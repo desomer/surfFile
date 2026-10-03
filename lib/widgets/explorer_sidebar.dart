@@ -6,6 +6,7 @@ import '../theme/explorer_colors.dart';
 import '../theme/container_style.dart';
 import '../theme/neon_style.dart';
 import 'styled_surface.dart';
+import 'disk_space_panel.dart';
 
 class ExplorerSidebar extends StatelessWidget {
   const ExplorerSidebar({
@@ -68,60 +69,51 @@ class ExplorerSidebar extends StatelessWidget {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.only(left: 10),
-              child: Text(
-                'ESPACE PERSONNEL',
-                style: TextStyle(
-                  color: style.foreground ??
-                      explorerColor(context, const Color(0xFF9298A8),
-                          Theme.of(context).colorScheme.onSurfaceVariant),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.1,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            for (final location in locations)
-              _LocationItem(
-                location: location,
-                selected: location.path == currentPath,
-                onTap: () => onLocationSelected(location.path),
-              ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: explorerColor(
-                    context,
-                    Colors.white.withValues(alpha: .75),
-                    Theme.of(context).colorScheme.surfaceContainer),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: explorerColor(context, const Color(0xFFE7E9F0),
-                      Theme.of(context).colorScheme.outlineVariant),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.tips_and_updates_outlined,
-                    size: 18,
-                    color: explorerColor(context, const Color(0xFF68728B),
-                        Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      'Vos fichiers, à portée de main.',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: explorerColor(context, const Color(0xFF68728B),
-                              Theme.of(context).colorScheme.onSurfaceVariant)),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.only(left: 10),
+                              child: Text(
+                                'ESPACE PERSONNEL',
+                                style: TextStyle(
+                                  color: style.foreground ??
+                                      explorerColor(
+                                          context,
+                                          const Color(0xFF9298A8),
+                                          Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            for (final location in locations)
+                              _LocationItem(
+                                location: location,
+                                selected: location.path == currentPath,
+                                onTap: () => onLocationSelected(location.path),
+                              ),
+                          ],
+                        ),
+                        DiskSpacePanel(onNavigate: onLocationSelected),
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ],

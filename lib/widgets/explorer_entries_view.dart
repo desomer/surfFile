@@ -6,6 +6,7 @@ import 'explorer_file_icon.dart';
 import 'neon_surface.dart';
 import 'press_feedback.dart';
 import 'sliding_selection_list.dart';
+import 'scroll_edge_fade.dart';
 
 class ExplorerEntriesView extends StatelessWidget {
   const ExplorerEntriesView({
@@ -29,7 +30,10 @@ class ExplorerEntriesView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return gridView ? _buildGrid(context) : _buildList();
+    return ScrollEdgeFade(
+      key: ValueKey(gridView),
+      child: gridView ? _buildGrid(context) : _buildList(),
+    );
   }
 
   Widget _buildList() {

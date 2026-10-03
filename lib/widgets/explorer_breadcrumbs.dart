@@ -21,6 +21,8 @@ class ExplorerBreadcrumbs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = AppearanceScope.of(context).pathBarStyle;
+    final colors = Theme.of(context).colorScheme;
+    final foreground = style.foreground ?? colors.onSurfaceVariant;
     final normalizedPath = path.replaceAll('\\', '/');
     final parts =
         normalizedPath.split('/').where((part) => part.isNotEmpty).toList();
@@ -44,51 +46,68 @@ class ExplorerBreadcrumbs extends StatelessWidget {
       borderColor: explorerColor(context, const Color(0xFFEAECF2),
           Theme.of(context).colorScheme.outlineVariant),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
             children: [
-              Icon(Icons.computer_rounded,
-                  size: 16,
-                  color: style.foreground ?? Colors.blueGrey.shade400),
+              Tooltip(
+                message: path,
+                child:
+                    Icon(Icons.computer_rounded, size: 20, color: foreground),
+              ),
               for (final (index, crumb) in crumbs.indexed) ...[
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
                   child: Icon(
                     Icons.chevron_right_rounded,
-                    size: 17,
-                    color: style.foreground ?? const Color(0xFFAAB0BF),
+                    size: 18,
+                    color: foreground.withValues(alpha: .55),
                   ),
                 ),
                 InkWell(
                   onTap: index == crumbs.length - 1
                       ? null
                       : () => onNavigate(crumb.path),
-                  borderRadius: BorderRadius.circular(5),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                    child: Text(
-                      crumb.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: style.foreground ??
-                            explorerColor(
-                                context,
-                                index == crumbs.length - 1
-                                    ? const Color(0xFF394154)
-                                    : const Color(0xFF7D8494),
-                                index == crumbs.length - 1
-                                    ? Theme.of(context).colorScheme.onSurface
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant),
-                        fontWeight: index == crumbs.length - 1
-                            ? FontWeight.w600
-                            : FontWeight.normal,
-                      ),
+                  borderRadius: BorderRadius.circular(9),
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      color: index == crumbs.length - 1
+                          ? (style.foreground ?? colors.primary)
+                              .withValues(alpha: .10)
+                          : null,
+                      borderRadius: BorderRadius.circular(9),
                     ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (index == crumbs.length - 1) ...[
+                        Icon(Icons.folder_open_rounded,
+                            size: 16,
+                            color: style.foreground ?? colors.primary),
+                        const SizedBox(width: 7),
+                      ],
+                      Text(
+                        crumb.label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: style.foreground ??
+                              explorerColor(
+                                  context,
+                                  index == crumbs.length - 1
+                                      ? const Color(0xFF394154)
+                                      : const Color(0xFF7D8494),
+                                  index == crumbs.length - 1
+                                      ? Theme.of(context).colorScheme.onSurface
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant),
+                          fontWeight: index == crumbs.length - 1
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ]),
                   ),
                 ),
               ],

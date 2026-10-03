@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/app.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/personal_folders.dart';
+import 'package:surf_file/services/disk_space.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/services/window_transparency.dart';
 import 'package:surf_file/theme/appearance.dart';
@@ -27,6 +28,7 @@ void main() {
         (_) async => null);
     messenger.setMockMethodCallHandler(
         WindowTransparency.channel, (_) async => null);
+    messenger.setMockMethodCallHandler(DiskSpace.channel, (_) async => []);
   });
   tearDown(() {
     final messenger =
@@ -34,6 +36,7 @@ void main() {
     messenger.setMockMethodCallHandler(
         const MethodChannel('com.alexmercerind/flutter_acrylic'), null);
     messenger.setMockMethodCallHandler(WindowTransparency.channel, null);
+    messenger.setMockMethodCallHandler(DiskSpace.channel, null);
   });
   testWidgets('settings update themes live, follow system and preserve search',
       (tester) async {

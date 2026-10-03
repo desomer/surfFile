@@ -30,57 +30,138 @@ class ExplorerToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 16, 26, 12),
-      child: Row(
-        children: [
-          IconButton(
-            tooltip: 'Retour',
-            onPressed: canGoBack ? onBack : null,
-            icon: const Icon(Icons.arrow_back_rounded),
-          ),
-          IconButton(
-            tooltip: 'Suivant',
-            onPressed: canGoForward ? onForward : null,
-            icon: const Icon(Icons.arrow_forward_rounded),
-          ),
-          IconButton(
-            tooltip: 'Dossier parent',
-            onPressed: canGoUp ? onUp : null,
-            icon: const Icon(Icons.arrow_upward_rounded),
-          ),
-          IconButton(
-            tooltip: 'Actualiser',
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-          const SizedBox(width: 12),
-          Expanded(child: _SearchBox(onChanged: onSearchChanged)),
-          const SizedBox(width: 12),
-          FilledButton.icon(
-            onPressed: onCreateFolder,
-            icon: const Icon(Icons.create_new_folder_outlined, size: 18),
-            label: const Text('Nouveau dossier'),
-            style: FilledButton.styleFrom(
-              backgroundColor: explorerColor(context, const Color(0xFF5268D9),
-                  Theme.of(context).colorScheme.primary),
-              foregroundColor: explorerColor(context, Colors.white,
-                  Theme.of(context).colorScheme.onPrimary),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+    final colors = Theme.of(context).colorScheme;
+    final navigation = Material(
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: colors.outlineVariant.withValues(alpha: .6)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _NavigationButton(
+              tooltip: 'Retour',
+              onPressed: canGoBack ? onBack : null,
+              icon: Icons.arrow_back_rounded,
             ),
-          ),
-          if (AppearanceScope.controllerOf(context) != null) ...[
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: 'Paramètres d’apparence',
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: () => AppearanceSettings.show(context),
+            _NavigationButton(
+              tooltip: 'Suivant',
+              onPressed: canGoForward ? onForward : null,
+              icon: Icons.arrow_forward_rounded,
+            ),
+            _NavigationButton(
+              tooltip: 'Dossier parent',
+              onPressed: canGoUp ? onUp : null,
+              icon: Icons.arrow_upward_rounded,
+            ),
+            Container(
+              width: 1,
+              height: 20,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              color: colors.outlineVariant,
+            ),
+            _NavigationButton(
+              tooltip: 'Actualiser',
+              onPressed: onRefresh,
+              icon: Icons.refresh_rounded,
             ),
           ],
-        ],
+        ),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 620;
+          final actions = [
+            if (compact)
+              IconButton.filled(
+                tooltip: 'Nouveau dossier',
+                onPressed: onCreateFolder,
+                icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                style: IconButton.styleFrom(
+                  minimumSize: const Size(44, 44),
+                  maximumSize: const Size(44, 44),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              )
+            else
+              FilledButton.icon(
+                onPressed: onCreateFolder,
+                icon: const Icon(Icons.create_new_folder_outlined, size: 20),
+                label: const Text('Nouveau dossier'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 48),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                ),
+              ),
+            if (AppearanceScope.controllerOf(context) != null) ...[
+              const SizedBox(width: 8),
+              _NavigationButton(
+                tooltip: 'Paramètres d’apparence',
+                icon: Icons.settings_outlined,
+                onPressed: () => AppearanceSettings.show(context),
+              ),
+            ],
+          ];
+          final search = _SearchBox(onChanged: onSearchChanged);
+          return compact
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(children: [navigation, const Spacer(), ...actions]),
+                    const SizedBox(height: 12),
+                    search,
+                  ],
+                )
+              : Row(
+                  children: [
+                    navigation,
+                    const SizedBox(width: 16),
+                    Expanded(child: search),
+                    const SizedBox(width: 16),
+                    ...actions,
+                  ],
+                );
+        },
       ),
     );
   }
+}
+
+class _NavigationButton extends StatelessWidget {
+  const _NavigationButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: tooltip,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+        style: IconButton.styleFrom(
+          minimumSize: const Size(40, 40),
+          maximumSize: const Size(40, 40),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
 }
 
 class _SearchBox extends StatelessWidget {
@@ -90,30 +171,30 @@ class _SearchBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 440),
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 48,
       child: TextField(
         onChanged: onChanged,
         decoration: InputDecoration(
           hintText: 'Rechercher dans ce dossier',
           prefixIcon: const Icon(Icons.search_rounded, size: 20),
           filled: true,
-          fillColor: explorerColor(context, Colors.white,
-              Theme.of(context).colorScheme.surfaceContainerLow),
-          contentPadding: const EdgeInsets.symmetric(vertical: 0),
+          fillColor:
+              explorerColor(context, Colors.white, colors.surfaceContainerLow),
+          hintStyle: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
+          prefixIconColor: colors.onSurfaceVariant,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
-            borderSide: BorderSide(
-              color: explorerColor(context, const Color(0xFFE5E8F0),
-                  Theme.of(context).colorScheme.outlineVariant),
-            ),
+            borderRadius: BorderRadius.circular(14),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(11),
-            borderSide: BorderSide(
-              color: explorerColor(context, const Color(0xFFE5E8F0),
-                  Theme.of(context).colorScheme.outlineVariant),
-            ),
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: colors.outlineVariant),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: colors.primary, width: 2),
           ),
         ),
       ),

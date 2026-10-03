@@ -12,6 +12,8 @@ class Appearance {
   static const maxSpacing = 64.0;
   static const minTransitionDuration = 100.0;
   static const maxTransitionDuration = 1000.0;
+  static const minScrollFadeExtent = 8.0;
+  static const maxScrollFadeExtent = 100.0;
 
   const Appearance({
     this.mode = ThemeMode.light,
@@ -46,6 +48,8 @@ class Appearance {
     this.iconSize = 49,
     this.folderTransition = FolderTransition.none,
     this.folderTransitionDuration = 220,
+    this.scrollFadeEnabled = true,
+    this.scrollFadeExtent = 28,
   });
 
   final ThemeMode mode;
@@ -80,6 +84,8 @@ class Appearance {
   final double iconSize;
   final FolderTransition folderTransition;
   final double folderTransitionDuration;
+  final bool scrollFadeEnabled;
+  final double scrollFadeExtent;
 
   Appearance copyWith({
     ThemeMode? mode,
@@ -120,6 +126,8 @@ class Appearance {
     double? iconSize,
     FolderTransition? folderTransition,
     double? folderTransitionDuration,
+    bool? scrollFadeEnabled,
+    double? scrollFadeExtent,
   }) =>
       Appearance(
         mode: mode ?? this.mode,
@@ -163,12 +171,15 @@ class Appearance {
         backgroundBorderColor: resetBackgroundBorderColor
             ? null
             : backgroundBorderColor ?? this.backgroundBorderColor,
-        backgroundBorderWidth: backgroundBorderWidth ?? this.backgroundBorderWidth,
+        backgroundBorderWidth:
+            backgroundBorderWidth ?? this.backgroundBorderWidth,
         fontSize: fontSize ?? this.fontSize,
         iconSize: iconSize ?? this.iconSize,
         folderTransition: folderTransition ?? this.folderTransition,
         folderTransitionDuration:
             folderTransitionDuration ?? this.folderTransitionDuration,
+        scrollFadeEnabled: scrollFadeEnabled ?? this.scrollFadeEnabled,
+        scrollFadeExtent: scrollFadeExtent ?? this.scrollFadeExtent,
       );
 
   ThemeData theme(Brightness brightness) {

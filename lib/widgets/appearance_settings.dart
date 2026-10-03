@@ -21,6 +21,7 @@ enum _Section {
   layout('Dimensions et espacement', Icons.dashboard_outlined),
   text('Texte et icônes', Icons.text_fields),
   navigation('Animation de navigation', Icons.animation),
+  scrollFade('Fondu des fichiers', Icons.gradient_rounded),
   window('Transparence de la fenêtre', Icons.window_outlined);
 
   const _Section(this.label, this.icon);
@@ -325,6 +326,31 @@ class _AppearanceSection extends StatelessWidget {
               64,
               (value) => controller.value =
                   controller.value.copyWith(iconSize: value)),
+        ],
+      _Section.scrollFade => [
+          SwitchListTile(
+            title: const Text('Activer le fondu'),
+            value: a.scrollFadeEnabled,
+            onChanged: (value) => controller.value =
+                controller.value.copyWith(scrollFadeEnabled: value),
+          ),
+          const Text(
+              'Le fondu apparaît uniquement aux bords où il reste des fichiers '
+              'à faire défiler, en liste comme en grille.'),
+          const SizedBox(height: 16),
+          if (a.scrollFadeEnabled)
+            _StyleSlider(
+                'Hauteur du fondu (px)',
+                a.scrollFadeExtent,
+                Appearance.minScrollFadeExtent,
+                Appearance.maxScrollFadeExtent,
+                (value) => controller.value =
+                    controller.value.copyWith(scrollFadeExtent: value)),
+          TextButton(
+            onPressed: () => controller.value = controller.value
+                .copyWith(scrollFadeEnabled: true, scrollFadeExtent: 28),
+            child: const Text('Réinitialiser le fondu'),
+          ),
         ],
       _Section.navigation => [
           DropdownButtonFormField<FolderTransition>(

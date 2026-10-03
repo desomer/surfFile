@@ -2,6 +2,34 @@
 
 Un explorateur de fichiers de bureau Flutter.
 
+Le menu contextuel utilise des lignes compactes de 32 pixels, des icones pour
+les commandes Windows usuelles, des separateurs fins et un panneau arrondi
+avec bordure et ombre discrete. Ses couleurs suivent le theme clair/sombre ;
+les commandes desactivees, cochees et les sous-menus gardent leurs etats.
+Dans ce menu, le bouton lateral Retour remonte au menu parent et ferme le menu
+a la racine. Suivant rouvre le sous-menu quitte ; ouvrir un autre sous-menu
+efface cet historique. Ces boutons ne naviguent pas dans les dossiers tant
+que le menu est ouvert et fonctionnent aussi sur les commandes desactivees.
+
+La zone des fichiers en liste et en grille utilise un fondu transparent de
+28 pixels en haut et en bas lorsqu'il reste du contenu dans cette direction.
+Le fondu disparait aux extremites et lorsque tout le contenu tient dans la
+zone ; il laisse apparaitre le fond personnalise et ne touche pas aux en-tetes.
+Le bouton **Fondu des fichiers** des parametres d'apparence permet de le
+desactiver ou de regler sa hauteur entre 8 et 100 pixels. Le changement est
+immediat, sauvegarde et commun aux vues liste et grille ; la reinitialisation
+du fondu restaure uniquement son activation et sa hauteur de 28 pixels.
+
+Le panneau gauche affiche les disques Windows dans une grille de deux colonnes.
+Chaque disque indique son pourcentage d'occupation par une piste circulaire et
+son espace libre en Gio/Tio ; l'anneau devient rouge a partir de 90 %.
+Un clic ouvre la racine du disque et une infobulle detaille sa capacite totale.
+Les capacites sont actualisees au retour dans l'application ou manuellement.
+Les lecteurs sans media affichent « Indisponible » ; les erreurs de lecture
+de la liste proposent de reessayer. La zone est defilante sur les petites fenetres.
+Cette fonctionnalite utilise les API Windows et necessite une reconstruction
+complete apres sa premiere installation, pas seulement un rechargement a chaud.
+
 Le bouton lateral Retour des souris revient au dossier precedent des l'appui,
 partout dans l'explorateur. Il reste inactif si l'historique est vide, pendant
 un chargement ou lorsqu'un dialogue/menu contextuel est ouvert.
@@ -9,6 +37,13 @@ Le bouton lateral Suivant et la fleche Suivant de la barre d'outils permettent
 de parcourir l'historique vers l'avant. Ouvrir un nouveau dossier apres un retour
 efface cette suite ; actualiser la conserve. Une navigation qui echoue ne
 consomme pas l'historique.
+
+La barre de navigation regroupe Retour, Suivant, Dossier parent et Actualiser
+dans un bloc arrondi. La recherche dispose d'un contour accentue au focus ;
+sur une fenetre etroite, elle passe sur une seconde ligne et la creation de
+dossier devient un bouton icone avec infobulle. Le chemin met en evidence le
+dossier actif avec une pastille et une icone, et conserve les liens vers les
+parents ainsi que ses reglages de couleur, bordure et neon.
 
 L'icone **Parametres d'apparence** de la barre d'outils ouvre un panneau pour
 choisir Clair, Sombre ou Systeme et personnaliser les couleurs d'accent, de fond

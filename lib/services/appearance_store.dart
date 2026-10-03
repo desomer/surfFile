@@ -65,6 +65,8 @@ class AppearanceStore {
         'iconSize': a.iconSize,
         'folderTransition': a.folderTransition.name,
         'folderTransitionDuration': a.folderTransitionDuration,
+        'scrollFadeEnabled': a.scrollFadeEnabled,
+        'scrollFadeExtent': a.scrollFadeExtent,
       });
 
   static Appearance decode(String stored) {
@@ -106,6 +108,10 @@ class AppearanceStore {
       'zoom' => FolderTransition.zoom,
       _ => throw const FormatException('Animation de dossier invalide.'),
     };
+    final fadeEnabled = json['scrollFadeEnabled'] ?? true;
+    if (fadeEnabled is! bool) {
+      throw const FormatException('Activation du fondu invalide.');
+    }
     return Appearance(
       mode: mode,
       accent: color('accent') ?? const Color(0xFF5268D9),
@@ -149,6 +155,9 @@ class AppearanceStore {
       folderTransition: transition,
       folderTransitionDuration: number('folderTransitionDuration', 220,
           Appearance.minTransitionDuration, Appearance.maxTransitionDuration),
+      scrollFadeEnabled: fadeEnabled,
+      scrollFadeExtent: number('scrollFadeExtent', 28,
+          Appearance.minScrollFadeExtent, Appearance.maxScrollFadeExtent),
     );
   }
 }

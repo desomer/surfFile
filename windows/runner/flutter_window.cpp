@@ -28,6 +28,51 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  flutter::MethodChannel<flutter::EncodableValue> disk_space(
+      flutter_controller_->engine()->messenger(), "surf_file/disk_space",
+      &flutter::StandardMethodCodec::GetInstance());
+  disk_space.SetMethodCallHandler(
+      [](const auto& call, auto result) {
+        if (call.method_name() != "getDisks") {
+          result->NotImplemented();
+          return;
+        }
+        const DWORD drives = GetLogicalDrives();
+        if (drives == 0) {
+          result->Error("disk_enumeration_failed",
+                        "Cannot enumerate drives (Win32 " +
+                            std::to_string(GetLastError()) + ").");
+          return;
+        }
+        flutter::EncodableList disks;
+        for (int index = 0; index < 26; ++index) {
+          if ((drives & (1u << index)) == 0) continue;
+          const std::string path =
+              std::string(1, static_cast<char>('A' + index)) + ":\\";
+          const std::wstring wide_path(path.begin(), path.end());
+          ULARGE_INTEGER available{}, total{}, free{};
+          flutter::EncodableMap disk;
+          disk[flutter::EncodableValue("path")] = flutter::EncodableValue(path);
+          // Avoid Windows showing an insert-media dialog for empty drives.
+          DWORD previous_mode = 0;
+          SetThreadErrorMode(SEM_FAILCRITICALERRORS, &previous_mode);
+          const BOOL success = GetDiskFreeSpaceExW(
+              wide_path.c_str(), &available, &total, &free);
+          const DWORD error = success ? ERROR_SUCCESS : GetLastError();
+          SetThreadErrorMode(previous_mode, nullptr);
+          if (!success || total.QuadPart == 0) {
+            disk[flutter::EncodableValue("error")] = flutter::EncodableValue(
+                "Capacity unavailable (Win32 " + std::to_string(error) + ").");
+          } else {
+            disk[flutter::EncodableValue("totalBytes")] =
+                flutter::EncodableValue(static_cast<int64_t>(total.QuadPart));
+            disk[flutter::EncodableValue("freeBytes")] =
+                flutter::EncodableValue(static_cast<int64_t>(free.QuadPart));
+          }
+          disks.emplace_back(disk);
+        }
+        result->Success(flutter::EncodableValue(disks));
+      });
   flutter::MethodChannel<flutter::EncodableValue> transparency_channel(
       flutter_controller_->engine()->messenger(),
       "surf_file/window_transparency",
