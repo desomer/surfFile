@@ -43,7 +43,7 @@ class ExplorerToolbar extends StatelessWidget {
         side: BorderSide(color: colors.outlineVariant.withValues(alpha: .6)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(4),
+        padding: const EdgeInsets.all(2),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -185,8 +185,8 @@ class _NavigationButton extends StatelessWidget {
     isSelected: selected,
     icon: Icon(icon, size: 20),
     style: IconButton.styleFrom(
-      minimumSize: const Size(40, 40),
-      maximumSize: const Size(40, 40),
+      minimumSize: const Size(36, 36),
+      maximumSize: const Size(36, 36),
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       backgroundColor: selected
           ? Theme.of(context).colorScheme.primaryContainer
