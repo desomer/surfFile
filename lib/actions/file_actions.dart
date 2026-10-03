@@ -18,6 +18,7 @@ class FileActionContext {
     required this.right,
     required this.navigate,
     required this.refresh,
+    this.track,
   });
 
   final PaneSnapshot left;
@@ -28,6 +29,18 @@ class FileActionContext {
 
   /// Recharge le contenu des deux volets.
   final Future<void> Function() refresh;
+
+  /// Reçoit les opérations longues pour afficher progression et annulation.
+  final void Function(FileJob job)? track;
+
+  FileActionContext withTracker(void Function(FileJob job) track) =>
+      FileActionContext(
+        left: left,
+        right: right,
+        navigate: navigate,
+        refresh: refresh,
+        track: track,
+      );
 }
 
 /// Action déclenchable depuis la barre d'actions entre les deux volets.
@@ -78,8 +91,9 @@ class SwapPanesAction extends FileAction {
 abstract class TransferToRightAction extends FileAction {
   const TransferToRightAction();
 
-  Future<String> transfer(String source, String destinationDir);
+  FileTransfer get kind;
   String done(int count);
+  String cancelled(int count);
 
   @override
   bool isEnabled(FileActionContext context) =>
@@ -89,14 +103,16 @@ abstract class TransferToRightAction extends FileAction {
   @override
   Future<String?> run(FileActionContext context) async {
     final selection = context.left.selection;
+    final job = FileOperations.start(kind, selection, context.right.path);
+    context.track?.call(job);
     try {
-      for (final path in selection) {
-        await transfer(path, context.right.path);
-      }
+      final created = await job.result;
+      return done(created.length);
+    } on FileOperationCancelled {
+      return cancelled(job.latest?.doneItems ?? 0);
     } finally {
       await context.refresh();
     }
-    return done(selection.length);
   }
 }
 
@@ -111,12 +127,14 @@ class CopyToRightAction extends TransferToRightAction {
   IconData get icon => Icons.copy_all_rounded;
 
   @override
-  Future<String> transfer(String source, String destinationDir) =>
-      FileOperations.copy(source, destinationDir);
+  FileTransfer get kind => FileTransfer.copy;
 
   @override
   String done(int count) =>
       '$count élément${count == 1 ? ' copié' : 's copiés'}';
+
+  @override
+  String cancelled(int count) => 'Copie annulée ($count fichier(s) copié(s))';
 }
 
 class MoveToRightAction extends TransferToRightAction {
@@ -130,10 +148,13 @@ class MoveToRightAction extends TransferToRightAction {
   IconData get icon => Icons.drive_file_move_outline;
 
   @override
-  Future<String> transfer(String source, String destinationDir) =>
-      FileOperations.move(source, destinationDir);
+  FileTransfer get kind => FileTransfer.move;
 
   @override
   String done(int count) =>
       '$count élément${count == 1 ? ' déplacé' : 's déplacés'}';
+
+  @override
+  String cancelled(int count) =>
+      'Déplacement annulé ($count fichier(s) déplacé(s))';
 }

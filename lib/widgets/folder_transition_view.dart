@@ -48,8 +48,9 @@ class _FolderTransitionViewState extends State<FolderTransitionView>
     final appearance = AppearanceScope.of(context);
     _type = appearance.folderTransition;
     _reverse = widget.reverse;
-    _controller.duration =
-        Duration(milliseconds: appearance.folderTransitionDuration.round());
+    _controller.duration = Duration(
+      milliseconds: appearance.folderTransitionDuration.round(),
+    );
     if (_type == FolderTransition.none ||
         MediaQuery.disableAnimationsOf(context)) {
       _previous = null;
@@ -79,98 +80,102 @@ class _FolderTransitionViewState extends State<FolderTransitionView>
     super.dispose();
   }
 
+  // Les *Transition écoutent directement le contrôleur : le contenu des
+  // dossiers n'est ni reconstruit ni repeint à chaque image, seule la couche
+  // de composition change.
+  late final Animation<double> _progress = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
+  late final Animation<double> _remaining = ReverseAnimation(_progress);
+
+  Animation<Offset> _slide(double from, double to) => Tween<Offset>(
+    begin: Offset(from, 0),
+    end: Offset(to, 0),
+  ).animate(_progress);
+
+  Animation<double> _scale(double from, double to) =>
+      Tween<double>(begin: from, end: to).animate(_progress);
+
   @override
   Widget build(BuildContext context) {
+    final current = KeyedSubtree(
+      key: ValueKey(widget.revision),
+      child: RepaintBoundary(child: widget.child),
+    );
+    final direction = _reverse ? -1.0 : 1.0;
+    final incoming = switch (_type) {
+      FolderTransition.none => current,
+      FolderTransition.fade ||
+      FolderTransition.heroExpand ||
+      FolderTransition.heroIcon => FadeTransition(
+        key: const ValueKey('folder-fade'),
+        opacity: _progress,
+        child: current,
+      ),
+      FolderTransition.slide => SlideTransition(
+        key: const ValueKey('folder-slide'),
+        position: _slide(.08 * direction, 0),
+        child: current,
+      ),
+      FolderTransition.fullSlide => SlideTransition(
+        key: const ValueKey('folder-full-slide'),
+        position: _slide(direction, 0),
+        child: current,
+      ),
+      FolderTransition.zoom => ScaleTransition(
+        key: const ValueKey('folder-zoom'),
+        scale: _scale(1 - .03 * direction, 1),
+        child: current,
+      ),
+    };
+    final previous = _previous;
     return ClipRect(
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, child) {
-          final progress = Curves.easeOutCubic.transform(_controller.value);
-          final remaining = 1 - progress;
-          final current = KeyedSubtree(
-            key: ValueKey(widget.revision),
-            child: widget.child,
-          );
-          final incoming = switch (_type) {
-            FolderTransition.none => current,
-            FolderTransition.fade ||
-            FolderTransition.heroExpand ||
-            FolderTransition.heroIcon =>
-              Opacity(
-                key: const ValueKey('folder-fade'),
-                opacity: progress,
-                child: current,
-              ),
-            FolderTransition.slide => FractionalTranslation(
-                key: const ValueKey('folder-slide'),
-                translation: Offset((_reverse ? -.08 : .08) * remaining, 0),
-                child: current,
-              ),
-            FolderTransition.fullSlide => FractionalTranslation(
-                key: const ValueKey('folder-full-slide'),
-                translation: Offset((_reverse ? -1.0 : 1.0) * remaining, 0),
-                child: current,
-              ),
-            FolderTransition.zoom => Transform.scale(
-                key: const ValueKey('folder-zoom'),
-                scale: 1 + (_reverse ? .03 : -.03) * remaining,
-                child: current,
-              ),
-          };
-          final previous = _previous;
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              if (previous != null)
-                IgnorePointer(
-                  child: ExcludeSemantics(
-                    child: _outgoing(
-                      progress,
-                      remaining,
-                      KeyedSubtree(
-                        key: ValueKey(_previousRevision),
-                        child: previous,
-                      ),
-                    ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (previous != null)
+            IgnorePointer(
+              child: ExcludeSemantics(
+                child: _outgoing(
+                  KeyedSubtree(
+                    key: ValueKey(_previousRevision),
+                    child: RepaintBoundary(child: previous),
                   ),
                 ),
-              incoming,
-            ],
-          );
-        },
+              ),
+            ),
+          incoming,
+        ],
       ),
     );
   }
 
-  Widget _outgoing(double progress, double remaining, Widget child) {
+  Widget _outgoing(Widget child) {
+    final direction = _reverse ? 1.0 : -1.0;
     return switch (_type) {
       FolderTransition.none => child,
       FolderTransition.fade ||
       FolderTransition.heroExpand ||
-      FolderTransition.heroIcon =>
-        Opacity(
-          opacity: remaining,
+      FolderTransition.heroIcon => FadeTransition(
+        opacity: _remaining,
+        child: child,
+      ),
+      FolderTransition.slide => SlideTransition(
+        position: _slide(0, .08 * direction),
+        child: FadeTransition(opacity: _remaining, child: child),
+      ),
+      FolderTransition.fullSlide => SlideTransition(
+        position: _slide(0, direction),
+        child: child,
+      ),
+      FolderTransition.zoom => FadeTransition(
+        opacity: _remaining,
+        child: ScaleTransition(
+          scale: _scale(1, 1 - .03 * direction),
           child: child,
         ),
-      FolderTransition.slide ||
-      FolderTransition.fullSlide =>
-        FractionalTranslation(
-          translation: Offset(
-              (_reverse ? 1.0 : -1.0) *
-                  (_type == FolderTransition.fullSlide ? 1 : .08) *
-                  progress,
-              0),
-          child: _type == FolderTransition.slide
-              ? Opacity(opacity: remaining, child: child)
-              : child,
-        ),
-      FolderTransition.zoom => Opacity(
-          opacity: remaining,
-          child: Transform.scale(
-            scale: 1 + (_reverse ? -.03 : .03) * progress,
-            child: child,
-          ),
-        ),
+      ),
     };
   }
 }

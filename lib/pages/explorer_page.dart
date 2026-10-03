@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/explorer_entry.dart';
 import '../models/explorer_location.dart';
+import '../services/directory_scanner.dart';
 import '../services/personal_folders.dart';
 import '../services/windows_context_menu.dart';
 import '../theme/explorer_colors.dart';
@@ -14,6 +15,7 @@ import '../widgets/explorer_empty_state.dart';
 import '../widgets/explorer_entries_view.dart';
 import '../widgets/explorer_error_state.dart';
 import '../widgets/explorer_sidebar.dart';
+import '../widgets/explorer_skeleton.dart';
 import '../widgets/explorer_sort_header.dart';
 import '../widgets/explorer_toolbar.dart';
 import '../widgets/explorer_view_toggle.dart';
@@ -28,6 +30,7 @@ import '../theme/appearance_slot.dart';
 import '../theme/folder_transition.dart';
 import '../widgets/super_container.dart';
 import '../widgets/file_action_bar.dart';
+import '../widgets/transfer_panel.dart';
 import '../actions/file_actions.dart';
 
 enum _HistoryDirection { back, forward }
@@ -99,42 +102,59 @@ class _ExplorerPageState extends State<ExplorerPage> {
       decorate: false,
       applyPadding: true,
       child: Scaffold(
-        body: ExplorerPane(
-          key: _panes[0],
-          split: _split,
-          active: _split && _active == 0,
-          onActivate: () => _activate(0),
-          onPathChanged: (path) => _pathChanged(0, path),
-          onToggleSplit: _toggleSplit,
-          sidebarPath: _split ? _paths[_active] : null,
-          onSidebarLocation: _split
-              ? (path) => _panes[_active].currentState?._loadDirectory(path)
-              : null,
-          splitBarBuilder: (_) => FileActionBar(
-            actionContext: _actionContext(),
-            onMessage: _showMessage,
-          ),
-          splitChild: _split
-              ? ExplorerPane(
-                  key: _panes[1],
-                  initialPath: _paths[0],
-                  showSidebar: false,
-                  autofocus: false,
-                  split: true,
-                  active: _active == 1,
-                  onActivate: () => _activate(1),
-                  onPathChanged: (path) => _pathChanged(1, path),
-                  onSelectionChanged: () => _panes[0].currentState?._touch(),
-                  onToggleSplit: _toggleSplit,
-                )
-              : null,
+        body: Stack(
+          children: [
+            Positioned.fill(child: _panesView()),
+            const Positioned(top: 56, right: 16, child: TransferPanel()),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _panesView() {
+    return ExplorerPane(
+      key: _panes[0],
+      split: _split,
+      active: _split && _active == 0,
+      onActivate: () => _activate(0),
+      onPathChanged: (path) => _pathChanged(0, path),
+      onToggleSplit: _toggleSplit,
+      sidebarPath: _split ? _paths[_active] : null,
+      onSidebarLocation: _split
+          ? (path) => _panes[_active].currentState?._loadDirectory(path)
+          : null,
+      splitBarBuilder: (_) => FileActionBar(
+        actionContext: _actionContext(),
+        onMessage: _showMessage,
+      ),
+      splitChild: _split
+          ? ExplorerPane(
+              key: _panes[1],
+              initialPath: _paths[0],
+              showSidebar: false,
+              autofocus: false,
+              split: true,
+              active: _active == 1,
+              onActivate: () => _activate(1),
+              onPathChanged: (path) => _pathChanged(1, path),
+              onSelectionChanged: () => _panes[0].currentState?._touch(),
+              onToggleSplit: _toggleSplit,
+            )
+          : null,
     );
   }
 }
 
 /// Une navigation de dossiers complète (barre d'outils, chemin, fichiers).
+typedef _LoadRollback = ({
+  String path,
+  List<ExplorerEntry> entries,
+  List<String> history,
+  List<String> forward,
+  String? selected,
+});
+
 class ExplorerPane extends StatefulWidget {
   const ExplorerPane({
     this.initialPath,
@@ -187,6 +207,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   final List<String> _forwardHistory = [];
   _HistoryDirection? _failedDirection;
   List<ExplorerEntry> _entries = [];
+  ((List<ExplorerEntry>, String, ExplorerSort, bool), List<ExplorerEntry>)?
+  _visibleCache;
   String _query = '';
   String? _selectedPath;
   String? _loadError;
@@ -201,6 +223,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   bool _contextMenuOpen = false;
   ExplorerSort _sort = ExplorerSort.name;
   bool _hasLoadedDirectory = false;
+  bool _pendingEntries = false;
   int _folderRevision = 0;
   bool _reverseTransition = false;
   int _loadRequest = 0;
@@ -299,27 +322,39 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     });
   }
 
+  /// Filtré et trié une seule fois par combinaison liste/recherche/tri, au
+  /// lieu de l'être à chaque reconstruction (survol, animation…).
   List<ExplorerEntry> get _visibleEntries {
-    final query = _query.trim().toLowerCase();
+    final key = (_entries, _query.trim().toLowerCase(), _sort, _ascending);
+    final cached = _visibleCache;
+    if (cached != null &&
+        identical(cached.$1.$1, key.$1) &&
+        cached.$1.$2 == key.$2 &&
+        cached.$1.$3 == key.$3 &&
+        cached.$1.$4 == key.$4) {
+      return cached.$2;
+    }
+    final query = key.$2;
+    final lower = {
+      for (final entry in _entries) entry: entry.name.toLowerCase(),
+    };
     final entries = _entries
-        .where(
-          (entry) => query.isEmpty || entry.name.toLowerCase().contains(query),
-        )
+        .where((entry) => query.isEmpty || lower[entry]!.contains(query))
         .toList();
     entries.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
         return a.isDirectory ? -1 : 1;
       }
       final comparison = switch (_sort) {
-        ExplorerSort.name => a.name.toLowerCase().compareTo(
-          b.name.toLowerCase(),
-        ),
+        ExplorerSort.name => lower[a]!.compareTo(lower[b]!),
         ExplorerSort.modified => a.modified.compareTo(b.modified),
         ExplorerSort.size => a.size.compareTo(b.size),
       };
       return _ascending ? comparison : -comparison;
     });
-    return entries;
+    final visible = List<ExplorerEntry>.unmodifiable(entries);
+    _visibleCache = (key, visible);
+    return visible;
   }
 
   Future<void> _loadDirectory(
@@ -330,94 +365,159 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     Rect? heroIcon,
   }) async {
     final request = ++_loadRequest;
-    setState(() {
-      _isLoading = true;
+    final navigating = _hasLoadedDirectory && path != _currentPath;
+    final scan = DirectoryScanner.scan(path);
+    void reset() {
       _previewVisible = false;
       _previewExpanded = false;
       _loadError = null;
       _failedPath = null;
       _failedDirection = null;
-    });
+    }
 
-    try {
-      final directory = Directory(path);
-      final entities = <FileSystemEntity>[];
-      await for (final entity in directory.list(followLinks: false)) {
-        entities.add(entity);
-      }
-      final entries = await Future.wait(
-        entities.map((entity) async {
-          final stat = await entity.stat();
-          return ExplorerEntry(
-            entity: entity,
-            name: _fileName(entity.path),
-            isDirectory: entity is Directory,
-            modified: stat.modified,
-            size: stat.size,
-          );
-        }),
-      );
-      if (!mounted || request != _loadRequest) return;
-
+    if (!navigating) {
       setState(() {
-        _heroSource = null;
-        if (_hasLoadedDirectory && path != _currentPath) {
-          _folderRevision++;
-          _reverseTransition =
-              direction == _HistoryDirection.back ||
-              (direction == null &&
-                  path == Directory(_currentPath).parent.path);
-          final appearance = AppearanceScope.of(context);
-          final type = appearance.folderTransition;
-          if (heroCard != null &&
-              heroIcon != null &&
-              !MediaQuery.disableAnimationsOf(context) &&
-              (type == FolderTransition.heroExpand ||
-                  type == FolderTransition.heroIcon)) {
-            _heroExpand = type == FolderTransition.heroExpand;
-            final target =
-                (_heroExpand ? _contentKey : _titleIconKey).currentContext!
-                        .findRenderObject()!
-                    as RenderBox;
-            final overlay =
-                _overlayKey.currentContext!.findRenderObject()! as RenderBox;
-            final origin = overlay.localToGlobal(Offset.zero);
-            _heroSource = (_heroExpand ? heroCard : heroIcon).shift(-origin);
-            _heroDestination = (target.localToGlobal(Offset.zero) & target.size)
-                .shift(-origin);
-            _heroDuration = Duration(
-              milliseconds: appearance.folderTransitionDuration.round(),
-            );
-            _heroRevision++;
-          }
-        }
-        if (direction == _HistoryDirection.back) {
-          _history.removeLast();
-          _forwardHistory.add(_currentPath);
-        } else if (direction == _HistoryDirection.forward) {
-          _forwardHistory.removeLast();
-          _history.add(_currentPath);
-        } else if (addToHistory && path != _currentPath) {
-          _history.add(_currentPath);
-          _forwardHistory.clear();
+        reset();
+        _isLoading = true;
+      });
+    }
+
+    _LoadRollback? rollback;
+    try {
+      if (navigating) {
+        // Un petit dossier est lu en quelques millisecondes : il glisse
+        // directement avec son contenu. Sinon le glissement part sur un
+        // squelette, remplacé dès que la liste est prête.
+        final quick = await Future.any<List<ExplorerEntry>?>([
+          scan,
+          Future<List<ExplorerEntry>?>.delayed(_quickScan),
+        ]);
+        if (!mounted || request != _loadRequest) return;
+        rollback = (
+          path: _currentPath,
+          entries: _entries,
+          history: List.of(_history),
+          forward: List.of(_forwardHistory),
+          selected: _selectedPath,
+        );
+        setState(() {
+          reset();
+          _startTransition(path, direction, heroCard, heroIcon);
+          _commitHistory(path, direction, addToHistory);
+          _currentPath = path;
+          _entries = quick ?? const [];
+          _selectedPath = null;
+          _pendingEntries = quick == null;
+          _isLoading = quick == null;
+        });
+        widget.onPathChanged?.call(path);
+        if (quick != null) return;
+      }
+
+      final entries = await scan;
+      if (!mounted || request != _loadRequest) return;
+      setState(() {
+        if (!navigating) {
+          _commitHistory(path, direction, addToHistory);
+          _selectedPath = null;
         }
         _currentPath = path;
         _entries = entries;
-        _selectedPath = null;
+        _pendingEntries = false;
         _isLoading = false;
         _hasLoadedDirectory = true;
       });
-      widget.onPathChanged?.call(path);
+      if (!navigating) widget.onPathChanged?.call(path);
     } on FileSystemException catch (error) {
-      debugPrint('Error loading directory: $error');
-      if (!mounted || request != _loadRequest) return;
-      setState(() {
-        _isLoading = false;
-        _failedPath = path;
-        _failedDirection = direction;
-        _loadError =
-            'Impossible d’ouvrir le dossier "$path" : ${error.message}';
-      });
+      _loadFailed(request, path, direction, error, rollback);
+    }
+  }
+
+  /// Délai de lecture sous lequel un dossier s'affiche sans squelette.
+  static const _quickScan = Duration(milliseconds: 60);
+
+  void _loadFailed(
+    int request,
+    String path,
+    _HistoryDirection? direction,
+    FileSystemException error,
+    _LoadRollback? rollback,
+  ) {
+    debugPrint('Error loading directory: $error');
+    if (!mounted || request != _loadRequest) return;
+    setState(() {
+      if (rollback != null) {
+        _currentPath = rollback.path;
+        _entries = rollback.entries;
+        _history
+          ..clear()
+          ..addAll(rollback.history);
+        _forwardHistory
+          ..clear()
+          ..addAll(rollback.forward);
+        _selectedPath = rollback.selected;
+      }
+      _pendingEntries = false;
+      _isLoading = false;
+      _failedPath = path;
+      _failedDirection = direction;
+      _loadError = 'Impossible d’ouvrir le dossier "$path" : ${error.message}';
+    });
+    if (rollback != null) widget.onPathChanged?.call(rollback.path);
+  }
+
+  /// Lance la transition vers [path].
+  void _startTransition(
+    String path,
+    _HistoryDirection? direction,
+    Rect? heroCard,
+    Rect? heroIcon,
+  ) {
+    _heroSource = null;
+    _folderRevision++;
+    _reverseTransition =
+        direction == _HistoryDirection.back ||
+        (direction == null && path == Directory(_currentPath).parent.path);
+    final appearance = AppearanceScope.of(context);
+    final type = appearance.folderTransition;
+    final duration = Duration(
+      milliseconds: appearance.folderTransitionDuration.round(),
+    );
+    if (heroCard != null &&
+        heroIcon != null &&
+        !MediaQuery.disableAnimationsOf(context) &&
+        (type == FolderTransition.heroExpand ||
+            type == FolderTransition.heroIcon)) {
+      _heroExpand = type == FolderTransition.heroExpand;
+      final target =
+          (_heroExpand ? _contentKey : _titleIconKey).currentContext!
+                  .findRenderObject()!
+              as RenderBox;
+      final overlay =
+          _overlayKey.currentContext!.findRenderObject()! as RenderBox;
+      final origin = overlay.localToGlobal(Offset.zero);
+      _heroSource = (_heroExpand ? heroCard : heroIcon).shift(-origin);
+      _heroDestination = (target.localToGlobal(Offset.zero) & target.size)
+          .shift(-origin);
+      _heroDuration = duration;
+      _heroRevision++;
+    }
+  }
+
+  void _commitHistory(
+    String path,
+    _HistoryDirection? direction,
+    bool addToHistory,
+  ) {
+    if (direction == _HistoryDirection.back) {
+      _history.removeLast();
+      _forwardHistory.add(_currentPath);
+    } else if (direction == _HistoryDirection.forward) {
+      _forwardHistory.removeLast();
+      _history.add(_currentPath);
+    } else if (addToHistory && path != _currentPath) {
+      _history.add(_currentPath);
+      _forwardHistory.clear();
     }
   }
 
@@ -811,7 +911,9 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                   ),
                 ),
                 Text(
-                  '${entries.length} élément${entries.length == 1 ? '' : 's'}',
+                  _pendingEntries
+                      ? '…'
+                      : '${entries.length} élément${entries.length == 1 ? '' : 's'}',
                   style: TextStyle(
                     color: explorerColor(
                       context,
@@ -852,116 +954,144 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                 reverse: _reverseTransition,
                 child: IgnorePointer(
                   ignoring: _isLoading,
-                  child: _isLoading && !_hasLoadedDirectory
-                      ? const Center(child: CircularProgressIndicator())
-                      : _loadError != null
-                      ? ExplorerErrorState(
-                          message: _loadError!,
-                          onRetry: () {
-                            if (_initializationFailed) {
-                              _initialize();
-                            } else {
-                              _loadDirectory(
-                                _failedPath ?? _currentPath,
-                                direction: _failedDirection,
-                              );
-                            }
-                          },
-                        )
-                      : entries.isEmpty
-                      ? ExplorerEmptyState(hasQuery: _query.isNotEmpty)
-                      : LayoutBuilder(
-                          builder: (context, constraints) {
-                            final fileList = ExplorerEntriesView(
-                              key: ValueKey(_currentPath),
-                              entries: entries,
-                              gridView: _gridView,
-                              selectedPath: _selectedPath,
-                              onSelected: (path) {
-                                _explorerFocusNode.requestFocus();
-                                setState(() => _selectedPath = path);
-                                widget.onSelectionChanged?.call();
-                              },
-                              onOpen: _openEntry,
-                              onOpenWithBounds: (entry, card, icon) =>
-                                  _loadDirectory(
-                                    entry.entity.path,
-                                    heroCard: card,
-                                    heroIcon: icon,
-                                  ),
-                              onContextMenu: Platform.isWindows
-                                  ? _showContextMenu
-                                  : null,
-                            );
-                            if (!_previewVisible) return fileList;
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    layoutBuilder: (current, previous) => Stack(
+                      fit: StackFit.expand,
+                      children: [...previous, if (current != null) current],
+                    ),
+                    child: _pendingEntries && _loadError == null
+                        ? ExplorerSkeleton(
+                            key: const ValueKey('explorer-skeleton'),
+                            gridView: _gridView,
+                          )
+                        : KeyedSubtree(
+                            key: const ValueKey('explorer-content'),
+                            child: _isLoading && !_hasLoadedDirectory
+                                ? const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
+                                : _loadError != null
+                                ? ExplorerErrorState(
+                                    message: _loadError!,
+                                    onRetry: () {
+                                      if (_initializationFailed) {
+                                        _initialize();
+                                      } else {
+                                        _loadDirectory(
+                                          _failedPath ?? _currentPath,
+                                          direction: _failedDirection,
+                                        );
+                                      }
+                                    },
+                                  )
+                                : entries.isEmpty
+                                ? ExplorerEmptyState(
+                                    hasQuery: _query.isNotEmpty,
+                                  )
+                                : LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final fileList = ExplorerEntriesView(
+                                        key: ValueKey(_currentPath),
+                                        entries: entries,
+                                        gridView: _gridView,
+                                        selectedPath: _selectedPath,
+                                        onSelected: (path) {
+                                          _explorerFocusNode.requestFocus();
+                                          setState(() => _selectedPath = path);
+                                          widget.onSelectionChanged?.call();
+                                        },
+                                        onOpen: _openEntry,
+                                        onOpenWithBounds: (entry, card, icon) =>
+                                            _loadDirectory(
+                                              entry.entity.path,
+                                              heroCard: card,
+                                              heroIcon: icon,
+                                            ),
+                                        onContextMenu: Platform.isWindows
+                                            ? _showContextMenu
+                                            : null,
+                                      );
+                                      if (!_previewVisible) return fileList;
 
-                            final matching = entries.where(
-                              (entry) => entry.entity.path == _selectedPath,
-                            );
-                            final selected = matching.isEmpty
-                                ? null
-                                : matching.first;
-                            void closePreview() => setState(() {
-                              _previewVisible = false;
-                              _previewExpanded = false;
-                            });
-                            void toggleExpanded() => setState(
-                              () => _previewExpanded = !_previewExpanded,
-                            );
-                            final preview =
-                                selected != null &&
-                                    VideoPreviewPanel.supports(selected.name)
-                                ? VideoPreviewPanel(
-                                    key: _videoPreviewKey,
-                                    path: selected.entity.path,
-                                    onClose: closePreview,
-                                    isExpanded: _previewExpanded,
-                                    onToggleExpanded: toggleExpanded,
-                                  )
-                                : selected != null &&
-                                      ImagePreviewPanel.supports(selected.name)
-                                ? ImagePreviewPanel(
-                                    key: _imagePreviewKey,
-                                    path: selected.entity.path,
-                                    onClose: closePreview,
-                                    isExpanded: _previewExpanded,
-                                    onToggleExpanded: toggleExpanded,
-                                  )
-                                : TextPreviewPanel(
-                                    key: _textPreviewKey,
-                                    path:
-                                        selected != null &&
-                                            TextPreviewPanel.supports(
-                                              selected.name,
+                                      final matching = entries.where(
+                                        (entry) =>
+                                            entry.entity.path == _selectedPath,
+                                      );
+                                      final selected = matching.isEmpty
+                                          ? null
+                                          : matching.first;
+                                      void closePreview() => setState(() {
+                                        _previewVisible = false;
+                                        _previewExpanded = false;
+                                      });
+                                      void toggleExpanded() => setState(
+                                        () => _previewExpanded =
+                                            !_previewExpanded,
+                                      );
+                                      final preview =
+                                          selected != null &&
+                                              VideoPreviewPanel.supports(
+                                                selected.name,
+                                              )
+                                          ? VideoPreviewPanel(
+                                              key: _videoPreviewKey,
+                                              path: selected.entity.path,
+                                              onClose: closePreview,
+                                              isExpanded: _previewExpanded,
+                                              onToggleExpanded: toggleExpanded,
                                             )
-                                        ? selected.entity.path
-                                        : null,
-                                    onClose: closePreview,
-                                    isExpanded: _previewExpanded,
-                                    onToggleExpanded: toggleExpanded,
-                                  );
-                            if (_previewExpanded) return preview;
-                            if (constraints.maxWidth >= 760) {
-                              return Row(
-                                children: [
-                                  Expanded(child: fileList),
-                                  const SizedBox(width: 12),
-                                  SizedBox(width: 340, child: preview),
-                                ],
-                              );
-                            }
-                            return Column(
-                              children: [
-                                Expanded(flex: 3, child: fileList),
-                                const SizedBox(height: 12),
-                                SizedBox(height: 240, child: preview),
-                              ],
-                            );
-                          },
-                        ),
+                                          : selected != null &&
+                                                ImagePreviewPanel.supports(
+                                                  selected.name,
+                                                )
+                                          ? ImagePreviewPanel(
+                                              key: _imagePreviewKey,
+                                              path: selected.entity.path,
+                                              onClose: closePreview,
+                                              isExpanded: _previewExpanded,
+                                              onToggleExpanded: toggleExpanded,
+                                            )
+                                          : TextPreviewPanel(
+                                              key: _textPreviewKey,
+                                              path:
+                                                  selected != null &&
+                                                      TextPreviewPanel.supports(
+                                                        selected.name,
+                                                      )
+                                                  ? selected.entity.path
+                                                  : null,
+                                              onClose: closePreview,
+                                              isExpanded: _previewExpanded,
+                                              onToggleExpanded: toggleExpanded,
+                                            );
+                                      if (_previewExpanded) return preview;
+                                      if (constraints.maxWidth >= 760) {
+                                        return Row(
+                                          children: [
+                                            Expanded(child: fileList),
+                                            const SizedBox(width: 12),
+                                            SizedBox(
+                                              width: 340,
+                                              child: preview,
+                                            ),
+                                          ],
+                                        );
+                                      }
+                                      return Column(
+                                        children: [
+                                          Expanded(flex: 3, child: fileList),
+                                          const SizedBox(height: 12),
+                                          SizedBox(height: 240, child: preview),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                          ),
+                  ),
                 ),
               ),
-              if (_isLoading && _hasLoadedDirectory)
+              if (_isLoading && _hasLoadedDirectory && !_pendingEntries)
                 const Center(child: CircularProgressIndicator()),
             ],
           ),

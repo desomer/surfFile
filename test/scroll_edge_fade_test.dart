@@ -12,6 +12,8 @@ import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/widgets/appearance_settings.dart';
 
 Future<List<int>> maskAlphas(WidgetTester tester) async {
+  // Sans bord estompé, le masque est retiré : tout est opaque.
+  if (find.byType(ShaderMask).evaluate().isEmpty) return List.filled(7, 255);
   final mask = tester.widget<ShaderMask>(find.byType(ShaderMask));
   expect(mask.blendMode, BlendMode.dstIn);
   final recorder = ui.PictureRecorder();

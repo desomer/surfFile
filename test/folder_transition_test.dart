@@ -84,27 +84,30 @@ void main() {
             FolderTransition.heroIcon =>
               1 -
                   tester
-                      .widget<Opacity>(
+                      .widget<FadeTransition>(
                           find.byKey(const ValueKey('folder-fade')))
-                      .opacity,
+                      .opacity
+                      .value,
             FolderTransition.slide => tester
-                    .widget<FractionalTranslation>(
+                    .widget<SlideTransition>(
                         find.byKey(const ValueKey('folder-slide')))
-                    .translation
+                    .position
+                    .value
                     .dx
                     .abs() /
                 .08,
             FolderTransition.fullSlide => tester
-                .widget<FractionalTranslation>(
+                .widget<SlideTransition>(
                     find.byKey(const ValueKey('folder-full-slide')))
-                .translation
+                .position
+                .value
                 .dx
                 .abs(),
             FolderTransition.zoom => (tester
-                            .widget<Transform>(
+                            .widget<ScaleTransition>(
                                 find.byKey(const ValueKey('folder-zoom')))
-                            .transform
-                            .storage[0] -
+                            .scale
+                            .value -
                         1)
                     .abs() /
                 .03,
@@ -134,15 +137,16 @@ void main() {
       if (type == FolderTransition.slide) {
         expect(
             tester
-                .widget<FractionalTranslation>(
+                .widget<SlideTransition>(
                     find.byKey(const ValueKey('folder-slide')))
-                .translation
+                .position
+                .value
                 .dx,
             -.08);
       }
       if (type == FolderTransition.fullSlide) {
         final slide = find.byKey(const ValueKey('folder-full-slide'));
-        expect(tester.widget<FractionalTranslation>(slide).translation.dx, -1);
+        expect(tester.widget<SlideTransition>(slide).position.value.dx, -1);
         expect(
             tester.getTopLeft(find.text('content').last).dx -
                 tester.getTopLeft(slide).dx,
@@ -151,9 +155,10 @@ void main() {
       if (type == FolderTransition.zoom) {
         expect(
             tester
-                .widget<Transform>(find.byKey(const ValueKey('folder-zoom')))
-                .transform
-                .storage[0],
+                .widget<ScaleTransition>(
+                    find.byKey(const ValueKey('folder-zoom')))
+                .scale
+                .value,
             1.03);
       }
       await show(2, reduced: true);
@@ -208,15 +213,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
       expect(find.text('old folder'), findsOneWidget);
       if (type == FolderTransition.fullSlide) {
-        final oldSlide = tester.widget<FractionalTranslation>(find
+        final oldSlide = tester.widget<SlideTransition>(find
             .ancestor(
                 of: find.text('old folder'),
-                matching: find.byType(FractionalTranslation))
+                matching: find.byType(SlideTransition))
             .first);
-        final newSlide = tester.widget<FractionalTranslation>(
+        final newSlide = tester.widget<SlideTransition>(
             find.byKey(const ValueKey('folder-full-slide')));
-        expect(oldSlide.translation.dx, lessThan(0));
-        expect(newSlide.translation.dx - oldSlide.translation.dx, 1);
+        expect(oldSlide.position.value.dx, lessThan(0));
+        expect(newSlide.position.value.dx - oldSlide.position.value.dx,
+            closeTo(1, 1e-9));
       }
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pump(const Duration(milliseconds: 1));

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../actions/file_actions.dart';
+import '../services/file_operations.dart';
 
 /// Barre verticale de 40 px entre les deux volets de la vue partagée.
 class FileActionBar extends StatefulWidget {
@@ -26,11 +27,16 @@ class FileActionBar extends StatefulWidget {
 
 class _FileActionBarState extends State<FileActionBar> {
   FileAction? _running;
+  FileJob? _job;
 
   Future<void> _run(FileAction action, FileActionContext context) async {
     setState(() => _running = action);
     try {
-      final message = await action.run(context);
+      final message = await action.run(
+        context.withTracker((job) {
+          if (mounted) setState(() => _job = job);
+        }),
+      );
       if (message != null) widget.onMessage?.call(message);
     } on FileSystemException catch (error) {
       widget.onMessage?.call(
@@ -38,7 +44,12 @@ class _FileActionBarState extends State<FileActionBar> {
         '${error.path == null ? '' : ' (${error.path})'}',
       );
     } finally {
-      if (mounted) setState(() => _running = null);
+      if (mounted) {
+        setState(() {
+          _running = null;
+          _job = null;
+        });
+      }
     }
   }
 
@@ -61,13 +72,7 @@ class _FileActionBarState extends State<FileActionBar> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: _running == action
-                    ? const SizedBox.square(
-                        dimension: 32,
-                        child: Padding(
-                          padding: EdgeInsets.all(8),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
+                    ? _progress(_job)
                     : IconButton(
                         key: ValueKey('file-action-${action.id}'),
                         tooltip: action.label,
@@ -89,6 +94,63 @@ class _FileActionBarState extends State<FileActionBar> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _progress(FileJob? job) {
+    if (job == null) {
+      return const SizedBox.square(
+        dimension: 32,
+        child: Padding(
+          padding: EdgeInsets.all(8),
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    return StreamBuilder<FileProgress>(
+      stream: job.progress,
+      initialData: job.latest,
+      builder: (context, snapshot) {
+        final progress = snapshot.data;
+        final fraction = progress?.fraction;
+        final detail = progress == null
+            ? 'Préparation…'
+            : '${progress.doneItems} / ${progress.totalItems} fichier(s)'
+                  '${progress.current == null ? '' : '\n${progress.current}'}';
+        return Tooltip(
+          message: job.isCancelling
+              ? 'Annulation…'
+              : '$detail\nCliquer pour annuler',
+          child: SizedBox.square(
+            dimension: 32,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Positioned.fill(
+                  child: CircularProgressIndicator(
+                    key: const ValueKey('file-action-progress'),
+                    value: fraction,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('file-action-cancel'),
+                  icon: const Icon(Icons.close_rounded, size: 14),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(24, 24),
+                    maximumSize: const Size(24, 24),
+                    padding: EdgeInsets.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: job.isCancelling
+                      ? null
+                      : () => setState(job.cancel),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

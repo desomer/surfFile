@@ -64,6 +64,24 @@ class _ImagePreviewPanelState extends State<ImagePreviewPanel> {
     }
   }
 
+  ImageProvider? _decoded;
+
+  /// Décode l'image à la taille affichée (arrondie par paliers pour éviter de
+  /// redécoder à chaque redimensionnement) plutôt qu'en pleine résolution.
+  ImageProvider _provider(BuildContext context, BoxConstraints constraints) {
+    const step = 256;
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    int size(double extent) => extent.isFinite
+        ? ((extent * ratio / step).ceil() * step).clamp(step, 8192)
+        : 4096;
+    return _decoded = ResizeImage(
+      FileImage(File(widget.path)),
+      width: size(constraints.maxWidth),
+      height: size(constraints.maxHeight),
+      policy: ResizeImagePolicy.fit,
+    );
+  }
+
   void _startEditing() {
     if (!widget.isExpanded) widget.onToggleExpanded();
     setState(() => _editing = true);
@@ -75,6 +93,7 @@ class _ImagePreviewPanelState extends State<ImagePreviewPanel> {
     try {
       await file.writeAsBytes(bytes, flush: true);
       await FileImage(file).evict();
+      await _decoded?.evict();
       if (!mounted) return;
       setState(() {
         _saving = false;
@@ -189,24 +208,26 @@ class _ImagePreviewPanelState extends State<ImagePreviewPanel> {
                   )
                 : ColoredBox(
                     color: Colors.black,
-                    child: Center(
-                      child: Image.file(
-                        File(widget.path),
-                        fit: BoxFit.contain,
-                        filterQuality: FilterQuality.medium,
-                        frameBuilder:
-                            (context, child, frame, wasSynchronouslyLoaded) {
-                              if (wasSynchronouslyLoaded || frame != null) {
-                                return child;
-                              }
-                              return const CircularProgressIndicator();
-                            },
-                        errorBuilder: (context, error, stackTrace) => Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Text(
-                            'Impossible d’afficher cette image : $error',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: colors.onSurface),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) => Center(
+                        child: Image(
+                          image: _provider(context, constraints),
+                          fit: BoxFit.contain,
+                          filterQuality: FilterQuality.medium,
+                          frameBuilder:
+                              (context, child, frame, wasSynchronouslyLoaded) {
+                                if (wasSynchronouslyLoaded || frame != null) {
+                                  return child;
+                                }
+                                return const CircularProgressIndicator();
+                              },
+                          errorBuilder: (context, error, stackTrace) => Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Text(
+                              'Impossible d’afficher cette image : $error',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: colors.onSurface),
+                            ),
                           ),
                         ),
                       ),
