@@ -140,7 +140,7 @@ class _SurfFileAppState extends State<SurfFileApp> {
         child: ValueListenableBuilder<Appearance>(
           valueListenable: _appearance,
           builder: (context, appearance, child) => MaterialApp(
-            title: 'SurfFile',
+            title: 'Surf File V 1.0.0 by Gauthier Desomer',
             debugShowCheckedModeBanner: false,
             scaffoldMessengerKey: _messenger,
             localizationsDelegates: GlobalMaterialLocalizations.delegates,
