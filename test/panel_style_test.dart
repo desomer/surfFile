@@ -17,9 +17,10 @@ void main() {
   const custom = ContainerStyle(
     color: Color(0x80112233),
     fill: ContainerFill(
-        type: FillType.linear,
-        start: Color(0x40223344),
-        end: Color(0x80556677)),
+      type: FillType.linear,
+      start: Color(0x40223344),
+      end: Color(0x80556677),
+    ),
     radius: 18,
     borderWidth: 3,
     borderColor: Color(0x8000FFFF),
@@ -27,18 +28,22 @@ void main() {
     shadowOpacity: .4,
   );
 
-  test('panel styles persist, validate, and support old preferences', () {
-    final saved = AppearanceStore.decode(AppearanceStore.encode(
-        const Appearance(sidebarStyle: custom, pathBarStyle: custom)));
+  test('panel styles persist, validate, and default missing styles', () {
+    final saved = AppearanceStore.decode(
+      AppearanceStore.encode(
+        const Appearance(sidebarStyle: custom, pathBarStyle: custom),
+      ),
+    );
     expect(saved.sidebarStyle.toJson(), custom.toJson());
     expect(saved.pathBarStyle.toJson(), custom.toJson());
-    final json = jsonDecode(AppearanceStore.encode(const Appearance()))
-        as Map<String, dynamic>;
+    final json = jsonDecode(
+      AppearanceStore.encode(const Appearance()),
+    ) as Map<String, dynamic>;
     json.remove('sidebarStyle');
     json.remove('pathBarStyle');
-    final old = AppearanceStore.decode(jsonEncode(json));
-    expect(old.sidebarStyle.toJson(), const ContainerStyle().toJson());
-    expect(old.pathBarStyle.borderWidth, 1);
+    final decoded = AppearanceStore.decode(jsonEncode(json));
+    expect(decoded.sidebarStyle.toJson(), const ContainerStyle().toJson());
+    expect(decoded.pathBarStyle.borderWidth, 1);
     for (final field in ['sidebarStyle', 'pathBarStyle']) {
       for (final invalid in [
         custom.toJson()..['radius'] = 37,
@@ -49,8 +54,9 @@ void main() {
         custom.toJson()..['fill'] = {'type': 'invalid'},
       ]) {
         expect(
-            () => AppearanceStore.decode(jsonEncode({...json, field: invalid})),
-            throwsFormatException);
+          () => AppearanceStore.decode(jsonEncode({...json, field: invalid})),
+          throwsFormatException,
+        );
       }
     }
   });
@@ -58,84 +64,113 @@ void main() {
   test('panel styles are saved and restored from local preferences', () async {
     SharedPreferences.setMockInitialValues({});
     final store = AppearanceStore();
-    await store
-        .save(const Appearance(sidebarStyle: custom, pathBarStyle: custom));
+    await store.save(
+      const Appearance(sidebarStyle: custom, pathBarStyle: custom),
+    );
     final restored = await store.load();
     expect(restored.sidebarStyle.toJson(), custom.toJson());
     expect(restored.pathBarStyle.toJson(), custom.toJson());
     await store.save(const Appearance());
     final reset = await store.load();
     expect(reset.sidebarStyle.toJson(), const ContainerStyle().toJson());
-    expect(reset.pathBarStyle.toJson(),
-        const ContainerStyle(borderWidth: 1).toJson());
+    expect(
+      reset.pathBarStyle.toJson(),
+      const ContainerStyle(borderWidth: 1).toJson(),
+    );
   });
 
-  testWidgets('surfaces render styles live and retain navigation',
-      (tester) async {
-    final controller = ValueNotifier(const Appearance(
+  testWidgets('surfaces render styles live and retain navigation', (
+    tester,
+  ) async {
+    final controller = ValueNotifier(
+      const Appearance(
         sidebarStyle: custom,
         pathBarStyle: custom,
-        selectedFolderElevation: 9));
+        selectedFolderStyle: ContainerStyle(elevation: 9),
+      ),
+    );
     addTearDown(controller.dispose);
     String? location;
     String? path;
-    await tester.pumpWidget(AppearanceScope(
-      controller: controller,
-      child: MaterialApp(
+    await tester.pumpWidget(
+      AppearanceScope(
+        controller: controller,
+        child: MaterialApp(
           home: Scaffold(
-              body: Row(children: [
-        ExplorerSidebar(
-          locations: const [
-            ExplorerLocation('Documents', 'docs', Icons.folder),
-            ExplorerLocation('Images', 'images', Icons.image),
-          ],
-          currentPath: 'docs',
-          onLocationSelected: (value) => location = value,
+            body: Row(
+              children: [
+                ExplorerSidebar(
+                  locations: const [
+                    ExplorerLocation('Documents', 'docs', Icons.folder),
+                    ExplorerLocation('Images', 'images', Icons.image),
+                  ],
+                  currentPath: 'docs',
+                  onLocationSelected: (value) => location = value,
+                ),
+                Expanded(
+                  child: ExplorerBreadcrumbs(
+                    path: 'C:\\Users\\Documents',
+                    onNavigate: (value) => path = value,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        Expanded(
-            child: ExplorerBreadcrumbs(
-          path: 'C:\\Users\\Documents',
-          onNavigate: (value) => path = value,
-        )),
-      ]))),
-    ));
+      ),
+    );
     for (final key in ['sidebar-surface', 'path-bar-surface']) {
       final surface = find.byKey(ValueKey(key));
       final material = tester.widget<Material>(
-          find.descendant(of: surface, matching: find.byType(Material)).first);
+        find.descendant(of: surface, matching: find.byType(Material)).first,
+      );
       expect(material.elevation, 8);
       expect(material.color, Colors.transparent);
       expect(material.shadowColor, Colors.black.withValues(alpha: .4));
       final ink = tester.widget<Ink>(
-          find.descendant(of: surface, matching: find.byType(Ink)).first);
+        find.descendant(of: surface, matching: find.byType(Ink)).first,
+      );
       final decoration = ink.decoration! as BoxDecoration;
       expect(decoration.gradient!.colors, [custom.fill.start, custom.fill.end]);
       expect(decoration.borderRadius, BorderRadius.circular(18));
       expect(decoration.border!.top.width, 3);
       expect(decoration.border!.top.color, custom.borderColor);
     }
-    expect(tester.widget<Text>(find.text('Images')).style!.color,
-        custom.foreground);
-    expect(tester.widget<Text>(find.text('Users')).style!.color,
-        custom.foreground);
-    final selected = tester.widget<Material>(find
-        .ancestor(
-            of: find.text('Documents').first, matching: find.byType(Material))
-        .first);
+    expect(
+      tester.widget<Text>(find.text('Images')).style!.color,
+      custom.foreground,
+    );
+    expect(
+      tester.widget<Text>(find.text('Users')).style!.color,
+      custom.foreground,
+    );
+    final selected = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.text('Documents').first,
+            matching: find.byType(Material),
+          )
+          .first,
+    );
     expect(selected.elevation, 9);
     await tester.tap(find.text('Images'));
     expect(location, 'images');
     await tester.tap(find.text('Users'));
     expect(path, 'C:\\Users');
     controller.value = const Appearance(
-        sidebarStyle: ContainerStyle(color: Color(0x40112233)),
-        pathBarStyle: ContainerStyle(color: Color(0x40112233)));
+      sidebarStyle: ContainerStyle(color: Color(0x40112233)),
+      pathBarStyle: ContainerStyle(color: Color(0x40112233)),
+    );
     await tester.pump();
     for (final key in ['sidebar-surface', 'path-bar-surface']) {
-      final material = tester.widget<Material>(find
-          .descendant(
-              of: find.byKey(ValueKey(key)), matching: find.byType(Material))
-          .first);
+      final material = tester.widget<Material>(
+        find
+            .descendant(
+              of: find.byKey(ValueKey(key)),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
       expect(material.color, const Color(0x40112233));
       expect(material.elevation, 0);
     }
@@ -144,68 +179,80 @@ void main() {
 
   for (final sidebar in [true, false]) {
     testWidgets(
-        'panel popup edits, restores automatic color and resets: $sidebar',
-        (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1100, 950));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      final controller = ValueNotifier(const Appearance());
-      addTearDown(controller.dispose);
-      await tester.pumpWidget(AppearanceScope(
-        controller: controller,
-        child: MaterialApp(
-            home: Builder(
+      'panel popup edits, restores automatic color and resets: $sidebar',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1100, 950));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final controller = ValueNotifier(const Appearance());
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: controller,
+            child: MaterialApp(
+              home: Builder(
                 builder: (context) => Scaffold(
-                      body: TextButton(
-                          onPressed: () => AppearanceSettings.show(context),
-                          child: const Text('Réglages')),
-                    ))),
-      ));
-      await tester.tap(find.text('Réglages'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(sidebar
-          ? 'Style du panneau de gauche'
-          : 'Style de la barre du chemin'));
-      await tester.pumpAndSettle();
-      expect(find.byType(Slider), findsNWidgets(4));
-      for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
-        slider.onChanged!(slider.max);
-      }
-      await tester.pumpAndSettle();
-      ContainerStyle current() => sidebar
-          ? controller.value.sidebarStyle
-          : controller.value.pathBarStyle;
-      expect(current().radius, 36);
-      expect(current().borderWidth, 4);
-      expect(current().elevation, 16);
-      expect(current().shadowOpacity, .6);
-      await tester.tap(find.text('Couleur unie').last);
-      await tester.pumpAndSettle();
-      tester
-          .widget<ColorPicker>(find.byType(ColorPicker))
-          .onColorChanged(const Color(0x40112233));
-      await tester.pumpAndSettle();
-      expect(current().color, const Color(0x40112233));
-      await tester.ensureVisible(find.text('Couleur unie automatique'));
-      await tester.tap(find.text('Couleur unie automatique'));
-      await tester.pumpAndSettle();
-      expect(current().color, isNull);
-      await tester
-          .ensureVisible(find.byType(DropdownButtonFormField<FillType>));
-      await tester.tap(find.byType(DropdownButtonFormField<FillType>));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Radial').last);
-      await tester.pumpAndSettle();
-      expect(current().fill.type, FillType.radial);
-      await tester.ensureVisible(find.text('Réinitialiser ce style'));
-      await tester.tap(find.text('Réinitialiser ce style'));
-      await tester.pumpAndSettle();
-      expect(
+                  body: TextButton(
+                    onPressed: () => AppearanceSettings.show(context),
+                    child: const Text('Réglages'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Réglages'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.text(
+            sidebar
+                ? 'Style du panneau de gauche'
+                : 'Style de la barre du chemin',
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(Slider), findsNWidgets(4));
+        for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
+          slider.onChanged!(slider.max);
+        }
+        await tester.pumpAndSettle();
+        ContainerStyle current() => sidebar
+            ? controller.value.sidebarStyle
+            : controller.value.pathBarStyle;
+        expect(current().radius, 36);
+        expect(current().borderWidth, 4);
+        expect(current().elevation, 16);
+        expect(current().shadowOpacity, .6);
+        await tester.tap(find.text('Couleur unie').last);
+        await tester.pumpAndSettle();
+        tester
+            .widget<ColorPicker>(find.byType(ColorPicker))
+            .onColorChanged(const Color(0x40112233));
+        await tester.pumpAndSettle();
+        expect(current().color, const Color(0x40112233));
+        await tester.ensureVisible(find.text('Couleur unie automatique'));
+        await tester.tap(find.text('Couleur unie automatique'));
+        await tester.pumpAndSettle();
+        expect(current().color, isNull);
+        await tester.ensureVisible(
+          find.byType(DropdownButtonFormField<FillType>),
+        );
+        await tester.tap(find.byType(DropdownButtonFormField<FillType>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Radial').last);
+        await tester.pumpAndSettle();
+        expect(current().fill.type, FillType.radial);
+        await tester.ensureVisible(find.text('Réinitialiser ce style'));
+        await tester.tap(find.text('Réinitialiser ce style'));
+        await tester.pumpAndSettle();
+        expect(
           current().toJson(),
           (sidebar
                   ? const ContainerStyle()
                   : const ContainerStyle(borderWidth: 1))
-              .toJson());
-      expect(tester.takeException(), isNull);
-    });
+              .toJson(),
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
   }
 }

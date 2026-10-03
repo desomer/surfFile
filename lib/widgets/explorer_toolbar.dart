@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/appearance.dart';
 import 'appearance_settings.dart';
+import 'super_container.dart';
 
 class ExplorerToolbar extends StatelessWidget {
   const ExplorerToolbar({
@@ -15,6 +16,8 @@ class ExplorerToolbar extends StatelessWidget {
     required this.onCreateFolder,
     this.canGoForward = false,
     this.onForward,
+    this.split = false,
+    this.onToggleSplit,
     super.key,
   });
 
@@ -27,6 +30,8 @@ class ExplorerToolbar extends StatelessWidget {
   final VoidCallback onRefresh;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onCreateFolder;
+  final bool split;
+  final VoidCallback? onToggleSplit;
 
   @override
   Widget build(BuildContext context) {
@@ -88,7 +93,8 @@ class ExplorerToolbar extends StatelessWidget {
                   maximumSize: const Size(44, 44),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               )
             else
@@ -99,10 +105,21 @@ class ExplorerToolbar extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 48),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                 ),
               ),
+            if (onToggleSplit != null) ...[
+              const SizedBox(width: 8),
+              _NavigationButton(
+                key: const ValueKey('split-view'),
+                tooltip: split ? 'Fermer la vue partagée' : 'Vue partagée',
+                icon: Icons.vertical_split_outlined,
+                selected: split,
+                onPressed: onToggleSplit,
+              ),
+            ],
             if (AppearanceScope.controllerOf(context) != null) ...[
               const SizedBox(width: 8),
               _NavigationButton(
@@ -110,6 +127,16 @@ class ExplorerToolbar extends StatelessWidget {
                 icon: Icons.settings_outlined,
                 onPressed: () => AppearanceSettings.show(context),
               ),
+              if (StyleEditScope.controllerOf(context) case final editMode?)
+                _NavigationButton(
+                  key: const ValueKey('style-edit-mode'),
+                  tooltip: editMode.value
+                      ? 'Quitter l’édition du style'
+                      : 'Éditer le style (clic droit sur une zone)',
+                  icon: Icons.brush_outlined,
+                  selected: editMode.value,
+                  onPressed: () => editMode.value = !editMode.value,
+                ),
             ],
           ];
           final search = _SearchBox(onChanged: onSearchChanged);
@@ -142,26 +169,34 @@ class _NavigationButton extends StatelessWidget {
     required this.tooltip,
     required this.icon,
     required this.onPressed,
+    this.selected = false,
+    super.key,
   });
 
   final String tooltip;
   final IconData icon;
   final VoidCallback? onPressed;
+  final bool selected;
 
   @override
   Widget build(BuildContext context) => IconButton(
-        tooltip: tooltip,
-        onPressed: onPressed,
-        icon: Icon(icon, size: 20),
-        style: IconButton.styleFrom(
-          minimumSize: const Size(40, 40),
-          maximumSize: const Size(40, 40),
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+    tooltip: tooltip,
+    onPressed: onPressed,
+    isSelected: selected,
+    icon: Icon(icon, size: 20),
+    style: IconButton.styleFrom(
+      minimumSize: const Size(40, 40),
+      maximumSize: const Size(40, 40),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      backgroundColor: selected
+          ? Theme.of(context).colorScheme.primaryContainer
+          : null,
+      foregroundColor: selected
+          ? Theme.of(context).colorScheme.onPrimaryContainer
+          : Theme.of(context).colorScheme.onSurfaceVariant,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+  );
 }
 
 class _SearchBox extends StatelessWidget {
@@ -180,14 +215,15 @@ class _SearchBox extends StatelessWidget {
           hintText: 'Rechercher dans ce dossier',
           prefixIcon: const Icon(Icons.search_rounded, size: 20),
           filled: true,
-          fillColor:
-              explorerColor(context, Colors.white, colors.surfaceContainerLow),
+          fillColor: explorerColor(
+            context,
+            Colors.white,
+            colors.surfaceContainerLow,
+          ),
           hintStyle: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
           prefixIconColor: colors.onSurfaceVariant,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
             borderSide: BorderSide(color: colors.outlineVariant),

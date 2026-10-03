@@ -23,9 +23,10 @@ void main() {
   const custom = ContainerStyle(
     color: Color(0x80102030),
     fill: ContainerFill(
-        type: FillType.linear,
-        start: Color(0xFF102030),
-        end: Color(0xFF304050)),
+      type: FillType.linear,
+      start: Color(0xFF102030),
+      end: Color(0xFF304050),
+    ),
     radius: 24,
     borderWidth: 3,
     borderColor: Color(0x8000FFFF),
@@ -33,132 +34,162 @@ void main() {
     shadowOpacity: .4,
   );
 
-  test('selection styles persist, validate and retain legacy defaults',
-      () async {
-    SharedPreferences.setMockInitialValues({});
-    const appearance = Appearance(
+  test(
+    'selection styles persist, validate and reset to current defaults',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      const appearance = Appearance(
         selectedCardStyle: custom,
         selectedFolderStyle: custom,
-        cardNeon: NeonStyle(enabled: true));
-    await AppearanceStore().save(appearance);
-    final saved = await AppearanceStore().load();
-    expect(saved.selectedCardStyle!.toJson(), custom.toJson());
-    expect(saved.selectedFolderStyle!.toJson(), custom.toJson());
-    expect(saved.cardNeon.enabled, isTrue);
-    final old = AppearanceStore.decode(jsonEncode({
-      'version': 1,
-      'mode': 'light',
-      'radius': 18,
-      'elevation': 5,
-      'selectedFolderElevation': 7,
-      'shadowOpacity': .3,
-    }));
-    expect(old.selectedCardStyle, isNull);
-    expect(old.selectedFolderStyle, isNull);
-    expect(old.effectiveSelectedCardStyle.radius, 18);
-    expect(old.cardElevation(selected: true), 5);
-    expect(old.effectiveSelectedFolderStyle.elevation, 7);
-    expect(old.effectiveSelectedFolderStyle.shadowOpacity, .3);
-    final changed = appearance.copyWith(
-        selectedCardElevation: 11, selectedFolderElevation: 12);
-    expect(changed.cardElevation(selected: true), 11);
-    expect(changed.effectiveSelectedFolderStyle.elevation, 12);
-    expect(changed.selectedCardStyle!.fill.type, FillType.linear);
-    final reset = changed.copyWith(
-        resetSelectedCardStyle: true, resetSelectedFolderStyle: true);
-    expect(reset.selectedCardStyle, isNull);
-    expect(reset.selectedFolderStyle, isNull);
-    expect(reset.cardNeon.enabled, isTrue);
-    await AppearanceStore().save(const Appearance());
-    expect((await AppearanceStore().load()).selectedCardStyle, isNull);
-    for (final field in ['selectedCardStyle', 'selectedFolderStyle']) {
-      for (final invalid in [
-        'bad',
-        custom.toJson()..['radius'] = 37,
-        custom.toJson()..['borderWidth'] = 5,
-        custom.toJson()..['elevation'] = -1,
-        custom.toJson()..['shadowOpacity'] = .7,
-        custom.toJson()..['color'] = -1,
-        custom.toJson()..['fill'] = {'type': 'bad'},
-      ]) {
-        expect(
+        cardStyle: ContainerStyle(neon: NeonStyle(enabled: true)),
+      );
+      await AppearanceStore().save(appearance);
+      final saved = await AppearanceStore().load();
+      expect(saved.selectedCardStyle!.toJson(), custom.toJson());
+      expect(saved.selectedFolderStyle!.toJson(), custom.toJson());
+      expect(saved.cardNeon.enabled, isTrue);
+      final changed = appearance.copyWith(
+        selectedCardStyle: custom.copyWith(elevation: 11),
+        selectedFolderStyle: custom.copyWith(elevation: 12),
+      );
+      expect(changed.cardElevation(selected: true), 11);
+      expect(changed.effectiveSelectedFolderStyle.elevation, 12);
+      expect(changed.selectedCardStyle!.fill.type, FillType.linear);
+      final reset = changed.copyWith(
+        resetSelectedCardStyle: true,
+        resetSelectedFolderStyle: true,
+      );
+      expect(reset.selectedCardStyle, isNull);
+      expect(reset.selectedFolderStyle, isNull);
+      expect(reset.cardNeon.enabled, isTrue);
+      await AppearanceStore().save(const Appearance());
+      expect((await AppearanceStore().load()).selectedCardStyle, isNull);
+      for (final field in ['selectedCardStyle', 'selectedFolderStyle']) {
+        for (final invalid in [
+          'bad',
+          custom.toJson()..['radius'] = 37,
+          custom.toJson()..['borderWidth'] = 5,
+          custom.toJson()..['elevation'] = -1,
+          custom.toJson()..['shadowOpacity'] = .7,
+          custom.toJson()..['color'] = -1,
+          custom.toJson()..['fill'] = {'type': 'bad'},
+        ]) {
+          expect(
             () => AppearanceStore.decode(
-                jsonEncode({'version': 1, 'mode': 'light', field: invalid})),
-            throwsFormatException);
+              jsonEncode({'version': 2, 'mode': 'light', field: invalid}),
+            ),
+            throwsFormatException,
+          );
+        }
       }
-    }
-  });
+    },
+  );
 
   for (final grid in [false, true]) {
-    testWidgets('custom card selection renders and follows selection: $grid',
-        (tester) async {
-      final controller = ValueNotifier(const Appearance(
-        selectedCardStyle: custom,
-        cardNeon: NeonStyle(enabled: true),
-      ));
+    testWidgets('custom card selection renders and follows selection: $grid', (
+      tester,
+    ) async {
+      final controller = ValueNotifier(
+        const Appearance(
+          selectedCardStyle: custom,
+          cardStyle: ContainerStyle(neon: NeonStyle(enabled: true)),
+        ),
+      );
       addTearDown(controller.dispose);
       final entries = [
         for (final name in ['first.txt', 'second.txt'])
           ExplorerEntry(
-              entity: File(name),
-              name: name,
-              isDirectory: false,
-              modified: DateTime(2026),
-              size: 1),
+            entity: File(name),
+            name: name,
+            isDirectory: false,
+            modified: DateTime(2026),
+            size: 1,
+          ),
       ];
       String? clicked;
-      Future<void> show(String selected) => tester.pumpWidget(AppearanceScope(
-            controller: controller,
-            child: MaterialApp(
-                home: Scaffold(
-                    body: ExplorerEntriesView(
-              entries: entries,
-              gridView: grid,
-              selectedPath: selected,
-              onSelected: (path) => clicked = path,
-              onOpen: (_) {},
-            ))),
-          ));
+      Future<void> show(String selected) => tester.pumpWidget(
+        AppearanceScope(
+          controller: controller,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ExplorerEntriesView(
+                entries: entries,
+                gridView: grid,
+                selectedPath: selected,
+                onSelected: (path) => clicked = path,
+                onOpen: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
       Finder surface(String name, bool selected) => grid
           ? find.ancestor(
-              of: find.text(name), matching: find.byType(NeonSurface))
+              of: find.text(name),
+              matching: find.byType(NeonSurface),
+            )
           : find.byKey(
-              ValueKey(selected ? 'sliding-selection' : 'row-surface-$name'));
-      Material material(String name, bool selected) =>
-          tester.widget<Material>(find
-              .descendant(
-                  of: surface(name, selected), matching: find.byType(Material))
-              .first);
+              ValueKey(selected ? 'sliding-selection' : 'row-surface-$name'),
+            );
+      Material material(String name, bool selected) => tester.widget<Material>(
+        find
+            .descendant(
+              of: surface(name, selected),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
       void checkSelected(String name) {
         final selected = surface(name, true);
         expect(material(name, true).color, Colors.transparent);
         expect(material(name, true).elevation, 8);
-        expect(material(name, true).shadowColor,
-            Colors.black.withValues(alpha: .4));
+        expect(
+          material(name, true).shadowColor,
+          Colors.black.withValues(alpha: .4),
+        );
         final decoration = grid
             ? tester
-                .widget<Ink>(
-                    find.descendant(of: selected, matching: find.byType(Ink)))
-                .decoration! as BoxDecoration
+                      .widget<Ink>(
+                        find.descendant(
+                          of: selected,
+                          matching: find.byType(Ink),
+                        ),
+                      )
+                      .decoration!
+                  as BoxDecoration
             : tester
-                .widget<DecoratedBox>(find
-                    .descendant(
-                        of: selected, matching: find.byType(DecoratedBox))
-                    .last)
-                .decoration as BoxDecoration;
-        expect(
-            decoration.gradient!.colors, [custom.fill.start, custom.fill.end]);
+                      .widget<DecoratedBox>(
+                        find
+                            .descendant(
+                              of: selected,
+                              matching: find.byType(DecoratedBox),
+                            )
+                            .last,
+                      )
+                      .decoration
+                  as BoxDecoration;
+        expect(decoration.gradient!.colors, [
+          custom.fill.start,
+          custom.fill.end,
+        ]);
         expect(decoration.borderRadius, BorderRadius.circular(24));
         expect(
-            tester
-                .widget<NeonSurface>(grid
+          tester
+              .widget<NeonSurface>(
+                grid
                     ? selected
                     : find.descendant(
-                        of: selected, matching: find.byType(NeonSurface)))
-                .radius,
-            24);
-        expect(tester.widget<Text>(find.text(name)).style!.color,
-            custom.foreground);
+                        of: selected,
+                        matching: find.byType(NeonSurface),
+                      ),
+              )
+              .radius,
+          24,
+        );
+        expect(
+          tester.widget<Text>(find.text(name)).style!.color,
+          custom.foreground,
+        );
         if (grid) {
           final shape = material(name, true).shape! as RoundedRectangleBorder;
           expect(shape.side.width, 3);
@@ -179,48 +210,77 @@ void main() {
       checkSelected('second.txt');
       expect(material('first.txt', false).elevation, 0);
       controller.value = controller.value.copyWith(
-          selectedCardStyle: custom.copyWith(
-              fill: const ContainerFill(), color: const Color(0x80112233)));
+        selectedCardStyle: custom.copyWith(
+          fill: const ContainerFill(),
+          color: const Color(0x80112233),
+        ),
+      );
       await tester.pump();
       expect(material('second.txt', true).color, const Color(0x80112233));
-      controller.value =
-          controller.value.copyWith(resetSelectedCardStyle: true);
+      controller.value = controller.value.copyWith(
+        resetSelectedCardStyle: true,
+      );
       await tester.pump();
       expect(material('second.txt', true).elevation, 0);
       controller.value = controller.value.copyWith(
-          selectedCardStyle: custom.copyWith(neon: const NeonStyle()));
+        selectedCardStyle: custom.copyWith(neon: const NeonStyle()),
+      );
       await tester.pump();
       final selectedSurface = surface('second.txt', true);
-      final selectedNeon = tester.widget<NeonSurface>(grid
-          ? selectedSurface
-          : find.descendant(
-              of: selectedSurface, matching: find.byType(NeonSurface)));
+      final selectedNeon = tester.widget<NeonSurface>(
+        grid
+            ? selectedSurface
+            : find.descendant(
+                of: selectedSurface,
+                matching: find.byType(NeonSurface),
+              ),
+      );
       expect(selectedNeon.style.enabled, isFalse);
       expect(controller.value.cardNeon.enabled, isTrue);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('sidebar selected style follows navigation, including neon',
-      (tester) async {
-    final controller = ValueNotifier(const Appearance(
-        selectedFolderStyle: custom,
-        selectedFolderNeon: NeonStyle(enabled: true)));
+  testWidgets('sidebar selected style follows navigation, including neon', (
+    tester,
+  ) async {
+    final controller = ValueNotifier(
+      const Appearance(
+        selectedFolderStyle: ContainerStyle(
+          color: Color(0x80102030),
+          fill: ContainerFill(
+            type: FillType.linear,
+            start: Color(0xFF102030),
+            end: Color(0xFF304050),
+          ),
+          radius: 24,
+          borderWidth: 3,
+          borderColor: Color(0x8000FFFF),
+          elevation: 8,
+          shadowOpacity: .4,
+          neon: NeonStyle(enabled: true),
+        ),
+      ),
+    );
     addTearDown(controller.dispose);
     String? clicked;
-    Future<void> show(String path) => tester.pumpWidget(AppearanceScope(
-          controller: controller,
-          child: MaterialApp(
-              home: Scaffold(
-                  body: ExplorerSidebar(
-            locations: const [
-              ExplorerLocation('Documents', 'docs', Icons.folder),
-              ExplorerLocation('Images', 'images', Icons.image),
-            ],
-            currentPath: path,
-            onLocationSelected: (path) => clicked = path,
-          ))),
-        ));
+    Future<void> show(String path) => tester.pumpWidget(
+      AppearanceScope(
+        controller: controller,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ExplorerSidebar(
+              locations: const [
+                ExplorerLocation('Documents', 'docs', Icons.folder),
+                ExplorerLocation('Images', 'images', Icons.image),
+              ],
+              currentPath: path,
+              onLocationSelected: (path) => clicked = path,
+            ),
+          ),
+        ),
+      ),
+    );
     Finder surface(String name) =>
         find.ancestor(of: find.text(name), matching: find.byType(NeonSurface));
     void check(String name) {
@@ -228,19 +288,24 @@ void main() {
       expect(neon.radius, 24);
       expect(neon.style.enabled, isTrue);
       final material = tester.widget<Material>(
-          find.descendant(of: surface(name), matching: find.byType(Material)));
+        find.descendant(of: surface(name), matching: find.byType(Material)),
+      );
       expect(material.color, Colors.transparent);
       expect(material.elevation, 8);
       expect(material.shadowColor, Colors.black.withValues(alpha: .4));
       final ink = tester.widget<Ink>(
-          find.descendant(of: surface(name), matching: find.byType(Ink)));
+        find.descendant(of: surface(name), matching: find.byType(Ink)),
+      );
       final decoration = ink.decoration! as BoxDecoration;
       expect(decoration.gradient!.colors, [custom.fill.start, custom.fill.end]);
       expect(decoration.border!.top.width, 3);
       expect(
-          tester.widget<Text>(find.text(name)).style!.color, custom.foreground);
+        tester.widget<Text>(find.text(name)).style!.color,
+        custom.foreground,
+      );
       final icon = tester.widget<Icon>(
-          find.descendant(of: surface(name), matching: find.byType(Icon)));
+        find.descendant(of: surface(name), matching: find.byType(Icon)),
+      );
       expect(icon.color, custom.foreground);
     }
 
@@ -251,38 +316,55 @@ void main() {
     expect(clicked, 'images');
     await show('images');
     check('Images');
-    expect(tester.widget<NeonSurface>(surface('Documents')).style.enabled,
-        isFalse);
-    controller.value =
-        controller.value.copyWith(resetSelectedFolderStyle: true);
+    expect(
+      tester.widget<NeonSurface>(surface('Documents')).style.enabled,
+      isFalse,
+    );
+    controller.value = controller.value.copyWith(
+      resetSelectedFolderStyle: true,
+    );
     await tester.pump();
     expect(tester.widget<NeonSurface>(surface('Images')).radius, 9);
     expect(tester.takeException(), isNull);
   });
 
   for (final cards in [true, false]) {
-    testWidgets('selection popup edits and resets only its style: $cards',
-        (tester) async {
+    testWidgets('selection popup edits and resets only its style: $cards', (
+      tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(1100, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      final controller = ValueNotifier(const Appearance(
-          selectedCardElevation: 5, selectedFolderElevation: 7));
+      final controller = ValueNotifier(
+        const Appearance(
+          cardStyle: ContainerStyle(elevation: 5),
+          selectedFolderStyle: ContainerStyle(elevation: 7),
+        ),
+      );
       addTearDown(controller.dispose);
-      await tester.pumpWidget(AppearanceScope(
-        controller: controller,
-        child: MaterialApp(
+      await tester.pumpWidget(
+        AppearanceScope(
+          controller: controller,
+          child: MaterialApp(
             home: Builder(
-                builder: (context) => Scaffold(
-                      body: TextButton(
-                          onPressed: () => AppearanceSettings.show(context),
-                          child: const Text('Réglages')),
-                    ))),
-      ));
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => AppearanceSettings.show(context),
+                  child: const Text('Réglages'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
       await tester.tap(find.text('Réglages'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text(cards
-          ? 'Style des cartes sélectionnées'
-          : 'Style de la sélection du panneau gauche'));
+      await tester.tap(
+        find.text(
+          cards
+              ? 'Style des cartes sélectionnées'
+              : 'Style de la sélection du panneau gauche',
+        ),
+      );
       await tester.pumpAndSettle();
       ContainerStyle current() => cards
           ? controller.value.effectiveSelectedCardStyle
@@ -303,8 +385,9 @@ void main() {
           .onColorChanged(const Color(0x80112233));
       await tester.pumpAndSettle();
       expect(current().color, const Color(0x80112233));
-      final editor = tester
-          .widget<ContainerStyleEditor>(find.byType(ContainerStyleEditor));
+      final editor = tester.widget<ContainerStyleEditor>(
+        find.byType(ContainerStyleEditor),
+      );
       editor.onChanged(custom.fill);
       await tester.pumpAndSettle();
       expect(current().fill.type, FillType.linear);
@@ -323,8 +406,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(controller.value.selectedCardStyle, isNull);
       expect(controller.value.selectedFolderStyle, isNull);
-      expect(current().elevation, cards ? 5 : 7);
-      expect(controller.value.radius, 13);
+      expect(current().elevation, cards ? 5 : 0);
+      expect(controller.value.cardStyle.radius, 13);
       expect(tester.takeException(), isNull);
     });
   }

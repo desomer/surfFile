@@ -14,7 +14,11 @@ class ContainerStyle {
     this.elevation = 0,
     this.shadowOpacity = .2,
     this.neon,
+    this.padding = 0,
+    this.margin = 0,
   });
+
+  static const maxSpacing = 48.0;
 
   final Color? color;
   final ContainerFill fill;
@@ -24,6 +28,12 @@ class ContainerStyle {
   final double elevation;
   final double shadowOpacity;
   final NeonStyle? neon;
+
+  /// Espace intérieur entre la surface et son contenu.
+  final double padding;
+
+  /// Espace extérieur autour de la surface.
+  final double margin;
 
   ContainerStyle copyWith({
     Color? color,
@@ -36,42 +46,49 @@ class ContainerStyle {
     double? elevation,
     double? shadowOpacity,
     NeonStyle? neon,
-  }) =>
-      ContainerStyle(
-        color: resetColor ? null : color ?? this.color,
-        fill: fill ?? this.fill,
-        radius: radius ?? this.radius,
-        borderWidth: borderWidth ?? this.borderWidth,
-        borderColor: resetBorderColor ? null : borderColor ?? this.borderColor,
-        elevation: elevation ?? this.elevation,
-        shadowOpacity: shadowOpacity ?? this.shadowOpacity,
-        neon: neon ?? this.neon,
-      );
+    double? padding,
+    double? margin,
+  }) => ContainerStyle(
+    color: resetColor ? null : color ?? this.color,
+    fill: fill ?? this.fill,
+    radius: radius ?? this.radius,
+    borderWidth: borderWidth ?? this.borderWidth,
+    borderColor: resetBorderColor ? null : borderColor ?? this.borderColor,
+    elevation: elevation ?? this.elevation,
+    shadowOpacity: shadowOpacity ?? this.shadowOpacity,
+    neon: neon ?? this.neon,
+    padding: padding ?? this.padding,
+    margin: margin ?? this.margin,
+  );
 
   Color? get foreground => fill.type != FillType.solid
       ? foregroundFor(Color.lerp(fill.start, fill.end, .5)!)
       : color == null
-          ? null
-          : foregroundFor(color!);
+      ? null
+      : foregroundFor(color!);
 
   static Color foregroundFor(Color background) =>
       ThemeData.estimateBrightnessForColor(background) == Brightness.dark
-          ? const Color(0xFFF1F3F8)
-          : const Color(0xFF262B38);
+      ? const Color(0xFFF1F3F8)
+      : const Color(0xFF262B38);
 
   Map<String, Object?> toJson() => {
-        'color': color?.toARGB32(),
-        'fill': fill.toJson(),
-        'radius': radius,
-        'borderWidth': borderWidth,
-        'borderColor': borderColor?.toARGB32(),
-        'elevation': elevation,
-        'shadowOpacity': shadowOpacity,
-        'neon': neon?.toJson(),
-      };
+    'color': color?.toARGB32(),
+    'fill': fill.toJson(),
+    'radius': radius,
+    'borderWidth': borderWidth,
+    'borderColor': borderColor?.toARGB32(),
+    'elevation': elevation,
+    'shadowOpacity': shadowOpacity,
+    'neon': neon?.toJson(),
+    'padding': padding,
+    'margin': margin,
+  };
 
-  static ContainerStyle fromJson(Object? value,
-      {ContainerStyle fallback = const ContainerStyle()}) {
+  static ContainerStyle fromJson(
+    Object? value, {
+    ContainerStyle fallback = const ContainerStyle(),
+  }) {
     if (value == null) return fallback;
     if (value is! Map) {
       throw const FormatException('Style de conteneur invalide.');
@@ -85,8 +102,8 @@ class ContainerStyle {
         (borderColor is! int || borderColor < 0 || borderColor > 0xFFFFFFFF)) {
       throw const FormatException('Couleur de bordure invalide.');
     }
-    double number(String key, double min, double max) {
-      final number = value[key];
+    double number(String key, double min, double max, [double? fallback]) {
+      final number = value[key] ?? fallback;
       if (number is! num || !number.isFinite || number < min || number > max) {
         throw FormatException('Paramètre de conteneur invalide : $key.');
       }
@@ -102,6 +119,8 @@ class ContainerStyle {
       elevation: number('elevation', 0, 16),
       shadowOpacity: number('shadowOpacity', 0, .6),
       neon: value['neon'] == null ? null : NeonStyle.fromJson(value['neon']),
+      padding: number('padding', 0, maxSpacing, fallback.padding),
+      margin: number('margin', 0, maxSpacing, fallback.margin),
     );
   }
 }

@@ -25,6 +25,10 @@ class ContainerStyleEditor extends StatelessWidget {
     this.onResetBorderColor,
     this.onElevationChanged,
     this.onShadowOpacityChanged,
+    this.padding = 0,
+    this.margin = 0,
+    this.onPaddingChanged,
+    this.onMarginChanged,
     this.neon = const NeonStyle(),
     this.accent = const Color(0xFF5268D9),
     this.onNeonChanged,
@@ -49,6 +53,10 @@ class ContainerStyleEditor extends StatelessWidget {
   final VoidCallback? onResetBorderColor;
   final ValueChanged<double>? onElevationChanged;
   final ValueChanged<double>? onShadowOpacityChanged;
+  final double padding;
+  final double margin;
+  final ValueChanged<double>? onPaddingChanged;
+  final ValueChanged<double>? onMarginChanged;
   final NeonStyle neon;
   final Color accent;
   final ValueChanged<NeonStyle>? onNeonChanged;
@@ -72,27 +80,49 @@ class ContainerStyleEditor extends StatelessWidget {
       if (value.type == FillType.solid && onSolidColorChanged != null)
         _color('Couleur unie', solidColor, onSolidColorChanged!),
       if (value.type != FillType.solid) ...[
-        _color('Couleur de départ', value.start,
-            (color) => onChanged(value.copyWith(start: color))),
-        _color('Couleur d’arrivée', value.end,
-            (color) => onChanged(value.copyWith(end: color))),
+        _color(
+          'Couleur de départ',
+          value.start,
+          (color) => onChanged(value.copyWith(start: color)),
+        ),
+        _color(
+          'Couleur d’arrivée',
+          value.end,
+          (color) => onChanged(value.copyWith(end: color)),
+        ),
         if (value.type != FillType.radial)
-          _slider('Orientation (°)', value.angle, 0, 360,
-              (angle) => onChanged(value.copyWith(angle: angle))),
+          _slider(
+            'Orientation (°)',
+            value.angle,
+            0,
+            360,
+            (angle) => onChanged(value.copyWith(angle: angle)),
+          ),
         if (value.type == FillType.radial)
-          _slider('Rayon du dégradé', value.radius, .1, 2,
-              (radius) => onChanged(value.copyWith(radius: radius))),
+          _slider(
+            'Rayon du dégradé',
+            value.radius,
+            .1,
+            2,
+            (radius) => onChanged(value.copyWith(radius: radius)),
+          ),
       ],
       if (onRadiusChanged != null)
         _slider('Arrondi du conteneur', radius, 0, 36, onRadiusChanged!),
       if (onBorderWidthChanged != null)
         _slider(
-            'Bordure du conteneur', borderWidth, 0, 4, onBorderWidthChanged!),
+          'Bordure du conteneur',
+          borderWidth,
+          0,
+          4,
+          onBorderWidthChanged!,
+        ),
       if (onBorderColorChanged != null)
         _color(
-            'Couleur de la bordure',
-            borderColor ?? Theme.of(context).colorScheme.outlineVariant,
-            onBorderColorChanged!),
+          'Couleur de la bordure',
+          borderColor ?? Theme.of(context).colorScheme.outlineVariant,
+          onBorderColorChanged!,
+        ),
       if (onResetBorderColor != null)
         TextButton(
           key: ValueKey('automatic-border-$label'),
@@ -101,10 +131,38 @@ class ContainerStyleEditor extends StatelessWidget {
         ),
       if (onElevationChanged != null)
         _slider(
-            'Élévation du conteneur', elevation, 0, 16, onElevationChanged!),
+          'Élévation du conteneur',
+          elevation,
+          0,
+          16,
+          onElevationChanged!,
+        ),
       if (onShadowOpacityChanged != null)
-        _slider('Opacité de l’ombre du conteneur', shadowOpacity, 0, .6,
-            onShadowOpacityChanged!),
+        _slider(
+          'Opacité de l’ombre du conteneur',
+          shadowOpacity,
+          0,
+          .6,
+          onShadowOpacityChanged!,
+        ),
+      if (onPaddingChanged != null)
+        _slider(
+          'Marge intérieure (padding)',
+          padding,
+          0,
+          48,
+          onPaddingChanged!,
+          key: ValueKey('padding-$label'),
+        ),
+      if (onMarginChanged != null)
+        _slider(
+          'Marge extérieure (margin)',
+          margin,
+          0,
+          48,
+          onMarginChanged!,
+          key: ValueKey('margin-$label'),
+        ),
       const SizedBox(height: 12),
       if (onNeonChanged != null)
         NeonStyleEditor(
@@ -139,9 +197,10 @@ class ContainerStyleEditor extends StatelessWidget {
                   ? null
                   : [
                       BoxShadow(
-                          color: Colors.black.withValues(alpha: shadowOpacity),
-                          blurRadius: elevation * 2,
-                          offset: Offset(0, elevation / 2)),
+                        color: Colors.black.withValues(alpha: shadowOpacity),
+                        blurRadius: elevation * 2,
+                        offset: Offset(0, elevation / 2),
+                      ),
                     ],
             ),
           ),
@@ -169,15 +228,20 @@ class ContainerStyleEditor extends StatelessWidget {
     );
   }
 
-  Widget _slider(String label, double value, double min, double max,
-          ValueChanged<double> onChanged) =>
-      Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('$label : ${value.toStringAsFixed(1)}'),
-          Slider(value: value, min: min, max: max, onChanged: onChanged),
-        ],
-      );
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged, {
+    Key? key,
+  }) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text('$label : ${value.toStringAsFixed(1)}'),
+      Slider(key: key, value: value, min: min, max: max, onChanged: onChanged),
+    ],
+  );
 }
 
 class NeonStyleEditor extends StatelessWidget {
@@ -196,33 +260,36 @@ class NeonStyleEditor extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SwitchListTile(
-            key: ValueKey('neon-$label'),
-            title: const Text('Effet néon'),
-            subtitle: const Text('Halo lumineux sans bordure supplémentaire'),
-            value: value.enabled,
-            onChanged: (enabled) => onChanged(value.copyWith(enabled: enabled)),
-          ),
-          if (value.enabled) ...[
-            _color('Couleur du néon', value.color ?? accent,
-                (color) => onChanged(value.copyWith(color: color))),
-            TextButton(
-              onPressed: () => onChanged(value.copyWith(resetColor: true)),
-              child: const Text('Utiliser la couleur d’accent'),
-            ),
-            Text('Intensité : ${(value.intensity * 100).round()} %'),
-            Slider(
-              key: ValueKey('neon-intensity-$label'),
-              value: value.intensity,
-              max: NeonStyle.maxIntensity,
-              onChanged: (intensity) =>
-                  onChanged(value.copyWith(intensity: intensity)),
-            ),
-          ],
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SwitchListTile(
+        key: ValueKey('neon-$label'),
+        title: const Text('Effet néon'),
+        subtitle: const Text('Halo lumineux sans bordure supplémentaire'),
+        value: value.enabled,
+        onChanged: (enabled) => onChanged(value.copyWith(enabled: enabled)),
+      ),
+      if (value.enabled) ...[
+        _color(
+          'Couleur du néon',
+          value.color ?? accent,
+          (color) => onChanged(value.copyWith(color: color)),
+        ),
+        TextButton(
+          onPressed: () => onChanged(value.copyWith(resetColor: true)),
+          child: const Text('Utiliser la couleur d’accent'),
+        ),
+        Text('Intensité : ${(value.intensity * 100).round()} %'),
+        Slider(
+          key: ValueKey('neon-intensity-$label'),
+          value: value.intensity,
+          max: NeonStyle.maxIntensity,
+          onChanged: (intensity) =>
+              onChanged(value.copyWith(intensity: intensity)),
+        ),
+      ],
+    ],
+  );
 }
 
 Widget _color(String label, Color color, ValueChanged<Color> onChanged) =>

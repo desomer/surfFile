@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+
 import '../theme/explorer_colors.dart';
 import '../theme/appearance.dart';
-import 'styled_surface.dart';
+import '../theme/appearance_slot.dart';
+import 'super_container.dart';
 
 class ExplorerBreadcrumbs extends StatelessWidget {
   const ExplorerBreadcrumbs({
@@ -24,8 +26,10 @@ class ExplorerBreadcrumbs extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final foreground = style.foreground ?? colors.onSurfaceVariant;
     final normalizedPath = path.replaceAll('\\', '/');
-    final parts =
-        normalizedPath.split('/').where((part) => part.isNotEmpty).toList();
+    final parts = normalizedPath
+        .split('/')
+        .where((part) => part.isNotEmpty)
+        .toList();
     final isWindows = Platform.isWindows;
     var accumulated = isWindows ? '' : Platform.pathSeparator;
     final crumbs = <({String label, String path})>[];
@@ -37,14 +41,20 @@ class ExplorerBreadcrumbs extends StatelessWidget {
       crumbs.add((label: part, path: accumulated));
     }
 
-    return StyledSurface(
+    return SuperContainer(
       key: const ValueKey('path-bar-surface'),
-      style: style,
+      slot: AppearanceSlot.pathBar,
       horizontalBorder: true,
-      fallbackColor: explorerColor(context, Colors.white,
-          Theme.of(context).colorScheme.surfaceContainerLow),
-      borderColor: explorerColor(context, const Color(0xFFEAECF2),
-          Theme.of(context).colorScheme.outlineVariant),
+      fallbackColor: explorerColor(
+        context,
+        Colors.white,
+        Theme.of(context).colorScheme.surfaceContainerLow,
+      ),
+      borderColor: explorerColor(
+        context,
+        const Color(0xFFEAECF2),
+        Theme.of(context).colorScheme.outlineVariant,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
         child: SingleChildScrollView(
@@ -53,8 +63,11 @@ class ExplorerBreadcrumbs extends StatelessWidget {
             children: [
               Tooltip(
                 message: path,
-                child:
-                    Icon(Icons.computer_rounded, size: 20, color: foreground),
+                child: Icon(
+                  Icons.computer_rounded,
+                  size: 20,
+                  color: foreground,
+                ),
               ),
               for (final (index, crumb) in crumbs.indexed) ...[
                 Padding(
@@ -73,26 +86,34 @@ class ExplorerBreadcrumbs extends StatelessWidget {
                   child: Ink(
                     decoration: BoxDecoration(
                       color: index == crumbs.length - 1
-                          ? (style.foreground ?? colors.primary)
-                              .withValues(alpha: .10)
+                          ? (style.foreground ?? colors.primary).withValues(
+                              alpha: .10,
+                            )
                           : null,
                       borderRadius: BorderRadius.circular(9),
                     ),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      if (index == crumbs.length - 1) ...[
-                        Icon(Icons.folder_open_rounded,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (index == crumbs.length - 1) ...[
+                          Icon(
+                            Icons.folder_open_rounded,
                             size: 16,
-                            color: style.foreground ?? colors.primary),
-                        const SizedBox(width: 7),
-                      ],
-                      Text(
-                        crumb.label,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: style.foreground ??
-                              explorerColor(
+                            color: style.foreground ?? colors.primary,
+                          ),
+                          const SizedBox(width: 7),
+                        ],
+                        Text(
+                          crumb.label,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color:
+                                style.foreground ??
+                                explorerColor(
                                   context,
                                   index == crumbs.length - 1
                                       ? const Color(0xFF394154)
@@ -100,14 +121,16 @@ class ExplorerBreadcrumbs extends StatelessWidget {
                                   index == crumbs.length - 1
                                       ? Theme.of(context).colorScheme.onSurface
                                       : Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                          fontWeight: index == crumbs.length - 1
-                              ? FontWeight.w600
-                              : FontWeight.normal,
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                ),
+                            fontWeight: index == crumbs.length - 1
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
                         ),
-                      ),
-                    ]),
+                      ],
+                    ),
                   ),
                 ),
               ],

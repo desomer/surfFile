@@ -24,7 +24,11 @@ import '../widgets/mouse_back_navigation.dart';
 import '../widgets/folder_transition_view.dart';
 import '../widgets/folder_hero_flight.dart';
 import '../theme/appearance.dart';
+import '../theme/appearance_slot.dart';
 import '../theme/folder_transition.dart';
+import '../widgets/super_container.dart';
+import '../widgets/file_action_bar.dart';
+import '../actions/file_actions.dart';
 
 enum _HistoryDirection { back, forward }
 
@@ -35,7 +39,149 @@ class ExplorerPage extends StatefulWidget {
   State<ExplorerPage> createState() => _ExplorerPageState();
 }
 
+/// Héberge un ou deux [ExplorerPane] côte à côte (mode divisé).
 class _ExplorerPageState extends State<ExplorerPage> {
+  final _panes = [
+    GlobalKey<_ExplorerPaneState>(),
+    GlobalKey<_ExplorerPaneState>(),
+  ];
+  final _paths = <String?>[null, null];
+  bool _split = false;
+  int _active = 0;
+
+  void _toggleSplit() => setState(() {
+    _split = !_split;
+    _active = _split ? 1 : 0;
+    _paths[1] = null;
+  });
+
+  void _activate(int pane) {
+    if (_active != pane) setState(() => _active = pane);
+  }
+
+  void _pathChanged(int pane, String path) {
+    if (_paths[pane] != path) {
+      setState(() => _paths[pane] = path);
+    } else if (pane == 1) {
+      _panes[0].currentState?._touch();
+    }
+  }
+
+  /// Contexte des actions de la barre centrale ; `null` si un volet manque.
+  FileActionContext? _actionContext() {
+    final left = _panes[0].currentState;
+    final right = _panes[1].currentState;
+    if (left == null || right == null || !left._ready || !right._ready) {
+      return null;
+    }
+    return FileActionContext(
+      left: left._snapshot,
+      right: right._snapshot,
+      navigate: (leftPath, rightPath) => Future.wait([
+        left._loadDirectory(leftPath),
+        right._loadDirectory(rightPath),
+      ]),
+      refresh: () => Future.wait([left._refresh(), right._refresh()]),
+    );
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SuperContainer(
+      slot: AppearanceSlot.background,
+      decorate: false,
+      applyPadding: true,
+      child: Scaffold(
+        body: ExplorerPane(
+          key: _panes[0],
+          split: _split,
+          active: _split && _active == 0,
+          onActivate: () => _activate(0),
+          onPathChanged: (path) => _pathChanged(0, path),
+          onToggleSplit: _toggleSplit,
+          sidebarPath: _split ? _paths[_active] : null,
+          onSidebarLocation: _split
+              ? (path) => _panes[_active].currentState?._loadDirectory(path)
+              : null,
+          splitBarBuilder: (_) => FileActionBar(
+            actionContext: _actionContext(),
+            onMessage: _showMessage,
+          ),
+          splitChild: _split
+              ? ExplorerPane(
+                  key: _panes[1],
+                  initialPath: _paths[0],
+                  showSidebar: false,
+                  autofocus: false,
+                  split: true,
+                  active: _active == 1,
+                  onActivate: () => _activate(1),
+                  onPathChanged: (path) => _pathChanged(1, path),
+                  onSelectionChanged: () => _panes[0].currentState?._touch(),
+                  onToggleSplit: _toggleSplit,
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// Une navigation de dossiers complète (barre d'outils, chemin, fichiers).
+class ExplorerPane extends StatefulWidget {
+  const ExplorerPane({
+    this.initialPath,
+    this.showSidebar = true,
+    this.autofocus = true,
+    this.split = false,
+    this.active = false,
+    this.onActivate,
+    this.onPathChanged,
+    this.onToggleSplit,
+    this.sidebarPath,
+    this.onSidebarLocation,
+    this.splitChild,
+    this.splitBarBuilder,
+    this.onSelectionChanged,
+    super.key,
+  });
+
+  final String? initialPath;
+  final bool showSidebar;
+  final bool autofocus;
+  final bool split;
+
+  /// Volet cible de la barre latérale en mode divisé (souligné).
+  final bool active;
+  final VoidCallback? onActivate;
+  final ValueChanged<String>? onPathChanged;
+  final VoidCallback? onToggleSplit;
+
+  /// Dossier mis en évidence et cible de la barre latérale si elle pilote un
+  /// autre volet que celui-ci.
+  final String? sidebarPath;
+  final ValueChanged<String>? onSidebarLocation;
+
+  /// Second volet affiché à droite, hors de la navigation souris/clavier de
+  /// celui-ci.
+  final Widget? splitChild;
+
+  /// Barre placée entre ce volet et [splitChild], reconstruite avec ce volet.
+  final WidgetBuilder? splitBarBuilder;
+  final VoidCallback? onSelectionChanged;
+
+  @override
+  State<ExplorerPane> createState() => _ExplorerPaneState();
+}
+
+class _ExplorerPaneState extends State<ExplorerPane> {
   late String _currentPath;
   final List<String> _history = [];
   final List<String> _forwardHistory = [];
@@ -71,6 +217,18 @@ class _ExplorerPageState extends State<ExplorerPage> {
   final _textPreviewKey = GlobalKey();
   final _videoPreviewKey = GlobalKey();
 
+  bool get _ready => _hasLoadedDirectory && !_isLoading;
+
+  PaneSnapshot get _snapshot =>
+      PaneSnapshot(path: _currentPath, selection: [?_selectedPath]);
+
+  Future<void> _refresh() => _loadDirectory(_currentPath, addToHistory: false);
+
+  /// Reconstruit ce volet (et la barre d'actions) quand l'autre change.
+  void _touch() {
+    if (mounted) setState(() {});
+  }
+
   String get _homePath =>
       Platform.environment['USERPROFILE'] ??
       Platform.environment['HOME'] ??
@@ -79,7 +237,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
   @override
   void initState() {
     super.initState();
-    _currentPath = _homePath;
+    _currentPath = widget.initialPath ?? _homePath;
     _initialize();
   }
 
@@ -111,9 +269,15 @@ class _ExplorerPageState extends State<ExplorerPage> {
             Icons.download_outlined,
           ),
           ExplorerLocation(
-              'Images', folders['Pictures']!, Icons.image_outlined),
+            'Images',
+            folders['Pictures']!,
+            Icons.image_outlined,
+          ),
           ExplorerLocation(
-              'Musique', folders['Music']!, Icons.headphones_outlined),
+            'Musique',
+            folders['Music']!,
+            Icons.headphones_outlined,
+          ),
           ExplorerLocation('Vidéos', folders['Videos']!, Icons.movie_outlined),
         ];
       });
@@ -138,16 +302,18 @@ class _ExplorerPageState extends State<ExplorerPage> {
   List<ExplorerEntry> get _visibleEntries {
     final query = _query.trim().toLowerCase();
     final entries = _entries
-        .where((entry) =>
-            query.isEmpty || entry.name.toLowerCase().contains(query))
+        .where(
+          (entry) => query.isEmpty || entry.name.toLowerCase().contains(query),
+        )
         .toList();
     entries.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
         return a.isDirectory ? -1 : 1;
       }
       final comparison = switch (_sort) {
-        ExplorerSort.name =>
-          a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+        ExplorerSort.name => a.name.toLowerCase().compareTo(
+          b.name.toLowerCase(),
+        ),
         ExplorerSort.modified => a.modified.compareTo(b.modified),
         ExplorerSort.size => a.size.compareTo(b.size),
       };
@@ -197,7 +363,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
         _heroSource = null;
         if (_hasLoadedDirectory && path != _currentPath) {
           _folderRevision++;
-          _reverseTransition = direction == _HistoryDirection.back ||
+          _reverseTransition =
+              direction == _HistoryDirection.back ||
               (direction == null &&
                   path == Directory(_currentPath).parent.path);
           final appearance = AppearanceScope.of(context);
@@ -208,9 +375,10 @@ class _ExplorerPageState extends State<ExplorerPage> {
               (type == FolderTransition.heroExpand ||
                   type == FolderTransition.heroIcon)) {
             _heroExpand = type == FolderTransition.heroExpand;
-            final target = (_heroExpand ? _contentKey : _titleIconKey)
-                .currentContext!
-                .findRenderObject()! as RenderBox;
+            final target =
+                (_heroExpand ? _contentKey : _titleIconKey).currentContext!
+                        .findRenderObject()!
+                    as RenderBox;
             final overlay =
                 _overlayKey.currentContext!.findRenderObject()! as RenderBox;
             final origin = overlay.localToGlobal(Offset.zero);
@@ -218,7 +386,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
             _heroDestination = (target.localToGlobal(Offset.zero) & target.size)
                 .shift(-origin);
             _heroDuration = Duration(
-                milliseconds: appearance.folderTransitionDuration.round());
+              milliseconds: appearance.folderTransitionDuration.round(),
+            );
             _heroRevision++;
           }
         }
@@ -238,6 +407,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
         _isLoading = false;
         _hasLoadedDirectory = true;
       });
+      widget.onPathChanged?.call(path);
     } on FileSystemException catch (error) {
       debugPrint('Error loading directory: $error');
       if (!mounted || request != _loadRequest) return;
@@ -272,8 +442,10 @@ class _ExplorerPageState extends State<ExplorerPage> {
 
   Future<void> _goForward() async {
     if (_forwardHistory.isEmpty || _isLoading || _contextMenuOpen) return;
-    await _loadDirectory(_forwardHistory.last,
-        direction: _HistoryDirection.forward);
+    await _loadDirectory(
+      _forwardHistory.last,
+      direction: _HistoryDirection.forward,
+    );
   }
 
   Future<void> _openEntry(ExplorerEntry entry) async {
@@ -359,14 +531,18 @@ class _ExplorerPageState extends State<ExplorerPage> {
     } on PlatformException catch (error) {
       debugPrint('Windows context menu error: $error');
       if (mounted) {
-        _showMessage('Impossible d’utiliser le menu Windows : '
-            '${error.message ?? error.code}');
+        _showMessage(
+          'Impossible d’utiliser le menu Windows : '
+          '${error.message ?? error.code}',
+        );
       }
     } on MissingPluginException catch (error) {
       debugPrint('Windows context menu unavailable: $error');
       if (mounted) {
-        _showMessage('Le menu Windows est indisponible. '
-            'Arrêtez puis relancez l’application.');
+        _showMessage(
+          'Le menu Windows est indisponible. '
+          'Arrêtez puis relancez l’application.',
+        );
       }
     } finally {
       try {
@@ -374,8 +550,10 @@ class _ExplorerPageState extends State<ExplorerPage> {
       } on PlatformException catch (error) {
         debugPrint('Error closing Windows context menu: $error');
         if (mounted) {
-          _showMessage('Impossible de fermer le contexte du menu Windows : '
-              '${error.message ?? error.code}');
+          _showMessage(
+            'Impossible de fermer le contexte du menu Windows : '
+            '${error.message ?? error.code}',
+          );
         }
       } finally {
         _contextMenuOpen = false;
@@ -482,10 +660,45 @@ class _ExplorerPageState extends State<ExplorerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Focus(
+    final splitChild = widget.splitChild;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final sidebar = widget.showSidebar && !_previewExpanded
+            ? ExplorerSidebar.width
+            : 0.0;
+        final bar = widget.splitBarBuilder;
+        final pane =
+            (constraints.maxWidth -
+                sidebar -
+                (bar == null ? 1 : FileActionBar.width)) /
+            2;
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(child: _buildPane(context)),
+            if (splitChild != null) ...[
+              if (bar != null)
+                bar(context)
+              else
+                VerticalDivider(
+                  width: 1,
+                  thickness: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+              SizedBox(width: pane < 0 ? 0 : pane, child: splitChild),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPane(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Focus(
         focusNode: _explorerFocusNode,
-        autofocus: true,
+        autofocus: widget.autofocus,
         onKeyEvent: _handleKeyEvent,
         child: MouseBackNavigation(
           enabled: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
@@ -500,14 +713,25 @@ class _ExplorerPageState extends State<ExplorerPage> {
               children: [
                 Row(
                   children: [
-                    if (!_previewExpanded)
+                    if (widget.showSidebar && !_previewExpanded)
                       ExplorerSidebar(
                         locations: _locations,
-                        currentPath: _currentPath,
-                        onLocationSelected: _loadDirectory,
+                        currentPath: widget.sidebarPath ?? _currentPath,
+                        onLocationSelected:
+                            widget.onSidebarLocation ?? _loadDirectory,
                       ),
-                    //const VerticalDivider(width: 1, thickness: 1),
-                    Expanded(child: _buildExplorer()),
+                    Expanded(
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerDown: (_) {
+                          widget.onActivate?.call();
+                          if (widget.split && !_explorerFocusNode.hasFocus) {
+                            _explorerFocusNode.requestFocus();
+                          }
+                        },
+                        child: _buildExplorer(),
+                      ),
+                    ),
                   ],
                 ),
                 if (_heroSource != null &&
@@ -539,7 +763,18 @@ class _ExplorerPageState extends State<ExplorerPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!_previewExpanded) ...[
+          if (widget.split)
+            AnimatedContainer(
+              key: ValueKey('split-active-${widget.active}'),
+              duration: const Duration(milliseconds: 150),
+              height: 3,
+              color: widget.active
+                  ? AppearanceScope.of(context).accent
+                  : Colors.transparent,
+            ),
           ExplorerToolbar(
+            split: widget.split,
+            onToggleSplit: widget.onToggleSplit,
             canGoBack: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
             canGoUp: Directory(_currentPath).parent.path != _currentPath,
             onBack: _goBack,
@@ -645,6 +880,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
                               onSelected: (path) {
                                 _explorerFocusNode.requestFocus();
                                 setState(() => _selectedPath = path);
+                                widget.onSelectionChanged?.call();
                               },
                               onOpen: _openEntry,
                               onOpenWithBounds: (entry, card, icon) =>
@@ -666,13 +902,14 @@ class _ExplorerPageState extends State<ExplorerPage> {
                                 ? null
                                 : matching.first;
                             void closePreview() => setState(() {
-                                  _previewVisible = false;
-                                  _previewExpanded = false;
-                                });
+                              _previewVisible = false;
+                              _previewExpanded = false;
+                            });
                             void toggleExpanded() => setState(
-                                  () => _previewExpanded = !_previewExpanded,
-                                );
-                            final preview = selected != null &&
+                              () => _previewExpanded = !_previewExpanded,
+                            );
+                            final preview =
+                                selected != null &&
                                     VideoPreviewPanel.supports(selected.name)
                                 ? VideoPreviewPanel(
                                     key: _videoPreviewKey,
@@ -692,7 +929,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
                                   )
                                 : TextPreviewPanel(
                                     key: _textPreviewKey,
-                                    path: selected != null &&
+                                    path:
+                                        selected != null &&
                                             TextPreviewPanel.supports(
                                               selected.name,
                                             )

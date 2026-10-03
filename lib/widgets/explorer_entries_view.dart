@@ -2,10 +2,12 @@ import 'package:material_ui/material_ui.dart';
 
 import '../models/explorer_entry.dart';
 import '../theme/appearance.dart';
+import '../theme/appearance_slot.dart';
 import 'explorer_file_icon.dart';
 import 'neon_surface.dart';
 import 'press_feedback.dart';
 import 'sliding_selection_list.dart';
+import 'super_container.dart';
 import 'scroll_edge_fade.dart';
 
 class ExplorerEntriesView extends StatelessWidget {
@@ -69,93 +71,116 @@ class ExplorerEntriesView extends StatelessWidget {
         final color = appearance.cardBackground(context, selected: selected);
         final foreground = Appearance.foreground(color);
         final style = appearance.effectiveSelectedCardStyle;
-        final radius = selected ? style.radius : appearance.radius;
-        final borderWidth =
-            selected ? style.borderWidth : appearance.borderWidth;
-        final gradient =
-            selected ? style.fill.gradient() : appearance.cardFill.gradient();
+        final radius = selected ? style.radius : appearance.cardStyle.radius;
+        final borderWidth = selected
+            ? style.borderWidth
+            : appearance.cardStyle.borderWidth;
+        final gradient = selected
+            ? style.fill.gradient()
+            : appearance.cardStyle.fill.gradient();
         return _EntryBounds(
           key: ValueKey(entry.entity.path),
-          builder: (cardKey, iconKey) => NeonSurface(
-            key: cardKey,
-            style: selected ? style.neon! : appearance.cardNeon,
-            accent: appearance.accent,
-            radius: radius,
-            child: Material(
-              color: gradient != null ? Colors.transparent : color,
-              elevation: appearance.cardElevation(selected: selected),
-              shadowColor: Colors.black.withValues(
+          builder: (cardKey, iconKey) => SuperContainer(
+            slot: selected ? AppearanceSlot.selectedCard : AppearanceSlot.card,
+            decorate: false,
+            child: NeonSurface(
+              key: cardKey,
+              style: selected ? style.neon! : appearance.cardNeon,
+              accent: appearance.accent,
+              radius: radius,
+              child: Material(
+                color: gradient != null ? Colors.transparent : color,
+                elevation: appearance.cardElevation(selected: selected),
+                shadowColor: Colors.black.withValues(
                   alpha: selected
                       ? style.shadowOpacity
-                      : appearance.shadowOpacity),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(radius),
-                side: BorderSide(
-                  color: selected
-                      ? style.borderColor ??
-                          Theme.of(context).colorScheme.primary
-                      : appearance.cardBorderColor ??
-                          Theme.of(context).colorScheme.outlineVariant,
-                  width: borderWidth,
-                  style:
-                      borderWidth == 0 ? BorderStyle.none : BorderStyle.solid,
+                      : appearance.cardStyle.shadowOpacity,
                 ),
-              ),
-              child: Ink(
-                decoration: BoxDecoration(
-                  gradient: gradient,
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(radius),
+                  side: BorderSide(
+                    color: selected
+                        ? style.borderColor ??
+                              Theme.of(context).colorScheme.primary
+                        : appearance.cardStyle.borderColor ??
+                              Theme.of(context).colorScheme.outlineVariant,
+                    width: borderWidth,
+                    style: borderWidth == 0
+                        ? BorderStyle.none
+                        : BorderStyle.solid,
+                  ),
                 ),
-                child: PressFeedback(
-                  key: ValueKey(entry.entity.path),
-                  onMouseDown: () => onSelected(entry.entity.path),
-                  child: InkWell(
+                child: Ink(
+                  decoration: BoxDecoration(
+                    gradient: gradient,
                     borderRadius: BorderRadius.circular(radius),
-                    onTap: () {
-                      if (!selected) onSelected(entry.entity.path);
-                    },
-                    onDoubleTap: () => _openWithBounds(
-                        entry, cardKey, iconKey, onOpen, onOpenWithBounds),
-                    onSecondaryTapDown: onContextMenu == null
-                        ? null
-                        : (details) =>
-                            onContextMenu!(entry, details.globalPosition),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
+                  ),
+                  child: PressFeedback(
+                    key: ValueKey(entry.entity.path),
+                    onMouseDown: () => onSelected(entry.entity.path),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(radius),
+                      onTap: () {
+                        if (!selected) onSelected(entry.entity.path);
+                      },
+                      onDoubleTap: () => _openWithBounds(
+                        entry,
+                        cardKey,
+                        iconKey,
+                        onOpen,
+                        onOpenWithBounds,
+                      ),
+                      onSecondaryTapDown:
+                          onContextMenu == null || _styleEditing(context)
+                          ? null
+                          : (details) =>
+                                onContextMenu!(entry, details.globalPosition),
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          selected
+                              ? style.padding
+                              : appearance.cardStyle.padding,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
                               child: Center(
-                                  child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: ExplorerFileIcon(
-                                key: iconKey,
-                                entry: entry,
-                                size: appearance.iconSize),
-                          ))),
-                          const SizedBox(height: 8),
-                          Text(
-                            entry.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: ExplorerFileIcon(
+                                    key: iconKey,
+                                    entry: entry,
+                                    size: appearance.iconSize,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              entry.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
                                 fontSize: appearance.fontSize,
                                 color: foreground,
-                                fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            entry.isDirectory
-                                ? 'Dossier'
-                                : formatExplorerSize(entry.size),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              entry.isDirectory
+                                  ? 'Dossier'
+                                  : formatExplorerSize(entry.size),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
                                 fontSize: appearance.fontSize - 2,
-                                color: foreground.withValues(alpha: .75)),
-                          ),
-                        ],
+                                color: foreground.withValues(alpha: .75),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -204,99 +229,115 @@ class _EntryRowState extends State<_EntryRow> {
     final onOpen = widget.onOpen;
     final onContextMenu = widget.onContextMenu;
     final onOpenWithBounds = widget.onOpenWithBounds;
-    final color = appearance.cardColor != null ||
-            appearance.cardFill.gradient() != null ||
+    final color =
+        appearance.cardStyle.color != null ||
+            appearance.cardStyle.fill.gradient() != null ||
             selected
         ? appearance.cardBackground(context, selected: selected)
         : Theme.of(context).colorScheme.surface;
     final foreground = Appearance.foreground(color);
     final radius = selected
         ? appearance.effectiveSelectedCardStyle.radius
-        : appearance.radius;
+        : appearance.cardStyle.radius;
     return Padding(
       key: cardKey,
       padding: EdgeInsets.only(bottom: appearance.spacing / 6),
-      child: Material(
-        type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(radius),
-        child: PressFeedback(
-          key: ValueKey(entry.entity.path),
-          onMouseDown: () => onSelected(entry.entity.path),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(radius),
-            onTap: () {
-              if (!selected) onSelected(entry.entity.path);
-            },
-            onDoubleTap: () => _openWithBounds(
-                entry, cardKey, iconKey, onOpen, onOpenWithBounds),
-            onSecondaryTapDown: onContextMenu == null
-                ? null
-                : (details) => onContextMenu(entry, details.globalPosition),
-            child: SizedBox(
-              height: appearance.rowHeight,
-              child: Row(
-                children: [
-                  Expanded(
-                    flex: 5,
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        ExplorerFileIcon(
+      child: SuperContainer(
+        slot: selected ? AppearanceSlot.selectedCard : AppearanceSlot.card,
+        decorate: false,
+        child: Material(
+          type: MaterialType.transparency,
+          borderRadius: BorderRadius.circular(radius),
+          child: PressFeedback(
+            key: ValueKey(entry.entity.path),
+            onMouseDown: () => onSelected(entry.entity.path),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(radius),
+              onTap: () {
+                if (!selected) onSelected(entry.entity.path);
+              },
+              onDoubleTap: () => _openWithBounds(
+                entry,
+                cardKey,
+                iconKey,
+                onOpen,
+                onOpenWithBounds,
+              ),
+              onSecondaryTapDown:
+                  onContextMenu == null || _styleEditing(context)
+                  ? null
+                  : (details) => onContextMenu(entry, details.globalPosition),
+              child: SizedBox(
+                height: appearance.rowHeight,
+                child: Row(
+                  children: [
+                    Expanded(
+                      flex: 5,
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          ExplorerFileIcon(
                             key: iconKey,
                             entry: entry,
-                            size:
-                                (appearance.iconSize * 22 / 49).clamp(16, 30)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            entry.name,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: appearance.fontSize,
-                              color: foreground,
-                              fontWeight: FontWeight.w500,
+                            size: (appearance.iconSize * 22 / 49).clamp(16, 30),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              entry.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: appearance.fontSize,
+                                color: foreground,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        formatExplorerDate(entry.modified),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: appearance.fontSize - 1,
+                          color: foreground.withValues(alpha: .75),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      formatExplorerDate(entry.modified),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                        entry.isDirectory
+                            ? 'Dossier'
+                            : explorerFileType(entry.name),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
                           fontSize: appearance.fontSize - 1,
-                          color: foreground.withValues(alpha: .75)),
+                          color: foreground.withValues(alpha: .75),
+                        ),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 2,
-                    child: Text(
-                      entry.isDirectory
-                          ? 'Dossier'
-                          : explorerFileType(entry.name),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                    Expanded(
+                      flex: 1,
+                      child: Text(
+                        entry.isDirectory
+                            ? '—'
+                            : formatExplorerSize(entry.size),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
                           fontSize: appearance.fontSize - 1,
-                          color: foreground.withValues(alpha: .75)),
+                          color: foreground.withValues(alpha: .75),
+                        ),
+                      ),
                     ),
-                  ),
-                  Expanded(
-                    flex: 1,
-                    child: Text(
-                      entry.isDirectory ? '—' : formatExplorerSize(entry.size),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: appearance.fontSize - 1,
-                          color: foreground.withValues(alpha: .75)),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -323,12 +364,16 @@ class _EntryBoundsState extends State<_EntryBounds> {
   Widget build(BuildContext context) => widget.builder(_cardKey, _iconKey);
 }
 
+bool _styleEditing(BuildContext context) =>
+    StyleEditScope.controllerOf(context)?.value ?? false;
+
 void _openWithBounds(
-    ExplorerEntry entry,
-    GlobalKey cardKey,
-    GlobalKey iconKey,
-    ValueChanged<ExplorerEntry> onOpen,
-    void Function(ExplorerEntry, Rect, Rect)? onOpenWithBounds) {
+  ExplorerEntry entry,
+  GlobalKey cardKey,
+  GlobalKey iconKey,
+  ValueChanged<ExplorerEntry> onOpen,
+  void Function(ExplorerEntry, Rect, Rect)? onOpenWithBounds,
+) {
   if (onOpenWithBounds == null || !entry.isDirectory) {
     onOpen(entry);
     return;

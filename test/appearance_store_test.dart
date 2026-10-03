@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/appearance.dart';
+import 'package:surf_file/theme/container_style.dart';
 
 class _DelayedStore extends AppearanceStore {
   final gate = Completer<void>();
@@ -30,20 +31,22 @@ void main() {
   const custom = Appearance(
     mode: ThemeMode.system,
     accent: Color(0xFF00796B),
-    cardColor: Color(0xFF102030),
-    backgroundColor: Color(0xFFF0E0D0),
+    cardStyle: ContainerStyle(
+      color: Color(0xFF102030),
+      radius: 24,
+      elevation: 5,
+      shadowOpacity: .4,
+      borderWidth: 2,
+    ),
+    backgroundStyle: ContainerStyle(color: Color(0xFFF0E0D0)),
     backgroundOpacity: .4,
     windowOpacity: .8,
+    selectedCardStyle: ContainerStyle(elevation: 10),
+    selectedFolderStyle: ContainerStyle(elevation: 8),
     cardHeight: 230,
     cardWidth: 280,
     rowHeight: 70,
-    radius: 24,
     spacing: 20,
-    elevation: 5,
-    selectedCardElevation: 10,
-    selectedFolderElevation: 8,
-    shadowOpacity: .4,
-    borderWidth: 2,
     fontSize: 15,
     iconSize: 60,
   );
@@ -55,20 +58,26 @@ void main() {
     first.value = custom;
     await first.saved;
     first.dispose();
-    final second =
-        PersistentAppearanceController(AppearanceStore(), errors.add);
+    final second = PersistentAppearanceController(
+      AppearanceStore(),
+      errors.add,
+    );
     addTearDown(second.dispose);
     await second.restore();
     expect(
-        AppearanceStore.encode(second.value), AppearanceStore.encode(custom));
+      AppearanceStore.encode(second.value),
+      AppearanceStore.encode(custom),
+    );
     expect(errors, isEmpty);
     second.value = const Appearance();
     await second.saved;
     final restored = await AppearanceStore().load();
-    expect(AppearanceStore.encode(restored),
-        AppearanceStore.encode(const Appearance()));
-    expect(restored.cardColor, isNull);
-    expect(restored.selectedCardElevation, isNull);
+    expect(
+      AppearanceStore.encode(restored),
+      AppearanceStore.encode(const Appearance()),
+    );
+    expect(restored.cardStyle.color, isNull);
+    expect(restored.selectedCardStyle, isNull);
   });
 
   test('writes are ordered and save errors allow later writes', () async {
@@ -88,7 +97,7 @@ void main() {
     for (final spacing in [
       Appearance.minSpacing,
       48.0,
-      Appearance.maxSpacing
+      Appearance.maxSpacing,
     ]) {
       for (final height in [Appearance.minRowHeight, Appearance.maxRowHeight]) {
         final appearance = custom.copyWith(spacing: spacing, rowHeight: height);
@@ -96,12 +105,12 @@ void main() {
         final restored = await AppearanceStore().load();
         expect(restored.spacing, spacing);
         expect(restored.rowHeight, height);
-        expect(restored.cardColor, custom.cardColor);
+        expect(restored.cardStyle.color, custom.cardStyle.color);
       }
     }
     for (final spacing in [
       Appearance.minSpacing - 1,
-      Appearance.maxSpacing + 1
+      Appearance.maxSpacing + 1,
     ]) {
       expect(
         () => AppearanceStore.decode(
@@ -116,41 +125,84 @@ void main() {
     for (final alpha in [0, 64, 128, 255]) {
       final appearance = custom.copyWith(
         accent: Color((alpha << 24) | 0x00796B),
-        cardColor: Color((alpha << 24) | 0x102030),
-        backgroundColor: Color((alpha << 24) | 0xE2E8F0),
+        cardStyle: custom.cardStyle.copyWith(
+          color: Color((alpha << 24) | 0x102030),
+        ),
+        backgroundStyle: custom.backgroundStyle.copyWith(
+          color: Color((alpha << 24) | 0xE2E8F0),
+        ),
       );
       await AppearanceStore().save(appearance);
       final restored = await AppearanceStore().load();
       expect(restored.accent.toARGB32(), appearance.accent.toARGB32());
-      expect(restored.cardColor?.toARGB32(), appearance.cardColor?.toARGB32());
-      expect(restored.backgroundColor?.toARGB32(),
-          appearance.backgroundColor?.toARGB32());
-      expect(restored.theme(Brightness.light).colorScheme.primary.a,
-          closeTo(alpha / 255, .001));
+      expect(
+        restored.cardStyle.color?.toARGB32(),
+        appearance.cardStyle.color?.toARGB32(),
+      );
+      expect(
+        restored.backgroundStyle.color?.toARGB32(),
+        appearance.backgroundStyle.color?.toARGB32(),
+      );
+      expect(
+        restored.theme(Brightness.light).colorScheme.primary.a,
+        closeTo(alpha / 255, .001),
+      );
     }
   });
 
-  test('missing values default but invalid stored data is rejected', () async {
-    expect(AppearanceStore.decode('{"version":1,"mode":"dark"}').mode,
-        ThemeMode.dark);
-    for (final stored in [
-      'not json',
-      '{"version":2,"mode":"light"}',
-      '{"version":1,"mode":"invalid"}',
-      jsonEncode({'version': 1, 'mode': 'light', 'cardHeight': 1}),
-      jsonEncode({'version': 1, 'mode': 'light', 'shadowOpacity': 2}),
-      jsonEncode({'version': 1, 'mode': 'light', 'accent': 'red'}),
-      jsonEncode({'version': 1, 'mode': 'light', 'windowOpacity': 0}),
-      jsonEncode({'version': 1, 'mode': 'light', 'backgroundOpacity': 2}),
-      jsonEncode({'version': 1, 'mode': 'light', 'cardColor': -1}),
-      jsonEncode(
-          {'version': 1, 'mode': 'light', 'backgroundColor': 0x100000000}),
-    ]) {
-      expect(() => AppearanceStore.decode(stored),
-          throwsA(isA<FormatException>()));
-    }
-    SharedPreferences.setMockInitialValues({AppearanceStore.key: 42});
-    await expectLater(
-        AppearanceStore().load(), throwsA(isA<FormatException>()));
-  });
+  test(
+    'missing values default, v1 is discarded, and invalid data is rejected',
+    () async {
+      expect(
+        AppearanceStore.decode('{"version":2,"mode":"dark"}').mode,
+        ThemeMode.dark,
+      );
+      expect(
+        AppearanceStore.decode('{"version":2,"mode":"dark"}').cardStyle,
+        Appearance.defaultCardStyle,
+      );
+      final oldStored = jsonEncode({'version': 1, 'mode': 'dark'});
+      expect(AppearanceStore.isOutdated(oldStored), isTrue);
+      SharedPreferences.setMockInitialValues({AppearanceStore.key: oldStored});
+      expect(await AppearanceStore().load(), isA<Appearance>());
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey(AppearanceStore.key), isFalse);
+      for (final stored in [
+        'not json',
+        '{"version":1,"mode":"dark"}',
+        '{"version":3,"mode":"dark"}',
+        '{"version":2,"mode":"invalid"}',
+        jsonEncode({'version': 2, 'mode': 'light', 'cardHeight': 1}),
+        jsonEncode({
+          'version': 2,
+          'mode': 'light',
+          'cardStyle': Appearance.defaultCardStyle.toJson()
+            ..['shadowOpacity'] = 2,
+        }),
+        jsonEncode({'version': 2, 'mode': 'light', 'accent': 'red'}),
+        jsonEncode({'version': 2, 'mode': 'light', 'windowOpacity': 0}),
+        jsonEncode({'version': 2, 'mode': 'light', 'backgroundOpacity': 2}),
+        jsonEncode({
+          'version': 2,
+          'mode': 'light',
+          'cardStyle': {'color': -1},
+        }),
+        jsonEncode({
+          'version': 2,
+          'mode': 'light',
+          'backgroundStyle': {'color': 0x100000000},
+        }),
+      ]) {
+        expect(
+          () => AppearanceStore.decode(stored),
+          throwsA(isA<FormatException>()),
+        );
+      }
+      SharedPreferences.setMockInitialValues({AppearanceStore.key: 42});
+      await expectLater(
+        AppearanceStore().load(),
+        throwsA(isA<FormatException>()),
+      );
+    },
+  );
 }

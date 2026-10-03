@@ -80,122 +80,140 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
     final appearance = AppearanceScope.of(context);
     final extent = appearance.rowHeight + appearance.spacing / 6;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    return LayoutBuilder(builder: (context, constraints) {
-      return ClipRect(
-        child: AnimatedBuilder(
-          animation: Listenable.merge([_scroll, _animation]),
-          child: ListView.builder(
-            controller: _scroll,
-            padding: const EdgeInsets.fromLTRB(26, 2, 26, 24),
-            itemExtent: extent,
-            itemCount: widget.paths.length,
-            itemBuilder: widget.itemBuilder,
-          ),
-          builder: (context, child) {
-            final offset = _scroll.hasClients ? _scroll.offset : 0.0;
-            final first = math.max(0, ((offset - 2) / extent).floor() - 1);
-            final last = math.min(widget.paths.length,
-                ((offset + constraints.maxHeight) / extent).ceil() + 1);
-            final position = reduceMotion ? _to : _position;
-            Widget surface(int index, {required bool selected}) => Positioned(
-                  key: selected
-                      ? const ValueKey('sliding-selection')
-                      : ValueKey('row-surface-${widget.paths[index]}'),
-                  left: 26,
-                  right: 26,
-                  top: 2 +
-                      (selected ? position! : index.toDouble()) * extent -
-                      offset,
-                  height: appearance.rowHeight,
-                  child: IgnorePointer(
-                    child: NeonSurface(
-                      // The sliding surface already lights the row beneath it.
-                      style: !selected && position == index.toDouble()
-                          ? appearance.cardNeon.copyWith(enabled: false)
-                          : selected
-                              ? appearance.effectiveSelectedCardStyle.neon!
-                              : appearance.cardNeon,
-                      accent: appearance.accent,
-                      radius: selected
-                          ? appearance.effectiveSelectedCardStyle.radius
-                          : appearance.radius,
-                      child: Material(
-                        color: selected
-                            ? appearance.effectiveSelectedCardStyle.fill
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ClipRect(
+          child: AnimatedBuilder(
+            animation: Listenable.merge([_scroll, _animation]),
+            child: ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.fromLTRB(26, 2, 26, 24),
+              itemExtent: extent,
+              itemCount: widget.paths.length,
+              itemBuilder: widget.itemBuilder,
+            ),
+            builder: (context, child) {
+              final offset = _scroll.hasClients ? _scroll.offset : 0.0;
+              final first = math.max(0, ((offset - 2) / extent).floor() - 1);
+              final last = math.min(
+                widget.paths.length,
+                ((offset + constraints.maxHeight) / extent).ceil() + 1,
+              );
+              final position = reduceMotion ? _to : _position;
+              Widget surface(int index, {required bool selected}) => Positioned(
+                key: selected
+                    ? const ValueKey('sliding-selection')
+                    : ValueKey('row-surface-${widget.paths[index]}'),
+                left: 26,
+                right: 26,
+                top:
+                    2 +
+                    (selected ? position! : index.toDouble()) * extent -
+                    offset,
+                height: appearance.rowHeight,
+                child: IgnorePointer(
+                  child: NeonSurface(
+                    // The sliding surface already lights the row beneath it.
+                    style: !selected && position == index.toDouble()
+                        ? appearance.cardNeon.copyWith(enabled: false)
+                        : selected
+                        ? appearance.effectiveSelectedCardStyle.neon!
+                        : appearance.cardNeon,
+                    accent: appearance.accent,
+                    radius: selected
+                        ? appearance.effectiveSelectedCardStyle.radius
+                        : appearance.cardStyle.radius,
+                    child: Material(
+                      color: selected
+                          ? appearance.effectiveSelectedCardStyle.fill
                                         .gradient() !=
                                     null
                                 ? Colors.transparent
-                                : appearance.cardBackground(context,
-                                    selected: true)
-                            : appearance.cardFill.gradient() != null
-                                ? Colors.transparent
-                                : appearance.cardColor ??
-                                    (appearance.backgroundOpacity < 1 ||
-                                            (appearance.backgroundColor?.a ??
-                                                    1) <
-                                                1
-                                        ? Colors.transparent
-                                        : Theme.of(context)
-                                            .colorScheme
-                                            .surface),
-                        elevation: appearance.cardElevation(selected: selected),
-                        shadowColor: Colors.black.withValues(
-                            alpha: selected
-                                ? appearance
-                                    .effectiveSelectedCardStyle.shadowOpacity
-                                : appearance.shadowOpacity),
-                        borderRadius: BorderRadius.circular(selected
+                                : appearance.cardBackground(
+                                    context,
+                                    selected: true,
+                                  )
+                          : appearance.cardStyle.fill.gradient() != null
+                          ? Colors.transparent
+                          : appearance.cardStyle.color ??
+                                (appearance.backgroundOpacity < 1 ||
+                                        (appearance.backgroundStyle.color?.a ??
+                                                1) <
+                                            1
+                                    ? Colors.transparent
+                                    : Theme.of(context).colorScheme.surface),
+                      elevation: appearance.cardElevation(selected: selected),
+                      shadowColor: Colors.black.withValues(
+                        alpha: selected
+                            ? appearance
+                                  .effectiveSelectedCardStyle
+                                  .shadowOpacity
+                            : appearance.cardStyle.shadowOpacity,
+                      ),
+                      borderRadius: BorderRadius.circular(
+                        selected
                             ? appearance.effectiveSelectedCardStyle.radius
-                            : appearance.radius),
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: selected
-                                ? appearance.effectiveSelectedCardStyle.fill
+                            : appearance.cardStyle.radius,
+                      ),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: selected
+                              ? appearance.effectiveSelectedCardStyle.fill
                                     .gradient()
-                                : appearance.cardFill.gradient(),
-                            borderRadius: BorderRadius.circular(selected
+                              : appearance.cardStyle.fill.gradient(),
+                          borderRadius: BorderRadius.circular(
+                            selected
                                 ? appearance.effectiveSelectedCardStyle.radius
-                                : appearance.radius),
-                            border: selected &&
-                                    appearance.selectedCardStyle != null
-                                ? Border.all(
-                                    color: appearance.effectiveSelectedCardStyle
-                                            .borderColor ??
-                                        Theme.of(context).colorScheme.primary,
-                                    width: appearance
-                                        .effectiveSelectedCardStyle.borderWidth,
-                                    style: appearance.effectiveSelectedCardStyle
-                                                .borderWidth ==
-                                            0
-                                        ? BorderStyle.none
-                                        : BorderStyle.solid)
-                                : !selected &&
-                                        appearance.cardBorderColor != null
-                                    ? Border.all(
-                                        color: appearance.cardBorderColor!,
-                                        width: appearance.borderWidth,
-                                        style: appearance.borderWidth == 0
-                                            ? BorderStyle.none
-                                            : BorderStyle.solid)
-                                    : null,
+                                : appearance.cardStyle.radius,
                           ),
+                          border:
+                              selected && appearance.selectedCardStyle != null
+                              ? Border.all(
+                                  color:
+                                      appearance
+                                          .effectiveSelectedCardStyle
+                                          .borderColor ??
+                                      Theme.of(context).colorScheme.primary,
+                                  width: appearance
+                                      .effectiveSelectedCardStyle
+                                      .borderWidth,
+                                  style:
+                                      appearance
+                                              .effectiveSelectedCardStyle
+                                              .borderWidth ==
+                                          0
+                                      ? BorderStyle.none
+                                      : BorderStyle.solid,
+                                )
+                              : !selected &&
+                                    appearance.cardStyle.borderColor != null
+                              ? Border.all(
+                                  color: appearance.cardStyle.borderColor!,
+                                  width: appearance.cardStyle.borderWidth,
+                                  style: appearance.cardStyle.borderWidth == 0
+                                      ? BorderStyle.none
+                                      : BorderStyle.solid,
+                                )
+                              : null,
                         ),
                       ),
                     ),
                   ),
-                );
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                for (var index = first; index < last; index++)
-                  surface(index, selected: false),
-                if (position != null) surface(0, selected: true),
-                child!,
-              ],
-            );
-          },
-        ),
-      );
-    });
+                ),
+              );
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  for (var index = first; index < last; index++)
+                    surface(index, selected: false),
+                  if (position != null) surface(0, selected: true),
+                  child!,
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }
