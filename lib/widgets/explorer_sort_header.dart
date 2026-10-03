@@ -18,7 +18,7 @@ class ExplorerSortHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(34, 3, 34, 3),
+      padding: const EdgeInsets.fromLTRB(34, 0, 34, 0),
       child: Row(
         children: [
           Expanded(
@@ -41,7 +41,7 @@ class ExplorerSortHeader extends StatelessWidget {
     return InkWell(
       onTap: selectedSort == null ? null : () => onSortChanged(selectedSort),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
         child: Row(
           children: [
             Flexible(

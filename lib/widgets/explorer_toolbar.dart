@@ -78,8 +78,7 @@ class ExplorerToolbar extends StatelessWidget {
       ),
     );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
-      //padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 620;
@@ -90,8 +89,8 @@ class ExplorerToolbar extends StatelessWidget {
                 onPressed: onCreateFolder,
                 icon: const Icon(Icons.create_new_folder_outlined, size: 20),
                 style: IconButton.styleFrom(
-                  minimumSize: const Size(44, 44),
-                  maximumSize: const Size(44, 44),
+                  minimumSize: const Size(40, 40),
+                  maximumSize: const Size(40, 40),
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
@@ -104,7 +103,7 @@ class ExplorerToolbar extends StatelessWidget {
                 icon: const Icon(Icons.create_new_folder_outlined, size: 20),
                 label: const Text('Nouveau dossier'),
                 style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 48),
+                  minimumSize: const Size(0, 40),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -146,7 +145,7 @@ class ExplorerToolbar extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Row(children: [navigation, const Spacer(), ...actions]),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     search,
                   ],
                 )
@@ -209,7 +208,7 @@ class _SearchBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return SizedBox(
-      height: 48,
+      height: 40,
       child: TextField(
         onChanged: onChanged,
         decoration: InputDecoration(

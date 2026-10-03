@@ -41,7 +41,7 @@ class ExplorerViewModeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(30, 23, 30, 14),
+      padding: const EdgeInsets.fromLTRB(30, 10, 30, 6),
       child: Row(
         children: [
           if (appearance.folderTransition == FolderTransition.heroIcon) ...[

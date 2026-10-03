@@ -57,7 +57,7 @@ class ExplorerBreadcrumbs extends StatelessWidget {
         Theme.of(context).colorScheme.outlineVariant,
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 10, 12, 10),
+        padding: const EdgeInsets.fromLTRB(24, 3, 12, 3),
         child: Row(
           children: [
             Expanded(
@@ -97,7 +97,7 @@ class ExplorerBreadcrumbs extends StatelessWidget {
                           ),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
-                            vertical: 9,
+                            vertical: 6,
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
