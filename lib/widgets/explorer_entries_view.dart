@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../models/explorer_entry.dart';
 import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
+import 'drag_select_region.dart';
+import 'entries_layout.dart';
 import 'explorer_file_icon.dart';
 import 'neon_surface.dart';
 import 'press_feedback.dart';
@@ -19,6 +21,11 @@ class ExplorerEntriesView extends StatelessWidget {
     required this.onOpen,
     this.onContextMenu,
     this.onOpenWithBounds,
+    this.selectedPaths,
+    this.onSelectionChanged,
+    this.onTapped,
+    this.revealToken,
+    this.onViewportChanged,
     super.key,
   });
 
@@ -30,23 +37,87 @@ class ExplorerEntriesView extends StatelessWidget {
   final void Function(ExplorerEntry, Offset)? onContextMenu;
   final void Function(ExplorerEntry, Rect, Rect)? onOpenWithBounds;
 
+  /// Sélection multiple ; par défaut, seulement [selectedPath].
+  final Set<String>? selectedPaths;
+
+  /// Active la sélection par cadre lorsqu'il est fourni.
+  final ValueChanged<Set<String>>? onSelectionChanged;
+
+  /// Clic relâché sans glisser ; à défaut, [onSelected] si non sélectionné.
+  final ValueChanged<String>? onTapped;
+
+  /// Change pour faire défiler jusqu'à [selectedPath] (navigation clavier).
+  final Object? revealToken;
+
+  final ValueChanged<Size>? onViewportChanged;
+
+  Set<String> get _selection => selectedPaths ?? {?selectedPath};
+
+  void _tap(String path, bool selected) {
+    final onTapped = this.onTapped;
+    if (onTapped != null) {
+      onTapped(path);
+    } else if (!selected) {
+      onSelected(path);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return ScrollEdgeFade(
+    final onSelectionChanged = this.onSelectionChanged;
+    Widget view(ScrollController? controller) => ScrollEdgeFade(
+      child: gridView
+          ? _buildGrid(context, controller)
+          : _buildList(controller),
+    );
+    if (onSelectionChanged == null) {
+      return KeyedSubtree(key: ValueKey(gridView), child: view(null));
+    }
+    final appearance = AppearanceScope.of(context);
+    EntriesLayout layout(Size viewport) => EntriesLayout(
+      grid: gridView,
+      appearance: appearance,
+      viewport: viewport,
+      count: entries.length,
+    );
+    return DragSelectRegion(
       key: ValueKey(gridView),
-      child: gridView ? _buildGrid(context) : _buildList(),
+      builder: (context, controller) => view(controller),
+      hitTest: (rect, viewport) => layout(viewport).hits(rect),
+      selectedIndexes: () {
+        final selection = _selection;
+        return {
+          for (var i = 0; i < entries.length; i++)
+            if (selection.contains(entries[i].entity.path)) i,
+        };
+      },
+      onChanged: (indexes) => onSelectionChanged({
+        for (final index in indexes) entries[index].entity.path,
+      }),
+      revealToken: revealToken,
+      reveal: (viewport) {
+        final index = entries.indexWhere(
+          (entry) => entry.entity.path == selectedPath,
+        );
+        return index < 0 ? null : layout(viewport).itemRect(index);
+      },
+      onViewport: onViewportChanged,
     );
   }
 
-  Widget _buildList() {
+  Widget _buildList(ScrollController? controller) {
+    final selection = _selection;
     return SlidingSelectionList(
+      controller: controller,
       paths: entries.map((entry) => entry.entity.path).toList(),
       selectedPath: selectedPath,
+      selectedPaths: selection,
       itemBuilder: (context, index) => _EntryRow(
         key: ValueKey(entries[index].entity.path),
         entry: entries[index],
-        selected: selectedPath == entries[index].entity.path,
+        selected: selection.contains(entries[index].entity.path),
         onSelected: onSelected,
+        onTapped: (path) => _tap(path, _selection.contains(path)),
         onOpen: onOpen,
         onContextMenu: onContextMenu,
         onOpenWithBounds: onOpenWithBounds,
@@ -54,10 +125,12 @@ class ExplorerEntriesView extends StatelessWidget {
     );
   }
 
-  Widget _buildGrid(BuildContext context) {
+  Widget _buildGrid(BuildContext context, ScrollController? controller) {
     final appearance = AppearanceScope.of(context);
+    final selection = _selection;
     return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(30, 8, 30, 28),
+      controller: controller,
+      padding: EntriesLayout.gridPadding,
       gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: appearance.cardWidth,
         mainAxisExtent: appearance.cardHeight,
@@ -67,7 +140,7 @@ class ExplorerEntriesView extends StatelessWidget {
       itemCount: entries.length,
       itemBuilder: (context, index) {
         final entry = entries[index];
-        final selected = selectedPath == entry.entity.path;
+        final selected = selection.contains(entry.entity.path);
         final color = appearance.cardBackground(context, selected: selected);
         final foreground = Appearance.foreground(color);
         final style = appearance.effectiveSelectedCardStyle;
@@ -120,9 +193,7 @@ class ExplorerEntriesView extends StatelessWidget {
                     onMouseDown: () => onSelected(entry.entity.path),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(radius),
-                      onTap: () {
-                        if (!selected) onSelected(entry.entity.path);
-                      },
+                      onTap: () => _tap(entry.entity.path, selected),
                       onDoubleTap: () => _openWithBounds(
                         entry,
                         cardKey,
@@ -199,6 +270,7 @@ class _EntryRow extends StatefulWidget {
     required this.entry,
     required this.selected,
     required this.onSelected,
+    required this.onTapped,
     required this.onOpen,
     this.onContextMenu,
     this.onOpenWithBounds,
@@ -208,6 +280,7 @@ class _EntryRow extends StatefulWidget {
   final ExplorerEntry entry;
   final bool selected;
   final ValueChanged<String> onSelected;
+  final ValueChanged<String> onTapped;
   final ValueChanged<ExplorerEntry> onOpen;
   final void Function(ExplorerEntry, Offset)? onContextMenu;
   final void Function(ExplorerEntry, Rect, Rect)? onOpenWithBounds;
@@ -253,9 +326,7 @@ class _EntryRowState extends State<_EntryRow> {
             onMouseDown: () => onSelected(entry.entity.path),
             child: InkWell(
               borderRadius: BorderRadius.circular(radius),
-              onTap: () {
-                if (!selected) onSelected(entry.entity.path);
-              },
+              onTap: () => widget.onTapped(entry.entity.path),
               onDoubleTap: () => _openWithBounds(
                 entry,
                 cardKey,

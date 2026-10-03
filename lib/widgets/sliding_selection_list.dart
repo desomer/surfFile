@@ -11,11 +11,17 @@ class SlidingSelectionList extends StatefulWidget {
     required this.paths,
     required this.selectedPath,
     required this.itemBuilder,
+    this.selectedPaths = const {},
+    this.controller,
     super.key,
   });
 
   final List<String> paths;
   final String? selectedPath;
+
+  /// Autres éléments sélectionnés, surlignés sur place (sans glissement).
+  final Set<String> selectedPaths;
+  final ScrollController? controller;
   final IndexedWidgetBuilder itemBuilder;
 
   @override
@@ -24,14 +30,19 @@ class SlidingSelectionList extends StatefulWidget {
 
 class _SlidingSelectionListState extends State<SlidingSelectionList>
     with SingleTickerProviderStateMixin {
-  final _scroll = ScrollController();
+  final _ownScroll = ScrollController();
+  ScrollController get _scroll => widget.controller ?? _ownScroll;
   late final AnimationController _animation;
   double? _from;
   double? _to;
+  Curve _curve = Curves.easeInOutCubic;
+
+  /// Retard maximal (en lignes) de la sélection animée sur sa cible.
+  static const _maxLag = 1.0;
 
   double? get _position {
     if (_to == null) return null;
-    final progress = Curves.easeInOutCubic.transform(_animation.value);
+    final progress = _curve.transform(_animation.value);
     return _from! + (_to! - _from!) * progress;
   }
 
@@ -62,15 +73,25 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
       _from = _to = index.toDouble();
       _animation.value = 1;
     } else if (oldWidget.selectedPath != widget.selectedPath) {
-      _from = _position;
-      _to = index.toDouble();
+      // Relancée en plein mouvement (touche maintenue), l'animation garde sa
+      // vitesse : une courbe qui démarre lentement prendrait du retard à
+      // chaque répétition, puis rattraperait d'un coup au relâchement.
+      final moving = _animation.isAnimating;
+      final target = index.toDouble();
+      final from = _position!;
+      _from = moving
+          ? from.clamp(target - _maxLag, target + _maxLag).toDouble()
+          : from;
+      _to = target;
+      _curve = moving ? Curves.easeOutCubic : Curves.easeInOutCubic;
+      _animation.duration = Duration(milliseconds: moving ? 140 : 250);
       _animation.forward(from: 0);
     }
   }
 
   @override
   void dispose() {
-    _scroll.dispose();
+    _ownScroll.dispose();
     _animation.dispose();
     super.dispose();
   }
@@ -87,6 +108,7 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
             animation: Listenable.merge([_scroll, _animation]),
             child: ListView.builder(
               controller: _scroll,
+              // Identique à ExplorerEntriesView._listPadding.
               padding: const EdgeInsets.fromLTRB(26, 2, 26, 24),
               itemExtent: extent,
               itemCount: widget.paths.length,
@@ -100,15 +122,19 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                 ((offset + constraints.maxHeight) / extent).ceil() + 1,
               );
               final position = reduceMotion ? _to : _position;
-              Widget surface(int index, {required bool selected}) => Positioned(
-                key: selected
+              Widget surface(
+                int index, {
+                required bool selected,
+                bool slide = false,
+              }) => Positioned(
+                key: slide
                     ? const ValueKey('sliding-selection')
                     : ValueKey('row-surface-${widget.paths[index]}'),
                 left: 26,
                 right: 26,
                 top:
                     2 +
-                    (selected ? position! : index.toDouble()) * extent -
+                    (slide ? position! : index.toDouble()) * extent -
                     offset,
                 height: appearance.rowHeight,
                 child: IgnorePointer(
@@ -205,8 +231,13 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                 fit: StackFit.expand,
                 children: [
                   for (var index = first; index < last; index++)
-                    surface(index, selected: false),
-                  if (position != null) surface(0, selected: true),
+                    surface(
+                      index,
+                      selected:
+                          widget.paths[index] != widget.selectedPath &&
+                          widget.selectedPaths.contains(widget.paths[index]),
+                    ),
+                  if (position != null) surface(0, selected: true, slide: true),
                   child!,
                 ],
               );

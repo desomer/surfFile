@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -6,12 +8,14 @@ import 'package:flutter/services.dart';
 import '../models/explorer_entry.dart';
 import '../models/explorer_location.dart';
 import '../services/directory_scanner.dart';
+import '../services/file_operations.dart';
 import '../services/personal_folders.dart';
 import '../services/windows_context_menu.dart';
 import '../theme/explorer_colors.dart';
 import '../widgets/explorer_breadcrumbs.dart';
 import '../widgets/explorer_context_menu.dart';
 import '../widgets/explorer_empty_state.dart';
+import '../widgets/entries_layout.dart';
 import '../widgets/explorer_entries_view.dart';
 import '../widgets/explorer_error_state.dart';
 import '../widgets/explorer_sidebar.dart';
@@ -30,6 +34,7 @@ import '../theme/appearance_slot.dart';
 import '../theme/folder_transition.dart';
 import '../widgets/super_container.dart';
 import '../widgets/file_action_bar.dart';
+import '../widgets/shortcuts_help_dialog.dart';
 import '../widgets/transfer_panel.dart';
 import '../actions/file_actions.dart';
 
@@ -210,7 +215,115 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   ((List<ExplorerEntry>, String, ExplorerSort, bool), List<ExplorerEntry>)?
   _visibleCache;
   String _query = '';
-  String? _selectedPath;
+  String? _primary;
+  Set<String> _selection = const {};
+
+  /// Point de départ des sélections de plage (Maj).
+  String? _anchor;
+
+  /// Élément cliqué dans une sélection multiple : la sélection s'y réduit au
+  /// relâchement, sauf si un glisser a commencé entre-temps.
+  String? _collapseTo;
+
+  /// Incrémenté pour faire défiler jusqu'à l'élément principal.
+  int _revealToken = 0;
+  Size _viewport = Size.zero;
+  String _typed = '';
+  DateTime _typedAt = DateTime(0);
+  StreamSubscription<FileJob>? _jobsSubscription;
+  final _ownJobs = <FileJob>{};
+
+  /// Élément principal (clavier, aperçu, menu contextuel).
+  String? get _selectedPath => _primary;
+  set _selectedPath(String? path) {
+    _primary = path;
+    _anchor = path;
+    _selection = {?path};
+  }
+
+  void _setSelection(Set<String> paths) {
+    final visible = _visibleEntries;
+    _selection = paths;
+    _anchor = null;
+    if (!paths.contains(_primary)) {
+      _primary = null;
+      for (final entry in visible) {
+        if (paths.contains(entry.entity.path)) {
+          _primary = entry.entity.path;
+          break;
+        }
+      }
+    }
+    _anchor = _primary;
+  }
+
+  void _toggle(String path) {
+    final next = {..._selection};
+    if (!next.remove(path)) next.add(path);
+    if (next.contains(path)) {
+      _selection = next;
+      _primary = path;
+    } else {
+      _primary = null;
+      _setSelection(next);
+    }
+    _anchor = path;
+  }
+
+  /// Sélectionne de [_anchor] à [path] ; [add] conserve la sélection actuelle.
+  void _selectRange(String path, {required bool add}) {
+    final visible = _visibleEntries;
+    final to = visible.indexWhere((entry) => entry.entity.path == path);
+    if (to < 0) return;
+    final anchor = _anchor ?? _primary;
+    var from = visible.indexWhere((entry) => entry.entity.path == anchor);
+    if (from < 0) {
+      from = to;
+      _anchor = path;
+    }
+    final range = {
+      for (var i = math.min(from, to); i <= math.max(from, to); i++)
+        visible[i].entity.path,
+    };
+    _selection = add ? {..._selection, ...range} : range;
+    _primary = path;
+  }
+
+  void _selectionChanged(VoidCallback change) {
+    setState(change);
+    widget.onSelectionChanged?.call();
+  }
+
+  /// Appui de la souris sur un élément (avant le relâchement).
+  void _pointerSelect(String path) {
+    _explorerFocusNode.requestFocus();
+    final keys = HardwareKeyboard.instance;
+    _selectionChanged(() {
+      _collapseTo = null;
+      if (keys.isShiftPressed) {
+        _selectRange(path, add: keys.isControlPressed);
+      } else if (keys.isControlPressed) {
+        _toggle(path);
+      } else if (_selection.contains(path)) {
+        _primary = path;
+        _anchor = path;
+        _collapseTo = path;
+      } else {
+        _selectedPath = path;
+      }
+    });
+  }
+
+  /// Clic relâché sans glisser (ou toucher).
+  void _tapSelect(String path) {
+    final keys = HardwareKeyboard.instance;
+    final collapse = _collapseTo == path || !_selection.contains(path);
+    _collapseTo = null;
+    if (keys.isShiftPressed || keys.isControlPressed || !collapse) return;
+    _explorerFocusNode.requestFocus();
+    _selectionChanged(() => _selectedPath = path);
+  }
+
   String? _loadError;
   String? _failedPath;
   bool _initializationFailed = false;
@@ -242,8 +355,13 @@ class _ExplorerPaneState extends State<ExplorerPane> {
 
   bool get _ready => _hasLoadedDirectory && !_isLoading;
 
-  PaneSnapshot get _snapshot =>
-      PaneSnapshot(path: _currentPath, selection: [?_selectedPath]);
+  PaneSnapshot get _snapshot => PaneSnapshot(
+    path: _currentPath,
+    selection: [
+      for (final entry in _visibleEntries)
+        if (_selection.contains(entry.entity.path)) entry.entity.path,
+    ],
+  );
 
   Future<void> _refresh() => _loadDirectory(_currentPath, addToHistory: false);
 
@@ -261,8 +379,32 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   void initState() {
     super.initState();
     _currentPath = widget.initialPath ?? _homePath;
+    _jobsSubscription = FileJobs.ended.listen(_jobEnded);
     _initialize();
   }
+
+  static bool _samePath(String a, String b) =>
+      Platform.isWindows ? a.toLowerCase() == b.toLowerCase() : a == b;
+
+  /// Rafraîchit le volet quand un transfert touche le dossier affiché.
+  void _jobEnded(FileJob job) {
+    if (_ownJobs.remove(job) || !mounted || !_hasLoadedDirectory) return;
+    final touched =
+        _samePath(job.destination, _currentPath) ||
+        job.sources.any(
+          (source) => _samePath(FileOperations.parent(source), _currentPath),
+        );
+    if (touched) _reload();
+  }
+
+  /// Relit le dossier sans indicateur de chargement en gardant la sélection
+  /// (ou en sélectionnant [select]).
+  Future<void> _reload({Set<String>? select}) => _loadDirectory(
+    _currentPath,
+    addToHistory: false,
+    keepSelection: true,
+    select: select,
+  );
 
   Future<void> _initialize() async {
     setState(() {
@@ -363,6 +505,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     _HistoryDirection? direction,
     Rect? heroCard,
     Rect? heroIcon,
+    bool keepSelection = false,
+    Set<String>? select,
   }) async {
     final request = ++_loadRequest;
     final navigating = _hasLoadedDirectory && path != _currentPath;
@@ -375,7 +519,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       _failedDirection = null;
     }
 
-    if (!navigating) {
+    if (!navigating && !keepSelection) {
       setState(() {
         reset();
         _isLoading = true;
@@ -417,12 +561,21 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       final entries = await scan;
       if (!mounted || request != _loadRequest) return;
       setState(() {
-        if (!navigating) {
-          _commitHistory(path, direction, addToHistory);
-          _selectedPath = null;
-        }
+        if (!navigating) _commitHistory(path, direction, addToHistory);
         _currentPath = path;
         _entries = entries;
+        if (!navigating) {
+          if (keepSelection) {
+            final existing = {for (final entry in entries) entry.entity.path};
+            if (select != null) {
+              _primary = null;
+              _revealToken++;
+            }
+            _setSelection((select ?? _selection).intersection(existing));
+          } else {
+            _selectedPath = null;
+          }
+        }
         _pendingEntries = false;
         _isLoading = false;
         _hasLoadedDirectory = true;
@@ -579,18 +732,195 @@ class _ExplorerPaneState extends State<ExplorerPane> {
 
   KeyEventResult _handleKeyEvent(FocusNode _, KeyEvent event) {
     if (!_explorerFocusNode.hasPrimaryFocus ||
-        event is! KeyDownEvent ||
-        event.logicalKey != LogicalKeyboardKey.space) {
+        event is KeyUpEvent ||
+        !_hasLoadedDirectory) {
       return KeyEventResult.ignored;
     }
-    final selected = _visibleEntries.where(
+    final key = event.logicalKey;
+    final keys = HardwareKeyboard.instance;
+    final ctrl = keys.isControlPressed;
+    final shift = keys.isShiftPressed;
+    final handled = keys.isAltPressed
+        ? _handleAltKey(key)
+        : _moveWithKey(key, shift: shift, add: ctrl) ||
+              (event is KeyDownEvent &&
+                  (ctrl
+                      ? _handleCtrlKey(key, shift: shift)
+                      : _handleKey(key, shift: shift))) ||
+              (!ctrl && _typeAhead(event.character));
+    return handled ? KeyEventResult.handled : KeyEventResult.ignored;
+  }
+
+  bool _handleAltKey(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _goBack();
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      _goForward();
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      _goUp();
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  bool _handleCtrlKey(LogicalKeyboardKey key, {required bool shift}) {
+    final visible = _visibleEntries;
+    if (key == LogicalKeyboardKey.keyA) {
+      _selectionChanged(
+        () => shift
+            ? _selectedPath = null
+            : _setSelection({for (final entry in visible) entry.entity.path}),
+      );
+    } else if (key == LogicalKeyboardKey.keyI) {
+      _selectionChanged(
+        () => _setSelection({
+          for (final entry in visible)
+            if (!_selection.contains(entry.entity.path)) entry.entity.path,
+        }),
+      );
+    } else if (key == LogicalKeyboardKey.keyC) {
+      _toClipboard(FileTransfer.copy);
+    } else if (key == LogicalKeyboardKey.keyX) {
+      _toClipboard(FileTransfer.move);
+    } else if (key == LogicalKeyboardKey.keyV) {
+      _paste();
+    } else if (key == LogicalKeyboardKey.keyN && shift) {
+      _createFolder();
+    } else if (key == LogicalKeyboardKey.keyR) {
+      _reload();
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  bool _handleKey(LogicalKeyboardKey key, {required bool shift}) {
+    final primary = _visibleEntries
+        .where((entry) => entry.entity.path == _selectedPath)
+        .firstOrNull;
+    if (key == LogicalKeyboardKey.space) return _togglePreview(primary);
+    if (key == LogicalKeyboardKey.escape) {
+      if (_selection.isEmpty) return false;
+      _selectionChanged(() => _selectedPath = null);
+    } else if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      if (primary == null) return false;
+      _openEntry(primary);
+    } else if (key == LogicalKeyboardKey.backspace) {
+      _goBack();
+    } else if (key == LogicalKeyboardKey.f1) {
+      ShortcutsHelpDialog.show(context);
+    } else if (key == LogicalKeyboardKey.f2) {
+      if (primary == null) return false;
+      _renameWithKeyboard(primary);
+    } else if (key == LogicalKeyboardKey.f5) {
+      _reload();
+    } else if (key == LogicalKeyboardKey.delete) {
+      _deleteSelection(permanent: shift);
+    } else {
+      return false;
+    }
+    return true;
+  }
+
+  /// Flèches, Début/Fin et Page préc./suiv. ; Maj étend la sélection.
+  bool _moveWithKey(
+    LogicalKeyboardKey key, {
+    required bool shift,
+    required bool add,
+  }) {
+    final visible = _visibleEntries;
+    if (visible.isEmpty) return false;
+    final layout = EntriesLayout(
+      grid: _gridView,
+      appearance: AppearanceScope.of(context),
+      viewport: _viewport,
+      count: visible.length,
+    );
+    final columns = layout.columns;
+    final page = layout.rowsPerPage * columns;
+    final current = visible.indexWhere(
       (entry) => entry.entity.path == _selectedPath,
     );
-    if (selected.isEmpty ||
-        (!VideoPreviewPanel.supports(selected.first.name) &&
-            !ImagePreviewPanel.supports(selected.first.name) &&
-            !TextPreviewPanel.supports(selected.first.name))) {
-      return KeyEventResult.ignored;
+    final int target;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      target = current < 0 ? 0 : current + columns;
+    } else if (key == LogicalKeyboardKey.arrowUp) {
+      target = current < 0 ? 0 : current - columns;
+    } else if (_gridView && key == LogicalKeyboardKey.arrowRight) {
+      target = current + 1;
+    } else if (_gridView && key == LogicalKeyboardKey.arrowLeft) {
+      target = current < 0 ? 0 : current - 1;
+    } else if (key == LogicalKeyboardKey.home) {
+      target = 0;
+    } else if (key == LogicalKeyboardKey.end) {
+      target = visible.length - 1;
+    } else if (key == LogicalKeyboardKey.pageDown) {
+      target = math.max(current, 0) + page;
+    } else if (key == LogicalKeyboardKey.pageUp) {
+      target = current - page;
+    } else {
+      return false;
+    }
+    // Comme l'Explorateur : une ligne incomplète de la grille ne bloque pas.
+    final index = target.clamp(0, visible.length - 1);
+    _moveTo(visible[index].entity.path, extend: shift, add: add);
+    return true;
+  }
+
+  void _moveTo(String path, {bool extend = false, bool add = false}) {
+    _selectionChanged(() {
+      _collapseTo = null;
+      if (extend) {
+        _selectRange(path, add: add);
+      } else {
+        _selectedPath = path;
+      }
+      _revealToken++;
+    });
+  }
+
+  /// Saisie rapide : va au prochain élément commençant par les lettres tapées.
+  bool _typeAhead(String? character) {
+    if (character == null ||
+        character.length != 1 ||
+        character.codeUnitAt(0) < 0x21 ||
+        character.codeUnitAt(0) == 0x7F) {
+      return false;
+    }
+    final visible = _visibleEntries;
+    if (visible.isEmpty) return false;
+    final now = DateTime.now();
+    if (now.difference(_typedAt) > const Duration(seconds: 1)) _typed = '';
+    _typedAt = now;
+    _typed += character.toLowerCase();
+    final repeated = _typed.split('').every((c) => c == _typed[0]);
+    final current = visible.indexWhere(
+      (entry) => entry.entity.path == _selectedPath,
+    );
+    ExplorerEntry? find(String prefix, int from) {
+      for (var i = 0; i < visible.length; i++) {
+        final entry = visible[(from + i) % visible.length];
+        if (entry.name.toLowerCase().startsWith(prefix)) return entry;
+      }
+      return null;
+    }
+
+    final start = math.max(current, 0);
+    final match =
+        (_typed.length > 1 ? find(_typed, start) : null) ??
+        (repeated ? find(_typed[0], current + 1) : null);
+    if (match != null) _moveTo(match.entity.path);
+    return true;
+  }
+
+  bool _togglePreview(ExplorerEntry? selected) {
+    if (selected == null ||
+        (!VideoPreviewPanel.supports(selected.name) &&
+            !ImagePreviewPanel.supports(selected.name) &&
+            !TextPreviewPanel.supports(selected.name))) {
+      return false;
     }
     setState(() {
       if (_previewExpanded) {
@@ -603,13 +933,187 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         _previewExpanded = false;
       }
     });
-    return KeyEventResult.handled;
+    return true;
+  }
+
+  void _toClipboard(FileTransfer kind) {
+    final paths = _snapshot.selection;
+    if (paths.isEmpty) return;
+    FileClipboard.set(kind, paths);
+    final count = paths.length;
+    final plural = count == 1 ? '' : 's';
+    _showMessage(
+      kind == FileTransfer.copy
+          ? '$count élément$plural copié$plural'
+          : '$count élément$plural coupé$plural',
+    );
+  }
+
+  Future<void> _paste() async {
+    final content = FileClipboard.content.value;
+    if (content == null) return;
+    final destination = _currentPath;
+    final move = content.kind == FileTransfer.move;
+    final sources = [
+      for (final path in content.paths)
+        if (FileSystemEntity.typeSync(path) != FileSystemEntityType.notFound &&
+            !(move && _samePath(FileOperations.parent(path), destination)))
+          path,
+    ];
+    if (sources.isEmpty) {
+      if (content.paths.every(
+        (path) =>
+            FileSystemEntity.typeSync(path) == FileSystemEntityType.notFound,
+      )) {
+        FileClipboard.clear();
+        _showMessage('Les éléments du presse-papiers n’existent plus.');
+      }
+      return;
+    }
+    final separator = Platform.pathSeparator;
+    if (sources.any(
+      (source) =>
+          _samePath(source, destination) ||
+          (Platform.isWindows ? destination.toLowerCase() : destination)
+              .startsWith(
+                '${Platform.isWindows ? source.toLowerCase() : source}'
+                '$separator',
+              ),
+    )) {
+      _showMessage('Impossible de coller un dossier dans lui-même.');
+      return;
+    }
+    if (move) FileClipboard.clear();
+    final job = FileOperations.start(content.kind, sources, destination);
+    _ownJobs.add(job);
+    Set<String>? created;
+    try {
+      created = (await job.result).toSet();
+    } on FileOperationCancelled {
+      // Le panneau de transferts affiche déjà l'annulation.
+    } on Object catch (error) {
+      if (mounted) _showMessage('Collage impossible : $error');
+    }
+    if (mounted && _samePath(_currentPath, destination)) {
+      await _reload(select: created);
+    }
+  }
+
+  Future<void> _deleteSelection({required bool permanent}) async {
+    final paths = _snapshot.selection;
+    if (paths.isEmpty || _contextMenuOpen) return;
+    if (permanent || !Platform.isWindows) {
+      final count = paths.length;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Supprimer définitivement ?'),
+          content: Text(
+            count == 1
+                ? '« ${FileOperations.name(paths.first)} » sera supprimé '
+                      'sans passer par la corbeille.'
+                : '$count éléments seront supprimés sans passer par la '
+                      'corbeille.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Supprimer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    // Après suppression, l'élément suivant devient la sélection.
+    final visible = _visibleEntries;
+    final last = visible.lastIndexWhere(
+      (entry) => _selection.contains(entry.entity.path),
+    );
+    final next = visible
+        .skip(last + 1)
+        .followedBy(visible.take(last).toList().reversed)
+        .where((entry) => !_selection.contains(entry.entity.path))
+        .firstOrNull;
+
+    _contextMenuOpen = true;
+    try {
+      for (final path in paths) {
+        if (permanent || !Platform.isWindows) {
+          await FileSystemEntity.isDirectory(path)
+              ? await Directory(path).delete(recursive: true)
+              : await File(path).delete();
+        } else {
+          await _recycle(path);
+        }
+      }
+    } on FileSystemException catch (error) {
+      if (mounted) _showMessage('Suppression impossible : ${error.message}');
+    } on PlatformException catch (error) {
+      if (mounted) {
+        _showMessage('Suppression impossible : ${error.message ?? error.code}');
+      }
+    } finally {
+      _contextMenuOpen = false;
+    }
+    if (mounted) await _reload(select: {?next?.entity.path});
+  }
+
+  /// Envoie [path] à la corbeille via la commande « Supprimer » du Shell.
+  Future<void> _recycle(String path) async {
+    final menu = await WindowsContextMenu.open(path);
+    try {
+      final delete = menu.items
+          .where((item) => item.verb.toLowerCase() == 'delete')
+          .firstOrNull;
+      if (delete == null) {
+        throw PlatformException(
+          code: 'no_delete',
+          message: 'Windows ne propose pas la suppression de cet élément.',
+        );
+      }
+      await menu.invoke(delete.id);
+    } finally {
+      await menu.close();
+    }
+  }
+
+  Future<void> _renameWithKeyboard(ExplorerEntry entry) async {
+    final newName = await _askNewName(entry);
+    if (newName == null || !mounted) return;
+    final target = FileOperations.join(
+      FileOperations.parent(entry.entity.path),
+      newName,
+    );
+    if (!_samePath(target, entry.entity.path) &&
+        FileSystemEntity.typeSync(target) != FileSystemEntityType.notFound) {
+      _showMessage('Un élément nommé « $newName » existe déjà.');
+      return;
+    }
+    try {
+      await entry.entity.rename(target);
+    } on FileSystemException catch (error) {
+      if (mounted) _showMessage('Impossible de renommer : ${error.message}');
+      return;
+    }
+    if (mounted) await _reload(select: {target});
   }
 
   Future<void> _showContextMenu(ExplorerEntry entry, Offset position) async {
     if (_contextMenuOpen) return;
     _contextMenuOpen = true;
-    setState(() => _selectedPath = entry.entity.path);
+    _selectionChanged(() {
+      if (_selection.contains(entry.entity.path)) {
+        _primary = entry.entity.path;
+      } else {
+        _selectedPath = entry.entity.path;
+      }
+    });
     WindowsContextMenu? menu;
     try {
       menu = await WindowsContextMenu.open(entry.entity.path);
@@ -667,7 +1171,19 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     int commandId,
   ) async {
     // The Shell rename verb requires an Explorer view; SurfFile owns the dialog.
+    final newName = await _askNewName(entry);
+    if (newName == null || !mounted) return;
+    await menu.rename(commandId, newName);
+  }
+
+  /// Demande un nouveau nom valide ; `null` si annulé ou inchangé.
+  Future<String?> _askNewName(ExplorerEntry entry) async {
     final controller = TextEditingController(text: entry.name);
+    final dot = entry.name.lastIndexOf('.');
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: entry.isDirectory || dot <= 0 ? entry.name.length : dot,
+    );
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -691,7 +1207,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       ),
     );
     controller.dispose();
-    if (name == null || !mounted) return;
+    if (name == null || !mounted) return null;
     final newName = name.trim();
     if (newName.isEmpty ||
         newName == '.' ||
@@ -699,10 +1215,9 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         RegExp(r'[<>:"/\\|?*\x00-\x1F]').hasMatch(newName) ||
         newName.endsWith('.')) {
       _showMessage('Ce nom de fichier ou de dossier n’est pas valide.');
-      return;
+      return null;
     }
-    if (newName == entry.name) return;
-    await menu.rename(commandId, newName);
+    return newName == entry.name ? null : newName;
   }
 
   Future<void> _createFolder() async {
@@ -754,6 +1269,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
 
   @override
   void dispose() {
+    _jobsSubscription?.cancel();
     _explorerFocusNode.dispose();
     super.dispose();
   }
@@ -996,11 +1512,19 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                                         entries: entries,
                                         gridView: _gridView,
                                         selectedPath: _selectedPath,
-                                        onSelected: (path) {
+                                        selectedPaths: _selection,
+                                        onSelected: _pointerSelect,
+                                        onTapped: _tapSelect,
+                                        onSelectionChanged: (paths) {
                                           _explorerFocusNode.requestFocus();
-                                          setState(() => _selectedPath = path);
-                                          widget.onSelectionChanged?.call();
+                                          _selectionChanged(() {
+                                            _collapseTo = null;
+                                            _setSelection(paths);
+                                          });
                                         },
+                                        revealToken: _revealToken,
+                                        onViewportChanged: (size) =>
+                                            _viewport = size,
                                         onOpen: _openEntry,
                                         onOpenWithBounds: (entry, card, icon) =>
                                             _loadDirectory(

@@ -189,7 +189,14 @@ class FileJobs {
     ];
   }
 
+  static final _ended = StreamController<FileJob>.broadcast();
+
+  /// Opérations terminées (succès, échec ou annulation), pour rafraîchir les
+  /// vues concernées.
+  static Stream<FileJob> get ended => _ended.stream;
+
   static void _finished(FileJob job) {
+    _ended.add(job);
     if (job.status == FileJobStatus.failed) return;
     Timer(keepFinished, () => dismiss(job));
   }
@@ -537,4 +544,18 @@ class _Tracker {
       ),
     );
   }
+}
+
+/// Presse-papiers de fichiers interne (Ctrl+C / Ctrl+X / Ctrl+V), partagé par
+/// les volets.
+class FileClipboard {
+  const FileClipboard._();
+
+  static final content =
+      ValueNotifier<({FileTransfer kind, List<String> paths})?>(null);
+
+  static void set(FileTransfer kind, List<String> paths) => content.value =
+      paths.isEmpty ? null : (kind: kind, paths: List.unmodifiable(paths));
+
+  static void clear() => content.value = null;
 }
