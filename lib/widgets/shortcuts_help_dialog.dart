@@ -36,6 +36,8 @@ class ShortcutsHelpDialog extends StatelessWidget {
         ('Alt + ↑', 'Dossier parent'),
         ('F5 / Ctrl + R', 'Actualiser'),
         ('Espace', 'Aperçu'),
+        ('Ctrl + D', 'Ajouter / retirer le dossier des favoris'),
+        ('Ctrl + Maj + F', 'Afficher / masquer la barre de filtres'),
       ],
     ),
     (

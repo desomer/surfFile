@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../services/favorites.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
@@ -56,88 +57,131 @@ class ExplorerBreadcrumbs extends StatelessWidget {
         Theme.of(context).colorScheme.outlineVariant,
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              Tooltip(
-                message: path,
-                child: Icon(
-                  Icons.computer_rounded,
-                  size: 20,
-                  color: foreground,
-                ),
-              ),
-              for (final (index, crumb) in crumbs.indexed) ...[
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    size: 18,
-                    color: foreground.withValues(alpha: .55),
-                  ),
-                ),
-                InkWell(
-                  onTap: index == crumbs.length - 1
-                      ? null
-                      : () => onNavigate(crumb.path),
-                  borderRadius: BorderRadius.circular(9),
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      color: index == crumbs.length - 1
-                          ? (style.foreground ?? colors.primary).withValues(
-                              alpha: .10,
-                            )
-                          : null,
-                      borderRadius: BorderRadius.circular(9),
+        padding: const EdgeInsets.fromLTRB(24, 10, 12, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    Tooltip(
+                      message: path,
+                      child: Icon(
+                        Icons.computer_rounded,
+                        size: 20,
+                        color: foreground,
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 9,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (index == crumbs.length - 1) ...[
-                          Icon(
-                            Icons.folder_open_rounded,
-                            size: 16,
-                            color: style.foreground ?? colors.primary,
+                    for (final (index, crumb) in crumbs.indexed) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: foreground.withValues(alpha: .55),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: index == crumbs.length - 1
+                            ? null
+                            : () => onNavigate(crumb.path),
+                        borderRadius: BorderRadius.circular(9),
+                        child: Ink(
+                          decoration: BoxDecoration(
+                            color: index == crumbs.length - 1
+                                ? (style.foreground ?? colors.primary)
+                                      .withValues(alpha: .10)
+                                : null,
+                            borderRadius: BorderRadius.circular(9),
                           ),
-                          const SizedBox(width: 7),
-                        ],
-                        Text(
-                          crumb.label,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color:
-                                style.foreground ??
-                                explorerColor(
-                                  context,
-                                  index == crumbs.length - 1
-                                      ? const Color(0xFF394154)
-                                      : const Color(0xFF7D8494),
-                                  index == crumbs.length - 1
-                                      ? Theme.of(context).colorScheme.onSurface
-                                      : Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 9,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (index == crumbs.length - 1) ...[
+                                Icon(
+                                  Icons.folder_open_rounded,
+                                  size: 16,
+                                  color: style.foreground ?? colors.primary,
                                 ),
-                            fontWeight: index == crumbs.length - 1
-                                ? FontWeight.w600
-                                : FontWeight.normal,
+                                const SizedBox(width: 7),
+                              ],
+                              Text(
+                                crumb.label,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color:
+                                      style.foreground ??
+                                      explorerColor(
+                                        context,
+                                        index == crumbs.length - 1
+                                            ? const Color(0xFF394154)
+                                            : const Color(0xFF7D8494),
+                                        index == crumbs.length - 1
+                                            ? Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurface
+                                            : Theme.of(context)
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                      ),
+                                  fontWeight: index == crumbs.length - 1
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                    ],
+                  ],
                 ),
-              ],
-            ],
-          ),
+              ),
+            ),
+            FavoriteStar(path: path, color: foreground),
+          ],
         ),
       ),
     );
   }
+}
+
+/// Étoile qui ajoute ou retire le dossier des favoris (Ctrl+D).
+class FavoriteStar extends StatelessWidget {
+  const FavoriteStar({required this.path, this.color, super.key});
+
+  final String path;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<List<String>>(
+    valueListenable: Favorites.instance,
+    builder: (context, _, _) {
+      final favorite = Favorites.instance.contains(path);
+      return IconButton(
+        key: const ValueKey('favorite-star'),
+        tooltip: favorite
+            ? 'Retirer des favoris (Ctrl+D)'
+            : 'Ajouter aux favoris (Ctrl+D)',
+        isSelected: favorite,
+        onPressed: () => Favorites.instance.toggle(path),
+        icon: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          transitionBuilder: (child, animation) =>
+              ScaleTransition(scale: animation, child: child),
+          child: Icon(
+            favorite ? Icons.star_rounded : Icons.star_outline_rounded,
+            key: ValueKey(favorite),
+            size: 22,
+            color: favorite ? const Color(0xFFFFB300) : color,
+          ),
+        ),
+      );
+    },
+  );
 }

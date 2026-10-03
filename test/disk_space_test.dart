@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/services/disk_space.dart';
+import 'package:surf_file/widgets/disk_gauge.dart';
 import 'package:surf_file/widgets/disk_space_panel.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
 
@@ -52,12 +53,12 @@ void main() {
     expect(find.text('75 %'), findsOneWidget);
     expect(find.text('25.0 Gio libres'), findsOneWidget);
     expect(find.text('Indisponible'), findsOneWidget);
-    final circles = tester
-        .widgetList<CircularProgressIndicator>(
-            find.byType(CircularProgressIndicator))
-        .toList();
-    expect(circles.map((circle) => circle.value), [.75, .95, 0, 0, 1]);
-    expect(circles[1].color,
+    final gauges =
+        tester.widgetList<DiskGauge>(find.byType(DiskGauge)).toList();
+    expect(gauges.map((gauge) => gauge.value), [.75, .95, 0, null, 1]);
+    expect(gauges.map((gauge) => gauge.alert),
+        [false, true, false, false, true]);
+    expect(gauges[1].alertColor,
         Theme.of(tester.element(find.text('D:\\'))).colorScheme.error);
     final c = tester.getCenter(find.text('C:\\'));
     final d = tester.getCenter(find.text('D:\\'));

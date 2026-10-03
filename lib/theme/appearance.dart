@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'container_fill.dart';
 import 'container_style.dart';
+import 'disk_gauge_style.dart';
 import 'neon_style.dart';
 import 'folder_transition.dart';
 
@@ -27,8 +28,13 @@ class Appearance {
     this.backgroundStyle = const ContainerStyle(),
     this.sidebarStyle = const ContainerStyle(),
     this.pathBarStyle = const ContainerStyle(borderWidth: 1),
+    this.diskPanelStyle = const ContainerStyle(),
+    this.diskTileStyle = defaultDiskTileStyle,
+    this.diskGaugeStyle = const DiskGaugeStyle(),
+    this.selectedDiskTileStyle,
     this.selectedCardStyle,
     this.selectedFolderStyle,
+    this.folderStyle,
     this.cardHeight = 142,
     this.cardWidth = 180,
     this.rowHeight = 48,
@@ -47,6 +53,11 @@ class Appearance {
     padding: 12,
   );
 
+  static const defaultDiskTileStyle = ContainerStyle(
+    radius: 12,
+    borderWidth: 1,
+  );
+
   final ThemeMode mode;
   final Color accent;
   final double backgroundOpacity;
@@ -58,8 +69,17 @@ class Appearance {
   final ContainerStyle backgroundStyle;
   final ContainerStyle sidebarStyle;
   final ContainerStyle pathBarStyle;
+  final ContainerStyle diskPanelStyle;
+  final ContainerStyle diskTileStyle;
+  final DiskGaugeStyle diskGaugeStyle;
+
+  /// `null` : forme des tuiles de disque, couleurs de sélection du thème.
+  final ContainerStyle? selectedDiskTileStyle;
   final ContainerStyle? selectedCardStyle;
   final ContainerStyle? selectedFolderStyle;
+
+  /// Dossiers non sélectionnés du panneau gauche ; `null` : style par défaut.
+  final ContainerStyle? folderStyle;
   final double cardHeight;
   final double cardWidth;
   final double rowHeight;
@@ -81,10 +101,17 @@ class Appearance {
     ContainerStyle? backgroundStyle,
     ContainerStyle? sidebarStyle,
     ContainerStyle? pathBarStyle,
+    ContainerStyle? diskPanelStyle,
+    ContainerStyle? diskTileStyle,
+    DiskGaugeStyle? diskGaugeStyle,
+    ContainerStyle? selectedDiskTileStyle,
+    bool resetSelectedDiskTileStyle = false,
     ContainerStyle? selectedCardStyle,
     ContainerStyle? selectedFolderStyle,
     bool resetSelectedCardStyle = false,
     bool resetSelectedFolderStyle = false,
+    ContainerStyle? folderStyle,
+    bool resetFolderStyle = false,
     double? cardHeight,
     double? cardWidth,
     double? rowHeight,
@@ -105,9 +132,16 @@ class Appearance {
     backgroundStyle: backgroundStyle ?? this.backgroundStyle,
     sidebarStyle: sidebarStyle ?? this.sidebarStyle,
     pathBarStyle: pathBarStyle ?? this.pathBarStyle,
+    diskPanelStyle: diskPanelStyle ?? this.diskPanelStyle,
+    diskTileStyle: diskTileStyle ?? this.diskTileStyle,
+    diskGaugeStyle: diskGaugeStyle ?? this.diskGaugeStyle,
+    selectedDiskTileStyle: resetSelectedDiskTileStyle
+        ? null
+        : selectedDiskTileStyle ?? this.selectedDiskTileStyle,
     selectedCardStyle: resetSelectedCardStyle
         ? null
         : selectedCardStyle ?? this.selectedCardStyle,
+    folderStyle: resetFolderStyle ? null : folderStyle ?? this.folderStyle,
     selectedFolderStyle: resetSelectedFolderStyle
         ? null
         : selectedFolderStyle ?? this.selectedFolderStyle,
@@ -188,6 +222,28 @@ class Appearance {
                 margin: cardStyle.margin,
               ))
           .copyWith(neon: selectedCardStyle?.neon ?? cardNeon);
+
+  ContainerStyle get effectiveSelectedDiskTileStyle =>
+      (selectedDiskTileStyle ??
+              ContainerStyle(
+                radius: diskTileStyle.radius,
+                borderWidth: diskTileStyle.borderWidth,
+                elevation: diskTileStyle.elevation,
+                shadowOpacity: diskTileStyle.shadowOpacity,
+                padding: diskTileStyle.padding,
+                margin: diskTileStyle.margin,
+              ))
+          .copyWith(
+            neon:
+                selectedDiskTileStyle?.neon ??
+                diskTileStyle.neon ??
+                const NeonStyle(),
+          );
+
+  ContainerStyle get effectiveFolderStyle =>
+      (folderStyle ??
+              ContainerStyle(radius: 9, shadowOpacity: cardStyle.shadowOpacity))
+          .copyWith(neon: folderStyle?.neon ?? const NeonStyle());
 
   ContainerStyle get effectiveSelectedFolderStyle =>
       (selectedFolderStyle ??

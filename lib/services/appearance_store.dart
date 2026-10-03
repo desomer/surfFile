@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
+import '../theme/disk_gauge_style.dart';
 import '../theme/folder_transition.dart';
 
 class AppearanceStore {
@@ -56,8 +57,13 @@ class AppearanceStore {
     'backgroundStyle': a.backgroundStyle.toJson(),
     'sidebarStyle': a.sidebarStyle.toJson(),
     'pathBarStyle': a.pathBarStyle.toJson(),
+    'diskPanelStyle': a.diskPanelStyle.toJson(),
+    'diskTileStyle': a.diskTileStyle.toJson(),
+    'diskGaugeStyle': a.diskGaugeStyle.toJson(),
+    'selectedDiskTileStyle': a.selectedDiskTileStyle?.toJson(),
     'selectedCardStyle': a.selectedCardStyle?.toJson(),
     'selectedFolderStyle': a.selectedFolderStyle?.toJson(),
+    'folderStyle': a.folderStyle?.toJson(),
     'cardHeight': a.cardHeight,
     'cardWidth': a.cardWidth,
     'rowHeight': a.rowHeight,
@@ -137,9 +143,21 @@ class AppearanceStore {
         json['pathBarStyle'],
         fallback: const ContainerStyle(borderWidth: 1),
       ),
+      diskPanelStyle: ContainerStyle.fromJson(json['diskPanelStyle']),
+      diskTileStyle: ContainerStyle.fromJson(
+        json['diskTileStyle'],
+        fallback: Appearance.defaultDiskTileStyle,
+      ),
+      diskGaugeStyle: DiskGaugeStyle.fromJson(json['diskGaugeStyle']),
+      selectedDiskTileStyle: json['selectedDiskTileStyle'] == null
+          ? null
+          : ContainerStyle.fromJson(json['selectedDiskTileStyle']),
       selectedCardStyle: json['selectedCardStyle'] == null
           ? null
           : ContainerStyle.fromJson(json['selectedCardStyle']),
+      folderStyle: json['folderStyle'] == null
+          ? null
+          : ContainerStyle.fromJson(json['folderStyle']),
       selectedFolderStyle: json['selectedFolderStyle'] == null
           ? null
           : ContainerStyle.fromJson(json['selectedFolderStyle']),

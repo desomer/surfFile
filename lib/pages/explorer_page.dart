@@ -5,13 +5,14 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
+import '../models/explorer_filter.dart';
 import '../models/explorer_entry.dart';
 import '../models/explorer_location.dart';
+import '../services/favorites.dart';
 import '../services/directory_scanner.dart';
 import '../services/file_operations.dart';
 import '../services/personal_folders.dart';
 import '../services/windows_context_menu.dart';
-import '../theme/explorer_colors.dart';
 import '../widgets/explorer_breadcrumbs.dart';
 import '../widgets/explorer_context_menu.dart';
 import '../widgets/explorer_empty_state.dart';
@@ -20,9 +21,10 @@ import '../widgets/explorer_entries_view.dart';
 import '../widgets/explorer_error_state.dart';
 import '../widgets/explorer_sidebar.dart';
 import '../widgets/explorer_skeleton.dart';
+import '../widgets/explorer_filter_bar.dart';
 import '../widgets/explorer_sort_header.dart';
 import '../widgets/explorer_toolbar.dart';
-import '../widgets/explorer_view_toggle.dart';
+import '../widgets/explorer_view_mode_bar.dart';
 import '../widgets/image_preview_panel.dart';
 import '../widgets/text_preview_panel.dart';
 import '../widgets/video_preview_panel.dart';
@@ -212,9 +214,14 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   final List<String> _forwardHistory = [];
   _HistoryDirection? _failedDirection;
   List<ExplorerEntry> _entries = [];
-  ((List<ExplorerEntry>, String, ExplorerSort, bool), List<ExplorerEntry>)?
+  (
+    (List<ExplorerEntry>, String, ExplorerSort, bool, ExplorerFilter),
+    List<ExplorerEntry>,
+  )?
   _visibleCache;
   String _query = '';
+  ExplorerFilter _filter = const ExplorerFilter();
+  bool _filterOpen = false;
   String? _primary;
   Set<String> _selection = const {};
 
@@ -467,21 +474,33 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   /// Filtré et trié une seule fois par combinaison liste/recherche/tri, au
   /// lieu de l'être à chaque reconstruction (survol, animation…).
   List<ExplorerEntry> get _visibleEntries {
-    final key = (_entries, _query.trim().toLowerCase(), _sort, _ascending);
+    final key = (
+      _entries,
+      _query.trim().toLowerCase(),
+      _sort,
+      _ascending,
+      _filter,
+    );
     final cached = _visibleCache;
     if (cached != null &&
         identical(cached.$1.$1, key.$1) &&
         cached.$1.$2 == key.$2 &&
         cached.$1.$3 == key.$3 &&
-        cached.$1.$4 == key.$4) {
+        cached.$1.$4 == key.$4 &&
+        cached.$1.$5 == key.$5) {
       return cached.$2;
     }
+    final matches = _filter.matcher();
     final query = key.$2;
     final lower = {
       for (final entry in _entries) entry: entry.name.toLowerCase(),
     };
     final entries = _entries
-        .where((entry) => query.isEmpty || lower[entry]!.contains(query))
+        .where(
+          (entry) =>
+              (query.isEmpty || lower[entry]!.contains(query)) &&
+              matches(entry),
+        )
         .toList();
     entries.sort((a, b) {
       if (a.isDirectory != b.isDirectory) {
@@ -789,6 +808,10 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       _createFolder();
     } else if (key == LogicalKeyboardKey.keyR) {
       _reload();
+    } else if (key == LogicalKeyboardKey.keyF && shift) {
+      setState(() => _filterOpen = !_filterOpen);
+    } else if (key == LogicalKeyboardKey.keyD) {
+      Favorites.instance.toggle(_currentPath);
     } else {
       return false;
     }
@@ -1403,49 +1426,31 @@ class _ExplorerPaneState extends State<ExplorerPane> {
             onCreateFolder: _createFolder,
           ),
           ExplorerBreadcrumbs(path: _currentPath, onNavigate: _loadDirectory),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(30, 23, 30, 14),
-            child: Row(
-              children: [
-                if (AppearanceScope.of(context).folderTransition ==
-                    FolderTransition.heroIcon) ...[
-                  Icon(
-                    Icons.folder_rounded,
-                    key: _titleIconKey,
-                    size: 28,
-                    color: AppearanceScope.of(context).accent,
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                Expanded(
-                  child: Text(
-                    _currentFolderName,
-                    style: const TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-                Text(
-                  _pendingEntries
-                      ? '…'
-                      : '${entries.length} élément${entries.length == 1 ? '' : 's'}',
-                  style: TextStyle(
-                    color: explorerColor(
-                      context,
-                      const Color(0xFF82899A),
-                      Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                ExplorerViewToggle(
-                  gridView: _gridView,
-                  onChanged: (gridView) => setState(() => _gridView = gridView),
-                ),
-              ],
-            ),
+          ExplorerViewModeBar(
+            title: _currentFolderName,
+            itemCount: entries.length,
+            pending: _pendingEntries,
+            gridView: _gridView,
+            onGridViewChanged: (gridView) =>
+                setState(() => _gridView = gridView),
+            titleIconKey: _titleIconKey,
+            filterCount: _filter.activeCount,
+            filterOpen: _filterOpen,
+            onToggleFilter: () => setState(() => _filterOpen = !_filterOpen),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            alignment: Alignment.topCenter,
+            child: _filterOpen
+                ? ExplorerFilterBar(
+                    filter: _filter,
+                    shown: entries.length,
+                    total: _entries.length,
+                    onChanged: (filter) => setState(() => _filter = filter),
+                    onClose: () => setState(() => _filterOpen = false),
+                  )
+                : const SizedBox(width: double.infinity),
           ),
           ExplorerSortHeader(
             sort: _sort,
@@ -1503,7 +1508,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                                   )
                                 : entries.isEmpty
                                 ? ExplorerEmptyState(
-                                    hasQuery: _query.isNotEmpty,
+                                    hasQuery:
+                                        _query.isNotEmpty || _filter.isActive,
                                   )
                                 : LayoutBuilder(
                                     builder: (context, constraints) {

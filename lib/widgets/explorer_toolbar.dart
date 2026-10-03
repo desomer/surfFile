@@ -79,6 +79,7 @@ class ExplorerToolbar extends StatelessWidget {
     );
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+      //padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 620;

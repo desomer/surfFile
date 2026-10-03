@@ -3,11 +3,18 @@ import 'package:material_ui/material_ui.dart';
 
 import '../services/disk_space.dart';
 import '../theme/appearance.dart';
+import '../theme/appearance_slot.dart';
+import 'disk_gauge.dart';
+import 'disk_gauge_style_editor.dart';
+import 'super_container.dart';
 
 class DiskSpacePanel extends StatefulWidget {
-  const DiskSpacePanel({required this.onNavigate, super.key});
+  const DiskSpacePanel({required this.onNavigate, this.currentPath, super.key});
 
   final ValueChanged<String> onNavigate;
+
+  /// Dossier affiché : le disque qui le contient est mis en évidence.
+  final String? currentPath;
 
   @override
   State<DiskSpacePanel> createState() => _DiskSpacePanelState();
@@ -18,6 +25,9 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
   List<DiskSpace>? _disks;
   String? _error;
   bool _loading = false;
+
+  /// Incrémenté à chaque lecture pour rejouer le remplissage des jauges.
+  int _revision = 0;
 
   @override
   void initState() {
@@ -40,6 +50,7 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
       setState(() {
         _disks = disks;
         _error = null;
+        _revision++;
       });
     } on PlatformException catch (error) {
       _failed(error);
@@ -61,6 +72,24 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
     }
   }
 
+  /// Disque contenant [DiskSpacePanel.currentPath] (préfixe le plus long).
+  String? get _selectedPath {
+    final current = widget.currentPath?.toLowerCase();
+    if (current == null || _disks == null) return null;
+    String? best;
+    for (final disk in _disks!) {
+      final root = disk.path.toLowerCase();
+      final prefix = root.endsWith('\\') ? root : '$root\\';
+      if ((current == root ||
+              current.startsWith(prefix) ||
+              '$current\\' == prefix) &&
+          (best == null || disk.path.length > best.length)) {
+        best = disk.path;
+      }
+    }
+    return best;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -70,65 +99,106 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final foreground = AppearanceScope.of(context).sidebarStyle.foreground ??
+    final appearance = AppearanceScope.of(context);
+    final foreground =
+        appearance.diskPanelStyle.foreground ??
+        appearance.sidebarStyle.foreground ??
         colors.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(top: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(children: [
-            Expanded(
-              child: Text('DISQUES',
-                  style: TextStyle(
+      child: SuperContainer(
+        key: const ValueKey('disk-panel-surface'),
+        slot: AppearanceSlot.diskPanel,
+        fallbackColor: Colors.transparent,
+        borderColor: foreground.withValues(alpha: .12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'DISQUES',
+                    style: TextStyle(
                       color: foreground,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
-                      letterSpacing: 1.1)),
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Actualiser les disques',
+                  onPressed: _loading ? null : _load,
+                  icon: Icon(
+                    Icons.refresh_rounded,
+                    size: 16,
+                    color: foreground,
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
             ),
-            IconButton(
-              tooltip: 'Actualiser les disques',
-              onPressed: _loading ? null : _load,
-              icon: Icon(Icons.refresh_rounded, size: 16, color: foreground),
-              visualDensity: VisualDensity.compact,
-            ),
-          ]),
-          if (_error != null)
-            Column(children: [
-              Text(_error!, style: TextStyle(color: foreground, fontSize: 12)),
-              TextButton(onPressed: _load, child: const Text('Réessayer')),
-            ])
-          else if (_disks == null)
-            const Center(child: CircularProgressIndicator())
-          else if (_disks!.isEmpty)
-            Text('Aucun disque disponible.',
-                style: TextStyle(color: foreground, fontSize: 12))
-          else
-            LayoutBuilder(
-                builder: (context, constraints) => Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final disk in _disks!)
-                          SizedBox(
-                            width: (constraints.maxWidth - 8) / 2,
-                            child: _DiskTile(
-                              disk: disk,
-                              onTap: () => widget.onNavigate(disk.path),
-                            ),
+            if (_error != null)
+              Column(
+                children: [
+                  Text(
+                    _error!,
+                    style: TextStyle(color: foreground, fontSize: 12),
+                  ),
+                  TextButton(onPressed: _load, child: const Text('Réessayer')),
+                ],
+              )
+            else if (_disks == null)
+              const Center(child: CircularProgressIndicator())
+            else if (_disks!.isEmpty)
+              Text(
+                'Aucun disque disponible.',
+                style: TextStyle(color: foreground, fontSize: 12),
+              )
+            else
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = appearance.diskGaugeStyle.columns;
+                  final selectedPath = _selectedPath;
+                  return Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final disk in _disks!)
+                        SizedBox(
+                          width:
+                              (constraints.maxWidth - 8 * (columns - 1)) /
+                              columns,
+                          child: _DiskTile(
+                            disk: disk,
+                            revision: _revision,
+                            selected: disk.path == selectedPath,
+                            onTap: () => widget.onNavigate(disk.path),
                           ),
-                      ],
-                    )),
-        ],
+                        ),
+                    ],
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _DiskTile extends StatelessWidget {
-  const _DiskTile({required this.disk, required this.onTap});
+  const _DiskTile({
+    required this.disk,
+    required this.revision,
+    required this.selected,
+    required this.onTap,
+  });
 
   final DiskSpace disk;
+  final int revision;
+  final bool selected;
   final VoidCallback onTap;
 
   String _capacity(int bytes) {
@@ -142,8 +212,18 @@ class _DiskTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final appearance = AppearanceScope.of(context);
+    final style = selected
+        ? appearance.effectiveSelectedDiskTileStyle
+        : appearance.diskTileStyle;
+    final gauge = appearance.diskGaugeStyle;
     final foreground =
-        AppearanceScope.of(context).sidebarStyle.foreground ?? colors.onSurface;
+        style.foreground ??
+        (selected
+            ? colors.onPrimaryContainer
+            : appearance.diskPanelStyle.foreground ??
+                  appearance.sidebarStyle.foreground ??
+                  colors.onSurface);
     final used = disk.usedFraction;
     final percentage = used == null ? null : (used * 100).round();
     final description = used == null
@@ -153,55 +233,65 @@ class _DiskTile extends StatelessWidget {
       message: '${disk.path}\n$description',
       child: Semantics(
         label:
-            '${disk.path}, ${percentage == null ? description : '$percentage % occupé, $description'}',
-        child: Material(
-          color: foreground.withValues(alpha: .04),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: foreground.withValues(alpha: .12))),
+            '${disk.path}${selected ? ', sélectionné' : ''}, ${percentage == null ? description : '$percentage % occupé, $description'}',
+        child: SuperContainer(
+          key: ValueKey('disk-tile-${disk.path}'),
+          slot: selected
+              ? AppearanceSlot.selectedDiskTile
+              : AppearanceSlot.diskTile,
+          fallbackColor: selected
+              ? colors.primaryContainer
+              : foreground.withValues(alpha: .04),
+          borderColor: selected
+              ? colors.primary
+              : foreground.withValues(alpha: .12),
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(style.radius),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-              child: Column(children: [
-                SizedBox(
-                  width: 62,
-                  height: 62,
-                  child: Stack(alignment: Alignment.center, children: [
-                    SizedBox.expand(
-                      child: CircularProgressIndicator(
-                        value: used ?? 0,
-                        strokeWidth: 5,
-                        backgroundColor: foreground.withValues(alpha: .12),
-                        color: used != null && used >= .9
-                            ? Colors.red
-                            : colors.primary,
-                      ),
+              child: Column(
+                children: [
+                  SuperContainer(
+                    key: ValueKey('disk-gauge-${disk.path}'),
+                    decorate: false,
+                    label: 'Style de la jauge des disques',
+                    onEdit: () => showDiskGaugeStyleEditor(context),
+                    child: DiskGauge(
+                      value: used,
+                      style: gauge,
+                      revision: revision,
+                      fillColor: gauge.fillColor ?? colors.primary,
+                      alertColor: gauge.alertColor ?? colors.error,
+                      trackColor:
+                          gauge.trackColor ?? foreground.withValues(alpha: .12),
+                      foreground: foreground,
                     ),
-                    Text(percentage == null ? '—' : '$percentage %',
-                        style: TextStyle(
-                            color: foreground,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700)),
-                  ]),
-                ),
-                const SizedBox(height: 10),
-                Text(disk.path,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    disk.path,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                        color: foreground,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(
+                      color: foreground,
+                      fontSize: gauge.nameSize,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
                     used == null
                         ? 'Indisponible'
                         : '${_capacity(disk.freeBytes!)} libres',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: foreground, fontSize: 10)),
-              ]),
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: gauge.captionSize,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

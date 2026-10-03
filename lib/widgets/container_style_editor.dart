@@ -293,30 +293,39 @@ class NeonStyleEditor extends StatelessWidget {
 }
 
 Widget _color(String label, Color color, ValueChanged<Color> onChanged) =>
-    ExpansionTile(
-      title: Text(label),
-      leading: CircleAvatar(backgroundColor: color, radius: 12),
-      children: [
-        ColorPicker(
-          color: color,
-          onColorChanged: onChanged,
-          enableOpacity: true,
-          showColorCode: true,
-          showEditIconButton: true,
-          opacitySubheading: const Text('Opacité'),
-          width: 30,
-          height: 30,
-          wheelDiameter: 180,
-          pickersEnabled: const {
-            ColorPickerType.both: true,
-            ColorPickerType.primary: false,
-            ColorPickerType.accent: false,
-            ColorPickerType.wheel: true,
-          },
-          pickerTypeLabels: const {
-            ColorPickerType.both: 'Palette',
-            ColorPickerType.wheel: 'Roue',
-          },
-        ),
-      ],
-    );
+    styleColorTile(label, color, onChanged);
+
+/// Ligne repliable avec pastille et sélecteur de couleur (palette, roue).
+Widget styleColorTile(
+  String label,
+  Color color,
+  ValueChanged<Color> onChanged, {
+  Key? key,
+}) => ExpansionTile(
+  key: key,
+  title: Text(label),
+  leading: CircleAvatar(backgroundColor: color, radius: 12),
+  children: [
+    ColorPicker(
+      color: color,
+      onColorChanged: onChanged,
+      enableOpacity: true,
+      showColorCode: true,
+      showEditIconButton: true,
+      opacitySubheading: const Text('Opacité'),
+      width: 30,
+      height: 30,
+      wheelDiameter: 180,
+      pickersEnabled: const {
+        ColorPickerType.both: true,
+        ColorPickerType.primary: false,
+        ColorPickerType.accent: false,
+        ColorPickerType.wheel: true,
+      },
+      pickerTypeLabels: const {
+        ColorPickerType.both: 'Palette',
+        ColorPickerType.wheel: 'Roue',
+      },
+    ),
+  ],
+);
