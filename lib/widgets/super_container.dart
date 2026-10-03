@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
@@ -95,7 +97,7 @@ class SuperContainerState extends State<SuperContainer> {
 
   @override
   void dispose() {
-    if (_hovered.contains(this)) _setHovered(false);
+    _removeHoveredSafely();
     _local.dispose();
     super.dispose();
   }
@@ -104,6 +106,7 @@ class SuperContainerState extends State<SuperContainer> {
   static final Set<SuperContainerState> _hovered = {};
   static final ValueNotifier<SuperContainerState?> _hoveredTarget =
       ValueNotifier(null);
+  static bool _hoveredTargetUpdateScheduled = false;
 
   int _cachedDepth = 0;
 
@@ -124,6 +127,19 @@ class SuperContainerState extends State<SuperContainer> {
     } else {
       _hovered.remove(this);
     }
+    _refreshHoveredTarget();
+  }
+
+  void _removeHoveredSafely() {
+    if (!_hovered.remove(this) || _hoveredTargetUpdateScheduled) return;
+    _hoveredTargetUpdateScheduled = true;
+    scheduleMicrotask(() {
+      _hoveredTargetUpdateScheduled = false;
+      _refreshHoveredTarget();
+    });
+  }
+
+  static void _refreshHoveredTarget() {
     SuperContainerState? deepest;
     var maxDepth = -1;
     for (final state in _hovered) {
@@ -477,7 +493,7 @@ class SuperContainerState extends State<SuperContainer> {
         ),
       );
     } else if (_hovered.contains(this)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _setHovered(false));
+      _removeHoveredSafely();
     }
     content = GestureDetector(
       onSecondaryTapUp: canEdit

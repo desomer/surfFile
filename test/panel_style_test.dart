@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flex_color_picker/flex_color_picker.dart';
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,6 +13,10 @@ import 'package:surf_file/theme/container_style.dart';
 import 'package:surf_file/widgets/appearance_settings.dart';
 import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer_view_mode_bar.dart';
+import 'package:surf_file/widgets/super_container.dart';
+
+void _ignoreGridChange(bool _) {}
 
 void main() {
   const custom = ContainerStyle(
@@ -31,20 +36,34 @@ void main() {
   test('panel styles persist, validate, and default missing styles', () {
     final saved = AppearanceStore.decode(
       AppearanceStore.encode(
-        const Appearance(sidebarStyle: custom, pathBarStyle: custom),
+        const Appearance(
+          sidebarStyle: custom,
+          pathBarStyle: custom,
+          explorerViewModeBarStyle: custom,
+        ),
       ),
     );
     expect(saved.sidebarStyle.toJson(), custom.toJson());
     expect(saved.pathBarStyle.toJson(), custom.toJson());
+    expect(saved.explorerViewModeBarStyle.toJson(), custom.toJson());
     final json = jsonDecode(
       AppearanceStore.encode(const Appearance()),
     ) as Map<String, dynamic>;
     json.remove('sidebarStyle');
     json.remove('pathBarStyle');
+    json.remove('explorerViewModeBarStyle');
     final decoded = AppearanceStore.decode(jsonEncode(json));
     expect(decoded.sidebarStyle.toJson(), const ContainerStyle().toJson());
     expect(decoded.pathBarStyle.borderWidth, 1);
-    for (final field in ['sidebarStyle', 'pathBarStyle']) {
+    expect(
+      decoded.explorerViewModeBarStyle.toJson(),
+      const ContainerStyle().toJson(),
+    );
+    for (final field in [
+      'sidebarStyle',
+      'pathBarStyle',
+      'explorerViewModeBarStyle',
+    ]) {
       for (final invalid in [
         custom.toJson()..['radius'] = 37,
         custom.toJson()..['elevation'] = -1,
@@ -65,17 +84,26 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final store = AppearanceStore();
     await store.save(
-      const Appearance(sidebarStyle: custom, pathBarStyle: custom),
+      const Appearance(
+        sidebarStyle: custom,
+        pathBarStyle: custom,
+        explorerViewModeBarStyle: custom,
+      ),
     );
     final restored = await store.load();
     expect(restored.sidebarStyle.toJson(), custom.toJson());
     expect(restored.pathBarStyle.toJson(), custom.toJson());
+    expect(restored.explorerViewModeBarStyle.toJson(), custom.toJson());
     await store.save(const Appearance());
     final reset = await store.load();
     expect(reset.sidebarStyle.toJson(), const ContainerStyle().toJson());
     expect(
       reset.pathBarStyle.toJson(),
       const ContainerStyle(borderWidth: 1).toJson(),
+    );
+    expect(
+      reset.explorerViewModeBarStyle.toJson(),
+      const ContainerStyle().toJson(),
     );
   });
 
@@ -86,6 +114,7 @@ void main() {
       const Appearance(
         sidebarStyle: custom,
         pathBarStyle: custom,
+        explorerViewModeBarStyle: custom,
         selectedFolderStyle: ContainerStyle(elevation: 9),
       ),
     );
@@ -108,9 +137,19 @@ void main() {
                   onLocationSelected: (value) => location = value,
                 ),
                 Expanded(
-                  child: ExplorerBreadcrumbs(
-                    path: 'C:\\Users\\Documents',
-                    onNavigate: (value) => path = value,
+                  child: Column(
+                    children: [
+                      ExplorerBreadcrumbs(
+                        path: 'C:\\Users\\Documents',
+                        onNavigate: (value) => path = value,
+                      ),
+                      ExplorerViewModeBar(
+                        title: 'Fichiers',
+                        itemCount: 2,
+                        gridView: false,
+                        onGridViewChanged: (_) {},
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -119,7 +158,11 @@ void main() {
         ),
       ),
     );
-    for (final key in ['sidebar-surface', 'path-bar-surface']) {
+    for (final key in [
+      'sidebar-surface',
+      'path-bar-surface',
+      'explorer-view-mode-bar-surface',
+    ]) {
       final surface = find.byKey(ValueKey(key));
       final material = tester.widget<Material>(
         find.descendant(of: surface, matching: find.byType(Material)).first,
@@ -144,6 +187,10 @@ void main() {
       tester.widget<Text>(find.text('Users')).style!.color,
       custom.foreground,
     );
+    expect(
+      tester.widget<Text>(find.text('Fichiers')).style!.color,
+      custom.foreground,
+    );
     final selected = tester.widget<Material>(
       find
           .ancestor(
@@ -160,9 +207,14 @@ void main() {
     controller.value = const Appearance(
       sidebarStyle: ContainerStyle(color: Color(0x40112233)),
       pathBarStyle: ContainerStyle(color: Color(0x40112233)),
+      explorerViewModeBarStyle: ContainerStyle(color: Color(0x40112233)),
     );
     await tester.pump();
-    for (final key in ['sidebar-surface', 'path-bar-surface']) {
+    for (final key in [
+      'sidebar-surface',
+      'path-bar-surface',
+      'explorer-view-mode-bar-surface',
+    ]) {
       final material = tester.widget<Material>(
         find
             .descendant(
@@ -174,6 +226,44 @@ void main() {
       expect(material.color, const Color(0x40112233));
       expect(material.elevation, 0);
     }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('view mode bar opens its style editor in edit mode', (
+    tester,
+  ) async {
+    final appearance = ValueNotifier(const Appearance());
+    final editMode = ValueNotifier(true);
+    addTearDown(appearance.dispose);
+    addTearDown(editMode.dispose);
+    await tester.pumpWidget(
+      AppearanceScope(
+        controller: appearance,
+        child: StyleEditScope(
+          controller: editMode,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: ExplorerViewModeBar(
+                title: 'Fichiers',
+                itemCount: 2,
+                gridView: false,
+                onGridViewChanged: _ignoreGridChange,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey('explorer-view-mode-bar-surface')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Style de la barre des modes d’affichage'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Slider), findsNWidgets(6));
     expect(tester.takeException(), isNull);
   });
 

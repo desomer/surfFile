@@ -1,6 +1,7 @@
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
+import '../models/super_layout_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
 import 'disk_gauge_style.dart';
@@ -28,6 +29,9 @@ class Appearance {
     this.backgroundStyle = const ContainerStyle(),
     this.sidebarStyle = const ContainerStyle(),
     this.pathBarStyle = const ContainerStyle(borderWidth: 1),
+    this.pathBarLayout = defaultPathBarLayout,
+    this.explorerLayout = defaultExplorerLayout,
+    this.explorerViewModeBarStyle = const ContainerStyle(),
     this.diskPanelStyle = const ContainerStyle(),
     this.diskTileStyle = defaultDiskTileStyle,
     this.diskGaugeStyle = const DiskGaugeStyle(),
@@ -53,6 +57,24 @@ class Appearance {
     padding: 12,
   );
 
+  /// Sans zones latérales : la barre de chemin occupe tout le centre.
+  static const defaultPathBarLayout = SuperLayoutConfig(
+    north: false,
+    south: false,
+    west: false,
+    east: false,
+  );
+
+  static const defaultSidebarWidth = 236.0;
+
+  /// Panneau gauche à l'ouest, explorateur au centre.
+  static const defaultExplorerLayout = SuperLayoutConfig(
+    north: false,
+    south: false,
+    east: false,
+    westSize: defaultSidebarWidth,
+  );
+
   static const defaultDiskTileStyle = ContainerStyle(
     radius: 12,
     borderWidth: 1,
@@ -69,6 +91,9 @@ class Appearance {
   final ContainerStyle backgroundStyle;
   final ContainerStyle sidebarStyle;
   final ContainerStyle pathBarStyle;
+  final SuperLayoutConfig pathBarLayout;
+  final SuperLayoutConfig explorerLayout;
+  final ContainerStyle explorerViewModeBarStyle;
   final ContainerStyle diskPanelStyle;
   final ContainerStyle diskTileStyle;
   final DiskGaugeStyle diskGaugeStyle;
@@ -101,6 +126,9 @@ class Appearance {
     ContainerStyle? backgroundStyle,
     ContainerStyle? sidebarStyle,
     ContainerStyle? pathBarStyle,
+    SuperLayoutConfig? pathBarLayout,
+    SuperLayoutConfig? explorerLayout,
+    ContainerStyle? explorerViewModeBarStyle,
     ContainerStyle? diskPanelStyle,
     ContainerStyle? diskTileStyle,
     DiskGaugeStyle? diskGaugeStyle,
@@ -132,6 +160,10 @@ class Appearance {
     backgroundStyle: backgroundStyle ?? this.backgroundStyle,
     sidebarStyle: sidebarStyle ?? this.sidebarStyle,
     pathBarStyle: pathBarStyle ?? this.pathBarStyle,
+    pathBarLayout: pathBarLayout ?? this.pathBarLayout,
+    explorerLayout: explorerLayout ?? this.explorerLayout,
+    explorerViewModeBarStyle:
+        explorerViewModeBarStyle ?? this.explorerViewModeBarStyle,
     diskPanelStyle: diskPanelStyle ?? this.diskPanelStyle,
     diskTileStyle: diskTileStyle ?? this.diskTileStyle,
     diskGaugeStyle: diskGaugeStyle ?? this.diskGaugeStyle,

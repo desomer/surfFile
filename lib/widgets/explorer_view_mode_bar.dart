@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/appearance.dart';
+import '../theme/appearance_slot.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/folder_transition.dart';
+import 'super_container.dart';
 import 'explorer_view_toggle.dart';
 
 /// En-tête du dossier courant : icône, nom, nombre d'éléments et bascule
@@ -40,43 +42,63 @@ class ExplorerViewModeBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(30, 10, 30, 6),
-      child: Row(
-        children: [
-          if (appearance.folderTransition == FolderTransition.heroIcon) ...[
-            Icon(
-              Icons.folder_rounded,
-              key: titleIconKey,
-              size: 28,
-              color: appearance.accent,
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w700),
-            ),
-          ),
-          if (onToggleFilter != null) ...[
-            _filterButton(context),
-            const SizedBox(width: 12),
-          ],
-          Text(
-            pending ? '…' : '$itemCount élément${itemCount == 1 ? '' : 's'}',
-            style: TextStyle(
-              color: explorerColor(
-                context,
-                const Color(0xFF82899A),
-                Theme.of(context).colorScheme.onSurfaceVariant,
+    final style = appearance.explorerViewModeBarStyle;
+    return SuperContainer(
+      key: const ValueKey('explorer-view-mode-bar-surface'),
+      slot: AppearanceSlot.explorerViewModeBar,
+      fallbackColor: explorerColor(
+        context,
+        Colors.white,
+        Theme.of(context).colorScheme.surfaceContainerLow,
+      ),
+      borderColor: Theme.of(context).colorScheme.outlineVariant,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(30, 10, 30, 6),
+        child: Row(
+          children: [
+            if (appearance.folderTransition == FolderTransition.heroIcon) ...[
+              Icon(
+                Icons.folder_rounded,
+                key: titleIconKey,
+                size: 28,
+                color: appearance.accent,
               ),
-              fontSize: 12,
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 25,
+                  fontWeight: FontWeight.w700,
+                  color: style.foreground,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 14),
-          ExplorerViewToggle(gridView: gridView, onChanged: onGridViewChanged),
-        ],
+            if (onToggleFilter != null) ...[
+              _filterButton(context),
+              const SizedBox(width: 12),
+            ],
+            Text(
+              pending ? '…' : '$itemCount élément${itemCount == 1 ? '' : 's'}',
+              style: TextStyle(
+                color:
+                    style.foreground ??
+                    explorerColor(
+                      context,
+                      const Color(0xFF82899A),
+                      Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(width: 14),
+            ExplorerViewToggle(
+              gridView: gridView,
+              onChanged: onGridViewChanged,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -229,3 +229,14 @@ La selection multiple et le menu du fond d'un dossier ne sont pas pris en charge
 Validation : `flutter test` pour les tests Dart et widgets.
 Le test non destructif du vrai Shell Windows se lance avec
 `flutter run -d windows --profile -t test/native_shell_smoke.dart`.
+
+
+
+**SuperLayout** (`lib/widgets/super_layout.dart`) est une disposition en grille
+3x3 (Nord-Ouest, Nord, Nord-Est, Ouest, Centre, Est, Sud-Ouest, Sud, Sud-Est)
+qui s'edite par clic droit, comme un `SuperContainer`. L'editeur affiche un
+apercu et permet de choisir si le Nord, le Sud, l'Est et l'Ouest existent (avec
+leur taille) et, pour chaque coin, de le garder en case propre ou de le fusionner
+avec l'un de ses deux voisins, jamais les deux (ex. Sud-Ouest avec Ouest ou avec
+Sud). Un coin n'existe que si ses deux voisins existent. Les zones sont fournies
+via `zones` ; la structure remonte par `onChanged` (`SuperLayoutConfig`).

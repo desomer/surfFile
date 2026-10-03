@@ -2,11 +2,13 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../models/super_layout_config.dart';
 import '../services/favorites.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import 'super_container.dart';
+import 'super_layout.dart';
 
 class ExplorerBreadcrumbs extends StatelessWidget {
   const ExplorerBreadcrumbs({
@@ -18,12 +20,16 @@ class ExplorerBreadcrumbs extends StatelessWidget {
   final String path;
   final ValueChanged<String> onNavigate;
 
+  /// Hauteur du contenu de la barre : 3 + 40 + 3.
+  static const _barHeight = 46.0;
+
   String _joinPath(String parent, String child) =>
       '$parent${parent.endsWith(Platform.pathSeparator) ? '' : Platform.pathSeparator}$child';
 
   @override
   Widget build(BuildContext context) {
     final style = AppearanceScope.of(context).pathBarStyle;
+    final layout = AppearanceScope.of(context).pathBarLayout;
     final colors = Theme.of(context).colorScheme;
     final foreground = style.foreground ?? colors.onSurfaceVariant;
     final normalizedPath = path.replaceAll('\\', '/');
@@ -42,7 +48,8 @@ class ExplorerBreadcrumbs extends StatelessWidget {
       crumbs.add((label: part, path: accumulated));
     }
 
-    return SuperContainer(
+    final appearance = AppearanceScope.controllerOf(context);
+    final bar = SuperContainer(
       key: const ValueKey('path-bar-surface'),
       slot: AppearanceSlot.pathBar,
       horizontalBorder: true,
@@ -147,6 +154,19 @@ class ExplorerBreadcrumbs extends StatelessWidget {
           ],
         ),
       ),
+    );
+
+    return SuperLayout(
+      key: const ValueKey('path-bar-layout'),
+      label: 'Disposition de la barre de chemin',
+      config: layout,
+      onChanged: appearance == null
+          ? null
+          : (value) => appearance.value = appearance.value.copyWith(
+              pathBarLayout: value,
+            ),
+      centerHeight: _barHeight + 2 * (style.padding + style.margin),
+      zones: {SuperLayoutZone.center: bar},
     );
   }
 }

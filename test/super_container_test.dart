@@ -79,6 +79,38 @@ void main() {
     expect(current(tester).radius, 20);
   });
 
+  testWidgets('disposing a hovered editable container is safe', (tester) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: const MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SuperContainer(
+                key: ValueKey('hovered-container'),
+                child: SizedBox(width: 120, height: 60, child: Text('Box')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(
+      location: tester.getCenter(
+        find.byKey(const ValueKey('hovered-container')),
+      ),
+    );
+    await tester.pump();
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('cancel restores the previous style', (tester) async {
     final changes = await pump(tester);
     await edit(tester, find.text('Box'));

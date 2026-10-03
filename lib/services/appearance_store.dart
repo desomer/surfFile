@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/super_layout_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
 import '../theme/disk_gauge_style.dart';
@@ -57,6 +58,9 @@ class AppearanceStore {
     'backgroundStyle': a.backgroundStyle.toJson(),
     'sidebarStyle': a.sidebarStyle.toJson(),
     'pathBarStyle': a.pathBarStyle.toJson(),
+    'pathBarLayout': a.pathBarLayout.toJson(),
+    'explorerLayout': a.explorerLayout.toJson(),
+    'explorerViewModeBarStyle': a.explorerViewModeBarStyle.toJson(),
     'diskPanelStyle': a.diskPanelStyle.toJson(),
     'diskTileStyle': a.diskTileStyle.toJson(),
     'diskGaugeStyle': a.diskGaugeStyle.toJson(),
@@ -142,6 +146,17 @@ class AppearanceStore {
       pathBarStyle: ContainerStyle.fromJson(
         json['pathBarStyle'],
         fallback: const ContainerStyle(borderWidth: 1),
+      ),
+      pathBarLayout: SuperLayoutConfig.fromJson(
+        json['pathBarLayout'],
+        fallback: Appearance.defaultPathBarLayout,
+      ),
+      explorerLayout: SuperLayoutConfig.fromJson(
+        json['explorerLayout'],
+        fallback: Appearance.defaultExplorerLayout,
+      ),
+      explorerViewModeBarStyle: ContainerStyle.fromJson(
+        json['explorerViewModeBarStyle'],
       ),
       diskPanelStyle: ContainerStyle.fromJson(json['diskPanelStyle']),
       diskTileStyle: ContainerStyle.fromJson(

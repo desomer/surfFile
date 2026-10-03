@@ -34,7 +34,9 @@ import '../widgets/folder_hero_flight.dart';
 import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/folder_transition.dart';
+import '../models/super_layout_config.dart';
 import '../widgets/super_container.dart';
+import '../widgets/super_layout.dart';
 import '../widgets/file_action_bar.dart';
 import '../widgets/shortcuts_help_dialog.dart';
 import '../widgets/transfer_panel.dart';
@@ -1302,9 +1304,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     final splitChild = widget.splitChild;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final sidebar = widget.showSidebar && !_previewExpanded
-            ? ExplorerSidebar.width
-            : 0.0;
+        final layout = AppearanceScope.of(context).explorerLayout;
+        final sidebar = _sidebarVisible && layout.west ? layout.westSize : 0.0;
         final bar = widget.splitBarBuilder;
         final pane =
             (constraints.maxWidth -
@@ -1350,29 +1351,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
               key: _overlayKey,
               fit: StackFit.expand,
               children: [
-                Row(
-                  children: [
-                    if (widget.showSidebar && !_previewExpanded)
-                      ExplorerSidebar(
-                        locations: _locations,
-                        currentPath: widget.sidebarPath ?? _currentPath,
-                        onLocationSelected:
-                            widget.onSidebarLocation ?? _loadDirectory,
-                      ),
-                    Expanded(
-                      child: Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerDown: (_) {
-                          widget.onActivate?.call();
-                          if (widget.split && !_explorerFocusNode.hasFocus) {
-                            _explorerFocusNode.requestFocus();
-                          }
-                        },
-                        child: _buildExplorer(),
-                      ),
-                    ),
-                  ],
-                ),
+                _buildLayout(context),
                 if (_heroSource != null &&
                     !MediaQuery.disableAnimationsOf(context))
                   FolderHeroFlight(
@@ -1393,6 +1372,45 @@ class _ExplorerPaneState extends State<ExplorerPane> {
           ),
         ),
       ),
+    );
+  }
+
+  bool get _sidebarVisible => widget.showSidebar && !_previewExpanded;
+
+  /// Disposition racine : panneau gauche à l'ouest, explorateur au centre.
+  Widget _buildLayout(BuildContext context) {
+    final appearance = AppearanceScope.controllerOf(context);
+    final config =
+        appearance?.value.explorerLayout ?? Appearance.defaultExplorerLayout;
+    final sidebarVisible = _sidebarVisible;
+    return SuperLayout(
+      key: const ValueKey('explorer-layout'),
+      label: 'Disposition de la page',
+      // Seul le volet qui affiche le panneau édite la disposition partagée.
+      editable: sidebarVisible,
+      config: sidebarVisible ? config : config.copyWith(west: false),
+      onChanged: appearance == null
+          ? null
+          : (value) => appearance.value = appearance.value.copyWith(
+              explorerLayout: value,
+            ),
+      zones: {
+        SuperLayoutZone.west: ExplorerSidebar(
+          locations: _locations,
+          currentPath: widget.sidebarPath ?? _currentPath,
+          onLocationSelected: widget.onSidebarLocation ?? _loadDirectory,
+        ),
+        SuperLayoutZone.center: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) {
+            widget.onActivate?.call();
+            if (widget.split && !_explorerFocusNode.hasFocus) {
+              _explorerFocusNode.requestFocus();
+            }
+          },
+          child: _buildExplorer(),
+        ),
+      },
     );
   }
 
