@@ -175,7 +175,7 @@ class _DiskTile extends StatelessWidget {
                         strokeWidth: 5,
                         backgroundColor: foreground.withValues(alpha: .12),
                         color: used != null && used >= .9
-                            ? colors.error
+                            ? Colors.red
                             : colors.primary,
                       ),
                     ),

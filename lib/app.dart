@@ -118,6 +118,7 @@ class _SurfFileAppState extends State<SurfFileApp> {
           title: 'SurfFile',
           debugShowCheckedModeBanner: false,
           scaffoldMessengerKey: _messenger,
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           themeMode: appearance.mode,
           theme: appearance.theme(Brightness.light),
           darkTheme: appearance.theme(Brightness.dark),

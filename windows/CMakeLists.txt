@@ -57,6 +57,18 @@ add_subdirectory("runner")
 # them to the application.
 include(flutter/generated_plugins.cmake)
 
+# webview_flutter_windows is built as C++23, so MSBuild implicitly compiles
+# std.ixx, which fails to link with _HAS_EXCEPTIONS=0 (unresolved
+# std::_Raise_handler). The plugin does not use `import std`.
+if(TARGET webview_flutter_windows_plugin)
+  get_target_property(WEBVIEW_PLUGIN_SOURCES webview_flutter_windows_plugin SOURCES)
+  get_target_property(WEBVIEW_PLUGIN_DIR webview_flutter_windows_plugin SOURCE_DIR)
+  list(TRANSFORM WEBVIEW_PLUGIN_SOURCES PREPEND "${WEBVIEW_PLUGIN_DIR}/")
+  set_source_files_properties(${WEBVIEW_PLUGIN_SOURCES}
+    TARGET_DIRECTORY webview_flutter_windows_plugin
+    PROPERTIES VS_SETTINGS "BuildStlModules=false")
+endif()
+
 
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can

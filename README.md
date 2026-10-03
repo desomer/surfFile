@@ -2,6 +2,47 @@
 
 Un explorateur de fichiers de bureau Flutter.
 
+## Installateur Windows (Inno Setup)
+
+Prerequis : Flutter 3.44.0 ou plus recent (Dart 3.12.0 ou plus recent),
+Visual Studio avec les outils C++ de bureau, et Inno Setup 6.
+Pour installer ce dernier : `winget install --id JRSoftware.InnoSetup --exact`.
+Depuis la racine du projet, executer dans PowerShell :
+
+```powershell
+.\installer\build-installer.ps1
+```
+
+Le script compile en Release puis cree
+`build\installer\SurfFile-0.1.0+1-windows-x64-setup.exe`. La version provient de
+`pubspec.yaml` ; modifier ce champ avant de publier une nouvelle version.
+Les parametres `-FlutterPath`, `-IsccPath` et `-RuntimePath` permettent de
+preciser les outils et le dossier des DLL CRT Visual C++ redistribuables x64.
+Le script recherche sinon Flutter dans le PATH ou dans le dossier voisin
+`flutter`, et les outils Inno Setup / Visual Studio dans leurs emplacements usuels.
+
+L'installateur propose le francais et l'anglais, installe pour l'utilisateur
+courant sans elevation dans `%LOCALAPPDATA%\Programs\SurfFile`, ajoute un
+raccourci au menu Demarrer et propose un raccourci Bureau optionnel.
+Il inclut l'application complete, ses assets/plugins et les DLL CRT x64
+app-local. Windows 10 1803 ou plus recent est requis ; la previsualisation
+Monaco necessite Windows 10 1809 et le runtime WebView2.
+L'AppId reste stable pour les mises a jour ; la desinstallation retire les
+fichiers installes, sans effacer les preferences utilisateur.
+L'EXE n'est pas signe : Windows SmartScreen peut afficher un avertissement.
+Une distribution publique peut necessiter une signature Authenticode.
+
+## Fonctionnalites
+
+La previsualisation des videos et fichiers texte/code s'ouvre et se ferme avec
+la barre d'espace apres avoir selectionne un fichier pris en charge. La lecture
+video demarre automatiquement ; le panneau propose lecture/pause et navigation.
+Les fichiers texte sont affiches en lecture seule avec coloration syntaxique
+Monaco. Monaco utilise WebView2 et ses assets locaux ; le runtime WebView2 doit
+etre installe sur Windows 10 1809 ou plus recent. La lecture video utilise les
+codecs Windows disponibles sur le PC ; certains formats peuvent necessiter un
+codec supplementaire.
+
 Le menu contextuel utilise des lignes compactes de 32 pixels, des icones pour
 les commandes Windows usuelles, des separateurs fins et un panneau arrondi
 avec bordure et ombre discrete. Ses couleurs suivent le theme clair/sombre ;

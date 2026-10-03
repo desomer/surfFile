@@ -17,6 +17,9 @@ import '../widgets/explorer_sidebar.dart';
 import '../widgets/explorer_sort_header.dart';
 import '../widgets/explorer_toolbar.dart';
 import '../widgets/explorer_view_toggle.dart';
+import '../widgets/image_preview_panel.dart';
+import '../widgets/text_preview_panel.dart';
+import '../widgets/video_preview_panel.dart';
 import '../widgets/mouse_back_navigation.dart';
 import '../widgets/folder_transition_view.dart';
 import '../widgets/folder_hero_flight.dart';
@@ -46,6 +49,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
   List<ExplorerLocation> _locations = [];
   bool _isLoading = true;
   bool _gridView = false;
+  bool _previewVisible = false;
+  bool _previewExpanded = false;
   bool _ascending = true;
   bool _contextMenuOpen = false;
   ExplorerSort _sort = ExplorerSort.name;
@@ -61,6 +66,10 @@ class _ExplorerPageState extends State<ExplorerPage> {
   bool _heroExpand = false;
   int _heroRevision = 0;
   Duration _heroDuration = Duration.zero;
+  final _explorerFocusNode = FocusNode(debugLabel: 'File explorer');
+  final _imagePreviewKey = GlobalKey();
+  final _textPreviewKey = GlobalKey();
+  final _videoPreviewKey = GlobalKey();
 
   String get _homePath =>
       Platform.environment['USERPROFILE'] ??
@@ -157,6 +166,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
     final request = ++_loadRequest;
     setState(() {
       _isLoading = true;
+      _previewVisible = false;
+      _previewExpanded = false;
       _loadError = null;
       _failedPath = null;
       _failedDirection = null;
@@ -292,6 +303,35 @@ class _ExplorerPageState extends State<ExplorerPage> {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode _, KeyEvent event) {
+    if (!_explorerFocusNode.hasPrimaryFocus ||
+        event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.space) {
+      return KeyEventResult.ignored;
+    }
+    final selected = _visibleEntries.where(
+      (entry) => entry.entity.path == _selectedPath,
+    );
+    if (selected.isEmpty ||
+        (!VideoPreviewPanel.supports(selected.first.name) &&
+            !ImagePreviewPanel.supports(selected.first.name) &&
+            !TextPreviewPanel.supports(selected.first.name))) {
+      return KeyEventResult.ignored;
+    }
+    setState(() {
+      if (_previewExpanded) {
+        _previewVisible = false;
+        _previewExpanded = false;
+      } else if (_previewVisible) {
+        _previewExpanded = true;
+      } else {
+        _previewVisible = true;
+        _previewExpanded = false;
+      }
+    });
+    return KeyEventResult.handled;
   }
 
   Future<void> _showContextMenu(ExplorerEntry entry, Offset position) async {
@@ -435,46 +475,58 @@ class _ExplorerPageState extends State<ExplorerPage> {
   }
 
   @override
+  void dispose() {
+    _explorerFocusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: MouseBackNavigation(
-        enabled: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
-        onBack: _goBack,
-        forwardEnabled:
-            _forwardHistory.isNotEmpty && !_isLoading && !_contextMenuOpen,
-        onForward: _goForward,
-        child: SafeArea(
-          child: Stack(
-            key: _overlayKey,
-            fit: StackFit.expand,
-            children: [
-              Row(
-                children: [
-                  ExplorerSidebar(
-                    locations: _locations,
-                    currentPath: _currentPath,
-                    onLocationSelected: _loadDirectory,
-                  ),
-                  //const VerticalDivider(width: 1, thickness: 1),
-                  Expanded(child: _buildExplorer()),
-                ],
-              ),
-              if (_heroSource != null &&
-                  !MediaQuery.disableAnimationsOf(context))
-                FolderHeroFlight(
-                  key: ValueKey(_heroRevision),
-                  source: _heroSource!,
-                  destination: _heroDestination!,
-                  duration: _heroDuration,
-                  expand: _heroExpand,
-                  color: _heroExpand
-                      ? Theme.of(context).colorScheme.primaryContainer
-                      : AppearanceScope.of(context).accent,
-                  onComplete: () {
-                    if (mounted) setState(() => _heroSource = null);
-                  },
+      body: Focus(
+        focusNode: _explorerFocusNode,
+        autofocus: true,
+        onKeyEvent: _handleKeyEvent,
+        child: MouseBackNavigation(
+          enabled: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
+          onBack: _goBack,
+          forwardEnabled:
+              _forwardHistory.isNotEmpty && !_isLoading && !_contextMenuOpen,
+          onForward: _goForward,
+          child: SafeArea(
+            child: Stack(
+              key: _overlayKey,
+              fit: StackFit.expand,
+              children: [
+                Row(
+                  children: [
+                    if (!_previewExpanded)
+                      ExplorerSidebar(
+                        locations: _locations,
+                        currentPath: _currentPath,
+                        onLocationSelected: _loadDirectory,
+                      ),
+                    //const VerticalDivider(width: 1, thickness: 1),
+                    Expanded(child: _buildExplorer()),
+                  ],
                 ),
-            ],
+                if (_heroSource != null &&
+                    !MediaQuery.disableAnimationsOf(context))
+                  FolderHeroFlight(
+                    key: ValueKey(_heroRevision),
+                    source: _heroSource!,
+                    destination: _heroDestination!,
+                    duration: _heroDuration,
+                    expand: _heroExpand,
+                    color: _heroExpand
+                        ? Theme.of(context).colorScheme.primaryContainer
+                        : AppearanceScope.of(context).accent,
+                    onComplete: () {
+                      if (mounted) setState(() => _heroSource = null);
+                    },
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -486,66 +538,75 @@ class _ExplorerPageState extends State<ExplorerPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        ExplorerToolbar(
-          canGoBack: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
-          canGoUp: Directory(_currentPath).parent.path != _currentPath,
-          onBack: _goBack,
-          canGoForward:
-              _forwardHistory.isNotEmpty && !_isLoading && !_contextMenuOpen,
-          onForward: _goForward,
-          onUp: _goUp,
-          onRefresh: () => _loadDirectory(_currentPath, addToHistory: false),
-          onSearchChanged: (value) => setState(() => _query = value),
-          onCreateFolder: _createFolder,
-        ),
-        ExplorerBreadcrumbs(path: _currentPath, onNavigate: _loadDirectory),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(30, 23, 30, 14),
-          child: Row(
-            children: [
-              if (AppearanceScope.of(context).folderTransition ==
-                  FolderTransition.heroIcon) ...[
-                Icon(Icons.folder_rounded,
+        if (!_previewExpanded) ...[
+          ExplorerToolbar(
+            canGoBack: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
+            canGoUp: Directory(_currentPath).parent.path != _currentPath,
+            onBack: _goBack,
+            canGoForward:
+                _forwardHistory.isNotEmpty && !_isLoading && !_contextMenuOpen,
+            onForward: _goForward,
+            onUp: _goUp,
+            onRefresh: () => _loadDirectory(_currentPath, addToHistory: false),
+            onSearchChanged: (value) => setState(() => _query = value),
+            onCreateFolder: _createFolder,
+          ),
+          ExplorerBreadcrumbs(path: _currentPath, onNavigate: _loadDirectory),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(30, 23, 30, 14),
+            child: Row(
+              children: [
+                if (AppearanceScope.of(context).folderTransition ==
+                    FolderTransition.heroIcon) ...[
+                  Icon(
+                    Icons.folder_rounded,
                     key: _titleIconKey,
                     size: 28,
-                    color: AppearanceScope.of(context).accent),
-                const SizedBox(width: 10),
+                    color: AppearanceScope.of(context).accent,
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Text(
+                    _currentFolderName,
+                    style: const TextStyle(
+                      fontSize: 25,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${entries.length} élément${entries.length == 1 ? '' : 's'}',
+                  style: TextStyle(
+                    color: explorerColor(
+                      context,
+                      const Color(0xFF82899A),
+                      Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                ExplorerViewToggle(
+                  gridView: _gridView,
+                  onChanged: (gridView) => setState(() => _gridView = gridView),
+                ),
               ],
-              Expanded(
-                child: Text(
-                  _currentFolderName,
-                  style: const TextStyle(
-                      fontSize: 25, fontWeight: FontWeight.w700),
-                ),
-              ),
-              Text(
-                '${entries.length} élément${entries.length == 1 ? '' : 's'}',
-                style: TextStyle(
-                  color: explorerColor(context, const Color(0xFF82899A),
-                      Theme.of(context).colorScheme.onSurfaceVariant),
-                  fontSize: 12,
-                ),
-              ),
-              const SizedBox(width: 14),
-              ExplorerViewToggle(
-                gridView: _gridView,
-                onChanged: (gridView) => setState(() => _gridView = gridView),
-              ),
-            ],
+            ),
           ),
-        ),
-        ExplorerSortHeader(
-          sort: _sort,
-          ascending: _ascending,
-          onSortChanged: (sort) => setState(() {
-            if (_sort == sort) {
-              _ascending = !_ascending;
-            } else {
-              _sort = sort;
-              _ascending = true;
-            }
-          }),
-        ),
+          ExplorerSortHeader(
+            sort: _sort,
+            ascending: _ascending,
+            onSortChanged: (sort) => setState(() {
+              if (_sort == sort) {
+                _ascending = !_ascending;
+              } else {
+                _sort = sort;
+                _ascending = true;
+              }
+            }),
+          ),
+        ],
         Expanded(
           key: _contentKey,
           child: Stack(
@@ -559,34 +620,107 @@ class _ExplorerPageState extends State<ExplorerPage> {
                   child: _isLoading && !_hasLoadedDirectory
                       ? const Center(child: CircularProgressIndicator())
                       : _loadError != null
-                          ? ExplorerErrorState(
-                              message: _loadError!,
-                              onRetry: () {
-                                if (_initializationFailed) {
-                                  _initialize();
-                                } else {
-                                  _loadDirectory(_failedPath ?? _currentPath,
-                                      direction: _failedDirection);
-                                }
+                      ? ExplorerErrorState(
+                          message: _loadError!,
+                          onRetry: () {
+                            if (_initializationFailed) {
+                              _initialize();
+                            } else {
+                              _loadDirectory(
+                                _failedPath ?? _currentPath,
+                                direction: _failedDirection,
+                              );
+                            }
+                          },
+                        )
+                      : entries.isEmpty
+                      ? ExplorerEmptyState(hasQuery: _query.isNotEmpty)
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final fileList = ExplorerEntriesView(
+                              key: ValueKey(_currentPath),
+                              entries: entries,
+                              gridView: _gridView,
+                              selectedPath: _selectedPath,
+                              onSelected: (path) {
+                                _explorerFocusNode.requestFocus();
+                                setState(() => _selectedPath = path);
                               },
-                            )
-                          : entries.isEmpty
-                              ? ExplorerEmptyState(hasQuery: _query.isNotEmpty)
-                              : ExplorerEntriesView(
-                                  key: ValueKey(_currentPath),
-                                  entries: entries,
-                                  gridView: _gridView,
-                                  selectedPath: _selectedPath,
-                                  onSelected: (path) =>
-                                      setState(() => _selectedPath = path),
-                                  onOpen: _openEntry,
-                                  onOpenWithBounds: (entry, card, icon) =>
-                                      _loadDirectory(entry.entity.path,
-                                          heroCard: card, heroIcon: icon),
-                                  onContextMenu: Platform.isWindows
-                                      ? _showContextMenu
-                                      : null,
-                                ),
+                              onOpen: _openEntry,
+                              onOpenWithBounds: (entry, card, icon) =>
+                                  _loadDirectory(
+                                    entry.entity.path,
+                                    heroCard: card,
+                                    heroIcon: icon,
+                                  ),
+                              onContextMenu: Platform.isWindows
+                                  ? _showContextMenu
+                                  : null,
+                            );
+                            if (!_previewVisible) return fileList;
+
+                            final matching = entries.where(
+                              (entry) => entry.entity.path == _selectedPath,
+                            );
+                            final selected = matching.isEmpty
+                                ? null
+                                : matching.first;
+                            void closePreview() => setState(() {
+                                  _previewVisible = false;
+                                  _previewExpanded = false;
+                                });
+                            void toggleExpanded() => setState(
+                                  () => _previewExpanded = !_previewExpanded,
+                                );
+                            final preview = selected != null &&
+                                    VideoPreviewPanel.supports(selected.name)
+                                ? VideoPreviewPanel(
+                                    key: _videoPreviewKey,
+                                    path: selected.entity.path,
+                                    onClose: closePreview,
+                                    isExpanded: _previewExpanded,
+                                    onToggleExpanded: toggleExpanded,
+                                  )
+                                : selected != null &&
+                                      ImagePreviewPanel.supports(selected.name)
+                                ? ImagePreviewPanel(
+                                    key: _imagePreviewKey,
+                                    path: selected.entity.path,
+                                    onClose: closePreview,
+                                    isExpanded: _previewExpanded,
+                                    onToggleExpanded: toggleExpanded,
+                                  )
+                                : TextPreviewPanel(
+                                    key: _textPreviewKey,
+                                    path: selected != null &&
+                                            TextPreviewPanel.supports(
+                                              selected.name,
+                                            )
+                                        ? selected.entity.path
+                                        : null,
+                                    onClose: closePreview,
+                                    isExpanded: _previewExpanded,
+                                    onToggleExpanded: toggleExpanded,
+                                  );
+                            if (_previewExpanded) return preview;
+                            if (constraints.maxWidth >= 760) {
+                              return Row(
+                                children: [
+                                  Expanded(child: fileList),
+                                  const SizedBox(width: 12),
+                                  SizedBox(width: 340, child: preview),
+                                ],
+                              );
+                            }
+                            return Column(
+                              children: [
+                                Expanded(flex: 3, child: fileList),
+                                const SizedBox(height: 12),
+                                SizedBox(height: 240, child: preview),
+                              ],
+                            );
+                          },
+                        ),
                 ),
               ),
               if (_isLoading && _hasLoadedDirectory)
