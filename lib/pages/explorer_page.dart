@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import '../models/explorer_filter.dart';
 import '../models/explorer_entry.dart';
 import '../models/explorer_location.dart';
+import '../models/selection_mode.dart';
 import '../services/favorites.dart';
 import '../services/directory_scanner.dart';
 import '../services/file_operations.dart';
@@ -18,6 +19,7 @@ import '../widgets/explorer_context_menu.dart';
 import '../widgets/explorer_empty_state.dart';
 import '../widgets/entries_layout.dart';
 import '../widgets/explorer_entries_view.dart';
+import '../widgets/explorer_columns_view.dart';
 import '../widgets/explorer_error_state.dart';
 import '../widgets/explorer_sidebar.dart';
 import '../widgets/explorer_skeleton.dart';
@@ -306,6 +308,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   /// Appui de la souris sur un élément (avant le relâchement).
   void _pointerSelect(String path) {
     _explorerFocusNode.requestFocus();
+    if (_effectiveSelectionMode == SelectionMode.rowClick) return;
     final keys = HardwareKeyboard.instance;
     _selectionChanged(() {
       _collapseTo = null;
@@ -326,6 +329,18 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   /// Clic relâché sans glisser (ou toucher).
   void _tapSelect(String path) {
     final keys = HardwareKeyboard.instance;
+    if (_effectiveSelectionMode == SelectionMode.rowClick) {
+      _explorerFocusNode.requestFocus();
+      _selectionChanged(() {
+        _collapseTo = null;
+        if (keys.isShiftPressed) {
+          _selectRange(path, add: keys.isControlPressed);
+        } else {
+          _toggle(path);
+        }
+      });
+      return;
+    }
     final collapse = _collapseTo == path || !_selection.contains(path);
     _collapseTo = null;
     if (keys.isShiftPressed || keys.isControlPressed || !collapse) return;
@@ -339,6 +354,24 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   List<ExplorerLocation> _locations = [];
   bool _isLoading = true;
   bool _gridView = false;
+  bool _columnView = false;
+  SelectionMode _selectionMode = SelectionMode.standard;
+
+  /// Un clic de la vue en colonnes ouvre le dossier : pas de mode particulier.
+  SelectionMode get _effectiveSelectionMode =>
+      _columnView ? SelectionMode.standard : _selectionMode;
+
+  /// Case à cocher : bascule l'élément sans toucher aux autres.
+  void _toggleSelection(String path) {
+    _explorerFocusNode.requestFocus();
+    _selectionChanged(() {
+      _collapseTo = null;
+      _toggle(path);
+    });
+  }
+
+  /// La vue en colonnes impose la liste réduite.
+  bool get _showGrid => _gridView && !_columnView;
   bool _previewVisible = false;
   bool _previewExpanded = false;
   bool _ascending = true;
@@ -504,17 +537,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
               matches(entry),
         )
         .toList();
-    entries.sort((a, b) {
-      if (a.isDirectory != b.isDirectory) {
-        return a.isDirectory ? -1 : 1;
-      }
-      final comparison = switch (_sort) {
-        ExplorerSort.name => lower[a]!.compareTo(lower[b]!),
-        ExplorerSort.modified => a.modified.compareTo(b.modified),
-        ExplorerSort.size => a.size.compareTo(b.size),
-      };
-      return _ascending ? comparison : -comparison;
-    });
+    sortExplorerEntries(entries, _sort, ascending: _ascending);
     final visible = List<ExplorerEntry>.unmodifiable(entries);
     _visibleCache = (key, visible);
     return visible;
@@ -571,7 +594,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
           _commitHistory(path, direction, addToHistory);
           _currentPath = path;
           _entries = quick ?? const [];
-          _selectedPath = null;
+          _selectedPath = select?.firstOrNull;
+          if (select != null) _revealToken++;
           _pendingEntries = quick == null;
           _isLoading = quick == null;
         });
@@ -855,10 +879,18 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     required bool shift,
     required bool add,
   }) {
+    if (_columnView && !shift && !add) {
+      if (key == LogicalKeyboardKey.arrowLeft) {
+        _columnLeft();
+        return true;
+      }
+      if (key == LogicalKeyboardKey.arrowRight) return _columnRight();
+    }
     final visible = _visibleEntries;
     if (visible.isEmpty) return false;
     final layout = EntriesLayout(
-      grid: _gridView,
+      grid: _showGrid,
+      compact: _columnView,
       appearance: AppearanceScope.of(context),
       viewport: _viewport,
       count: visible.length,
@@ -873,9 +905,9 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       target = current < 0 ? 0 : current + columns;
     } else if (key == LogicalKeyboardKey.arrowUp) {
       target = current < 0 ? 0 : current - columns;
-    } else if (_gridView && key == LogicalKeyboardKey.arrowRight) {
+    } else if (_showGrid && key == LogicalKeyboardKey.arrowRight) {
       target = current + 1;
-    } else if (_gridView && key == LogicalKeyboardKey.arrowLeft) {
+    } else if (_showGrid && key == LogicalKeyboardKey.arrowLeft) {
       target = current < 0 ? 0 : current - 1;
     } else if (key == LogicalKeyboardKey.home) {
       target = 0;
@@ -892,6 +924,37 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     final index = target.clamp(0, visible.length - 1);
     _moveTo(visible[index].entity.path, extend: shift, add: add);
     return true;
+  }
+
+  /// Vue en colonnes : revient au dossier parent en gardant le dossier quitté
+  /// sélectionné.
+  void _columnLeft() {
+    final parent = Directory(_currentPath).parent.path;
+    if (parent != _currentPath) _loadDirectory(parent, select: {_currentPath});
+  }
+
+  /// Vue en colonnes : entre dans le dossier sélectionné.
+  bool _columnRight() {
+    final primary = _visibleEntries
+        .where((entry) => entry.entity.path == _selectedPath)
+        .firstOrNull;
+    if (primary == null || !primary.isDirectory) return false;
+    _loadDirectory(primary.entity.path);
+    return true;
+  }
+
+  /// Vue en colonnes : un clic sur un dossier l'ouvre dans la colonne suivante.
+  void _columnTapped(String path) {
+    _tapSelect(path);
+    final keys = HardwareKeyboard.instance;
+    if (keys.isShiftPressed || keys.isControlPressed) return;
+    final entry = _entries.where((e) => e.entity.path == path).firstOrNull;
+    if (entry != null && entry.isDirectory) _loadDirectory(path);
+  }
+
+  void _openColumn(String path, {String? select}) {
+    _explorerFocusNode.requestFocus();
+    _loadDirectory(path, select: select == null ? null : {select});
   }
 
   void _moveTo(String path, {bool extend = false, bool add = false}) {
@@ -1451,10 +1514,16 @@ class _ExplorerPaneState extends State<ExplorerPane> {
             gridView: _gridView,
             onGridViewChanged: (gridView) =>
                 setState(() => _gridView = gridView),
+            columnView: _columnView,
+            onColumnViewChanged: (columnView) =>
+                setState(() => _columnView = columnView),
             titleIconKey: _titleIconKey,
             filterCount: _filter.activeCount,
             filterOpen: _filterOpen,
             onToggleFilter: () => setState(() => _filterOpen = !_filterOpen),
+            selectionMode: _selectionMode,
+            onSelectionModeChanged: (mode) =>
+                setState(() => _selectionMode = mode),
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
@@ -1470,28 +1539,27 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                   )
                 : const SizedBox(width: double.infinity),
           ),
-          ExplorerSortHeader(
-            sort: _sort,
-            ascending: _ascending,
-            onSortChanged: (sort) => setState(() {
-              if (_sort == sort) {
-                _ascending = !_ascending;
-              } else {
-                _sort = sort;
-                _ascending = true;
-              }
-            }),
-          ),
+          if (!_columnView)
+            ExplorerSortHeader(
+              sort: _sort,
+              ascending: _ascending,
+              onSortChanged: (sort) => setState(() {
+                if (_sort == sort) {
+                  _ascending = !_ascending;
+                } else {
+                  _sort = sort;
+                  _ascending = true;
+                }
+              }),
+            ),
         ],
         Expanded(
           key: _contentKey,
           child: Stack(
             fit: StackFit.expand,
             children: [
-              FolderTransitionView(
-                revision: _folderRevision,
-                reverse: _reverseTransition,
-                child: IgnorePointer(
+              _wrapContent(
+                IgnorePointer(
                   ignoring: _isLoading,
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 180),
@@ -1502,7 +1570,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                     child: _pendingEntries && _loadError == null
                         ? ExplorerSkeleton(
                             key: const ValueKey('explorer-skeleton'),
-                            gridView: _gridView,
+                            gridView: _showGrid,
                           )
                         : KeyedSubtree(
                             key: const ValueKey('explorer-content'),
@@ -1534,11 +1602,14 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                                       final fileList = ExplorerEntriesView(
                                         key: ValueKey(_currentPath),
                                         entries: entries,
-                                        gridView: _gridView,
+                                        gridView: _showGrid,
+                                        compact: _columnView,
                                         selectedPath: _selectedPath,
                                         selectedPaths: _selection,
                                         onSelected: _pointerSelect,
-                                        onTapped: _tapSelect,
+                                        onTapped: _columnView
+                                            ? _columnTapped
+                                            : _tapSelect,
                                         onSelectionChanged: (paths) {
                                           _explorerFocusNode.requestFocus();
                                           _selectionChanged(() {
@@ -1546,21 +1617,42 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                                             _setSelection(paths);
                                           });
                                         },
+                                        onToggle:
+                                            _effectiveSelectionMode ==
+                                                SelectionMode.checkbox
+                                            ? _toggleSelection
+                                            : null,
                                         revealToken: _revealToken,
                                         onViewportChanged: (size) =>
                                             _viewport = size,
                                         onOpen: _openEntry,
-                                        onOpenWithBounds: (entry, card, icon) =>
-                                            _loadDirectory(
-                                              entry.entity.path,
-                                              heroCard: card,
-                                              heroIcon: icon,
-                                            ),
+                                        onOpenWithBounds: _columnView
+                                            ? null
+                                            : (entry, card, icon) =>
+                                                  _loadDirectory(
+                                                    entry.entity.path,
+                                                    heroCard: card,
+                                                    heroIcon: icon,
+                                                  ),
                                         onContextMenu: Platform.isWindows
                                             ? _showContextMenu
                                             : null,
                                       );
-                                      if (!_previewVisible) return fileList;
+                                      if (!_previewVisible) {
+                                        return _columnView
+                                            ? Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.stretch,
+                                                children: [
+                                                  SizedBox(
+                                                    width: ExplorerColumnsView
+                                                        .columnWidth,
+                                                    child: fileList,
+                                                  ),
+                                                ],
+                                              )
+                                            : fileList;
+                                      }
 
                                       final matching = entries.where(
                                         (entry) =>
@@ -1614,6 +1706,21 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                                               onToggleExpanded: toggleExpanded,
                                             );
                                       if (_previewExpanded) return preview;
+                                      if (_columnView) {
+                                        return Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            SizedBox(
+                                              width: ExplorerColumnsView
+                                                  .columnWidth,
+                                              child: fileList,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(child: preview),
+                                          ],
+                                        );
+                                      }
                                       if (constraints.maxWidth >= 760) {
                                         return Row(
                                           children: [
@@ -1645,6 +1752,28 @@ class _ExplorerPaneState extends State<ExplorerPane> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Enveloppe le contenu du dossier : colonnes parentes (vue en colonnes) ou
+  /// transition de dossier.
+  Widget _wrapContent(Widget child) {
+    if (_columnView && !_previewExpanded) {
+      return ExplorerColumnsView(
+        path: _currentPath,
+        current: child,
+        lastMinWidth:
+            ExplorerColumnsView.columnWidth + (_previewVisible ? 352 : 0),
+        sort: _sort,
+        ascending: _ascending,
+        onNavigate: _openColumn,
+        onOpen: _openEntry,
+      );
+    }
+    return FolderTransitionView(
+      revision: _folderRevision,
+      reverse: _reverseTransition,
+      child: child,
     );
   }
 

@@ -289,6 +289,22 @@ class SuperContainerState extends State<SuperContainer> {
                                   update(style.copyWith(margin: v)),
                               onNeonChanged: (v) =>
                                   update(style.copyWith(neon: v)),
+                              hoverEffect: style.hoverEffect,
+                              onHoverEffectChanged: (v) =>
+                                  update(style.copyWith(hoverEffect: v)),
+                              hoverTint: style.hoverTint,
+                              hoverColor: style.hoverColor,
+                              onHoverTintChanged: (v) =>
+                                  update(style.copyWith(hoverTint: v)),
+                              onHoverColorChanged: (v) =>
+                                  update(style.copyWith(hoverColor: v)),
+                              interactionEffect: style.interactionEffect,
+                              onInteractionEffectChanged: (v) =>
+                                  update(style.copyWith(interactionEffect: v)),
+                              designSystem: style.designSystem,
+                              onDesignSystemChanged: shape
+                                  ? (v) => update(v.apply(style))
+                                  : null,
                             ),
                             if (widget.slot == AppearanceSlot.background) ...[
                               Text(

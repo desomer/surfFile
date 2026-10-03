@@ -13,14 +13,16 @@ class EntriesLayout {
     required Appearance appearance,
     required Size viewport,
     required int count,
+    bool compact = false,
   }) {
     if (!grid) {
+      final padding = compact ? compactListPadding : listPadding;
       return EntriesLayout._(
-        padding: listPadding,
+        padding: padding,
         viewport: viewport,
         count: count,
         columns: 1,
-        itemWidth: math.max(0, viewport.width - listPadding.horizontal),
+        itemWidth: math.max(0, viewport.width - padding.horizontal),
         itemHeight: appearance.rowHeight,
         strideX: 0,
         strideY: appearance.rowHeight + appearance.spacing / 6,
@@ -58,6 +60,15 @@ class EntriesLayout {
   });
 
   static const listPadding = EdgeInsets.fromLTRB(26, 2, 26, 24);
+
+  /// Liste d'une colonne de la vue en colonnes.
+  static const compactListPadding = EdgeInsets.fromLTRB(
+    compactHorizontalPadding,
+    2,
+    compactHorizontalPadding,
+    24,
+  );
+  static const compactHorizontalPadding = 8.0;
   static const gridPadding = EdgeInsets.fromLTRB(30, 8, 30, 28);
 
   final EdgeInsets padding;

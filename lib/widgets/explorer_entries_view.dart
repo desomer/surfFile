@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/explorer_entry.dart';
@@ -6,6 +7,9 @@ import '../theme/appearance_slot.dart';
 import 'drag_select_region.dart';
 import 'entries_layout.dart';
 import 'explorer_file_icon.dart';
+import 'folder_size_cell.dart';
+import 'hover_preview.dart';
+import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
 import 'press_feedback.dart';
 import 'sliding_selection_list.dart';
@@ -26,8 +30,22 @@ class ExplorerEntriesView extends StatelessWidget {
     this.onTapped,
     this.revealToken,
     this.onViewportChanged,
+    this.compact = false,
+    this.scrollController,
+    this.onToggle,
     super.key,
   });
+
+  /// Bascule la sélection d'un élément ; affiche une case à cocher par élément
+  /// lorsqu'il est fourni.
+  final ValueChanged<String>? onToggle;
+
+  /// Liste réduite à l'icône et au nom (colonne de la vue en colonnes) ;
+  /// [gridView] est alors ignoré.
+  final bool compact;
+
+  /// Défilement de la liste lorsque [onSelectionChanged] est absent.
+  final ScrollController? scrollController;
 
   final List<ExplorerEntry> entries;
   final bool gridView;
@@ -65,23 +83,23 @@ class ExplorerEntriesView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final onSelectionChanged = this.onSelectionChanged;
+    final grid = gridView && !compact;
     Widget view(ScrollController? controller) => ScrollEdgeFade(
-      child: gridView
-          ? _buildGrid(context, controller)
-          : _buildList(controller),
+      child: grid ? _buildGrid(context, controller) : _buildList(controller),
     );
     if (onSelectionChanged == null) {
-      return KeyedSubtree(key: ValueKey(gridView), child: view(null));
+      return KeyedSubtree(key: ValueKey(grid), child: view(scrollController));
     }
     final appearance = AppearanceScope.of(context);
     EntriesLayout layout(Size viewport) => EntriesLayout(
-      grid: gridView,
+      grid: grid,
+      compact: compact,
       appearance: appearance,
       viewport: viewport,
       count: entries.length,
     );
     return DragSelectRegion(
-      key: ValueKey(gridView),
+      key: ValueKey(grid),
       builder: (context, controller) => view(controller),
       hitTest: (rect, viewport) => layout(viewport).hits(rect),
       selectedIndexes: () {
@@ -109,14 +127,19 @@ class ExplorerEntriesView extends StatelessWidget {
     final selection = _selection;
     return SlidingSelectionList(
       controller: controller,
+      horizontalPadding: compact
+          ? EntriesLayout.compactHorizontalPadding
+          : EntriesLayout.listPadding.left,
       paths: entries.map((entry) => entry.entity.path).toList(),
       selectedPath: selectedPath,
       selectedPaths: selection,
       itemBuilder: (context, index) => _EntryRow(
         key: ValueKey(entries[index].entity.path),
+        compact: compact,
         entry: entries[index],
         selected: selection.contains(entries[index].entity.path),
         onSelected: onSelected,
+        onToggle: onToggle,
         onTapped: (path) => _tap(path, _selection.contains(path)),
         onOpen: onOpen,
         onContextMenu: onContextMenu,
@@ -156,100 +179,130 @@ class ExplorerEntriesView extends StatelessWidget {
           builder: (cardKey, iconKey) => SuperContainer(
             slot: selected ? AppearanceSlot.selectedCard : AppearanceSlot.card,
             decorate: false,
-            child: NeonSurface(
-              key: cardKey,
-              style: selected ? style.neon! : appearance.cardNeon,
-              accent: appearance.accent,
+            child: InteractionEffectBox(
+              effect:
+                  (selected ? style : appearance.cardStyle).interactionEffect,
+              ownsHover: true,
+              hover: (selected ? style : appearance.cardStyle).hoverEffect,
+              hoverColor: (selected ? style : appearance.cardStyle).hoverBase(
+                appearance.accent,
+              ),
               radius: radius,
-              child: Material(
-                color: gradient != null ? Colors.transparent : color,
-                elevation: appearance.cardElevation(selected: selected),
-                shadowColor: Colors.black.withValues(
-                  alpha: selected
-                      ? style.shadowOpacity
-                      : appearance.cardStyle.shadowOpacity,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(radius),
-                  side: BorderSide(
-                    color: selected
-                        ? style.borderColor ??
-                              Theme.of(context).colorScheme.primary
-                        : appearance.cardStyle.borderColor ??
-                              Theme.of(context).colorScheme.outlineVariant,
-                    width: borderWidth,
-                    style: borderWidth == 0
-                        ? BorderStyle.none
-                        : BorderStyle.solid,
+              builder: (context, boost) => NeonSurface(
+                key: cardKey,
+                style: selected ? style.neon! : appearance.cardNeon,
+                accent: appearance.accent,
+                radius: radius,
+                child: Material(
+                  color: gradient != null ? Colors.transparent : color,
+                  elevation:
+                      (appearance.cardElevation(selected: selected) + boost)
+                          .clamp(0.0, double.infinity),
+                  shadowColor: Colors.black.withValues(
+                    alpha: selected
+                        ? style.shadowOpacity
+                        : appearance.cardStyle.shadowOpacity,
                   ),
-                ),
-                child: Ink(
-                  decoration: BoxDecoration(
-                    gradient: gradient,
+                  shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(radius),
+                    side: BorderSide(
+                      color: selected
+                          ? style.borderColor ??
+                                Theme.of(context).colorScheme.primary
+                          : appearance.cardStyle.borderColor ??
+                                Theme.of(context).colorScheme.outlineVariant,
+                      width: borderWidth,
+                      style: borderWidth == 0
+                          ? BorderStyle.none
+                          : BorderStyle.solid,
+                    ),
                   ),
-                  child: PressFeedback(
-                    key: ValueKey(entry.entity.path),
-                    onMouseDown: () => onSelected(entry.entity.path),
-                    child: InkWell(
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      gradient: gradient,
                       borderRadius: BorderRadius.circular(radius),
-                      onTap: () => _tap(entry.entity.path, selected),
-                      onDoubleTap: () => _openWithBounds(
-                        entry,
-                        cardKey,
-                        iconKey,
-                        onOpen,
-                        onOpenWithBounds,
-                      ),
-                      onSecondaryTapDown:
-                          onContextMenu == null || _styleEditing(context)
-                          ? null
-                          : (details) =>
-                                onContextMenu!(entry, details.globalPosition),
-                      child: Padding(
-                        padding: EdgeInsets.all(
-                          selected
-                              ? style.padding
-                              : appearance.cardStyle.padding,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    ),
+                    child: PressFeedback(
+                      key: ValueKey(entry.entity.path),
+                      onMouseDown: () =>
+                          _mouseDown(onSelected, entry.entity.path),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(radius),
+                        onTap: () {
+                          _tap(entry.entity.path, selected);
+                          if (_isDoubleClick(entry.entity.path)) {
+                            _openWithBounds(
+                              entry,
+                              cardKey,
+                              iconKey,
+                              onOpen,
+                              onOpenWithBounds,
+                            );
+                          }
+                        },
+                        onSecondaryTapDown:
+                            onContextMenu == null || _styleEditing(context)
+                            ? null
+                            : (details) =>
+                                  onContextMenu!(entry, details.globalPosition),
+                        child: Stack(
                           children: [
-                            Expanded(
-                              child: Center(
-                                child: FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: ExplorerFileIcon(
-                                    key: iconKey,
-                                    entry: entry,
-                                    size: appearance.iconSize,
+                            Padding(
+                              padding: EdgeInsets.all(
+                                selected
+                                    ? style.padding
+                                    : appearance.cardStyle.padding,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Center(
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: ExplorerFileIcon(
+                                          key: iconKey,
+                                          entry: entry,
+                                          size: appearance.iconSize,
+                                        ),
+                                      ),
+                                    ),
                                   ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    entry.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: appearance.fontSize,
+                                      color: foreground,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    entry.isDirectory
+                                        ? 'Dossier'
+                                        : formatExplorerSize(entry.size),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: appearance.fontSize - 2,
+                                      color: foreground.withValues(alpha: .75),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (onToggle != null)
+                              Positioned(
+                                top: 4,
+                                left: 4,
+                                child: _SelectBox(
+                                  checked: selected,
+                                  onChanged: () => onToggle!(entry.entity.path),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              entry.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: appearance.fontSize,
-                                color: foreground,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 3),
-                            Text(
-                              entry.isDirectory
-                                  ? 'Dossier'
-                                  : formatExplorerSize(entry.size),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: appearance.fontSize - 2,
-                                color: foreground.withValues(alpha: .75),
-                              ),
-                            ),
                           ],
                         ),
                       ),
@@ -274,9 +327,13 @@ class _EntryRow extends StatefulWidget {
     required this.onOpen,
     this.onContextMenu,
     this.onOpenWithBounds,
+    this.compact = false,
+    this.onToggle,
     super.key,
   });
 
+  final ValueChanged<String>? onToggle;
+  final bool compact;
   final ExplorerEntry entry;
   final bool selected;
   final ValueChanged<String> onSelected;
@@ -312,102 +369,145 @@ class _EntryRowState extends State<_EntryRow> {
     final radius = selected
         ? appearance.effectiveSelectedCardStyle.radius
         : appearance.cardStyle.radius;
+    final rowStyle = selected
+        ? appearance.effectiveSelectedCardStyle
+        : appearance.cardStyle;
     return Padding(
       key: cardKey,
       padding: EdgeInsets.only(bottom: appearance.spacing / 6),
       child: SuperContainer(
         slot: selected ? AppearanceSlot.selectedCard : AppearanceSlot.card,
         decorate: false,
-        child: Material(
-          type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(radius),
-          child: PressFeedback(
-            key: ValueKey(entry.entity.path),
-            onMouseDown: () => onSelected(entry.entity.path),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(radius),
-              onTap: () => widget.onTapped(entry.entity.path),
-              onDoubleTap: () => _openWithBounds(
-                entry,
-                cardKey,
-                iconKey,
-                onOpen,
-                onOpenWithBounds,
-              ),
-              onSecondaryTapDown:
-                  onContextMenu == null || _styleEditing(context)
-                  ? null
-                  : (details) => onContextMenu(entry, details.globalPosition),
-              child: SizedBox(
-                height: appearance.rowHeight,
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 5,
-                      child: Row(
-                        children: [
-                          const SizedBox(width: 12),
-                          ExplorerFileIcon(
-                            key: iconKey,
-                            entry: entry,
-                            size: (appearance.iconSize * 22 / 49).clamp(16, 30),
+        child: InteractionEffectBox(
+          effect: rowStyle.interactionEffect,
+          ownsHover: true,
+          hover: rowStyle.hoverEffect,
+          hoverColor: rowStyle.hoverBase(appearance.accent),
+          radius: radius,
+          builder: (context, _) => Material(
+            type: MaterialType.transparency,
+            borderRadius: BorderRadius.circular(radius),
+            child: PressFeedback(
+              key: ValueKey(entry.entity.path),
+              onMouseDown: () => _mouseDown(onSelected, entry.entity.path),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(radius),
+                onTap: () {
+                  widget.onTapped(entry.entity.path);
+                  // En colonnes, un dossier s'ouvre dès le premier clic.
+                  if (_isDoubleClick(entry.entity.path) &&
+                      !(widget.compact && entry.isDirectory)) {
+                    _openWithBounds(
+                      entry,
+                      cardKey,
+                      iconKey,
+                      onOpen,
+                      onOpenWithBounds,
+                    );
+                  }
+                },
+                onSecondaryTapDown:
+                    onContextMenu == null || _styleEditing(context)
+                    ? null
+                    : (details) => onContextMenu(entry, details.globalPosition),
+                child: HoverPreview(
+                  entry: entry,
+                  child: SizedBox(
+                    height: appearance.rowHeight,
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 5,
+                          child: Row(
+                            children: [
+                              if (widget.onToggle case final onToggle?)
+                                _SelectBox(
+                                  checked: selected,
+                                  onChanged: () => onToggle(entry.entity.path),
+                                )
+                              else
+                                SizedBox(width: widget.compact ? 8 : 12),
+                              ExplorerFileIcon(
+                                key: iconKey,
+                                entry: entry,
+                                size: (appearance.iconSize * 22 / 49).clamp(
+                                  16,
+                                  30,
+                                ),
+                              ),
+                              SizedBox(width: widget.compact ? 10 : 12),
+                              Expanded(
+                                child: Text(
+                                  entry.name,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: appearance.fontSize,
+                                    color: foreground,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                              if (widget.compact && entry.isDirectory)
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  size: 18,
+                                  color: foreground.withValues(alpha: .6),
+                                ),
+                              if (widget.compact) const SizedBox(width: 6),
+                            ],
                           ),
-                          const SizedBox(width: 12),
+                        ),
+                        if (!widget.compact) ...[
                           Expanded(
+                            flex: 2,
                             child: Text(
-                              entry.name,
+                              formatExplorerDate(entry.modified),
+                              maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: appearance.fontSize,
-                                color: foreground,
-                                fontWeight: FontWeight.w500,
+                                fontSize: appearance.fontSize - 1,
+                                color: foreground.withValues(alpha: .75),
                               ),
                             ),
                           ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              entry.isDirectory
+                                  ? 'Dossier'
+                                  : explorerFileType(entry.name),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: appearance.fontSize - 1,
+                                color: foreground.withValues(alpha: .75),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 1,
+                            child: entry.isDirectory
+                                ? FolderSizeCell(
+                                    path: entry.entity.path,
+                                    style: TextStyle(
+                                      fontSize: appearance.fontSize - 1,
+                                      color: foreground.withValues(alpha: .75),
+                                    ),
+                                  )
+                                : Text(
+                                    formatExplorerSize(entry.size),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: appearance.fontSize - 1,
+                                      color: foreground.withValues(alpha: .75),
+                                    ),
+                                  ),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        formatExplorerDate(entry.modified),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: appearance.fontSize - 1,
-                          color: foreground.withValues(alpha: .75),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        entry.isDirectory
-                            ? 'Dossier'
-                            : explorerFileType(entry.name),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: appearance.fontSize - 1,
-                          color: foreground.withValues(alpha: .75),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Text(
-                        entry.isDirectory
-                            ? '—'
-                            : formatExplorerSize(entry.size),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: appearance.fontSize - 1,
-                          color: foreground.withValues(alpha: .75),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -476,4 +576,55 @@ String formatExplorerSize(int bytes) {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} Mo';
   }
   return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} Go';
+}
+
+String? _lastClickPath;
+DateTime _lastClickAt = DateTime(0);
+
+/// Détecte le double-clic sans InkWell.onDoubleTap, qui retarde onTap du
+/// délai du double-clic : la sélection reste ainsi immédiate.
+bool _isDoubleClick(String path) {
+  final now = DateTime.now();
+  final repeated =
+      _lastClickPath == path &&
+      now.difference(_lastClickAt) <= kDoubleTapTimeout;
+  _lastClickPath = repeated ? null : path;
+  _lastClickAt = now;
+  return repeated;
+}
+
+/// Appui en cours sur une case à cocher : la case gère seule la sélection, le
+/// `onMouseDown` de la ligne ou de la carte ne doit pas la remplacer.
+bool _checkboxDown = false;
+
+void _mouseDown(ValueChanged<String> onSelected, String path) {
+  if (!_checkboxDown) onSelected(path);
+}
+
+class _SelectBox extends StatelessWidget {
+  const _SelectBox({required this.checked, required this.onChanged});
+
+  final bool checked;
+  final VoidCallback onChanged;
+
+  static const size = 24.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerDown: (event) => _checkboxDown = true,
+      onPointerUp: (_) => _checkboxDown = false,
+      onPointerCancel: (_) => _checkboxDown = false,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Checkbox(
+          value: checked,
+          onChanged: (_) => onChanged(),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+      ),
+    );
+  }
 }

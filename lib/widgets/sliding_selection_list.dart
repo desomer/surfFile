@@ -13,8 +13,11 @@ class SlidingSelectionList extends StatefulWidget {
     required this.itemBuilder,
     this.selectedPaths = const {},
     this.controller,
+    this.horizontalPadding = 26,
     super.key,
   });
+
+  final double horizontalPadding;
 
   final List<String> paths;
   final String? selectedPath;
@@ -108,8 +111,13 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
             animation: Listenable.merge([_scroll, _animation]),
             child: ListView.builder(
               controller: _scroll,
-              // Identique à ExplorerEntriesView._listPadding.
-              padding: const EdgeInsets.fromLTRB(26, 2, 26, 24),
+              // Identique à EntriesLayout.listPadding.
+              padding: EdgeInsets.fromLTRB(
+                widget.horizontalPadding,
+                2,
+                widget.horizontalPadding,
+                24,
+              ),
               itemExtent: extent,
               itemCount: widget.paths.length,
               itemBuilder: widget.itemBuilder,
@@ -130,8 +138,8 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                 key: slide
                     ? const ValueKey('sliding-selection')
                     : ValueKey('row-surface-${widget.paths[index]}'),
-                left: 26,
-                right: 26,
+                left: widget.horizontalPadding,
+                right: widget.horizontalPadding,
                 top:
                     2 +
                     (slide ? position! : index.toDouble()) * extent -

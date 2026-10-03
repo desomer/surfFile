@@ -240,3 +240,50 @@ leur taille) et, pour chaque coin, de le garder en case propre ou de le fusionne
 avec l'un de ses deux voisins, jamais les deux (ex. Sud-Ouest avec Ouest ou avec
 Sud). Un coin n'existe que si ses deux voisins existent. Les zones sont fournies
 via `zones` ; la structure remonte par `onChanged` (`SuperLayoutConfig`).
+
+
+
+UI DESIGN
+│
+├── Réaliste
+│   ├── Skeuomorphism
+│   └── Neo Skeuomorphism
+│
+├── Minimaliste
+│   ├── Swiss
+│   ├── Flat
+│   └── Material
+│
+├── Verre
+│   ├── Aero
+│   ├── Glassmorphism
+│   ├── Liquid Glass
+│   ├── Frosted
+│   └── Acrylic
+│
+├── Relief
+│   ├── Neumorphism
+│   ├── Soft UI
+│   └── Claymorphism
+│
+├── Cartes
+│   ├── Card UI
+│   ├── Dashboard
+│   └── Bento
+│
+├── Futuriste
+│   ├── HUD
+│   ├── Cyberpunk
+│   ├── Holographic
+│   └── AI Native
+│
+├── Spatial
+│   ├── 3D UI
+│   ├── Mixed Reality
+│   └── Spatial UI
+│
+└── Artistique
+    ├── Brutalism
+    ├── Neo Brutalism
+    ├── Y2K
+    └── Vaporwave

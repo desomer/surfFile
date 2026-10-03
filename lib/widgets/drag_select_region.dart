@@ -74,6 +74,13 @@ class DragSelectRegionState extends State<DragSelectRegion>
   );
 
   @override
+  void initState() {
+    super.initState();
+    // Une sélection déjà présente à la création (retour au dossier parent).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reveal());
+  }
+
+  @override
   void didUpdateWidget(DragSelectRegion oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.revealToken != oldWidget.revealToken && !_dragging) {

@@ -1,11 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../models/selection_mode.dart';
 import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/folder_transition.dart';
 import 'super_container.dart';
 import 'explorer_view_toggle.dart';
+import 'explorer_selection_mode_button.dart';
 
 /// En-tête du dossier courant : icône, nom, nombre d'éléments et bascule
 /// liste / grille.
@@ -15,11 +17,15 @@ class ExplorerViewModeBar extends StatelessWidget {
     required this.itemCount,
     required this.gridView,
     required this.onGridViewChanged,
+    this.columnView = false,
+    this.onColumnViewChanged,
     this.pending = false,
     this.titleIconKey,
     this.filterCount = 0,
     this.filterOpen = false,
     this.onToggleFilter,
+    this.selectionMode = SelectionMode.standard,
+    this.onSelectionModeChanged,
     super.key,
   });
 
@@ -31,6 +37,10 @@ class ExplorerViewModeBar extends StatelessWidget {
   final bool gridView;
   final ValueChanged<bool> onGridViewChanged;
 
+  /// Navigation en colonnes (à la place de la liste ou de la grille).
+  final bool columnView;
+  final ValueChanged<bool>? onColumnViewChanged;
+
   /// Clé de l'icône dossier, cible de la transition « heroIcon ».
   final Key? titleIconKey;
 
@@ -38,6 +48,11 @@ class ExplorerViewModeBar extends StatelessWidget {
   final int filterCount;
   final bool filterOpen;
   final VoidCallback? onToggleFilter;
+
+  /// Mode de sélection ; le sélecteur n'apparaît que si
+  /// [onSelectionModeChanged] est fourni.
+  final SelectionMode selectionMode;
+  final ValueChanged<SelectionMode>? onSelectionModeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +68,8 @@ class ExplorerViewModeBar extends StatelessWidget {
       ),
       borderColor: Theme.of(context).colorScheme.outlineVariant,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(30, 10, 30, 6),
+        padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
+        //padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
         child: Row(
           children: [
             if (appearance.folderTransition == FolderTransition.heroIcon) ...[
@@ -69,7 +85,7 @@ class ExplorerViewModeBar extends StatelessWidget {
               child: Text(
                 title,
                 style: TextStyle(
-                  fontSize: 25,
+                  fontSize: 20,
                   fontWeight: FontWeight.w700,
                   color: style.foreground,
                 ),
@@ -77,8 +93,16 @@ class ExplorerViewModeBar extends StatelessWidget {
             ),
             if (onToggleFilter != null) ...[
               _filterButton(context),
-              const SizedBox(width: 12),
+              const SizedBox(width: 4),
             ],
+            if (onSelectionModeChanged != null) ...[
+              ExplorerSelectionModeButton(
+                mode: selectionMode,
+                onChanged: onSelectionModeChanged!,
+              ),
+              const SizedBox(width: 12),
+            ] else if (onToggleFilter != null)
+              const SizedBox(width: 8),
             Text(
               pending ? '…' : '$itemCount élément${itemCount == 1 ? '' : 's'}',
               style: TextStyle(
@@ -96,6 +120,8 @@ class ExplorerViewModeBar extends StatelessWidget {
             ExplorerViewToggle(
               gridView: gridView,
               onChanged: onGridViewChanged,
+              columnView: columnView,
+              onColumnViewChanged: onColumnViewChanged,
             ),
           ],
         ),

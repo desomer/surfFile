@@ -2,6 +2,8 @@ import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/container_fill.dart';
+import '../theme/design_system.dart';
+import '../theme/interaction_effect.dart';
 import '../theme/neon_style.dart';
 import 'neon_surface.dart';
 
@@ -32,8 +34,39 @@ class ContainerStyleEditor extends StatelessWidget {
     this.neon = const NeonStyle(),
     this.accent = const Color(0xFF5268D9),
     this.onNeonChanged,
+    this.designSystem = DesignSystem.material,
+    this.onDesignSystemChanged,
+    this.interactionEffect = InteractionEffect.ripple,
+    this.onInteractionEffectChanged,
+    this.hoverEffect = false,
+    this.onHoverEffectChanged,
+    this.hoverTint = HoverTint.material,
+    this.hoverColor,
+    this.onHoverTintChanged,
+    this.onHoverColorChanged,
     super.key,
   });
+
+  /// Système de design ; le sélecteur n'apparaît que si
+  /// [onDesignSystemChanged] est fourni.
+  final DesignSystem designSystem;
+  final ValueChanged<DesignSystem>? onDesignSystemChanged;
+
+  /// Effet à l'interaction ; le sélecteur n'apparaît que si
+  /// [onInteractionEffectChanged] est fourni.
+  final InteractionEffect interactionEffect;
+  final ValueChanged<InteractionEffect>? onInteractionEffectChanged;
+
+  /// Effet au survol, indépendant du choix ci-dessus ; la case n'apparaît que
+  /// si [onHoverEffectChanged] est fourni.
+  final bool hoverEffect;
+  final ValueChanged<bool>? onHoverEffectChanged;
+
+  /// Couleur du voile au survol, proposée quand l'effet est actif.
+  final HoverTint hoverTint;
+  final Color? hoverColor;
+  final ValueChanged<HoverTint>? onHoverTintChanged;
+  final ValueChanged<Color>? onHoverColorChanged;
 
   final String label;
   final ContainerFill value;
@@ -64,6 +97,86 @@ class ContainerStyleEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final children = [
+      if (onDesignSystemChanged != null) ...[
+        DropdownButtonFormField<DesignSystem>(
+          key: ValueKey('design-system-$label'),
+          initialValue: designSystem,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Système de design',
+            helperText: 'Règle l’arrondi, la bordure, l’ombre et le fond.',
+          ),
+          items: [
+            for (final system in DesignSystem.values)
+              DropdownMenuItem(
+                value: system,
+                child: Text(system.label, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (system) {
+            if (system != null) onDesignSystemChanged!(system);
+          },
+        ),
+        const SizedBox(height: 8),
+      ],
+      if (onInteractionEffectChanged != null) ...[
+        DropdownButtonFormField<InteractionEffect>(
+          key: ValueKey('interaction-effect-$label'),
+          initialValue: interactionEffect,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Effet d’interaction',
+            helperText: interactionEffect.description,
+          ),
+          items: [
+            for (final effect in InteractionEffect.values)
+              DropdownMenuItem(
+                value: effect,
+                child: Text(effect.label, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (effect) {
+            if (effect != null) onInteractionEffectChanged!(effect);
+          },
+        ),
+      ],
+      if (onHoverEffectChanged != null)
+        CheckboxListTile(
+          key: ValueKey('hover-effect-$label'),
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          title: const Text('Effet au survol (Hover)'),
+          subtitle: const Text('Voile quand le pointeur survole'),
+          value: hoverEffect,
+          onChanged: (v) => onHoverEffectChanged!(v ?? false),
+        ),
+      if (hoverEffect &&
+          onHoverEffectChanged != null &&
+          onHoverTintChanged != null) ...[
+        DropdownButtonFormField<HoverTint>(
+          key: ValueKey('hover-tint-$label'),
+          initialValue: hoverTint,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Couleur du survol'),
+          items: [
+            for (final tint in HoverTint.values)
+              DropdownMenuItem(
+                value: tint,
+                child: Text(tint.label, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (tint) {
+            if (tint != null) onHoverTintChanged!(tint);
+          },
+        ),
+        if (hoverTint == HoverTint.custom && onHoverColorChanged != null)
+          _color(
+            'Couleur du voile',
+            hoverColor ?? accent,
+            onHoverColorChanged!,
+          ),
+      ],
+      const SizedBox(height: 8),
       DropdownButtonFormField<FillType>(
         initialValue: value.type,
         decoration: const InputDecoration(labelText: 'Type de fond'),
@@ -195,6 +308,12 @@ class ContainerStyleEditor extends StatelessWidget {
               ),
               boxShadow: elevation == 0
                   ? null
+                  : designSystem == DesignSystem.neumorphism
+                  ? DesignSystem.neumorphicShadows(
+                      solidColor,
+                      elevation,
+                      shadowOpacity,
+                    )
                   : [
                       BoxShadow(
                         color: Colors.black.withValues(alpha: shadowOpacity),

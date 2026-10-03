@@ -252,6 +252,10 @@ class Appearance {
                 shadowOpacity: cardStyle.shadowOpacity,
                 padding: cardStyle.padding,
                 margin: cardStyle.margin,
+                interactionEffect: cardStyle.interactionEffect,
+                hoverEffect: cardStyle.hoverEffect,
+                hoverTint: cardStyle.hoverTint,
+                hoverColor: cardStyle.hoverColor,
               ))
           .copyWith(neon: selectedCardStyle?.neon ?? cardNeon);
 
@@ -264,6 +268,10 @@ class Appearance {
                 shadowOpacity: diskTileStyle.shadowOpacity,
                 padding: diskTileStyle.padding,
                 margin: diskTileStyle.margin,
+                interactionEffect: diskTileStyle.interactionEffect,
+                hoverEffect: diskTileStyle.hoverEffect,
+                hoverTint: diskTileStyle.hoverTint,
+                hoverColor: diskTileStyle.hoverColor,
               ))
           .copyWith(
             neon:
