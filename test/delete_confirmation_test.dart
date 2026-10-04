@@ -5,9 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/pages/explorer_page.dart';
 import 'package:surf_file/services/personal_folders.dart';
-import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
 void main() {
   testWidgets('deleting asks for confirmation first', (tester) async {

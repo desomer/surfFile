@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:surf_file/widgets/mouse_back_navigation.dart';
+import 'package:surf_file/widgets/interaction/mouse_back_navigation.dart';
 
 void main() {
   testWidgets('forward acts on press and never triggers back', (tester) async {

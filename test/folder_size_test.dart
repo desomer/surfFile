@@ -5,9 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/folder_size_service.dart';
-import 'package:surf_file/widgets/folder_size_cell.dart';
-import 'package:surf_file/widgets/folder_size_indicator.dart';
-import 'package:surf_file/widgets/transfer_panel.dart';
+import 'package:surf_file/widgets/folder_size/folder_size_cell.dart';
+import 'package:surf_file/widgets/folder_size/folder_size_indicator.dart';
+import 'package:surf_file/widgets/file_operations/transfer_panel.dart';
 
 void main() {
   late Directory root;

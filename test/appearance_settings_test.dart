@@ -16,8 +16,8 @@ import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/widgets/neon_surface.dart';
 import 'package:super_container_layout/widgets/appearance_settings.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
-import 'package:surf_file/widgets/explorer_toolbar.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
 
 void main() {
   setUp(() {

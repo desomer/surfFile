@@ -11,9 +11,9 @@ import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/appearance_settings.dart';
-import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
-import 'package:surf_file/widgets/explorer_view_mode_bar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_view_mode_bar.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
 void _ignoreGridChange(bool _) {}

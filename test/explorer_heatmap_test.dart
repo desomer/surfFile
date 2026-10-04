@@ -5,8 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/treemap_layout.dart';
 import 'package:surf_file/services/folder_size_service.dart';
-import 'package:surf_file/widgets/explorer_heatmap_view.dart';
-import 'package:surf_file/widgets/explorer_view_toggle.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_heatmap_view.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_view_toggle.dart';
 
 void main() {
   group('squarifyTreemap', () {

@@ -1,21 +1,18 @@
 name: surf_file
 description: Un explorateur de fichiers de bureau.
 publish_to: none
-version: 0.3.1+4
+version: 0.3.2+5
 
 environment:
   sdk: ^3.13.5
   flutter: ">=3.47.6"
 
 dependencies:
-  flex_color_picker: 4.0.0
   flutter:
     sdk: flutter
-  flutter_acrylic: ^1.1.4
   flutter_monaco: 3.4.3
   material_ui: 1.5.0
   pro_image_editor: 14.6.2
-  shared_preferences: ^2.5.5
   super_container_layout:
     path: packages/super_container_layout
   video_player: ^2.9.2

@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/app.dart';
-import 'package:surf_file/widgets/explorer_toolbar.dart';
-import 'package:surf_file/widgets/file_action_bar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
+import 'package:surf_file/widgets/file_operations/file_action_bar.dart';
 
 void main() {
   runApp(const SurfFileApp());

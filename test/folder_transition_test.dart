@@ -11,13 +11,13 @@ import 'package:surf_file/services/personal_folders.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/folder_transition.dart';
 import 'package:super_container_layout/widgets/appearance_settings.dart';
-import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
-import 'package:surf_file/widgets/explorer_sort_header.dart';
-import 'package:surf_file/widgets/explorer_view_toggle.dart';
-import 'package:surf_file/widgets/folder_transition_view.dart';
-import 'package:surf_file/widgets/folder_hero_flight.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sort_header.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_view_toggle.dart';
+import 'package:surf_file/widgets/explorer/transitions/folder_transition_view.dart';
+import 'package:surf_file/widgets/explorer/transitions/folder_hero_flight.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

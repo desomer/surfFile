@@ -14,7 +14,7 @@ Depuis la racine du projet, executer dans PowerShell :
 ```
 
 Le script compile en Release puis cree
-`build\installer\SurfFile-0.3.1+4-windows-x64-setup.exe`. La version provient de
+`build\installer\SurfFile-0.3.2+5-windows-x64-setup.exe`. La version provient de
 `pubspec.yaml` ; modifier ce champ avant de publier une nouvelle version.
 Les parametres `-FlutterPath`, `-IsccPath` et `-RuntimePath` permettent de
 preciser les outils et le dossier des DLL CRT Visual C++ redistribuables x64.
@@ -279,6 +279,12 @@ Sud). Un coin n'existe que si ses deux voisins existent. La structure remonte pa
 `SuperContainer`, `SuperLayout`, leurs éditeurs et leurs modèles sont regroupés
 dans le package Flutter autonome [`super_container_layout`](packages/super_container_layout).
 Le point d'entrée est `package:super_container_layout/super_container_layout.dart`.
+Le gestionnaire Windows du canal `surf_file/window_transparency` est fourni par
+`packages/super_container_layout/windows/window_transparency.cpp`. Les runners
+de SurfFile et de l'application autonome du package compilent cette source et
+appellent `RegisterWindowTransparency` apres l'enregistrement des plugins.
+Toute modification de ce code natif necessite une recompilation et un
+redemarrage complet de l'application Windows ; le hot reload ne suffit pas.
 `SuperApp` y fournit la coquille `MaterialApp` liée aux contrôleurs d'apparence
 et de mode édition. Les anciens imports `package:surf_file/...` restent
 disponibles comme réexports.

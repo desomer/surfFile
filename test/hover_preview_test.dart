@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:surf_file/widgets/hover_preview.dart';
+import 'package:surf_file/widgets/preview/hover_preview.dart';
 
 void main() {
   late Directory root;

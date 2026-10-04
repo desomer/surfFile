@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pro_image_editor/core/models/editor_configs/image_generation_configs/output_formats.dart';
-import 'package:surf_file/widgets/image_preview_panel.dart';
+import 'package:surf_file/widgets/preview/image_preview_panel.dart';
 
 void main() {
   test('recognizes common image extensions in Windows paths', () {

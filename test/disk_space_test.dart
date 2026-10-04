@@ -2,9 +2,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/services/disk_space.dart';
-import 'package:surf_file/widgets/disk_gauge.dart';
-import 'package:surf_file/widgets/disk_space_panel.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
+import 'package:surf_file/widgets/disk_space/disk_gauge.dart';
+import 'package:surf_file/widgets/disk_space/disk_space_panel.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

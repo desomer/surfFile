@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/services/disk_space.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

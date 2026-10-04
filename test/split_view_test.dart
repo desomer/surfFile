@@ -5,11 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/pages/explorer_page.dart';
 import 'package:surf_file/services/file_operations.dart';
 import 'package:surf_file/services/personal_folders.dart';
-import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
-import 'package:surf_file/widgets/explorer_skeleton.dart';
-import 'package:surf_file/widgets/explorer_toolbar.dart';
-import 'package:surf_file/widgets/file_action_bar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/states/explorer_skeleton.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
+import 'package:surf_file/widgets/file_operations/file_action_bar.dart';
 
 void main() {
   testWidgets('split view shows two independent folder navigations', (

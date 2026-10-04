@@ -6,8 +6,8 @@ import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_location.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
 void main() {
   test('selected cards follow general elevation until customized', () {

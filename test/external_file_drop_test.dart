@@ -9,9 +9,9 @@ import 'package:surf_file/services/file_operations.dart';
 import 'package:surf_file/services/windows_file_drop.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/folder_size_service.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
-import 'package:surf_file/widgets/explorer_heatmap_view.dart';
-import 'package:surf_file/widgets/external_file_drop.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_heatmap_view.dart';
+import 'package:surf_file/widgets/file_operations/external_file_drop.dart';
 
 Future<void> nativeEvent(String method, Object? arguments) async {
   final result = Completer<void>();

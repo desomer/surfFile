@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:surf_file/widgets/video_preview_panel.dart';
+import 'package:surf_file/widgets/preview/video_preview_panel.dart';
 
 void main() {
   test('recognizes supported video extensions in Windows paths', () {

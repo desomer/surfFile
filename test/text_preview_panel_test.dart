@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:surf_file/widgets/text_preview_panel.dart';
+import 'package:surf_file/widgets/preview/text_preview_panel.dart';
 
 void main() {
   test('recognizes text, source and dot-env files', () {

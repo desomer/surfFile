@@ -10,7 +10,7 @@ import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/container_style_editor.dart';
-import 'package:surf_file/widgets/explorer_toolbar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
 import 'package:super_container_layout/widgets/styled_surface.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 

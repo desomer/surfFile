@@ -1,12 +1,12 @@
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:surf_file/widgets/press_feedback.dart';
+import 'package:surf_file/widgets/interaction/press_feedback.dart';
 
 import 'dart:io';
 
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 
 void main() {
   testWidgets('press selects immediately without visual feedback', (

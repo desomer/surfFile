@@ -10,7 +10,7 @@ import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/container_style_editor.dart';
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 
 void main() {
   test('all gradient types and alpha survive persistence', () {

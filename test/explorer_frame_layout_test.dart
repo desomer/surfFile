@@ -4,12 +4,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/pages/explorer_page.dart';
 import 'package:surf_file/services/personal_folders.dart';
-import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
-import 'package:surf_file/widgets/explorer_sidebar.dart';
-import 'package:surf_file/widgets/explorer_sort_header.dart';
-import 'package:surf_file/widgets/explorer_toolbar.dart';
-import 'package:surf_file/widgets/explorer_view_mode_bar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_sort_header.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_view_mode_bar.dart';
 
 void main() {
   testWidgets('explorer frame keeps its blocks where they are', (tester) async {

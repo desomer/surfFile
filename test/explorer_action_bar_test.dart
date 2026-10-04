@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:surf_file/widgets/explorer_action_bar.dart';
-import 'package:surf_file/widgets/explorer_view_mode_bar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_action_bar.dart';
+import 'package:surf_file/widgets/explorer/navigation/explorer_view_mode_bar.dart';
 
 void main() {
   group('ExplorerActionBar', () {

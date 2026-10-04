@@ -6,8 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/shell_menu_item.dart';
 import 'package:surf_file/services/windows_context_menu.dart';
-import 'package:surf_file/widgets/explorer_context_menu.dart';
-import 'package:surf_file/widgets/explorer_entries_view.dart';
+import 'package:surf_file/widgets/explorer/menus/explorer_context_menu.dart';
+import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 
 void main() {
   final entry = ExplorerEntry(
