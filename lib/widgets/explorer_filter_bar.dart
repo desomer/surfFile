@@ -96,6 +96,9 @@ class _ExplorerFilterBarState extends State<ExplorerFilterBar> {
         border: Border.all(color: colors.outlineVariant.withValues(alpha: .6)),
       ),
       child: Column(
+        // La hauteur du contenu : borné par une zone, le Column ne doit pas
+        // remplir tout l'espace.
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _group('DATE', [
