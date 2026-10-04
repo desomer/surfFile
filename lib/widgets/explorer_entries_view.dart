@@ -494,7 +494,7 @@ class _EntryRowState extends State<_EntryRow> {
                               Expanded(
                                 flex: 2,
                                 child: Text(
-                                  formatExplorerDate(entry.modified),
+                                  formatExplorerDateTime(entry.modified),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
@@ -615,6 +615,14 @@ String formatExplorerDate(DateTime date) {
   final day = local.day.toString().padLeft(2, '0');
   final month = local.month.toString().padLeft(2, '0');
   return '$day/$month/${local.year}';
+}
+
+/// Date et heure locales, ex. `05/03/2026 09:07`.
+String formatExplorerDateTime(DateTime date) {
+  final local = date.toLocal();
+  final hour = local.hour.toString().padLeft(2, '0');
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '${formatExplorerDate(local)} $hour:$minute';
 }
 
 String formatExplorerSize(int bytes) {

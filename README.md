@@ -260,6 +260,8 @@ hauteur automatique plafonnee a la moitie du panneau (slot `sidebar-disks`).
 
 Win + Echap remet toutes les zones et tous les slots par defaut.
 
+En mode edition, le bouton import/export de la banniere ouvre une boite pour echanger le style et la disposition. L'export peut contenir les **styles**, les **dispositions** ou les deux (puces a cocher) ; il se copie dans le presse-papiers ou s'enregistre dans un fichier JSON (surf_file_style.json par defaut). A l'import, le texte est colle ou lu depuis un fichier, la boite indique les groupes qu'il contient et n'applique que ceux qui sont coches ; le resultat est entierement valide avant d'etre applique et sauvegarde. Le format est une enveloppe {format, version, groups, data} (voir lib/services/appearance_transfer.dart) ; un parametrage brut enregistre est aussi accepte.
+
 
 
 UI DESIGN

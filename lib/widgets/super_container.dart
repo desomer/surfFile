@@ -9,6 +9,7 @@ import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/container_style.dart';
 import '../theme/neon_style.dart';
+import 'appearance_transfer_dialog.dart';
 import 'container_style_editor.dart';
 import 'layout_selection.dart';
 import 'style_editor_panel.dart';
@@ -623,7 +624,11 @@ class _PathSegment extends StatelessWidget {
 /// Peut être placée au-dessus du [Navigator] (ex. `MaterialApp.builder`) :
 /// elle fournit alors son propre [Overlay] pour l'info-bulle du bouton.
 class StyleEditBanner extends StatelessWidget {
-  const StyleEditBanner({super.key});
+  const StyleEditBanner({this.navigatorKey, super.key});
+
+  /// Navigateur de l'application, où s'ouvre la boîte d'import / export : la
+  /// bannière est au-dessus de lui. Sans lui, celui du contexte est utilisé.
+  final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
   Widget build(BuildContext context) => Overlay.maybeOf(context) == null
@@ -714,6 +719,21 @@ class StyleEditBanner extends StatelessWidget {
                         ),
                 ),
                 const SizedBox(width: 4),
+                if (AppearanceScope.controllerOf(context)
+                    case final appearance?)
+                  IconButton(
+                    key: const ValueKey('style-edit-banner-transfer'),
+                    tooltip: 'Importer / exporter le style et la disposition',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: scheme.onPrimary,
+                    icon: const Icon(Icons.import_export),
+                    onPressed: () {
+                      final target = navigatorKey?.currentContext ?? context;
+                      if (Navigator.maybeOf(target) == null) return;
+                      AppearanceTransferDialog.show(target, appearance);
+                    },
+                  ),
                 IconButton(
                   key: const ValueKey('style-edit-banner-close'),
                   tooltip: 'Quitter le mode édition',

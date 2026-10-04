@@ -1158,36 +1158,56 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     }
   }
 
+  /// Demande confirmation avant de supprimer [paths] : à la corbeille, ou
+  /// définitivement si [permanent] (ou si le système n'a pas de corbeille).
+  Future<bool> _confirmDelete(
+    List<String> paths, {
+    required bool permanent,
+  }) async {
+    final hard = permanent || !Platform.isWindows;
+    final count = paths.length;
+    final what = count == 1
+        ? '« ${FileOperations.name(paths.first)} »'
+        : '$count éléments';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        key: const ValueKey('delete-confirm'),
+        title: Text(
+          hard ? 'Supprimer définitivement ?' : 'Mettre à la corbeille ?',
+        ),
+        content: Text(
+          hard
+              ? (count == 1
+                    ? '$what sera supprimé sans passer par la corbeille.'
+                    : '$what seront supprimés sans passer par la corbeille.')
+              : (count == 1
+                    ? '$what sera envoyé à la corbeille.'
+                    : '$what seront envoyés à la corbeille.'),
+        ),
+        actions: [
+          // Le focus initial évite qu'Entrée confirme une suppression.
+          TextButton(
+            key: const ValueKey('delete-cancel'),
+            autofocus: true,
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            key: const ValueKey('delete-accept'),
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(hard ? 'Supprimer' : 'Mettre à la corbeille'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true && mounted;
+  }
+
   Future<void> _deleteSelection({required bool permanent}) async {
     final paths = _snapshot.selection;
     if (paths.isEmpty || _contextMenuOpen) return;
-    if (permanent || !Platform.isWindows) {
-      final count = paths.length;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Supprimer définitivement ?'),
-          content: Text(
-            count == 1
-                ? '« ${FileOperations.name(paths.first)} » sera supprimé '
-                      'sans passer par la corbeille.'
-                : '$count éléments seront supprimés sans passer par la '
-                      'corbeille.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Annuler'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Supprimer'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted) return;
-    }
+    if (!await _confirmDelete(paths, permanent: permanent)) return;
 
     // Après suppression, l'élément suivant devient la sélection.
     final visible = _visibleEntries;
@@ -1286,6 +1306,10 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       if (command.verb.toLowerCase() == 'rename') {
         await _renameEntry(entry, menu, command.id);
       } else {
+        if (command.verb.toLowerCase() == 'delete' &&
+            !await _confirmDelete([entry.entity.path], permanent: false)) {
+          return;
+        }
         await menu.invoke(command.id);
       }
       if (mounted) {

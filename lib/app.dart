@@ -24,6 +24,7 @@ class _SurfFileAppState extends State<SurfFileApp> {
   late final PersistentAppearanceController _appearance;
   final _styleEditMode = ValueNotifier(false);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
+  final _navigator = GlobalKey<NavigatorState>();
   bool _loading = true;
   String? _loadError;
   Future<void> _windowUpdates = Future.value();
@@ -155,6 +156,7 @@ class _SurfFileAppState extends State<SurfFileApp> {
               title: 'Surf File V 1.0.0 by Gauthier Desomer',
               debugShowCheckedModeBanner: false,
               scaffoldMessengerKey: _messenger,
+              navigatorKey: _navigator,
               localizationsDelegates: GlobalMaterialLocalizations.delegates,
               themeMode: appearance.mode,
               theme: appearance.theme(Brightness.light),
@@ -193,7 +195,9 @@ class _SurfFileAppState extends State<SurfFileApp> {
                       ),
                     ),
                   ),
-                  const Positioned.fill(child: StyleEditBanner()),
+                  Positioned.fill(
+                    child: StyleEditBanner(navigatorKey: _navigator),
+                  ),
                 ],
               ),
               home: _loading
