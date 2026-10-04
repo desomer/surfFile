@@ -9,6 +9,7 @@ import 'entries_layout.dart';
 import 'explorer_file_icon.dart';
 import 'folder_size_cell.dart';
 import 'folder_size_indicator.dart';
+import '../services/folder_size_service.dart';
 import 'hover_preview.dart';
 import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
@@ -146,9 +147,18 @@ class ExplorerEntriesView extends StatelessWidget {
         onContextMenu: onContextMenu,
         onOpenWithBounds: onOpenWithBounds,
         siblingFolders: _folderPaths,
+        siblingSizes: _sizes,
       ),
     );
   }
+
+  /// Tailles de tous les éléments (dossiers : taille calculée, sinon 0).
+  List<int> _sizes() => [
+    for (final entry in entries)
+      entry.isDirectory
+          ? FolderSizeService.bytesOf(entry.entity.path) ?? 0
+          : entry.size,
+  ];
 
   List<String> _folderPaths() => [
     for (final entry in entries)
@@ -337,10 +347,12 @@ class _EntryRow extends StatefulWidget {
     this.compact = false,
     this.onToggle,
     this.siblingFolders,
+    this.siblingSizes,
     super.key,
   });
 
   final List<String> Function()? siblingFolders;
+  final List<int> Function()? siblingSizes;
   final ValueChanged<String>? onToggle;
   final bool compact;
   final ExplorerEntry entry;
@@ -425,11 +437,13 @@ class _EntryRowState extends State<_EntryRow> {
                     height: appearance.rowHeight,
                     child: Stack(
                       children: [
-                        if (!widget.compact && entry.isDirectory)
+                        if (!widget.compact)
                           Positioned.fill(
-                            child: FolderSizeRowBackground(
-                              path: entry.entity.path,
-                              siblings: widget.siblingFolders,
+                            child: SizeRowBackground(
+                              bytes: () => entry.isDirectory
+                                  ? FolderSizeService.bytesOf(entry.entity.path)
+                                  : entry.size,
+                              siblingSizes: widget.siblingSizes,
                             ),
                           ),
                         Row(
@@ -509,6 +523,7 @@ class _EntryRowState extends State<_EntryRow> {
                                     ? FolderSizeCell(
                                         path: entry.entity.path,
                                         siblingFolders: widget.siblingFolders,
+                                        siblingSizes: widget.siblingSizes,
                                         style: TextStyle(
                                           fontSize: appearance.fontSize - 1,
                                           color: foreground.withValues(
@@ -516,14 +531,21 @@ class _EntryRowState extends State<_EntryRow> {
                                           ),
                                         ),
                                       )
-                                    : Text(
-                                        formatExplorerSize(entry.size),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: appearance.fontSize - 1,
-                                          color: foreground.withValues(
-                                            alpha: .75,
+                                    : Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: SizeGauge(
+                                          bytes: () => entry.size,
+                                          siblingSizes: widget.siblingSizes,
+                                          child: Text(
+                                            formatExplorerSize(entry.size),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: appearance.fontSize - 1,
+                                              color: foreground.withValues(
+                                                alpha: .75,
+                                              ),
+                                            ),
                                           ),
                                         ),
                                       ),

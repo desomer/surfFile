@@ -12,11 +12,15 @@ class FolderSizeCell extends StatelessWidget {
     required this.path,
     required this.style,
     this.siblingFolders,
+    this.siblingSizes,
     super.key,
   });
 
   final String path;
   final TextStyle style;
+
+  /// Tailles de tous les éléments du répertoire, pour l'indicateur visuel.
+  final List<int> Function()? siblingSizes;
 
   /// Dossiers du même répertoire : à la fin du calcul, propose de calculer
   /// aussi ceux dont la taille est encore inconnue.
@@ -76,9 +80,9 @@ class FolderSizeCell extends StatelessWidget {
         final bytes = state.bytes;
         return Align(
           alignment: Alignment.centerLeft,
-          child: FolderSizeGauge(
-            path: path,
-            siblings: siblingFolders,
+          child: SizeGauge(
+            bytes: () => FolderSizeService.bytesOf(path),
+            siblingSizes: siblingSizes,
             child: Tooltip(
               message: bytes == null
                   ? 'Calculer la taille du dossier'

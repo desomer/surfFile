@@ -62,7 +62,9 @@ void main() {
       await FolderSizeService.compute(a.path);
       await FolderSizeService.compute(b.path);
     });
-    expect(FolderSizeIndicator.ratio(b.path, [a.path, b.path]), .25);
+    List<int> sizes() => [100, 25, 50];
+    expect(FolderSizeIndicator.ratio(25, sizes()), .25);
+    expect(FolderSizeIndicator.ratio(null, sizes()), isNull);
     addTearDown(() => FolderSizeIndicator.mode.value = FolderSizeDisplay.bar);
 
     Future<void> show(FolderSizeDisplay display) async {
@@ -77,12 +79,18 @@ void main() {
                   path: b.path,
                   style: const TextStyle(),
                   siblingFolders: () => [a.path, b.path],
+                  siblingSizes: sizes,
+                ),
+                SizeGauge(
+                  bytes: () => 50,
+                  siblingSizes: sizes,
+                  child: const Text('file'),
                 ),
                 SizedBox(
                   height: 30,
-                  child: FolderSizeRowBackground(
-                    path: b.path,
-                    siblings: () => [a.path, b.path],
+                  child: SizeRowBackground(
+                    bytes: () => FolderSizeService.bytesOf(b.path),
+                    siblingSizes: sizes,
                   ),
                 ),
               ],
@@ -93,11 +101,11 @@ void main() {
     }
 
     await show(FolderSizeDisplay.bar);
-    expect(find.byKey(const ValueKey('folder-size-bar')), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-size-bar')), findsNWidgets(2));
     await show(FolderSizeDisplay.dot);
-    expect(find.byKey(const ValueKey('folder-size-dot')), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-size-dot')), findsNWidgets(2));
     await show(FolderSizeDisplay.pie);
-    expect(find.byKey(const ValueKey('folder-size-pie')), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-size-pie')), findsNWidgets(2));
     await show(FolderSizeDisplay.background);
     expect(
       find.byKey(const ValueKey('folder-size-background')),
@@ -112,7 +120,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('folder-size-display-pie')));
     await tester.pumpAndSettle();
     expect(FolderSizeIndicator.mode.value, FolderSizeDisplay.pie);
-    expect(find.byKey(const ValueKey('folder-size-pie')), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-size-pie')), findsNWidgets(2));
   });
 
   testWidgets('hovering the progress shows a cross that cancels', (

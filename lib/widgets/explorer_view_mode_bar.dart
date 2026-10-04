@@ -82,10 +82,6 @@ class ExplorerViewModeBar extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) => Row(
             children: [
-              if (!gridView && !columnView) ...[
-                const FolderSizeDisplayButton(),
-                const SizedBox(width: 6),
-              ],
               if (actions.isNotEmpty) ...[
                 ExplorerActionBar(
                   actions: actions,
@@ -112,6 +108,10 @@ class ExplorerViewModeBar extends StatelessWidget {
                   ),
                 ),
               ),
+              if (!gridView && !columnView) ...[
+                const FolderSizeDisplayButton(),
+                const SizedBox(width: 4),
+              ],
               if (onToggleFilter != null) ...[
                 _filterButton(context),
                 const SizedBox(width: 4),

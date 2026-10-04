@@ -5,8 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import '../services/folder_size_service.dart';
 import '../theme/explorer_colors.dart';
 
-/// Représentation visuelle de la taille d'un dossier, relative au plus gros
-/// dossier calculé du même répertoire.
+/// Représentation visuelle de la taille d'un élément, relative au plus gros
+/// élément (fichier ou dossier calculé) du même répertoire.
 enum FolderSizeDisplay {
   none('Aucun indicateur', Icons.straighten_outlined),
   bar('Barre sous la taille', Icons.align_horizontal_left_rounded),
@@ -26,15 +26,11 @@ class FolderSizeIndicator {
   /// Indicateur choisi, commun à toutes les listes.
   static final mode = ValueNotifier(FolderSizeDisplay.bar);
 
-  /// Part (0..1) de [path] par rapport au plus gros de [folders] ; `null`
-  /// tant que sa taille n'est pas calculée.
-  static double? ratio(String path, Iterable<String> folders) {
-    final bytes = FolderSizeService.bytesOf(path);
+  /// Part (0..1) de [bytes] par rapport au plus gros de [siblings] ; `null`
+  /// tant que la taille n'est pas connue.
+  static double? ratio(int? bytes, Iterable<int> siblings) {
     if (bytes == null) return null;
-    var max = bytes;
-    for (final folder in folders) {
-      max = math.max(max, FolderSizeService.bytesOf(folder) ?? 0);
-    }
+    final max = siblings.fold(bytes, math.max);
     return max == 0 ? 0 : bytes / max;
   }
 
@@ -47,18 +43,19 @@ class FolderSizeIndicator {
         )!;
 }
 
-/// Taille d'un dossier accompagnée de l'indicateur choisi (hors fond de
-/// ligne, géré par [FolderSizeRowBackground]).
-class FolderSizeGauge extends StatelessWidget {
-  const FolderSizeGauge({
-    required this.path,
-    required this.siblings,
+/// Taille d'un élément accompagnée de l'indicateur choisi (hors fond de
+/// ligne, géré par [SizeRowBackground]).
+class SizeGauge extends StatelessWidget {
+  const SizeGauge({
+    required this.bytes,
+    required this.siblingSizes,
     required this.child,
     super.key,
   });
 
-  final String path;
-  final List<String> Function()? siblings;
+  /// Taille de l'élément (`null` si inconnue) et celle de ses voisins.
+  final int? Function() bytes;
+  final List<int> Function()? siblingSizes;
   final Widget child;
 
   @override
@@ -71,8 +68,8 @@ class FolderSizeGauge extends StatelessWidget {
       builder: (context, _) {
         final display = FolderSizeIndicator.mode.value;
         final ratio = FolderSizeIndicator.ratio(
-          path,
-          siblings?.call() ?? const [],
+          bytes(),
+          siblingSizes?.call() ?? const [],
         );
         if (ratio == null ||
             display == FolderSizeDisplay.none ||
@@ -158,16 +155,16 @@ class _PiePainter extends CustomPainter {
       old.ratio != ratio || old.color != color;
 }
 
-/// Barre de proportion derrière toute la ligne d'un dossier.
-class FolderSizeRowBackground extends StatelessWidget {
-  const FolderSizeRowBackground({
-    required this.path,
-    required this.siblings,
+/// Barre de proportion derrière toute la ligne d'un élément.
+class SizeRowBackground extends StatelessWidget {
+  const SizeRowBackground({
+    required this.bytes,
+    required this.siblingSizes,
     super.key,
   });
 
-  final String path;
-  final List<String> Function()? siblings;
+  final int? Function() bytes;
+  final List<int> Function()? siblingSizes;
 
   @override
   Widget build(BuildContext context) {
@@ -181,8 +178,8 @@ class FolderSizeRowBackground extends StatelessWidget {
           return const SizedBox.shrink();
         }
         final ratio = FolderSizeIndicator.ratio(
-          path,
-          siblings?.call() ?? const [],
+          bytes(),
+          siblingSizes?.call() ?? const [],
         );
         if (ratio == null) return const SizedBox.shrink();
         return IgnorePointer(
