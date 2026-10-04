@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
@@ -9,6 +10,7 @@ import '../theme/appearance_slot.dart';
 import '../theme/container_style.dart';
 import '../theme/neon_style.dart';
 import 'container_style_editor.dart';
+import 'style_editor_panel.dart';
 import 'styled_surface.dart';
 
 /// Active ou non l'édition des styles par clic droit sur les [SuperContainer].
@@ -186,6 +188,7 @@ class SuperContainerState extends State<SuperContainer> {
     final initialStyle = _local.value;
     final accent = AppearanceScope.of(context).accent;
     final shape = widget.slot?.editShape ?? true;
+    final extended = widget.slot?.extendedLook ?? true;
     final standardSlot = widget.slot?.standard;
     final selectedSlot = standardSlot?.selectedVariant;
     final colors = Theme.of(context).colorScheme;
@@ -197,35 +200,41 @@ class SuperContainerState extends State<SuperContainer> {
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.transparent,
-      builder: (context) => AlertDialog(
-        title: Text(_label),
-        content: SizedBox(
-          width: 420,
-          child: StatefulBuilder(
-            builder: (context, setTab) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (tabbed) ...[
-                  DefaultTabController(
-                    length: 2,
-                    initialIndex: editSlot == selectedSlot ? 1 : 0,
-                    child: TabBar(
-                      key: const ValueKey('style-editor-tabs'),
-                      onTap: (index) => setTab(
-                        () =>
-                            editSlot = index == 1 ? selectedSlot : standardSlot,
+      builder: (context) {
+        final screen = MediaQuery.sizeOf(context);
+        final width = math.min(1080.0, screen.width - 96);
+        final height = math.max(320.0, math.min(680.0, screen.height - 260));
+        return AlertDialog(
+          title: Text(_label),
+          insetPadding: const EdgeInsets.all(24),
+          constraints: BoxConstraints(maxWidth: width + 48),
+          content: SizedBox(
+            width: width,
+            height: height,
+            child: StatefulBuilder(
+              builder: (context, setTab) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (tabbed) ...[
+                    DefaultTabController(
+                      length: 2,
+                      initialIndex: editSlot == selectedSlot ? 1 : 0,
+                      child: TabBar(
+                        key: const ValueKey('style-editor-tabs'),
+                        onTap: (index) => setTab(
+                          () => editSlot = index == 1
+                              ? selectedSlot
+                              : standardSlot,
+                        ),
+                        tabs: const [
+                          Tab(text: 'Standard'),
+                          Tab(text: 'Sélectionné'),
+                        ],
                       ),
-                      tabs: const [
-                        Tab(text: 'Standard'),
-                        Tab(text: 'Sélectionné'),
-                      ],
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                Flexible(
-                  child: SingleChildScrollView(
+                    const SizedBox(height: 12),
+                  ],
+                  Expanded(
                     child: ListenableBuilder(
                       key: ValueKey(editSlot),
                       listenable: appearance ?? _local,
@@ -243,147 +252,153 @@ class SuperContainerState extends State<SuperContainer> {
                             ? _border(context)
                             : colors.primary;
                         void update(ContainerStyle v) => _update(v, slot: slot);
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ContainerStyleEditor(
-                              label: _label,
-                              collapsible: false,
-                              value: style.fill,
-                              solidColor: style.color ?? fallback,
-                              radius: style.radius,
-                              borderWidth: style.borderWidth,
-                              borderColor: style.borderColor ?? border,
-                              elevation: style.elevation,
-                              shadowOpacity: style.shadowOpacity,
-                              opacity: widget.slot == AppearanceSlot.background
-                                  ? appearance!.value.backgroundOpacity
-                                  : 1,
-                              neon: style.neon ?? const NeonStyle(),
-                              accent: accent,
-                              onChanged: (v) => update(style.copyWith(fill: v)),
-                              onSolidColorChanged: (v) =>
-                                  update(style.copyWith(color: v)),
-                              onRadiusChanged: shape
-                                  ? (v) => update(style.copyWith(radius: v))
-                                  : null,
-                              onBorderWidthChanged: (v) =>
-                                  update(style.copyWith(borderWidth: v)),
-                              onBorderColorChanged: (v) =>
-                                  update(style.copyWith(borderColor: v)),
-                              onResetBorderColor: () => update(
-                                style.copyWith(resetBorderColor: true),
-                              ),
-                              onElevationChanged: shape
-                                  ? (v) => update(style.copyWith(elevation: v))
-                                  : null,
-                              onShadowOpacityChanged: shape
-                                  ? (v) =>
-                                        update(style.copyWith(shadowOpacity: v))
-                                  : null,
-                              padding: style.padding,
-                              margin: style.margin,
-                              onPaddingChanged: (v) =>
-                                  update(style.copyWith(padding: v)),
-                              onMarginChanged: (v) =>
-                                  update(style.copyWith(margin: v)),
-                              onNeonChanged: (v) =>
-                                  update(style.copyWith(neon: v)),
-                              hoverEffect: style.hoverEffect,
-                              onHoverEffectChanged: (v) =>
-                                  update(style.copyWith(hoverEffect: v)),
-                              hoverTint: style.hoverTint,
-                              hoverColor: style.hoverColor,
-                              onHoverTintChanged: (v) =>
-                                  update(style.copyWith(hoverTint: v)),
-                              onHoverColorChanged: (v) =>
-                                  update(style.copyWith(hoverColor: v)),
-                              interactionEffect: style.interactionEffect,
-                              onInteractionEffectChanged: (v) =>
-                                  update(style.copyWith(interactionEffect: v)),
-                              designSystem: style.designSystem,
-                              onDesignSystemChanged: shape
-                                  ? (v) => update(v.apply(style))
-                                  : null,
-                            ),
-                            if (widget.slot == AppearanceSlot.background) ...[
-                              Text(
-                                'Opacité du fond : '
-                                '${appearance!.value.backgroundOpacity.toStringAsFixed(1)}',
-                              ),
-                              Slider(
-                                key: const ValueKey('Opacité du fond'),
-                                value: appearance.value.backgroundOpacity,
-                                onChanged: (v) => appearance.value = appearance
-                                    .value
-                                    .copyWith(backgroundOpacity: v),
-                              ),
-                              const SizedBox(height: 8),
-                              DropdownButtonFormField<WindowEffect>(
-                                key: const ValueKey('window-effect'),
-                                initialValue: appearance.value.windowEffect,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                  labelText: 'Effet de la fenêtre',
-                                  helperText: 'Visible à travers le fond : baissez son opacité.',
-                                ),
-                                items: [
-                                  for (final effect in WindowEffect.values)
-                                    DropdownMenuItem(
-                                      value: effect,
-                                      enabled: WindowTransparency.isSupported(
-                                        effect,
-                                      ),
-                                      child: Text(
-                                        WindowTransparency.label(effect),
-                                        overflow: TextOverflow.ellipsis,
-                                        style:
-                                            WindowTransparency.isSupported(
-                                              effect,
-                                            )
-                                            ? null
-                                            : TextStyle(
-                                                color: Theme.of(context)
-                                                    .disabledColor,
-                                              ),
-                                      ),
+                        return ContainerStyleEditor(
+                          label: _label,
+                          collapsible: false,
+                          style: style,
+                          onStyle: update,
+                          extended: extended,
+                          value: style.fill,
+                          solidColor: style.color ?? fallback,
+                          radius: style.radius,
+                          borderWidth: style.borderWidth,
+                          borderColor: style.borderColor ?? border,
+                          elevation: style.elevation,
+                          shadowOpacity: style.shadowOpacity,
+                          opacity: widget.slot == AppearanceSlot.background
+                              ? appearance!.value.backgroundOpacity
+                              : 1,
+                          neon: style.neon ?? const NeonStyle(),
+                          accent: accent,
+                          onChanged: (v) => update(style.copyWith(fill: v)),
+                          onSolidColorChanged: (v) =>
+                              update(style.copyWith(color: v)),
+                          onRadiusChanged: shape
+                              ? (v) => update(style.copyWith(radius: v))
+                              : null,
+                          onBorderWidthChanged: (v) =>
+                              update(style.copyWith(borderWidth: v)),
+                          onBorderColorChanged: (v) =>
+                              update(style.copyWith(borderColor: v)),
+                          onResetBorderColor: () =>
+                              update(style.copyWith(resetBorderColor: true)),
+                          onElevationChanged: shape
+                              ? (v) => update(style.copyWith(elevation: v))
+                              : null,
+                          onShadowOpacityChanged: shape
+                              ? (v) => update(style.copyWith(shadowOpacity: v))
+                              : null,
+                          padding: style.padding,
+                          margin: style.margin,
+                          onPaddingChanged: (v) =>
+                              update(style.copyWith(padding: v)),
+                          onMarginChanged: (v) =>
+                              update(style.copyWith(margin: v)),
+                          onNeonChanged: (v) => update(style.copyWith(neon: v)),
+                          hoverEffect: style.hoverEffect,
+                          onHoverEffectChanged: (v) =>
+                              update(style.copyWith(hoverEffect: v)),
+                          hoverTint: style.hoverTint,
+                          hoverColor: style.hoverColor,
+                          onHoverTintChanged: (v) =>
+                              update(style.copyWith(hoverTint: v)),
+                          onHoverColorChanged: (v) =>
+                              update(style.copyWith(hoverColor: v)),
+                          interactionEffect: style.interactionEffect,
+                          onInteractionEffectChanged: (v) =>
+                              update(style.copyWith(interactionEffect: v)),
+                          designSystem: style.designSystem,
+                          onDesignSystemChanged: shape
+                              ? (v) => update(v.apply(style))
+                              : null,
+                          onResetColor: () =>
+                              update(style.copyWith(resetColor: true)),
+                          onReset: () => _reset(slot: slot),
+                          extraSections: [
+                            if (widget.slot == AppearanceSlot.background)
+                              StyleEditorSection(
+                                id: 'window',
+                                title: 'Fenêtre',
+                                tag: 'windowEffect',
+                                icon: Icons.window_outlined,
+                                count: 2,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      'Opacité du fond : '
+                                      '${appearance!.value.backgroundOpacity.toStringAsFixed(1)}',
                                     ),
-                                ],
-                                onChanged: (v) => appearance.value = appearance
-                                    .value
-                                    .copyWith(windowEffect: v),
+                                    Slider(
+                                      key: const ValueKey('Opacité du fond'),
+                                      value: appearance.value.backgroundOpacity,
+                                      onChanged: (v) =>
+                                          appearance.value = appearance.value
+                                              .copyWith(backgroundOpacity: v),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    DropdownButtonFormField<WindowEffect>(
+                                      key: const ValueKey('window-effect'),
+                                      initialValue:
+                                          appearance.value.windowEffect,
+                                      isExpanded: true,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Effet de la fenêtre',
+                                        helperText: 'Visible à travers le fond : baissez son opacité.',
+                                      ),
+                                      items: [
+                                        for (final effect
+                                            in WindowEffect.values)
+                                          DropdownMenuItem(
+                                            value: effect,
+                                            enabled:
+                                                WindowTransparency.isSupported(
+                                                  effect,
+                                                ),
+                                            child: Text(
+                                              WindowTransparency.label(effect),
+                                              overflow: TextOverflow.ellipsis,
+                                              style:
+                                                  WindowTransparency.isSupported(
+                                                    effect,
+                                                  )
+                                                  ? null
+                                                  : TextStyle(
+                                                      color: Theme.of(context)
+                                                          .disabledColor,
+                                                    ),
+                                            ),
+                                          ),
+                                      ],
+                                      onChanged: (v) =>
+                                          appearance.value = appearance.value
+                                              .copyWith(windowEffect: v),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
-                            TextButton(
-                              onPressed: () =>
-                                  update(style.copyWith(resetColor: true)),
-                              child: const Text('Couleur unie automatique'),
-                            ),
-                            TextButton(
-                              onPressed: () => _reset(slot: slot),
-                              child: const Text('Réinitialiser ce style'),
-                            ),
                           ],
                         );
                       },
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Appliquer'),
-          ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Appliquer'),
+            ),
+          ],
+        );
+      },
     );
     if (confirmed == true || !mounted) return;
     if (appearance != null) {
@@ -473,7 +488,7 @@ class SuperContainerState extends State<SuperContainer> {
       content = ListenableBuilder(
         listenable: _appearance ?? _local,
         builder: (context, child) =>
-            Padding(padding: EdgeInsets.all(style.padding), child: child),
+            Padding(padding: style.contentPadding, child: child),
         child: content,
       );
     }
@@ -494,7 +509,7 @@ class SuperContainerState extends State<SuperContainer> {
       _cachedDepth = _depth;
       final painter = _DashedOutlinePainter(
         color: AppearanceScope.of(context).accent.withValues(alpha: .8),
-        radius: widget.slot == AppearanceSlot.background ? 0 : style.radius,
+        radius: widget.slot == AppearanceSlot.background ? 0 : style.maxRadius,
       );
       content = MouseRegion(
         onEnter: (_) => _setHovered(true),
@@ -520,7 +535,7 @@ class SuperContainerState extends State<SuperContainer> {
     return ListenableBuilder(
       listenable: _appearance ?? _local,
       builder: (context, child) =>
-          Padding(padding: EdgeInsets.all(style.margin), child: child),
+          Padding(padding: style.outerMargin, child: child),
       child: content,
     );
   }

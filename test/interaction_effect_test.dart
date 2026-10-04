@@ -234,6 +234,8 @@ void main() {
   });
 
   testWidgets('editor selector changes the interaction effect', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1300, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
@@ -253,6 +255,8 @@ void main() {
     expect(selector, findsOneWidget);
     final checkbox = find.byType(CheckboxListTile);
     expect(checkbox, findsOneWidget);
+    await tester.ensureVisible(checkbox);
+    await tester.pumpAndSettle();
     await tester.tap(checkbox);
     await tester.pumpAndSettle();
     expect(
@@ -262,6 +266,8 @@ void main() {
           .hoverEffect,
       isTrue,
     );
+    await tester.ensureVisible(selector);
+    await tester.pumpAndSettle();
     await tester.tap(selector);
     await tester.pumpAndSettle();
     await tester.tap(find.text(InteractionEffect.elevation.label).last);

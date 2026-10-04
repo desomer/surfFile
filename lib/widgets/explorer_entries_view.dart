@@ -8,6 +8,7 @@ import 'drag_select_region.dart';
 import 'entries_layout.dart';
 import 'explorer_file_icon.dart';
 import 'folder_size_cell.dart';
+import 'folder_size_indicator.dart';
 import 'hover_preview.dart';
 import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
@@ -144,9 +145,15 @@ class ExplorerEntriesView extends StatelessWidget {
         onOpen: onOpen,
         onContextMenu: onContextMenu,
         onOpenWithBounds: onOpenWithBounds,
+        siblingFolders: _folderPaths,
       ),
     );
   }
+
+  List<String> _folderPaths() => [
+    for (final entry in entries)
+      if (entry.isDirectory) entry.entity.path,
+  ];
 
   Widget _buildGrid(BuildContext context, ScrollController? controller) {
     final appearance = AppearanceScope.of(context);
@@ -329,9 +336,11 @@ class _EntryRow extends StatefulWidget {
     this.onOpenWithBounds,
     this.compact = false,
     this.onToggle,
+    this.siblingFolders,
     super.key,
   });
 
+  final List<String> Function()? siblingFolders;
   final ValueChanged<String>? onToggle;
   final bool compact;
   final ExplorerEntry entry;
@@ -414,97 +423,114 @@ class _EntryRowState extends State<_EntryRow> {
                   entry: entry,
                   child: SizedBox(
                     height: appearance.rowHeight,
-                    child: Row(
+                    child: Stack(
                       children: [
-                        Expanded(
-                          flex: 5,
-                          child: Row(
-                            children: [
-                              if (widget.onToggle case final onToggle?)
-                                _SelectBox(
-                                  checked: selected,
-                                  onChanged: () => onToggle(entry.entity.path),
-                                )
-                              else
-                                SizedBox(width: widget.compact ? 8 : 12),
-                              ExplorerFileIcon(
-                                key: iconKey,
-                                entry: entry,
-                                size: (appearance.iconSize * 22 / 49).clamp(
-                                  16,
-                                  30,
-                                ),
+                        if (!widget.compact && entry.isDirectory)
+                          Positioned.fill(
+                            child: FolderSizeRowBackground(
+                              path: entry.entity.path,
+                              siblings: widget.siblingFolders,
+                            ),
+                          ),
+                        Row(
+                          children: [
+                            Expanded(
+                              flex: 5,
+                              child: Row(
+                                children: [
+                                  if (widget.onToggle case final onToggle?)
+                                    _SelectBox(
+                                      checked: selected,
+                                      onChanged: () =>
+                                          onToggle(entry.entity.path),
+                                    )
+                                  else
+                                    SizedBox(width: widget.compact ? 8 : 12),
+                                  ExplorerFileIcon(
+                                    key: iconKey,
+                                    entry: entry,
+                                    size: (appearance.iconSize * 22 / 49).clamp(
+                                      16,
+                                      30,
+                                    ),
+                                  ),
+                                  SizedBox(width: widget.compact ? 10 : 12),
+                                  Expanded(
+                                    child: Text(
+                                      entry.name,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: appearance.fontSize,
+                                        color: foreground,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                  if (widget.compact && entry.isDirectory)
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 18,
+                                      color: foreground.withValues(alpha: .6),
+                                    ),
+                                  if (widget.compact) const SizedBox(width: 6),
+                                ],
                               ),
-                              SizedBox(width: widget.compact ? 10 : 12),
+                            ),
+                            if (!widget.compact) ...[
                               Expanded(
+                                flex: 2,
                                 child: Text(
-                                  entry.name,
+                                  formatExplorerDate(entry.modified),
+                                  maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: appearance.fontSize,
-                                    color: foreground,
-                                    fontWeight: FontWeight.w500,
+                                    fontSize: appearance.fontSize - 1,
+                                    color: foreground.withValues(alpha: .75),
                                   ),
                                 ),
                               ),
-                              if (widget.compact && entry.isDirectory)
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  size: 18,
-                                  color: foreground.withValues(alpha: .6),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  entry.isDirectory
+                                      ? 'Dossier'
+                                      : explorerFileType(entry.name),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: appearance.fontSize - 1,
+                                    color: foreground.withValues(alpha: .75),
+                                  ),
                                 ),
-                              if (widget.compact) const SizedBox(width: 6),
+                              ),
+                              Expanded(
+                                flex: 1,
+                                child: entry.isDirectory
+                                    ? FolderSizeCell(
+                                        path: entry.entity.path,
+                                        siblingFolders: widget.siblingFolders,
+                                        style: TextStyle(
+                                          fontSize: appearance.fontSize - 1,
+                                          color: foreground.withValues(
+                                            alpha: .75,
+                                          ),
+                                        ),
+                                      )
+                                    : Text(
+                                        formatExplorerSize(entry.size),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: appearance.fontSize - 1,
+                                          color: foreground.withValues(
+                                            alpha: .75,
+                                          ),
+                                        ),
+                                      ),
+                              ),
                             ],
-                          ),
+                          ],
                         ),
-                        if (!widget.compact) ...[
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              formatExplorerDate(entry.modified),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: appearance.fontSize - 1,
-                                color: foreground.withValues(alpha: .75),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              entry.isDirectory
-                                  ? 'Dossier'
-                                  : explorerFileType(entry.name),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: appearance.fontSize - 1,
-                                color: foreground.withValues(alpha: .75),
-                              ),
-                            ),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: entry.isDirectory
-                                ? FolderSizeCell(
-                                    path: entry.entity.path,
-                                    style: TextStyle(
-                                      fontSize: appearance.fontSize - 1,
-                                      color: foreground.withValues(alpha: .75),
-                                    ),
-                                  )
-                                : Text(
-                                    formatExplorerSize(entry.size),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: appearance.fontSize - 1,
-                                      color: foreground.withValues(alpha: .75),
-                                    ),
-                                  ),
-                          ),
-                        ],
                       ],
                     ),
                   ),

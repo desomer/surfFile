@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import '../services/folder_size_service.dart';
+
 enum ExplorerSort { name, modified, size }
 
 class ExplorerEntry {
@@ -18,6 +20,11 @@ class ExplorerEntry {
   final int size;
 }
 
+/// Taille de tri : pour un dossier, la taille calculée (-1 si inconnue).
+int _sizeKey(ExplorerEntry entry) => entry.isDirectory
+    ? FolderSizeService.bytesOf(entry.entity.path) ?? -1
+    : entry.size;
+
 /// Dossiers d'abord, puis selon [sort] ; [ascending] n'inverse que ce second
 /// critère.
 void sortExplorerEntries(
@@ -31,7 +38,7 @@ void sortExplorerEntries(
     final comparison = switch (sort) {
       ExplorerSort.name => lower[a]!.compareTo(lower[b]!),
       ExplorerSort.modified => a.modified.compareTo(b.modified),
-      ExplorerSort.size => a.size.compareTo(b.size),
+      ExplorerSort.size => _sizeKey(a).compareTo(_sizeKey(b)),
     };
     return ascending ? comparison : -comparison;
   });

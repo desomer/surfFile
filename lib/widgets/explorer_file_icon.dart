@@ -10,8 +10,9 @@ class ExplorerFileIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        entry.isDirectory ? const Color(0xFFEABF5E) : _fileColor(entry.name);
+    final color = entry.isDirectory
+        ? const Color(0xFFEABF5E)
+        : _fileColor(entry.name);
     return Icon(
       entry.isDirectory ? Icons.folder_rounded : _fileIconData(entry.name),
       size: size,

@@ -7,8 +7,10 @@ import 'mouse_back_navigation.dart';
 class ExplorerContextMenu {
   static const _back = ShellMenuItem(id: -1, label: 'Retour');
   static const _forward = ShellMenuItem(id: -3, label: 'Suivant');
-  static const _native =
-      ShellMenuItem(id: -2, label: 'Afficher le menu Windows');
+  static const _native = ShellMenuItem(
+    id: -2,
+    label: 'Afficher le menu Windows',
+  );
 
   static Future<ShellMenuItem?> show({
     required BuildContext context,
@@ -35,8 +37,11 @@ class ExplorerContextMenu {
         Navigator.of(menuContext).pop(direction);
       }
 
-      PopupMenuItem<ShellMenuItem> menuItem(ShellMenuItem item,
-          {IconData? icon, String? label}) {
+      PopupMenuItem<ShellMenuItem> menuItem(
+        ShellMenuItem item, {
+        IconData? icon,
+        String? label,
+      }) {
         final foreground = item.enabled
             ? colors.onSurface
             : colors.onSurface.withValues(alpha: .38);
@@ -49,36 +54,41 @@ class ExplorerContextMenu {
           enabled: item.enabled,
           height: 32,
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
-                fontSize: 12,
-                color: states.contains(WidgetState.disabled)
-                    ? colors.onSurface.withValues(alpha: .38)
-                    : colors.onSurface,
-                fontWeight: item.isDefault ? FontWeight.w600 : FontWeight.w400,
-              )),
+          labelTextStyle: WidgetStateProperty.resolveWith(
+            (states) => TextStyle(
+              fontSize: 12,
+              color: states.contains(WidgetState.disabled)
+                  ? colors.onSurface.withValues(alpha: .38)
+                  : colors.onSurface,
+              fontWeight: item.isDefault ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
           child: Row(
             children: [
               SizedBox(
                 width: 26,
                 child:
                     item.checked || icon != null || _iconFor(item.verb) != null
-                        ? Align(
-                            alignment: Alignment.centerLeft,
-                            child: Icon(
-                              item.checked
-                                  ? Icons.check_rounded
-                                  : icon ?? _iconFor(item.verb),
-                              size: 16,
-                              color: item.enabled && item.isDefault
-                                  ? colors.primary
-                                  : foreground,
-                            ),
-                          )
-                        : null,
+                    ? Align(
+                        alignment: Alignment.centerLeft,
+                        child: Icon(
+                          item.checked
+                              ? Icons.check_rounded
+                              : icon ?? _iconFor(item.verb),
+                          size: 16,
+                          color: item.enabled && item.isDefault
+                              ? colors.primary
+                              : foreground,
+                        ),
+                      )
+                    : null,
               ),
               Expanded(
-                child: Text(label ?? item.label,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  label ?? item.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               if (item.submenu != null) ...[
                 const SizedBox(width: 12),
@@ -134,15 +144,15 @@ class ExplorerContextMenu {
   }
 
   static IconData? _iconFor(String verb) => switch (verb.toLowerCase()) {
-        'open' => Icons.open_in_new_rounded,
-        'cut' => Icons.content_cut_rounded,
-        'copy' => Icons.content_copy_rounded,
-        'paste' => Icons.content_paste_rounded,
-        'delete' => Icons.delete_outline_rounded,
-        'rename' => Icons.drive_file_rename_outline_rounded,
-        'properties' => Icons.info_outline_rounded,
-        _ => null,
-      };
+    'open' => Icons.open_in_new_rounded,
+    'cut' => Icons.content_cut_rounded,
+    'copy' => Icons.content_copy_rounded,
+    'paste' => Icons.content_paste_rounded,
+    'delete' => Icons.delete_outline_rounded,
+    'rename' => Icons.drive_file_rename_outline_rounded,
+    'properties' => Icons.info_outline_rounded,
+    _ => null,
+  };
 }
 
 class _MouseNavigationMenuItem extends PopupMenuItem<ShellMenuItem> {
@@ -169,10 +179,10 @@ class _MouseNavigationMenuItemState
     extends PopupMenuItemState<ShellMenuItem, _MouseNavigationMenuItem> {
   @override
   Widget build(BuildContext context) => MouseBackNavigation(
-        enabled: true,
-        onBack: () => widget.onBack(context),
-        forwardEnabled: widget.onForward != null,
-        onForward: () => widget.onForward?.call(context),
-        child: super.build(context),
-      );
+    enabled: true,
+    onBack: () => widget.onBack(context),
+    forwardEnabled: widget.onForward != null,
+    onForward: () => widget.onForward?.call(context),
+    child: super.build(context),
+  );
 }

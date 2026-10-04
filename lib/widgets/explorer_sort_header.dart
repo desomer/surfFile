@@ -22,21 +22,28 @@ class ExplorerSortHeader extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-              flex: 5, child: _sortButton(context, 'Nom', ExplorerSort.name)),
+            flex: 5,
+            child: _sortButton(context, 'Nom', ExplorerSort.name),
+          ),
           Expanded(
-              flex: 2,
-              child: _sortButton(context, 'Modifié', ExplorerSort.modified)),
+            flex: 2,
+            child: _sortButton(context, 'Modifié', ExplorerSort.modified),
+          ),
           Expanded(flex: 2, child: _sortButton(context, 'Type', null)),
           Expanded(
-              flex: 1,
-              child: _sortButton(context, 'Taille', ExplorerSort.size)),
+            flex: 1,
+            child: _sortButton(context, 'Taille', ExplorerSort.size),
+          ),
         ],
       ),
     );
   }
 
   Widget _sortButton(
-      BuildContext context, String label, ExplorerSort? selectedSort) {
+    BuildContext context,
+    String label,
+    ExplorerSort? selectedSort,
+  ) {
     final isSelected = selectedSort == sort;
     return InkWell(
       onTap: selectedSort == null ? null : () => onSortChanged(selectedSort),
@@ -45,19 +52,22 @@ class ExplorerSortHeader extends StatelessWidget {
         child: Row(
           children: [
             Flexible(
-              child: Text(label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: explorerColor(
-                        context,
-                        isSelected
-                            ? const Color(0xFF454D60)
-                            : const Color(0xFF9298A8),
-                        Theme.of(context).colorScheme.onSurfaceVariant),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  )),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: explorerColor(
+                    context,
+                    isSelected
+                        ? const Color(0xFF454D60)
+                        : const Color(0xFF9298A8),
+                    Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
             if (isSelected)
               Icon(
@@ -65,8 +75,11 @@ class ExplorerSortHeader extends StatelessWidget {
                     ? Icons.arrow_upward_rounded
                     : Icons.arrow_downward_rounded,
                 size: 13,
-                color: explorerColor(context, const Color(0xFF737B8F),
-                    Theme.of(context).colorScheme.onSurfaceVariant),
+                color: explorerColor(
+                  context,
+                  const Color(0xFF737B8F),
+                  Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
           ],
         ),

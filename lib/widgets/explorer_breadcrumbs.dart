@@ -165,7 +165,10 @@ class ExplorerBreadcrumbs extends StatelessWidget {
           : (value) => appearance.value = appearance.value.copyWith(
               pathBarLayout: value,
             ),
-      centerHeight: _barHeight + 2 * (style.padding + style.margin),
+      centerHeight:
+          _barHeight +
+          style.contentPadding.vertical +
+          style.outerMargin.vertical,
       zones: {SuperLayoutZone.center: bar},
     );
   }

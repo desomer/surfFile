@@ -4,11 +4,7 @@ import 'package:material_ui/material_ui.dart';
 class NeonStyle {
   static const maxIntensity = 3.0;
 
-  const NeonStyle({
-    this.enabled = false,
-    this.color,
-    this.intensity = .6,
-  });
+  const NeonStyle({this.enabled = false, this.color, this.intensity = .6});
 
   final bool enabled;
   final Color? color;
@@ -19,18 +15,17 @@ class NeonStyle {
     Color? color,
     bool resetColor = false,
     double? intensity,
-  }) =>
-      NeonStyle(
-        enabled: enabled ?? this.enabled,
-        color: resetColor ? null : color ?? this.color,
-        intensity: intensity ?? this.intensity,
-      );
+  }) => NeonStyle(
+    enabled: enabled ?? this.enabled,
+    color: resetColor ? null : color ?? this.color,
+    intensity: intensity ?? this.intensity,
+  );
 
   Map<String, Object?> toJson() => {
-        'enabled': enabled,
-        'color': color?.toARGB32(),
-        'intensity': intensity,
-      };
+    'enabled': enabled,
+    'color': color?.toARGB32(),
+    'intensity': intensity,
+  };
 
   static NeonStyle fromJson(Object? value) {
     if (value == null) return const NeonStyle();

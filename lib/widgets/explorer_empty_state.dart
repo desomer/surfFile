@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+
 import '../theme/explorer_colors.dart';
 
 class ExplorerEmptyState extends StatelessWidget {
@@ -27,9 +28,14 @@ class ExplorerEmptyState extends StatelessWidget {
             hasQuery
                 ? 'Essayez avec un autre terme de recherche.'
                 : 'Créez un dossier ou choisissez un autre emplacement.',
-            style: TextStyle(fontSize: 12,
-                color: explorerColor(context, const Color(0xFF9298A8),
-                    Theme.of(context).colorScheme.onSurfaceVariant)),
+            style: TextStyle(
+              fontSize: 12,
+              color: explorerColor(
+                context,
+                const Color(0xFF9298A8),
+                Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
         ],
       ),

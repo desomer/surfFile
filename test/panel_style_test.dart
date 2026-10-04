@@ -263,7 +263,7 @@ void main() {
     await tester.tap(find.text('Style de la barre des modes d’affichage'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(Slider), findsNWidgets(6));
+    expect(find.byType(Slider), findsNWidgets(7));
     expect(tester.takeException(), isNull);
   });
 

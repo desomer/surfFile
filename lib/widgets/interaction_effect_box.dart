@@ -18,6 +18,7 @@ class InteractionEffectBox extends StatefulWidget {
     this.hover = false,
     this.hoverColor,
     this.ownsHover = false,
+    this.borderRadius,
     super.key,
   });
 
@@ -33,6 +34,9 @@ class InteractionEffectBox extends StatefulWidget {
   /// sans [hover] : le survol n'existe alors que s'il est activé.
   final bool ownsHover;
   final double radius;
+
+  /// Coins de la surface quand ils diffèrent ; sinon [radius].
+  final BorderRadius? borderRadius;
   final Widget Function(BuildContext context, double elevationBoost) builder;
 
   @override
@@ -91,6 +95,7 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
               ? InteractionEffect.hoverOverlay
               : InteractionEffect.hoverTintedOverlay)
         : 0.0;
+    final corners = widget.borderRadius ?? BorderRadius.circular(widget.radius);
     final showOverlay = hover || effect == InteractionEffect.pressed;
     Widget content = Theme(
       data: Theme.of(context).copyWith(
@@ -113,7 +118,7 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
                 duration: duration,
                 decoration: BoxDecoration(
                   color: base.withValues(alpha: base.a * alpha),
-                  borderRadius: BorderRadius.circular(widget.radius),
+                  borderRadius: corners,
                 ),
               ),
             ),
@@ -137,7 +142,7 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
                 child: IgnorePointer(
                   child: CustomPaint(
                     painter: InsetShadowPainter(
-                      radius: widget.radius,
+                      borderRadius: corners,
                       intensity: t,
                     ),
                   ),
@@ -176,18 +181,18 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
 
 /// Ombre intérieure : sombre en haut à gauche, claire en bas à droite.
 class InsetShadowPainter extends CustomPainter {
-  const InsetShadowPainter({required this.radius, required this.intensity});
+  const InsetShadowPainter({
+    required this.borderRadius,
+    required this.intensity,
+  });
 
-  final double radius;
+  final BorderRadius borderRadius;
   final double intensity;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (intensity <= 0 || size.isEmpty) return;
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    );
+    final rrect = borderRadius.toRRect(Offset.zero & size);
     const d = InteractionEffect.insetOffset;
     const blur = InteractionEffect.insetBlur;
     canvas.save();
@@ -222,5 +227,6 @@ class InsetShadowPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(InsetShadowPainter oldDelegate) =>
-      oldDelegate.radius != radius || oldDelegate.intensity != intensity;
+      oldDelegate.borderRadius != borderRadius ||
+      oldDelegate.intensity != intensity;
 }

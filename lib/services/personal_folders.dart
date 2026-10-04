@@ -22,8 +22,9 @@ class PersonalFolders {
       };
     }
 
-    final folders =
-        await channel.invokeMapMethod<String, String>('getPersonalFolders');
+    final folders = await channel.invokeMapMethod<String, String>(
+      'getPersonalFolders',
+    );
     if (folders == null ||
         names.any((name) => folders[name]?.isNotEmpty != true)) {
       throw PlatformException(

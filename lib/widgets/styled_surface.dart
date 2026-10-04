@@ -5,9 +5,11 @@ import 'package:material_ui/material_ui.dart';
 import '../theme/container_style.dart';
 import '../theme/design_system.dart';
 import '../theme/interaction_effect.dart';
+import '../theme/style_extras.dart';
 import '../theme/appearance.dart';
 import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
+import 'surface_painters.dart';
 
 class StyledSurface extends StatelessWidget {
   const StyledSurface({
@@ -30,31 +32,55 @@ class StyledSurface extends StatelessWidget {
     effect: style.interactionEffect,
     hover: style.hoverEffect,
     hoverColor: style.hoverBase(AppearanceScope.of(context).accent),
-    radius: style.radius,
+    radius: style.maxRadius,
+    borderRadius: style.borderRadius,
     builder: _surface,
   );
 
   Widget _surface(BuildContext context, double elevationBoost) {
-    final elevation = (style.elevation + elevationBoost).clamp(
-      0.0,
-      double.infinity,
-    );
+    final custom = style.shadow;
+    final elevation = custom != null
+        ? 0.0
+        : (style.elevation + elevationBoost).clamp(0.0, double.infinity);
     final gradient = style.fill.gradient();
-    final side = BorderSide(
+    final borderSide = BorderSide(
       color: style.borderColor ?? borderColor,
       width: style.borderWidth,
       style: style.borderWidth == 0 ? BorderStyle.none : BorderStyle.solid,
     );
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(style.radius),
-    );
+    final radius = style.borderRadius;
+    final shape = RoundedRectangleBorder(borderRadius: radius);
     final system = style.designSystem;
     final neumorphic = system == DesignSystem.neumorphism;
-    final radius = BorderRadius.circular(style.radius);
+    final plain = style.plainBorder;
+    final hasOverlay =
+        style.pattern != SurfacePattern.none || style.hasInnerShadow;
+    final baseColor = style.color ?? fallbackColor;
+    Widget content = hasOverlay
+        ? Stack(
+            fit: StackFit.passthrough,
+            children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(
+                    painter: SurfaceOverlayPainter(
+                      radii: radius,
+                      pattern: style.pattern,
+                      patternOpacity: style.patternOpacity,
+                      ink:
+                          style.foreground ??
+                          Theme.of(context).colorScheme.onSurface,
+                      innerShadow: style.innerShadow,
+                    ),
+                  ),
+                ),
+              ),
+              child,
+            ],
+          )
+        : child;
     Widget material = Material(
-      color: gradient == null
-          ? style.color ?? fallbackColor
-          : Colors.transparent,
+      color: gradient == null ? baseColor : Colors.transparent,
       elevation: neumorphic ? 0 : elevation,
       shadowColor: Colors.black.withValues(alpha: style.shadowOpacity),
       surfaceTintColor: Colors.transparent,
@@ -63,24 +89,44 @@ class StyledSurface extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           gradient: gradient,
-          borderRadius: BorderRadius.circular(style.radius),
-          border: horizontalBorder && style.radius == 0
-              ? Border.symmetric(horizontal: side)
-              : Border.fromBorderSide(side),
+          borderRadius: radius,
+          border: !plain
+              ? null
+              : horizontalBorder && style.maxRadius == 0
+              ? Border.symmetric(horizontal: borderSide)
+              : Border.fromBorderSide(borderSide),
         ),
-        child: child,
+        child: content,
       ),
     );
-    if (system == DesignSystem.liquidGlass) {
+    if (!plain) {
+      material = CustomPaint(
+        foregroundPainter: StyleBorderPainter(
+          widths: style.sideWidths,
+          color: style.borderColor ?? borderColor,
+          radii: radius,
+          line: style.borderLine,
+        ),
+        child: material,
+      );
+    }
+    final blur = style.effectiveBackdropBlur;
+    if (blur > 0) {
       material = ClipRRect(
         borderRadius: radius,
         child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: DesignSystem.glassBlur,
-            sigmaY: DesignSystem.glassBlur,
-          ),
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
           child: material,
         ),
+      );
+    }
+    if (custom != null) {
+      material = DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: radius,
+          boxShadow: custom.enabled ? [custom.toBoxShadow()] : null,
+        ),
+        child: material,
       );
     } else if (neumorphic) {
       material = AnimatedContainer(
@@ -88,7 +134,7 @@ class StyledSurface extends StatelessWidget {
         decoration: BoxDecoration(
           borderRadius: radius,
           boxShadow: DesignSystem.neumorphicShadows(
-            style.color ?? fallbackColor,
+            baseColor,
             elevation,
             style.shadowOpacity,
           ),
@@ -97,13 +143,26 @@ class StyledSurface extends StatelessWidget {
       );
     }
     final neon = style.neon;
-    return neon == null
+    Widget result = neon == null
         ? material
         : NeonSurface(
             style: neon,
             accent: AppearanceScope.of(context).accent,
-            radius: style.radius,
+            radius: style.maxRadius,
+            corners: radius,
             child: material,
           );
+    if (style.opacity < 1) {
+      result = Opacity(opacity: style.opacity, child: result);
+    }
+    final transform = style.transform;
+    if (transform != null && !transform.isIdentity) {
+      result = Transform(
+        transform: transform.matrix,
+        alignment: Alignment.center,
+        child: result,
+      );
+    }
+    return result;
   }
 }

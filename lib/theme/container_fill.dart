@@ -26,14 +26,13 @@ class ContainerFill {
     Color? end,
     double? angle,
     double? radius,
-  }) =>
-      ContainerFill(
-        type: type ?? this.type,
-        start: start ?? this.start,
-        end: end ?? this.end,
-        angle: angle ?? this.angle,
-        radius: radius ?? this.radius,
-      );
+  }) => ContainerFill(
+    type: type ?? this.type,
+    start: start ?? this.start,
+    end: end ?? this.end,
+    angle: angle ?? this.angle,
+    radius: radius ?? this.radius,
+  );
 
   Gradient? gradient({double opacity = 1}) {
     final colors = [
@@ -44,23 +43,25 @@ class ContainerFill {
     return switch (type) {
       FillType.solid => null,
       FillType.linear => LinearGradient(
-          begin: Alignment(-math.cos(radians), -math.sin(radians)),
-          end: Alignment(math.cos(radians), math.sin(radians)),
-          colors: colors,
-        ),
+        begin: Alignment(-math.cos(radians), -math.sin(radians)),
+        end: Alignment(math.cos(radians), math.sin(radians)),
+        colors: colors,
+      ),
       FillType.radial => RadialGradient(colors: colors, radius: radius),
-      FillType.sweep =>
-        SweepGradient(colors: colors, transform: GradientRotation(radians)),
+      FillType.sweep => SweepGradient(
+        colors: colors,
+        transform: GradientRotation(radians),
+      ),
     };
   }
 
   Map<String, Object> toJson() => {
-        'type': type.name,
-        'start': start.toARGB32(),
-        'end': end.toARGB32(),
-        'angle': angle,
-        'radius': radius,
-      };
+    'type': type.name,
+    'start': start.toARGB32(),
+    'end': end.toARGB32(),
+    'angle': angle,
+    'radius': radius,
+  };
 
   static ContainerFill fromJson(Object? value) {
     if (value == null) return const ContainerFill();
@@ -89,10 +90,11 @@ class ContainerFill {
     }
 
     return ContainerFill(
-        type: type,
-        start: color('start'),
-        end: color('end'),
-        angle: number('angle', 0, 360),
-        radius: number('radius', .1, 2));
+      type: type,
+      start: color('start'),
+      end: color('end'),
+      angle: number('angle', 0, 360),
+      radius: number('radius', .1, 2),
+    );
   }
 }

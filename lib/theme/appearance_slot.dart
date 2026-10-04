@@ -3,24 +3,33 @@ import 'container_style.dart';
 
 /// Zones de l'écran principal stylables par un `SuperContainer`.
 enum AppearanceSlot {
-  background('Fond de l’application', editShape: false),
+  background('Fond de l’application', editShape: false, extendedLook: false),
   sidebar('Style du panneau de gauche'),
   pathBar('Style de la barre du chemin'),
   explorerViewModeBar('Style de la barre des modes d’affichage'),
   diskPanel('Style de la zone des disques'),
   diskTile('Style des tuiles de disque'),
   selectedDiskTile('Style du disque sélectionné'),
-  card('Style des cartes'),
-  selectedCard('Style des cartes sélectionnées'),
+  card('Style des cartes', extendedLook: false),
+  selectedCard('Style des cartes sélectionnées', extendedLook: false),
   folder('Style des dossiers du panneau gauche'),
   selectedFolder('Style de la sélection du panneau gauche');
 
-  const AppearanceSlot(this.label, {this.editShape = true});
+  const AppearanceSlot(
+    this.label, {
+    this.editShape = true,
+    this.extendedLook = true,
+  });
 
   final String label;
 
   /// Arrondi, élévation et ombre n'ont pas de sens pour le fond plein écran.
   final bool editShape;
+
+  /// Coins et côtés indépendants, ombres détaillées, motif, flou et
+  /// transformation : rendus par StyledSurface, pas par les cartes, les lignes
+  /// de l'explorateur ni le fond.
+  final bool extendedLook;
 
   /// Variante « sélectionné » éditée dans un onglet de l'éditeur de ce slot.
   AppearanceSlot? get selectedVariant => switch (this) {

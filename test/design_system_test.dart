@@ -47,6 +47,8 @@ void main() {
   testWidgets('editor selector applies the design system and renders it', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(1300, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
       const MaterialApp(
         home: Scaffold(
@@ -69,6 +71,8 @@ void main() {
     expect(selector, findsOneWidget);
 
     Future<void> choose(DesignSystem system) async {
+      await tester.ensureVisible(selector);
+      await tester.pumpAndSettle();
       await tester.tap(selector);
       await tester.pumpAndSettle();
       await tester.tap(find.text(system.label).last);
@@ -77,7 +81,8 @@ void main() {
 
     await choose(DesignSystem.liquidGlass);
     expect(state().style.designSystem, DesignSystem.liquidGlass);
-    expect(find.byType(BackdropFilter), findsOneWidget);
+    // Le conteneur et l'aperçu de l'éditeur.
+    expect(find.byType(BackdropFilter), findsNWidgets(2));
 
     await choose(DesignSystem.neumorphism);
     expect(state().style.designSystem, DesignSystem.neumorphism);

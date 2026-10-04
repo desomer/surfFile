@@ -247,7 +247,7 @@ class _DiskTile extends StatelessWidget {
               : foreground.withValues(alpha: .12),
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(style.radius),
+            borderRadius: style.borderRadius,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
               child: Column(

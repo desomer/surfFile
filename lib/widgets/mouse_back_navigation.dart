@@ -19,18 +19,18 @@ class MouseBackNavigation extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (event) {
-          if (event.kind != PointerDeviceKind.mouse ||
-              ModalRoute.of(context)?.isCurrent != true) {
-            return;
-          }
-          if (enabled && event.buttons == kBackMouseButton) {
-            onBack();
-          } else if (forwardEnabled && event.buttons == kForwardMouseButton) {
-            onForward?.call();
-          }
-        },
-        child: child,
-      );
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: (event) {
+      if (event.kind != PointerDeviceKind.mouse ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+      if (enabled && event.buttons == kBackMouseButton) {
+        onBack();
+      } else if (forwardEnabled && event.buttons == kForwardMouseButton) {
+        onForward?.call();
+      }
+    },
+    child: child,
+  );
 }

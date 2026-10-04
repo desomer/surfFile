@@ -272,7 +272,7 @@ class Appearance {
                 hoverEffect: diskTileStyle.hoverEffect,
                 hoverTint: diskTileStyle.hoverTint,
                 hoverColor: diskTileStyle.hoverColor,
-              ))
+              ).withLookOf(diskTileStyle))
           .copyWith(
             neon:
                 selectedDiskTileStyle?.neon ??

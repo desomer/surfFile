@@ -7,6 +7,7 @@ class NeonSurface extends StatelessWidget {
     required this.style,
     required this.accent,
     required this.radius,
+    this.corners,
     required this.child,
     super.key,
   });
@@ -14,6 +15,9 @@ class NeonSurface extends StatelessWidget {
   final NeonStyle style;
   final Color accent;
   final double radius;
+
+  /// Coins de la surface quand ils diffèrent ; sinon [radius].
+  final BorderRadius? corners;
   final Widget child;
 
   @override
@@ -21,14 +25,15 @@ class NeonSurface extends StatelessWidget {
     if (!style.enabled || style.intensity == 0) return child;
     final color = style.color ?? accent;
     final strength = style.intensity;
-    final borderRadius = BorderRadius.circular(radius);
+    final borderRadius = corners ?? BorderRadius.circular(radius);
     return Container(
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         boxShadow: [
           BoxShadow(
             color: color.withValues(
-                alpha: color.a * (strength * .7).clamp(0.0, 1.0)),
+              alpha: color.a * (strength * .7).clamp(0.0, 1.0),
+            ),
             blurRadius: 6 + 12 * strength,
             spreadRadius: 2 * strength,
           ),

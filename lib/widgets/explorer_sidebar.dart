@@ -170,7 +170,7 @@ class _SidebarTabs extends StatelessWidget {
         child: Row(
           children: [
             for (final (index, label, icon) in const [
-              (0, 'Espace perso', Icons.person_outline_rounded),
+              (0, 'Espace', Icons.person_outline_rounded),
               (1, 'Favoris', Icons.star_rounded),
             ])
               Expanded(
@@ -347,7 +347,7 @@ class _LocationItemState extends State<_LocationItem> {
               )
             : Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(style.radius),
+          borderRadius: style.borderRadius,
           onTap: widget.onTap,
           onHover: (hovered) => setState(() => _hovered = hovered),
           child: SizedBox(

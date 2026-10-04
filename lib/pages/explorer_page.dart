@@ -10,6 +10,7 @@ import '../models/explorer_entry.dart';
 import '../models/explorer_location.dart';
 import '../models/selection_mode.dart';
 import '../services/favorites.dart';
+import '../services/folder_size_service.dart';
 import '../services/directory_scanner.dart';
 import '../services/file_operations.dart';
 import '../services/personal_folders.dart';
@@ -26,6 +27,7 @@ import '../widgets/explorer_skeleton.dart';
 import '../widgets/explorer_filter_bar.dart';
 import '../widgets/explorer_sort_header.dart';
 import '../widgets/explorer_toolbar.dart';
+import '../widgets/explorer_action_bar.dart';
 import '../widgets/explorer_view_mode_bar.dart';
 import '../widgets/image_preview_panel.dart';
 import '../widgets/text_preview_panel.dart';
@@ -405,6 +407,68 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     ],
   );
 
+  /// Actions de la barre des modes d'affichage, activées selon la sélection.
+  List<ExplorerBarAction> _barActions({required bool canPaste}) {
+    final idle = _ready && !_contextMenuOpen;
+    final selected = _snapshot.selection;
+    final hasSelection = idle && selected.isNotEmpty;
+    final target = _selectedPath ?? selected.firstOrNull;
+    final entry = target == null
+        ? null
+        : _visibleEntries.where((e) => e.entity.path == target).firstOrNull;
+    return [
+      ExplorerBarAction(
+        id: 'new-folder',
+        icon: Icons.create_new_folder_outlined,
+        label: 'Nouveau dossier',
+        shortcut: 'Ctrl+Maj+N',
+        onPressed: idle ? _createFolder : null,
+      ),
+      ExplorerBarAction(
+        id: 'cut',
+        icon: Icons.content_cut_rounded,
+        label: 'Couper',
+        shortcut: 'Ctrl+X',
+        separatorBefore: true,
+        onPressed: hasSelection ? () => _toClipboard(FileTransfer.move) : null,
+      ),
+      ExplorerBarAction(
+        id: 'copy',
+        icon: Icons.content_copy_rounded,
+        label: 'Copier',
+        shortcut: 'Ctrl+C',
+        onPressed: hasSelection ? () => _toClipboard(FileTransfer.copy) : null,
+      ),
+      ExplorerBarAction(
+        id: 'paste',
+        icon: Icons.content_paste_rounded,
+        label: 'Coller',
+        shortcut: 'Ctrl+V',
+        onPressed: idle && canPaste ? _paste : null,
+      ),
+      ExplorerBarAction(
+        id: 'rename',
+        icon: Icons.drive_file_rename_outline_rounded,
+        label: 'Renommer',
+        shortcut: 'F2',
+        separatorBefore: true,
+        onPressed: hasSelection && entry != null
+            ? () => _renameWithKeyboard(entry)
+            : null,
+      ),
+      ExplorerBarAction(
+        id: 'delete',
+        icon: Icons.delete_outline_rounded,
+        label: 'Supprimer',
+        shortcut: 'Suppr',
+        destructive: true,
+        onPressed: hasSelection
+            ? () => _deleteSelection(permanent: false)
+            : null,
+      ),
+    ];
+  }
+
   Future<void> _refresh() => _loadDirectory(_currentPath, addToHistory: false);
 
   /// Reconstruit ce volet (et la barre d'actions) quand l'autre change.
@@ -422,6 +486,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     super.initState();
     _currentPath = widget.initialPath ?? _homePath;
     _jobsSubscription = FileJobs.ended.listen(_jobEnded);
+    FolderSizeService.revision.addListener(_folderSizeChanged);
     _initialize();
   }
 
@@ -504,6 +569,11 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       _initializationFailed = true;
       _loadError = 'Impossible de trouver les dossiers personnels : $message';
     });
+  }
+
+  void _folderSizeChanged() {
+    if (!mounted || _sort != ExplorerSort.size) return;
+    setState(() => _visibleCache = null);
   }
 
   /// Filtré et trié une seule fois par combinaison liste/recherche/tri, au
@@ -1358,6 +1428,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   @override
   void dispose() {
     _jobsSubscription?.cancel();
+    FolderSizeService.revision.removeListener(_folderSizeChanged);
     _explorerFocusNode.dispose();
     super.dispose();
   }
@@ -1507,23 +1578,27 @@ class _ExplorerPaneState extends State<ExplorerPane> {
             onCreateFolder: _createFolder,
           ),
           ExplorerBreadcrumbs(path: _currentPath, onNavigate: _loadDirectory),
-          ExplorerViewModeBar(
-            title: _currentFolderName,
-            itemCount: entries.length,
-            pending: _pendingEntries,
-            gridView: _gridView,
-            onGridViewChanged: (gridView) =>
-                setState(() => _gridView = gridView),
-            columnView: _columnView,
-            onColumnViewChanged: (columnView) =>
-                setState(() => _columnView = columnView),
-            titleIconKey: _titleIconKey,
-            filterCount: _filter.activeCount,
-            filterOpen: _filterOpen,
-            onToggleFilter: () => setState(() => _filterOpen = !_filterOpen),
-            selectionMode: _selectionMode,
-            onSelectionModeChanged: (mode) =>
-                setState(() => _selectionMode = mode),
+          ValueListenableBuilder(
+            valueListenable: FileClipboard.content,
+            builder: (context, clipboard, _) => ExplorerViewModeBar(
+              actions: _barActions(canPaste: clipboard != null),
+              title: _currentFolderName,
+              itemCount: entries.length,
+              pending: _pendingEntries,
+              gridView: _gridView,
+              onGridViewChanged: (gridView) =>
+                  setState(() => _gridView = gridView),
+              columnView: _columnView,
+              onColumnViewChanged: (columnView) =>
+                  setState(() => _columnView = columnView),
+              titleIconKey: _titleIconKey,
+              filterCount: _filter.activeCount,
+              filterOpen: _filterOpen,
+              onToggleFilter: () => setState(() => _filterOpen = !_filterOpen),
+              selectionMode: _selectionMode,
+              onSelectionModeChanged: (mode) =>
+                  setState(() => _selectionMode = mode),
+            ),
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 180),

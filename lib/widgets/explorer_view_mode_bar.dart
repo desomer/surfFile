@@ -5,9 +5,11 @@ import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/folder_transition.dart';
+import 'explorer_action_bar.dart';
 import 'super_container.dart';
 import 'explorer_view_toggle.dart';
 import 'explorer_selection_mode_button.dart';
+import 'folder_size_indicator.dart';
 
 /// En-tête du dossier courant : icône, nom, nombre d'éléments et bascule
 /// liste / grille.
@@ -26,6 +28,7 @@ class ExplorerViewModeBar extends StatelessWidget {
     this.onToggleFilter,
     this.selectionMode = SelectionMode.standard,
     this.onSelectionModeChanged,
+    this.actions = const [],
     super.key,
   });
 
@@ -54,6 +57,12 @@ class ExplorerViewModeBar extends StatelessWidget {
   final SelectionMode selectionMode;
   final ValueChanged<SelectionMode>? onSelectionModeChanged;
 
+  /// Boutons d'action sur les éléments, à gauche de la barre.
+  final List<ExplorerBarAction> actions;
+
+  /// Largeur en dessous de laquelle les actions passent dans un menu.
+  static const compactActionsWidth = 720.0;
+
   @override
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
@@ -70,60 +79,75 @@ class ExplorerViewModeBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(10, 0, 10, 0),
         //padding: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-        child: Row(
-          children: [
-            if (appearance.folderTransition == FolderTransition.heroIcon) ...[
-              Icon(
-                Icons.folder_rounded,
-                key: titleIconKey,
-                size: 28,
-                color: appearance.accent,
-              ),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: Text(
-                title,
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: style.foreground,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            children: [
+              if (!gridView && !columnView) ...[
+                const FolderSizeDisplayButton(),
+                const SizedBox(width: 6),
+              ],
+              if (actions.isNotEmpty) ...[
+                ExplorerActionBar(
+                  actions: actions,
+                  compact: constraints.maxWidth < compactActionsWidth,
+                ),
+                const SizedBox(width: 10),
+              ],
+              if (appearance.folderTransition == FolderTransition.heroIcon) ...[
+                Icon(
+                  Icons.folder_rounded,
+                  key: titleIconKey,
+                  size: 28,
+                  color: appearance.accent,
+                ),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: style.foreground,
+                  ),
                 ),
               ),
-            ),
-            if (onToggleFilter != null) ...[
-              _filterButton(context),
-              const SizedBox(width: 4),
+              if (onToggleFilter != null) ...[
+                _filterButton(context),
+                const SizedBox(width: 4),
+              ],
+              if (onSelectionModeChanged != null) ...[
+                ExplorerSelectionModeButton(
+                  mode: selectionMode,
+                  onChanged: onSelectionModeChanged!,
+                ),
+                const SizedBox(width: 12),
+              ] else if (onToggleFilter != null)
+                const SizedBox(width: 8),
+              Text(
+                pending
+                    ? '…'
+                    : '$itemCount élément${itemCount == 1 ? '' : 's'}',
+                style: TextStyle(
+                  color:
+                      style.foreground ??
+                      explorerColor(
+                        context,
+                        const Color(0xFF82899A),
+                        Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(width: 14),
+              ExplorerViewToggle(
+                gridView: gridView,
+                onChanged: onGridViewChanged,
+                columnView: columnView,
+                onColumnViewChanged: onColumnViewChanged,
+              ),
             ],
-            if (onSelectionModeChanged != null) ...[
-              ExplorerSelectionModeButton(
-                mode: selectionMode,
-                onChanged: onSelectionModeChanged!,
-              ),
-              const SizedBox(width: 12),
-            ] else if (onToggleFilter != null)
-              const SizedBox(width: 8),
-            Text(
-              pending ? '…' : '$itemCount élément${itemCount == 1 ? '' : 's'}',
-              style: TextStyle(
-                color:
-                    style.foreground ??
-                    explorerColor(
-                      context,
-                      const Color(0xFF82899A),
-                      Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(width: 14),
-            ExplorerViewToggle(
-              gridView: gridView,
-              onChanged: onGridViewChanged,
-              columnView: columnView,
-              onColumnViewChanged: onColumnViewChanged,
-            ),
-          ],
+          ),
         ),
       ),
     );
