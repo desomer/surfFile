@@ -58,8 +58,9 @@ class AppearanceStore {
     'backgroundStyle': a.backgroundStyle.toJson(),
     'sidebarStyle': a.sidebarStyle.toJson(),
     'pathBarStyle': a.pathBarStyle.toJson(),
-    'pathBarLayout': a.pathBarLayout.toJson(),
     'explorerLayout': a.explorerLayout.toJson(),
+    'explorerMainLayout': a.explorerMainLayout.toJson(),
+    'explorerSidebarLayout': a.explorerSidebarLayout.toJson(),
     'explorerViewModeBarStyle': a.explorerViewModeBarStyle.toJson(),
     'diskPanelStyle': a.diskPanelStyle.toJson(),
     'diskTileStyle': a.diskTileStyle.toJson(),
@@ -147,13 +148,18 @@ class AppearanceStore {
         json['pathBarStyle'],
         fallback: const ContainerStyle(borderWidth: 1),
       ),
-      pathBarLayout: SuperLayoutConfig.fromJson(
-        json['pathBarLayout'],
-        fallback: Appearance.defaultPathBarLayout,
-      ),
+
       explorerLayout: SuperLayoutConfig.fromJson(
         json['explorerLayout'],
         fallback: Appearance.defaultExplorerLayout,
+      ),
+      explorerMainLayout: SuperLayoutConfig.fromJson(
+        json['explorerMainLayout'],
+        fallback: Appearance.defaultExplorerMainLayout,
+      ),
+      explorerSidebarLayout: SuperLayoutConfig.fromJson(
+        json['explorerSidebarLayout'],
+        fallback: Appearance.defaultExplorerSidebarLayout,
       ),
       explorerViewModeBarStyle: ContainerStyle.fromJson(
         json['explorerViewModeBarStyle'],

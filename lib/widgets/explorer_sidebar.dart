@@ -5,7 +5,9 @@ import '../services/favorites.dart';
 import '../theme/appearance.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/appearance_slot.dart';
+import 'slot_implementation.dart';
 import 'super_container.dart';
+import 'super_layout.dart';
 import 'disk_space_panel.dart';
 
 class ExplorerSidebar extends StatelessWidget {
@@ -28,6 +30,7 @@ class ExplorerSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = AppearanceScope.of(context).sidebarStyle;
+    final appearance = AppearanceScope.controllerOf(context);
     return SuperContainer(
       key: const ValueKey('sidebar-surface'),
       slot: AppearanceSlot.sidebar,
@@ -85,62 +88,84 @@ class ExplorerSidebar extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) => SingleChildScrollView(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _SidebarTabs(foreground: style.foreground),
-                            const SizedBox(height: 10),
-                            ValueListenableBuilder<int>(
-                              valueListenable: tab,
-                              builder: (context, index, _) => AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 180),
-                                child: index == 0
-                                    ? Column(
-                                        key: const ValueKey('sidebar-personal'),
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.stretch,
-                                        children: [
-                                          for (final location in locations)
-                                            _LocationItem(
-                                              location: location,
-                                              selected:
-                                                  location.path == currentPath,
-                                              onTap: () => onLocationSelected(
-                                                location.path,
-                                              ),
+              child: SuperLayout(
+                key: const ValueKey('sidebar-layout'),
+                label: 'Disposition du panneau gauche',
+                config: AppearanceScope.of(context).explorerSidebarLayout,
+                onChanged: appearance == null
+                    ? null
+                    : (value) => appearance.value = appearance.value.copyWith(
+                        explorerSidebarLayout: value,
+                      ),
+                slots: [
+                  BuilderSlot(
+                    id: 'sidebar-places',
+                    label: 'Espace et favoris',
+                    builder: (_) => SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _SidebarTabs(foreground: style.foreground),
+                          const SizedBox(height: 10),
+                          ValueListenableBuilder<int>(
+                            valueListenable: tab,
+                            builder: (context, index, _) => AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 180),
+                              child: index == 0
+                                  ? Column(
+                                      key: const ValueKey('sidebar-personal'),
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        for (final location in locations)
+                                          _LocationItem(
+                                            location: location,
+                                            selected:
+                                                location.path == currentPath,
+                                            onTap: () => onLocationSelected(
+                                              location.path,
                                             ),
-                                        ],
-                                      )
-                                    : _FavoritesList(
-                                        key: const ValueKey(
-                                          'sidebar-favorites',
-                                        ),
-                                        currentPath: currentPath,
-                                        onSelected: onLocationSelected,
-                                        foreground: style.foreground,
-                                      ),
-                              ),
+                                          ),
+                                      ],
+                                    )
+                                  : _FavoritesList(
+                                      key: const ValueKey('sidebar-favorites'),
+                                      currentPath: currentPath,
+                                      onSelected: onLocationSelected,
+                                      foreground: style.foreground,
+                                    ),
                             ),
-                          ],
-                        ),
-                        DiskSpacePanel(
-                          currentPath: currentPath,
-                          onNavigate: onLocationSelected,
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  BuilderSlot(
+                    id: 'sidebar-disks',
+                    label: 'Disques',
+                    sizing: SlotSizing.intrinsic,
+                    // En zone automatique, les disques ne prennent pas plus de
+                    // la moitié du panneau : la liste garde sa place.
+                    builder: (_) => LayoutBuilder(
+                      builder: (context, constraints) => ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: constraints.hasTightHeight
+                              ? constraints.maxHeight
+                              : constraints.maxHeight / 2,
+                        ),
+                        child: SingleChildScrollView(
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: DiskSpacePanel(
+                              currentPath: currentPath,
+                              onNavigate: onLocationSelected,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

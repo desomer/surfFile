@@ -2,13 +2,11 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../models/super_layout_config.dart';
 import '../services/favorites.dart';
 import '../theme/explorer_colors.dart';
 import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import 'super_container.dart';
-import 'super_layout.dart';
 
 class ExplorerBreadcrumbs extends StatelessWidget {
   const ExplorerBreadcrumbs({
@@ -29,7 +27,6 @@ class ExplorerBreadcrumbs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = AppearanceScope.of(context).pathBarStyle;
-    final layout = AppearanceScope.of(context).pathBarLayout;
     final colors = Theme.of(context).colorScheme;
     final foreground = style.foreground ?? colors.onSurfaceVariant;
     final normalizedPath = path.replaceAll('\\', '/');
@@ -48,128 +45,117 @@ class ExplorerBreadcrumbs extends StatelessWidget {
       crumbs.add((label: part, path: accumulated));
     }
 
-    final appearance = AppearanceScope.controllerOf(context);
-    final bar = SuperContainer(
-      key: const ValueKey('path-bar-surface'),
-      slot: AppearanceSlot.pathBar,
-      horizontalBorder: true,
-      fallbackColor: explorerColor(
-        context,
-        Colors.white,
-        Theme.of(context).colorScheme.surfaceContainerLow,
-      ),
-      borderColor: explorerColor(
-        context,
-        const Color(0xFFEAECF2),
-        Theme.of(context).colorScheme.outlineVariant,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 3, 12, 3),
-        child: Row(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    Tooltip(
-                      message: path,
-                      child: Icon(
-                        Icons.computer_rounded,
-                        size: 20,
-                        color: foreground,
-                      ),
-                    ),
-                    for (final (index, crumb) in crumbs.indexed) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Icon(
-                          Icons.chevron_right_rounded,
-                          size: 18,
-                          color: foreground.withValues(alpha: .55),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: index == crumbs.length - 1
-                            ? null
-                            : () => onNavigate(crumb.path),
-                        borderRadius: BorderRadius.circular(9),
-                        child: Ink(
-                          decoration: BoxDecoration(
-                            color: index == crumbs.length - 1
-                                ? (style.foreground ?? colors.primary)
-                                      .withValues(alpha: .10)
-                                : null,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (index == crumbs.length - 1) ...[
-                                Icon(
-                                  Icons.folder_open_rounded,
-                                  size: 16,
-                                  color: style.foreground ?? colors.primary,
-                                ),
-                                const SizedBox(width: 7),
-                              ],
-                              Text(
-                                crumb.label,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color:
-                                      style.foreground ??
-                                      explorerColor(
-                                        context,
-                                        index == crumbs.length - 1
-                                            ? const Color(0xFF394154)
-                                            : const Color(0xFF7D8494),
-                                        index == crumbs.length - 1
-                                            ? Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurface
-                                            : Theme.of(context)
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                      ),
-                                  fontWeight: index == crumbs.length - 1
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            FavoriteStar(path: path, color: foreground),
-          ],
-        ),
-      ),
-    );
-
-    return SuperLayout(
-      key: const ValueKey('path-bar-layout'),
-      label: 'Disposition de la barre de chemin',
-      config: layout,
-      onChanged: appearance == null
-          ? null
-          : (value) => appearance.value = appearance.value.copyWith(
-              pathBarLayout: value,
-            ),
-      centerHeight:
+    return SizedBox(
+      height:
           _barHeight +
           style.contentPadding.vertical +
           style.outerMargin.vertical,
-      zones: {SuperLayoutZone.center: bar},
+      child: SuperContainer(
+        key: const ValueKey('path-bar-surface'),
+        slot: AppearanceSlot.pathBar,
+        horizontalBorder: true,
+        fallbackColor: explorerColor(
+          context,
+          Colors.white,
+          Theme.of(context).colorScheme.surfaceContainerLow,
+        ),
+        borderColor: explorerColor(
+          context,
+          const Color(0xFFEAECF2),
+          Theme.of(context).colorScheme.outlineVariant,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 3, 12, 3),
+          child: Row(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      Tooltip(
+                        message: path,
+                        child: Icon(
+                          Icons.computer_rounded,
+                          size: 20,
+                          color: foreground,
+                        ),
+                      ),
+                      for (final (index, crumb) in crumbs.indexed) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          child: Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: foreground.withValues(alpha: .55),
+                          ),
+                        ),
+                        InkWell(
+                          onTap: index == crumbs.length - 1
+                              ? null
+                              : () => onNavigate(crumb.path),
+                          borderRadius: BorderRadius.circular(9),
+                          child: Ink(
+                            decoration: BoxDecoration(
+                              color: index == crumbs.length - 1
+                                  ? (style.foreground ?? colors.primary)
+                                        .withValues(alpha: .10)
+                                  : null,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (index == crumbs.length - 1) ...[
+                                  Icon(
+                                    Icons.folder_open_rounded,
+                                    size: 16,
+                                    color: style.foreground ?? colors.primary,
+                                  ),
+                                  const SizedBox(width: 7),
+                                ],
+                                Text(
+                                  crumb.label,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color:
+                                        style.foreground ??
+                                        explorerColor(
+                                          context,
+                                          index == crumbs.length - 1
+                                              ? const Color(0xFF394154)
+                                              : const Color(0xFF7D8494),
+                                          index == crumbs.length - 1
+                                              ? Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurface
+                                              : Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
+                                        ),
+                                    fontWeight: index == crumbs.length - 1
+                                        ? FontWeight.w600
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              FavoriteStar(path: path, color: foreground),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

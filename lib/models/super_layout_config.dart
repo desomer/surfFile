@@ -34,6 +34,11 @@ enum SuperLayoutZone {
     _ => false,
   };
 
+  bool get isSide => switch (this) {
+    north || south || west || east => true,
+    _ => false,
+  };
+
   /// Représentant de la paire (zone, opposée), qui identifie un échange.
   SuperLayoutZone get _pairKey => switch (this) {
     se => nw,
@@ -77,6 +82,8 @@ class SuperLayoutConfig {
     this.westSize = 120,
     this.eastSize = 120,
     this.swaps = const {},
+    this.autoSides = const {},
+    this.placements = const {},
   });
 
   static const minSize = 20.0;
@@ -100,6 +107,23 @@ class SuperLayoutConfig {
   /// Paires de zones opposées dont les contenus sont échangés, identifiées par
   /// leur représentant (Nord, Ouest, Nord-Ouest ou Nord-Est).
   final Set<SuperLayoutZone> swaps;
+
+  /// Côtés (Nord, Sud, Est, Ouest) dont la taille suit celle de leur contenu au
+  /// lieu de la valeur fixe correspondante.
+  final Set<SuperLayoutZone> autoSides;
+
+  /// Identifiants des slots rangés dans chaque zone, dans l'ordre d'empilement.
+  /// Les clés sont celles de [contentZone] : un échange de zones déplace donc
+  /// aussi les slots avec leur zone.
+  final Map<SuperLayoutZone, List<String>> placements;
+
+  bool isAuto(SuperLayoutZone side) => autoSides.contains(side);
+
+  List<String> placementsOf(SuperLayoutZone zone) =>
+      placements[zone] ?? const [];
+
+  /// Zones qui existent, quelle que soit la taille disponible.
+  Set<SuperLayoutZone> get visibleZones => resolve(Size.zero).keys.toSet();
 
   /// Zone dont le contenu est affiché à l'emplacement de [zone] ; la relation
   /// est symétrique, elle donne donc aussi l'emplacement du contenu de [zone].
@@ -132,7 +156,9 @@ class SuperLayoutConfig {
         .withSide(first, hasSide(second))
         .withSide(second, hasSide(first))
         ._withSize(first, sizeOf(second))
-        ._withSize(second, sizeOf(first));
+        ._withSize(second, sizeOf(first))
+        ._withAuto(first, isAuto(second))
+        ._withAuto(second, isAuto(first));
     // Les coins se reflètent d'un bord à l'autre de l'axe déplacé.
     return first == SuperLayoutZone.north
         ? next
@@ -165,6 +191,63 @@ class SuperLayoutConfig {
         SuperLayoutZone.west => copyWith(westSize: value),
         _ => copyWith(eastSize: value),
       };
+
+  SuperLayoutConfig _withAuto(SuperLayoutZone side, bool auto) => copyWith(
+    autoSides: auto ? {...autoSides, side} : ({...autoSides}..remove(side)),
+  );
+
+  SuperLayoutConfig withAuto(SuperLayoutZone side, bool auto) {
+    if (!side.isSide) {
+      throw ArgumentError.value(side, 'side', 'Pas un côté');
+    }
+    return _withAuto(side, auto);
+  }
+
+  SuperLayoutConfig withPlacement(SuperLayoutZone zone, List<String> ids) =>
+      copyWith(
+        placements: {
+          for (final MapEntry(:key, :value) in placements.entries)
+            if (key != zone) key: value,
+          if (ids.isNotEmpty) zone: List.unmodifiable(ids),
+        },
+      );
+
+  /// Range le slot [id] dans la zone de contenu [zone] (clé de [placements]),
+  /// juste avant [beforeId] ou après [afterId], ou en dernier sans repère. Il
+  /// quitte la zone où il se trouvait ; un repère inconnu place le slot en
+  /// dernier.
+  SuperLayoutConfig withSlotMoved(
+    String id,
+    SuperLayoutZone zone, {
+    String? beforeId,
+    String? afterId,
+  }) {
+    assert(beforeId == null || afterId == null);
+    final next = {
+      for (final MapEntry(:key, :value) in placements.entries)
+        key: [
+          for (final other in value)
+            if (other != id) other,
+        ],
+    };
+    final ids = next[zone] ?? <String>[];
+    var at = ids.length;
+    if (beforeId != null) {
+      final index = ids.indexOf(beforeId);
+      if (index >= 0) at = index;
+    } else if (afterId != null) {
+      final index = ids.indexOf(afterId);
+      if (index >= 0) at = index + 1;
+    }
+    ids.insert(at, id);
+    next[zone] = ids;
+    return copyWith(
+      placements: {
+        for (final MapEntry(:key, :value) in next.entries)
+          if (value.isNotEmpty) key: List.unmodifiable(value),
+      },
+    );
+  }
 
   SuperLayoutConfig _reflectCorners(SuperLayoutZone a, SuperLayoutZone b) =>
       withCorner(a, mergeOf(b)).withCorner(b, mergeOf(a));
@@ -208,6 +291,8 @@ class SuperLayoutConfig {
     double? westSize,
     double? eastSize,
     Set<SuperLayoutZone>? swaps,
+    Set<SuperLayoutZone>? autoSides,
+    Map<SuperLayoutZone, List<String>>? placements,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
     south: south ?? this.south,
@@ -222,6 +307,8 @@ class SuperLayoutConfig {
     westSize: westSize ?? this.westSize,
     eastSize: eastSize ?? this.eastSize,
     swaps: swaps ?? this.swaps,
+    autoSides: autoSides ?? this.autoSides,
+    placements: placements ?? this.placements,
   );
 
   SuperLayoutConfig withCorner(SuperLayoutZone corner, CornerMerge merge) =>
@@ -256,6 +343,11 @@ class SuperLayoutConfig {
     'westSize': westSize,
     'eastSize': eastSize,
     'swaps': [for (final zone in swaps) zone.name],
+    'autoSides': [for (final zone in autoSides) zone.name],
+    'placements': {
+      for (final MapEntry(:key, :value) in placements.entries)
+        key.name: [...value],
+    },
   };
 
   /// [fallback] fournit les valeurs des clés absentes.
@@ -304,6 +396,45 @@ class SuperLayoutConfig {
       };
     }
 
+    Set<SuperLayoutZone> autoSet() {
+      final v = value['autoSides'];
+      if (v == null) return fallback.autoSides;
+      if (v is! List) {
+        throw const FormatException('Valeur invalide pour "autoSides".');
+      }
+      return {
+        for (final name in v)
+          SuperLayoutZone.values
+                  .where((z) => z.name == name && z.isSide)
+                  .firstOrNull ??
+              (throw const FormatException(
+                'Valeur invalide pour "autoSides".',
+              )),
+      };
+    }
+
+    Map<SuperLayoutZone, List<String>> placementMap() {
+      final v = value['placements'];
+      if (v == null) return fallback.placements;
+      if (v is! Map) {
+        throw const FormatException('Valeur invalide pour "placements".');
+      }
+      return {
+        for (final MapEntry(:key, :value) in v.entries)
+          SuperLayoutZone.values.where((z) => z.name == key).firstOrNull ??
+              (throw const FormatException(
+                'Valeur invalide pour "placements".',
+              )): switch (value) {
+            List() when value.every((id) => id is String) => [
+              ...value.cast<String>(),
+            ],
+            _ => throw const FormatException(
+              'Valeur invalide pour "placements".',
+            ),
+          },
+      };
+    }
+
     return SuperLayoutConfig(
       north: flag('north', fallback.north),
       south: flag('south', fallback.south),
@@ -318,22 +449,30 @@ class SuperLayoutConfig {
       westSize: size('westSize', fallback.westSize),
       eastSize: size('eastSize', fallback.eastSize),
       swaps: swapSet(),
+      autoSides: autoSet(),
+      placements: placementMap(),
     );
   }
 
   /// Rectangles des zones affichées dans [size]. Une zone absente ou fusionnée
   /// n'apparaît pas dans le résultat ; la zone qui l'absorbe s'étend sur sa
-  /// case.
-  Map<SuperLayoutZone, Rect> resolve(Size size) {
+  /// case. [measured] donne l'épaisseur mesurée des côtés en taille
+  /// automatique ; sans mesure, la taille fixe du côté s'applique.
+  Map<SuperLayoutZone, Rect> resolve(
+    Size size, {
+    Map<SuperLayoutZone, double> measured = const {},
+  }) {
+    double extent(SuperLayoutZone side) =>
+        isAuto(side) ? measured[side] ?? sizeOf(side) : sizeOf(side);
     final (x1, x2) = _tracks(
       size.width,
-      west ? westSize : 0,
-      east ? eastSize : 0,
+      west ? extent(SuperLayoutZone.west) : 0,
+      east ? extent(SuperLayoutZone.east) : 0,
     );
     final (y1, y2) = _tracks(
       size.height,
-      north ? northSize : 0,
-      south ? southSize : 0,
+      north ? extent(SuperLayoutZone.north) : 0,
+      south ? extent(SuperLayoutZone.south) : 0,
     );
     final width = size.width;
     final height = size.height;
@@ -402,7 +541,22 @@ class SuperLayoutConfig {
       other.westSize == westSize &&
       other.eastSize == eastSize &&
       other.swaps.length == swaps.length &&
-      other.swaps.containsAll(swaps);
+      other.swaps.containsAll(swaps) &&
+      other.autoSides.length == autoSides.length &&
+      other.autoSides.containsAll(autoSides) &&
+      _samePlacements(other.placements);
+
+  bool _samePlacements(Map<SuperLayoutZone, List<String>> other) {
+    if (other.length != placements.length) return false;
+    for (final MapEntry(:key, :value) in placements.entries) {
+      final ids = other[key];
+      if (ids == null || ids.length != value.length) return false;
+      for (var i = 0; i < ids.length; i++) {
+        if (ids[i] != value[i]) return false;
+      }
+    }
+    return true;
+  }
 
   @override
   int get hashCode => Object.hash(
@@ -419,5 +573,10 @@ class SuperLayoutConfig {
     westSize,
     eastSize,
     Object.hashAllUnordered(swaps),
+    Object.hashAllUnordered(autoSides),
+    Object.hashAllUnordered([
+      for (final MapEntry(:key, :value) in placements.entries)
+        Object.hash(key, Object.hashAll(value)),
+    ]),
   );
 }

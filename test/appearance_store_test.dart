@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:surf_file/models/super_layout_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/appearance.dart';
 import 'package:surf_file/theme/container_style.dart';
@@ -78,6 +79,48 @@ void main() {
     );
     expect(restored.cardStyle.color, isNull);
     expect(restored.selectedCardStyle, isNull);
+  });
+
+  test('explorer main layout survives saving and has a default', () async {
+    expect(
+      (await AppearanceStore().load()).explorerMainLayout,
+      Appearance.defaultExplorerMainLayout,
+    );
+    final moved = Appearance.defaultExplorerMainLayout.withSwap(
+      SuperLayoutZone.north,
+    );
+    final errors = <Object>[];
+    final first = PersistentAppearanceController(AppearanceStore(), errors.add);
+    addTearDown(first.dispose);
+    await first.restore();
+    first.value = first.value.copyWith(explorerMainLayout: moved);
+    await first.saved;
+    final restored = await AppearanceStore().load();
+    expect(restored.explorerMainLayout, moved);
+    expect(restored.explorerMainLayout.south, isTrue);
+    expect(restored.explorerMainLayout.isAuto(SuperLayoutZone.south), isTrue);
+    expect(errors, isEmpty);
+  });
+
+  test('sidebar layout survives saving and has a default', () async {
+    expect(
+      (await AppearanceStore().load()).explorerSidebarLayout,
+      Appearance.defaultExplorerSidebarLayout,
+    );
+    final moved = Appearance.defaultExplorerSidebarLayout.withSlotMoved(
+      'sidebar-disks',
+      SuperLayoutZone.center,
+    );
+    final controller = PersistentAppearanceController(
+      AppearanceStore(),
+      (_) {},
+    );
+    addTearDown(controller.dispose);
+    await controller.restore();
+    controller.value = controller.value.copyWith(explorerSidebarLayout: moved);
+    await controller.saved;
+    final restored = await AppearanceStore().load();
+    expect(restored.explorerSidebarLayout, moved);
   });
 
   test('writes are ordered and save errors allow later writes', () async {

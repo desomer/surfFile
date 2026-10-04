@@ -39,6 +39,7 @@ import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/folder_transition.dart';
 import '../models/super_layout_config.dart';
+import '../widgets/slot_implementation.dart';
 import '../widgets/super_container.dart';
 import '../widgets/super_layout.dart';
 import '../widgets/file_action_bar.dart';
@@ -1526,11 +1527,13 @@ class _ExplorerPaneState extends State<ExplorerPane> {
           ? config
           : config.copyWith(
               // Masque l'emplacement où le panneau gauche est affiché.
-              west: config.contentZone(SuperLayoutZone.west) ==
+              west:
+                  config.contentZone(SuperLayoutZone.west) ==
                       SuperLayoutZone.west
                   ? false
                   : null,
-              east: config.contentZone(SuperLayoutZone.west) ==
+              east:
+                  config.contentZone(SuperLayoutZone.west) ==
                       SuperLayoutZone.east
                   ? false
                   : null,
@@ -1540,42 +1543,77 @@ class _ExplorerPaneState extends State<ExplorerPane> {
           : (value) => appearance.value = appearance.value.copyWith(
               explorerLayout: value,
             ),
-      zones: {
-        SuperLayoutZone.west: ExplorerSidebar(
-          locations: _locations,
-          currentPath: widget.sidebarPath ?? _currentPath,
-          onLocationSelected: widget.onSidebarLocation ?? _loadDirectory,
+      slots: [
+        BuilderSlot(
+          id: 'sidebar',
+          label: 'Panneau gauche',
+          builder: (_) => ExplorerSidebar(
+            locations: _locations,
+            currentPath: widget.sidebarPath ?? _currentPath,
+            onLocationSelected: widget.onSidebarLocation ?? _loadDirectory,
+          ),
         ),
-        SuperLayoutZone.center: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (_) {
-            widget.onActivate?.call();
-            if (widget.split && !_explorerFocusNode.hasFocus) {
-              _explorerFocusNode.requestFocus();
-            }
-          },
-          child: _buildExplorer(),
+        BuilderSlot(
+          id: 'main',
+          label: 'Explorateur',
+          showLabel: false,
+          builder: (_) => Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) {
+              widget.onActivate?.call();
+              if (widget.split && !_explorerFocusNode.hasFocus) {
+                _explorerFocusNode.requestFocus();
+              }
+            },
+            child: _buildExplorer(),
+          ),
         ),
-      },
+      ],
     );
   }
 
+  /// Disposition de l'explorateur : barres empilées d'un côté, contenu au
+  /// centre.
   Widget _buildExplorer() {
     final entries = _visibleEntries;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (!_previewExpanded) ...[
-          if (widget.split)
-            AnimatedContainer(
-              key: ValueKey('split-active-${widget.active}'),
-              duration: const Duration(milliseconds: 150),
-              height: 3,
-              color: widget.active
-                  ? AppearanceScope.of(context).accent
-                  : Colors.transparent,
+    final appearance = AppearanceScope.controllerOf(context);
+    final config =
+        appearance?.value.explorerMainLayout ??
+        Appearance.defaultExplorerMainLayout;
+    return SuperLayout(
+      key: const ValueKey('explorer-main-layout'),
+      label: 'Disposition de l’explorateur',
+      // Seul le volet qui affiche le panneau édite la disposition partagée.
+      editable: _sidebarVisible,
+      onChanged: appearance == null
+          ? null
+          : (value) => appearance.value = appearance.value.copyWith(
+              explorerMainLayout: value,
             ),
-          ExplorerToolbar(
+      // L'aperçu agrandi masque toutes les barres.
+      config: _previewExpanded
+          ? config.withSide(config.contentZone(SuperLayoutZone.north), false)
+          : config,
+      slots: [
+        BuilderSlot(
+          id: 'split-indicator',
+          label: 'Indicateur du mode divisé',
+          sizing: SlotSizing.intrinsic,
+          visible: widget.split,
+          builder: (context) => AnimatedContainer(
+            key: ValueKey('split-active-${widget.active}'),
+            duration: const Duration(milliseconds: 150),
+            height: 3,
+            color: widget.active
+                ? AppearanceScope.of(context).accent
+                : Colors.transparent,
+          ),
+        ),
+        BuilderSlot(
+          id: 'toolbar',
+          label: 'Barre d’outils',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) => ExplorerToolbar(
             split: widget.split,
             onToggleSplit: widget.onToggleSplit,
             canGoBack: _history.isNotEmpty && !_isLoading && !_contextMenuOpen,
@@ -1589,8 +1627,21 @@ class _ExplorerPaneState extends State<ExplorerPane> {
             onSearchChanged: (value) => setState(() => _query = value),
             onCreateFolder: _createFolder,
           ),
-          ExplorerBreadcrumbs(path: _currentPath, onNavigate: _loadDirectory),
-          ValueListenableBuilder(
+        ),
+        BuilderSlot(
+          id: 'breadcrumbs',
+          label: 'Barre du chemin',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) => ExplorerBreadcrumbs(
+            path: _currentPath,
+            onNavigate: _loadDirectory,
+          ),
+        ),
+        BuilderSlot(
+          id: 'view-mode-bar',
+          label: 'Barre des modes d’affichage',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) => ValueListenableBuilder(
             valueListenable: FileClipboard.content,
             builder: (context, clipboard, _) => ExplorerViewModeBar(
               actions: _barActions(canPaste: clipboard != null),
@@ -1612,7 +1663,12 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                   setState(() => _selectionMode = mode),
             ),
           ),
-          AnimatedSize(
+        ),
+        BuilderSlot(
+          id: 'filter-bar',
+          label: 'Barre de filtres',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) => AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
             alignment: Alignment.topCenter,
@@ -1626,216 +1682,233 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                   )
                 : const SizedBox(width: double.infinity),
           ),
-          if (!_columnView)
-            ExplorerSortHeader(
-              sort: _sort,
-              ascending: _ascending,
-              onSortChanged: (sort) => setState(() {
-                if (_sort == sort) {
-                  _ascending = !_ascending;
-                } else {
-                  _sort = sort;
-                  _ascending = true;
-                }
-              }),
-            ),
-        ],
-        Expanded(
-          key: _contentKey,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              _wrapContent(
-                IgnorePointer(
-                  ignoring: _isLoading,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 180),
-                    layoutBuilder: (current, previous) => Stack(
-                      fit: StackFit.expand,
-                      children: [...previous, if (current != null) current],
-                    ),
-                    child: _pendingEntries && _loadError == null
-                        ? ExplorerSkeleton(
-                            key: const ValueKey('explorer-skeleton'),
-                            gridView: _showGrid,
-                          )
-                        : KeyedSubtree(
-                            key: const ValueKey('explorer-content'),
-                            child: _isLoading && !_hasLoadedDirectory
-                                ? const Center(
-                                    child: CircularProgressIndicator(),
-                                  )
-                                : _loadError != null
-                                ? ExplorerErrorState(
-                                    message: _loadError!,
-                                    onRetry: () {
-                                      if (_initializationFailed) {
-                                        _initialize();
-                                      } else {
-                                        _loadDirectory(
-                                          _failedPath ?? _currentPath,
-                                          direction: _failedDirection,
+        ),
+        BuilderSlot(
+          id: 'sort-header',
+          label: 'En-tête de tri',
+          sizing: SlotSizing.intrinsic,
+          visible: !_columnView,
+          builder: (_) => ExplorerSortHeader(
+            sort: _sort,
+            ascending: _ascending,
+            onSortChanged: (sort) => setState(() {
+              if (_sort == sort) {
+                _ascending = !_ascending;
+              } else {
+                _sort = sort;
+                _ascending = true;
+              }
+            }),
+          ),
+        ),
+        BuilderSlot(
+          id: 'content',
+          label: 'Contenu du dossier',
+          builder: (_) => KeyedSubtree(
+            key: _contentKey,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                _wrapContent(
+                  IgnorePointer(
+                    ignoring: _isLoading,
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      layoutBuilder: (current, previous) => Stack(
+                        fit: StackFit.expand,
+                        children: [...previous, if (current != null) current],
+                      ),
+                      child: _pendingEntries && _loadError == null
+                          ? ExplorerSkeleton(
+                              key: const ValueKey('explorer-skeleton'),
+                              gridView: _showGrid,
+                            )
+                          : KeyedSubtree(
+                              key: const ValueKey('explorer-content'),
+                              child: _isLoading && !_hasLoadedDirectory
+                                  ? const Center(
+                                      child: CircularProgressIndicator(),
+                                    )
+                                  : _loadError != null
+                                  ? ExplorerErrorState(
+                                      message: _loadError!,
+                                      onRetry: () {
+                                        if (_initializationFailed) {
+                                          _initialize();
+                                        } else {
+                                          _loadDirectory(
+                                            _failedPath ?? _currentPath,
+                                            direction: _failedDirection,
+                                          );
+                                        }
+                                      },
+                                    )
+                                  : entries.isEmpty
+                                  ? ExplorerEmptyState(
+                                      hasQuery:
+                                          _query.isNotEmpty || _filter.isActive,
+                                    )
+                                  : LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final fileList = ExplorerEntriesView(
+                                          key: ValueKey(_currentPath),
+                                          entries: entries,
+                                          gridView: _showGrid,
+                                          compact: _columnView,
+                                          selectedPath: _selectedPath,
+                                          selectedPaths: _selection,
+                                          onSelected: _pointerSelect,
+                                          onTapped: _columnView
+                                              ? _columnTapped
+                                              : _tapSelect,
+                                          onSelectionChanged: (paths) {
+                                            _explorerFocusNode.requestFocus();
+                                            _selectionChanged(() {
+                                              _collapseTo = null;
+                                              _setSelection(paths);
+                                            });
+                                          },
+                                          onToggle:
+                                              _effectiveSelectionMode ==
+                                                  SelectionMode.checkbox
+                                              ? _toggleSelection
+                                              : null,
+                                          revealToken: _revealToken,
+                                          onViewportChanged: (size) =>
+                                              _viewport = size,
+                                          onOpen: _openEntry,
+                                          onOpenWithBounds: _columnView
+                                              ? null
+                                              : (entry, card, icon) =>
+                                                    _loadDirectory(
+                                                      entry.entity.path,
+                                                      heroCard: card,
+                                                      heroIcon: icon,
+                                                    ),
+                                          onContextMenu: Platform.isWindows
+                                              ? _showContextMenu
+                                              : null,
                                         );
-                                      }
-                                    },
-                                  )
-                                : entries.isEmpty
-                                ? ExplorerEmptyState(
-                                    hasQuery:
-                                        _query.isNotEmpty || _filter.isActive,
-                                  )
-                                : LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      final fileList = ExplorerEntriesView(
-                                        key: ValueKey(_currentPath),
-                                        entries: entries,
-                                        gridView: _showGrid,
-                                        compact: _columnView,
-                                        selectedPath: _selectedPath,
-                                        selectedPaths: _selection,
-                                        onSelected: _pointerSelect,
-                                        onTapped: _columnView
-                                            ? _columnTapped
-                                            : _tapSelect,
-                                        onSelectionChanged: (paths) {
-                                          _explorerFocusNode.requestFocus();
-                                          _selectionChanged(() {
-                                            _collapseTo = null;
-                                            _setSelection(paths);
-                                          });
-                                        },
-                                        onToggle:
-                                            _effectiveSelectionMode ==
-                                                SelectionMode.checkbox
-                                            ? _toggleSelection
-                                            : null,
-                                        revealToken: _revealToken,
-                                        onViewportChanged: (size) =>
-                                            _viewport = size,
-                                        onOpen: _openEntry,
-                                        onOpenWithBounds: _columnView
-                                            ? null
-                                            : (entry, card, icon) =>
-                                                  _loadDirectory(
-                                                    entry.entity.path,
-                                                    heroCard: card,
-                                                    heroIcon: icon,
-                                                  ),
-                                        onContextMenu: Platform.isWindows
-                                            ? _showContextMenu
-                                            : null,
-                                      );
-                                      if (!_previewVisible) {
-                                        return _columnView
-                                            ? Row(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.stretch,
-                                                children: [
-                                                  SizedBox(
-                                                    width: ExplorerColumnsView
-                                                        .columnWidth,
-                                                    child: fileList,
-                                                  ),
-                                                ],
-                                              )
-                                            : fileList;
-                                      }
+                                        if (!_previewVisible) {
+                                          return _columnView
+                                              ? Row(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment
+                                                          .stretch,
+                                                  children: [
+                                                    SizedBox(
+                                                      width: ExplorerColumnsView
+                                                          .columnWidth,
+                                                      child: fileList,
+                                                    ),
+                                                  ],
+                                                )
+                                              : fileList;
+                                        }
 
-                                      final matching = entries.where(
-                                        (entry) =>
-                                            entry.entity.path == _selectedPath,
-                                      );
-                                      final selected = matching.isEmpty
-                                          ? null
-                                          : matching.first;
-                                      void closePreview() => setState(() {
-                                        _previewVisible = false;
-                                        _previewExpanded = false;
-                                      });
-                                      void toggleExpanded() => setState(
-                                        () => _previewExpanded =
-                                            !_previewExpanded,
-                                      );
-                                      final preview =
-                                          selected != null &&
-                                              VideoPreviewPanel.supports(
-                                                selected.name,
-                                              )
-                                          ? VideoPreviewPanel(
-                                              key: _videoPreviewKey,
-                                              path: selected.entity.path,
-                                              onClose: closePreview,
-                                              isExpanded: _previewExpanded,
-                                              onToggleExpanded: toggleExpanded,
-                                            )
-                                          : selected != null &&
-                                                ImagePreviewPanel.supports(
+                                        final matching = entries.where(
+                                          (entry) =>
+                                              entry.entity.path ==
+                                              _selectedPath,
+                                        );
+                                        final selected = matching.isEmpty
+                                            ? null
+                                            : matching.first;
+                                        void closePreview() => setState(() {
+                                          _previewVisible = false;
+                                          _previewExpanded = false;
+                                        });
+                                        void toggleExpanded() => setState(
+                                          () => _previewExpanded =
+                                              !_previewExpanded,
+                                        );
+                                        final preview =
+                                            selected != null &&
+                                                VideoPreviewPanel.supports(
                                                   selected.name,
                                                 )
-                                          ? ImagePreviewPanel(
-                                              key: _imagePreviewKey,
-                                              path: selected.entity.path,
-                                              onClose: closePreview,
-                                              isExpanded: _previewExpanded,
-                                              onToggleExpanded: toggleExpanded,
-                                            )
-                                          : TextPreviewPanel(
-                                              key: _textPreviewKey,
-                                              path:
-                                                  selected != null &&
-                                                      TextPreviewPanel.supports(
-                                                        selected.name,
-                                                      )
-                                                  ? selected.entity.path
-                                                  : null,
-                                              onClose: closePreview,
-                                              isExpanded: _previewExpanded,
-                                              onToggleExpanded: toggleExpanded,
-                                            );
-                                      if (_previewExpanded) return preview;
-                                      if (_columnView) {
-                                        return Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
+                                            ? VideoPreviewPanel(
+                                                key: _videoPreviewKey,
+                                                path: selected.entity.path,
+                                                onClose: closePreview,
+                                                isExpanded: _previewExpanded,
+                                                onToggleExpanded:
+                                                    toggleExpanded,
+                                              )
+                                            : selected != null &&
+                                                  ImagePreviewPanel.supports(
+                                                    selected.name,
+                                                  )
+                                            ? ImagePreviewPanel(
+                                                key: _imagePreviewKey,
+                                                path: selected.entity.path,
+                                                onClose: closePreview,
+                                                isExpanded: _previewExpanded,
+                                                onToggleExpanded:
+                                                    toggleExpanded,
+                                              )
+                                            : TextPreviewPanel(
+                                                key: _textPreviewKey,
+                                                path:
+                                                    selected != null &&
+                                                        TextPreviewPanel.supports(
+                                                          selected.name,
+                                                        )
+                                                    ? selected.entity.path
+                                                    : null,
+                                                onClose: closePreview,
+                                                isExpanded: _previewExpanded,
+                                                onToggleExpanded:
+                                                    toggleExpanded,
+                                              );
+                                        if (_previewExpanded) return preview;
+                                        if (_columnView) {
+                                          return Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.stretch,
+                                            children: [
+                                              SizedBox(
+                                                width: ExplorerColumnsView
+                                                    .columnWidth,
+                                                child: fileList,
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Expanded(child: preview),
+                                            ],
+                                          );
+                                        }
+                                        if (constraints.maxWidth >= 760) {
+                                          return Row(
+                                            children: [
+                                              Expanded(child: fileList),
+                                              const SizedBox(width: 12),
+                                              SizedBox(
+                                                width: 340,
+                                                child: preview,
+                                              ),
+                                            ],
+                                          );
+                                        }
+                                        return Column(
                                           children: [
+                                            Expanded(flex: 3, child: fileList),
+                                            const SizedBox(height: 12),
                                             SizedBox(
-                                              width: ExplorerColumnsView
-                                                  .columnWidth,
-                                              child: fileList,
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(child: preview),
-                                          ],
-                                        );
-                                      }
-                                      if (constraints.maxWidth >= 760) {
-                                        return Row(
-                                          children: [
-                                            Expanded(child: fileList),
-                                            const SizedBox(width: 12),
-                                            SizedBox(
-                                              width: 340,
+                                              height: 240,
                                               child: preview,
                                             ),
                                           ],
                                         );
-                                      }
-                                      return Column(
-                                        children: [
-                                          Expanded(flex: 3, child: fileList),
-                                          const SizedBox(height: 12),
-                                          SizedBox(height: 240, child: preview),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                          ),
+                                      },
+                                    ),
+                            ),
+                    ),
                   ),
                 ),
-              ),
-              if (_isLoading && _hasLoadedDirectory && !_pendingEntries)
-                const Center(child: CircularProgressIndicator()),
-            ],
+                if (_isLoading && _hasLoadedDirectory && !_pendingEntries)
+                  const Center(child: CircularProgressIndicator()),
+              ],
+            ),
           ),
         ),
       ],

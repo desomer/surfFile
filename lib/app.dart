@@ -9,6 +9,7 @@ import 'services/appearance_store.dart';
 import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/neon_style.dart';
+import 'widgets/layout_reset_shortcut.dart';
 import 'widgets/neon_surface.dart';
 import 'widgets/super_container.dart';
 
@@ -46,6 +47,15 @@ class _SurfFileAppState extends State<SurfFileApp> {
     });
     _appearance.addListener(_updateWindow);
     _restore();
+  }
+
+  void _resetLayouts() {
+    _appearance.value = _appearance.value.resetLayouts();
+    _messenger.currentState
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(content: Text('Zones et slots remis par défaut.')),
+      );
   }
 
   void _updateWindow() {
@@ -135,85 +145,91 @@ class _SurfFileAppState extends State<SurfFileApp> {
   Widget build(BuildContext context) {
     return AppearanceScope(
       controller: _appearance,
-      child: StyleEditScope(
-        controller: _styleEditMode,
-        child: ValueListenableBuilder<Appearance>(
-          valueListenable: _appearance,
-          builder: (context, appearance, child) => MaterialApp(
-            title: 'Surf File V 1.0.0 by Gauthier Desomer',
-            debugShowCheckedModeBanner: false,
-            scaffoldMessengerKey: _messenger,
-            localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            themeMode: appearance.mode,
-            theme: appearance.theme(Brightness.light),
-            darkTheme: appearance.theme(Brightness.dark),
-            builder: (context, child) => Stack(
-              children: [
-                Positioned.fill(
-                  child: NeonSurface(
-                    key: const ValueKey('background-neon'),
-                    style: appearance.backgroundStyle.neon ?? const NeonStyle(),
-                    accent: appearance.accent,
-                    radius: 0,
-                    child: DecoratedBox(
-                      key: const ValueKey('background-border'),
-                      position: DecorationPosition.foreground,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color:
-                              appearance.backgroundStyle.borderColor ??
-                              Theme.of(context).colorScheme.outlineVariant,
-                          width: appearance.backgroundStyle.borderWidth,
-                          style: appearance.backgroundStyle.borderWidth == 0
-                              ? BorderStyle.none
-                              : BorderStyle.solid,
-                        ),
-                      ),
+      child: LayoutResetShortcut(
+        onReset: _resetLayouts,
+        child: StyleEditScope(
+          controller: _styleEditMode,
+          child: ValueListenableBuilder<Appearance>(
+            valueListenable: _appearance,
+            builder: (context, appearance, child) => MaterialApp(
+              title: 'Surf File V 1.0.0 by Gauthier Desomer',
+              debugShowCheckedModeBanner: false,
+              scaffoldMessengerKey: _messenger,
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              themeMode: appearance.mode,
+              theme: appearance.theme(Brightness.light),
+              darkTheme: appearance.theme(Brightness.dark),
+              builder: (context, child) => Stack(
+                children: [
+                  Positioned.fill(
+                    child: NeonSurface(
+                      key: const ValueKey('background-neon'),
+                      style:
+                          appearance.backgroundStyle.neon ?? const NeonStyle(),
+                      accent: appearance.accent,
+                      radius: 0,
                       child: DecoratedBox(
+                        key: const ValueKey('background-border'),
+                        position: DecorationPosition.foreground,
                         decoration: BoxDecoration(
-                          gradient: appearance.backgroundStyle.fill.gradient(
-                            opacity: appearance.backgroundOpacity,
+                          border: Border.all(
+                            color:
+                                appearance.backgroundStyle.borderColor ??
+                                Theme.of(context).colorScheme.outlineVariant,
+                            width: appearance.backgroundStyle.borderWidth,
+                            style: appearance.backgroundStyle.borderWidth == 0
+                                ? BorderStyle.none
+                                : BorderStyle.solid,
                           ),
                         ),
-                        child: child,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: appearance.backgroundStyle.fill.gradient(
+                              opacity: appearance.backgroundOpacity,
+                            ),
+                          ),
+                          child: child,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const Positioned.fill(child: StyleEditBanner()),
-              ],
-            ),
-            home: _loading
-                ? const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  )
-                : _loadError != null
-                ? Scaffold(
-                    body: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_loadError!, textAlign: TextAlign.center),
-                            const SizedBox(height: 16),
-                            FilledButton(
-                              onPressed: _restore,
-                              child: const Text('Réessayer'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                _appearance.value = const Appearance();
-                                setState(() => _loadError = null);
-                              },
-                              child: const Text('Réinitialiser les paramètres'),
-                            ),
-                          ],
+                  const Positioned.fill(child: StyleEditBanner()),
+                ],
+              ),
+              home: _loading
+                  ? const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    )
+                  : _loadError != null
+                  ? Scaffold(
+                      body: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_loadError!, textAlign: TextAlign.center),
+                              const SizedBox(height: 16),
+                              FilledButton(
+                                onPressed: _restore,
+                                child: const Text('Réessayer'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  _appearance.value = const Appearance();
+                                  setState(() => _loadError = null);
+                                },
+                                child: const Text(
+                                  'Réinitialiser les paramètres',
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                : const ExplorerPage(),
+                    )
+                  : const ExplorerPage(),
+            ),
           ),
         ),
       ),

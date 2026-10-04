@@ -38,6 +38,7 @@ class ShortcutsHelpDialog extends StatelessWidget {
         ('Espace', 'Aperçu'),
         ('Ctrl + D', 'Ajouter / retirer le dossier des favoris'),
         ('Ctrl + Maj + F', 'Afficher / masquer la barre de filtres'),
+        ('Win + Échap', 'Remettre les zones et slots par défaut'),
       ],
     ),
     (

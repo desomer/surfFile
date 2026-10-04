@@ -2,10 +2,27 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/super_layout_config.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
+import 'package:surf_file/widgets/slot_implementation.dart';
 import 'package:surf_file/widgets/super_container.dart';
 import 'package:surf_file/widgets/super_layout.dart';
+
+/// Un slot par zone, pour tester le placement sans écrire les ids à la main.
+Widget zonedLayout({
+  required Map<SuperLayoutZone, Widget> zones,
+  SuperLayoutConfig config = const SuperLayoutConfig(),
+  ValueChanged<SuperLayoutConfig>? onChanged,
+}) => SuperLayout(
+  config: config.copyWith(
+    placements: {
+      for (final zone in zones.keys) zone: [zone.name],
+    },
+  ),
+  onChanged: onChanged,
+  slots: [
+    for (final MapEntry(:key, :value) in zones.entries)
+      BuilderSlot(id: key.name, label: 'slot ', builder: (_) => value),
+  ],
+);
 
 void main() {
   const size = Size(600, 400);
@@ -110,7 +127,7 @@ void main() {
           body: SizedBox(
             width: 600,
             height: 400,
-            child: SuperLayout(
+            child: zonedLayout(
               config: config,
               onChanged: changes.add,
               zones: const {SuperLayoutZone.center: Text('Contenu')},
@@ -175,59 +192,15 @@ void main() {
 
     await tester.tap(find.text('Annuler'));
     await tester.pumpAndSettle();
-    expect(changes.last, const SuperLayoutConfig());
+    expect(
+      changes.last,
+      const SuperLayoutConfig(
+        placements: {
+          SuperLayoutZone.center: ['center'],
+        },
+      ),
+    );
     expect(find.byKey(const ValueKey('super-layout-east')), findsOneWidget);
-  });
-
-  testWidgets('path bar layout is in the edit-mode menu and persists', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(800, 1600);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final appearance = ValueNotifier(const Appearance());
-    final editMode = ValueNotifier(true);
-    addTearDown(appearance.dispose);
-    addTearDown(editMode.dispose);
-    await tester.pumpWidget(
-      AppearanceScope(
-        controller: appearance,
-        child: StyleEditScope(
-          controller: editMode,
-          child: MaterialApp(
-            home: Scaffold(
-              body: Column(
-                children: [
-                  ExplorerBreadcrumbs(
-                    path: 'C:\\Users\\demo',
-                    onNavigate: (_) {},
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    expect(find.text('Nord'), findsNothing);
-
-    await tester.tap(find.text('Users'), buttons: kSecondaryMouseButton);
-    await tester.pumpAndSettle();
-    final menu = find.byType(PopupMenuItem<SuperContainerState>);
-    expect(menu, findsNWidgets(2));
-    await tester.tap(
-      find.byKey(
-        const ValueKey('style-menu-Disposition de la barre de chemin'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('super-layout-side-north')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Appliquer'));
-    await tester.pumpAndSettle();
-
-    expect(appearance.value.pathBarLayout.north, isTrue);
-    expect(find.text('Nord'), findsOneWidget);
   });
 
   testWidgets('edit mode names the used zones above their centre', (
@@ -243,7 +216,7 @@ void main() {
             body: SizedBox(
               width: 600,
               height: 400,
-              child: SuperLayout(
+              child: zonedLayout(
                 zones: const {
                   SuperLayoutZone.west: SizedBox.expand(),
                   SuperLayoutZone.center: Text('Contenu'),
@@ -285,7 +258,7 @@ void main() {
             body: SizedBox(
               width: 600,
               height: 400,
-              child: SuperLayout(
+              child: zonedLayout(
                 onChanged: changes.add,
                 zones: const {
                   SuperLayoutZone.west: Text('Panneau'),
@@ -381,7 +354,7 @@ void main() {
             body: SizedBox(
               width: 600,
               height: 400,
-              child: SuperLayout(
+              child: zonedLayout(
                 config: const SuperLayoutConfig(east: false),
                 onChanged: changes.add,
                 zones: const {
@@ -419,7 +392,7 @@ void main() {
             body: SizedBox(
               width: 600,
               height: 400,
-              child: SuperLayout(
+              child: zonedLayout(
                 onChanged: changes.add,
                 zones: const {
                   SuperLayoutZone.west: Text('Panneau'),
@@ -462,4 +435,3 @@ void main() {
     );
   });
 }
-

@@ -29,8 +29,9 @@ class Appearance {
     this.backgroundStyle = const ContainerStyle(),
     this.sidebarStyle = const ContainerStyle(),
     this.pathBarStyle = const ContainerStyle(borderWidth: 1),
-    this.pathBarLayout = defaultPathBarLayout,
     this.explorerLayout = defaultExplorerLayout,
+    this.explorerMainLayout = defaultExplorerMainLayout,
+    this.explorerSidebarLayout = defaultExplorerSidebarLayout,
     this.explorerViewModeBarStyle = const ContainerStyle(),
     this.diskPanelStyle = const ContainerStyle(),
     this.diskTileStyle = defaultDiskTileStyle,
@@ -57,14 +58,6 @@ class Appearance {
     padding: 12,
   );
 
-  /// Sans zones latérales : la barre de chemin occupe tout le centre.
-  static const defaultPathBarLayout = SuperLayoutConfig(
-    north: false,
-    south: false,
-    west: false,
-    east: false,
-  );
-
   static const defaultSidebarWidth = 236.0;
 
   /// Panneau gauche à l'ouest, explorateur au centre.
@@ -73,6 +66,41 @@ class Appearance {
     south: false,
     east: false,
     westSize: defaultSidebarWidth,
+    placements: {
+      SuperLayoutZone.west: ['sidebar'],
+      SuperLayoutZone.center: ['main'],
+    },
+  );
+
+  /// Barres empilées au nord (hauteur automatique), contenu au centre.
+  static const defaultExplorerMainLayout = SuperLayoutConfig(
+    south: false,
+    west: false,
+    east: false,
+    autoSides: {SuperLayoutZone.north},
+    placements: {
+      SuperLayoutZone.north: [
+        'split-indicator',
+        'toolbar',
+        'breadcrumbs',
+        'view-mode-bar',
+        'filter-bar',
+        'sort-header',
+      ],
+      SuperLayoutZone.center: ['content'],
+    },
+  );
+
+  /// Espace perso / favoris au centre, disques au sud (hauteur automatique).
+  static const defaultExplorerSidebarLayout = SuperLayoutConfig(
+    north: false,
+    west: false,
+    east: false,
+    autoSides: {SuperLayoutZone.south},
+    placements: {
+      SuperLayoutZone.center: ['sidebar-places'],
+      SuperLayoutZone.south: ['sidebar-disks'],
+    },
   );
 
   static const defaultDiskTileStyle = ContainerStyle(
@@ -91,8 +119,9 @@ class Appearance {
   final ContainerStyle backgroundStyle;
   final ContainerStyle sidebarStyle;
   final ContainerStyle pathBarStyle;
-  final SuperLayoutConfig pathBarLayout;
   final SuperLayoutConfig explorerLayout;
+  final SuperLayoutConfig explorerMainLayout;
+  final SuperLayoutConfig explorerSidebarLayout;
   final ContainerStyle explorerViewModeBarStyle;
   final ContainerStyle diskPanelStyle;
   final ContainerStyle diskTileStyle;
@@ -116,6 +145,13 @@ class Appearance {
   final bool scrollFadeEnabled;
   final double scrollFadeExtent;
 
+  /// Remet toutes les zones et tous les slots à leur place par défaut.
+  Appearance resetLayouts() => copyWith(
+    explorerLayout: defaultExplorerLayout,
+    explorerMainLayout: defaultExplorerMainLayout,
+    explorerSidebarLayout: defaultExplorerSidebarLayout,
+  );
+
   Appearance copyWith({
     ThemeMode? mode,
     Color? accent,
@@ -126,8 +162,9 @@ class Appearance {
     ContainerStyle? backgroundStyle,
     ContainerStyle? sidebarStyle,
     ContainerStyle? pathBarStyle,
-    SuperLayoutConfig? pathBarLayout,
     SuperLayoutConfig? explorerLayout,
+    SuperLayoutConfig? explorerMainLayout,
+    SuperLayoutConfig? explorerSidebarLayout,
     ContainerStyle? explorerViewModeBarStyle,
     ContainerStyle? diskPanelStyle,
     ContainerStyle? diskTileStyle,
@@ -160,8 +197,9 @@ class Appearance {
     backgroundStyle: backgroundStyle ?? this.backgroundStyle,
     sidebarStyle: sidebarStyle ?? this.sidebarStyle,
     pathBarStyle: pathBarStyle ?? this.pathBarStyle,
-    pathBarLayout: pathBarLayout ?? this.pathBarLayout,
     explorerLayout: explorerLayout ?? this.explorerLayout,
+    explorerMainLayout: explorerMainLayout ?? this.explorerMainLayout,
+    explorerSidebarLayout: explorerSidebarLayout ?? this.explorerSidebarLayout,
     explorerViewModeBarStyle:
         explorerViewModeBarStyle ?? this.explorerViewModeBarStyle,
     diskPanelStyle: diskPanelStyle ?? this.diskPanelStyle,

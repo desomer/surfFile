@@ -238,8 +238,27 @@ qui s'edite par clic droit, comme un `SuperContainer`. L'editeur affiche un
 apercu et permet de choisir si le Nord, le Sud, l'Est et l'Ouest existent (avec
 leur taille) et, pour chaque coin, de le garder en case propre ou de le fusionner
 avec l'un de ses deux voisins, jamais les deux (ex. Sud-Ouest avec Ouest ou avec
-Sud). Un coin n'existe que si ses deux voisins existent. Les zones sont fournies
-via `zones` ; la structure remonte par `onChanged` (`SuperLayoutConfig`).
+Sud). Un coin n'existe que si ses deux voisins existent. La structure remonte par
+`onChanged` (`SuperLayoutConfig`).
+
+Le contenu d'une page est fait de **slots** : une sous-classe de
+`SlotImplementation` (`lib/widgets/slot_implementation.dart`, ou `BuilderSlot`
+pour un bloc simple) identifiee par son `id`. Le `SuperLayout` les recoit via
+`slots` et la config les range dans ses zones par `placements` (ids ordonnes par
+zone, empiles de haut en bas). Un cote de `autoSides` prend la taille de son
+contenu (hauteur du Nord/Sud, largeur de l'Ouest/Est) au lieu de sa taille
+fixe ; le centre recoit le reste.
+En mode edition, chaque slot affiche une etiquette (nom, zone et rang) : la
+survoler surligne le slot, la glisser sur un autre slot le range avant ou apres
+lui, la glisser sur une zone le range en dernier. Le nom d'une zone se survole
+et se glisse de la meme facon ; hors du centre, il surligne aussi le centre qui recevra l'echange. Survoler ou glisser une etiquette (slot ou zone) agrandit les etiquettes des slots de sa zone et les noms de toutes les zones. Les placements sont sauvegardes avec la
+disposition (`explorerLayout`, `explorerMainLayout`, `explorerSidebarLayout`).
+
+Le panneau gauche est lui-meme un `SuperLayout` a deux zones : l'espace perso et
+les favoris au centre (slot `sidebar-places`), les disques au sud avec une
+hauteur automatique plafonnee a la moitie du panneau (slot `sidebar-disks`).
+
+Win + Echap remet toutes les zones et tous les slots par defaut.
 
 
 
