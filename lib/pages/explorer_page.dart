@@ -1521,6 +1521,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     return SuperLayout(
       key: const ValueKey('explorer-layout'),
       label: 'Disposition de la page',
+      name: 'Page',
       // Seul le volet qui affiche le panneau édite la disposition partagée.
       editable: sidebarVisible,
       config: sidebarVisible
@@ -1556,7 +1557,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         BuilderSlot(
           id: 'main',
           label: 'Explorateur',
-          showLabel: false,
+          // Les étiquettes de ses barres commencent au coin haut-gauche.
+          labelAlignment: Alignment.topRight,
           builder: (_) => Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (_) {
@@ -1583,6 +1585,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     return SuperLayout(
       key: const ValueKey('explorer-main-layout'),
       label: 'Disposition de l’explorateur',
+      name: 'Explorateur',
       // Seul le volet qui affiche le panneau édite la disposition partagée.
       editable: _sidebarVisible,
       onChanged: appearance == null

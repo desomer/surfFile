@@ -1,8 +1,10 @@
-import 'package:flutter/foundation.dart' show ValueListenable, setEquals;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, listEquals, setEquals;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../models/super_layout_config.dart';
+import 'layout_selection.dart';
 import 'slot_implementation.dart';
 import 'super_container.dart';
 
@@ -22,6 +24,7 @@ class SuperLayout extends StatefulWidget {
     this.config = const SuperLayoutConfig(),
     this.onChanged,
     this.label = 'Super layout',
+    this.name,
     this.editable = true,
     this.showZoneNames = true,
     super.key,
@@ -31,6 +34,10 @@ class SuperLayout extends StatefulWidget {
   final SuperLayoutConfig config;
   final ValueChanged<SuperLayoutConfig>? onChanged;
   final String label;
+
+  /// Nom court de la disposition, affiché dans le chemin de la bannière du mode
+  /// édition ; [label] par défaut.
+  final String? name;
   final bool editable;
 
   /// Affiche le nom des zones pendant le mode édition ; à désactiver pour une
@@ -55,6 +62,26 @@ class SuperLayoutState extends State<SuperLayout> {
   /// reçoit l'échange, est surligné.
   final _centerHint = ValueNotifier(false);
   final _hinting = <SuperLayoutZone>{};
+
+  /// Zone sélectionnée par un clic sur son nom : seule elle montre les
+  /// étiquettes des dispositions imbriquées dans ses slots.
+  final _selected = ValueNotifier<SuperLayoutZone?>(null);
+
+  void _select(SuperLayoutZone zone) =>
+      _selected.value = _selected.value == zone ? null : zone;
+
+  List<String> _reportedPath = const [];
+
+  /// Déclare le chemin des zones sélectionnées à la bannière du mode édition.
+  void _reportPath(List<String> path) {
+    if (listEquals(_reportedPath, path)) return;
+    _reportedPath = path;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && listEquals(_reportedPath, path)) {
+        LayoutSelection.report(this, path, clear: () => _selected.value = null);
+      }
+    });
+  }
 
   /// Zones dont une étiquette (nom de zone ou slot) est survolée ou glissée :
   /// leurs étiquettes de slot et tous les noms de zone grossissent.
@@ -95,6 +122,11 @@ class SuperLayoutState extends State<SuperLayout> {
     _overCenter.dispose();
     _centerHint.dispose();
     _emphasis.dispose();
+    _selected.dispose();
+    final owner = this;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => LayoutSelection.report(owner, const []),
+    );
     super.dispose();
   }
 
@@ -155,11 +187,6 @@ class SuperLayoutState extends State<SuperLayout> {
   bool _hasContent(SuperLayoutConfig config, SuperLayoutZone content) =>
       _slotsOf(config, content).isNotEmpty;
 
-  /// Une zone qui ne contient que des conteneurs (slots sans étiquette) laisse
-  /// la disposition imbriquée afficher les noms de ses propres zones.
-  bool _showsName(SuperLayoutConfig config, SuperLayoutZone content) =>
-      _slotsOf(config, content).any((slot) => slot.showLabel);
-
   Widget _contentOf(
     SuperLayoutConfig config,
     SuperLayoutZone zone,
@@ -204,10 +231,24 @@ class SuperLayoutState extends State<SuperLayout> {
     editable: widget.editable,
     onEdit: _openEditor,
     child: ListenableBuilder(
-      listenable: _config,
+      listenable: Listenable.merge([_config, _selected]),
       builder: (context, _) {
         final config = _config.value;
-        final editMode = StyleEditScope.controllerOf(context)?.value ?? false;
+        // Une disposition imbriquée n'affiche ses étiquettes que si la zone
+        // qui la contient est sélectionnée dans sa disposition parente.
+        final editMode =
+            (StyleEditScope.controllerOf(context)?.value ?? false) &&
+            _LabelScope.of(context);
+        final parentPath = _LabelScope.pathOf(context);
+        final selected = _selected.value;
+        final name = widget.name ?? widget.label;
+        // Une disposition sans sélection et sans parent sélectionné n'apporte
+        // rien au chemin.
+        _reportPath(
+          editMode && (parentPath.isNotEmpty || selected != null)
+              ? [...parentPath, name, if (selected != null) selected.label]
+              : const [],
+        );
         final editing = widget.showZoneNames && editMode;
         final zones = config.visibleZones;
         // Un côté automatique sans contenu garde sa taille fixe.
@@ -225,7 +266,11 @@ class SuperLayoutState extends State<SuperLayout> {
               _ZoneEntry(
                 key: ValueKey('super-layout-${zone.name}'),
                 zone: zone,
-                child: _contentOf(config, zone, autoSides, editMode),
+                child: _LabelScope(
+                  visible: editMode && selected == zone,
+                  path: [...parentPath, name, zone.label],
+                  child: _contentOf(config, zone, autoSides, editMode),
+                ),
               ),
             // Une zone reçoit un slot glissé sur sa partie libre : il s'y range
             // en dernier.
@@ -269,7 +314,7 @@ class SuperLayoutState extends State<SuperLayout> {
                 ),
               ),
               for (final zone in zones)
-                if (_showsName(config, config.contentZone(zone)))
+                if (_hasContent(config, config.contentZone(zone)))
                   _ZoneEntry(
                     key: ValueKey('super-layout-name-${zone.name}'),
                     zone: zone,
@@ -279,6 +324,8 @@ class SuperLayoutState extends State<SuperLayout> {
                       overCenter: _overCenter,
                       onCenterHint: (active) => _hintCenter(zone, active),
                       emphasis: _emphasisFor(zone),
+                      selected: selected == zone,
+                      onSelect: () => _select(zone),
                       swapTarget: widget.editable && config.canSwap(zone)
                           ? zone.opposite
                           : null,
@@ -292,6 +339,34 @@ class SuperLayoutState extends State<SuperLayout> {
       },
     ),
   );
+}
+
+/// Indique si les étiquettes d'édition des dispositions situées dessous sont
+/// visibles ; la disposition racine les montre toujours.
+class _LabelScope extends InheritedWidget {
+  const _LabelScope({
+    required this.visible,
+    required this.path,
+    required super.child,
+  });
+
+  final bool visible;
+
+  /// Zones sélectionnées au-dessus de ces dispositions, de la plus englobante
+  /// à la plus proche.
+  final List<String> path;
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_LabelScope>()?.visible ??
+      true;
+
+  static List<String> pathOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_LabelScope>()?.path ??
+      const [];
+
+  @override
+  bool updateShouldNotify(_LabelScope oldWidget) =>
+      visible != oldWidget.visible || !listEquals(path, oldWidget.path);
 }
 
 class _ZoneParentData extends ContainerBoxParentData<RenderBox> {
@@ -515,6 +590,8 @@ class _ZoneNameBadge extends StatefulWidget {
     required this.overCenter,
     required this.onCenterHint,
     required this.emphasis,
+    required this.selected,
+    required this.onSelect,
     this.swapTarget,
     this.moves = false,
   });
@@ -528,6 +605,10 @@ class _ZoneNameBadge extends StatefulWidget {
   /// Signale que ce nom est survolé ou glissé : le centre doit être surligné.
   final ValueChanged<bool> onCenterHint;
   final LabelEmphasis emphasis;
+
+  /// La zone est sélectionnée ; un clic sur son nom la (dé)sélectionne.
+  final bool selected;
+  final VoidCallback onSelect;
 
   @override
   State<_ZoneNameBadge> createState() => _ZoneNameBadgeState();
@@ -592,7 +673,13 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
     );
     final badge = Material(
       color: colors.primary.withValues(alpha: .85),
-      borderRadius: BorderRadius.circular(12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: widget.selected ? colors.onPrimary : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
       child: target == null
           ? Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -600,7 +687,10 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
             )
           : InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: () => setState(() => _open = !_open),
+              onTap: () {
+                setState(() => _open = !_open);
+                widget.onSelect();
+              },
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 1, 4, 1),
                 child: Row(
@@ -644,6 +734,17 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
               ),
             ),
           ),
+        if (widget.selected)
+          Positioned.fill(
+            key: ValueKey('super-layout-zone-selected-${widget.zone.name}'),
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(color: colors.primary, width: 3),
+                ),
+              ),
+            ),
+          ),
         Center(
           key: const ValueKey('super-layout-zone-badge'),
           child: EmphasizedLabel(
@@ -657,7 +758,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                 onExit: (_) => _setHover(false),
                 // Glisser le nom vers le centre déclenche l'échange.
                 child: target == null
-                    ? IgnorePointer(child: badge)
+                    ? GestureDetector(onTap: widget.onSelect, child: badge)
                     : Draggable<SuperLayoutZone>(
                         onDragStarted: () => _setDragging(true),
                         onDragEnd: (_) => _setDragging(false),

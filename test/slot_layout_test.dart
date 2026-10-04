@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/super_layout_config.dart';
+import 'package:surf_file/widgets/layout_selection.dart';
 import 'package:surf_file/widgets/slot_implementation.dart';
 import 'package:surf_file/widgets/super_container.dart';
 import 'package:surf_file/widgets/super_layout.dart';
@@ -399,7 +400,7 @@ void main() {
                   BuilderSlot(
                     id: 'main',
                     label: 'main',
-                    showLabel: false,
+                    labelAlignment: Alignment.topRight,
                     builder: (_) => SuperLayout(
                       config: innerConfig,
                       onChanged: inner.add,
@@ -416,6 +417,10 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    // Les étiquettes de la disposition imbriquée n'apparaissent qu'une fois
+    // la zone qui la contient sélectionnée.
+    await tester.tap(find.text('Centre'));
     await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(const ValueKey('box-bar'))).top, 0);
 
@@ -839,6 +844,381 @@ void main() {
       );
     });
 
+    testWidgets('a container slot shows its label on the opposite corner', (
+      tester,
+    ) async {
+      final editMode = ValueNotifier(true);
+      addTearDown(editMode.dispose);
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: editMode,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: SuperLayout(
+                  editable: false,
+                  config: const SuperLayoutConfig(
+                    north: false,
+                    south: false,
+                    west: false,
+                    east: false,
+                    placements: {
+                      SuperLayoutZone.center: ['main'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'main',
+                      label: 'Explorateur',
+                      labelAlignment: Alignment.topRight,
+                      builder: (_) => SuperLayout(
+                        editable: false,
+                        config: const SuperLayoutConfig(
+                          south: false,
+                          west: false,
+                          east: false,
+                          autoSides: {SuperLayoutZone.north},
+                          placements: {
+                            SuperLayoutZone.north: ['bar'],
+                            SuperLayoutZone.center: ['content'],
+                          },
+                        ),
+                        slots: [
+                          _slot('bar', height: 40),
+                          _slot('content', sizing: SlotSizing.fill),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // Les étiquettes de la disposition imbriquée n'apparaissent qu'une fois
+      // la zone qui la contient sélectionnée.
+      await tester.tap(find.text('Centre'));
+      await tester.pumpAndSettle();
+
+      final container = find.byKey(const ValueKey('slot-label-main'));
+      expect(find.text('Explorateur · Centre 1/1'), findsOneWidget);
+      final rect = Rect.fromPoints(
+        tester.getTopLeft(container),
+        tester.getBottomRight(container),
+      );
+      expect(rect.right, 596);
+      expect(rect.top, 4);
+      // Les étiquettes de la disposition interne restent à gauche, sans
+      // recouvrement, et le conteneur est dessiné au-dessus du contenu.
+      final bar = tester.getRect(find.byKey(const ValueKey('slot-label-bar')));
+      expect(bar.topLeft, const Offset(4, 4));
+      expect(rect.overlaps(bar), isFalse);
+      // Le Centre de la disposition qui contient main et celui de la
+      // disposition interne affichent chacun leur nom.
+      expect(find.text('Centre'), findsNWidgets(2));
+      expect(find.text('Nord'), findsOneWidget);
+    });
+
+    testWidgets(
+      'clicking a zone name selects the zone that shows its children',
+      (tester) async {
+        final editMode = ValueNotifier(true);
+        addTearDown(editMode.dispose);
+        await tester.pumpWidget(
+          StyleEditScope(
+            controller: editMode,
+            child: MaterialApp(
+              home: Scaffold(
+                body: SizedBox(
+                  width: size.width,
+                  height: size.height,
+                  child: SuperLayout(
+                    editable: false,
+                    config: const SuperLayoutConfig(
+                      north: false,
+                      south: false,
+                      east: false,
+                      placements: {
+                        SuperLayoutZone.west: ['side'],
+                        SuperLayoutZone.center: ['main'],
+                      },
+                    ),
+                    slots: [
+                      BuilderSlot(
+                        id: 'side',
+                        label: 'side',
+                        builder: (_) => SuperLayout(
+                          editable: false,
+                          config: const SuperLayoutConfig(
+                            north: false,
+                            west: false,
+                            east: false,
+                            placements: {
+                              SuperLayoutZone.center: ['places'],
+                              SuperLayoutZone.south: ['disks'],
+                            },
+                          ),
+                          slots: [
+                            _slot('places', sizing: SlotSizing.fill),
+                            _slot('disks', height: 30),
+                          ],
+                        ),
+                      ),
+                      BuilderSlot(
+                        id: 'main',
+                        label: 'main',
+                        builder: (_) => SuperLayout(
+                          editable: false,
+                          config: const SuperLayoutConfig(
+                            south: false,
+                            west: false,
+                            east: false,
+                            autoSides: {SuperLayoutZone.north},
+                            placements: {
+                              SuperLayoutZone.north: ['bar'],
+                              SuperLayoutZone.center: ['content'],
+                            },
+                          ),
+                          slots: [
+                            _slot('bar', height: 40),
+                            _slot('content', sizing: SlotSizing.fill),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final mainChild = find.byKey(const ValueKey('slot-label-bar'));
+        final sideChild = find.byKey(const ValueKey('slot-label-places'));
+        // Les labels de la racine sont visibles, ceux des dispositions enfants non.
+        expect(find.byKey(const ValueKey('slot-label-main')), findsOneWidget);
+        expect(find.byKey(const ValueKey('slot-label-side')), findsOneWidget);
+        expect(find.text('Nord'), findsNothing);
+        expect(mainChild, findsNothing);
+        expect(sideChild, findsNothing);
+
+        // Sélection du centre : seule sa disposition enfant montre ses labels.
+        await tester.tap(find.text('Centre'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('super-layout-zone-selected-center')),
+          findsOneWidget,
+        );
+        expect(mainChild, findsOneWidget);
+        expect(find.text('Nord'), findsOneWidget);
+        expect(sideChild, findsNothing);
+
+        // Sélection de l'ouest : le centre est désélectionné.
+        await tester.tap(find.text('Ouest'));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('super-layout-zone-selected-center')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('super-layout-zone-selected-west')),
+          findsOneWidget,
+        );
+        expect(mainChild, findsNothing);
+        expect(sideChild, findsOneWidget);
+
+        // Un second clic désélectionne.
+        await tester.tap(find.text('Ouest'));
+        await tester.pumpAndSettle();
+        expect(sideChild, findsNothing);
+        expect(
+          find.byKey(const ValueKey('super-layout-zone-selected-west')),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets('a root layout always shows its labels', (tester) async {
+      await pumpMovable(tester);
+      expect(find.byKey(const ValueKey('slot-label-a')), findsOneWidget);
+      expect(find.text('Nord'), findsOneWidget);
+    });
+
+    testWidgets('the banner shows the path of the selected zones', (
+      tester,
+    ) async {
+      final editMode = ValueNotifier(true);
+      addTearDown(editMode.dispose);
+      SuperLayout layout({
+        required String name,
+        required SuperLayoutConfig config,
+        required List<SlotImplementation> slots,
+      }) => SuperLayout(
+        name: name,
+        editable: false,
+        config: config,
+        slots: slots,
+      );
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: editMode,
+          child: MaterialApp(
+            builder: (context, child) => Stack(
+              children: [
+                Positioned.fill(child: child!),
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+            home: Scaffold(
+              body: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: layout(
+                  name: 'Page',
+                  config: const SuperLayoutConfig(
+                    north: false,
+                    south: false,
+                    west: false,
+                    east: false,
+                    placements: {
+                      SuperLayoutZone.center: ['l2'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'l2',
+                      label: 'l2',
+                      builder: (_) => layout(
+                        name: 'Explorateur',
+                        config: const SuperLayoutConfig(
+                          north: false,
+                          south: false,
+                          east: false,
+                          westSize: 300,
+                          placements: {
+                            SuperLayoutZone.west: ['l3'],
+                            SuperLayoutZone.center: ['content'],
+                          },
+                        ),
+                        slots: [
+                          BuilderSlot(
+                            id: 'l3',
+                            label: 'l3',
+                            builder: (_) => layout(
+                              name: 'Panneau',
+                              config: const SuperLayoutConfig(
+                                north: false,
+                                south: false,
+                                west: false,
+                                placements: {
+                                  SuperLayoutZone.east: ['y'],
+                                  SuperLayoutZone.center: ['z'],
+                                },
+                              ),
+                              slots: [
+                                _slot('y', sizing: SlotSizing.fill),
+                                _slot('z', sizing: SlotSizing.fill),
+                              ],
+                            ),
+                          ),
+                          _slot('content', sizing: SlotSizing.fill),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final pathRow = find.byKey(const ValueKey('style-edit-banner-path'));
+      String? path() => pathRow.evaluate().isEmpty
+          ? null
+          : tester
+                .widgetList<Text>(
+                  find.descendant(of: pathRow, matching: find.byType(Text)),
+                )
+                .map((text) => text.data)
+                .join(' > ');
+      Finder name(String zone) =>
+          find.byKey(ValueKey('super-layout-name-$zone'));
+      Finder segment(String label) =>
+          find.descendant(of: pathRow, matching: find.text(label));
+      expect(find.text('Mode édition'), findsOneWidget);
+      expect(path(), isNull);
+
+      await tester.tap(name('center'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur');
+
+      await tester.tap(name('west'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
+
+      await tester.tap(name('east'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
+
+      // Un clic sur une zone du chemin la désélectionne, comme un clic sur son
+      // nom, y compris la dernière.
+      await tester.tap(segment('Est'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
+      expect(
+        find.byKey(const ValueKey('super-layout-zone-selected-east')),
+        findsNothing,
+      );
+
+      // ... et désélectionne aussi tout ce qui est dessous.
+      await tester.tap(name('east'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
+      await tester.tap(segment('Ouest'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur');
+      expect(
+        find.byKey(const ValueKey('super-layout-zone-selected-west')),
+        findsNothing,
+      );
+      await tester.tap(name('west'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
+
+      // Une disposition du chemin ramène la sélection à son niveau.
+      await tester.tap(segment('Explorateur'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur');
+
+      // Dernier niveau, une disposition : ce n'est pas un lien.
+      await tester.tap(segment('Explorateur'));
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur');
+
+      await tester.tap(segment('Centre'));
+      await tester.pumpAndSettle();
+      expect(path(), isNull);
+      expect(
+        find.byKey(const ValueKey('super-layout-zone-selected-center')),
+        findsNothing,
+      );
+
+      await tester.tap(name('center').last);
+      await tester.pumpAndSettle();
+      expect(path(), 'Page > Centre > Explorateur');
+      await tester.tap(segment('Page'));
+      await tester.pumpAndSettle();
+      expect(path(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      expect(LayoutSelection.path.value, isEmpty);
+    });
+
     testWidgets('a slot of a nested layout cannot leave its owner', (
       tester,
     ) async {
@@ -870,7 +1250,7 @@ void main() {
                     BuilderSlot(
                       id: 'main',
                       label: 'main',
-                      showLabel: false,
+                      labelAlignment: Alignment.topRight,
                       builder: (_) => SuperLayout(
                         config: const SuperLayoutConfig(
                           south: false,
@@ -896,6 +1276,10 @@ void main() {
           ),
         ),
       );
+      await tester.pumpAndSettle();
+      // Les étiquettes de la disposition imbriquée n'apparaissent qu'une fois
+      // la zone qui la contient sélectionnée.
+      await tester.tap(find.text('Centre'));
       await tester.pumpAndSettle();
       final gesture = await tester.startGesture(
         tester.getCenter(find.byKey(const ValueKey('slot-label-bar'))),
@@ -996,7 +1380,7 @@ void main() {
       expect(find.textContaining('quiet'), findsNothing);
     });
 
-    testWidgets('zone names show for north and hide for container zones', (
+    testWidgets('every zone with a slot shows its name, containers included', (
       tester,
     ) async {
       final editMode = ValueNotifier(true);
@@ -1026,7 +1410,6 @@ void main() {
                     const BuilderSlot(
                       id: 'container',
                       label: 'container',
-                      showLabel: false,
                       builder: _quietBox,
                     ),
                   ],
@@ -1038,7 +1421,7 @@ void main() {
       );
       await tester.pump();
       expect(find.text('Nord'), findsOneWidget);
-      expect(find.text('Centre'), findsNothing);
+      expect(find.text('Centre'), findsOneWidget);
       final badge = tester.getCenter(find.text('Nord'));
       expect(badge.dy, 15);
     });

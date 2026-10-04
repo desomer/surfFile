@@ -251,7 +251,7 @@ fixe ; le centre recoit le reste.
 En mode edition, chaque slot affiche une etiquette (nom, zone et rang) : la
 survoler surligne le slot, la glisser sur un autre slot le range avant ou apres
 lui, la glisser sur une zone le range en dernier. Le nom d'une zone se survole
-et se glisse de la meme facon ; hors du centre, il surligne aussi le centre qui recevra l'echange. Survoler ou glisser une etiquette (slot ou zone) agrandit les etiquettes des slots de sa zone et les noms de toutes les zones. Les placements sont sauvegardes avec la
+et se glisse de la meme facon ; hors du centre, il surligne aussi le centre qui recevra l'echange. Survoler ou glisser une etiquette (slot ou zone) agrandit les etiquettes des slots de sa zone et les noms de toutes les zones. Un clic sur le nom d'une zone la selectionne (cadre epais) ; une disposition imbriquee dans un slot n'affiche ses etiquettes que si la zone qui la contient est selectionnee, ce qui evite de superposer les etiquettes de toutes les dispositions. Un second clic deselectionne. La banniere du mode edition affiche le chemin des dispositions et des zones selectionnees (Page > Centre > Explorateur > Nord), avec le nom court name de chaque SuperLayout. Chaque niveau du chemin est cliquable : un clic sur une zone la deselectionne (comme un clic sur son nom) avec tous les niveaux plus profonds ; un clic sur une disposition ramene la selection a son niveau. Les placements sont sauvegardes avec la
 disposition (`explorerLayout`, `explorerMainLayout`, `explorerSidebarLayout`).
 
 Le panneau gauche est lui-meme un `SuperLayout` a deux zones : l'espace perso et

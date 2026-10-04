@@ -10,6 +10,7 @@ import '../theme/appearance_slot.dart';
 import '../theme/container_style.dart';
 import '../theme/neon_style.dart';
 import 'container_style_editor.dart';
+import 'layout_selection.dart';
 import 'style_editor_panel.dart';
 import 'styled_surface.dart';
 
@@ -579,6 +580,44 @@ class _DashedOutlinePainter extends CustomPainter {
       old.color != color || old.radius != radius;
 }
 
+/// Un niveau du chemin de la bannière. Un clic sur une zone la désélectionne,
+/// avec tout ce qui est dessous ; un clic sur une disposition ne garde que son
+/// niveau.
+class _PathSegment extends StatelessWidget {
+  const _PathSegment({
+    required this.label,
+    required this.current,
+    required this.onTap,
+    super.key,
+  });
+
+  final String label;
+  final bool current;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onPrimary;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            color: current ? color : color.withValues(alpha: .85),
+            fontWeight: current ? FontWeight.w700 : FontWeight.normal,
+            decoration: onTap == null ? null : TextDecoration.underline,
+            decorationColor: color.withValues(alpha: .6),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Pastille affichée en haut au centre pendant le mode édition des styles.
 ///
 /// Peut être placée au-dessus du [Navigator] (ex. `MaterialApp.builder`) :
@@ -617,6 +656,62 @@ class StyleEditBanner extends StatelessWidget {
                     color: scheme.onPrimary,
                     fontWeight: FontWeight.w600,
                   ),
+                ),
+                // Dispositions et zones sélectionnées : parent > ... > enfant.
+                ValueListenableBuilder<List<String>>(
+                  valueListenable: LayoutSelection.path,
+                  builder: (context, path, _) => path.isEmpty
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 520),
+                            // Le plus profond reste visible quand le chemin
+                            // dépasse la largeur.
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              reverse: true,
+                              child: Row(
+                                key: const ValueKey('style-edit-banner-path'),
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (final (index, label)
+                                      in path.indexed) ...[
+                                    if (index > 0)
+                                      Icon(
+                                        Icons.chevron_right,
+                                        size: 16,
+                                        color: scheme.onPrimary.withValues(
+                                          alpha: .7,
+                                        ),
+                                      ),
+                                    _PathSegment(
+                                      key: ValueKey(
+                                        'style-edit-banner-path-$index',
+                                      ),
+                                      label: label,
+                                      current: index == path.length - 1,
+                                      // Les niveaux pairs sont des dispositions,
+                                      // les impairs leurs zones sélectionnées.
+                                      // Le dernier niveau ne sert que s'il
+                                      // s'agit d'une zone.
+                                      onTap:
+                                          index == path.length - 1 &&
+                                              index.isEven
+                                          ? null
+                                          : () => LayoutSelection.cut(
+                                              path.sublist(
+                                                0,
+                                                index.isOdd ? index : index + 1,
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                 ),
                 const SizedBox(width: 4),
                 IconButton(

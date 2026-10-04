@@ -91,6 +91,7 @@ class ExplorerSidebar extends StatelessWidget {
               child: SuperLayout(
                 key: const ValueKey('sidebar-layout'),
                 label: 'Disposition du panneau gauche',
+                name: 'Panneau gauche',
                 config: AppearanceScope.of(context).explorerSidebarLayout,
                 onChanged: appearance == null
                     ? null
