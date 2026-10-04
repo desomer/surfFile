@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/super_layout_config.dart';
@@ -41,6 +42,9 @@ class SuperLayoutState extends State<SuperLayout> {
 
   SuperLayoutConfig get config => _config.value;
 
+  /// Vrai quand un nom de zone glissé survole le centre.
+  final _overCenter = ValueNotifier(false);
+
   @override
   void didUpdateWidget(SuperLayout oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -50,6 +54,7 @@ class SuperLayoutState extends State<SuperLayout> {
   @override
   void dispose() {
     _config.dispose();
+    _overCenter.dispose();
     super.dispose();
   }
 
@@ -102,19 +107,54 @@ class SuperLayoutState extends State<SuperLayout> {
       listenable: _config,
       builder: (context, _) {
         final config = _config.value;
+        final editing = StyleEditScope.controllerOf(context)?.value ?? false;
         final layout = LayoutBuilder(
-          builder: (context, constraints) => Stack(
-            fit: StackFit.expand,
-            children: [
-              for (final MapEntry(key: zone, value: rect)
-                  in config.resolve(constraints.biggest).entries)
-                Positioned.fromRect(
-                  key: ValueKey('super-layout-${zone.name}'),
-                  rect: rect,
-                  child: widget.zones[zone] ?? _ZonePlaceholder(zone: zone),
-                ),
-            ],
-          ),
+          builder: (context, constraints) {
+            final rects = config.resolve(constraints.biggest);
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                for (final MapEntry(key: zone, value: rect) in rects.entries)
+                  Positioned.fromRect(
+                    key: ValueKey('super-layout-${zone.name}'),
+                    rect: rect,
+                    child:
+                        widget.zones[config.contentZone(zone)] ??
+                        _ZonePlaceholder(zone: zone),
+                  ),
+                // Noms des zones utilisées, au-dessus de leur centre.
+                if (editing) ...[
+                  Positioned.fromRect(
+                    key: const ValueKey('super-layout-center-target'),
+                    rect: rects[SuperLayoutZone.center]!,
+                    child: _CenterSwapTarget(
+                      overCenter: _overCenter,
+                      canSwap: (zone) =>
+                          widget.editable &&
+                          rects.containsKey(zone) &&
+                          config.canSwap(zone),
+                      onSwap: (zone) => _update(config.withSwap(zone)),
+                    ),
+                  ),
+                  for (final MapEntry(key: zone, value: rect) in rects.entries)
+                    if (widget.zones.containsKey(config.contentZone(zone)))
+                      Positioned.fromRect(
+                        key: ValueKey('super-layout-name-${zone.name}'),
+                        rect: rect,
+                        child: _ZoneNameBadge(
+                          zone: zone,
+                          overCenter: _overCenter,
+                          swapTarget: widget.editable && config.canSwap(zone)
+                              ? zone.opposite
+                              : null,
+                          moves: !rects.containsKey(zone.opposite),
+                          onSwap: () => _update(config.withSwap(zone)),
+                        ),
+                      ),
+                ],
+              ],
+            );
+          },
         );
         final centerHeight = widget.centerHeight;
         if (centerHeight == null) return layout;
@@ -128,6 +168,162 @@ class SuperLayoutState extends State<SuperLayout> {
       },
     ),
   );
+}
+
+/// Pastille du nom d'une zone, centrée sur celle-ci pendant le mode édition.
+/// Un clic sur une zone ayant une opposée ([swapTarget]) révèle un bouton qui
+/// échange leurs contenus, ou déplace la zone si l'opposée n'existe pas
+/// ([moves]).
+class _ZoneNameBadge extends StatefulWidget {
+  const _ZoneNameBadge({
+    required this.zone,
+    required this.onSwap,
+    required this.overCenter,
+    this.swapTarget,
+    this.moves = false,
+  });
+
+  final SuperLayoutZone zone;
+  final SuperLayoutZone? swapTarget;
+  final bool moves;
+  final VoidCallback onSwap;
+  final ValueListenable<bool> overCenter;
+
+  @override
+  State<_ZoneNameBadge> createState() => _ZoneNameBadgeState();
+}
+
+class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
+  bool _open = false;
+
+  IconData get _icon => switch (widget.zone) {
+    SuperLayoutZone.north || SuperLayoutZone.south => Icons.swap_vert,
+    SuperLayoutZone.west || SuperLayoutZone.east => Icons.swap_horiz,
+    _ => Icons.swap_calls,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final target = widget.swapTarget;
+    final label = Text(
+      widget.zone.label,
+      style: TextStyle(fontSize: 11, color: colors.onPrimary),
+    );
+    final badge = Material(
+      color: colors.primary.withValues(alpha: .85),
+      borderRadius: BorderRadius.circular(12),
+      child: target == null
+          ? Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              child: label,
+            )
+          : InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => setState(() => _open = !_open),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 1, 4, 1),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    label,
+                    if (_open)
+                      IconButton(
+                        key: ValueKey('super-layout-swap-${widget.zone.name}'),
+                        tooltip: widget.moves
+                            ? 'Déplacer vers ${target.label}'
+                            : 'Échanger avec ${target.label}',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 16,
+                        color: colors.onPrimary,
+                        icon: Icon(_icon),
+                        onPressed: () {
+                          setState(() => _open = false);
+                          widget.onSwap();
+                        },
+                      )
+                    else
+                      const SizedBox(width: 4),
+                  ],
+                ),
+              ),
+            ),
+    );
+    return Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        // Glisser le nom vers le centre déclenche l'échange.
+        child: target == null
+            ? IgnorePointer(child: badge)
+            : Draggable<SuperLayoutZone>(
+                data: widget.zone,
+                feedback: Material(
+                  color: colors.primary,
+                  elevation: 4,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    // Pendant le survol du centre, le nom devient la zone future.
+                    child: ValueListenableBuilder<bool>(
+                      valueListenable: widget.overCenter,
+                      builder: (context, over, _) => Text(
+                        over ? target.label : widget.zone.label,
+                        style: TextStyle(fontSize: 11, color: colors.onPrimary),
+                      ),
+                    ),
+                  ),
+                ),
+                childWhenDragging: Opacity(opacity: .35, child: badge),
+                child: badge,
+              ),
+      ),
+    );
+  }
+}
+
+/// Cible de dépôt sur le centre : illuminée pendant qu'un nom de zone la
+/// survole, elle échange alors cette zone avec son opposée au relâchement.
+class _CenterSwapTarget extends StatelessWidget {
+  const _CenterSwapTarget({
+    required this.canSwap,
+    required this.onSwap,
+    required this.overCenter,
+  });
+
+  final ValueNotifier<bool> overCenter;
+  final bool Function(SuperLayoutZone zone) canSwap;
+  final ValueChanged<SuperLayoutZone> onSwap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DragTarget<SuperLayoutZone>(
+      onWillAcceptWithDetails: (details) {
+        final accept = canSwap(details.data);
+        overCenter.value = accept;
+        return accept;
+      },
+      onLeave: (_) => overCenter.value = false,
+      onAcceptWithDetails: (details) {
+        overCenter.value = false;
+        onSwap(details.data);
+      },
+      builder: (context, candidates, _) => IgnorePointer(
+        child: candidates.isEmpty
+            ? const SizedBox.expand()
+            : DecoratedBox(
+                key: const ValueKey('super-layout-center-drop'),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: .2),
+                  border: Border.all(color: colors.primary, width: 2),
+                ),
+              ),
+      ),
+    );
+  }
 }
 
 class _ZonePlaceholder extends StatelessWidget {

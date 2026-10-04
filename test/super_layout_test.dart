@@ -229,4 +229,237 @@ void main() {
     expect(appearance.value.pathBarLayout.north, isTrue);
     expect(find.text('Nord'), findsOneWidget);
   });
+
+  testWidgets('edit mode names the used zones above their centre', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(false);
+    addTearDown(editMode.dispose);
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: SuperLayout(
+                zones: const {
+                  SuperLayoutZone.west: SizedBox.expand(),
+                  SuperLayoutZone.center: Text('Contenu'),
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byKey(const ValueKey('super-layout-name-west')), findsNothing);
+
+    editMode.value = true;
+    await tester.pumpAndSettle();
+    expect(find.text('Ouest'), findsOneWidget);
+    expect(find.text('Centre'), findsOneWidget);
+    expect(find.byKey(const ValueKey('super-layout-name-north')), findsNothing);
+    final zoneCentre = tester.getCenter(
+      find.byKey(const ValueKey('super-layout-west')),
+    );
+    expect(tester.getCenter(find.text('Ouest')), zoneCentre);
+
+    editMode.value = false;
+    await tester.pumpAndSettle();
+    expect(find.text('Ouest'), findsNothing);
+  });
+
+  testWidgets('clicking a zone name swaps it with its opposite', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: SuperLayout(
+                onChanged: changes.add,
+                zones: const {
+                  SuperLayoutZone.west: Text('Panneau'),
+                  SuperLayoutZone.center: Text('Contenu'),
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    const swap = ValueKey('super-layout-swap-west');
+    expect(find.byKey(swap), findsNothing);
+
+    await tester.tap(find.text('Centre'));
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.swap_calls), findsNothing);
+    expect(find.byIcon(Icons.swap_horiz), findsNothing);
+
+    final west = tester.getCenter(find.text('Panneau'));
+    await tester.tap(find.text('Ouest'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(swap));
+    await tester.pumpAndSettle();
+
+    expect(changes.last.swaps, {SuperLayoutZone.west});
+    expect(tester.getCenter(find.text('Panneau')).dx, greaterThan(west.dx));
+    expect(find.byKey(swap), findsNothing);
+  });
+
+  test('swaps are symmetric and round-trip through json', () {
+    final config = const SuperLayoutConfig()
+        .withSwap(SuperLayoutZone.east)
+        .withSwap(SuperLayoutZone.sw);
+    expect(config.contentZone(SuperLayoutZone.west), SuperLayoutZone.east);
+    expect(config.contentZone(SuperLayoutZone.east), SuperLayoutZone.west);
+    expect(config.contentZone(SuperLayoutZone.ne), SuperLayoutZone.sw);
+    expect(config.contentZone(SuperLayoutZone.center), SuperLayoutZone.center);
+    expect(SuperLayoutConfig.fromJson(config.toJson()), config);
+    expect(
+      config.withSwap(SuperLayoutZone.west).withSwap(SuperLayoutZone.ne),
+      const SuperLayoutConfig(),
+    );
+  });
+
+  test('swapping two sides also swaps their sizes and corner merges', () {
+    const config = SuperLayoutConfig(
+      westSize: 200,
+      eastSize: 90,
+      nw: CornerMerge.column,
+    );
+    final swapped = config.withSwap(SuperLayoutZone.west);
+    expect(swapped.westSize, 90);
+    expect(swapped.eastSize, 200);
+    expect(swapped.ne, CornerMerge.column);
+    expect(swapped.nw, CornerMerge.none);
+    expect(swapped.withSwap(SuperLayoutZone.east), config);
+  });
+
+  test('swapping with a missing side moves it with its size and corners', () {
+    const config = SuperLayoutConfig(
+      east: false,
+      westSize: 200,
+      nw: CornerMerge.row,
+    );
+    final moved = config.withSwap(SuperLayoutZone.west);
+    expect(moved.west, isFalse);
+    expect(moved.east, isTrue);
+    expect(moved.eastSize, 200);
+    expect(moved.ne, CornerMerge.row);
+    expect(moved.nw, CornerMerge.none);
+    expect(moved.contentZone(SuperLayoutZone.east), SuperLayoutZone.west);
+    expect(moved.withSwap(SuperLayoutZone.east), config);
+    expect(config.canSwap(SuperLayoutZone.center), isFalse);
+    expect(
+      const SuperLayoutConfig(south: false).canSwap(SuperLayoutZone.nw),
+      isFalse,
+    );
+  });
+
+  testWidgets('a zone without opposite moves to the other side', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: SuperLayout(
+                config: const SuperLayoutConfig(east: false),
+                onChanged: changes.add,
+                zones: const {
+                  SuperLayoutZone.west: Text('Panneau'),
+                  SuperLayoutZone.center: Text('Contenu'),
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final before = tester.getCenter(find.text('Panneau'));
+    await tester.tap(find.text('Ouest'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('super-layout-swap-west')));
+    await tester.pumpAndSettle();
+
+    expect(changes.last.east, isTrue);
+    expect(changes.last.west, isFalse);
+    expect(tester.getCenter(find.text('Panneau')).dx, greaterThan(before.dx));
+    expect(find.text('Est'), findsOneWidget);
+  });
+
+  testWidgets('dragging a zone name onto the centre swaps it', (tester) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: SuperLayout(
+                onChanged: changes.add,
+                zones: const {
+                  SuperLayoutZone.west: Text('Panneau'),
+                  SuperLayoutZone.center: Text('Contenu'),
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final before = tester.getCenter(find.text('Panneau'));
+
+    // Lâché hors du centre : rien ne change.
+    await tester.drag(find.text('Ouest'), const Offset(0, 100));
+    await tester.pumpAndSettle();
+    expect(changes, isEmpty);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('Ouest')),
+    );
+    await gesture.moveBy(const Offset(40, 0));
+    await gesture.moveTo(tester.getCenter(find.text('Contenu')));
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey('super-layout-center-drop')),
+      findsOneWidget,
+    );
+    // Le nom glissé annonce la zone future (le repère de la zone Est existe déjà).
+    expect(find.text('Est'), findsNWidgets(2));
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(changes.last.swaps, {SuperLayoutZone.west});
+    expect(tester.getCenter(find.text('Panneau')).dx, greaterThan(before.dx));
+    expect(
+      find.byKey(const ValueKey('super-layout-center-drop')),
+      findsNothing,
+    );
+  });
 }
+

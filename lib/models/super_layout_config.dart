@@ -15,6 +15,33 @@ enum SuperLayoutZone {
   const SuperLayoutZone(this.label);
 
   final String label;
+
+  /// Zone symétrique par rapport au centre ; `null` pour le centre.
+  SuperLayoutZone? get opposite => switch (this) {
+    nw => se,
+    north => south,
+    ne => sw,
+    west => east,
+    center => null,
+    east => west,
+    sw => ne,
+    south => north,
+    se => nw,
+  };
+
+  bool get isCorner => switch (this) {
+    nw || ne || sw || se => true,
+    _ => false,
+  };
+
+  /// Représentant de la paire (zone, opposée), qui identifie un échange.
+  SuperLayoutZone get _pairKey => switch (this) {
+    se => nw,
+    south => north,
+    sw => ne,
+    east => west,
+    _ => this,
+  };
 }
 
 /// Où se range une zone de coin : sa propre case ou fusionnée avec un seul de
@@ -49,6 +76,7 @@ class SuperLayoutConfig {
     this.southSize = 80,
     this.westSize = 120,
     this.eastSize = 120,
+    this.swaps = const {},
   });
 
   static const minSize = 20.0;
@@ -68,6 +96,78 @@ class SuperLayoutConfig {
   final double southSize;
   final double westSize;
   final double eastSize;
+
+  /// Paires de zones opposées dont les contenus sont échangés, identifiées par
+  /// leur représentant (Nord, Ouest, Nord-Ouest ou Nord-Est).
+  final Set<SuperLayoutZone> swaps;
+
+  /// Zone dont le contenu est affiché à l'emplacement de [zone] ; la relation
+  /// est symétrique, elle donne donc aussi l'emplacement du contenu de [zone].
+  SuperLayoutZone contentZone(SuperLayoutZone zone) {
+    final opposite = zone.opposite;
+    return opposite != null && swaps.contains(zone._pairKey) ? opposite : zone;
+  }
+
+  /// Échange (ou rétablit) les contenus de [zone] et de sa zone opposée.
+  ///
+  /// Le contenu change de côté avec sa taille et les fusions de coins qui le
+  /// concernent ; si la zone opposée n'existe pas, il s'agit d'un déplacement
+  /// et l'existence des deux côtés est aussi échangée.
+  SuperLayoutConfig withSwap(SuperLayoutZone zone) {
+    final opposite = zone.opposite;
+    if (opposite == null) {
+      throw ArgumentError.value(zone, 'zone', 'Pas de zone opposée');
+    }
+    final key = zone._pairKey;
+    var next = copyWith(
+      swaps: swaps.contains(key) ? ({...swaps}..remove(key)) : {...swaps, key},
+    );
+    if (zone.isCorner) return next._reflectCorners(zone, opposite);
+    final (first, second) = switch (zone) {
+      SuperLayoutZone.north ||
+      SuperLayoutZone.south => (SuperLayoutZone.north, SuperLayoutZone.south),
+      _ => (SuperLayoutZone.west, SuperLayoutZone.east),
+    };
+    next = next
+        .withSide(first, hasSide(second))
+        .withSide(second, hasSide(first))
+        ._withSize(first, sizeOf(second))
+        ._withSize(second, sizeOf(first));
+    // Les coins se reflètent d'un bord à l'autre de l'axe déplacé.
+    return first == SuperLayoutZone.north
+        ? next
+              ._reflectCorners(SuperLayoutZone.nw, SuperLayoutZone.sw)
+              ._reflectCorners(SuperLayoutZone.ne, SuperLayoutZone.se)
+        : next
+              ._reflectCorners(SuperLayoutZone.nw, SuperLayoutZone.ne)
+              ._reflectCorners(SuperLayoutZone.sw, SuperLayoutZone.se);
+  }
+
+  /// Un échange est possible si la zone a une opposée et que celle-ci peut
+  /// exister (un coin a besoin de ses deux côtés).
+  bool canSwap(SuperLayoutZone zone) {
+    final opposite = zone.opposite;
+    if (opposite == null) return false;
+    return !zone.isCorner || cornerExists(opposite);
+  }
+
+  double sizeOf(SuperLayoutZone side) => switch (side) {
+    SuperLayoutZone.north => northSize,
+    SuperLayoutZone.south => southSize,
+    SuperLayoutZone.west => westSize,
+    _ => eastSize,
+  };
+
+  SuperLayoutConfig _withSize(SuperLayoutZone side, double value) =>
+      switch (side) {
+        SuperLayoutZone.north => copyWith(northSize: value),
+        SuperLayoutZone.south => copyWith(southSize: value),
+        SuperLayoutZone.west => copyWith(westSize: value),
+        _ => copyWith(eastSize: value),
+      };
+
+  SuperLayoutConfig _reflectCorners(SuperLayoutZone a, SuperLayoutZone b) =>
+      withCorner(a, mergeOf(b)).withCorner(b, mergeOf(a));
 
   bool hasSide(SuperLayoutZone zone) => switch (zone) {
     SuperLayoutZone.north => north,
@@ -107,6 +207,7 @@ class SuperLayoutConfig {
     double? southSize,
     double? westSize,
     double? eastSize,
+    Set<SuperLayoutZone>? swaps,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
     south: south ?? this.south,
@@ -120,6 +221,7 @@ class SuperLayoutConfig {
     southSize: southSize ?? this.southSize,
     westSize: westSize ?? this.westSize,
     eastSize: eastSize ?? this.eastSize,
+    swaps: swaps ?? this.swaps,
   );
 
   SuperLayoutConfig withCorner(SuperLayoutZone corner, CornerMerge merge) =>
@@ -153,6 +255,7 @@ class SuperLayoutConfig {
     'southSize': southSize,
     'westSize': westSize,
     'eastSize': eastSize,
+    'swaps': [for (final zone in swaps) zone.name],
   };
 
   /// [fallback] fournit les valeurs des clés absentes.
@@ -184,6 +287,23 @@ class SuperLayoutConfig {
       return v.toDouble();
     }
 
+    Set<SuperLayoutZone> swapSet() {
+      final v = value['swaps'];
+      if (v == null) return fallback.swaps;
+      if (v is! List)
+        throw const FormatException('Valeur invalide pour "swaps".');
+      return {
+        for (final name in v)
+          SuperLayoutZone.values
+                  .where(
+                    (z) =>
+                        z.name == name && z.opposite != null && z._pairKey == z,
+                  )
+                  .firstOrNull ??
+              (throw const FormatException('Valeur invalide pour "swaps".')),
+      };
+    }
+
     return SuperLayoutConfig(
       north: flag('north', fallback.north),
       south: flag('south', fallback.south),
@@ -197,6 +317,7 @@ class SuperLayoutConfig {
       southSize: size('southSize', fallback.southSize),
       westSize: size('westSize', fallback.westSize),
       eastSize: size('eastSize', fallback.eastSize),
+      swaps: swapSet(),
     );
   }
 
@@ -279,7 +400,9 @@ class SuperLayoutConfig {
       other.northSize == northSize &&
       other.southSize == southSize &&
       other.westSize == westSize &&
-      other.eastSize == eastSize;
+      other.eastSize == eastSize &&
+      other.swaps.length == swaps.length &&
+      other.swaps.containsAll(swaps);
 
   @override
   int get hashCode => Object.hash(
@@ -295,5 +418,6 @@ class SuperLayoutConfig {
     southSize,
     westSize,
     eastSize,
+    Object.hashAllUnordered(swaps),
   );
 }

@@ -1522,7 +1522,19 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       label: 'Disposition de la page',
       // Seul le volet qui affiche le panneau édite la disposition partagée.
       editable: sidebarVisible,
-      config: sidebarVisible ? config : config.copyWith(west: false),
+      config: sidebarVisible
+          ? config
+          : config.copyWith(
+              // Masque l'emplacement où le panneau gauche est affiché.
+              west: config.contentZone(SuperLayoutZone.west) ==
+                      SuperLayoutZone.west
+                  ? false
+                  : null,
+              east: config.contentZone(SuperLayoutZone.west) ==
+                      SuperLayoutZone.east
+                  ? false
+                  : null,
+            ),
       onChanged: appearance == null
           ? null
           : (value) => appearance.value = appearance.value.copyWith(
