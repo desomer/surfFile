@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/explorer_filter.dart';
-import 'package:surf_file/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/widgets/explorer_filter_bar.dart';
-import 'package:surf_file/widgets/slot_implementation.dart';
-import 'package:surf_file/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/slot_implementation.dart';
+import 'package:super_container_layout/widgets/super_layout.dart';
 
 void main() {
   const filterBar = ExplorerFilterBar(

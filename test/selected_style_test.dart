@@ -8,16 +8,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_location.dart';
-import 'package:surf_file/services/appearance_store.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/theme/container_fill.dart';
-import 'package:surf_file/theme/container_style.dart';
-import 'package:surf_file/theme/neon_style.dart';
-import 'package:surf_file/widgets/appearance_settings.dart';
-import 'package:surf_file/widgets/container_style_editor.dart';
+import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_fill.dart';
+import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/theme/neon_style.dart';
+import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:super_container_layout/widgets/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
-import 'package:surf_file/widgets/neon_surface.dart';
+import 'package:super_container_layout/widgets/neon_surface.dart';
 
 void main() {
   const custom = ContainerStyle(

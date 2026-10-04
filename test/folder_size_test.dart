@@ -7,6 +7,7 @@ import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/folder_size_service.dart';
 import 'package:surf_file/widgets/folder_size_cell.dart';
 import 'package:surf_file/widgets/folder_size_indicator.dart';
+import 'package:surf_file/widgets/transfer_panel.dart';
 
 void main() {
   late Directory root;
@@ -24,6 +25,177 @@ void main() {
 
   test('folderSizeSync sums files recursively', () {
     expect(FolderSizeService.folderSizeSync(root.path), 175);
+  });
+
+  test(
+    'publishes scanned bytes, files, folders and the current path',
+    () async {
+      final computation = FolderSizeService.compute(root.path);
+      final job = FolderSizeService.jobs.value.single;
+      final reports = <FolderSizeProgress>[];
+      job.addListener(() => reports.add(job.latest));
+      expect(job.status, FolderSizeJobStatus.running);
+      expect(await computation, isTrue);
+      expect(job.status, FolderSizeJobStatus.done);
+      expect(job.latest.bytes, 175);
+      expect(job.latest.files, 3);
+      expect(job.latest.folders, 3);
+      expect(job.latest.skipped, 0);
+      expect(job.latest.currentPath, endsWith('c.bin'));
+      expect(reports, isNotEmpty);
+      expect(FolderSizeService.bytesOf(root.path), 175);
+      FolderSizeService.dismiss(job);
+      expect(FolderSizeService.jobs.value, isEmpty);
+    },
+  );
+
+  test('failed scans expose the error without caching a zero size', () async {
+    final missing = '${root.path}${Platform.pathSeparator}missing';
+    expect(await FolderSizeService.compute(missing), isFalse);
+    final job = FolderSizeService.jobs.value.single;
+    expect(job.status, FolderSizeJobStatus.failed);
+    expect(job.error, contains(missing));
+    expect(FolderSizeService.of(missing).value.computing, isFalse);
+    expect(FolderSizeService.bytesOf(missing), isNull);
+  });
+
+  test('cancellation restores a previously computed size', () async {
+    await FolderSizeService.compute(root.path);
+    final computation = FolderSizeService.compute(root.path);
+    final job = FolderSizeService.jobs.value.last;
+    FolderSizeService.dismiss(job);
+    expect(FolderSizeService.jobs.value, contains(job));
+    expect(await FolderSizeService.compute(root.path), isFalse);
+    expect(FolderSizeService.jobs.value.length, 1);
+    job.cancel();
+    expect(await computation, isFalse);
+    expect(job.status, FolderSizeJobStatus.cancelled);
+    expect(FolderSizeService.of(root.path).value.computing, isFalse);
+    expect(FolderSizeService.bytesOf(root.path), 175);
+  });
+
+  testWidgets('size tracking uses the transfer panel and can be cancelled', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Align(child: TransferPanel())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('folder-size-card')), findsNothing);
+    final computation = FolderSizeService.compute(root.path);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Calcul de taille'), findsOneWidget);
+    expect(find.text('Total inconnu pendant le parcours'), findsOneWidget);
+    expect(find.text('Parcours en cours · 0 o'), findsOneWidget);
+    expect(find.text('0 fichiers · 0 dossiers'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('folder-size-current-path')))
+          .data,
+      root.path,
+    );
+    expect(
+      tester
+          .widget<LinearProgressIndicator>(
+            find.byKey(const ValueKey('folder-size-job-progress')),
+          )
+          .value,
+      isNull,
+    );
+    await tester.tap(find.byKey(const ValueKey('folder-size-job-cancel')));
+    expect(
+      FolderSizeService.jobs.value.single.status,
+      FolderSizeJobStatus.cancelled,
+      reason: 'The cancellation button must handle the tap before awaiting.',
+    );
+    await computation;
+    await tester.pump();
+    expect(find.text('Calcul annulé · 0 o'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('folder-size-dismiss')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('folder-size-card')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+  });
+
+  testWidgets('batch calculations display their results in the panel', (
+    tester,
+  ) async {
+    final empty = Directory('${root.path}${Platform.pathSeparator}empty')
+      ..createSync();
+    await tester.runAsync(
+      () => FolderSizeService.computeAll([root.path, empty.path]),
+    );
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Align(child: TransferPanel())),
+      ),
+    );
+    expect(find.byKey(const ValueKey('folder-size-card')), findsOneWidget);
+    expect(find.text('Calcul terminé · 175 o'), findsOneWidget);
+    expect(find.text('2 / 2 dossiers terminés'), findsOneWidget);
+    expect(find.text('3 fichiers · 5 dossiers'), findsOneWidget);
+    expect(
+      tester
+          .widgetList<LinearProgressIndicator>(
+            find.byKey(const ValueKey('folder-size-job-progress')),
+          )
+          .map((indicator) => indicator.value),
+      [1],
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('one cumulative popup cancels running and queued folders', (
+    tester,
+  ) async {
+    final paths = [
+      for (var i = 0; i < 6; i++)
+        (Directory(
+          '${root.path}${Platform.pathSeparator}batch_$i',
+        )..createSync()).path,
+    ];
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: Align(child: TransferPanel())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final computation = FolderSizeService.computeAll(paths, concurrency: 2);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(const ValueKey('folder-size-card')), findsOneWidget);
+    expect(find.text('0 / 6 dossiers terminés'), findsOneWidget);
+    expect(find.text('2 calculs simultanés'), findsOneWidget);
+    expect(FolderSizeService.queued.value, 4);
+    await tester.tap(find.byKey(const ValueKey('folder-size-job-cancel')));
+    expect(
+      FolderSizeService.jobs.value.map((job) => job.status),
+      everyElement(FolderSizeJobStatus.cancelled),
+      reason: 'The cancellation button must handle the tap before awaiting.',
+    );
+    await computation;
+    await tester.pump();
+    expect(FolderSizeService.queued.value, 0);
+    expect(FolderSizeService.jobs.value.length, 2);
+    expect(
+      FolderSizeService.jobs.value.map((job) => job.status),
+      everyElement(FolderSizeJobStatus.cancelled),
+    );
+    expect(paths.map(FolderSizeService.bytesOf), everyElement(isNull));
+    expect(find.text('2 calculs annulés'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('folder-size-dismiss')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('folder-size-card')), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
   });
 
   test('size sort orders folders by computed size numerically', () async {

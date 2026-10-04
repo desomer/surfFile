@@ -1,8 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-
-import '../theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 
 class ScrollEdgeFade extends StatefulWidget {
   const ScrollEdgeFade({required this.child, super.key});

@@ -14,7 +14,7 @@ Depuis la racine du projet, executer dans PowerShell :
 ```
 
 Le script compile en Release puis cree
-`build\installer\SurfFile-0.1.0+1-windows-x64-setup.exe`. La version provient de
+`build\installer\SurfFile-0.3.1+4-windows-x64-setup.exe`. La version provient de
 `pubspec.yaml` ; modifier ce champ avant de publier une nouvelle version.
 Les parametres `-FlutterPath`, `-IsccPath` et `-RuntimePath` permettent de
 preciser les outils et le dossier des DLL CRT Visual C++ redistribuables x64.
@@ -33,6 +33,28 @@ L'EXE n'est pas signe : Windows SmartScreen peut afficher un avertissement.
 Une distribution publique peut necessiter une signature Authenticode.
 
 ## Fonctionnalites
+
+Sous Windows, les fichiers et dossiers peuvent etre glisses depuis
+l'Explorateur Windows vers le fond du dossier affiche ou vers un dossier en
+liste, grille, colonnes ou carte thermique. Le dossier cible est surligne et
+une boite de dialogue demande **Copier**, **Deplacer** ou **Annuler**.
+Les transferts utilisent le panneau de progression habituel, avec annulation
+et suffixe automatique en cas de nom deja present. Les deux volets acceptent
+les depots independamment. Les fichiers virtuels (pieces jointes Outlook,
+par exemple) ne sont pas pris en charge : le depot doit fournir des chemins
+locaux. Reconstruire l'executable Windows pour activer la cible native OLE.
+La cible annonce uniquement un effet de copie a Windows ; le deplacement
+eventuel est realise par SurfFile apres confirmation, pour que l'annulation
+ne puisse pas provoquer de suppression du cote de la source.
+
+Le calcul de taille d'un dossier affiche un panneau flottant, comme les copies,
+avec le chemin traite, la taille cumulee, le nombre de fichiers et de dossiers
+parcourus, le temps ecoule et un bouton d'annulation. La progression reste
+indeterminee tant que le total est inconnu ; aucun pourcentage n'est estime.
+Les calculs des autres dossiers sont regroupes dans une seule popup cumulative :
+taille, compteurs, dossiers termines sur le total et annulation de tous les
+calculs, y compris ceux en attente. Les resultats restent visibles jusqu'a leur fermeture, avec les erreurs
+et les elements inaccessibles ignores signales pour les tailles partielles.
 
 La previsualisation des videos et fichiers texte/code s'ouvre et se ferme avec
 la barre d'espace apres avoir selectionne un fichier pris en charge. La lecture
@@ -70,6 +92,19 @@ Les lecteurs sans media affichent « Indisponible » ; les erreurs de lecture
 de la liste proposent de reessayer. La zone est defilante sur les petites fenetres.
 Cette fonctionnalite utilise les API Windows et necessite une reconstruction
 complete apres sa premiere installation, pas seulement un rechargement a chaud.
+
+Pour verifier la vue partagee dans le vrai executable Release (les tests de
+widgets seuls ne couvrent pas les crashes AOT), executer :
+
+```powershell
+flutter build windows --release --target test\split_release_smoke.dart
+& .\build\windows\x64\runner\Release\surf_file.exe
+```
+
+Ce test ouvre et ferme automatiquement la vue partagee trois fois, verifie
+les deux volets et leur barre d'actions, puis quitte avec le code 0 en cas de
+succes. Recompiler ensuite l'application normale avec le script d'installateur
+avant de distribuer l'executable.
 
 Le bouton lateral Retour des souris revient au dossier precedent des l'appui,
 partout dans l'explorateur. Il reste inactif si l'historique est vide, pendant
@@ -240,6 +275,13 @@ leur taille) et, pour chaque coin, de le garder en case propre ou de le fusionne
 avec l'un de ses deux voisins, jamais les deux (ex. Sud-Ouest avec Ouest ou avec
 Sud). Un coin n'existe que si ses deux voisins existent. La structure remonte par
 `onChanged` (`SuperLayoutConfig`).
+
+`SuperContainer`, `SuperLayout`, leurs éditeurs et leurs modèles sont regroupés
+dans le package Flutter autonome [`super_container_layout`](packages/super_container_layout).
+Le point d'entrée est `package:super_container_layout/super_container_layout.dart`.
+`SuperApp` y fournit la coquille `MaterialApp` liée aux contrôleurs d'apparence
+et de mode édition. Les anciens imports `package:surf_file/...` restent
+disponibles comme réexports.
 
 Le contenu d'une page est fait de **slots** : une sous-classe de
 `SlotImplementation` (`lib/widgets/slot_implementation.dart`, ou `BuilderSlot`

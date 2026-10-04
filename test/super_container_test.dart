@@ -5,14 +5,14 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:surf_file/services/appearance_store.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/theme/appearance_slot.dart';
-import 'package:surf_file/theme/container_style.dart';
-import 'package:surf_file/widgets/container_style_editor.dart';
+import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/widgets/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer_toolbar.dart';
-import 'package:surf_file/widgets/styled_surface.dart';
-import 'package:surf_file/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/styled_surface.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
 
 void main() {
   Future<List<ContainerStyle>> pump(WidgetTester tester) async {

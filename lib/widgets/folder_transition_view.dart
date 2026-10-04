@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-
-import '../theme/appearance.dart';
-import '../theme/folder_transition.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/folder_transition.dart';
 
 class FolderTransitionView extends StatefulWidget {
   const FolderTransitionView({

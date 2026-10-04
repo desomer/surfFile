@@ -4,6 +4,13 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/theme/folder_transition.dart';
+import 'package:super_container_layout/widgets/slot_implementation.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/super_layout.dart';
 
 import '../models/explorer_filter.dart';
 import '../models/explorer_entry.dart';
@@ -13,6 +20,7 @@ import '../services/favorites.dart';
 import '../services/folder_size_service.dart';
 import '../services/directory_scanner.dart';
 import '../services/file_operations.dart';
+import '../services/external_drop_transfer.dart';
 import '../services/personal_folders.dart';
 import '../services/windows_context_menu.dart';
 import '../widgets/explorer_breadcrumbs.dart';
@@ -22,6 +30,7 @@ import '../widgets/entries_layout.dart';
 import '../widgets/explorer_entries_view.dart';
 import '../widgets/explorer_columns_view.dart';
 import '../widgets/explorer_error_state.dart';
+import '../widgets/explorer_heatmap_view.dart';
 import '../widgets/explorer_sidebar.dart';
 import '../widgets/explorer_skeleton.dart';
 import '../widgets/explorer_filter_bar.dart';
@@ -35,16 +44,10 @@ import '../widgets/video_preview_panel.dart';
 import '../widgets/mouse_back_navigation.dart';
 import '../widgets/folder_transition_view.dart';
 import '../widgets/folder_hero_flight.dart';
-import '../theme/appearance.dart';
-import '../theme/appearance_slot.dart';
-import '../theme/folder_transition.dart';
-import '../models/super_layout_config.dart';
-import '../widgets/slot_implementation.dart';
-import '../widgets/super_container.dart';
-import '../widgets/super_layout.dart';
 import '../widgets/file_action_bar.dart';
 import '../widgets/shortcuts_help_dialog.dart';
 import '../widgets/transfer_panel.dart';
+import '../widgets/external_file_drop.dart';
 import '../actions/file_actions.dart';
 
 enum _HistoryDirection { back, forward }
@@ -119,7 +122,15 @@ class _ExplorerPageState extends State<ExplorerPage> {
         body: Stack(
           children: [
             Positioned.fill(child: _panesView()),
-            const Positioned(top: 56, right: 16, child: TransferPanel()),
+            const Positioned(
+              top: 56,
+              right: 16,
+              bottom: 16,
+              child: Align(
+                alignment: Alignment.topRight,
+                child: SingleChildScrollView(child: TransferPanel()),
+              ),
+            ),
           ],
         ),
       ),
@@ -358,6 +369,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   bool _isLoading = true;
   bool _gridView = false;
   bool _columnView = false;
+  bool _heatmapView = false;
   SelectionMode _selectionMode = SelectionMode.standard;
 
   /// Un clic de la vue en colonnes ouvre le dossier : pas de mode particulier.
@@ -696,7 +708,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         _isLoading = false;
         _hasLoadedDirectory = true;
       });
-      if (!navigating) widget.onPathChanged?.call(path);
+      widget.onPathChanged?.call(path);
     } on FileSystemException catch (error) {
       _loadFailed(request, path, direction, error, rollback);
     }
@@ -1155,6 +1167,34 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     }
     if (mounted && _samePath(_currentPath, destination)) {
       await _reload(select: created);
+    }
+  }
+
+  Future<void> _receiveExternalDrop(
+    List<String> sources,
+    String destination,
+  ) async {
+    try {
+      final job = await ExternalDropTransfer.confirm(context, sources, destination);
+      if (job == null) return;
+      _ownJobs.add(job);
+      Set<String>? created;
+      try {
+        created = (await job.result).toSet();
+      } on FileOperationCancelled {
+        // L'annulation est affichée dans le panneau de transferts.
+      } finally {
+        if (mounted) {
+          await _reload(
+            select: _samePath(_currentPath, destination) ? created : null,
+          );
+        }
+      }
+    } on FileSystemException catch (error) {
+      if (mounted) _showMessage('Dépôt impossible : ${error.message}');
+    } on Object catch (error) {
+      debugPrint('Error receiving Windows file drop: $error');
+      if (mounted) _showMessage('Dépôt impossible : $error');
     }
   }
 
@@ -1681,6 +1721,9 @@ class _ExplorerPaneState extends State<ExplorerPane> {
               columnView: _columnView,
               onColumnViewChanged: (columnView) =>
                   setState(() => _columnView = columnView),
+              heatmapView: _heatmapView,
+              onHeatmapViewChanged: (heatmapView) =>
+                  setState(() => _heatmapView = heatmapView),
               titleIconKey: _titleIconKey,
               filterCount: _filter.activeCount,
               filterOpen: _filterOpen,
@@ -1714,7 +1757,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
           id: 'sort-header',
           label: 'En-tête de tri',
           sizing: SlotSizing.intrinsic,
-          visible: !_columnView,
+          visible: !_columnView && !_heatmapView,
           builder: (_) => ExplorerSortHeader(
             sort: _sort,
             ascending: _ascending,
@@ -1743,7 +1786,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                       duration: const Duration(milliseconds: 180),
                       layoutBuilder: (current, previous) => Stack(
                         fit: StackFit.expand,
-                        children: [...previous, if (current != null) current],
+                        children: [...previous, ?current],
                       ),
                       child: _pendingEntries && _loadError == null
                           ? ExplorerSkeleton(
@@ -1777,45 +1820,62 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                                     )
                                   : LayoutBuilder(
                                       builder: (context, constraints) {
-                                        final fileList = ExplorerEntriesView(
-                                          key: ValueKey(_currentPath),
-                                          entries: entries,
-                                          gridView: _showGrid,
-                                          compact: _columnView,
-                                          selectedPath: _selectedPath,
-                                          selectedPaths: _selection,
-                                          onSelected: _pointerSelect,
-                                          onTapped: _columnView
-                                              ? _columnTapped
-                                              : _tapSelect,
-                                          onSelectionChanged: (paths) {
-                                            _explorerFocusNode.requestFocus();
-                                            _selectionChanged(() {
-                                              _collapseTo = null;
-                                              _setSelection(paths);
-                                            });
-                                          },
-                                          onToggle:
-                                              _effectiveSelectionMode ==
-                                                  SelectionMode.checkbox
-                                              ? _toggleSelection
-                                              : null,
-                                          revealToken: _revealToken,
-                                          onViewportChanged: (size) =>
-                                              _viewport = size,
-                                          onOpen: _openEntry,
-                                          onOpenWithBounds: _columnView
-                                              ? null
-                                              : (entry, card, icon) =>
-                                                    _loadDirectory(
-                                                      entry.entity.path,
-                                                      heroCard: card,
-                                                      heroIcon: icon,
-                                                    ),
-                                          onContextMenu: Platform.isWindows
-                                              ? _showContextMenu
-                                              : null,
-                                        );
+                                        final fileList = _heatmapView
+                                            ? ExplorerHeatmapView(
+                                                key: ValueKey(
+                                                  'heatmap-$_currentPath',
+                                                ),
+                                                entries: entries,
+                                                selectedPaths: _selection,
+                                                onPointerSelect: _pointerSelect,
+                                                onTapped: _tapSelect,
+                                                onOpen: _openEntry,
+                                                onContextMenu:
+                                                    Platform.isWindows
+                                                    ? _showContextMenu
+                                                    : null,
+                                              )
+                                            : ExplorerEntriesView(
+                                                key: ValueKey(_currentPath),
+                                                entries: entries,
+                                                gridView: _showGrid,
+                                                compact: _columnView,
+                                                selectedPath: _selectedPath,
+                                                selectedPaths: _selection,
+                                                onSelected: _pointerSelect,
+                                                onTapped: _columnView
+                                                    ? _columnTapped
+                                                    : _tapSelect,
+                                                onSelectionChanged: (paths) {
+                                                  _explorerFocusNode
+                                                      .requestFocus();
+                                                  _selectionChanged(() {
+                                                    _collapseTo = null;
+                                                    _setSelection(paths);
+                                                  });
+                                                },
+                                                onToggle:
+                                                    _effectiveSelectionMode ==
+                                                        SelectionMode.checkbox
+                                                    ? _toggleSelection
+                                                    : null,
+                                                revealToken: _revealToken,
+                                                onViewportChanged: (size) =>
+                                                    _viewport = size,
+                                                onOpen: _openEntry,
+                                                onOpenWithBounds: _columnView
+                                                    ? null
+                                                    : (entry, card, icon) =>
+                                                          _loadDirectory(
+                                                            entry.entity.path,
+                                                            heroCard: card,
+                                                            heroIcon: icon,
+                                                          ),
+                                                onContextMenu:
+                                                    Platform.isWindows
+                                                    ? _showContextMenu
+                                                    : null,
+                                              );
                                         if (!_previewVisible) {
                                           return _columnView
                                               ? Row(
@@ -1945,6 +2005,15 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   /// Enveloppe le contenu du dossier : colonnes parentes (vue en colonnes) ou
   /// transition de dossier.
   Widget _wrapContent(Widget child) {
+    return ExternalFileDrop(
+      path: _currentPath,
+      enabled: Platform.isWindows && _ready && !_contextMenuOpen,
+      onDrop: _receiveExternalDrop,
+      child: _contentView(child),
+    );
+  }
+
+  Widget _contentView(Widget child) {
     if (_columnView && !_previewExpanded) {
       return ExplorerColumnsView(
         path: _currentPath,
@@ -1955,6 +2024,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         ascending: _ascending,
         onNavigate: _openColumn,
         onOpen: _openEntry,
+        refreshToken: _loadRequest,
       );
     }
     return FolderTransitionView(

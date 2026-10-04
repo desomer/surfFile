@@ -1,12 +1,12 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/theme/folder_transition.dart';
+import 'package:super_container_layout/theme/explorer_colors.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
 
 import '../models/selection_mode.dart';
-import '../theme/appearance.dart';
-import '../theme/appearance_slot.dart';
-import '../theme/explorer_colors.dart';
-import '../theme/folder_transition.dart';
 import 'explorer_action_bar.dart';
-import 'super_container.dart';
 import 'explorer_view_toggle.dart';
 import 'explorer_selection_mode_button.dart';
 import 'folder_size_indicator.dart';
@@ -21,6 +21,8 @@ class ExplorerViewModeBar extends StatelessWidget {
     required this.onGridViewChanged,
     this.columnView = false,
     this.onColumnViewChanged,
+    this.heatmapView = false,
+    this.onHeatmapViewChanged,
     this.pending = false,
     this.titleIconKey,
     this.filterCount = 0,
@@ -43,6 +45,10 @@ class ExplorerViewModeBar extends StatelessWidget {
   /// Navigation en colonnes (à la place de la liste ou de la grille).
   final bool columnView;
   final ValueChanged<bool>? onColumnViewChanged;
+
+  /// Carte thermique des tailles (à la place de la liste ou de la grille).
+  final bool heatmapView;
+  final ValueChanged<bool>? onHeatmapViewChanged;
 
   /// Clé de l'icône dossier, cible de la transition « heroIcon ».
   final Key? titleIconKey;
@@ -108,7 +114,7 @@ class ExplorerViewModeBar extends StatelessWidget {
                   ),
                 ),
               ),
-              if (!gridView && !columnView) ...[
+              if (!gridView && !columnView && !heatmapView) ...[
                 const FolderSizeDisplayButton(),
                 const SizedBox(width: 4),
               ],
@@ -145,6 +151,8 @@ class ExplorerViewModeBar extends StatelessWidget {
                 onChanged: onGridViewChanged,
                 columnView: columnView,
                 onColumnViewChanged: onColumnViewChanged,
+                heatmapView: heatmapView,
+                onHeatmapViewChanged: onHeatmapViewChanged,
               ),
             ],
           ),

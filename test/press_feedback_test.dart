@@ -103,7 +103,7 @@ void main() {
                 selectedPath: selected,
                 onSelected: (path) => setState(() => selected = path),
                 onOpen: (_) {},
-                onOpenWithBounds: (_, __, ___) {},
+                onOpenWithBounds: (_, _, _) {},
               ),
             ),
           ),

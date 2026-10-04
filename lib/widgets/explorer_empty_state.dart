@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-
-import '../theme/explorer_colors.dart';
+import 'package:super_container_layout/theme/explorer_colors.dart';
 
 class ExplorerEmptyState extends StatelessWidget {
   const ExplorerEmptyState({required this.hasQuery, super.key});

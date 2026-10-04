@@ -1,9 +1,12 @@
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/widgets/interaction_effect_box.dart';
+import 'package:super_container_layout/widgets/neon_surface.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
 
 import '../models/explorer_entry.dart';
-import '../theme/appearance.dart';
-import '../theme/appearance_slot.dart';
 import 'drag_select_region.dart';
 import 'entries_layout.dart';
 import 'explorer_file_icon.dart';
@@ -11,12 +14,10 @@ import 'folder_size_cell.dart';
 import 'folder_size_indicator.dart';
 import '../services/folder_size_service.dart';
 import 'hover_preview.dart';
-import 'interaction_effect_box.dart';
-import 'neon_surface.dart';
 import 'press_feedback.dart';
 import 'sliding_selection_list.dart';
-import 'super_container.dart';
 import 'scroll_edge_fade.dart';
+import 'external_file_drop.dart';
 
 class ExplorerEntriesView extends StatelessWidget {
   const ExplorerEntriesView({
@@ -135,19 +136,22 @@ class ExplorerEntriesView extends StatelessWidget {
       paths: entries.map((entry) => entry.entity.path).toList(),
       selectedPath: selectedPath,
       selectedPaths: selection,
-      itemBuilder: (context, index) => _EntryRow(
-        key: ValueKey(entries[index].entity.path),
-        compact: compact,
-        entry: entries[index],
-        selected: selection.contains(entries[index].entity.path),
-        onSelected: onSelected,
-        onToggle: onToggle,
-        onTapped: (path) => _tap(path, _selection.contains(path)),
-        onOpen: onOpen,
-        onContextMenu: onContextMenu,
-        onOpenWithBounds: onOpenWithBounds,
-        siblingFolders: _folderPaths,
-        siblingSizes: _sizes,
+      itemBuilder: (context, index) => ExternalDropDestination(
+        path: entries[index].isDirectory ? entries[index].entity.path : null,
+        child: _EntryRow(
+          key: ValueKey(entries[index].entity.path),
+          compact: compact,
+          entry: entries[index],
+          selected: selection.contains(entries[index].entity.path),
+          onSelected: onSelected,
+          onToggle: onToggle,
+          onTapped: (path) => _tap(path, _selection.contains(path)),
+          onOpen: onOpen,
+          onContextMenu: onContextMenu,
+          onOpenWithBounds: onOpenWithBounds,
+          siblingFolders: _folderPaths,
+          siblingSizes: _sizes,
+        ),
       ),
     );
   }
@@ -191,136 +195,146 @@ class ExplorerEntriesView extends StatelessWidget {
         final gradient = selected
             ? style.fill.gradient()
             : appearance.cardStyle.fill.gradient();
-        return _EntryBounds(
-          key: ValueKey(entry.entity.path),
-          builder: (cardKey, iconKey) => SuperContainer(
-            slot: selected ? AppearanceSlot.selectedCard : AppearanceSlot.card,
-            decorate: false,
-            child: InteractionEffectBox(
-              effect:
-                  (selected ? style : appearance.cardStyle).interactionEffect,
-              ownsHover: true,
-              hover: (selected ? style : appearance.cardStyle).hoverEffect,
-              hoverColor: (selected ? style : appearance.cardStyle).hoverBase(
-                appearance.accent,
-              ),
-              radius: radius,
-              builder: (context, boost) => NeonSurface(
-                key: cardKey,
-                style: selected ? style.neon! : appearance.cardNeon,
-                accent: appearance.accent,
+        return ExternalDropDestination(
+          path: entry.isDirectory ? entry.entity.path : null,
+          child: _EntryBounds(
+            key: ValueKey(entry.entity.path),
+            builder: (cardKey, iconKey) => SuperContainer(
+              slot: selected
+                  ? AppearanceSlot.selectedCard
+                  : AppearanceSlot.card,
+              decorate: false,
+              child: InteractionEffectBox(
+                effect:
+                    (selected ? style : appearance.cardStyle).interactionEffect,
+                ownsHover: true,
+                hover: (selected ? style : appearance.cardStyle).hoverEffect,
+                hoverColor: (selected ? style : appearance.cardStyle).hoverBase(
+                  appearance.accent,
+                ),
                 radius: radius,
-                child: Material(
-                  color: gradient != null ? Colors.transparent : color,
-                  elevation:
-                      (appearance.cardElevation(selected: selected) + boost)
-                          .clamp(0.0, double.infinity),
-                  shadowColor: Colors.black.withValues(
-                    alpha: selected
-                        ? style.shadowOpacity
-                        : appearance.cardStyle.shadowOpacity,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(radius),
-                    side: BorderSide(
-                      color: selected
-                          ? style.borderColor ??
-                                Theme.of(context).colorScheme.primary
-                          : appearance.cardStyle.borderColor ??
-                                Theme.of(context).colorScheme.outlineVariant,
-                      width: borderWidth,
-                      style: borderWidth == 0
-                          ? BorderStyle.none
-                          : BorderStyle.solid,
+                builder: (context, boost) => NeonSurface(
+                  key: cardKey,
+                  style: selected ? style.neon! : appearance.cardNeon,
+                  accent: appearance.accent,
+                  radius: radius,
+                  child: Material(
+                    color: gradient != null ? Colors.transparent : color,
+                    elevation:
+                        (appearance.cardElevation(selected: selected) + boost)
+                            .clamp(0.0, double.infinity),
+                    shadowColor: Colors.black.withValues(
+                      alpha: selected
+                          ? style.shadowOpacity
+                          : appearance.cardStyle.shadowOpacity,
                     ),
-                  ),
-                  child: Ink(
-                    decoration: BoxDecoration(
-                      gradient: gradient,
+                    shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(radius),
+                      side: BorderSide(
+                        color: selected
+                            ? style.borderColor ??
+                                  Theme.of(context).colorScheme.primary
+                            : appearance.cardStyle.borderColor ??
+                                  Theme.of(context).colorScheme.outlineVariant,
+                        width: borderWidth,
+                        style: borderWidth == 0
+                            ? BorderStyle.none
+                            : BorderStyle.solid,
+                      ),
                     ),
-                    child: PressFeedback(
-                      key: ValueKey(entry.entity.path),
-                      onMouseDown: () =>
-                          _mouseDown(onSelected, entry.entity.path),
-                      child: InkWell(
+                    child: Ink(
+                      decoration: BoxDecoration(
+                        gradient: gradient,
                         borderRadius: BorderRadius.circular(radius),
-                        onTap: () {
-                          _tap(entry.entity.path, selected);
-                          if (_isDoubleClick(entry.entity.path)) {
-                            _openWithBounds(
-                              entry,
-                              cardKey,
-                              iconKey,
-                              onOpen,
-                              onOpenWithBounds,
-                            );
-                          }
-                        },
-                        onSecondaryTapDown:
-                            onContextMenu == null || _styleEditing(context)
-                            ? null
-                            : (details) =>
-                                  onContextMenu!(entry, details.globalPosition),
-                        child: Stack(
-                          children: [
-                            Padding(
-                              padding: EdgeInsets.all(
-                                selected
-                                    ? style.padding
-                                    : appearance.cardStyle.padding,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Center(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: ExplorerFileIcon(
-                                          key: iconKey,
-                                          entry: entry,
-                                          size: appearance.iconSize,
+                      ),
+                      child: PressFeedback(
+                        key: ValueKey(entry.entity.path),
+                        onMouseDown: () =>
+                            _mouseDown(onSelected, entry.entity.path),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(radius),
+                          onTap: () {
+                            _tap(entry.entity.path, selected);
+                            if (_isDoubleClick(entry.entity.path)) {
+                              _openWithBounds(
+                                entry,
+                                cardKey,
+                                iconKey,
+                                onOpen,
+                                onOpenWithBounds,
+                              );
+                            }
+                          },
+                          onSecondaryTapDown:
+                              onContextMenu == null || _styleEditing(context)
+                              ? null
+                              : (details) => onContextMenu!(
+                                  entry,
+                                  details.globalPosition,
+                                ),
+                          child: Stack(
+                            children: [
+                              Padding(
+                                padding: EdgeInsets.all(
+                                  selected
+                                      ? style.padding
+                                      : appearance.cardStyle.padding,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Center(
+                                        child: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: ExplorerFileIcon(
+                                            key: iconKey,
+                                            entry: entry,
+                                            size: appearance.iconSize,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    entry.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: appearance.fontSize,
-                                      color: foreground,
-                                      fontWeight: FontWeight.w600,
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      entry.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: appearance.fontSize,
+                                        color: foreground,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 3),
-                                  Text(
-                                    entry.isDirectory
-                                        ? 'Dossier'
-                                        : formatExplorerSize(entry.size),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: appearance.fontSize - 2,
-                                      color: foreground.withValues(alpha: .75),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      entry.isDirectory
+                                          ? 'Dossier'
+                                          : formatExplorerSize(entry.size),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: appearance.fontSize - 2,
+                                        color: foreground.withValues(
+                                          alpha: .75,
+                                        ),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (onToggle != null)
-                              Positioned(
-                                top: 4,
-                                left: 4,
-                                child: _SelectBox(
-                                  checked: selected,
-                                  onChanged: () => onToggle!(entry.entity.path),
+                                  ],
                                 ),
                               ),
-                          ],
+                              if (onToggle != null)
+                                Positioned(
+                                  top: 4,
+                                  left: 4,
+                                  child: _SelectBox(
+                                    checked: selected,
+                                    onChanged: () =>
+                                        onToggle!(entry.entity.path),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
                     ),

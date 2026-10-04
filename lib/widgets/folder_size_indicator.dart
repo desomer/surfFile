@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-
+import 'package:super_container_layout/theme/explorer_colors.dart';
 import '../services/folder_size_service.dart';
-import '../theme/explorer_colors.dart';
 
 /// Représentation visuelle de la taille d'un élément, relative au plus gros
 /// élément (fichier ou dossier calculé) du même répertoire.

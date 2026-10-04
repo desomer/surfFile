@@ -1,6 +1,7 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <iostream>
 #include <flutter/method_channel.h>
 #include <flutter/standard_method_codec.h>
 #include <shlobj.h>
@@ -28,6 +29,13 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  const HRESULT drop_result = ExternalFileDrop::Register(
+      flutter_controller_->view()->GetNativeWindow(),
+      flutter_controller_->engine()->messenger(), &external_file_drop_);
+  if (FAILED(drop_result)) {
+    std::cerr << "Cannot register Windows file drop: " << drop_result << std::endl;
+    return false;
+  }
   flutter::MethodChannel<flutter::EncodableValue> disk_space(
       flutter_controller_->engine()->messenger(), "surf_file/disk_space",
       &flutter::StandardMethodCodec::GetInstance());
@@ -197,6 +205,11 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  if (external_file_drop_) {
+    external_file_drop_->Revoke();
+    external_file_drop_->Release();
+    external_file_drop_ = nullptr;
+  }
   shell_context_menu_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

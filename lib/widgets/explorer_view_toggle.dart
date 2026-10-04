@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-
-import '../theme/explorer_colors.dart';
+import 'package:super_container_layout/theme/explorer_colors.dart';
 
 class ExplorerViewToggle extends StatelessWidget {
   const ExplorerViewToggle({
@@ -8,6 +7,8 @@ class ExplorerViewToggle extends StatelessWidget {
     required this.onChanged,
     this.columnView = false,
     this.onColumnViewChanged,
+    this.heatmapView = false,
+    this.onHeatmapViewChanged,
     super.key,
   });
 
@@ -19,9 +20,15 @@ class ExplorerViewToggle extends StatelessWidget {
   final bool columnView;
   final ValueChanged<bool>? onColumnViewChanged;
 
+  /// Carte thermique des tailles ; le bouton n'apparaît que si
+  /// [onHeatmapViewChanged] est fourni.
+  final bool heatmapView;
+  final ValueChanged<bool>? onHeatmapViewChanged;
+
   @override
   Widget build(BuildContext context) {
     final onColumnViewChanged = this.onColumnViewChanged;
+    final onHeatmapViewChanged = this.onHeatmapViewChanged;
     return Container(
       decoration: BoxDecoration(
         color: explorerColor(
@@ -36,19 +43,21 @@ class ExplorerViewToggle extends StatelessWidget {
           _ViewButton(
             key: const ValueKey('view-list'),
             icon: Icons.view_list_rounded,
-            selected: !gridView && !columnView,
+            selected: !gridView && !columnView && !heatmapView,
             onTap: () {
               onChanged(false);
               onColumnViewChanged?.call(false);
+              onHeatmapViewChanged?.call(false);
             },
           ),
           _ViewButton(
             key: const ValueKey('view-grid'),
             icon: Icons.grid_view_rounded,
-            selected: gridView && !columnView,
+            selected: gridView && !columnView && !heatmapView,
             onTap: () {
               onChanged(true);
               onColumnViewChanged?.call(false);
+              onHeatmapViewChanged?.call(false);
             },
           ),
           if (onColumnViewChanged != null)
@@ -56,7 +65,20 @@ class ExplorerViewToggle extends StatelessWidget {
               key: const ValueKey('view-columns'),
               icon: Icons.view_column_rounded,
               selected: columnView,
-              onTap: () => onColumnViewChanged(true),
+              onTap: () {
+                onColumnViewChanged(true);
+                onHeatmapViewChanged?.call(false);
+              },
+            ),
+          if (onHeatmapViewChanged != null)
+            _ViewButton(
+              key: const ValueKey('view-heatmap'),
+              icon: Icons.dashboard_rounded,
+              selected: heatmapView,
+              onTap: () {
+                onHeatmapViewChanged(true);
+                onColumnViewChanged?.call(false);
+              },
             ),
         ],
       ),

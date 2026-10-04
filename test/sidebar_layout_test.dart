@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:surf_file/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/services/disk_space.dart';
-import 'package:surf_file/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
 
 void main() {

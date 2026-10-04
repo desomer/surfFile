@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-
-import '../theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 
 /// Contenu provisoire affiché pendant le glissement vers un nouveau dossier.
 ///

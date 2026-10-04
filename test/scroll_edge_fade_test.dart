@@ -7,9 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/widgets/explorer_entries_view.dart';
 import 'package:surf_file/widgets/scroll_edge_fade.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/services/appearance_store.dart';
-import 'package:surf_file/widgets/appearance_settings.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:super_container_layout/widgets/appearance_settings.dart';
 
 Future<List<int>> maskAlphas(WidgetTester tester) async {
   // Sans bord estompé, le masque est retiré : tout est opaque.

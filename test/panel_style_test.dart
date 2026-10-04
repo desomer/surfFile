@@ -6,15 +6,15 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/models/explorer_location.dart';
-import 'package:surf_file/services/appearance_store.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/theme/container_fill.dart';
-import 'package:surf_file/theme/container_style.dart';
-import 'package:surf_file/widgets/appearance_settings.dart';
+import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_fill.dart';
+import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/widgets/appearance_settings.dart';
 import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
 import 'package:surf_file/widgets/explorer_view_mode_bar.dart';
-import 'package:surf_file/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
 
 void _ignoreGridChange(bool _) {}
 

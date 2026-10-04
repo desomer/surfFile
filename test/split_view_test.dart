@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/pages/explorer_page.dart';
+import 'package:surf_file/services/file_operations.dart';
 import 'package:surf_file/services/personal_folders.dart';
 import 'package:surf_file/widgets/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
+import 'package:surf_file/widgets/explorer_skeleton.dart';
 import 'package:surf_file/widgets/explorer_toolbar.dart';
 import 'package:surf_file/widgets/file_action_bar.dart';
 
@@ -15,10 +17,10 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1600, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final root = await Directory.systemTemp.createTemp('surf_file_split_');
-    final a = await Directory('${root.path}\\a').create();
-    final b = await Directory('${root.path}\\b').create();
-    addTearDown(() => root.delete(recursive: true));
+    final root = Directory.systemTemp.createTempSync('surf_file_split_');
+    final a = Directory('${root.path}\\a')..createSync();
+    final b = Directory('${root.path}\\b')..createSync();
+    addTearDown(() => root.deleteSync(recursive: true));
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
@@ -36,8 +38,9 @@ void main() {
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 20)),
         );
-        await tester.pump();
-        if (find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(CircularProgressIndicator).evaluate().isEmpty &&
+            find.byType(ExplorerSkeleton).evaluate().isEmpty) {
           await tester.pumpAndSettle();
           return;
         }
@@ -93,11 +96,11 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1600, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    final root = await Directory.systemTemp.createTemp('surf_file_bar_');
-    final a = await Directory('${root.path}\\a').create();
-    final b = await Directory('${root.path}\\b').create();
-    await File('${a.path}\\note.txt').writeAsString('hello');
-    addTearDown(() => root.delete(recursive: true));
+    final root = Directory.systemTemp.createTempSync('surf_file_bar_');
+    final a = Directory('${root.path}\\a')..createSync();
+    final b = Directory('${root.path}\\b')..createSync();
+    File('${a.path}\\note.txt').writeAsStringSync('hello');
+    addTearDown(() => root.deleteSync(recursive: true));
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
@@ -115,8 +118,9 @@ void main() {
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 20)),
         );
-        await tester.pump();
-        if (find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (find.byType(CircularProgressIndicator).evaluate().isEmpty &&
+            find.byType(ExplorerSkeleton).evaluate().isEmpty) {
           await tester.pumpAndSettle();
           return;
         }
@@ -181,5 +185,7 @@ void main() {
     await act('swap');
     expect(paths(), [b.path, a.path]);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(FileJobs.keepFinished);
   }, skip: !Platform.isWindows);
 }

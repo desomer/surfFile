@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/theme/explorer_colors.dart';
+import 'package:super_container_layout/widgets/slot_implementation.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/super_layout.dart';
 
 import '../models/explorer_location.dart';
 import '../services/favorites.dart';
-import '../theme/appearance.dart';
-import '../theme/explorer_colors.dart';
-import '../theme/appearance_slot.dart';
-import 'slot_implementation.dart';
-import 'super_container.dart';
-import 'super_layout.dart';
 import 'disk_space_panel.dart';
 
 class ExplorerSidebar extends StatelessWidget {

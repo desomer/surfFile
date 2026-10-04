@@ -5,11 +5,11 @@ import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:surf_file/services/appearance_store.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/theme/container_style.dart';
-import 'package:surf_file/widgets/appearance_settings.dart';
-import 'package:surf_file/widgets/container_style_editor.dart';
+import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:super_container_layout/widgets/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer_entries_view.dart';
 
 void main() {

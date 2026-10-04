@@ -52,7 +52,7 @@ void main() {
             selectedPath: null,
             onSelected: (_) {},
             onOpen: (_) {},
-            onOpenWithBounds: (_, __, ___) {},
+            onOpenWithBounds: (_, _, _) {},
           ),
         ),
       ),

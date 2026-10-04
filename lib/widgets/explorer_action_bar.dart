@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/explorer_colors.dart';
 
-import '../theme/explorer_colors.dart';
 
 /// Action de la barre : désactivée quand [onPressed] est `null`.
 class ExplorerBarAction {

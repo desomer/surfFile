@@ -5,9 +5,11 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../services/file_operations.dart';
+import '../services/folder_size_service.dart';
+import 'folder_size_card.dart';
 
 /// Panneau flottant (en haut à droite) listant les transferts en cours :
-/// fichier traité, vitesse, courbe de vitesse, temps restant…
+/// fich ier traité, vitesse, courbe de vitesse, temps restant…
 class TransferPanel extends StatelessWidget {
   const TransferPanel({super.key});
 
@@ -15,22 +17,35 @@ class TransferPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ValueListenableBuilder<List<FileJob>>(
-      valueListenable: FileJobs.active,
-      builder: (context, jobs, _) => AnimatedSize(
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        FileJobs.active,
+        FolderSizeService.jobs,
+        FolderSizeService.queued,
+      ]),
+      builder: (context, _) => AnimatedSize(
         duration: const Duration(milliseconds: 220),
         curve: Curves.easeOutCubic,
         alignment: Alignment.topRight,
         child: SizedBox(
-          width: jobs.isEmpty ? 0 : width,
+          width:
+              FileJobs.active.value.isEmpty &&
+                  FolderSizeService.jobs.value.isEmpty
+              ? 0
+              : width,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final job in jobs)
+              for (final job in FileJobs.active.value)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: TransferCard(key: ObjectKey(job), job: job),
+                ),
+              if (FolderSizeService.jobs.value.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: FolderSizeCard(jobs: FolderSizeService.jobs.value),
                 ),
             ],
           ),

@@ -29,6 +29,32 @@ class FolderSizeService {
   /// Incrémenté à chaque taille calculée, pour réordonner les listes triées
   /// par taille.
   static final revision = ValueNotifier<int>(0);
+  static final jobs = ValueNotifier<List<FolderSizeJob>>(const []);
+  static final queued = ValueNotifier<int>(0);
+  static final _queues = <List<String>>[];
+
+  static void cancelAll() {
+    for (final queue in _queues) {
+      queue.clear();
+    }
+    queued.value = 0;
+    for (final job in jobs.value) {
+      job.cancel();
+    }
+  }
+
+  static void dismissAll() {
+    if (queued.value > 0 ||
+        jobs.value.any((job) => job.status == FolderSizeJobStatus.running)) {
+      return;
+    }
+    jobs.value = const [];
+  }
+
+  static void dismiss(FolderSizeJob job) {
+    if (job.status == FolderSizeJobStatus.running) return;
+    jobs.value = [for (final other in jobs.value) if (other != job) other];
+  }
 
   /// Taille calculée du dossier [path], `null` si inconnue.
   static int? bytesOf(String path) => _states[path]?.value.bytes;
@@ -43,8 +69,13 @@ class FolderSizeService {
     if (state.value.computing) return false;
     final previous = state.value;
     state.value = FolderSizeState.pending;
-    final job = _Job();
+    final job = FolderSizeJob._(path);
     _running[path] = job;
+    jobs.value = [
+      for (final previousJob in jobs.value)
+        if (previousJob.path != path) previousJob,
+      job,
+    ];
     final int? bytes;
     try {
       bytes = await job.run(path);
@@ -63,7 +94,7 @@ class FolderSizeService {
   /// Interrompt le calcul en cours de [path] et restaure la taille précédente.
   static void cancel(String path) => _running[path]?.cancel();
 
-  static final _running = <String, _Job>{};
+  static final _running = <String, FolderSizeJob>{};
 
   /// Chemins dont la taille n'est ni calculée ni en cours de calcul.
   static List<String> uncomputed(Iterable<String> paths) => [
@@ -76,50 +107,135 @@ class FolderSizeService {
     Iterable<String> paths, {
     int concurrency = 4,
   }) async {
-    final queue = paths.toList().reversed.toList();
+    if (concurrency < 1) {
+      throw ArgumentError.value(concurrency, 'concurrency', 'Must be positive');
+    }
+    final queue = paths.toSet().toList().reversed.toList();
+    _queues.add(queue);
+    queued.value += queue.length;
     Future<void> worker() async {
       while (queue.isNotEmpty) {
-        await compute(queue.removeLast());
+        final path = queue.removeLast();
+        queued.value--;
+        await compute(path);
       }
     }
 
-    await Future.wait([for (var i = 0; i < concurrency; i++) worker()]);
+    try {
+      await Future.wait([for (var i = 0; i < concurrency; i++) worker()]);
+    } finally {
+      queued.value -= queue.length;
+      _queues.remove(queue);
+    }
   }
 
   @visibleForTesting
-  static void reset() => _states.clear();
+  static void reset() {
+    cancelAll();
+    for (final job in _running.values) {
+      job.cancel();
+    }
+    _states.clear();
+    jobs.value = const [];
+  }
 
   /// Somme des tailles des fichiers sous [path], sans suivre les liens ; les
   /// sous-dossiers inaccessibles sont ignorés.
-  static int folderSizeSync(String path) {
+  static int folderSizeSync(String path) => _scan(path).bytes;
+
+  static FolderSizeProgress _scan(
+    String path, {
+    void Function(FolderSizeProgress)? onProgress,
+  }) {
     var total = 0;
+    var files = 0;
+    var folders = 0;
+    var skipped = 0;
+    var currentPath = path;
+    final clock = Stopwatch()..start();
+    var lastReport = Duration.zero;
+    FolderSizeProgress snapshot() => FolderSizeProgress(
+      bytes: total,
+      files: files,
+      folders: folders,
+      skipped: skipped,
+      currentPath: currentPath,
+    );
+    void report() {
+      if (clock.elapsed - lastReport < const Duration(milliseconds: 100)) {
+        return;
+      }
+      lastReport = clock.elapsed;
+      onProgress?.call(snapshot());
+    }
+
     final pending = [Directory(path)];
     while (pending.isNotEmpty) {
+      final directory = pending.removeLast();
+      currentPath = directory.path;
       final List<FileSystemEntity> children;
       try {
-        children = pending.removeLast().listSync(followLinks: false);
+        children = directory.listSync(followLinks: false);
       } on FileSystemException {
+        if (directory.path == path) rethrow;
+        skipped++;
+        report();
         continue;
       }
+      folders++;
       for (final child in children) {
+        currentPath = child.path;
         if (child is Directory) {
           pending.add(child);
         } else if (child is File) {
           try {
             total += child.lengthSync();
+            files++;
           } on FileSystemException {
-            // Fichier verrouillé ou supprimé entre-temps.
+            skipped++;
           }
         }
+        report();
       }
+      report();
     }
-    return total;
+    final progress = snapshot();
+    onProgress?.call(progress);
+    return progress;
   }
 }
 
-/// Calcul dans un isolate qu'on peut tuer ; le résultat est `null` s'il a été
-/// annulé ou a échoué.
-class _Job {
+enum FolderSizeJobStatus { running, done, cancelled, failed }
+
+@immutable
+class FolderSizeProgress {
+  const FolderSizeProgress({
+    this.bytes = 0,
+    this.files = 0,
+    this.folders = 0,
+    this.skipped = 0,
+    required this.currentPath,
+  });
+
+  final int bytes;
+  final int files;
+  final int folders;
+  final int skipped;
+  final String currentPath;
+}
+
+class FolderSizeJob extends ChangeNotifier {
+  FolderSizeJob._(this.path)
+    : latest = FolderSizeProgress(currentPath: path);
+
+  final String path;
+  final DateTime startedAt = DateTime.now();
+  FolderSizeProgress latest;
+  FolderSizeJobStatus status = FolderSizeJobStatus.running;
+  String? error;
+  final _clock = Stopwatch()..start();
+  Duration get elapsed => _clock.elapsed;
+
   final _result = Completer<int?>();
   final _port = ReceivePort();
   Isolate? _isolate;
@@ -127,8 +243,19 @@ class _Job {
 
   Future<int?> run(String path) {
     _port.listen((message) {
-      if (!_result.isCompleted) {
-        _result.complete(message is int ? message : null);
+      if (_result.isCompleted) return;
+      switch (message) {
+        case FolderSizeProgress progress:
+          latest = progress;
+          notifyListeners();
+        case int bytes:
+          _complete(FolderSizeJobStatus.done, bytes: bytes);
+        case List<dynamic> details:
+          error = details.first.toString();
+          _complete(FolderSizeJobStatus.failed);
+        case null:
+          error = 'Le calcul a été interrompu.';
+          _complete(FolderSizeJobStatus.failed);
       }
     });
     // Le résultat n'attend pas le démarrage : une annulation immédiate suffit.
@@ -146,21 +273,32 @@ class _Job {
           _isolate = isolate;
         }
       },
-      onError: (_) {
-        if (!_result.isCompleted) _result.complete(null);
+      onError: (Object failure, StackTrace stack) {
+        if (_result.isCompleted) return;
+        error = failure.toString();
+        _complete(FolderSizeJobStatus.failed);
       },
     );
     return _result.future.whenComplete(_port.close);
   }
 
   void cancel() {
+    if (_result.isCompleted) return;
     _cancelled = true;
     _isolate?.kill(priority: Isolate.immediate);
-    if (!_result.isCompleted) _result.complete(null);
+    _complete(FolderSizeJobStatus.cancelled);
+  }
+
+  void _complete(FolderSizeJobStatus value, {int? bytes}) {
+    status = value;
+    _clock.stop();
+    _result.complete(bytes);
+    notifyListeners();
   }
 
   static void _entry((SendPort, String) args) {
     final (port, path) = args;
-    port.send(FolderSizeService.folderSizeSync(path));
+    final progress = FolderSizeService._scan(path, onProgress: port.send);
+    port.send(progress.bytes);
   }
 }

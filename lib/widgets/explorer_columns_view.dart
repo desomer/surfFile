@@ -2,11 +2,12 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 
 import '../models/explorer_entry.dart';
 import '../services/directory_scanner.dart';
-import '../theme/appearance.dart';
 import 'explorer_entries_view.dart';
+import 'external_file_drop.dart';
 
 /// Navigation en colonnes (comme le Finder) : un dossier par colonne, de la
 /// racine jusqu'au dossier courant. Les colonnes parentes sont lues ici ;
@@ -20,6 +21,7 @@ class ExplorerColumnsView extends StatefulWidget {
     required this.ascending,
     required this.onNavigate,
     required this.onOpen,
+    this.refreshToken,
     super.key,
   });
 
@@ -37,6 +39,7 @@ class ExplorerColumnsView extends StatefulWidget {
   /// Ouvre [path] ; [select] est alors l'élément à sélectionner.
   final void Function(String path, {String? select}) onNavigate;
   final ValueChanged<ExplorerEntry> onOpen;
+  final Object? refreshToken;
 
   /// Dossiers parents de [path], de la racine au parent direct.
   static List<String> ancestors(String path) {
@@ -115,16 +118,20 @@ class _ExplorerColumnsViewState extends State<ExplorerColumnsView> {
                 for (var i = 0; i < ancestors.length; i++) ...[
                   SizedBox(
                     width: ExplorerColumnsView.columnWidth,
-                    child: _ParentColumn(
-                      key: ValueKey(ancestors[i]),
+                    child: ExternalDropDestination(
                       path: ancestors[i],
-                      selectedPath: i + 1 < ancestors.length
-                          ? ancestors[i + 1]
-                          : widget.path,
-                      sort: widget.sort,
-                      ascending: widget.ascending,
-                      onNavigate: widget.onNavigate,
-                      onOpen: widget.onOpen,
+                      child: _ParentColumn(
+                        key: ValueKey(ancestors[i]),
+                        path: ancestors[i],
+                        selectedPath: i + 1 < ancestors.length
+                            ? ancestors[i + 1]
+                            : widget.path,
+                        sort: widget.sort,
+                        ascending: widget.ascending,
+                        onNavigate: widget.onNavigate,
+                        onOpen: widget.onOpen,
+                        refreshToken: widget.refreshToken,
+                      ),
                     ),
                   ),
                   VerticalDivider(width: 1, thickness: 1, color: divider),
@@ -149,6 +156,7 @@ class _ParentColumn extends StatefulWidget {
     required this.ascending,
     required this.onNavigate,
     required this.onOpen,
+    this.refreshToken,
     super.key,
   });
 
@@ -158,6 +166,7 @@ class _ParentColumn extends StatefulWidget {
   final bool ascending;
   final void Function(String path, {String? select}) onNavigate;
   final ValueChanged<ExplorerEntry> onOpen;
+  final Object? refreshToken;
 
   @override
   State<_ParentColumn> createState() => _ParentColumnState();
@@ -169,6 +178,7 @@ class _ParentColumnState extends State<_ParentColumn> {
   ScrollController? _scroll;
   List<ExplorerEntry> _sorted = const [];
   (ExplorerSort, bool)? _sortedBy;
+  int _request = 0;
 
   @override
   void initState() {
@@ -176,16 +186,24 @@ class _ParentColumnState extends State<_ParentColumn> {
     _load();
   }
 
+  @override
+  void didUpdateWidget(_ParentColumn oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) _load();
+  }
+
   Future<void> _load() async {
+    final request = ++_request;
     try {
       final entries = await DirectoryScanner.scan(widget.path);
-      if (!mounted) return;
+      if (!mounted || request != _request) return;
       setState(() {
         _entries = entries;
+        _failed = false;
         _sortedBy = null;
       });
     } on FileSystemException {
-      if (mounted) setState(() => _failed = true);
+      if (mounted && request == _request) setState(() => _failed = true);
     }
   }
 

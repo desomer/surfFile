@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/disk_gauge_style.dart';
 
-import '../theme/appearance.dart';
-import '../theme/disk_gauge_style.dart';
 import 'container_style_editor.dart';
 import 'disk_gauge.dart';
 

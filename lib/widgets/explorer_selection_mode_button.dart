@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-
+import 'package:super_container_layout/theme/explorer_colors.dart';
 import '../models/selection_mode.dart';
-import '../theme/explorer_colors.dart';
 
 /// Menu de choix du mode de sélection, placé à côté du bouton de filtre.
 class ExplorerSelectionModeButton extends StatelessWidget {

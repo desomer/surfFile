@@ -4,8 +4,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_location.dart';
-import 'package:surf_file/theme/appearance.dart';
-import 'package:surf_file/theme/container_style.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_style.dart';
 import 'package:surf_file/widgets/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer_sidebar.dart';
 

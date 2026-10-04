@@ -1,12 +1,12 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
 
 import '../services/disk_space.dart';
-import '../theme/appearance.dart';
-import '../theme/appearance_slot.dart';
 import 'disk_gauge.dart';
 import 'disk_gauge_style_editor.dart';
-import 'super_container.dart';
 
 class DiskSpacePanel extends StatefulWidget {
   const DiskSpacePanel({required this.onNavigate, this.currentPath, super.key});

@@ -68,32 +68,36 @@ class _FileActionBarState extends State<FileActionBar> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            for (final action in widget.actions)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: _running == action
-                    ? _progress(_job)
-                    : IconButton(
-                        key: ValueKey('file-action-${action.id}'),
-                        tooltip: action.label,
-                        icon: Icon(action.icon, size: 20),
-                        style: IconButton.styleFrom(
-                          minimumSize: const Size(32, 32),
-                          maximumSize: const Size(32, 32),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        onPressed:
-                            _running == null &&
-                                actionContext != null &&
-                                action.isEnabled(actionContext)
-                            ? () => _run(action, actionContext)
-                            : null,
-                      ),
-              ),
+            // Évite le crash de l'itérateur de cette collection en AOT Windows.
+            for (var i = 0; i < widget.actions.length; i++)
+              _buildAction(widget.actions[i], actionContext),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAction(FileAction action, FileActionContext? context) {
+    final VoidCallback? onPressed =
+        _running == null && context != null && action.isEnabled(context)
+        ? () => _run(action, context)
+        : null;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: _running == action
+          ? _progress(_job)
+          : IconButton(
+              key: ValueKey('file-action-${action.id}'),
+              tooltip: action.label,
+              icon: Icon(action.icon, size: 20),
+              style: IconButton.styleFrom(
+                minimumSize: const Size(32, 32),
+                maximumSize: const Size(32, 32),
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: onPressed,
+            ),
     );
   }
 
