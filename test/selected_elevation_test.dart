@@ -4,25 +4,26 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_location.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
 void main() {
   test('selected cards follow general elevation until customized', () {
-    const appearance = Appearance(cardStyle: ContainerStyle(elevation: 6));
-    expect(appearance.cardElevation(selected: true), 6);
+    final appearance = Appearance(
+      styles: const {'card': ContainerStyle(elevation: 6)},
+    );
+    expect(SurfFileAppearanceSlots.selectedCard.read(appearance).elevation, 6);
     final custom = appearance
-        .copyWith(
-          selectedCardStyle: const ContainerStyle(elevation: 12),
-          selectedFolderStyle: const ContainerStyle(elevation: 8),
-        )
-        .copyWith(cardStyle: const ContainerStyle(elevation: 3));
-    expect(custom.cardElevation(selected: true), 12);
-    expect(custom.cardElevation(selected: false), 3);
-    expect(custom.effectiveSelectedFolderStyle.elevation, 8);
-    expect(const Appearance().effectiveSelectedFolderStyle.elevation, 0);
+        .withStyle('selectedCard', const ContainerStyle(elevation: 12))
+        .withStyle('selectedFolder', const ContainerStyle(elevation: 8))
+        .withStyle('card', const ContainerStyle(elevation: 3));
+    expect(SurfFileAppearanceSlots.selectedCard.read(custom).elevation, 12);
+    expect(custom.style('card').elevation, 3);
+    expect(SurfFileAppearanceSlots.selectedFolder.read(custom).elevation, 8);
+    expect(SurfFileAppearanceSlots.selectedFolder.read(Appearance()).elevation, 0);
   });
 
   for (final grid in [false, true]) {
@@ -30,9 +31,11 @@ void main() {
       tester,
     ) async {
       final controller = ValueNotifier(
-        const Appearance(
-          cardStyle: ContainerStyle(elevation: 2),
-          selectedCardStyle: ContainerStyle(elevation: 10),
+        Appearance(
+          styles: {
+            'card': ContainerStyle(elevation: 2),
+            'selectedCard': ContainerStyle(elevation: 10),
+          },
         ),
       );
       addTearDown(controller.dispose);
@@ -100,7 +103,7 @@ void main() {
       await show('second.txt');
       expect(elevation('first.txt'), 2);
       expect(elevation('second.txt'), 10);
-      controller.value = const Appearance();
+      controller.value = Appearance();
       await tester.pump();
       expect(elevation('second.txt'), 0);
       expect(tester.takeException(), isNull);
@@ -109,9 +112,11 @@ void main() {
 
   testWidgets('only selected sidebar folder has elevation', (tester) async {
     final controller = ValueNotifier(
-      const Appearance(
-        cardStyle: ContainerStyle(shadowOpacity: .4),
-        selectedFolderStyle: ContainerStyle(elevation: 9),
+      Appearance(
+        styles: {
+          'card': ContainerStyle(shadowOpacity: .4),
+          'selectedFolder': ContainerStyle(elevation: 9),
+        },
       ),
     );
     addTearDown(controller.dispose);
@@ -142,7 +147,7 @@ void main() {
     await show('images');
     expect(item('Documents').elevation, 0);
     expect(item('Images').elevation, 9);
-    controller.value = const Appearance();
+    controller.value = Appearance();
     await tester.pump();
     expect(item('Images').elevation, 0);
     expect(tester.takeException(), isNull);

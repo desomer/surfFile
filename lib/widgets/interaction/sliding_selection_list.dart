@@ -2,7 +2,9 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/surffile_appearance_slots.dart';
+import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/widgets/neon_surface.dart';
 
 class SlidingSelectionList extends StatefulWidget {
@@ -101,6 +103,12 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
   @override
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
+    final cardStyle = appearance.style('card');
+    final selectedCardStyle = SurfFileAppearanceSlots.selectedCard.read(
+      appearance,
+    );
+    final cardNeon = cardStyle.neon ?? const NeonStyle();
+    final hasSelectedCardStyle = appearance.styles.containsKey('selectedCard');
     final extent = appearance.rowHeight + appearance.spacing / 6;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return LayoutBuilder(
@@ -148,82 +156,79 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                   child: NeonSurface(
                     // The sliding surface already lights the row beneath it.
                     style: !selected && position == index.toDouble()
-                        ? appearance.cardNeon.copyWith(enabled: false)
+                        ? cardNeon.copyWith(enabled: false)
                         : selected
-                        ? appearance.effectiveSelectedCardStyle.neon!
-                        : appearance.cardNeon,
+                        ? selectedCardStyle.neon!
+                        : cardNeon,
                     accent: appearance.accent,
                     radius: selected
-                        ? appearance.effectiveSelectedCardStyle.radius
-                        : appearance.cardStyle.radius,
+                        ? selectedCardStyle.radius
+                        : cardStyle.radius,
                     child: Material(
                       color: selected
-                          ? appearance.effectiveSelectedCardStyle.fill
+                          ? selectedCardStyle.fill
                                         .gradient() !=
                                     null
                                 ? Colors.transparent
-                                : appearance.cardBackground(
+                                : Appearance.cardColor(
                                     context,
+                                    selectedCardStyle,
                                     selected: true,
                                   )
-                          : appearance.cardStyle.fill.gradient() != null
+                          : cardStyle.fill.gradient() != null
                           ? Colors.transparent
-                          : appearance.cardStyle.color ??
+                          : cardStyle.color ??
                                 (appearance.backgroundOpacity < 1 ||
-                                        (appearance.backgroundStyle.color?.a ??
+                                        (appearance.style('background').color?.a ??
                                                 1) <
                                             1
                                     ? Colors.transparent
                                     : Theme.of(context).colorScheme.surface),
-                      elevation: appearance.cardElevation(selected: selected),
+                      elevation: (selected ? selectedCardStyle : cardStyle).elevation,
                       shadowColor: Colors.black.withValues(
                         alpha: selected
-                            ? appearance
-                                  .effectiveSelectedCardStyle
+                            ? selectedCardStyle
                                   .shadowOpacity
-                            : appearance.cardStyle.shadowOpacity,
+                            : cardStyle.shadowOpacity,
                       ),
                       borderRadius: BorderRadius.circular(
                         selected
-                            ? appearance.effectiveSelectedCardStyle.radius
-                            : appearance.cardStyle.radius,
+                            ? selectedCardStyle.radius
+                            : cardStyle.radius,
                       ),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
                           gradient: selected
-                              ? appearance.effectiveSelectedCardStyle.fill
+                              ? selectedCardStyle.fill
                                     .gradient()
-                              : appearance.cardStyle.fill.gradient(),
+                              : cardStyle.fill.gradient(),
                           borderRadius: BorderRadius.circular(
                             selected
-                                ? appearance.effectiveSelectedCardStyle.radius
-                                : appearance.cardStyle.radius,
+                                ? selectedCardStyle.radius
+                                : cardStyle.radius,
                           ),
                           border:
-                              selected && appearance.selectedCardStyle != null
+                              selected && hasSelectedCardStyle
                               ? Border.all(
                                   color:
-                                      appearance
-                                          .effectiveSelectedCardStyle
+                                      selectedCardStyle
                                           .borderColor ??
                                       Theme.of(context).colorScheme.primary,
-                                  width: appearance
-                                      .effectiveSelectedCardStyle
+                                  width: selectedCardStyle
                                       .borderWidth,
                                   style:
-                                      appearance
-                                              .effectiveSelectedCardStyle
+                                      selectedCardStyle
                                               .borderWidth ==
                                           0
                                       ? BorderStyle.none
                                       : BorderStyle.solid,
                                 )
                               : !selected &&
-                                    appearance.cardStyle.borderColor != null
+                                    cardStyle.borderColor != null
                               ? Border.all(
-                                  color: appearance.cardStyle.borderColor!,
-                                  width: appearance.cardStyle.borderWidth,
-                                  style: appearance.cardStyle.borderWidth == 0
+                                  color: cardStyle.borderColor!,
+                                  width: cardStyle.borderWidth,
+                                  style: cardStyle.borderWidth == 0
                                       ? BorderStyle.none
                                       : BorderStyle.solid,
                                 )

@@ -1,130 +1,69 @@
 import 'dart:convert';
-
 import 'appearance_store.dart';
 import '../theme/appearance.dart';
 
-/// Ce que contient un export : les styles, les dispositions, ou les deux.
 enum TransferGroup {
-  styles('Styles'),
-  layouts('Dispositions');
-
+  styles('Styles'), layouts('Dispositions');
   const TransferGroup(this.label);
-
   final String label;
 }
 
-/// Export et import du style et de la disposition, séparément ou ensemble.
-///
-/// Le fichier est une enveloppe JSON `{format, version, groups, data}` dont
-/// `data` reprend les clés du paramétrage enregistré ([AppearanceStore]). Un
-/// paramétrage complet brut (sans enveloppe) est aussi accepté à l'import.
+/// Transfers generic groups through the application's injected codec.
 class AppearanceTransfer {
   const AppearanceTransfer._();
-
-  static const format = 'surf_file.appearance';
-
-  /// Clés des dispositions ; toutes les autres clés sont des styles.
-  static const layoutKeys = {
-    'explorerLayout',
-    'explorerMainLayout',
-    'explorerSidebarLayout',
-  };
-
-  static Map<String, Object?> _encoded(Appearance appearance) =>
-      Map<String, Object?>.from(
-        jsonDecode(AppearanceStore.encode(appearance)) as Map,
-      )..remove('version');
-
-  static TransferGroup? _groupOf(String key) =>
-      layoutKeys.contains(key) ? TransferGroup.layouts : TransferGroup.styles;
-
-  /// Texte JSON de [appearance] limité à [groups].
-  static String export(Appearance appearance, Set<TransferGroup> groups) {
-    if (groups.isEmpty) {
-      throw ArgumentError.value(groups, 'groups', 'Aucun groupe à exporter');
-    }
-    final data = {
-      for (final MapEntry(:key, :value) in _encoded(appearance).entries)
-        if (groups.contains(_groupOf(key))) key: value,
-    };
+  static const format = 'super_container_layout.appearance';
+  static TransferGroup _groupOf(String key) => key == 'layouts' ? TransferGroup.layouts : TransferGroup.styles;
+  static String export(Appearance appearance, Set<TransferGroup> groups, {
+    AppearanceCodec codec = const AppearanceCodec(),
+  }) {
+    if (groups.isEmpty) throw ArgumentError.value(groups, 'groups', 'No groups selected.');
+    final data = codec.toJson(appearance)..remove('version');
     return const JsonEncoder.withIndent('  ').convert({
-      'format': format,
-      'version': AppearanceStore.version,
-      'groups': [
-        for (final group in TransferGroup.values)
-          if (groups.contains(group)) group.name,
-      ],
-      'data': data,
+      'format': codec.format, 'version': codec.schemaVersion,
+      'groups': [for (final group in TransferGroup.values) if (groups.contains(group)) group.name],
+      'data': {for (final entry in data.entries) if (groups.contains(_groupOf(entry.key))) entry.key: entry.value},
     });
   }
-
-  static Map<String, Object?> _data(String text) {
+  static ({Map<String, Object?> data, int version}) _document(String text, AppearanceCodec codec) {
     final Object? json;
-    try {
-      json = jsonDecode(text);
-    } on FormatException {
-      throw const FormatException('Le texte n’est pas un JSON valide.');
-    }
-    if (json is! Map) {
-      throw const FormatException('Le fichier n’est pas un export SurfFile.');
-    }
+    try { json = jsonDecode(text); }
+    on FormatException { throw const FormatException('Le texte n’est pas un JSON valide.'); }
+    if (json is! Map<String, dynamic>) throw const FormatException('Invalid appearance export.');
+    final version = json['version'];
+    if (version is! int) throw const FormatException('Invalid export version.');
     if (json.containsKey('format')) {
-      if (json['format'] != format) {
-        throw const FormatException('Le fichier n’est pas un export SurfFile.');
+      if (json['format'] != codec.format || json['data'] is! Map<String, dynamic>) {
+        throw const FormatException('Invalid appearance export format or data.');
       }
-      if (json['version'] != AppearanceStore.version) {
-        throw const FormatException('Version d’export non prise en charge.');
+      final groups = json['groups'];
+      if (groups is! List || groups.isEmpty || groups.any((v) => !TransferGroup.values.any((g) => g.name == v))) {
+        throw const FormatException('Invalid export groups.');
       }
-      final data = json['data'];
-      if (data is! Map) {
-        throw const FormatException('Le fichier ne contient aucune donnée.');
-      }
-      return Map<String, Object?>.from(data);
+      return (data: codec.normalizeTransfer(json['data'] as Map<String, dynamic>, version), version: version);
     }
-    if (json['version'] == AppearanceStore.version) {
-      return Map<String, Object?>.from(json)..remove('version');
-    }
-    throw const FormatException('Le fichier n’est pas un export SurfFile.');
+    return (data: codec.normalizeTransfer({...json}..remove('version'), version), version: version);
   }
-
-  /// Groupes présents dans [text] ; une [FormatException] décrit un export
-  /// invalide ou sans données.
-  static Set<TransferGroup> groupsIn(String text) {
-    final data = _data(text);
-    final known = _encoded(const Appearance()).keys.toSet();
-    final groups = {
-      for (final key in data.keys)
-        if (known.contains(key)) _groupOf(key)!,
-    };
-    if (groups.isEmpty) {
-      throw const FormatException(
-        'Aucun style ni aucune disposition dans ce fichier.',
-      );
-    }
+  static Set<TransferGroup> groupsIn(String text, {
+    AppearanceCodec codec = const AppearanceCodec(),
+  }) {
+    final data = _document(text, codec).data;
+    final known = codec.toJson(codec.defaults).keys.toSet()..remove('version');
+    final groups = {for (final key in data.keys) if (known.contains(key)) _groupOf(key)};
+    if (groups.isEmpty) throw const FormatException('No styles or layouts found.');
     return groups;
   }
-
-  /// [current] dont les groupes [groups] sont remplacés par ceux de [text].
-  /// Le résultat est entièrement validé : une valeur incorrecte lève une
-  /// [FormatException] et ne modifie rien.
-  static Appearance import(
-    Appearance current,
-    String text,
-    Set<TransferGroup> groups,
-  ) {
-    final available = groupsIn(text);
-    final selected = groups.intersection(available);
-    if (selected.isEmpty) {
-      throw const FormatException('Rien à importer pour cette sélection.');
-    }
-    final merged = _encoded(current);
-    for (final MapEntry(:key, :value) in _data(text).entries) {
-      if (merged.containsKey(key) && selected.contains(_groupOf(key))) {
-        merged[key] = value;
+  static Appearance import(Appearance current, String text, Set<TransferGroup> groups, {
+    AppearanceCodec codec = const AppearanceCodec(),
+  }) {
+    final selected = groups.intersection(groupsIn(text, codec: codec));
+    if (selected.isEmpty) throw const FormatException('No selected groups to import.');
+    final merged = codec.toJson(current);
+    final document = _document(text, codec);
+    for (final entry in document.data.entries) {
+      if (merged.containsKey(entry.key) && selected.contains(_groupOf(entry.key))) {
+        merged[entry.key] = codec.mergeTransferValue(entry.key, merged[entry.key], entry.value, document.version);
       }
     }
-    return AppearanceStore.decode(
-      jsonEncode({'version': AppearanceStore.version, ...merged}),
-    );
+    return codec.decode(jsonEncode(merged));
   }
 }

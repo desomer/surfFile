@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
 
@@ -11,7 +11,7 @@ void main() {
           (tester) async {
         await tester.binding.setSurfaceSize(Size(width, 400));
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        final controller = ValueNotifier(const Appearance());
+        final controller = ValueNotifier(Appearance());
         addTearDown(controller.dispose);
         final actions = <String>[];
         String? query;

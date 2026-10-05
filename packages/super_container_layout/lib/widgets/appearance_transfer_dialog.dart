@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../services/appearance_transfer.dart';
+import '../services/appearance_store.dart';
 import '../theme/appearance.dart';
 
 /// Boîte d'export et d'import du style et de la disposition.
@@ -13,16 +14,19 @@ import '../theme/appearance.dart';
 /// ou lu depuis un fichier), propose les groupes qu'il contient et applique
 /// ceux qui sont cochés.
 class AppearanceTransferDialog extends StatefulWidget {
-  const AppearanceTransferDialog({required this.controller, super.key});
+  const AppearanceTransferDialog({required this.controller, this.codec = const AppearanceCodec(), super.key});
 
   final ValueNotifier<Appearance> controller;
+  final AppearanceCodec codec;
 
   static Future<void> show(
     BuildContext context,
-    ValueNotifier<Appearance> controller,
+    ValueNotifier<Appearance> controller, {
+    AppearanceCodec? codec,
+    }
   ) => showDialog<void>(
     context: context,
-    builder: (_) => AppearanceTransferDialog(controller: controller),
+    builder: (_) => AppearanceTransferDialog(controller: controller, codec: codec ?? AppearanceServicesScope.codecOf(context)),
   );
 
   @override
@@ -48,7 +52,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         Platform.environment['USERPROFILE'] ??
         Platform.environment['HOME'] ??
         Directory.current.path;
-    return '$home${Platform.pathSeparator}surf_file_style.json';
+    return '$home${Platform.pathSeparator}appearance.json';
   }
 
   @override
@@ -67,7 +71,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
 
   void _refreshExport() => _exportText.text = _exportGroups.isEmpty
       ? ''
-      : AppearanceTransfer.export(widget.controller.value, _exportGroups);
+      : AppearanceTransfer.export(widget.controller.value, _exportGroups, codec: widget.codec);
 
   /// Relit le texte à importer : groupes présents, ou erreur à afficher.
   void _refreshImport() {
@@ -81,7 +85,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         return;
       }
       try {
-        _available = AppearanceTransfer.groupsIn(text);
+        _available = AppearanceTransfer.groupsIn(text, codec: widget.codec);
         _importGroups = {..._available};
         _importError = null;
       } on FormatException catch (error) {
@@ -140,6 +144,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         widget.controller.value,
         _importText.text,
         _importGroups,
+        codec: widget.codec,
       );
       Navigator.of(context).pop();
     } on FormatException catch (error) {
@@ -244,7 +249,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         style: const TextStyle(fontFamily: 'Consolas', fontSize: 12),
         decoration: InputDecoration(
           border: const OutlineInputBorder(),
-          hintText: 'Collez ici un export SurfFile',
+          hintText: 'Collez ici un export d’apparence',
           errorText: _importError,
           errorMaxLines: 3,
         ),

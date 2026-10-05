@@ -42,6 +42,63 @@ void main() {
     );
   });
 
+  testWidgets('factory picker keeps metadata and uses layout ancestor scope', (
+    tester,
+  ) async {
+    final registry = Registry();
+    registry.registerComponent(
+      'scoped',
+      RegisteredComponent(
+        label: 'Scoped component',
+        slotId: 'historical-slot',
+        sizing: SlotSizing.intrinsic,
+        isAvailable: (context) =>
+            context.dependOnInheritedWidgetOfExactType<_TestComponentScope>() != null,
+        builder: (context) {
+          expect(
+            context.dependOnInheritedWidgetOfExactType<_TestComponentScope>(),
+            isNotNull,
+          );
+          return const Text('Factory content');
+        },
+      ),
+    );
+    registry.registerComponent(
+      'unavailable',
+      RegisteredComponent(
+        label: 'Unavailable component',
+        isAvailable: (_) => false,
+        builder: (_) => const Text('Not built'),
+      ),
+    );
+    final changes = <SuperLayoutConfig>[];
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    await tester.pumpWidget(
+      SuperApp(
+        registry: registry,
+        home: _TestComponentScope(
+          child: StyleEditScope(
+            controller: editMode,
+            child: SuperLayout(onChanged: changes.add),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-center')));
+    await tester.pumpAndSettle();
+    expect(find.text('Scoped component'), findsOneWidget);
+    expect(find.text('Unavailable component'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-slot-historical-slot')));
+    await tester.pumpAndSettle();
+    expect(changes.single.placementsOf(SuperLayoutZone.center), ['historical-slot']);
+    expect(find.text('Factory content'), findsOneWidget);
+    final stack = tester.widget<SlotStack>(find.byType(SlotStack));
+    expect(stack.slots.single.sizing, SlotSizing.intrinsic);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('layout and container descendants subscribe to the SuperApp', (
     tester,
   ) async {
@@ -238,4 +295,11 @@ void main() {
     expect(find.text('Supplied content'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _TestComponentScope extends InheritedWidget {
+  const _TestComponentScope({required super.child});
+
+  @override
+  bool updateShouldNotify(_TestComponentScope oldWidget) => false;
 }

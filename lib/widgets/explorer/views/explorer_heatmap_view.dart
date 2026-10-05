@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart'
     show kDoubleTapTimeout, kPrimaryMouseButton;
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 
 import '../../../models/explorer_entry.dart';
 import '../../../models/treemap_layout.dart';

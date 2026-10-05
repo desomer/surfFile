@@ -267,7 +267,7 @@ class SuperContainerState extends State<SuperContainer> {
                           borderColor: style.borderColor ?? border,
                           elevation: style.elevation,
                           shadowOpacity: style.shadowOpacity,
-                          opacity: widget.slot == AppearanceSlot.background
+                          opacity: widget.slot?.role == AppearanceSurfaceRole.applicationBackground
                               ? appearance!.value.backgroundOpacity
                               : 1,
                           neon: style.neon ?? const NeonStyle(),
@@ -317,7 +317,7 @@ class SuperContainerState extends State<SuperContainer> {
                               update(style.copyWith(resetColor: true)),
                           onReset: () => _reset(slot: slot),
                           extraSections: [
-                            if (widget.slot == AppearanceSlot.background)
+                            if (widget.slot?.role == AppearanceSurfaceRole.applicationBackground)
                               StyleEditorSection(
                                 id: 'window',
                                 title: 'Fenêtre',
@@ -511,7 +511,7 @@ class SuperContainerState extends State<SuperContainer> {
       _cachedDepth = _depth;
       final painter = _DashedOutlinePainter(
         color: AppearanceScope.of(context).accent.withValues(alpha: .8),
-        radius: widget.slot == AppearanceSlot.background ? 0 : style.maxRadius,
+        radius: widget.slot?.role == AppearanceSurfaceRole.applicationBackground ? 0 : style.maxRadius,
       );
       content = MouseRegion(
         onEnter: (_) => _setHovered(true),

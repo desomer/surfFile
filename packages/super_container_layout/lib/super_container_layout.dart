@@ -9,8 +9,6 @@ export 'theme/appearance_slot.dart';
 export 'theme/container_fill.dart';
 export 'theme/container_style.dart';
 export 'theme/design_system.dart';
-export 'theme/disk_gauge_style.dart';
-export 'theme/folder_transition.dart';
 export 'theme/interaction_effect.dart';
 export 'theme/neon_style.dart';
 export 'theme/style_extras.dart';

@@ -50,27 +50,13 @@ void main() {
   test('resetLayouts restores every layout and keeps the other settings', () {
     final moved = Appearance(
       accent: const Color(0xFF00796B),
-      explorerLayout: Appearance.defaultExplorerLayout.withSwap(
-        SuperLayoutZone.west,
-      ),
-      explorerMainLayout: Appearance.defaultExplorerMainLayout.withSwap(
-        SuperLayoutZone.north,
-      ),
-      explorerSidebarLayout: Appearance.defaultExplorerSidebarLayout.withSwap(
-        SuperLayoutZone.south,
-      ),
+      layouts: {
+        'editor': const SuperLayoutConfig().withSwap(SuperLayoutZone.west),
+        'preview': const SuperLayoutConfig().withSwap(SuperLayoutZone.north),
+      },
     );
     final reset = moved.resetLayouts();
-    expect(reset.explorerLayout, Appearance.defaultExplorerLayout);
-    expect(reset.explorerMainLayout, Appearance.defaultExplorerMainLayout);
-    expect(
-      reset.explorerSidebarLayout,
-      Appearance.defaultExplorerSidebarLayout,
-    );
-    expect(
-      reset.explorerSidebarLayout,
-      Appearance.defaultExplorerSidebarLayout,
-    );
+    expect(reset.layouts, isEmpty);
     expect(reset.accent, moved.accent);
   });
 }

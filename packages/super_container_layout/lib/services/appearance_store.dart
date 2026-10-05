@@ -1,252 +1,121 @@
 import 'dart:convert';
-import 'dart:io';
-
-import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:shared_preferences/shared_preferences.dart';
-
 import '../models/super_layout_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
-import '../theme/disk_gauge_style.dart';
-import '../theme/folder_transition.dart';
+
+/// Override this codec to retain application-owned preferences and migrations.
+class AppearanceCodec {
+  const AppearanceCodec();
+  String get format => 'super_container_layout.appearance';
+  int get schemaVersion => 1;
+  Set<String> get additionalKeys => const {};
+  Appearance get defaults => Appearance();
+  bool needsMigration(String text) => false;
+  String encode(Appearance appearance) => jsonEncode(toJson(appearance));
+  Appearance decode(String text) {
+    final json = jsonDecode(text);
+    if (json is! Map<String, dynamic>) throw const FormatException('Invalid appearance document.');
+    return fromJson(json);
+  }
+  Map<String, Object?> toJson(Appearance a) => {
+    'version': schemaVersion,
+    'mode': a.mode.name, 'accent': a.accent.toARGB32(),
+    'backgroundOpacity': a.backgroundOpacity, 'windowOpacity': a.windowOpacity,
+    'windowEffect': a.windowEffect.name,
+    'styles': {for (final entry in a.styles.entries) entry.key: entry.value.toJson()},
+    'layouts': {for (final entry in a.layouts.entries) entry.key: entry.value.toJson()},
+  };
+  Appearance fromJson(Map<String, dynamic> json) {
+    if (json['version'] != schemaVersion) throw const FormatException('Unsupported appearance version.');
+    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', ...additionalKeys};
+    if (json.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown appearance preference.');
+    double number(String key, double fallback, double min, double max) {
+      final value = json[key] ?? fallback;
+      if (value is! num || !value.isFinite || value < min || value > max) throw FormatException('Invalid "$key".');
+      return value.toDouble();
+    }
+    final mode = ThemeMode.values.where((v) => v.name == json['mode']).firstOrNull;
+    final effect = WindowEffect.values.where((v) => v.name == (json['windowEffect'] ?? 'transparent')).firstOrNull;
+    final accent = json['accent'] ?? 0xFF5268D9;
+    if (mode == null || effect == null || accent is! int || accent < 0 || accent > 0xFFFFFFFF) {
+      throw const FormatException('Invalid theme or window preferences.');
+    }
+    Map<String, dynamic> entries(String key) {
+      final value = json[key];
+      if (value is! Map<String, dynamic> || value.keys.any((id) => id.trim().isEmpty) ||
+          value.values.any((v) => v is! Map<String, dynamic>)) {
+        throw FormatException('Invalid "$key" map.');
+      }
+      return value;
+    }
+    return Appearance(
+      mode: mode, accent: Color(accent),
+      windowEffect: effect,
+      backgroundOpacity: number('backgroundOpacity', 1, 0, 1),
+      windowOpacity: number('windowOpacity', 1, .2, 1),
+      styles: {for (final entry in entries('styles').entries) entry.key: ContainerStyle.fromJson(entry.value)},
+      layouts: {for (final entry in entries('layouts').entries) entry.key: SuperLayoutConfig.fromJson(entry.value)},
+    );
+  }
+  Map<String, Object?> normalizeTransfer(Map<String, dynamic> data, int version) {
+    if (version != schemaVersion) throw const FormatException('Unsupported export version.');
+    final known = toJson(defaults).keys.toSet()..remove('version');
+    if (data.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown export preference.');
+    return Map<String, Object?>.from(data);
+  }
+  Object? mergeTransferValue(String key, Object? current, Object? imported, int sourceVersion) => imported;
+}
 
 class AppearanceStore {
-  AppearanceStore({this.key = 'appearance.v1'});
+  AppearanceStore({this.key = 'super_container_layout.appearance', this.codec = const AppearanceCodec()});
   final String key;
-  static const version = 2;
-
+  final AppearanceCodec codec;
+  static const version = 1;
+  static String encode(Appearance appearance) => const AppearanceCodec().encode(appearance);
+  static Appearance decode(String text) => const AppearanceCodec().decode(text);
   Future<Appearance> load() async {
     final preferences = await SharedPreferences.getInstance();
     final stored = preferences.get(key);
-    if (stored == null) return const Appearance();
-    if (stored is! String) {
-      throw const FormatException('Le paramétrage enregistré est invalide.');
-    }
-    if (isOutdated(stored)) {
-      await preferences.remove(key);
-      return const Appearance();
-    }
-    return decode(stored);
+    if (stored == null) return codec.defaults;
+    if (stored is! String) throw const FormatException('Invalid stored appearance.');
+    final result = codec.decode(stored);
+    if (codec.needsMigration(stored)) await save(result);
+    return result;
   }
 
   Future<void> save(Appearance appearance) async {
+    final encoded = codec.encode(appearance);
+    codec.decode(encoded);
     final preferences = await SharedPreferences.getInstance();
-    if (!await preferences.setString(key, encode(appearance))) {
-      throw StateError('L’enregistrement des paramètres a échoué.');
-    }
-  }
-
-  /// Older formats are discarded rather than migrated.
-  static bool isOutdated(String stored) {
-    try {
-      final json = jsonDecode(stored);
-      return json is Map && json['version'] is int && json['version'] < version;
-    } on FormatException {
-      return false;
-    }
-  }
-
-  static String encode(Appearance a) => jsonEncode({
-    'version': version,
-    'mode': a.mode.name,
-    'accent': a.accent.toARGB32(),
-    'backgroundOpacity': a.backgroundOpacity,
-    'windowOpacity': a.windowOpacity,
-    'windowEffect': a.windowEffect.name,
-    'cardStyle': a.cardStyle.toJson(),
-    'backgroundStyle': a.backgroundStyle.toJson(),
-    'sidebarStyle': a.sidebarStyle.toJson(),
-    'pathBarStyle': a.pathBarStyle.toJson(),
-    'explorerLayout': a.explorerLayout.toJson(),
-    'explorerMainLayout': a.explorerMainLayout.toJson(),
-    'explorerSidebarLayout': a.explorerSidebarLayout.toJson(),
-    'explorerViewModeBarStyle': a.explorerViewModeBarStyle.toJson(),
-    'diskPanelStyle': a.diskPanelStyle.toJson(),
-    'diskTileStyle': a.diskTileStyle.toJson(),
-    'diskGaugeStyle': a.diskGaugeStyle.toJson(),
-    'selectedDiskTileStyle': a.selectedDiskTileStyle?.toJson(),
-    'selectedCardStyle': a.selectedCardStyle?.toJson(),
-    'selectedFolderStyle': a.selectedFolderStyle?.toJson(),
-    'folderStyle': a.folderStyle?.toJson(),
-    'cardHeight': a.cardHeight,
-    'cardWidth': a.cardWidth,
-    'rowHeight': a.rowHeight,
-    'spacing': a.spacing,
-    'fontSize': a.fontSize,
-    'iconSize': a.iconSize,
-    'folderTransition': a.folderTransition.name,
-    'folderTransitionDuration': a.folderTransitionDuration,
-    'scrollFadeEnabled': a.scrollFadeEnabled,
-    'scrollFadeExtent': a.scrollFadeExtent,
-  });
-
-  static Appearance decode(String stored) {
-    final json = jsonDecode(stored);
-    if (json is! Map<String, dynamic> || json['version'] != version) {
-      throw const FormatException(
-        'Version du paramétrage non prise en charge.',
-      );
-    }
-    double number(String key, double fallback, double min, double max) {
-      final value = json[key] ?? fallback;
-      if (value is! num || !value.isFinite || value < min || value > max) {
-        throw FormatException('Valeur invalide pour "$key".');
-      }
-      return value.toDouble();
-    }
-
-    Color? color(String key) {
-      final value = json[key];
-      if (value == null) return null;
-      if (value is! int || value < 0 || value > 0xFFFFFFFF) {
-        throw FormatException('Couleur invalide pour "$key".');
-      }
-      return Color(value);
-    }
-
-    final mode = switch (json['mode']) {
-      'light' => ThemeMode.light,
-      'dark' => ThemeMode.dark,
-      'system' => ThemeMode.system,
-      _ => throw const FormatException('Thème enregistré invalide.'),
-    };
-    final transition = switch (json['folderTransition']) {
-      null || 'none' => FolderTransition.none,
-      'fade' => FolderTransition.fade,
-      'slide' => FolderTransition.slide,
-      'fullSlide' => FolderTransition.fullSlide,
-      'heroExpand' => FolderTransition.heroExpand,
-      'heroIcon' => FolderTransition.heroIcon,
-      'zoom' => FolderTransition.zoom,
-      _ => throw const FormatException('Animation de dossier invalide.'),
-    };
-    final effectName = json['windowEffect'] ?? WindowEffect.transparent.name;
-    final windowEffect = WindowEffect.values
-        .where((e) => e.name == effectName)
-        .firstOrNull;
-    if (windowEffect == null) {
-      throw const FormatException('Effet de fenêtre invalide.');
-    }
-    final fadeEnabled = json['scrollFadeEnabled'] ?? true;
-    if (fadeEnabled is! bool) {
-      throw const FormatException('Activation du fondu invalide.');
-    }
-    return Appearance(
-      mode: mode,
-      accent: color('accent') ?? const Color(0xFF5268D9),
-      backgroundOpacity: number('backgroundOpacity', 1, 0, 1),
-      windowOpacity: number('windowOpacity', 1, .2, 1),
-      windowEffect: windowEffect,
-      cardStyle: ContainerStyle.fromJson(
-        json['cardStyle'],
-        fallback: Appearance.defaultCardStyle,
-      ),
-      backgroundStyle: ContainerStyle.fromJson(json['backgroundStyle']),
-      sidebarStyle: ContainerStyle.fromJson(json['sidebarStyle']),
-      pathBarStyle: ContainerStyle.fromJson(
-        json['pathBarStyle'],
-        fallback: const ContainerStyle(borderWidth: 1),
-      ),
-
-      explorerLayout: SuperLayoutConfig.fromJson(
-        json['explorerLayout'],
-        fallback: Appearance.defaultExplorerLayout,
-      ),
-      explorerMainLayout: SuperLayoutConfig.fromJson(
-        json['explorerMainLayout'],
-        fallback: Appearance.defaultExplorerMainLayout,
-      ),
-      explorerSidebarLayout: SuperLayoutConfig.fromJson(
-        json['explorerSidebarLayout'],
-        fallback: Appearance.defaultExplorerSidebarLayout,
-      ),
-      explorerViewModeBarStyle: ContainerStyle.fromJson(
-        json['explorerViewModeBarStyle'],
-      ),
-      diskPanelStyle: ContainerStyle.fromJson(json['diskPanelStyle']),
-      diskTileStyle: ContainerStyle.fromJson(
-        json['diskTileStyle'],
-        fallback: Appearance.defaultDiskTileStyle,
-      ),
-      diskGaugeStyle: DiskGaugeStyle.fromJson(json['diskGaugeStyle']),
-      selectedDiskTileStyle: json['selectedDiskTileStyle'] == null
-          ? null
-          : ContainerStyle.fromJson(json['selectedDiskTileStyle']),
-      selectedCardStyle: json['selectedCardStyle'] == null
-          ? null
-          : ContainerStyle.fromJson(json['selectedCardStyle']),
-      folderStyle: json['folderStyle'] == null
-          ? null
-          : ContainerStyle.fromJson(json['folderStyle']),
-      selectedFolderStyle: json['selectedFolderStyle'] == null
-          ? null
-          : ContainerStyle.fromJson(json['selectedFolderStyle']),
-      cardHeight: number('cardHeight', 142, 142, 300),
-      cardWidth: number('cardWidth', 180, 180, 360),
-      rowHeight: number(
-        'rowHeight',
-        48,
-        Appearance.minRowHeight,
-        Appearance.maxRowHeight,
-      ),
-      spacing: number(
-        'spacing',
-        12,
-        Appearance.minSpacing,
-        Appearance.maxSpacing,
-      ),
-      fontSize: number('fontSize', 12, 10, 16),
-      iconSize: number('iconSize', 49, 24, 64),
-      folderTransition: transition,
-      folderTransitionDuration: number(
-        'folderTransitionDuration',
-        220,
-        Appearance.minTransitionDuration,
-        Appearance.maxTransitionDuration,
-      ),
-      scrollFadeEnabled: fadeEnabled,
-      scrollFadeExtent: number(
-        'scrollFadeExtent',
-        28,
-        Appearance.minScrollFadeExtent,
-        Appearance.maxScrollFadeExtent,
-      ),
-    );
+    if (!await preferences.setString(key, encoded)) throw StateError('Appearance save failed.');
   }
 }
 
-class PersistentAppearanceController extends ValueNotifier<Appearance> {
-  PersistentAppearanceController(this.store, this.onSaveError)
-    : super(const Appearance());
+class AppearanceServicesScope extends InheritedWidget {
+  const AppearanceServicesScope({required this.codec, required super.child, super.key});
+  final AppearanceCodec codec;
+  static AppearanceCodec codecOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppearanceServicesScope>()?.codec ?? const AppearanceCodec();
+  @override
+  bool updateShouldNotify(AppearanceServicesScope oldWidget) => codec != oldWidget.codec;
+}
 
+class PersistentAppearanceController extends ValueNotifier<Appearance> {
+  PersistentAppearanceController(this.store, this.onSaveError) : super(store.codec.defaults);
   final AppearanceStore store;
   final void Function(Object error) onSaveError;
   Future<void> _pending = Future.value();
-
   Future<void> get saved => _pending;
-
-  Future<void> restore() async {
-    super.value = await store.load();
-  }
-
+  Future<void> restore() async { super.value = await store.load(); }
   @override
   set value(Appearance appearance) {
     super.value = appearance;
-    // Serialize writes so an older slider value cannot replace a newer one.
     _pending = _pending.then((_) async {
-      try {
-        await store.save(appearance);
-      } on PlatformException catch (error) {
-        onSaveError(error);
-      } on MissingPluginException catch (error) {
-        onSaveError(error);
-      } on StateError catch (error) {
-        onSaveError(error);
-      } on FileSystemException catch (error) {
-        onSaveError(error);
-      }
+      try { await store.save(appearance); }
+      catch (error) { onSaveError(error); }
     });
   }
 }

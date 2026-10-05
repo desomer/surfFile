@@ -2,6 +2,76 @@
 
 Un explorateur de fichiers de bureau Flutter.
 
+## Catalogue des styles
+
+`lib/theme/surffile_appearance_slots.dart` definit les slots de style de SurfFile
+(`SurfFileAppearanceSlots.background`, `sidebar`, cartes, dossiers, disques,
+etc.) et la liste `values`. Le package ne fournit plus ces slots predefinis.
+Les instances du catalogue sont des singletons `static final` ; les widgets
+qui les utilisent ne sont donc pas des expressions `const`.
+Le fond declare le role generique `AppearanceSurfaceRole.applicationBackground`
+au lieu d'etre reconnu par une comparaison a un slot particulier.
+Les fonctions de lecture, ecriture, remise a zero et les variantes selectionnees
+restent disponibles. Le package stocke maintenant les styles et dispositions
+dans des collections immuables indexees par identifiants stables, sans preference
+d'explorateur, de carte, de dossier ou de disque.
+
+### Preferences et migration
+
+`lib/theme/surffile_appearance.dart` definit `SurfFileAppearance` : dimensions,
+polices, transitions, fondu et jauges sont propres a SurfFile. Ses accesseurs
+lisent les styles (`card`, `selectedCard`, `diskTile`, etc.) et les dispositions
+(`explorer`, `explorerMain`, `explorerSidebar`) du modele generique.
+`lib/widgets/dialogs/appearance_settings.dart` et `appearance_style_section.dart`
+composent les controles metier avec les editeurs generiques du package.
+
+`SurfFileApp` injecte `SurfFileAppearanceStore` et `SurfFileAppearanceCodec` dans
+`SuperApp`. La cle existante **`appearance.v1` est conservee**. Les documents
+historiques plats versions 1 et 2 sont valides, puis migres vers la version 3 :
+champs de theme/fenetre, `styles`, `layouts`, et preferences `application`.
+Aucune preference valide n'est remise a zero ; les variantes nulles conservent
+leur heritage. Une erreur de lecture ou de validation est affichee et le
+document invalide reste intact jusqu'a une reinitialisation explicite.
+
+L'import/export utilise le meme codec : les exports v3, les anciens exports
+`surf_file.appearance` v2 et les documents bruts sont acceptes. Les groupes
+Styles (y compris les preferences metier) et Dispositions restent independants.
+Un import historique partiel ne modifie que les valeurs fournies. Les
+identifiants de styles/dispositions generiques supplementaires sont conserves
+au prochain enregistrement.
+
+## Registre des composants
+
+`SurfFileApp` cree le registre une seule fois et appelle
+`registerExplorerComponents`. Le catalogue dans
+`lib/widgets/explorer/explorer_components.dart` contient les composants de la
+page (`explorer_sidebar`, `explorer_main`), les barres (`explorer_toolbar`,
+`explorer_breadcrumbs`, `explorer_view_mode_bar`, `explorer_filter_bar`,
+`explorer_sort_header`, `explorer_split_indicator`), le contenu
+(`explorer_content`) et les blocs du panneau gauche
+(`explorer_sidebar_places`, `explorer_sidebar_disks`).
+
+Chaque `ExplorerPane` fournit un `ExplorerScope` pour la navigation et un
+`ExplorerPaneScope` avec un instantane type (`ExplorerPaneData`) et ses commandes
+(`ExplorerPaneActions`). Le panneau fournit un `ExplorerSidebarScope` equivalent.
+Les fabriques du registre construisent directement les composants depuis ces
+donnees, sans callbacks `WidgetBuilder` fournis par la page ; les deux volets
+restent independants. Tous les identifiants historiques de placement sont conserves pour
+restaurer les dispositions existantes. Le bouton « + » propose ces composants
+uniquement sous un contexte explorateur, sans doublonner les slots deja fournis
+au layout. Un `ExplorerPane` utilise sans registre d'application cree un
+catalogue local equivalent ; un registre fourni doit enregistrer tout le catalogue.
+`ExplorerComponentScope` fournit uniquement la disponibilite et la visibilite
+locales a chaque disposition. La creation des slots passe par le registre ;
+les callbacks et la logique de navigation restent dans leurs proprietaires.
+Le selecteur est limite aux composants de la disposition courante pour eviter
+les compositions recursives. Les vues liste/grille, colonnes et carte thermique
+restent des variantes du composant `explorer_content`, avec les etats de chargement,
+d'erreur et de dossier vide, les transitions et les apercus texte/image/video.
+Les blocs espace/favoris et disques sont des composants presentationnels du panneau.
+Les cles des apercus et du contenu restent detenues par le volet ; les dispositions
+continuent d'etre sauvegardees par le controleur d'apparence.
+
 ## Installateur Windows (Inno Setup)
 
 Prerequis : Flutter 3.44.0 ou plus recent (Dart 3.12.0 ou plus recent),
@@ -279,15 +349,15 @@ Sud). Un coin n'existe que si ses deux voisins existent. La structure remonte pa
 `SuperContainer`, `SuperLayout`, leurs éditeurs et leurs modèles sont regroupés
 dans le package Flutter autonome [`super_container_layout`](packages/super_container_layout).
 Le point d'entrée est `package:super_container_layout/super_container_layout.dart`.
-Le gestionnaire Windows du canal `surf_file/window_transparency` est fourni par
+Le gestionnaire Windows du canal `super_container_layout/window_transparency` est fourni par
 `packages/super_container_layout/windows/window_transparency.cpp`. Les runners
 de SurfFile et de l'application autonome du package compilent cette source et
 appellent `RegisterWindowTransparency` apres l'enregistrement des plugins.
 Toute modification de ce code natif necessite une recompilation et un
 redemarrage complet de l'application Windows ; le hot reload ne suffit pas.
 `SuperApp` y fournit la coquille `MaterialApp` liée aux contrôleurs d'apparence
-et de mode édition. Les anciens imports `package:surf_file/...` restent
-disponibles comme réexports.
+et de mode édition. Les preferences metier et leur migration appartiennent
+uniquement a SurfFile ; les widgets generiques restent utilisables seuls.
 
 Le contenu d'une page est fait de **slots** : une sous-classe de
 `SlotImplementation` (`lib/widgets/slot_implementation.dart`, ou `BuilderSlot`
@@ -300,7 +370,13 @@ En mode edition, chaque slot affiche une etiquette (nom, zone et rang) : la
 survoler surligne le slot, la glisser sur un autre slot le range avant ou apres
 lui, la glisser sur une zone le range en dernier. Le nom d'une zone se survole
 et se glisse de la meme facon ; hors du centre, il surligne aussi le centre qui recevra l'echange. Survoler ou glisser une etiquette (slot ou zone) agrandit les etiquettes des slots de sa zone et les noms de toutes les zones. Un clic sur le nom d'une zone la selectionne (cadre epais) ; une disposition imbriquee dans un slot n'affiche ses etiquettes que si la zone qui la contient est selectionnee, ce qui evite de superposer les etiquettes de toutes les dispositions. Un second clic deselectionne. La banniere du mode edition affiche le chemin des dispositions et des zones selectionnees (Page > Centre > Explorateur > Nord), avec le nom court name de chaque SuperLayout. Chaque niveau du chemin est cliquable : un clic sur une zone la deselectionne (comme un clic sur son nom) avec tous les niveaux plus profonds ; un clic sur une disposition ramene la selection a son niveau. Les placements sont sauvegardes avec la
-disposition (`explorerLayout`, `explorerMainLayout`, `explorerSidebarLayout`).
+disposition, dans la map `layouts` de l'apparence (ids `explorer`, `explorerMain`,
+`explorerSidebar`). L'apparence SurfFile n'expose aucun accesseur type : styles et
+dispositions se lisent par id (`style('card')`, `layout('explorer')`,
+`styles['selectedCard']`) et se modifient avec `withStyle`/`withLayout` (`null`
+supprime une surcharge ; un id par defaut retombe sur `defaultStyles`/
+`defaultLayouts`). Les variantes selectionnees heritent de leur style standard
+via `variantStyle` et le catalogue `SurfFileAppearanceSlots`.
 
 Le panneau gauche est lui-meme un `SuperLayout` a deux zones : l'espace perso et
 les favoris au centre (slot `sidebar-places`), les disques au sud avec une

@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 
 class WindowTransparency {
-  static const channel = MethodChannel('surf_file/window_transparency');
+  static const channel = MethodChannel('super_container_layout/window_transparency');
   static Future<void>? _initialization;
 
   static Future<void> apply(

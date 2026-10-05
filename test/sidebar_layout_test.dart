@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/services/disk_space.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
 void main() {
@@ -28,9 +28,9 @@ void main() {
   Future<void> pump(
     WidgetTester tester, {
     required double height,
-    Appearance appearance = const Appearance(),
+    Appearance? appearance,
   }) async {
-    final controller = ValueNotifier(appearance);
+    final controller = ValueNotifier(appearance ?? Appearance());
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       AppearanceScope(
@@ -87,9 +87,11 @@ void main() {
       tester,
       height: 700,
       appearance: Appearance(
-        explorerSidebarLayout: Appearance.defaultExplorerSidebarLayout.withSwap(
-          SuperLayoutZone.south,
-        ),
+        layouts: {
+          'explorerSidebar': Appearance.defaultExplorerSidebarLayout.withSwap(
+            SuperLayoutZone.south,
+          ),
+        },
       ),
     );
     final layout = rect(tester, 'sidebar-layout');

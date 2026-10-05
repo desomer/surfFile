@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/disk_gauge_style.dart';
+import 'package:surf_file/theme/disk_gauge_style.dart';
 
 
 /// Jauge d'occupation d'un disque : anneau, compteur ou barre, avec dégradé,

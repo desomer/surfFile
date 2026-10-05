@@ -1,8 +1,11 @@
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+
+import '../../../theme/surffile_appearance_slots.dart';
+
 import 'package:super_container_layout/widgets/interaction_effect_box.dart';
+import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/widgets/neon_surface.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
@@ -185,48 +188,54 @@ class ExplorerEntriesView extends StatelessWidget {
       itemBuilder: (context, index) {
         final entry = entries[index];
         final selected = selection.contains(entry.entity.path);
-        final color = appearance.cardBackground(context, selected: selected);
+        final cardStyle = appearance.style('card');
+        final style = SurfFileAppearanceSlots.selectedCard.read(appearance);
+        final color = Appearance.cardColor(
+          context,
+          selected ? style : cardStyle,
+          selected: selected,
+        );
         final foreground = Appearance.foreground(color);
-        final style = appearance.effectiveSelectedCardStyle;
-        final radius = selected ? style.radius : appearance.cardStyle.radius;
+        final radius = selected ? style.radius : cardStyle.radius;
         final borderWidth = selected
             ? style.borderWidth
-            : appearance.cardStyle.borderWidth;
+            : cardStyle.borderWidth;
         final gradient = selected
             ? style.fill.gradient()
-            : appearance.cardStyle.fill.gradient();
+            : cardStyle.fill.gradient();
         return ExternalDropDestination(
           path: entry.isDirectory ? entry.entity.path : null,
           child: _EntryBounds(
             key: ValueKey(entry.entity.path),
             builder: (cardKey, iconKey) => SuperContainer(
               slot: selected
-                  ? AppearanceSlot.selectedCard
-                  : AppearanceSlot.card,
+                  ? SurfFileAppearanceSlots.selectedCard
+                  : SurfFileAppearanceSlots.card,
               decorate: false,
               child: InteractionEffectBox(
-                effect:
-                    (selected ? style : appearance.cardStyle).interactionEffect,
+                effect: (selected ? style : cardStyle).interactionEffect,
                 ownsHover: true,
-                hover: (selected ? style : appearance.cardStyle).hoverEffect,
-                hoverColor: (selected ? style : appearance.cardStyle).hoverBase(
+                hover: (selected ? style : cardStyle).hoverEffect,
+                hoverColor: (selected ? style : cardStyle).hoverBase(
                   appearance.accent,
                 ),
                 radius: radius,
                 builder: (context, boost) => NeonSurface(
                   key: cardKey,
-                  style: selected ? style.neon! : appearance.cardNeon,
+                  style: selected
+                      ? style.neon!
+                      : cardStyle.neon ?? const NeonStyle(),
                   accent: appearance.accent,
                   radius: radius,
                   child: Material(
                     color: gradient != null ? Colors.transparent : color,
                     elevation:
-                        (appearance.cardElevation(selected: selected) + boost)
+                        ((selected ? style : cardStyle).elevation + boost)
                             .clamp(0.0, double.infinity),
                     shadowColor: Colors.black.withValues(
                       alpha: selected
                           ? style.shadowOpacity
-                          : appearance.cardStyle.shadowOpacity,
+                          : cardStyle.shadowOpacity,
                     ),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(radius),
@@ -234,7 +243,7 @@ class ExplorerEntriesView extends StatelessWidget {
                         color: selected
                             ? style.borderColor ??
                                   Theme.of(context).colorScheme.primary
-                            : appearance.cardStyle.borderColor ??
+                            : cardStyle.borderColor ??
                                   Theme.of(context).colorScheme.outlineVariant,
                         width: borderWidth,
                         style: borderWidth == 0
@@ -276,9 +285,7 @@ class ExplorerEntriesView extends StatelessWidget {
                             children: [
                               Padding(
                                 padding: EdgeInsets.all(
-                                  selected
-                                      ? style.padding
-                                      : appearance.cardStyle.padding,
+                                  selected ? style.padding : cardStyle.padding,
                                 ),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -394,24 +401,23 @@ class _EntryRowState extends State<_EntryRow> {
     final onOpen = widget.onOpen;
     final onContextMenu = widget.onContextMenu;
     final onOpenWithBounds = widget.onOpenWithBounds;
+    final cardStyle = appearance.style('card');
+    final rowStyle = selected
+        ? SurfFileAppearanceSlots.selectedCard.read(appearance)
+        : cardStyle;
     final color =
-        appearance.cardStyle.color != null ||
-            appearance.cardStyle.fill.gradient() != null ||
-            selected
-        ? appearance.cardBackground(context, selected: selected)
+        cardStyle.color != null || cardStyle.fill.gradient() != null || selected
+        ? Appearance.cardColor(context, rowStyle, selected: selected)
         : Theme.of(context).colorScheme.surface;
     final foreground = Appearance.foreground(color);
-    final radius = selected
-        ? appearance.effectiveSelectedCardStyle.radius
-        : appearance.cardStyle.radius;
-    final rowStyle = selected
-        ? appearance.effectiveSelectedCardStyle
-        : appearance.cardStyle;
+    final radius = rowStyle.radius;
     return Padding(
       key: cardKey,
       padding: EdgeInsets.only(bottom: appearance.spacing / 6),
       child: SuperContainer(
-        slot: selected ? AppearanceSlot.selectedCard : AppearanceSlot.card,
+        slot: selected
+            ? SurfFileAppearanceSlots.selectedCard
+            : SurfFileAppearanceSlots.card,
         decorate: false,
         child: InteractionEffectBox(
           effect: rowStyle.interactionEffect,

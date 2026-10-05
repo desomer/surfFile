@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import '../../../theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 import '../../../services/favorites.dart';
-import 'package:super_container_layout/theme/explorer_colors.dart';
+import 'package:surf_file/theme/explorer_colors.dart';
 
 class ExplorerBreadcrumbs extends StatelessWidget {
   const ExplorerBreadcrumbs({
@@ -25,7 +25,7 @@ class ExplorerBreadcrumbs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = AppearanceScope.of(context).pathBarStyle;
+    final style = AppearanceScope.of(context).style('pathBar');
     final colors = Theme.of(context).colorScheme;
     final foreground = style.foreground ?? colors.onSurfaceVariant;
     final normalizedPath = path.replaceAll('\\', '/');
@@ -51,7 +51,7 @@ class ExplorerBreadcrumbs extends StatelessWidget {
           style.outerMargin.vertical,
       child: SuperContainer(
         key: const ValueKey('path-bar-surface'),
-        slot: AppearanceSlot.pathBar,
+        slot: SurfFileAppearanceSlots.pathBar,
         horizontalBorder: true,
         fallbackColor: explorerColor(
           context,

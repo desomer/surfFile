@@ -8,12 +8,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_location.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/services/appearance_store.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:super_container_layout/widgets/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
@@ -38,32 +39,32 @@ void main() {
     'selection styles persist, validate and reset to current defaults',
     () async {
       SharedPreferences.setMockInitialValues({});
-      const appearance = Appearance(
-        selectedCardStyle: custom,
-        selectedFolderStyle: custom,
-        cardStyle: ContainerStyle(neon: NeonStyle(enabled: true)),
+      final appearance = Appearance(
+        styles: {
+          'selectedCard': custom,
+          'selectedFolder': custom,
+          'card': ContainerStyle(neon: NeonStyle(enabled: true)),
+        },
       );
       await AppearanceStore().save(appearance);
       final saved = await AppearanceStore().load();
-      expect(saved.selectedCardStyle!.toJson(), custom.toJson());
-      expect(saved.selectedFolderStyle!.toJson(), custom.toJson());
-      expect(saved.cardNeon.enabled, isTrue);
-      final changed = appearance.copyWith(
-        selectedCardStyle: custom.copyWith(elevation: 11),
-        selectedFolderStyle: custom.copyWith(elevation: 12),
-      );
-      expect(changed.cardElevation(selected: true), 11);
-      expect(changed.effectiveSelectedFolderStyle.elevation, 12);
-      expect(changed.selectedCardStyle!.fill.type, FillType.linear);
-      final reset = changed.copyWith(
-        resetSelectedCardStyle: true,
-        resetSelectedFolderStyle: true,
-      );
-      expect(reset.selectedCardStyle, isNull);
-      expect(reset.selectedFolderStyle, isNull);
-      expect(reset.cardNeon.enabled, isTrue);
-      await AppearanceStore().save(const Appearance());
-      expect((await AppearanceStore().load()).selectedCardStyle, isNull);
+      expect(saved.styles['selectedCard']!.toJson(), custom.toJson());
+      expect(saved.styles['selectedFolder']!.toJson(), custom.toJson());
+      expect((saved.style('card').neon ?? const NeonStyle()).enabled, isTrue);
+      final changed = appearance
+          .withStyle('selectedCard', custom.copyWith(elevation: 11))
+          .withStyle('selectedFolder', custom.copyWith(elevation: 12));
+      expect(SurfFileAppearanceSlots.selectedCard.read(changed).elevation, 11);
+      expect(SurfFileAppearanceSlots.selectedFolder.read(changed).elevation, 12);
+      expect(changed.styles['selectedCard']!.fill.type, FillType.linear);
+      final reset = changed
+          .withStyle('selectedCard', null)
+          .withStyle('selectedFolder', null);
+      expect(reset.styles['selectedCard'], isNull);
+      expect(reset.styles['selectedFolder'], isNull);
+      expect((reset.style('card').neon ?? const NeonStyle()).enabled, isTrue);
+      await AppearanceStore().save(Appearance());
+      expect((await AppearanceStore().load()).styles['selectedCard'], isNull);
       for (final field in ['selectedCardStyle', 'selectedFolderStyle']) {
         for (final invalid in [
           'bad',
@@ -90,9 +91,11 @@ void main() {
       tester,
     ) async {
       final controller = ValueNotifier(
-        const Appearance(
-          selectedCardStyle: custom,
-          cardStyle: ContainerStyle(neon: NeonStyle(enabled: true)),
+        Appearance(
+          styles: {
+            'selectedCard': custom,
+            'card': ContainerStyle(neon: NeonStyle(enabled: true)),
+          },
         ),
       );
       addTearDown(controller.dispose);
@@ -209,21 +212,21 @@ void main() {
       await tester.pumpAndSettle();
       checkSelected('second.txt');
       expect(material('first.txt', false).elevation, 0);
-      controller.value = controller.value.copyWith(
-        selectedCardStyle: custom.copyWith(
+      controller.value = controller.value.withStyle(
+        'selectedCard',
+        custom.copyWith(
           fill: const ContainerFill(),
           color: const Color(0x80112233),
         ),
       );
       await tester.pump();
       expect(material('second.txt', true).color, const Color(0x80112233));
-      controller.value = controller.value.copyWith(
-        resetSelectedCardStyle: true,
-      );
+      controller.value = controller.value.withStyle('selectedCard', null);
       await tester.pump();
       expect(material('second.txt', true).elevation, 0);
-      controller.value = controller.value.copyWith(
-        selectedCardStyle: custom.copyWith(neon: const NeonStyle()),
+      controller.value = controller.value.withStyle(
+        'selectedCard',
+        custom.copyWith(neon: const NeonStyle()),
       );
       await tester.pump();
       final selectedSurface = surface('second.txt', true);
@@ -236,7 +239,7 @@ void main() {
               ),
       );
       expect(selectedNeon.style.enabled, isFalse);
-      expect(controller.value.cardNeon.enabled, isTrue);
+      expect((controller.value.style('card').neon ?? const NeonStyle()).enabled, isTrue);
       expect(tester.takeException(), isNull);
     });
   }
@@ -245,8 +248,9 @@ void main() {
     tester,
   ) async {
     final controller = ValueNotifier(
-      const Appearance(
-        selectedFolderStyle: ContainerStyle(
+      Appearance(
+        styles: {
+        'selectedFolder': ContainerStyle(
           color: Color(0x80102030),
           fill: ContainerFill(
             type: FillType.linear,
@@ -260,6 +264,7 @@ void main() {
           shadowOpacity: .4,
           neon: NeonStyle(enabled: true),
         ),
+        },
       ),
     );
     addTearDown(controller.dispose);
@@ -320,9 +325,7 @@ void main() {
       tester.widget<NeonSurface>(surface('Documents')).style.enabled,
       isFalse,
     );
-    controller.value = controller.value.copyWith(
-      resetSelectedFolderStyle: true,
-    );
+    controller.value = controller.value.withStyle('selectedFolder', null);
     await tester.pump();
     expect(tester.widget<NeonSurface>(surface('Images')).radius, 9);
     expect(tester.takeException(), isNull);
@@ -335,11 +338,14 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1100, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final controller = ValueNotifier(
-        const Appearance(
-          cardStyle: ContainerStyle(elevation: 5),
-          selectedFolderStyle: ContainerStyle(elevation: 7),
+        Appearance(
+          styles: {
+            'card': ContainerStyle(elevation: 5),
+            'selectedFolder': ContainerStyle(elevation: 7),
+          },
         ),
       );
+      final initial = controller.value;
       addTearDown(controller.dispose);
       await tester.pumpWidget(
         AppearanceScope(
@@ -358,6 +364,10 @@ void main() {
       );
       await tester.tap(find.text('Réglages'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(cards
+          ? 'Style des cartes sélectionnées'
+          : 'Style de la sélection du panneau gauche'));
+      await tester.pumpAndSettle();
       await tester.tap(
         find.text(
           cards
@@ -367,12 +377,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       ContainerStyle current() => cards
-          ? controller.value.effectiveSelectedCardStyle
-          : controller.value.effectiveSelectedFolderStyle;
+          ? SurfFileAppearanceSlots.selectedCard.read(controller.value)
+          : SurfFileAppearanceSlots.selectedFolder.read(controller.value);
       expect(current().elevation, cards ? 5 : 7);
-      for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
-        slider.onChanged!(slider.max);
-      }
+      final controls = tester.widget<ContainerStyleEditor>(find.byType(ContainerStyleEditor));
+      controls.onRadiusChanged!(36);
+      controls.onBorderWidthChanged!(4);
+      controls.onElevationChanged!(16);
+      controls.onShadowOpacityChanged!(.6);
       await tester.pumpAndSettle();
       expect(current().radius, 36);
       expect(current().borderWidth, 4);
@@ -404,10 +416,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(reset);
       await tester.pumpAndSettle();
-      expect(controller.value.selectedCardStyle, isNull);
-      expect(controller.value.selectedFolderStyle, isNull);
+      expect(controller.value.styles['selectedCard'], isNull);
+      expect(controller.value.styles['selectedFolder']?.toJson(), cards ? initial.styles['selectedFolder']?.toJson() : null);
       expect(current().elevation, cards ? 5 : 0);
-      expect(controller.value.cardStyle.radius, 13);
+      expect(controller.value.style('card').toJson(), initial.style('card').toJson());
       expect(tester.takeException(), isNull);
     });
   }

@@ -6,7 +6,7 @@
 void RegisterWindowTransparency(flutter::BinaryMessenger* messenger,
                                 HWND window) {
   flutter::MethodChannel<flutter::EncodableValue> channel(
-      messenger, "surf_file/window_transparency",
+      messenger, "super_container_layout/window_transparency",
       &flutter::StandardMethodCodec::GetInstance());
   channel.SetMethodCallHandler(
       [window](const auto& call, auto result) {

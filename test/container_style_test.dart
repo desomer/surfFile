@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/services/appearance_store.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/container_style_editor.dart';
@@ -25,14 +25,16 @@ void main() {
       final saved = AppearanceStore.decode(
         AppearanceStore.encode(
           Appearance(
-            cardStyle: ContainerStyle(fill: fill),
-            backgroundStyle: ContainerStyle(fill: fill),
+            styles: {
+              'card': ContainerStyle(fill: fill),
+              'background': ContainerStyle(fill: fill),
+            },
           ),
         ),
       );
-      expect(saved.cardStyle.fill.toJson(), fill.toJson());
-      expect(saved.backgroundStyle.fill.toJson(), fill.toJson());
-      final gradient = saved.backgroundStyle.fill.gradient(opacity: .5);
+      expect(saved.style('card').fill.toJson(), fill.toJson());
+      expect(saved.style('background').fill.toJson(), fill.toJson());
+      final gradient = saved.style('background').fill.gradient(opacity: .5);
       if (type == FillType.solid) {
         expect(gradient, isNull);
       } else {
@@ -43,12 +45,12 @@ void main() {
 
   test('old settings default to solid and malformed gradients fail', () {
     final json = jsonDecode(
-      AppearanceStore.encode(const Appearance()),
+      AppearanceStore.encode(Appearance()),
     ) as Map<String, dynamic>;
     json.remove('cardStyle');
     json.remove('backgroundStyle');
     expect(
-      AppearanceStore.decode(jsonEncode(json)).cardStyle.fill.type,
+      AppearanceStore.decode(jsonEncode(json)).style('card').fill.type,
       FillType.solid,
     );
     for (final invalid in [
@@ -121,7 +123,7 @@ void main() {
         end: Color(0x80B794F4),
       );
       final controller = ValueNotifier(
-        const Appearance(cardStyle: ContainerStyle(fill: fill)),
+        Appearance(styles: {'card': ContainerStyle(fill: fill)}),
       );
       addTearDown(controller.dispose);
       await tester.pumpWidget(

@@ -7,9 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/interaction/scroll_edge_fade.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/services/appearance_store.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 
 Future<List<int>> maskAlphas(WidgetTester tester) async {
   // Sans bord estompé, le masque est retiré : tout est opaque.
@@ -35,10 +35,10 @@ Future<List<int>> maskAlphas(WidgetTester tester) async {
 void main() {
   test('fade preferences round trip, validate and support old settings', () {
     final saved = AppearanceStore.decode(AppearanceStore.encode(
-        const Appearance(scrollFadeEnabled: false, scrollFadeExtent: 80)));
+        Appearance(scrollFadeEnabled: false, scrollFadeExtent: 80)));
     expect(saved.scrollFadeEnabled, isFalse);
     expect(saved.scrollFadeExtent, 80);
-    final json = jsonDecode(AppearanceStore.encode(const Appearance()))
+    final json = jsonDecode(AppearanceStore.encode(Appearance()))
         as Map<String, dynamic>;
     json.remove('scrollFadeEnabled');
     json.remove('scrollFadeExtent');
@@ -59,7 +59,7 @@ void main() {
 
   testWidgets('fade button edits and resets only fade settings',
       (tester) async {
-    final controller = ValueNotifier(const Appearance(spacing: 20));
+    final controller = ValueNotifier(Appearance(spacing: 20));
     addTearDown(controller.dispose);
     await tester.pumpWidget(AppearanceScope(
       controller: controller,
@@ -102,7 +102,7 @@ void main() {
                 modified: DateTime(2026),
                 size: 0,
               ));
-      final controller = ValueNotifier(const Appearance());
+      final controller = ValueNotifier(Appearance());
       addTearDown(controller.dispose);
       Future<void> show(int count) async {
         await tester.pumpWidget(AppearanceScope(

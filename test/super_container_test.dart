@@ -5,9 +5,9 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:surf_file/services/appearance_store.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
@@ -153,9 +153,9 @@ void main() {
                       onSearchChanged: (_) {},
                       onCreateFolder: () {},
                     ),
-                    const SuperContainer(
-                      slot: AppearanceSlot.sidebar,
-                      child: SizedBox(
+                    SuperContainer(
+                      slot: SurfFileAppearanceSlots.sidebar,
+                      child: const SizedBox(
                         width: 120,
                         height: 60,
                         child: Text('Box'),
@@ -197,7 +197,7 @@ void main() {
       await edit(tester, find.text('Box'));
 
       await setRadius(tester, 20);
-      expect(controller.value.sidebarStyle.radius, 20);
+      expect(controller.value.style('sidebar').radius, 20);
       final material = tester.widget<Material>(
         find
             .descendant(
@@ -215,7 +215,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.runAsync(() => controller.saved);
       final restored = await tester.runAsync(() => AppearanceStore().load());
-      expect(restored!.sidebarStyle.radius, 20);
+      expect(restored!.style('sidebar').radius, 20);
     });
 
     testWidgets('cancel restores the stored appearance', (tester) async {
@@ -227,14 +227,14 @@ void main() {
 
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
-      expect(controller.value.sidebarStyle.radius, 0);
+      expect(controller.value.style('sidebar').radius, 0);
       await tester.runAsync(() => controller.saved);
       final restored = await tester.runAsync(() => AppearanceStore().load());
-      expect(restored!.sidebarStyle.radius, 0);
+      expect(restored!.style('sidebar').radius, 0);
     });
     testWidgets('menu lists the container and its parents', (tester) async {
       SharedPreferences.setMockInitialValues({});
-      final controller = ValueNotifier(const Appearance());
+      final controller = ValueNotifier(Appearance());
       final editMode = ValueNotifier(true);
       addTearDown(controller.dispose);
       addTearDown(editMode.dispose);
@@ -243,16 +243,16 @@ void main() {
           controller: controller,
           child: StyleEditScope(
             controller: editMode,
-            child: const MaterialApp(
+            child: MaterialApp(
               home: SuperContainer(
-                slot: AppearanceSlot.background,
+                slot: SurfFileAppearanceSlots.background,
                 decorate: false,
                 child: Scaffold(
                   body: Center(
                     child: SuperContainer(
-                      slot: AppearanceSlot.card,
+                      slot: SurfFileAppearanceSlots.card,
                       decorate: false,
-                      child: SizedBox(
+                      child: const SizedBox(
                         width: 120,
                         height: 60,
                         child: Text('Box'),
@@ -331,16 +331,16 @@ void main() {
   testWidgets('background editor selects a flutter_acrylic window effect', (
     tester,
   ) async {
-    final controller = ValueNotifier(const Appearance());
+    final controller = ValueNotifier(Appearance());
     addTearDown(controller.dispose);
     await tester.pumpWidget(
       AppearanceScope(
         controller: controller,
-        child: const MaterialApp(
+        child: MaterialApp(
           home: SuperContainer(
-            slot: AppearanceSlot.background,
+            slot: SurfFileAppearanceSlots.background,
             decorate: false,
-            child: Scaffold(body: SizedBox.expand(child: Text('Fond'))),
+            child: const Scaffold(body: SizedBox.expand(child: Text('Fond'))),
           ),
         ),
       ),
@@ -373,7 +373,7 @@ void main() {
     );
     expect(restored.windowEffect, WindowEffect.mica);
     expect(
-      AppearanceStore.decode(AppearanceStore.encode(const Appearance()))
+      AppearanceStore.decode(AppearanceStore.encode(Appearance()))
           .windowEffect,
       WindowEffect.transparent,
     );

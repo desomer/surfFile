@@ -6,11 +6,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/pages/explorer_page.dart';
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/services/personal_folders.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/folder_transition.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/folder_transition.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
@@ -27,7 +27,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     for (final type in FolderTransition.values) {
       for (final duration in [100.0, 220.0, 1000.0]) {
-        final appearance = const Appearance().copyWith(
+        final appearance = Appearance().copyWith(
             folderTransition: type, folderTransitionDuration: duration);
         await AppearanceStore().save(appearance);
         final restored = await AppearanceStore().load();
@@ -234,7 +234,7 @@ void main() {
 
   testWidgets('settings expose all transition types and duration',
       (tester) async {
-    final controller = ValueNotifier(const Appearance());
+    final controller = ValueNotifier(Appearance());
     addTearDown(controller.dispose);
     await tester.binding.setSurfaceSize(const Size(1100, 950));
     addTearDown(() => tester.binding.setSurfaceSize(null));

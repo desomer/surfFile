@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/explorer_colors.dart';
+import 'package:surf_file/theme/explorer_colors.dart';
 import '../../../models/selection_mode.dart';
 
 /// Menu de choix du mode de sélection, placé à côté du bouton de filtre.

@@ -6,15 +6,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:surf_file/models/explorer_location.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/services/appearance_store.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_view_mode_bar.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/container_style_editor.dart';
 
 void _ignoreGridChange(bool _) {}
 
@@ -36,27 +37,29 @@ void main() {
   test('panel styles persist, validate, and default missing styles', () {
     final saved = AppearanceStore.decode(
       AppearanceStore.encode(
-        const Appearance(
-          sidebarStyle: custom,
-          pathBarStyle: custom,
-          explorerViewModeBarStyle: custom,
+        Appearance(
+          styles: {
+            'sidebar': custom,
+            'pathBar': custom,
+            'explorerViewModeBar': custom,
+          },
         ),
       ),
     );
-    expect(saved.sidebarStyle.toJson(), custom.toJson());
-    expect(saved.pathBarStyle.toJson(), custom.toJson());
-    expect(saved.explorerViewModeBarStyle.toJson(), custom.toJson());
+    expect(saved.style('sidebar').toJson(), custom.toJson());
+    expect(saved.style('pathBar').toJson(), custom.toJson());
+    expect(saved.style('explorerViewModeBar').toJson(), custom.toJson());
     final json = jsonDecode(
-      AppearanceStore.encode(const Appearance()),
+      AppearanceStore.encode(Appearance()),
     ) as Map<String, dynamic>;
     json.remove('sidebarStyle');
     json.remove('pathBarStyle');
     json.remove('explorerViewModeBarStyle');
     final decoded = AppearanceStore.decode(jsonEncode(json));
-    expect(decoded.sidebarStyle.toJson(), const ContainerStyle().toJson());
-    expect(decoded.pathBarStyle.borderWidth, 1);
+    expect(decoded.style('sidebar').toJson(), const ContainerStyle().toJson());
+    expect(decoded.style('pathBar').borderWidth, 1);
     expect(
-      decoded.explorerViewModeBarStyle.toJson(),
+      decoded.style('explorerViewModeBar').toJson(),
       const ContainerStyle().toJson(),
     );
     for (final field in [
@@ -84,25 +87,27 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final store = AppearanceStore();
     await store.save(
-      const Appearance(
-        sidebarStyle: custom,
-        pathBarStyle: custom,
-        explorerViewModeBarStyle: custom,
+      Appearance(
+        styles: {
+          'sidebar': custom,
+          'pathBar': custom,
+          'explorerViewModeBar': custom,
+        },
       ),
     );
     final restored = await store.load();
-    expect(restored.sidebarStyle.toJson(), custom.toJson());
-    expect(restored.pathBarStyle.toJson(), custom.toJson());
-    expect(restored.explorerViewModeBarStyle.toJson(), custom.toJson());
-    await store.save(const Appearance());
+    expect(restored.style('sidebar').toJson(), custom.toJson());
+    expect(restored.style('pathBar').toJson(), custom.toJson());
+    expect(restored.style('explorerViewModeBar').toJson(), custom.toJson());
+    await store.save(Appearance());
     final reset = await store.load();
-    expect(reset.sidebarStyle.toJson(), const ContainerStyle().toJson());
+    expect(reset.style('sidebar').toJson(), const ContainerStyle().toJson());
     expect(
-      reset.pathBarStyle.toJson(),
+      reset.style('pathBar').toJson(),
       const ContainerStyle(borderWidth: 1).toJson(),
     );
     expect(
-      reset.explorerViewModeBarStyle.toJson(),
+      reset.style('explorerViewModeBar').toJson(),
       const ContainerStyle().toJson(),
     );
   });
@@ -111,11 +116,13 @@ void main() {
     tester,
   ) async {
     final controller = ValueNotifier(
-      const Appearance(
-        sidebarStyle: custom,
-        pathBarStyle: custom,
-        explorerViewModeBarStyle: custom,
-        selectedFolderStyle: ContainerStyle(elevation: 9),
+      Appearance(
+        styles: {
+          'sidebar': custom,
+          'pathBar': custom,
+          'explorerViewModeBar': custom,
+          'selectedFolder': ContainerStyle(elevation: 9),
+        },
       ),
     );
     addTearDown(controller.dispose);
@@ -204,10 +211,12 @@ void main() {
     expect(location, 'images');
     await tester.tap(find.text('Users'));
     expect(path, 'C:\\Users');
-    controller.value = const Appearance(
-      sidebarStyle: ContainerStyle(color: Color(0x40112233)),
-      pathBarStyle: ContainerStyle(color: Color(0x40112233)),
-      explorerViewModeBarStyle: ContainerStyle(color: Color(0x40112233)),
+    controller.value = Appearance(
+      styles: {
+        'sidebar': ContainerStyle(color: Color(0x40112233)),
+        'pathBar': ContainerStyle(color: Color(0x40112233)),
+        'explorerViewModeBar': ContainerStyle(color: Color(0x40112233)),
+      },
     );
     await tester.pump();
     for (final key in [
@@ -232,7 +241,7 @@ void main() {
   testWidgets('view mode bar opens its style editor in edit mode', (
     tester,
   ) async {
-    final appearance = ValueNotifier(const Appearance());
+    final appearance = ValueNotifier(Appearance());
     final editMode = ValueNotifier(true);
     addTearDown(appearance.dispose);
     addTearDown(editMode.dispose);
@@ -273,7 +282,7 @@ void main() {
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(1100, 950));
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        final controller = ValueNotifier(const Appearance());
+        final controller = ValueNotifier(Appearance());
         addTearDown(controller.dispose);
         await tester.pumpWidget(
           AppearanceScope(
@@ -300,14 +309,15 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(Slider), findsNWidgets(4));
-        for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
-          slider.onChanged!(slider.max);
-        }
+        final controls = tester.widget<ContainerStyleEditor>(find.byType(ContainerStyleEditor));
+        controls.onRadiusChanged!(36);
+        controls.onBorderWidthChanged!(4);
+        controls.onElevationChanged!(16);
+        controls.onShadowOpacityChanged!(.6);
         await tester.pumpAndSettle();
         ContainerStyle current() => sidebar
-            ? controller.value.sidebarStyle
-            : controller.value.pathBarStyle;
+            ? controller.value.style('sidebar')
+            : controller.value.style('pathBar');
         expect(current().radius, 36);
         expect(current().borderWidth, 4);
         expect(current().elevation, 16);

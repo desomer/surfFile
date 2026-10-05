@@ -4,153 +4,68 @@ import 'package:material_ui/material_ui.dart';
 import '../models/super_layout_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
-import 'disk_gauge_style.dart';
 import 'neon_style.dart';
-import 'folder_transition.dart';
 
+/// Application-independent theme, window, styles and layouts.
 @immutable
 class Appearance {
-  static const minRowHeight = 20.0;
-  static const maxRowHeight = 100.0;
-  static const minSpacing = 4.0;
-  static const maxSpacing = 64.0;
-  static const minTransitionDuration = 100.0;
-  static const maxTransitionDuration = 1000.0;
-  static const minScrollFadeExtent = 8.0;
-  static const maxScrollFadeExtent = 100.0;
-
-  const Appearance({
+  Appearance({
     this.mode = ThemeMode.light,
     this.accent = const Color(0xFF5268D9),
     this.backgroundOpacity = 1,
     this.windowOpacity = 1,
     this.windowEffect = WindowEffect.transparent,
-    this.cardStyle = defaultCardStyle,
-    this.backgroundStyle = const ContainerStyle(),
-    this.sidebarStyle = const ContainerStyle(),
-    this.pathBarStyle = const ContainerStyle(borderWidth: 1),
-    this.explorerLayout = defaultExplorerLayout,
-    this.explorerMainLayout = defaultExplorerMainLayout,
-    this.explorerSidebarLayout = defaultExplorerSidebarLayout,
-    this.explorerViewModeBarStyle = const ContainerStyle(),
-    this.diskPanelStyle = const ContainerStyle(),
-    this.diskTileStyle = defaultDiskTileStyle,
-    this.diskGaugeStyle = const DiskGaugeStyle(),
-    this.selectedDiskTileStyle,
-    this.selectedCardStyle,
-    this.selectedFolderStyle,
-    this.folderStyle,
-    this.cardHeight = 142,
-    this.cardWidth = 180,
-    this.rowHeight = 48,
-    this.spacing = 12,
-    this.fontSize = 12,
-    this.iconSize = 49,
-    this.folderTransition = FolderTransition.none,
-    this.folderTransitionDuration = 220,
-    this.scrollFadeEnabled = true,
-    this.scrollFadeExtent = 28,
+    Map<String, ContainerStyle> styles = const {},
+    Map<String, SuperLayoutConfig> layouts = const {},
+  }) : styles = Map.unmodifiable(styles), layouts = Map.unmodifiable({
+    for (final entry in layouts.entries)
+      entry.key: entry.value.copyWith(
+        swaps: Set.unmodifiable(entry.value.swaps),
+        autoSides: Set.unmodifiable(entry.value.autoSides),
+        placements: Map.unmodifiable({
+          for (final placement in entry.value.placements.entries)
+            placement.key: List<String>.unmodifiable(placement.value),
+        }),
+      ),
   });
-
-  static const defaultCardStyle = ContainerStyle(
-    radius: 13,
-    borderWidth: 1,
-    padding: 12,
-  );
-
-  static const defaultSidebarWidth = 236.0;
-
-  /// Panneau gauche à l'ouest, explorateur au centre.
-  static const defaultExplorerLayout = SuperLayoutConfig(
-    north: false,
-    south: false,
-    east: false,
-    westSize: defaultSidebarWidth,
-    placements: {
-      SuperLayoutZone.west: ['sidebar'],
-      SuperLayoutZone.center: ['main'],
-    },
-  );
-
-  /// Barres empilées au nord (hauteur automatique), contenu au centre.
-  static const defaultExplorerMainLayout = SuperLayoutConfig(
-    south: false,
-    west: false,
-    east: false,
-    autoSides: {SuperLayoutZone.north},
-    placements: {
-      SuperLayoutZone.north: [
-        'split-indicator',
-        'toolbar',
-        'breadcrumbs',
-        'view-mode-bar',
-        'filter-bar',
-        'sort-header',
-      ],
-      SuperLayoutZone.center: ['content'],
-    },
-  );
-
-  /// Espace perso / favoris au centre, disques au sud (hauteur automatique).
-  static const defaultExplorerSidebarLayout = SuperLayoutConfig(
-    north: false,
-    west: false,
-    east: false,
-    autoSides: {SuperLayoutZone.south},
-    placements: {
-      SuperLayoutZone.center: ['sidebar-places'],
-      SuperLayoutZone.south: ['sidebar-disks'],
-    },
-  );
-
-  static const defaultDiskTileStyle = ContainerStyle(
-    radius: 12,
-    borderWidth: 1,
-  );
 
   final ThemeMode mode;
   final Color accent;
   final double backgroundOpacity;
   final double windowOpacity;
-
-  /// Effet natif (flutter_acrylic) visible sous le fond transparent.
   final WindowEffect windowEffect;
-  final ContainerStyle cardStyle;
-  final ContainerStyle backgroundStyle;
-  final ContainerStyle sidebarStyle;
-  final ContainerStyle pathBarStyle;
-  final SuperLayoutConfig explorerLayout;
-  final SuperLayoutConfig explorerMainLayout;
-  final SuperLayoutConfig explorerSidebarLayout;
-  final ContainerStyle explorerViewModeBarStyle;
-  final ContainerStyle diskPanelStyle;
-  final ContainerStyle diskTileStyle;
-  final DiskGaugeStyle diskGaugeStyle;
+  final Map<String, ContainerStyle> styles;
+  final Map<String, SuperLayoutConfig> layouts;
 
-  /// `null` : forme des tuiles de disque, couleurs de sélection du thème.
-  final ContainerStyle? selectedDiskTileStyle;
-  final ContainerStyle? selectedCardStyle;
-  final ContainerStyle? selectedFolderStyle;
+  ContainerStyle style(String id, {ContainerStyle fallback = const ContainerStyle()}) =>
+      styles[id] ?? fallback;
+  SuperLayoutConfig layout(String id, {SuperLayoutConfig fallback = const SuperLayoutConfig()}) =>
+      layouts[id] ?? fallback;
+  ContainerStyle get backgroundStyle => style('background');
 
-  /// Dossiers non sélectionnés du panneau gauche ; `null` : style par défaut.
-  final ContainerStyle? folderStyle;
-  final double cardHeight;
-  final double cardWidth;
-  final double rowHeight;
-  final double spacing;
-  final double fontSize;
-  final double iconSize;
-  final FolderTransition folderTransition;
-  final double folderTransitionDuration;
-  final bool scrollFadeEnabled;
-  final double scrollFadeExtent;
-
-  /// Remet toutes les zones et tous les slots à leur place par défaut.
-  Appearance resetLayouts() => copyWith(
-    explorerLayout: defaultExplorerLayout,
-    explorerMainLayout: defaultExplorerMainLayout,
-    explorerSidebarLayout: defaultExplorerSidebarLayout,
-  );
+  /// Resolves the optional variant [id] (a selected state, for instance) of
+  /// the [standardId] style. Without an override, the variant keeps the shape
+  /// and interaction settings of the standard style, plus its extended look
+  /// when [inheritLook] is set, but not its colors. The neon is inherited
+  /// unless the override defines its own.
+  ContainerStyle variantStyle(String id, String standardId, {bool inheritLook = false}) {
+    final standard = style(standardId);
+    final override = styles[id];
+    final shape = ContainerStyle(
+      radius: standard.radius,
+      borderWidth: standard.borderWidth,
+      elevation: standard.elevation,
+      shadowOpacity: standard.shadowOpacity,
+      padding: standard.padding,
+      margin: standard.margin,
+      interactionEffect: standard.interactionEffect,
+      hoverEffect: standard.hoverEffect,
+      hoverTint: standard.hoverTint,
+      hoverColor: standard.hoverColor,
+    );
+    return (override ?? (inheritLook ? shape.withLookOf(standard) : shape))
+        .copyWith(neon: override?.neon ?? standard.neon ?? const NeonStyle());
+  }
 
   Appearance copyWith({
     ThemeMode? mode,
@@ -158,190 +73,49 @@ class Appearance {
     double? backgroundOpacity,
     double? windowOpacity,
     WindowEffect? windowEffect,
-    ContainerStyle? cardStyle,
     ContainerStyle? backgroundStyle,
-    ContainerStyle? sidebarStyle,
-    ContainerStyle? pathBarStyle,
-    SuperLayoutConfig? explorerLayout,
-    SuperLayoutConfig? explorerMainLayout,
-    SuperLayoutConfig? explorerSidebarLayout,
-    ContainerStyle? explorerViewModeBarStyle,
-    ContainerStyle? diskPanelStyle,
-    ContainerStyle? diskTileStyle,
-    DiskGaugeStyle? diskGaugeStyle,
-    ContainerStyle? selectedDiskTileStyle,
-    bool resetSelectedDiskTileStyle = false,
-    ContainerStyle? selectedCardStyle,
-    ContainerStyle? selectedFolderStyle,
-    bool resetSelectedCardStyle = false,
-    bool resetSelectedFolderStyle = false,
-    ContainerStyle? folderStyle,
-    bool resetFolderStyle = false,
-    double? cardHeight,
-    double? cardWidth,
-    double? rowHeight,
-    double? spacing,
-    double? fontSize,
-    double? iconSize,
-    FolderTransition? folderTransition,
-    double? folderTransitionDuration,
-    bool? scrollFadeEnabled,
-    double? scrollFadeExtent,
+    Map<String, ContainerStyle>? styles,
+    Map<String, SuperLayoutConfig>? layouts,
   }) => Appearance(
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
     backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
     windowOpacity: windowOpacity ?? this.windowOpacity,
     windowEffect: windowEffect ?? this.windowEffect,
-    cardStyle: cardStyle ?? this.cardStyle,
-    backgroundStyle: backgroundStyle ?? this.backgroundStyle,
-    sidebarStyle: sidebarStyle ?? this.sidebarStyle,
-    pathBarStyle: pathBarStyle ?? this.pathBarStyle,
-    explorerLayout: explorerLayout ?? this.explorerLayout,
-    explorerMainLayout: explorerMainLayout ?? this.explorerMainLayout,
-    explorerSidebarLayout: explorerSidebarLayout ?? this.explorerSidebarLayout,
-    explorerViewModeBarStyle:
-        explorerViewModeBarStyle ?? this.explorerViewModeBarStyle,
-    diskPanelStyle: diskPanelStyle ?? this.diskPanelStyle,
-    diskTileStyle: diskTileStyle ?? this.diskTileStyle,
-    diskGaugeStyle: diskGaugeStyle ?? this.diskGaugeStyle,
-    selectedDiskTileStyle: resetSelectedDiskTileStyle
-        ? null
-        : selectedDiskTileStyle ?? this.selectedDiskTileStyle,
-    selectedCardStyle: resetSelectedCardStyle
-        ? null
-        : selectedCardStyle ?? this.selectedCardStyle,
-    folderStyle: resetFolderStyle ? null : folderStyle ?? this.folderStyle,
-    selectedFolderStyle: resetSelectedFolderStyle
-        ? null
-        : selectedFolderStyle ?? this.selectedFolderStyle,
-    cardHeight: cardHeight ?? this.cardHeight,
-    cardWidth: cardWidth ?? this.cardWidth,
-    rowHeight: rowHeight ?? this.rowHeight,
-    spacing: spacing ?? this.spacing,
-    fontSize: fontSize ?? this.fontSize,
-    iconSize: iconSize ?? this.iconSize,
-    folderTransition: folderTransition ?? this.folderTransition,
-    folderTransitionDuration:
-        folderTransitionDuration ?? this.folderTransitionDuration,
-    scrollFadeEnabled: scrollFadeEnabled ?? this.scrollFadeEnabled,
-    scrollFadeExtent: scrollFadeExtent ?? this.scrollFadeExtent,
+    styles: backgroundStyle == null ? styles ?? this.styles : {...styles ?? this.styles, 'background': backgroundStyle},
+    layouts: layouts ?? this.layouts,
   );
 
+  Appearance withStyle(String id, ContainerStyle? value) {
+    final next = {...styles};
+    if (value == null) { next.remove(id); } else { next[id] = value; }
+    return copyWith(styles: next);
+  }
+  Appearance withLayout(String id, SuperLayoutConfig value) =>
+      copyWith(layouts: {...layouts, id: value});
+  Appearance resetLayouts() => copyWith(layouts: const {});
+
   ThemeData theme(Brightness brightness) {
-    final surface =
-        backgroundStyle.color ??
-        (brightness == Brightness.dark
-            ? const Color(0xFF171A23)
-            : const Color(0xFFF8F9FC));
-    final generated = ColorScheme.fromSeed(
-      seedColor: accent,
-      brightness: brightness,
-      surface: surface,
-    );
-    final scheme = generated.copyWith(
-      primary: generated.primary.withValues(alpha: accent.a),
-      onSurface: foreground(surface),
-    );
+    final surface = backgroundStyle.color ??
+        (brightness == Brightness.dark ? const Color(0xFF171A23) : const Color(0xFFF8F9FC));
+    final generated = ColorScheme.fromSeed(seedColor: accent, brightness: brightness, surface: surface);
     return ThemeData(
       useMaterial3: true,
-      colorScheme: scheme,
+      colorScheme: generated.copyWith(primary: generated.primary.withValues(alpha: accent.a), onSurface: foreground(surface)),
       scaffoldBackgroundColor: backgroundStyle.fill.type == FillType.solid
           ? surface.withValues(alpha: surface.a * backgroundOpacity)
           : Colors.transparent,
       fontFamily: 'Segoe UI',
-      appBarTheme: AppBarTheme(
-        backgroundColor: surface,
-        surfaceTintColor: Colors.transparent,
-      ),
+      appBarTheme: AppBarTheme(backgroundColor: surface, surfaceTintColor: Colors.transparent),
     );
   }
-
-  /// Automatic solid color of unselected cards when [cardStyle] has none.
-  static Color defaultCardColor(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return scheme.brightness == Brightness.dark
-        ? scheme.surfaceContainerLow
-        : Colors.white;
-  }
-
-  Color cardBackground(BuildContext context, {bool selected = false}) {
-    final style = selected ? effectiveSelectedCardStyle : cardStyle;
-    if (style.fill.type != FillType.solid) {
-      return Color.lerp(style.fill.start, style.fill.end, .5)!;
-    }
-    return style.color ??
-        (selected
-            ? Theme.of(context).colorScheme.primaryContainer
-            : defaultCardColor(context));
-  }
-
-  double cardElevation({required bool selected}) =>
-      selected ? effectiveSelectedCardStyle.elevation : cardStyle.elevation;
-
-  NeonStyle get cardNeon => cardStyle.neon ?? const NeonStyle();
-
-  ContainerStyle get effectiveSelectedCardStyle =>
-      (selectedCardStyle ??
-              ContainerStyle(
-                radius: cardStyle.radius,
-                borderWidth: cardStyle.borderWidth,
-                elevation: cardStyle.elevation,
-                shadowOpacity: cardStyle.shadowOpacity,
-                padding: cardStyle.padding,
-                margin: cardStyle.margin,
-                interactionEffect: cardStyle.interactionEffect,
-                hoverEffect: cardStyle.hoverEffect,
-                hoverTint: cardStyle.hoverTint,
-                hoverColor: cardStyle.hoverColor,
-              ))
-          .copyWith(neon: selectedCardStyle?.neon ?? cardNeon);
-
-  ContainerStyle get effectiveSelectedDiskTileStyle =>
-      (selectedDiskTileStyle ??
-              ContainerStyle(
-                radius: diskTileStyle.radius,
-                borderWidth: diskTileStyle.borderWidth,
-                elevation: diskTileStyle.elevation,
-                shadowOpacity: diskTileStyle.shadowOpacity,
-                padding: diskTileStyle.padding,
-                margin: diskTileStyle.margin,
-                interactionEffect: diskTileStyle.interactionEffect,
-                hoverEffect: diskTileStyle.hoverEffect,
-                hoverTint: diskTileStyle.hoverTint,
-                hoverColor: diskTileStyle.hoverColor,
-              ).withLookOf(diskTileStyle))
-          .copyWith(
-            neon:
-                selectedDiskTileStyle?.neon ??
-                diskTileStyle.neon ??
-                const NeonStyle(),
-          );
-
-  ContainerStyle get effectiveFolderStyle =>
-      (folderStyle ??
-              ContainerStyle(radius: 9, shadowOpacity: cardStyle.shadowOpacity))
-          .copyWith(neon: folderStyle?.neon ?? const NeonStyle());
-
-  ContainerStyle get effectiveSelectedFolderStyle =>
-      (selectedFolderStyle ??
-              ContainerStyle(radius: 9, shadowOpacity: cardStyle.shadowOpacity))
-          .copyWith(neon: selectedFolderStyle?.neon ?? const NeonStyle());
-
-  static Color foreground(Color background) =>
-      ContainerStyle.foregroundFor(background);
+  static Color foreground(Color background) => ContainerStyle.foregroundFor(background);
 }
 
 class AppearanceScope extends InheritedNotifier<ValueNotifier<Appearance>> {
-  const AppearanceScope({
-    required ValueNotifier<Appearance> controller,
-    required super.child,
-    super.key,
-  }) : super(notifier: controller);
-
+  const AppearanceScope({required ValueNotifier<Appearance> controller, required super.child, super.key})
+      : super(notifier: controller);
   static ValueNotifier<Appearance>? controllerOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppearanceScope>()?.notifier;
-
-  static Appearance of(BuildContext context) =>
-      controllerOf(context)?.value ?? const Appearance();
+  static Appearance of(BuildContext context) => controllerOf(context)?.value ?? Appearance();
 }

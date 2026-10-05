@@ -10,6 +10,7 @@ import 'models/registry.dart';
 import 'services/appearance_store.dart';
 import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
+import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
 import 'widgets/layout_reset_shortcut.dart';
 import 'widgets/neon_surface.dart';
@@ -50,8 +51,17 @@ class SuperApp extends StatefulWidget {
   State<SuperApp> createState() => _SuperAppState();
 
   ValueNotifier<SuperLayoutConfig> getLayoutConfigById(String id) {
-    registry!.superLayoutConfigById[id] ??= ValueNotifier(SuperLayoutConfig());
-    return registry!.superLayoutConfigById[id]!;
+    final currentRegistry = registry;
+    if (currentRegistry == null) throw StateError('SuperApp requires a registry for ID-based controllers.');
+    return currentRegistry.layoutController(id);
+  }
+
+  ValueNotifier<ContainerStyle> getContainerStyleById(String id) {
+    final currentRegistry = registry;
+    if (currentRegistry == null) {
+      throw StateError('SuperApp requires a registry for ID-based controllers.');
+    }
+    return currentRegistry.styleController(id);
   }
 }
 
@@ -73,6 +83,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       widget.appearanceStore ?? AppearanceStore(),
       _saveFailed,
     )..addListener(_updateWindow);
+    widget.registry?.bindAppearance(_appearance);
     _restore();
   }
 
@@ -80,13 +91,18 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void didUpdateWidget(SuperApp oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.appearanceStore != widget.appearanceStore) {
+      oldWidget.registry?.unbindAppearance();
       _appearance.removeListener(_updateWindow);
       _appearance.dispose();
       _appearance = PersistentAppearanceController(
         widget.appearanceStore ?? AppearanceStore(),
         _saveFailed,
       )..addListener(_updateWindow);
+      widget.registry?.bindAppearance(_appearance);
       _restore();
+    } else if (oldWidget.registry != widget.registry) {
+      oldWidget.registry?.unbindAppearance();
+      widget.registry?.bindAppearance(_appearance);
     }
   }
 
@@ -195,6 +211,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.registry?.unbindAppearance();
     _appearance
       ..removeListener(_updateWindow)
       ..dispose();
@@ -205,7 +222,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) => _SuperAppScope(
     app: widget,
-    child: AppearanceScope(
+    child: AppearanceServicesScope(
+      codec: _appearance.store.codec,
+      child: AppearanceScope(
       controller: _appearance,
       child: LayoutResetShortcut(
         onReset: _resetLayouts,
@@ -242,8 +261,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                             style: value.backgroundStyle.borderWidth == 0
                                 ? BorderStyle.none
                                 : BorderStyle.solid,
+                            ),
                           ),
-                        ),
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             gradient: value.backgroundStyle.fill.gradient(
@@ -280,7 +299,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                               ),
                               TextButton(
                                 onPressed: () {
-                                  _appearance.value = const Appearance();
+                                  _appearance.value = _appearance.store.codec.defaults;
                                   setState(() => _loadError = null);
                                 },
                                 child: const Text(
@@ -297,6 +316,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
           ),
         ),
       ),
+    ),
     ),
   );
 }

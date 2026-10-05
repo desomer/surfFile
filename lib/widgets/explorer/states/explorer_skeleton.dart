@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 
 /// Contenu provisoire affiché pendant le glissement vers un nouveau dossier.
 ///
@@ -81,7 +81,7 @@ class ExplorerSkeleton extends StatelessWidget {
               .ceil()
               .clamp(1, 10)
         : 3;
-    final radius = appearance.cardStyle.radius;
+    final radius = appearance.style('card').radius;
     return Padding(
       padding: const EdgeInsets.fromLTRB(30, 8, 30, 0),
       child: Column(

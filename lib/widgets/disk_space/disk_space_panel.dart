@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import '../../theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
 import '../../services/disk_space.dart';
@@ -101,14 +101,14 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
     final colors = Theme.of(context).colorScheme;
     final appearance = AppearanceScope.of(context);
     final foreground =
-        appearance.diskPanelStyle.foreground ??
-        appearance.sidebarStyle.foreground ??
+        appearance.style('diskPanel').foreground ??
+        appearance.style('sidebar').foreground ??
         colors.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(top: 20),
       child: SuperContainer(
         key: const ValueKey('disk-panel-surface'),
-        slot: AppearanceSlot.diskPanel,
+        slot: SurfFileAppearanceSlots.diskPanel,
         fallbackColor: Colors.transparent,
         borderColor: foreground.withValues(alpha: .12),
         child: Column(
@@ -213,16 +213,18 @@ class _DiskTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final appearance = AppearanceScope.of(context);
-    final style = selected
-        ? appearance.effectiveSelectedDiskTileStyle
-        : appearance.diskTileStyle;
+    final style =
+        (selected
+                ? SurfFileAppearanceSlots.selectedDiskTile
+                : SurfFileAppearanceSlots.diskTile)
+            .read(appearance);
     final gauge = appearance.diskGaugeStyle;
     final foreground =
         style.foreground ??
         (selected
             ? colors.onPrimaryContainer
-            : appearance.diskPanelStyle.foreground ??
-                  appearance.sidebarStyle.foreground ??
+            : appearance.style('diskPanel').foreground ??
+                  appearance.style('sidebar').foreground ??
                   colors.onSurface);
     final used = disk.usedFraction;
     final percentage = used == null ? null : (used * 100).round();
@@ -237,8 +239,8 @@ class _DiskTile extends StatelessWidget {
         child: SuperContainer(
           key: ValueKey('disk-tile-${disk.path}'),
           slot: selected
-              ? AppearanceSlot.selectedDiskTile
-              : AppearanceSlot.diskTile,
+              ? SurfFileAppearanceSlots.selectedDiskTile
+              : SurfFileAppearanceSlots.diskTile,
           fallbackColor: selected
               ? colors.primaryContainer
               : foreground.withValues(alpha: .04),

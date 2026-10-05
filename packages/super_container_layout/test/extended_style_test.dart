@@ -344,15 +344,16 @@ void main() {
     });
   });
 
-  test('only StyledSurface slots offer the extended look', () {
-    for (final slot in AppearanceSlot.values) {
-      final renderedElsewhere = {
-        AppearanceSlot.background,
-        AppearanceSlot.card,
-        AppearanceSlot.selectedCard,
-      }.contains(slot);
-      expect(slot.extendedLook, !renderedElsewhere, reason: slot.name);
-    }
+  test('application defines whether a slot offers the extended look', () {
+    final slot = AppearanceSlot(
+      'Simple surface',
+      name: 'simple',
+      extendedLook: false,
+      read: (a) => a.backgroundStyle,
+      write: (a, style) => a.copyWith(backgroundStyle: style),
+      reset: (a) => a.copyWith(backgroundStyle: const ContainerStyle()),
+    );
+    expect(slot.extendedLook, isFalse);
   });
 
   group('editor', () {

@@ -21,11 +21,11 @@ void main() {
     final appearance = AppearanceStore.decode(
       AppearanceStore.encode(
         Appearance(
-          cardStyle: DesignSystem.liquidGlass.apply(const ContainerStyle()),
+          styles: {'custom': DesignSystem.liquidGlass.apply(const ContainerStyle())},
         ),
       ),
     );
-    expect(appearance.cardStyle.designSystem, DesignSystem.liquidGlass);
+    expect(appearance.style('custom').designSystem, DesignSystem.liquidGlass);
   });
 
   test('presets keep spacing and set the matching look', () {

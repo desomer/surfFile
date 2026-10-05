@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/appearance_slot.dart';
-import 'package:super_container_layout/theme/folder_transition.dart';
-import 'package:super_container_layout/theme/explorer_colors.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import '../../../theme/surffile_appearance_slots.dart';
+import 'package:surf_file/theme/folder_transition.dart';
+import 'package:surf_file/theme/explorer_colors.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
 import '../../../models/selection_mode.dart';
@@ -72,10 +72,10 @@ class ExplorerViewModeBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
-    final style = appearance.explorerViewModeBarStyle;
+    final style = appearance.style('explorerViewModeBar');
     return SuperContainer(
       key: const ValueKey('explorer-view-mode-bar-surface'),
-      slot: AppearanceSlot.explorerViewModeBar,
+      slot: SurfFileAppearanceSlots.explorerViewModeBar,
       fallbackColor: explorerColor(
         context,
         Colors.white,

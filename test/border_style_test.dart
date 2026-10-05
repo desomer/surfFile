@@ -5,45 +5,50 @@ import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/services/appearance_store.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:super_container_layout/widgets/container_style_editor.dart';
+import 'package:super_container_layout/widgets/styled_surface.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 
 void main() {
   const color = Color(0x8000FFFF);
   test('border preferences persist, reset and reject invalid data', () {
     const style = ContainerStyle(borderColor: color, borderWidth: 3);
-    const appearance = Appearance(
-      cardStyle: ContainerStyle(borderColor: color, borderWidth: 2),
-      backgroundStyle: ContainerStyle(borderColor: color, borderWidth: 4),
-      sidebarStyle: style,
-      pathBarStyle: style,
-      selectedCardStyle: style,
-      selectedFolderStyle: style,
+    final appearance = Appearance(
+      styles: {
+        'card': ContainerStyle(borderColor: color, borderWidth: 2),
+        'background': ContainerStyle(borderColor: color, borderWidth: 4),
+        'sidebar': style,
+        'pathBar': style,
+        'selectedCard': style,
+        'selectedFolder': style,
+      },
     );
     final saved = AppearanceStore.decode(AppearanceStore.encode(appearance));
-    expect(saved.cardStyle.borderColor, color);
-    expect(saved.backgroundStyle.borderColor, color);
-    expect(saved.backgroundStyle.borderWidth, 4);
+    expect(saved.style('card').borderColor, color);
+    expect(saved.style('background').borderColor, color);
+    expect(saved.style('background').borderWidth, 4);
     for (final panel in [
-      saved.sidebarStyle,
-      saved.pathBarStyle,
-      saved.selectedCardStyle!,
-      saved.selectedFolderStyle!,
+      saved.style('sidebar'),
+      saved.style('pathBar'),
+      saved.styles['selectedCard']!,
+      saved.styles['selectedFolder']!,
     ]) {
       expect(panel.borderColor, color);
       expect(panel.borderWidth, 3);
     }
     expect(style.copyWith(resetBorderColor: true).borderColor, isNull);
-    final reset = saved.copyWith(
-      cardStyle: saved.cardStyle.copyWith(resetBorderColor: true),
-      backgroundStyle: saved.backgroundStyle.copyWith(resetBorderColor: true),
-    );
-    expect(reset.cardStyle.borderColor, isNull);
-    expect(reset.backgroundStyle.borderColor, isNull);
+    final reset = saved
+        .withStyle('card', saved.style('card').copyWith(resetBorderColor: true))
+        .withStyle(
+          'background',
+          saved.style('background').copyWith(resetBorderColor: true),
+        );
+    expect(reset.style('card').borderColor, isNull);
+    expect(reset.style('background').borderColor, isNull);
     final oldStyle = style.toJson()..remove('borderColor');
     expect(ContainerStyle.fromJson(oldStyle).borderColor, isNull);
     for (final invalid in [-1, 0x100000000, 'cyan']) {
@@ -90,7 +95,7 @@ void main() {
     testWidgets('border editor updates preview and saved style: $section', (
       tester,
     ) async {
-      final controller = ValueNotifier(const Appearance());
+      final controller = ValueNotifier(Appearance());
       addTearDown(controller.dispose);
       await tester.binding.setSurfaceSize(const Size(1100, 950));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -128,38 +133,37 @@ void main() {
       expect(picker.enableOpacity, isTrue);
       picker.onColorChanged(color);
       await tester.pumpAndSettle();
-      BoxDecoration preview() =>
-          tester
-                  .widget<Container>(find.byKey(ValueKey('preview-$section')))
-                  .decoration!
-              as BoxDecoration;
-      expect(preview().border!.top.color, color);
-      expect(preview().border!.top.width, 3);
+      ContainerStyle preview() => tester.widget<StyledSurface>(
+        find.descendant(of: find.byKey(ValueKey('preview-$section')),
+          matching: find.byType(StyledSurface)),
+      ).style;
+      expect(preview().borderColor, color);
+      expect(preview().borderWidth, 3);
       final saved = AppearanceStore.decode(
         AppearanceStore.encode(controller.value),
       );
       final borderColor = switch (section) {
-        'Style des cartes' => saved.cardStyle.borderColor,
+        'Style des cartes' => saved.style('card').borderColor,
         'Style des cartes sélectionnées' =>
-          saved.selectedCardStyle!.borderColor,
+          saved.styles['selectedCard']!.borderColor,
         'Style de la sélection du panneau gauche' =>
-          saved.selectedFolderStyle!.borderColor,
-        'Style du panneau de gauche' => saved.sidebarStyle.borderColor,
-        'Style de la barre du chemin' => saved.pathBarStyle.borderColor,
-        _ => saved.backgroundStyle.borderColor,
+          saved.styles['selectedFolder']!.borderColor,
+        'Style du panneau de gauche' => saved.style('sidebar').borderColor,
+        'Style de la barre du chemin' => saved.style('pathBar').borderColor,
+        _ => saved.style('background').borderColor,
       };
       expect(borderColor, color);
       tester
           .widget<ContainerStyleEditor>(find.byType(ContainerStyleEditor))
           .onBorderWidthChanged!(0);
       await tester.pumpAndSettle();
-      expect(preview().border!.top.style, BorderStyle.none);
+      expect(preview().borderWidth, 0);
       final automatic = find.byKey(ValueKey('automatic-border-$section'));
       await tester.ensureVisible(automatic);
       await tester.pumpAndSettle();
       await tester.tap(automatic);
       await tester.pumpAndSettle();
-      expect(preview().border!.top.color, isNot(color));
+      expect(preview().borderColor, isNull);
       expect(tester.takeException(), isNull);
     });
   }
@@ -167,8 +171,10 @@ void main() {
   for (final grid in [false, true]) {
     testWidgets('unselected card border renders in grid=$grid', (tester) async {
       final controller = ValueNotifier(
-        const Appearance(
-          cardStyle: ContainerStyle(borderColor: color, borderWidth: 3),
+        Appearance(
+          styles: {
+            'card': ContainerStyle(borderColor: color, borderWidth: 3),
+          },
         ),
       );
       addTearDown(controller.dispose);
@@ -223,8 +229,9 @@ void main() {
 
       expect(border().color, color);
       expect(border().width, 3);
-      controller.value = controller.value.copyWith(
-        cardStyle: controller.value.cardStyle.copyWith(borderWidth: 0),
+      controller.value = controller.value.withStyle(
+        'card',
+        controller.value.style('card').copyWith(borderWidth: 0),
       );
       await tester.pump();
       expect(border().style, BorderStyle.none);

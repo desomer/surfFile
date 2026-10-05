@@ -10,7 +10,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('background opacity leaves content colors opaque', () {
-    const appearance = Appearance(backgroundOpacity: .25);
+    final appearance = Appearance(backgroundOpacity: .25);
     final theme = appearance.theme(Brightness.light);
     expect(theme.scaffoldBackgroundColor.a, closeTo(.25, .001));
     expect(theme.colorScheme.onSurface.a, 1);

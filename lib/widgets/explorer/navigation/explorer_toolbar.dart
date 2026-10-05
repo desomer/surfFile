@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/explorer_colors.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/explorer_colors.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
 class ExplorerToolbar extends StatelessWidget {

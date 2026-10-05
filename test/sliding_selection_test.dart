@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:surf_file/models/explorer_entry.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 
@@ -27,9 +27,9 @@ void main() {
     String? selected, {
     List<ExplorerEntry>? visible,
     bool reduceMotion = false,
-    Appearance appearance = const Appearance(),
+    Appearance? appearance,
   }) {
-    final controller = ValueNotifier(appearance);
+    final controller = ValueNotifier(appearance ?? Appearance());
     addTearDown(controller.dispose);
     return tester.pumpWidget(
       MaterialApp(
@@ -121,10 +121,12 @@ void main() {
     await show(
       tester,
       'file0.txt',
-      appearance: const Appearance(
+      appearance: Appearance(
         rowHeight: 80,
         spacing: 24,
-        selectedCardStyle: ContainerStyle(elevation: 9, radius: 22),
+        styles: const {
+          'selectedCard': ContainerStyle(elevation: 9, radius: 22),
+        },
       ),
     );
     expect(top(tester), 2);

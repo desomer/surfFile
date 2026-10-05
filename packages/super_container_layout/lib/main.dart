@@ -22,7 +22,7 @@ class TestApp extends StatelessWidget {
     registry.registerWidget('A', Center(child: Text('A')));
 
     return SuperApp(
-      title: 'Surf File V 0.0.1 by Gauthier Desomer',
+      title: 'Super Container Layout demo',
       home: getRootWidget(registry),
       registry: registry,
     );
@@ -35,17 +35,29 @@ class TestApp extends StatelessWidget {
         var superLayoutConfig = superapp.getLayoutConfigById('contA');
 
         return SuperContainer(
-          slot: AppearanceSlot.background,
+          slot: AppearanceSlot(
+            'Fond',
+            name: 'demo-background',
+            role: AppearanceSurfaceRole.applicationBackground,
+            editShape: false,
+            extendedLook: false,
+            read: (a) => a.backgroundStyle,
+            write: (a, style) => a.withStyle('background', style),
+            reset: (a) => a.withStyle('background', null),
+          ),
           decorate: false,
           applyPadding: true,
           child: Scaffold(
             body: Stack(
               children: [
                 Positioned.fill(
-                  child: SuperLayout(
-                    config: superLayoutConfig.value,
-                    onChanged: (value) => superLayoutConfig.value = value,
-                    slots: [],
+                  child: ValueListenableBuilder<SuperLayoutConfig>(
+                    valueListenable: superLayoutConfig,
+                    builder: (context, config, _) => SuperLayout(
+                      config: config,
+                      onChanged: (value) => superLayoutConfig.value = value,
+                      slots: const [],
+                    ),
                   ),
                 ),
                 Positioned(
@@ -68,7 +80,7 @@ class TestApp extends StatelessWidget {
   Widget overlyRight(BuildContext context) {
     return Builder(
       builder: (context) {
-        if (StyleEditScope.controllerOf(context) case final editMode?)
+        if (StyleEditScope.controllerOf(context) case final editMode?) {
           return _NavigationButton(
             key: const ValueKey('style-edit-mode'),
             tooltip: editMode.value
@@ -78,6 +90,7 @@ class TestApp extends StatelessWidget {
             selected: editMode.value,
             onPressed: () => editMode.value = !editMode.value,
           );
+        }
         return const SizedBox();
       },
     );

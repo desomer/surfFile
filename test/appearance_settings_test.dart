@@ -9,13 +9,14 @@ import 'package:surf_file/app.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/personal_folders.dart';
 import 'package:surf_file/services/disk_space.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:surf_file/services/appearance_store.dart';
 import 'package:super_container_layout/services/window_transparency.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/widgets/neon_surface.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
+import 'package:super_container_layout/widgets/container_style_editor.dart';
+import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
 
@@ -129,12 +130,13 @@ void main() {
       );
       expect(reset.cardHeight, 142);
       expect(reset.mode, ThemeMode.light);
-      expect(reset.cardStyle.color, isNull);
+      expect(reset.style('card').color, isNull);
       final controller = AppearanceScope.controllerOf(
         tester.element(find.byType(AppearanceSettings)),
       )!;
-      controller.value = controller.value.copyWith(
-        backgroundStyle: controller.value.backgroundStyle.copyWith(
+      controller.value = controller.value.withStyle(
+        'background',
+        controller.value.style('background').copyWith(
           neon: const NeonStyle(enabled: true, intensity: .8),
           borderColor: const Color(0x80112233),
           borderWidth: 3,
@@ -162,7 +164,7 @@ void main() {
   testWidgets('color pickers apply colors and restore automatic backgrounds', (
     tester,
   ) async {
-    final controller = ValueNotifier(const Appearance());
+    final controller = ValueNotifier(Appearance());
     addTearDown(controller.dispose);
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -185,6 +187,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ColorPicker), findsNothing);
     expect(find.byType(Slider), findsNothing);
+    await tester.ensureVisible(find.text('Style des cartes'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Style des cartes'));
     await tester.pumpAndSettle();
     expect(find.byType(Slider), findsNWidgets(4));
@@ -197,9 +201,9 @@ void main() {
     expect(picker.pickersEnabled[ColorPickerType.wheel], isTrue);
     picker.onColorChanged(const Color(0x80102030));
     await tester.pumpAndSettle();
-    expect(controller.value.cardStyle.color, const Color(0x80102030));
+    expect(controller.value.style('card').color, const Color(0x80102030));
     expect(
-      Appearance.foreground(controller.value.cardStyle.color!),
+      Appearance.foreground(controller.value.style('card').color!),
       const Color(0xFFF1F3F8),
     );
     final automatic = find.byKey(const ValueKey('automatic-Style des cartes'));
@@ -207,8 +211,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(automatic);
     await tester.pumpAndSettle();
-    expect(controller.value.cardStyle.color, isNull);
+    expect(controller.value.style('card').color, isNull);
     await tester.tap(find.text('Retour'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Couleur d’accent'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Couleur d’accent'));
     await tester.pumpAndSettle();
@@ -223,6 +229,8 @@ void main() {
     );
     await tester.tap(find.text('Retour'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Fond de l’application'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Fond de l’application'));
     await tester.pumpAndSettle();
     expect(find.byType(Slider), findsNWidgets(2));
@@ -232,7 +240,7 @@ void main() {
         .widget<ColorPicker>(find.byType(ColorPicker))
         .onColorChanged(const Color(0x40E2E8F0));
     await tester.pumpAndSettle();
-    expect(controller.value.backgroundStyle.color, const Color(0x40E2E8F0));
+    expect(controller.value.style('background').color, const Color(0x40E2E8F0));
     tester
         .widget<Slider>(find.byKey(const ValueKey('Opacité du fond')))
         .onChanged!(.5);
@@ -244,14 +252,14 @@ void main() {
     await tester.ensureVisible(automaticBackground);
     await tester.tap(automaticBackground);
     await tester.pumpAndSettle();
-    expect(controller.value.backgroundStyle.color, isNull);
+    expect(controller.value.style('background').color, isNull);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('popups expose each setting once and retain live changes', (
     tester,
   ) async {
-    final controller = ValueNotifier(const Appearance());
+    final controller = ValueNotifier(Appearance());
     addTearDown(controller.dispose);
     await tester.binding.setSurfaceSize(const Size(1000, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -274,7 +282,7 @@ void main() {
     for (final section in {
       'Style des cartes': 4,
       'Style des cartes sélectionnées': 4,
-      'Style de la sélection du panneau gauche': 4,
+      'Style de la sélection du panneau gauche': 5,
       'Dimensions et espacement': 4,
       'Texte et icônes': 2,
       'Transparence de la fenêtre': 1,
@@ -291,13 +299,23 @@ void main() {
         expect(barrier.color?.a ?? 0, 0);
         expect(barrier.dismissible, isFalse);
       }
-      // Change all sliders before rebuilding to catch stale snapshot callbacks.
-      for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
-        slider.onChanged!(slider.max);
-      }
-      await tester.pumpAndSettle();
-      for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
-        expect(slider.value, slider.max);
+      if (section.key.startsWith('Style')) {
+        final editor = tester.widget<ContainerStyleEditor>(
+          find.byType(ContainerStyleEditor),
+        );
+        editor.onRadiusChanged!(36);
+        editor.onBorderWidthChanged!(4);
+        editor.onElevationChanged!(16);
+        editor.onShadowOpacityChanged!(.6);
+        await tester.pumpAndSettle();
+      } else {
+        for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
+          slider.onChanged!(slider.max);
+        }
+        await tester.pumpAndSettle();
+        for (final slider in tester.widgetList<Slider>(find.byType(Slider))) {
+          expect(slider.value, slider.max);
+        }
       }
       await tester.tap(find.text('Retour'));
       await tester.pumpAndSettle();
@@ -306,16 +324,16 @@ void main() {
     final saved = AppearanceStore.decode(
       AppearanceStore.encode(controller.value),
     );
-    expect(saved.cardStyle.radius, 36);
-    expect(saved.cardStyle.borderWidth, 4);
-    expect(saved.cardStyle.elevation, 16);
-    expect(saved.cardStyle.shadowOpacity, .6);
+    expect(saved.style('card').radius, 36);
+    expect(saved.style('card').borderWidth, 4);
+    expect(saved.style('card').elevation, 16);
+    expect(saved.style('card').shadowOpacity, .6);
     expect(saved.spacing, Appearance.maxSpacing);
     expect(saved.rowHeight, Appearance.maxRowHeight);
     expect(saved.fontSize, 16);
     expect(saved.iconSize, 64);
-    expect(saved.selectedCardStyle!.elevation, 16);
-    expect(saved.selectedFolderStyle!.elevation, 16);
+    expect(saved.styles['selectedCard']!.elevation, 16);
+    expect(saved.styles['selectedFolder']!.elevation, 16);
     expect(saved.windowOpacity, 1);
     expect(tester.takeException(), isNull);
   });
@@ -324,17 +342,19 @@ void main() {
     tester,
   ) async {
     final controller = ValueNotifier(
-      const Appearance(
+      Appearance(
         cardHeight: 260,
         cardWidth: 320,
         rowHeight: 88,
-        cardStyle: ContainerStyle(
-          radius: 28,
-          elevation: 8,
-          shadowOpacity: .4,
-          borderWidth: 3,
-          color: Color(0xFF102030),
-        ),
+        styles: {
+          'card': ContainerStyle(
+            radius: 28,
+            elevation: 8,
+            shadowOpacity: .4,
+            borderWidth: 3,
+            color: Color(0xFF102030),
+          ),
+        },
         spacing: 24,
         fontSize: 16,
         iconSize: 64,
@@ -393,7 +413,7 @@ void main() {
     expect(tester.getSize(rowMaterial).height, 88);
     expect(tester.widget<Material>(rowMaterial).elevation, 8);
     expect(tester.takeException(), isNull);
-    controller.value = const Appearance(
+    controller.value = Appearance(
       cardHeight: 142,
       cardWidth: 180,
       fontSize: 16,

@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 
 /// Géométrie des éléments de la liste ou de la grille, dans le repère du
 /// contenu défilant. Sert à la sélection par cadre, au clavier et au

@@ -1,14 +1,16 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/theme/appearance_slot.dart';
-import 'package:super_container_layout/theme/explorer_colors.dart';
-import 'package:super_container_layout/widgets/slot_implementation.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
+import '../../../theme/surffile_appearance_slots.dart';
+import 'package:surf_file/theme/explorer_colors.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/super_app.dart';
 
 import '../../../models/explorer_location.dart';
 import '../../../services/favorites.dart';
 import '../../disk_space/disk_space_panel.dart';
+import '../explorer_components.dart';
+import '../explorer_scope.dart';
 
 class ExplorerSidebar extends StatelessWidget {
   const ExplorerSidebar({
@@ -29,11 +31,18 @@ class ExplorerSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = AppearanceScope.of(context).sidebarStyle;
+    final style = AppearanceScope.of(context).style('sidebar');
     final appearance = AppearanceScope.controllerOf(context);
-    return SuperContainer(
+    final registry = SuperApp.maybeOf(context)?.registry ?? createExplorerRegistry();
+    return ExplorerSidebarScope(
+      data: (
+        locations: locations,
+        currentPath: currentPath,
+      ),
+      actions: (onLocationSelected: onLocationSelected),
+      child: SuperContainer(
       key: const ValueKey('sidebar-surface'),
-      slot: AppearanceSlot.sidebar,
+      slot: SurfFileAppearanceSlots.sidebar,
       fallbackColor: explorerColor(
         context,
         const Color(0xFFF1F3F8),
@@ -88,92 +97,104 @@ class ExplorerSidebar extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: SuperLayout(
-                key: const ValueKey('sidebar-layout'),
-                label: 'Disposition du panneau gauche',
-                name: 'Panneau gauche',
-                config: AppearanceScope.of(context).explorerSidebarLayout,
-                onChanged: appearance == null
-                    ? null
-                    : (value) => appearance.value = appearance.value.copyWith(
-                        explorerSidebarLayout: value,
-                      ),
-                slots: [
-                  BuilderSlot(
-                    id: 'sidebar-places',
-                    label: 'Espace et favoris',
-                    builder: (_) => SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _SidebarTabs(foreground: style.foreground),
-                          const SizedBox(height: 10),
-                          ValueListenableBuilder<int>(
-                            valueListenable: tab,
-                            builder: (context, index, _) => AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 180),
-                              child: index == 0
-                                  ? Column(
-                                      key: const ValueKey('sidebar-personal'),
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        for (final location in locations)
-                                          _LocationItem(
-                                            location: location,
-                                            selected:
-                                                location.path == currentPath,
-                                            onTap: () => onLocationSelected(
-                                              location.path,
-                                            ),
-                                          ),
-                                      ],
-                                    )
-                                  : _FavoritesList(
-                                      key: const ValueKey('sidebar-favorites'),
-                                      currentPath: currentPath,
-                                      onSelected: onLocationSelected,
-                                      foreground: style.foreground,
-                                    ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  BuilderSlot(
-                    id: 'sidebar-disks',
-                    label: 'Disques',
-                    sizing: SlotSizing.intrinsic,
-                    // En zone automatique, les disques ne prennent pas plus de
-                    // la moitié du panneau : la liste garde sa place.
-                    builder: (_) => LayoutBuilder(
-                      builder: (context, constraints) => ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: constraints.hasTightHeight
-                              ? constraints.maxHeight
-                              : constraints.maxHeight / 2,
-                        ),
-                        child: SingleChildScrollView(
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: DiskSpacePanel(
-                              currentPath: currentPath,
-                              onNavigate: onLocationSelected,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              child: registeredExplorerLayout(
+                registry: registry,
+                layout: SuperLayout(
+                  key: const ValueKey('sidebar-layout'),
+                  label: 'Disposition du panneau gauche',
+                  name: 'Panneau gauche',
+                  config: AppearanceScope.of(context).layout('explorerSidebar'),
+                  onChanged: appearance == null
+                      ? null
+                      : (value) => appearance.value = appearance.value
+                            .withLayout('explorerSidebar', value),
+                  slots: [
+                    registry.component('explorer_sidebar_places').createSlot('sidebar-places'),
+                    registry.component('explorer_sidebar_disks').createSlot('sidebar-disks'),
+                  ],
+                ),
               ),
             ),
           ],
         ),
       ),
+      ),
     );
   }
+}
+
+class ExplorerSidebarPlaces extends StatelessWidget {
+  const ExplorerSidebarPlaces({required this.data, required this.actions, super.key});
+
+  final ExplorerSidebarData data;
+  final ExplorerSidebarActions actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = AppearanceScope.of(context).style('sidebar').foreground;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SidebarTabs(foreground: foreground),
+          const SizedBox(height: 10),
+          ValueListenableBuilder<int>(
+            valueListenable: ExplorerSidebar.tab,
+            builder: (context, index, _) => AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              child: index == 0
+                  ? Column(
+                      key: const ValueKey('sidebar-personal'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final location in data.locations)
+                          _LocationItem(
+                            location: location,
+                            selected: location.path == data.currentPath,
+                            onTap: () => actions.onLocationSelected(location.path),
+                          ),
+                      ],
+                    )
+                  : _FavoritesList(
+                      key: const ValueKey('sidebar-favorites'),
+                      currentPath: data.currentPath,
+                      onSelected: actions.onLocationSelected,
+                      foreground: foreground,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ExplorerSidebarDisks extends StatelessWidget {
+  const ExplorerSidebarDisks({required this.data, required this.actions, super.key});
+
+  final ExplorerSidebarData data;
+  final ExplorerSidebarActions actions;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => ConstrainedBox(
+      // Keep room for places in automatically sized zones.
+      constraints: BoxConstraints(
+        maxHeight: constraints.hasTightHeight
+            ? constraints.maxHeight
+            : constraints.maxHeight / 2,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: DiskSpacePanel(
+            currentPath: data.currentPath,
+            onNavigate: actions.onLocationSelected,
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _SidebarTabs extends StatelessWidget {
@@ -354,16 +375,18 @@ class _LocationItemState extends State<_LocationItem> {
   @override
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
-    final style = selected
-        ? appearance.effectiveSelectedFolderStyle
-        : appearance.effectiveFolderStyle;
+    final style =
+        (selected
+                ? SurfFileAppearanceSlots.selectedFolder
+                : SurfFileAppearanceSlots.folder)
+            .read(appearance);
     final foreground = selected
         ? style.foreground
-        : style.foreground ?? appearance.sidebarStyle.foreground;
+        : style.foreground ?? appearance.style('sidebar').foreground;
     final item = Padding(
       padding: const EdgeInsets.only(bottom: 3),
       child: SuperContainer(
-        slot: selected ? AppearanceSlot.selectedFolder : AppearanceSlot.folder,
+        slot: selected ? SurfFileAppearanceSlots.selectedFolder : SurfFileAppearanceSlots.folder,
         borderColor: Theme.of(context).colorScheme.primary,
         fallbackColor: selected
             ? explorerColor(

@@ -106,7 +106,7 @@ packages:
     source: hosted
     version: "7.0.1"
   flex_color_picker:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flex_color_picker
       sha256: f3cac22c1d5af8b355faa9a8146ae81b441664d499475c7a2690c933cf1c673e
@@ -127,7 +127,7 @@ packages:
     source: sdk
     version: "0.0.0"
   flutter_acrylic:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: flutter_acrylic
       sha256: b3996dbde5abf5823cc9ead4cf2e5267c3181f15585fe47ce4dc4472e7ec827a
@@ -438,7 +438,7 @@ packages:
     source: hosted
     version: "1.1.1"
   shared_preferences:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: shared_preferences
       sha256: c3025c5534b01739267eb7d76959bbc25a6d10f6988e1c2a3036940133dd10bf

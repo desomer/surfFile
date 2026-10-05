@@ -433,6 +433,7 @@ class ContainerStyleEditor extends StatelessWidget {
       ..._fillControls(),
       if (onResetColor != null)
         TextButton(
+          key: ValueKey('automatic-$label'),
           onPressed: onResetColor,
           child: const Text('Couleur unie automatique'),
         ),

@@ -171,10 +171,10 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   Future<void> _addSlot(SuperLayoutZone zone) async {
+    final slots = _availableSlots(context);
     final id = await showDialog<String>(
       context: context,
       builder: (context) {
-        final slots = _availableSlots(context);
         return SimpleDialog(
           title: Text('Ajouter un slot dans ${zone.label}'),
           children: [
@@ -208,6 +208,13 @@ class SuperLayoutState extends State<SuperLayout> {
     final ids = {for (final slot in widget.slots) slot.id};
     return [
       ...widget.slots,
+      if (registry != null)
+        for (final entry in registry.components.entries)
+          if (entry.value.isAvailable?.call(context) ?? true)
+            if (!ids.contains(entry.value.slotId))
+              entry.value.createSlot(
+                entry.value.slotId ?? _registrySlotId(entry.key, ids),
+              ),
       if (registry != null)
         for (final entry in registry.registry.entries)
           BuilderSlot(
