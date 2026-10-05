@@ -17,7 +17,7 @@ void main() {
     accent: const Color(0xFF00796B),
     fontSize: 15,
     layouts: {
-      'explorer': Appearance.defaultExplorerLayout.withSwap(
+      'explorer': SurfFileAppearanceDefaults.defaultExplorerLayout.withSwap(
         SuperLayoutZone.west,
       ),
     },
@@ -164,7 +164,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('transfer-apply')));
     await tester.pumpAndSettle();
     expect(controller.value.accent, custom.accent);
-    expect(controller.value.layout('explorer'), Appearance.defaultExplorerLayout);
+    expect(controller.value.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
   });
 
   testWidgets('an invalid text shows the reason and imports nothing', (

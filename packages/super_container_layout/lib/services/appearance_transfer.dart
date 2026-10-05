@@ -64,6 +64,9 @@ class AppearanceTransfer {
         merged[entry.key] = codec.mergeTransferValue(entry.key, merged[entry.key], entry.value, document.version);
       }
     }
-    return codec.decode(jsonEncode(merged));
+    final documentText = jsonEncode(merged);
+    final result = codec.decode(documentText);
+    codec.restoreAdditional(documentText);
+    return result;
   }
 }

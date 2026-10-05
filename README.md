@@ -1,5 +1,17 @@
 # SurfFile
 
+L'adaptation entre le contrôleur `DefaultAppearance` et les widgets génériques
+est fournie par `TypedAppearanceScope` dans le package. Le scope SurfFile garde
+uniquement la composition des préférences métier, du codec et du catalogue
+de valeurs par défaut ; il ne contient plus d'adaptateurs de contrôleur.
+
+Le modèle réutilisable `DefaultAppearance` appartient au package
+`super_container_layout` et est utilisé directement, sans sous-classe applicative.
+`SurfFileAppearanceDefaults` contient uniquement les constantes du catalogue
+et les valeurs par défaut. `SurfFilePreferences` est un modèle immuable indépendant
+pour les jauges et les transitions de dossiers. Le codec SurfFile conserve le
+format de sauvegarde actuel et ses migrations historiques.
+
 Un explorateur de fichiers de bureau Flutter.
 
 ## Catalogue des styles
@@ -18,12 +30,21 @@ d'explorateur, de carte, de dossier ou de disque.
 
 ### Preferences et migration
 
-`lib/theme/surffile_appearance.dart` definit `SurfFileAppearance` : dimensions,
-polices, transitions, fondu et jauges sont propres a SurfFile. Ses accesseurs
-lisent les styles (`card`, `selectedCard`, `diskTile`, etc.) et les dispositions
-(`explorer`, `explorerMain`, `explorerSidebar`) du modele generique.
-`lib/widgets/dialogs/appearance_settings.dart` et `appearance_style_section.dart`
-composent les controles metier avec les editeurs generiques du package.
+`lib/theme/surffile_appearance.dart` définit les constantes
+`SurfFileAppearanceDefaults`, la configuration explicite du catalogue et les
+fonctions `cardColor`, `defaultCardColor` et `foregroundForCard`. Les dimensions,
+polices et le fondu utilisent directement `DefaultAppearance`. Les styles
+(`card`, `selectedCard`, `diskTile`, etc.) et dispositions (`explorer`,
+`explorerMain`, `explorerSidebar`) restent indexés par identifiant.
+`SurfFilePreferencesScope` expose séparément les préférences métier.
+`super_container_layout` fournit les dialogues `AppearanceSettings` et
+`AppearanceStyleSection` : thème, accent, dimensions, texte/icônes, fondu,
+transparence et éditeur de slots. `lib/widgets/dialogs/appearance_settings.dart`
+est un adaptateur : catalogue, aperçu de carte, valeurs par défaut et animation
+de navigation. Son wrapper capture `SurfFilePreferencesScope` pour toutes les
+sous-fenêtres ; le package capture le contrôleur, le codec et le thème vivant.
+La réinitialisation appelle une seule fois le reset métier du codec, puis
+applique les valeurs d'apparence par défaut via le contrôleur existant.
 
 `SurfFileApp` injecte `SurfFileAppearanceStore` et `SurfFileAppearanceCodec` dans
 `SuperApp`. La cle existante **`appearance.v1` est conservee**. Les documents
@@ -32,6 +53,12 @@ champs de theme/fenetre, `styles`, `layouts`, et preferences `application`.
 Aucune preference valide n'est remise a zero ; les variantes nulles conservent
 leur heritage. Une erreur de lecture ou de validation est affichee et le
 document invalide reste intact jusqu'a une reinitialisation explicite.
+Les deux contrôleurs partagent un seul document et une seule file de sauvegarde :
+chaque modification capture immédiatement l'apparence et les préférences métier.
+Les erreurs de sauvegarde des jauges/transitions sont signalées comme celles des
+styles. Charger, importer et réinitialiser restaure les deux modèles ; remettre
+les dispositions à zéro conserve les préférences métier et rétablit le catalogue
+des dispositions de l'application.
 
 L'import/export utilise le meme codec : les exports v3, les anciens exports
 `surf_file.appearance` v2 et les documents bruts sont acceptes. Les groupes

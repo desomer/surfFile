@@ -159,7 +159,7 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
             else
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final columns = appearance.diskGaugeStyle.columns;
+                  final columns = SurfFilePreferencesScope.of(context).diskGaugeStyle.columns;
                   final selectedPath = _selectedPath;
                   return Wrap(
                     spacing: 8,
@@ -218,7 +218,7 @@ class _DiskTile extends StatelessWidget {
                 ? SurfFileAppearanceSlots.selectedDiskTile
                 : SurfFileAppearanceSlots.diskTile)
             .read(appearance);
-    final gauge = appearance.diskGaugeStyle;
+    final gauge = SurfFilePreferencesScope.of(context).diskGaugeStyle;
     final foreground =
         style.foreground ??
         (selected

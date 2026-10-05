@@ -44,7 +44,7 @@ class _FolderTransitionViewState extends State<FolderTransitionView>
   void didUpdateWidget(FolderTransitionView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.revision == widget.revision) return;
-    final appearance = AppearanceScope.of(context);
+    final appearance = SurfFilePreferencesScope.of(context);
     _type = appearance.folderTransition;
     _reverse = widget.reverse;
     _controller.duration = Duration(
@@ -66,7 +66,7 @@ class _FolderTransitionViewState extends State<FolderTransitionView>
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (MediaQuery.disableAnimationsOf(context) ||
-        AppearanceScope.of(context).folderTransition == FolderTransition.none) {
+        SurfFilePreferencesScope.of(context).folderTransition == FolderTransition.none) {
       _previous = null;
       _previousRevision = null;
       _controller.value = 1;

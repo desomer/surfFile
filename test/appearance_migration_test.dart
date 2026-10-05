@@ -71,7 +71,7 @@ void main() {
     SharedPreferences.setMockInitialValues({'appearance.v1': jsonEncode(legacy)});
     final store = AppearanceStore();
     final migrated = await store.load();
-    expect(jsonDecode(LegacyAppearanceCodec.encode(migrated)), legacy);
+    expect(jsonDecode(LegacyAppearanceCodec.encode(migrated, preferences: store.preferences.value)), legacy);
     final preferences = await SharedPreferences.getInstance();
     final persisted = preferences.getString('appearance.v1')!;
     expect(jsonDecode(persisted)['version'], 3);
@@ -81,14 +81,16 @@ void main() {
     final restart = PersistentAppearanceController(AppearanceStore(), errors.add);
     addTearDown(restart.dispose);
     await restart.restore();
-    expect(AppearanceStore.encode(restart.value), persisted);
-    final exported = AppearanceTransfer.export(restart.value, both);
-    final imported = AppearanceTransfer.import(Appearance(), exported, both);
-    expect(AppearanceStore.encode(imported), persisted);
+    final codec = SurfFileAppearanceCodec(preferences: restart.preferences);
+    expect(codec.encode(restart.value), persisted);
+    final exported = AppearanceTransfer.export(restart.value, both, codec: codec);
+    final imported = AppearanceTransfer.import(Appearance(), exported, both, codec: codec);
+    expect(codec.encode(imported), persisted);
     restart.value = imported;
     await restart.saved;
-    expect(AppearanceStore.encode(await AppearanceStore().load()), persisted);
-    restart.value = Appearance();
+    final reloadedStore = AppearanceStore();
+    expect(reloadedStore.codec.encode(await reloadedStore.load()), persisted);
+    restart.reset();
     await restart.saved;
     expect(AppearanceStore.encode(await AppearanceStore().load()), AppearanceStore.encode(Appearance()));
     expect(errors, isEmpty);
@@ -101,15 +103,17 @@ void main() {
       jsonEncode({'format': AppearanceTransfer.format, 'version': 2, 'groups': ['styles', 'layouts'],
         'data': {...legacy}..remove('version')}),
     ]) {
-      final restored = AppearanceTransfer.import(Appearance(), text, both);
-      expect(jsonDecode(LegacyAppearanceCodec.encode(restored)), legacy);
-      final layouts = AppearanceTransfer.import(Appearance(), text, {TransferGroup.layouts});
+      final codec = SurfFileAppearanceCodec();
+      final restored = AppearanceTransfer.import(Appearance(), text, both, codec: codec);
+      expect(jsonDecode(LegacyAppearanceCodec.encode(restored, preferences: codec.preferences.value)), legacy);
+      final layoutCodec = SurfFileAppearanceCodec();
+      final layouts = AppearanceTransfer.import(Appearance(), text, {TransferGroup.layouts}, codec: layoutCodec);
       expect(layouts.cardWidth, 180);
-      expect(layouts.folderTransition, FolderTransition.none);
+      expect(layoutCodec.preferences.value.folderTransition, FolderTransition.none);
       expect(layouts.layout('explorer').westSize, 277);
       final styles = AppearanceTransfer.import(Appearance(), text, {TransferGroup.styles});
       expect(styles.cardWidth, 287);
-      expect(styles.layout('explorer'), Appearance.defaultExplorerLayout);
+      expect(styles.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
     }
   });
 
@@ -126,17 +130,20 @@ void main() {
   });
 
   test('generic shell updates keep typed business preferences and unknown IDs', () {
-    shell.Appearance a = AppearanceStore.decode(jsonEncode(legacyDocument()));
+    final codec = SurfFileAppearanceCodec();
+    final text = jsonEncode(legacyDocument());
+    codec.restoreAdditional(text);
+    shell.Appearance a = codec.decode(text);
     a = a.withStyle('third-party/surface', const ContainerStyle(radius: 31))
       .withLayout('third-party/layout', const SuperLayoutConfig(west: false))
       .copyWith(mode: ThemeMode.system);
-    final restored = AppearanceStore.decode(const SurfFileAppearanceCodec().encode(a));
+    final restored = codec.decode(codec.encode(a));
     expect(restored.style('third-party/surface').radius, 31);
     expect(restored.layout('third-party/layout').west, isFalse);
     expect(restored.cardHeight, 243);
-    expect(restored.folderTransitionDuration, 680);
+    expect(codec.preferences.value.folderTransitionDuration, 680);
     expect(restored.mode, ThemeMode.system);
-    expect(requireSurfFileAppearance(a), isA<SurfFileAppearance>());
+    expect(a, isA<DefaultAppearance>());
   });
 
   testWidgets('typed scope preserves the controller and bridge across rebuilds', (tester) async {
@@ -160,18 +167,18 @@ void main() {
     controller.value = controller.value.copyWith(mode: ThemeMode.dark, cardWidth: 241);
     await tester.pump();
     expect(find.text('dark'), findsOneWidget);
-    expect(requireSurfFileAppearance(observed!).cardWidth, 241);
+    expect((observed! as DefaultAppearance).cardWidth, 241);
     expect(tester.takeException(), isNull);
   });
 
   test('selection reset still follows standard style without deleting business values', () {
     final initial = AppearanceStore.decode(jsonEncode(legacyDocument()));
-    final reset = requireSurfFileAppearance(SurfFileAppearanceSlots.selectedCard.reset(initial));
+    final reset = SurfFileAppearanceSlots.selectedCard.reset(initial);
     expect(reset.styles['selectedCard'], isNull);
     expect(SurfFileAppearanceSlots.selectedCard.read(reset).radius, initial.style('card').radius);
-    expect(reset.diskGaugeStyle.toJson(), initial.diskGaugeStyle.toJson());
-    expect(reset.resetLayouts().cardHeight, 243);
-    expect(reset.resetLayouts().layout('explorer'), Appearance.defaultExplorerLayout);
+    final configured = SurfFileAppearanceCodec().prepare(reset.resetLayouts());
+    expect(configured.cardHeight, 243);
+    expect(configured.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
   });
 
   test('invalid legacy storage is reported and never overwritten', () async {
@@ -237,6 +244,6 @@ void main() {
       expect(() => AppearanceTransfer.import(Appearance(), jsonEncode(document), both), throwsFormatException);
     }
     expect(() => AppearanceTransfer.groupsIn('not json'), throwsFormatException);
-    expect(() => const SurfFileAppearanceCodec().encode(shell.Appearance()), throwsStateError);
+    expect(() => SurfFileAppearanceCodec().encode(shell.Appearance()), throwsStateError);
   });
 }

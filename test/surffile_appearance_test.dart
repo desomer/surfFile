@@ -17,48 +17,48 @@ void main() {
   );
 
   test('partial maps keep every default style and layout', () {
-    final appearance = Appearance(
+    final appearance = defaultSurfFileAppearance(
       styles: const {'card': custom},
       layouts: const {'explorerMain': dynamicLayout},
     );
     expect(appearance.style('card'), same(custom));
-    for (final id in Appearance.defaultStyles.keys.where((id) => id != 'card')) {
+    for (final id in SurfFileAppearanceDefaults.defaultStyles.keys.where((id) => id != 'card')) {
       expect(
         appearance.styles[id]!.toJson(),
-        Appearance.defaultStyles[id]!.toJson(),
+        SurfFileAppearanceDefaults.defaultStyles[id]!.toJson(),
         reason: id,
       );
     }
-    expect(appearance.layout('explorerMain'), same(dynamicLayout));
-    expect(appearance.layout('explorer'), Appearance.defaultExplorerLayout);
+    expect(appearance.layout('explorerMain').toJson(), dynamicLayout.toJson());
+    expect(appearance.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
     expect(
       appearance.layout('explorerSidebar'),
-      Appearance.defaultExplorerSidebarLayout,
+      SurfFileAppearanceDefaults.defaultExplorerSidebarLayout,
     );
     expect(appearance.styles['selectedCard'], isNull);
   });
 
-  test('withStyle and withLayout keep the SurfFile type and scalars', () {
+  test('withStyle and withLayout keep the package model and scalars', () {
     final initial = Appearance(cardHeight: 210, spacing: 30);
-    final SurfFileAppearance changed = initial
+    final DefaultAppearance changed = initial
         .withStyle('custom-panel', custom)
         .withLayout('custom-layout', dynamicLayout)
         .withStyle('selectedCard', custom);
     expect(changed.cardHeight, 210);
     expect(changed.spacing, 30);
     expect(changed.style('custom-panel'), same(custom));
-    expect(changed.layout('custom-layout'), same(dynamicLayout));
+    expect(changed.layout('custom-layout').toJson(), dynamicLayout.toJson());
     final copied = changed.copyWith(rowHeight: 60);
     expect(copied.style('custom-panel'), same(custom));
-    expect(copied.layout('custom-layout'), same(dynamicLayout));
+    expect(copied.layout('custom-layout').toJson(), dynamicLayout.toJson());
 
-    final removed = changed
+    final removed = SurfFileAppearanceCodec().prepare(changed
         .withStyle('selectedCard', null)
-        .withStyle('card', null);
+        .withStyle('card', null));
     expect(removed.styles.containsKey('selectedCard'), isFalse);
     expect(
       removed.style('card').toJson(),
-      Appearance.defaultCardStyle.toJson(),
+      SurfFileAppearanceDefaults.defaultCardStyle.toJson(),
     );
     expect(removed.style('custom-panel'), same(custom));
   });
@@ -68,10 +68,10 @@ void main() {
         .withStyle('custom-panel', custom)
         .withLayout('explorer', dynamicLayout)
         .withLayout('custom-layout', dynamicLayout);
-    final SurfFileAppearance reset = appearance.resetLayouts();
+    final DefaultAppearance reset = SurfFileAppearanceCodec().prepare(appearance.resetLayouts());
     expect(reset.iconSize, 60);
     expect(reset.style('custom-panel'), same(custom));
-    expect(reset.layout('explorer'), Appearance.defaultExplorerLayout);
+    expect(reset.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
     expect(reset.layouts.containsKey('custom-layout'), isFalse);
   });
 
@@ -89,7 +89,7 @@ void main() {
     );
     expect(
       restored.style('card').toJson(),
-      Appearance.defaultCardStyle.toJson(),
+      SurfFileAppearanceDefaults.defaultCardStyle.toJson(),
     );
   });
 
@@ -119,7 +119,7 @@ void main() {
       appearance,
     );
     expect(selectedTile.radius, 7);
-    expect(selectedTile.color, const Color(0xFF0000FF));
+    expect(selectedTile.color, isNull);
 
     final overridden = appearance.withStyle(
       'selectedCard',

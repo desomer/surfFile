@@ -6,9 +6,9 @@ import 'package:super_container_layout/theme/neon_style.dart';
 
 /// Style catalog belonging to SurfFile, not to the layout package.
 ///
-/// Each slot edits the style of [SurfFileAppearance.styles] whose ID is its
+/// Each slot edits the style of [DefaultAppearance.styles] whose ID is its
 /// [AppearanceSlot.name]; resetting removes the entry, which restores
-/// [SurfFileAppearance.defaultStyles] or the derived default of an optional
+/// [SurfFileAppearanceDefaults.defaultStyles] or the derived default of an optional
 /// variant. [AppearanceSlot.read] resolves these derived styles.
 abstract final class SurfFileAppearanceSlots {
   static final background = _slot(
@@ -103,9 +103,9 @@ AppearanceSlot _slot(
 }) => AppearanceSlot(
   label,
   name: name,
-  read: (value) => (read ?? (a) => a.style(name))(requireSurfFileAppearance(value)),
-  write: (value, style) => requireSurfFileAppearance(value).withStyle(name, style),
-  reset: (value) => requireSurfFileAppearance(value).withStyle(name, null),
+  read: (value) => (read ?? (a) => a.style(name))(value),
+  write: (value, style) => value.withStyle(name, style),
+  reset: (value) => value.withStyle(name, SurfFileAppearanceDefaults.defaultStyles[name]),
   editShape: editShape,
   extendedLook: extendedLook,
   role: role,

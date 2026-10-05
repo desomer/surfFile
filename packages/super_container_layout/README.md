@@ -1,5 +1,53 @@
 # super_container_layout
 
+`TypedAppearanceScope<T extends Appearance>` raccorde un contrôleur typé aux
+widgets génériques du package, avec son codec :
+
+```dart
+TypedAppearanceScope<DefaultAppearance>(
+  controller: controller,
+  codec: const DefaultAppearanceCodec(),
+  child: child,
+)
+```
+
+`TypedAppearanceScope.of<DefaultAppearance>(context)` lit le modèle ;
+`controllerOf<DefaultAppearance>(context)` expose le contrôleur typé.
+`maybeOf` et `controllerOf` retournent `null` sans scope ; un modèle de type
+incompatible produit une `StateError`. Les écritures provenant du contrôleur
+générique passent par `codec.prepare`, puis sont vérifiées avant transmission.
+Le scope dispose ses adaptateurs, jamais le contrôleur fourni par l'application.
+Les scopes de préférences métier restent à composer dans l'application.
+
+`DefaultAppearance` complète `Appearance` avec les dimensions des éléments,
+la typographie et le fondu de défilement. Ses maps `styles` et `layouts` ne
+contiennent aucun catalogue ou disposition d'application par défaut.
+`copyWith`, `withStyle`, `withLayout` et `resetLayouts` conservent les autres
+préférences et retournent un `DefaultAppearance`.
+
+Pour sauvegarder ce modèle, fournir explicitement son codec :
+
+```dart
+SuperApp(
+  appearanceStore: AppearanceStore(codec: const DefaultAppearanceCodec()),
+  home: const MyHomePage(),
+)
+```
+
+Les réglages métier (jauges de disque, transitions de dossiers) et les
+catalogues spécifiques restent dans l'application. Une sous-classe peut
+ajouter ces données avec un codec dédié ; le codec générique ne les sérialise
+pas automatiquement.
+
+Un codec peut aussi composer des préférences indépendantes sans sous-classer
+le modèle : `additionalPreferences` expose leur `Listenable`,
+`restoreAdditional` applique un document déjà validé et `resetAdditional`
+restaure leurs valeurs initiales. `prepare` configure les catalogues/fallbacks
+de l'application avant une mise à jour du contrôleur. Le contrôleur persistant
+capture le document complet à chaque changement et sérialise les écritures avec
+`AppearanceStore.saveEncoded`, y compris pour les préférences indépendantes.
+La lecture, les migrations et les imports utilisent le même codec.
+
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
@@ -120,9 +168,23 @@ retourne `needsMigration == true` les valide avant de sauvegarder la valeur
 migree. Les erreurs sont signalees par `SuperApp` et par le controleur, sans
 effacer le document original. Les ecritures sont serialisees et validees.
 
-`AppearanceSettings` propose uniquement theme, accent et opacite de fenetre,
-avec `additionalControls` et `defaults` pour la composition. Les editeurs de
-styles, variantes selectionnees, fond et effet natif restent generiques.
+`AppearanceSettings` fournit thème, accent et transparence de fenêtre.
+Avec `DefaultAppearance`, il fournit aussi dimensions, espacement, texte,
+icônes et fondu de défilement (ces sections sont absentes avec `Appearance`).
+Injecter `slots: List<AppearanceSlot>`, `additionalSections` (des
+`AppearanceSettingsSection(id:, label:, icon:, builder:)`), `previewBuilder`
+et `defaults` pour composer le panneau sans dépendance métier.
+`additionalControls` reste compatible pour les contrôles intégrés au panneau.
+`AppearanceStyleSection` conserve les éditeurs de styles, variantes
+sélectionnées, fond et effet natif. Les callbacks des slots définissent leur
+lecture/écriture et réinitialisation ; des defaults explicites restaurent
+les entrées du catalogue, supprimant les variantes facultatives absentes.
+`AppearanceSettings.show` capture le contrôleur et `AppearanceServicesScope`
+du contexte appelant, avec un thème réactif dans chaque sous-dialogue.
+`dialogWrapper` permet de transmettre d'autres scopes : capturer leurs
+contrôleurs avant l'ouverture puis retourner le scope autour de `child`.
+`resetAdditional` remplace le reset du codec ; sans override, le codec est
+appelé une seule fois avant l'application des defaults d'apparence.
 `AppearanceTransfer` accepte un codec optionnel pour l'export et l'import
 des groupes Styles et Dispositions.
 

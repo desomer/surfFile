@@ -13,6 +13,10 @@ class AppearanceCodec {
   int get schemaVersion => 1;
   Set<String> get additionalKeys => const {};
   Appearance get defaults => Appearance();
+  Listenable? get additionalPreferences => null;
+  Appearance prepare(Appearance appearance) => appearance;
+  void restoreAdditional(String document) {}
+  void resetAdditional() {}
   bool needsMigration(String text) => false;
   String encode(Appearance appearance) => jsonEncode(toJson(appearance));
   Appearance decode(String text) {
@@ -79,15 +83,23 @@ class AppearanceStore {
   Future<Appearance> load() async {
     final preferences = await SharedPreferences.getInstance();
     final stored = preferences.get(key);
-    if (stored == null) return codec.defaults;
+    if (stored == null) {
+      codec.resetAdditional();
+      return codec.defaults;
+    }
     if (stored is! String) throw const FormatException('Invalid stored appearance.');
     final result = codec.decode(stored);
+    codec.restoreAdditional(stored);
     if (codec.needsMigration(stored)) await save(result);
     return result;
   }
 
   Future<void> save(Appearance appearance) async {
     final encoded = codec.encode(appearance);
+    await saveEncoded(encoded);
+  }
+
+  Future<void> saveEncoded(String encoded) async {
     codec.decode(encoded);
     final preferences = await SharedPreferences.getInstance();
     if (!await preferences.setString(key, encoded)) throw StateError('Appearance save failed.');
@@ -104,18 +116,41 @@ class AppearanceServicesScope extends InheritedWidget {
 }
 
 class PersistentAppearanceController extends ValueNotifier<Appearance> {
-  PersistentAppearanceController(this.store, this.onSaveError) : super(store.codec.defaults);
+  PersistentAppearanceController(this.store, this.onSaveError) : super(store.codec.defaults) {
+    store.codec.additionalPreferences?.addListener(persist);
+  }
   final AppearanceStore store;
   final void Function(Object error) onSaveError;
   Future<void> _pending = Future.value();
   Future<void> get saved => _pending;
-  Future<void> restore() async { super.value = await store.load(); }
+  bool _restoring = false;
+  Future<void> restore() async {
+    _restoring = true;
+    try { super.value = await store.load(); }
+    finally { _restoring = false; }
+  }
   @override
   set value(Appearance appearance) {
-    super.value = appearance;
+    super.value = store.codec.prepare(appearance);
+    persist();
+  }
+  void reset() {
+    store.codec.resetAdditional();
+    value = store.codec.defaults;
+  }
+  void persist() {
+    if (_restoring) return;
+    final String encoded;
+    try { encoded = store.codec.encode(value); }
+    catch (error) { onSaveError(error); return; }
     _pending = _pending.then((_) async {
-      try { await store.save(appearance); }
+      try { await store.saveEncoded(encoded); }
       catch (error) { onSaveError(error); }
     });
+  }
+  @override
+  void dispose() {
+    store.codec.additionalPreferences?.removeListener(persist);
+    super.dispose();
   }
 }

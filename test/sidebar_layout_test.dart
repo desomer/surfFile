@@ -88,7 +88,7 @@ void main() {
       height: 700,
       appearance: Appearance(
         layouts: {
-          'explorerSidebar': Appearance.defaultExplorerSidebarLayout.withSwap(
+          'explorerSidebar': SurfFileAppearanceDefaults.defaultExplorerSidebarLayout.withSwap(
             SuperLayoutZone.south,
           ),
         },

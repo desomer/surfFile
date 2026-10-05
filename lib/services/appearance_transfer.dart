@@ -7,10 +7,13 @@ class AppearanceTransfer {
   const AppearanceTransfer._();
   static const format = 'surf_file.appearance';
   static const layoutKeys = {'layouts'};
-  static String export(Appearance value, Set<shell.TransferGroup> groups) =>
-      shell.AppearanceTransfer.export(value, groups, codec: const SurfFileAppearanceCodec());
+  static String export(Appearance value, Set<shell.TransferGroup> groups, {SurfFileAppearanceCodec? codec}) =>
+      shell.AppearanceTransfer.export(value, groups, codec: codec ?? SurfFileAppearanceCodec());
   static Set<shell.TransferGroup> groupsIn(String text) =>
-      shell.AppearanceTransfer.groupsIn(text, codec: const SurfFileAppearanceCodec());
-  static Appearance import(Appearance current, String text, Set<shell.TransferGroup> groups) =>
-      requireSurfFileAppearance(shell.AppearanceTransfer.import(current, text, groups, codec: const SurfFileAppearanceCodec()));
+      shell.AppearanceTransfer.groupsIn(text, codec: SurfFileAppearanceCodec());
+  static Appearance import(Appearance current, String text, Set<shell.TransferGroup> groups, {SurfFileAppearanceCodec? codec}) {
+    final result = shell.AppearanceTransfer.import(current, text, groups, codec: codec ?? SurfFileAppearanceCodec());
+    if (result is DefaultAppearance) return result;
+    throw StateError('SurfFile requires DefaultAppearance.');
+  }
 }

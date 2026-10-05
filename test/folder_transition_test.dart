@@ -18,6 +18,7 @@ import 'package:surf_file/widgets/explorer/navigation/explorer_sort_header.dart'
 import 'package:surf_file/widgets/explorer/navigation/explorer_view_toggle.dart';
 import 'package:surf_file/widgets/explorer/transitions/folder_transition_view.dart';
 import 'package:surf_file/widgets/explorer/transitions/folder_hero_flight.dart';
+import 'package:surf_file/widgets/explorer/explorer_scope.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -27,15 +28,21 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     for (final type in FolderTransition.values) {
       for (final duration in [100.0, 220.0, 1000.0]) {
-        final appearance = Appearance().copyWith(
+        final preferences = SurfFilePreferences(
             folderTransition: type, folderTransitionDuration: duration);
-        await AppearanceStore().save(appearance);
-        final restored = await AppearanceStore().load();
+        final store = AppearanceStore();
+        store.preferences.value = preferences;
+        await store.save(Appearance());
+        final restoredStore = AppearanceStore();
+        await restoredStore.load();
+        final restored = restoredStore.preferences.value;
         expect(restored.folderTransition, type);
         expect(restored.folderTransitionDuration, duration);
       }
     }
-    final legacy = AppearanceStore.decode('{"version":1,"mode":"light"}');
+    final codec = SurfFileAppearanceCodec();
+    codec.restoreAdditional('{"version":1,"mode":"light"}');
+    final legacy = codec.preferences.value;
     expect(legacy.folderTransition, FolderTransition.none);
     expect(legacy.folderTransitionDuration, 220);
     for (final value in ['bad', 1]) {
@@ -58,8 +65,10 @@ void main() {
   for (final type in FolderTransition.values) {
     testWidgets('transition $type respects duration and revision',
         (tester) async {
-      final controller = ValueNotifier(
-          Appearance(folderTransition: type, folderTransitionDuration: 400));
+      final controller = ValueNotifier(Appearance());
+      final preferences = ValueNotifier(
+          SurfFilePreferences(folderTransition: type, folderTransitionDuration: 400));
+      addTearDown(preferences.dispose);
       addTearDown(controller.dispose);
       Future<void> show(int revision,
               {bool reverse = false,
@@ -67,6 +76,7 @@ void main() {
               String text = 'content'}) =>
           tester.pumpWidget(AppearanceScope(
             controller: controller,
+            preferences: preferences,
             child: MaterialApp(
                 home: MediaQuery(
               data: MediaQueryData(disableAnimations: reduced),
@@ -166,8 +176,8 @@ void main() {
       await show(3, reduced: true);
       expect(remaining(), closeTo(0, .0001));
       await show(4);
-      controller.value =
-          controller.value.copyWith(folderTransition: FolderTransition.none);
+      preferences.value =
+          preferences.value.copyWith(folderTransition: FolderTransition.none);
       await tester.pump();
       expect(remaining(), closeTo(0, .0001));
       expect(tester.takeException(), isNull);
@@ -176,13 +186,16 @@ void main() {
 
   for (final type in FolderTransition.values) {
     testWidgets('old folder stays visible only during $type', (tester) async {
-      final controller = ValueNotifier(
-          Appearance(folderTransition: type, folderTransitionDuration: 400));
+      final controller = ValueNotifier(Appearance());
+      final preferences = ValueNotifier(
+          SurfFilePreferences(folderTransition: type, folderTransitionDuration: 400));
+      addTearDown(preferences.dispose);
       addTearDown(controller.dispose);
       var oldTaps = 0;
       Future<void> show(int revision, String text) =>
           tester.pumpWidget(AppearanceScope(
             controller: controller,
+            preferences: preferences,
             child: MaterialApp(
               home: FolderTransitionView(
                 revision: revision,
@@ -235,11 +248,14 @@ void main() {
   testWidgets('settings expose all transition types and duration',
       (tester) async {
     final controller = ValueNotifier(Appearance());
+    final preferences = ValueNotifier(const SurfFilePreferences());
+    addTearDown(preferences.dispose);
     addTearDown(controller.dispose);
     await tester.binding.setSurfaceSize(const Size(1100, 950));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(AppearanceScope(
       controller: controller,
+      preferences: preferences,
       child: MaterialApp(
           home: Builder(
               builder: (context) => Scaffold(
@@ -262,7 +278,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text(type.label).last);
       await tester.pumpAndSettle();
-      expect(controller.value.folderTransition, type);
+      expect(preferences.value.folderTransition, type);
     }
     final slider = tester.widget<Slider>(
         find.byKey(const ValueKey('Durée de la transition (ms)')));
@@ -270,13 +286,13 @@ void main() {
     expect(slider.max, 1000);
     slider.onChanged!(750);
     await tester.pumpAndSettle();
-    expect(controller.value.folderTransitionDuration, 750);
+    expect(preferences.value.folderTransitionDuration, 750);
     await tester.tap(find.text('Retour'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Réinitialiser'));
     await tester.pumpAndSettle();
-    expect(controller.value.folderTransition, FolderTransition.none);
-    expect(controller.value.folderTransitionDuration, 220);
+    expect(preferences.value.folderTransition, FolderTransition.none);
+    expect(preferences.value.folderTransitionDuration, 220);
     expect(tester.takeException(), isNull);
   });
 
@@ -313,11 +329,14 @@ void main() {
               });
       addTearDown(() =>
           messenger.setMockMethodCallHandler(PersonalFolders.channel, null));
-      final controller = ValueNotifier(Appearance(
+      final controller = ValueNotifier(Appearance());
+      final preferences = ValueNotifier(SurfFilePreferences(
           folderTransition: navigationType, folderTransitionDuration: 400));
+      addTearDown(preferences.dispose);
       addTearDown(controller.dispose);
       await tester.pumpWidget(AppearanceScope(
           controller: controller,
+          preferences: preferences,
           child: MaterialApp(
               theme: controller.value.theme(Brightness.light),
               builder: (context, child) => MediaQuery(
@@ -330,7 +349,8 @@ void main() {
           await tester.runAsync(
               () => Future<void>.delayed(const Duration(milliseconds: 20)));
           await tester.pump();
-          if (find.byType(CircularProgressIndicator).evaluate().isEmpty) return;
+          final panes = tester.widgetList<ExplorerPaneScope>(find.byType(ExplorerPaneScope));
+          if (panes.isNotEmpty && panes.every((pane) => !pane.data.loading)) return;
         }
         fail('Directory loading did not finish.');
       }
@@ -350,6 +370,9 @@ void main() {
       await navigate('Documents');
       await finishLoad();
       await tester.pumpAndSettle();
+      expect(path(), first.path);
+      final data = tester.widget<ExplorerPaneScope>(find.byType(ExplorerPaneScope)).data;
+      expect(find.text('first.txt'), findsOneWidget, reason: '${data.entries.map((e) => e.name).toList()} loading=${data.loading} pending=${data.pending} ${controller.value.layouts.map((id, v) => MapEntry(id, v.toJson()))}');
       if (navigationType == FolderTransition.heroExpand ||
           navigationType == FolderTransition.heroIcon) {
         final entriesView = tester

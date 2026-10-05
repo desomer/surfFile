@@ -13,10 +13,10 @@ void main() {
     mode: ThemeMode.dark,
     fontSize: 15,
     layouts: {
-      'explorer': Appearance.defaultExplorerLayout.withSwap(
+      'explorer': SurfFileAppearanceDefaults.defaultExplorerLayout.withSwap(
         SuperLayoutZone.west,
       ),
-      'explorerMain': Appearance.defaultExplorerMainLayout.withSwap(
+      'explorerMain': SurfFileAppearanceDefaults.defaultExplorerMainLayout.withSwap(
         SuperLayoutZone.north,
       ),
     },
@@ -75,8 +75,8 @@ void main() {
       });
       expect(restored.accent, custom.accent);
       expect(restored.fontSize, 15);
-      expect(restored.layout('explorer'), Appearance.defaultExplorerLayout);
-      expect(restored.layout('explorerMain'), Appearance.defaultExplorerMainLayout);
+      expect(restored.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
+      expect(restored.layout('explorerMain'), SurfFileAppearanceDefaults.defaultExplorerMainLayout);
     });
 
     test('layouts only keep the current styles', () {

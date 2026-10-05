@@ -20,7 +20,7 @@ class ExplorerSidebar extends StatelessWidget {
     super.key,
   });
 
-  static const double width = Appearance.defaultSidebarWidth;
+  static const double width = SurfFileAppearanceDefaults.defaultSidebarWidth;
 
   /// Onglet affiché (0 : espace perso, 1 : favoris), commun aux deux volets.
   static final tab = ValueNotifier(0);

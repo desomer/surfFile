@@ -7,18 +7,22 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
-import 'package:super_container_layout/theme/appearance.dart' as shell;
+import 'package:surf_file/theme/folder_transition.dart';
+import 'package:surf_file/theme/disk_gauge_style.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 
 class _DelayedStore extends AppearanceStore {
   final gate = Completer<void>();
   final writes = <Appearance>[];
+  final documents = <Map<String, dynamic>>[];
   bool fail = false;
 
   @override
-  Future<void> save(shell.Appearance appearance) async {
+  Future<void> saveEncoded(String encoded) async {
     if (writes.isEmpty) await gate.future;
-    writes.add(requireSurfFileAppearance(appearance));
+    final appearance = AppearanceStore.decode(encoded);
+    documents.add(jsonDecode(encoded) as Map<String, dynamic>);
+    writes.add(appearance);
     if (fail) {
       fail = false;
       throw StateError('Storage unavailable');
@@ -29,6 +33,44 @@ class _DelayedStore extends AppearanceStore {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('independent preferences share immutable queued document snapshots', () async {
+    final store = _DelayedStore();
+    final errors = <Object>[];
+    final controller = PersistentAppearanceController(store, errors.add);
+    addTearDown(controller.dispose);
+    controller.preferences.value = const SurfFilePreferences(
+      folderTransition: FolderTransition.slide,
+      folderTransitionDuration: 400,
+    );
+    controller.value = controller.value.copyWith(cardWidth: 240);
+    controller.preferences.value = controller.preferences.value.copyWith(
+      diskGaugeStyle: const DiskGaugeStyle(columns: 3),
+      folderTransitionDuration: 700,
+    );
+    controller.value = controller.value.withLayout('dynamic', const SuperLayoutConfig(west: false));
+    store.gate.complete();
+    await controller.saved;
+    expect(store.documents.length, 4);
+    expect(store.documents.map((d) => (d['application'] as Map)['cardWidth']), [180, 240, 240, 240]);
+    expect(store.documents.map((d) => (d['application'] as Map)['folderTransitionDuration']), [400, 400, 700, 700]);
+    expect((store.documents[2]['application'] as Map)['diskGaugeStyle']['columns'], 3);
+    expect((store.documents.last['layouts'] as Map).containsKey('dynamic'), isTrue);
+    expect(errors, isEmpty);
+  });
+
+  test('business preference write errors surface and later writes recover', () async {
+    final store = _DelayedStore()..fail = true;
+    final errors = <Object>[];
+    final controller = PersistentAppearanceController(store, errors.add);
+    addTearDown(controller.dispose);
+    controller.preferences.value = controller.preferences.value.copyWith(folderTransitionDuration: 400);
+    controller.preferences.value = controller.preferences.value.copyWith(folderTransitionDuration: 600);
+    store.gate.complete();
+    await controller.saved;
+    expect(errors.single, isA<StateError>());
+    expect((store.documents.last['application'] as Map)['folderTransitionDuration'], 600);
+  });
 
   final custom = Appearance(
     mode: ThemeMode.system,
@@ -87,9 +129,9 @@ void main() {
   test('explorer main layout survives saving and has a default', () async {
     expect(
       (await AppearanceStore().load()).layout('explorerMain'),
-      Appearance.defaultExplorerMainLayout,
+      SurfFileAppearanceDefaults.defaultExplorerMainLayout,
     );
-    final moved = Appearance.defaultExplorerMainLayout.withSwap(
+    final moved = SurfFileAppearanceDefaults.defaultExplorerMainLayout.withSwap(
       SuperLayoutZone.north,
     );
     final errors = <Object>[];
@@ -108,9 +150,9 @@ void main() {
   test('sidebar layout survives saving and has a default', () async {
     expect(
       (await AppearanceStore().load()).layout('explorerSidebar'),
-      Appearance.defaultExplorerSidebarLayout,
+      SurfFileAppearanceDefaults.defaultExplorerSidebarLayout,
     );
-    final moved = Appearance.defaultExplorerSidebarLayout.withSlotMoved(
+    final moved = SurfFileAppearanceDefaults.defaultExplorerSidebarLayout.withSlotMoved(
       'sidebar-disks',
       SuperLayoutZone.center,
     );
@@ -208,7 +250,7 @@ void main() {
       );
       expect(
         AppearanceStore.decode('{"version":2,"mode":"dark"}').style('card'),
-        Appearance.defaultCardStyle,
+        SurfFileAppearanceDefaults.defaultCardStyle,
       );
       final oldStored = jsonEncode({'version': 1, 'mode': 'dark'});
       SharedPreferences.setMockInitialValues({'appearance.v1': oldStored});
@@ -223,7 +265,7 @@ void main() {
         jsonEncode({
           'version': 2,
           'mode': 'light',
-          'cardStyle': Appearance.defaultCardStyle.toJson()
+          'cardStyle': SurfFileAppearanceDefaults.defaultCardStyle.toJson()
             ..['shadowOpacity'] = 2,
         }),
         jsonEncode({'version': 2, 'mode': 'light', 'accent': 'red'}),

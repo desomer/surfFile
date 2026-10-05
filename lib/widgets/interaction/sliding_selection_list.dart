@@ -170,7 +170,7 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                                         .gradient() !=
                                     null
                                 ? Colors.transparent
-                                : Appearance.cardColor(
+                                : cardColor(
                                     context,
                                     selectedCardStyle,
                                     selected: true,

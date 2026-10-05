@@ -9,7 +9,8 @@ import 'disk_gauge.dart';
 Future<void> showDiskGaugeStyleEditor(BuildContext context) async {
   final controller = AppearanceScope.controllerOf(context);
   if (controller == null) return;
-  final initial = controller.value;
+  final preferences = SurfFilePreferencesScope.controllerOf(context);
+  final initial = preferences.value;
   final confirmed = await showDialog<bool>(
     context: context,
     barrierColor: Colors.transparent,
@@ -18,12 +19,12 @@ Future<void> showDiskGaugeStyleEditor(BuildContext context) async {
       content: SizedBox(
         width: 440,
         child: SingleChildScrollView(
-          child: ValueListenableBuilder<Appearance>(
-            valueListenable: controller,
-            builder: (context, appearance, _) => DiskGaugeStyleEditor(
-              value: appearance.diskGaugeStyle,
-              accent: appearance.accent,
-              onChanged: (style) => controller.value = controller.value
+          child: ValueListenableBuilder<SurfFilePreferences>(
+            valueListenable: preferences,
+            builder: (context, preference, _) => DiskGaugeStyleEditor(
+              value: preference.diskGaugeStyle,
+              accent: controller.value.accent,
+              onChanged: (style) => preferences.value = preferences.value
                   .copyWith(diskGaugeStyle: style),
             ),
           ),
@@ -41,8 +42,8 @@ Future<void> showDiskGaugeStyleEditor(BuildContext context) async {
       ],
     ),
   );
-  if (confirmed != true && controller.value != initial) {
-    controller.value = initial;
+  if (confirmed != true && preferences.value != initial) {
+    preferences.value = preferences.value.copyWith(diskGaugeStyle: initial.diskGaugeStyle);
   }
 }
 

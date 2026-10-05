@@ -95,7 +95,7 @@ class ExplorerViewModeBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
               ],
-              if (appearance.folderTransition == FolderTransition.heroIcon) ...[
+              if (SurfFilePreferencesScope.of(context).folderTransition == FolderTransition.heroIcon) ...[
                 Icon(
                   Icons.folder_rounded,
                   key: titleIconKey,

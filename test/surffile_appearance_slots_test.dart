@@ -30,7 +30,7 @@ void main() {
   test('predefined slots preserve their read, write and reset behavior', () {
     expect(SurfFileAppearanceSlots.values.length, 11);
     for (final slot in SurfFileAppearanceSlots.values) {
-      final initial = Appearance();
+      final initial = defaultSurfFileAppearance();
       final changed = slot.write(initial, style);
       expect(slot.read(changed).color, style.color, reason: slot.name);
       expect(slot.read(changed).radius, style.radius, reason: slot.name);

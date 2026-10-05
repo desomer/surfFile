@@ -1,55 +1,38 @@
-import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/theme/appearance.dart' as shell;
+import 'package:super_container_layout/theme/default_appearance.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'disk_gauge_style.dart';
 import 'folder_transition.dart';
-export 'surffile_appearance_scope.dart';
 
-/// SurfFile appearance: generic [styles] and [layouts] maps keyed by ID (see
-/// `SurfFileAppearanceSlots`), plus scalar business preferences.
-///
-/// Missing entries of [defaultStyles] and [defaultLayouts] are always filled
-/// in, so a partial map never erases a default; removing such an entry with
-/// [withStyle] resets it. Optional variants (`selectedCard`, `folder`…) are
-/// absent by default and derived through the slot catalog.
-@immutable
-class SurfFileAppearance extends shell.Appearance {
-  static const minRowHeight = 20.0;
-  static const maxRowHeight = 100.0;
-  static const minSpacing = 4.0;
-  static const maxSpacing = 64.0;
+export 'surffile_appearance_scope.dart';
+export 'surffile_preferences.dart';
+export 'package:super_container_layout/theme/default_appearance.dart';
+
+/// Application catalog and scalar defaults, independent of the runtime model.
+abstract final class SurfFileAppearanceDefaults {
+  static const minRowHeight = DefaultAppearance.minRowHeight;
+  static const maxRowHeight = DefaultAppearance.maxRowHeight;
+  static const minSpacing = DefaultAppearance.minSpacing;
+  static const maxSpacing = DefaultAppearance.maxSpacing;
   static const minTransitionDuration = 100.0;
   static const maxTransitionDuration = 1000.0;
-  static const minScrollFadeExtent = 8.0;
-  static const maxScrollFadeExtent = 100.0;
+  static const minScrollFadeExtent = DefaultAppearance.minScrollFadeExtent;
+  static const maxScrollFadeExtent = DefaultAppearance.maxScrollFadeExtent;
 
-  SurfFileAppearance({
-    super.mode,
-    super.accent,
-    super.backgroundOpacity,
-    super.windowOpacity,
-    super.windowEffect,
-    this.diskGaugeStyle = const DiskGaugeStyle(),
-    this.cardHeight = 142,
-    this.cardWidth = 180,
-    this.rowHeight = 48,
-    this.spacing = 12,
-    this.fontSize = 12,
-    this.iconSize = 49,
-    this.folderTransition = FolderTransition.none,
-    this.folderTransitionDuration = 220,
-    this.scrollFadeEnabled = true,
-    this.scrollFadeExtent = 28,
-    Map<String, ContainerStyle>? styles,
-    Map<String, SuperLayoutConfig>? layouts,
-  }) : super(
-         styles: {...defaultStyles, ...?styles},
-         layouts: {...defaultLayouts, ...?layouts},
-       );
+  static const folderTransitionDuration = 220.0;
+  static const folderTransition = FolderTransition.none;
+  static const diskGaugeStyle = DiskGaugeStyle();
+  static const cardHeight = 142.0;
+  static const cardWidth = 180.0;
+  static const rowHeight = 48.0;
+  static const spacing = 12.0;
+  static const fontSize = 12.0;
+  static const iconSize = 49.0;
+  static const scrollFadeEnabled = true;
+  static const scrollFadeExtent = 28.0;
 
   static const defaultCardStyle = ContainerStyle(
     radius: 13,
@@ -125,79 +108,19 @@ class SurfFileAppearance extends shell.Appearance {
     'explorerSidebar': defaultExplorerSidebarLayout,
   };
 
-  final DiskGaugeStyle diskGaugeStyle;
-  final double cardHeight;
-  final double cardWidth;
-  final double rowHeight;
-  final double spacing;
-  final double fontSize;
-  final double iconSize;
-  final FolderTransition folderTransition;
-  final double folderTransitionDuration;
-  final bool scrollFadeEnabled;
-  final double scrollFadeExtent;
+}
 
-  @override
-  SurfFileAppearance withStyle(String id, ContainerStyle? value) =>
-      requireSurfFileAppearance(super.withStyle(id, value));
+/// Creates a package model with the application catalog explicitly merged.
+DefaultAppearance defaultSurfFileAppearance({
+  Map<String, ContainerStyle>? styles,
+  Map<String, SuperLayoutConfig>? layouts,
+}) => DefaultAppearance(
+  styles: {...SurfFileAppearanceDefaults.defaultStyles, ...?styles},
+  layouts: {...SurfFileAppearanceDefaults.defaultLayouts, ...?layouts},
+);
 
-  @override
-  SurfFileAppearance withLayout(String id, SuperLayoutConfig value) =>
-      requireSurfFileAppearance(super.withLayout(id, value));
-
-  /// Remet toutes les zones et tous les slots à leur place par défaut : les
-  /// dispositions SurfFile reprennent [defaultLayouts] et celles déclarées
-  /// dynamiquement (registre) sont retirées, donc relues avec leur valeur par
-  /// défaut d'enregistrement.
-  @override
-  SurfFileAppearance resetLayouts() =>
-      requireSurfFileAppearance(super.resetLayouts());
-
-  @override
-  SurfFileAppearance copyWith({
-    Map<String, ContainerStyle>? styles,
-    Map<String, SuperLayoutConfig>? layouts,
-    ThemeMode? mode,
-    Color? accent,
-    double? backgroundOpacity,
-    double? windowOpacity,
-    WindowEffect? windowEffect,
-    ContainerStyle? backgroundStyle,
-    DiskGaugeStyle? diskGaugeStyle,
-    double? cardHeight,
-    double? cardWidth,
-    double? rowHeight,
-    double? spacing,
-    double? fontSize,
-    double? iconSize,
-    FolderTransition? folderTransition,
-    double? folderTransitionDuration,
-    bool? scrollFadeEnabled,
-    double? scrollFadeExtent,
-  }) => SurfFileAppearance(
-    styles: {...styles ?? this.styles, 'background': ?backgroundStyle},
-    layouts: layouts ?? this.layouts,
-    mode: mode ?? this.mode,
-    accent: accent ?? this.accent,
-    backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
-    windowOpacity: windowOpacity ?? this.windowOpacity,
-    windowEffect: windowEffect ?? this.windowEffect,
-    diskGaugeStyle: diskGaugeStyle ?? this.diskGaugeStyle,
-    cardHeight: cardHeight ?? this.cardHeight,
-    cardWidth: cardWidth ?? this.cardWidth,
-    rowHeight: rowHeight ?? this.rowHeight,
-    spacing: spacing ?? this.spacing,
-    fontSize: fontSize ?? this.fontSize,
-    iconSize: iconSize ?? this.iconSize,
-    folderTransition: folderTransition ?? this.folderTransition,
-    folderTransitionDuration:
-        folderTransitionDuration ?? this.folderTransitionDuration,
-    scrollFadeEnabled: scrollFadeEnabled ?? this.scrollFadeEnabled,
-    scrollFadeExtent: scrollFadeExtent ?? this.scrollFadeExtent,
-  );
-
-  /// Automatic solid color of unselected cards whose style has none.
-  static Color defaultCardColor(BuildContext context) {
+/// Automatic solid color of unselected cards whose style has none.
+Color defaultCardColor(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return scheme.brightness == Brightness.dark
         ? scheme.surfaceContainerLow
@@ -205,7 +128,7 @@ class SurfFileAppearance extends shell.Appearance {
   }
 
   /// Solid color of a card drawn with the resolved [style].
-  static Color cardColor(
+Color cardColor(
     BuildContext context,
     ContainerStyle style, {
     bool selected = false,
@@ -219,13 +142,7 @@ class SurfFileAppearance extends shell.Appearance {
             : defaultCardColor(context));
   }
 
-  static Color foreground(Color background) =>
+Color foregroundForCard(Color background) =>
       ContainerStyle.foregroundFor(background);
-}
 
-typedef Appearance = SurfFileAppearance;
-
-SurfFileAppearance requireSurfFileAppearance(shell.Appearance value) {
-  if (value is SurfFileAppearance) return value;
-  throw StateError('SurfFile requires its configured appearance store.');
-}
+typedef Appearance = DefaultAppearance;

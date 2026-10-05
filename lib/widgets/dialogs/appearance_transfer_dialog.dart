@@ -4,8 +4,15 @@ import '../../services/appearance_store.dart';
 import '../../theme/surffile_appearance.dart';
 
 class AppearanceTransferDialog extends shell.AppearanceTransferDialog {
-  const AppearanceTransferDialog({required ValueNotifier<Appearance> super.controller, super.key})
-      : super(codec: const SurfFileAppearanceCodec());
+  AppearanceTransferDialog({
+    required ValueNotifier<Appearance> super.controller,
+    SurfFileAppearanceCodec? codec,
+    super.key,
+  }) : super(codec: codec ?? SurfFileAppearanceCodec());
+
   static Future<void> show(BuildContext context, ValueNotifier<Appearance> controller) =>
-      shell.AppearanceTransferDialog.show(context, controller, codec: const SurfFileAppearanceCodec());
+      shell.AppearanceTransferDialog.show(
+        context, controller,
+        codec: SurfFileAppearanceCodec(preferences: SurfFilePreferencesScope.controllerOf(context)),
+      );
 }

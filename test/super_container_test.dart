@@ -416,7 +416,7 @@ void main() {
     expect(
       ContainerStyle.fromJson(
         {...style.toJson()}..remove('padding'),
-        fallback: Appearance.defaultCardStyle,
+        fallback: SurfFileAppearanceDefaults.defaultCardStyle,
       ).padding,
       12,
     );

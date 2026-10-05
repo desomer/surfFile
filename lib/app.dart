@@ -4,6 +4,7 @@ import 'package:super_container_layout/models/registry.dart';
 
 import 'pages/explorer_page.dart';
 import 'services/appearance_store.dart';
+import 'theme/surffile_appearance_scope.dart';
 import 'widgets/explorer/explorer_components.dart';
 
 class SurfFileApp extends StatefulWidget {
@@ -28,7 +29,15 @@ class _SurfFileAppState extends State<SurfFileApp> {
     registry: _registry,
     appearanceStore: _appearanceStore,
     title: 'Surf File V 0.0.1 by Gauthier Desomer',
-    home: const ExplorerPage(),
+    home: SurfFilePreferencesScope(
+      controller: _appearanceStore.preferences,
+      child: const ExplorerPage(),
+    ),
   );
+  @override
+  void dispose() {
+    _appearanceStore.preferences.dispose();
+    super.dispose();
+  }
   
 }

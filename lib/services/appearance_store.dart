@@ -12,27 +12,40 @@ import '../theme/disk_gauge_style.dart';
 import '../theme/folder_transition.dart';
 
 class SurfFileAppearanceStore extends shell.AppearanceStore {
-  SurfFileAppearanceStore({super.key = 'appearance.v1'})
-      : super(codec: const SurfFileAppearanceCodec());
+  SurfFileAppearanceStore({super.key = 'appearance.v1', SurfFileAppearanceCodec? codec})
+      : super(codec: codec ?? SurfFileAppearanceCodec());
   static const version = 3;
-  static String encode(Appearance value) => const SurfFileAppearanceCodec().encode(value);
-  static Appearance decode(String text) => requireSurfFileAppearance(const SurfFileAppearanceCodec().decode(text));
+  ValueNotifier<SurfFilePreferences> get preferences => (codec as SurfFileAppearanceCodec).preferences;
+  static String encode(Appearance value, {SurfFilePreferences preferences = const SurfFilePreferences()}) =>
+      SurfFileAppearanceCodec(preferences: ValueNotifier(preferences)).encode(value);
+  static Appearance decode(String text) => SurfFileAppearanceCodec().decode(text);
   @override
-  Future<Appearance> load() async => requireSurfFileAppearance(await super.load());
+  Future<Appearance> load() async {
+    final value = await super.load();
+    if (value is DefaultAppearance) return value;
+    throw StateError('SurfFile requires DefaultAppearance.');
+  }
 }
 
 typedef AppearanceStore = SurfFileAppearanceStore;
 
 class PersistentAppearanceController extends ValueNotifier<Appearance> {
   PersistentAppearanceController(AppearanceStore store, void Function(Object) onSaveError)
-      : _delegate = shell.PersistentAppearanceController(store, onSaveError), super(Appearance());
+      : _delegate = shell.PersistentAppearanceController(store, onSaveError), super(defaultSurfFileAppearance());
   final shell.PersistentAppearanceController _delegate;
   @override
-  Appearance get value => requireSurfFileAppearance(_delegate.value);
+  Appearance get value {
+    final value = _delegate.value;
+    if (value is DefaultAppearance) return value;
+    throw StateError('SurfFile requires DefaultAppearance.');
+  }
   @override
   set value(Appearance value) => _delegate.value = value;
   Future<void> get saved => _delegate.saved;
   Future<void> restore() => _delegate.restore();
+  ValueNotifier<SurfFilePreferences> get preferences =>
+      (_delegate.store.codec as SurfFileAppearanceCodec).preferences;
+  void reset() => _delegate.reset();
   @override
   void addListener(VoidCallback listener) => _delegate.addListener(listener);
   @override
@@ -42,7 +55,7 @@ class PersistentAppearanceController extends ValueNotifier<Appearance> {
 }
 
 class LegacyAppearanceCodec {
-  static String encode(Appearance a) => jsonEncode({
+  static String encode(Appearance a, {SurfFilePreferences preferences = const SurfFilePreferences()}) => jsonEncode({
     'version': 2,
     'mode': a.mode.name,
     'accent': a.accent.toARGB32(),
@@ -53,20 +66,20 @@ class LegacyAppearanceCodec {
       entry.key: a.styles[entry.value]?.toJson(),
     for (final entry in SurfFileAppearanceCodec.layoutIds.entries)
       entry.key: a.layout(entry.value).toJson(),
-    'diskGaugeStyle': a.diskGaugeStyle.toJson(),
+    'diskGaugeStyle': preferences.diskGaugeStyle.toJson(),
     'cardHeight': a.cardHeight,
     'cardWidth': a.cardWidth,
     'rowHeight': a.rowHeight,
     'spacing': a.spacing,
     'fontSize': a.fontSize,
     'iconSize': a.iconSize,
-    'folderTransition': a.folderTransition.name,
-    'folderTransitionDuration': a.folderTransitionDuration,
+    'folderTransition': preferences.folderTransition.name,
+    'folderTransitionDuration': preferences.folderTransitionDuration,
     'scrollFadeEnabled': a.scrollFadeEnabled,
     'scrollFadeExtent': a.scrollFadeExtent,
   });
 
-  static Appearance decode(String stored) {
+  static ({DefaultAppearance appearance, SurfFilePreferences preferences}) decodeDocument(String stored) {
     final json = jsonDecode(stored);
     if (json is! Map<String, dynamic> || json['version'] != 2) {
       throw const FormatException(
@@ -117,7 +130,16 @@ class LegacyAppearanceCodec {
     if (fadeEnabled is! bool) {
       throw const FormatException('Activation du fondu invalide.');
     }
-    return Appearance(
+    final preferences = SurfFilePreferences(
+      diskGaugeStyle: DiskGaugeStyle.fromJson(json['diskGaugeStyle']),
+      folderTransition: transition,
+      folderTransitionDuration: number(
+        'folderTransitionDuration', SurfFileAppearanceDefaults.folderTransitionDuration,
+        SurfFileAppearanceDefaults.minTransitionDuration,
+        SurfFileAppearanceDefaults.maxTransitionDuration,
+      ),
+    );
+    return (preferences: preferences, appearance: DefaultAppearance(
       mode: mode,
       accent: color('accent') ?? const Color(0xFF5268D9),
       backgroundOpacity: number('backgroundOpacity', 1, 0, 1),
@@ -130,7 +152,7 @@ class LegacyAppearanceCodec {
             entry.value: ContainerStyle.fromJson(
               json[entry.key],
               fallback:
-                  Appearance.defaultStyles[entry.value] ??
+                  SurfFileAppearanceDefaults.defaultStyles[entry.value] ??
                   const ContainerStyle(),
             ),
       },
@@ -138,10 +160,9 @@ class LegacyAppearanceCodec {
         for (final entry in SurfFileAppearanceCodec.layoutIds.entries)
           entry.value: SuperLayoutConfig.fromJson(
             json[entry.key],
-            fallback: Appearance.defaultLayouts[entry.value]!,
+            fallback: SurfFileAppearanceDefaults.defaultLayouts[entry.value]!,
           ),
       },
-      diskGaugeStyle: DiskGaugeStyle.fromJson(json['diskGaugeStyle']),
       cardHeight: number('cardHeight', 142, 142, 300),
       cardWidth: number('cardWidth', 180, 180, 360),
       rowHeight: number(
@@ -158,13 +179,6 @@ class LegacyAppearanceCodec {
       ),
       fontSize: number('fontSize', 12, 10, 16),
       iconSize: number('iconSize', 49, 24, 64),
-      folderTransition: transition,
-      folderTransitionDuration: number(
-        'folderTransitionDuration',
-        220,
-        Appearance.minTransitionDuration,
-        Appearance.maxTransitionDuration,
-      ),
       scrollFadeEnabled: fadeEnabled,
       scrollFadeExtent: number(
         'scrollFadeExtent',
@@ -172,12 +186,37 @@ class LegacyAppearanceCodec {
         Appearance.minScrollFadeExtent,
         Appearance.maxScrollFadeExtent,
       ),
-    );
+    ));
   }
+  static DefaultAppearance decode(String stored) => decodeDocument(stored).appearance;
 }
 
 class SurfFileAppearanceCodec extends shell.AppearanceCodec {
-  const SurfFileAppearanceCodec();
+  SurfFileAppearanceCodec({ValueNotifier<SurfFilePreferences>? preferences})
+      : preferences = preferences ?? ValueNotifier(const SurfFilePreferences());
+  final ValueNotifier<SurfFilePreferences> preferences;
+  @override
+  Listenable get additionalPreferences => preferences;
+  @override
+  void resetAdditional() => preferences.value = const SurfFilePreferences();
+  @override
+  DefaultAppearance prepare(base.Appearance appearance) {
+    if (appearance is! DefaultAppearance) throw StateError('SurfFile requires DefaultAppearance.');
+    return appearance.copyWith(
+      styles: {...SurfFileAppearanceDefaults.defaultStyles, ...appearance.styles},
+      layouts: {...SurfFileAppearanceDefaults.defaultLayouts, ...appearance.layouts},
+    );
+  }
+  @override
+  DefaultAppearance decode(String text) {
+    final json = jsonDecode(text);
+    if (json is! Map<String, dynamic>) throw const FormatException('Invalid appearance document.');
+    return fromJson(json);
+  }
+  @override
+  void restoreAdditional(String document) => preferences.value = decodeDocument(
+    Map<String, dynamic>.from(jsonDecode(document) as Map),
+  ).preferences;
   @override
   String get format => 'surf_file.appearance';
   @override
@@ -185,7 +224,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
   @override
   Set<String> get additionalKeys => const {'application'};
   @override
-  Appearance get defaults => Appearance();
+  Appearance get defaults => defaultSurfFileAppearance();
 
   static const styleIds = {
     'cardStyle': 'card', 'backgroundStyle': 'background',
@@ -278,28 +317,33 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
 
   @override
   Map<String, Object?> toJson(base.Appearance value) {
-    final a = requireSurfFileAppearance(value);
+    final a = prepare(value);
+    final p = preferences.value;
     return {...super.toJson(a), 'application': {
-      'diskGaugeStyle': a.diskGaugeStyle.toJson(),
+      'diskGaugeStyle': p.diskGaugeStyle.toJson(),
       'cardHeight': a.cardHeight, 'cardWidth': a.cardWidth,
       'rowHeight': a.rowHeight, 'spacing': a.spacing,
       'fontSize': a.fontSize, 'iconSize': a.iconSize,
-      'folderTransition': a.folderTransition.name,
-      'folderTransitionDuration': a.folderTransitionDuration,
+      'folderTransition': p.folderTransition.name,
+      'folderTransitionDuration': p.folderTransitionDuration,
       'scrollFadeEnabled': a.scrollFadeEnabled,
       'scrollFadeExtent': a.scrollFadeExtent,
     }};
   }
 
   @override
-  base.Appearance fromJson(Map<String, dynamic> json) {
+  DefaultAppearance fromJson(Map<String, dynamic> json) => decodeDocument(json).appearance;
+
+  ({DefaultAppearance appearance, SurfFilePreferences preferences}) decodeDocument(Map<String, dynamic> json) {
     if (json['version'] == 1) {
-      return LegacyAppearanceCodec.decode(jsonEncode(upgradeVersionOne(json)));
+      final document = LegacyAppearanceCodec.decodeDocument(jsonEncode(upgradeVersionOne(json)));
+      return (appearance: prepare(document.appearance), preferences: document.preferences);
     }
     if (json['version'] == 2) {
       final known = {...shellKeys, ...styleIds.keys, ...layoutIds.keys, ...businessKeys};
       if (json.keys.any((key) => !known.contains(key))) throw const FormatException('Préférence historique inconnue.');
-      return LegacyAppearanceCodec.decode(jsonEncode(json));
+      final document = LegacyAppearanceCodec.decodeDocument(jsonEncode(json));
+      return (appearance: prepare(document.appearance), preferences: document.preferences);
     }
     final generic = super.fromJson(json);
     final payload = json['application'];
@@ -320,10 +364,11 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
       for (final entry in styleIds.entries) entry.key: generic.styles[entry.value]?.toJson(),
       for (final entry in layoutIds.entries) entry.key: generic.layouts[entry.value]?.toJson(),
     };
-    return LegacyAppearanceCodec.decode(jsonEncode(legacy)).copyWith(
+    final document = LegacyAppearanceCodec.decodeDocument(jsonEncode(legacy));
+    return (preferences: document.preferences, appearance: prepare(document.appearance.copyWith(
       styles: generic.styles,
       layouts: generic.layouts,
-    );
+    )));
   }
 
   @override

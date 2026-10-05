@@ -59,7 +59,7 @@ void main() {
       const ContainerFill().toJson()..['radius'] = 0,
       const ContainerFill().toJson()..['start'] = -1,
     ]) {
-      json['cardStyle'] = Appearance.defaultCardStyle.toJson()
+      json['cardStyle'] = SurfFileAppearanceDefaults.defaultCardStyle.toJson()
         ..['fill'] = invalid;
       expect(
         () => AppearanceStore.decode(jsonEncode(json)),

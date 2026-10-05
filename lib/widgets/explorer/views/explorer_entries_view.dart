@@ -190,12 +190,12 @@ class ExplorerEntriesView extends StatelessWidget {
         final selected = selection.contains(entry.entity.path);
         final cardStyle = appearance.style('card');
         final style = SurfFileAppearanceSlots.selectedCard.read(appearance);
-        final color = Appearance.cardColor(
+        final color = cardColor(
           context,
           selected ? style : cardStyle,
           selected: selected,
         );
-        final foreground = Appearance.foreground(color);
+        final foreground = foregroundForCard(color);
         final radius = selected ? style.radius : cardStyle.radius;
         final borderWidth = selected
             ? style.borderWidth
@@ -407,9 +407,9 @@ class _EntryRowState extends State<_EntryRow> {
         : cardStyle;
     final color =
         cardStyle.color != null || cardStyle.fill.gradient() != null || selected
-        ? Appearance.cardColor(context, rowStyle, selected: selected)
+        ? cardColor(context, rowStyle, selected: selected)
         : Theme.of(context).colorScheme.surface;
-    final foreground = Appearance.foreground(color);
+    final foreground = foregroundForCard(color);
     final radius = rowStyle.radius;
     return Padding(
       key: cardKey,

@@ -750,10 +750,10 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     _reverseTransition =
         direction == _HistoryDirection.back ||
         (direction == null && path == Directory(_currentPath).parent.path);
-    final appearance = AppearanceScope.of(context);
-    final type = appearance.folderTransition;
+    final preferences = SurfFilePreferencesScope.of(context);
+    final type = preferences.folderTransition;
     final duration = Duration(
-      milliseconds: appearance.folderTransitionDuration.round(),
+      milliseconds: preferences.folderTransitionDuration.round(),
     );
     if (heroCard != null &&
         heroIcon != null &&

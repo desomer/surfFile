@@ -52,14 +52,19 @@ class SuperApp extends StatefulWidget {
 
   ValueNotifier<SuperLayoutConfig> getLayoutConfigById(String id) {
     final currentRegistry = registry;
-    if (currentRegistry == null) throw StateError('SuperApp requires a registry for ID-based controllers.');
+    if (currentRegistry == null)
+      throw StateError(
+        'SuperApp requires a registry for ID-based controllers.',
+      );
     return currentRegistry.layoutController(id);
   }
 
   ValueNotifier<ContainerStyle> getContainerStyleById(String id) {
     final currentRegistry = registry;
     if (currentRegistry == null) {
-      throw StateError('SuperApp requires a registry for ID-based controllers.');
+      throw StateError(
+        'SuperApp requires a registry for ID-based controllers.',
+      );
     }
     return currentRegistry.styleController(id);
   }
@@ -225,98 +230,98 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     child: AppearanceServicesScope(
       codec: _appearance.store.codec,
       child: AppearanceScope(
-      controller: _appearance,
-      child: LayoutResetShortcut(
-        onReset: _resetLayouts,
-        child: StyleEditScope(
-          controller: _styleEditMode,
-          child: ValueListenableBuilder<Appearance>(
-            valueListenable: _appearance,
-            builder: (context, value, _) => MaterialApp(
-              title: widget.title,
-              debugShowCheckedModeBanner: false,
-              scaffoldMessengerKey: _messenger,
-              navigatorKey: _navigator,
-              localizationsDelegates: GlobalMaterialLocalizations.delegates,
-              themeMode: value.mode,
-              theme: value.theme(Brightness.light),
-              darkTheme: value.theme(Brightness.dark),
-              builder: (context, child) => Stack(
-                children: [
-                  Positioned.fill(
-                    child: NeonSurface(
-                      key: const ValueKey('background-neon'),
-                      style: value.backgroundStyle.neon ?? const NeonStyle(),
-                      accent: value.accent,
-                      radius: 0,
-                      child: DecoratedBox(
-                        key: const ValueKey('background-border'),
-                        position: DecorationPosition.foreground,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color:
-                                value.backgroundStyle.borderColor ??
-                                Theme.of(context).colorScheme.outlineVariant,
-                            width: value.backgroundStyle.borderWidth,
-                            style: value.backgroundStyle.borderWidth == 0
-                                ? BorderStyle.none
-                                : BorderStyle.solid,
-                            ),
-                          ),
+        controller: _appearance,
+        child: LayoutResetShortcut(
+          onReset: _resetLayouts,
+          child: StyleEditScope(
+            controller: _styleEditMode,
+            child: ValueListenableBuilder<Appearance>(
+              valueListenable: _appearance,
+              builder: (context, value, _) => MaterialApp(
+                title: widget.title,
+                debugShowCheckedModeBanner: false,
+                scaffoldMessengerKey: _messenger,
+                navigatorKey: _navigator,
+                localizationsDelegates: GlobalMaterialLocalizations.delegates,
+                themeMode: value.mode,
+                theme: value.theme(Brightness.light),
+                darkTheme: value.theme(Brightness.dark),
+                builder: (context, child) => Stack(
+                  children: [
+                    Positioned.fill(
+                      child: NeonSurface(
+                        key: const ValueKey('background-neon'),
+                        style: value.backgroundStyle.neon ?? const NeonStyle(),
+                        accent: value.accent,
+                        radius: 0,
                         child: DecoratedBox(
+                          key: const ValueKey('background-border'),
+                          position: DecorationPosition.foreground,
                           decoration: BoxDecoration(
-                            gradient: value.backgroundStyle.fill.gradient(
-                              opacity: value.backgroundOpacity,
+                            border: Border.all(
+                              color:
+                                  value.backgroundStyle.borderColor ??
+                                  Theme.of(context).colorScheme.outlineVariant,
+                              width: value.backgroundStyle.borderWidth,
+                              style: value.backgroundStyle.borderWidth == 0
+                                  ? BorderStyle.none
+                                  : BorderStyle.solid,
                             ),
                           ),
-                          child: child,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: value.backgroundStyle.fill.gradient(
+                                opacity: value.backgroundOpacity,
+                              ),
+                            ),
+                            child: child,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  Positioned.fill(
-                    child: StyleEditBanner(navigatorKey: _navigator),
-                  ),
-                ],
-              ),
-              home: _loading
-                  ? const Scaffold(
-                      body: Center(child: CircularProgressIndicator()),
-                    )
-                  : _loadError != null
-                  ? Scaffold(
-                      body: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(_loadError!, textAlign: TextAlign.center),
-                              const SizedBox(height: 16),
-                              FilledButton(
-                                onPressed: _restore,
-                                child: const Text('Réessayer'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  _appearance.value = _appearance.store.codec.defaults;
-                                  setState(() => _loadError = null);
-                                },
-                                child: const Text(
-                                  'Réinitialiser les paramètres',
+                    Positioned.fill(
+                      child: StyleEditBanner(navigatorKey: _navigator),
+                    ),
+                  ],
+                ),
+                home: _loading
+                    ? const Scaffold(
+                        body: Center(child: CircularProgressIndicator()),
+                      )
+                    : _loadError != null
+                    ? Scaffold(
+                        body: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(_loadError!, textAlign: TextAlign.center),
+                                const SizedBox(height: 16),
+                                FilledButton(
+                                  onPressed: _restore,
+                                  child: const Text('Réessayer'),
                                 ),
-                              ),
-                            ],
+                                TextButton(
+                                  onPressed: () {
+                                    _appearance.reset();
+                                    setState(() => _loadError = null);
+                                  },
+                                  child: const Text(
+                                    'Réinitialiser les paramètres',
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    )
-                  : widget.home,
+                      )
+                    : widget.home,
+              ),
             ),
           ),
         ),
       ),
-    ),
     ),
   );
 }

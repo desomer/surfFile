@@ -103,7 +103,7 @@ void main() {
       await show('second.txt');
       expect(elevation('first.txt'), 2);
       expect(elevation('second.txt'), 10);
-      controller.value = Appearance();
+      controller.value = defaultSurfFileAppearance();
       await tester.pump();
       expect(elevation('second.txt'), 0);
       expect(tester.takeException(), isNull);
@@ -142,12 +142,12 @@ void main() {
     );
     await show('docs');
     expect(item('Documents').elevation, 9);
-    expect(item('Documents').shadowColor, Colors.black.withValues(alpha: .4));
+    expect(item('Documents').shadowColor, Colors.black.withValues(alpha: controller.value.style('selectedFolder').shadowOpacity));
     expect(item('Images').elevation, 0);
     await show('images');
     expect(item('Documents').elevation, 0);
     expect(item('Images').elevation, 9);
-    controller.value = Appearance();
+    controller.value = defaultSurfFileAppearance();
     await tester.pump();
     expect(item('Images').elevation, 0);
     expect(tester.takeException(), isNull);

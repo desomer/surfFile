@@ -29,7 +29,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final appearance = Appearance(
         styles: {
-        'card': Appearance.defaultCardStyle.copyWith(
+        'card': SurfFileAppearanceDefaults.defaultCardStyle.copyWith(
           neon: const NeonStyle(
             enabled: true,
             color: Color(0x8000FFFF),
@@ -439,7 +439,7 @@ void main() {
             .where((surface) => surface.style.enabled),
         hasLength(2),
       );
-      controller.value = Appearance();
+      controller.value = defaultSurfFileAppearance();
       await tester.pump();
       expect(
         tester
@@ -493,7 +493,7 @@ void main() {
     await show('images');
     expect(item('Documents').style.enabled, isFalse);
     expect(item('Images').style.enabled, isTrue);
-    controller.value = Appearance();
+    controller.value = defaultSurfFileAppearance();
     await tester.pump();
     expect(item('Images').style.enabled, isFalse);
     expect(tester.takeException(), isNull);

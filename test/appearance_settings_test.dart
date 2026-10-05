@@ -203,7 +203,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.value.style('card').color, const Color(0x80102030));
     expect(
-      Appearance.foreground(controller.value.style('card').color!),
+      foregroundForCard(controller.value.style('card').color!),
       const Color(0xFFF1F3F8),
     );
     final automatic = find.byKey(const ValueKey('automatic-Style des cartes'));
