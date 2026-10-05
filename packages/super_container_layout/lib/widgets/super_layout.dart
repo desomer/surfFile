@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../models/super_layout_config.dart';
+import '../super_app.dart';
 import 'layout_selection.dart';
 import 'slot_implementation.dart';
 import 'super_container.dart';
@@ -169,6 +170,62 @@ class SuperLayoutState extends State<SuperLayout> {
     if (confirmed != true && mounted) _update(initial);
   }
 
+  Future<void> _addSlot(SuperLayoutZone zone) async {
+    final id = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final slots = _availableSlots(context);
+        return SimpleDialog(
+          title: Text('Ajouter un slot dans ${zone.label}'),
+          children: [
+            if (!slots.any((slot) => slot.visible))
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                child: Text('Aucun slot visible disponible.'),
+              ),
+            for (final slot in slots)
+              if (slot.visible)
+                SimpleDialogOption(
+                  key: ValueKey('super-layout-add-slot-${slot.id}'),
+                  onPressed: () => Navigator.of(context).pop(slot.id),
+                  child: Text(slot.label),
+                ),
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Annuler'),
+            ),
+          ],
+        );
+      },
+    );
+    if (id == null || !mounted) return;
+    final config = _config.value;
+    _update(config.withSlotMoved(id, config.contentZone(zone)));
+  }
+
+  List<SlotImplementation> _availableSlots(BuildContext context) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final ids = {for (final slot in widget.slots) slot.id};
+    return [
+      ...widget.slots,
+      if (registry != null)
+        for (final entry in registry.registry.entries)
+          BuilderSlot(
+            id: _registrySlotId(entry.key, ids),
+            label: 'Registre : ${entry.key}',
+            builder: (_) => entry.value,
+          ),
+    ];
+  }
+
+  String _registrySlotId(String key, Set<String> slotIds) {
+    var id = 'registry:${Uri.encodeComponent(key)}';
+    while (slotIds.contains(id)) {
+      id = 'registry:$id';
+    }
+    return id;
+  }
+
   /// Slots visibles rangés dans la zone de contenu [content], dans l'ordre de
   /// [SuperLayoutConfig.placements] ; un identifiant inconnu est ignoré.
   List<SlotImplementation> _slotsOf(
@@ -177,7 +234,7 @@ class SuperLayoutState extends State<SuperLayout> {
   ) {
     final ids = config.placementsOf(content);
     if (ids.isEmpty) return const [];
-    final byId = {for (final slot in widget.slots) slot.id: slot};
+    final byId = {for (final slot in _availableSlots(context)) slot.id: slot};
     return [
       for (final id in ids)
         if (byId[id] case final slot? when slot.visible) slot,
@@ -331,6 +388,23 @@ class SuperLayoutState extends State<SuperLayout> {
                           : null,
                       moves: !zones.contains(zone.opposite),
                       onSwap: () => _update(config.withSwap(zone)),
+                    ),
+                  )
+                else if (widget.editable)
+                  _ZoneEntry(
+                    key: ValueKey('super-layout-add-overlay-${zone.name}'),
+                    zone: zone,
+                    overlay: true,
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: IconButton.filled(
+                          key: ValueKey('super-layout-add-${zone.name}'),
+                          tooltip: 'Ajouter un slot dans ${zone.label}',
+                          icon: const Icon(Icons.add),
+                          onPressed: () => _addSlot(zone),
+                        ),
+                      ),
                     ),
                   ),
             ],

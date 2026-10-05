@@ -3,6 +3,9 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/super_layout_config.dart';
+
+import 'models/registry.dart';
 
 import 'services/appearance_store.dart';
 import 'services/window_transparency.dart';
@@ -20,14 +23,36 @@ class SuperApp extends StatefulWidget {
     this.appearanceStore,
     this.title = '',
     super.key,
+    this.registry,
   });
 
   final Widget home;
   final AppearanceStore? appearanceStore;
   final String title;
+  final Registry? registry;
+
+  /// Returns the nearest application and subscribes to its configuration.
+  static SuperApp? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_SuperAppScope>()?.app;
+
+  /// Returns the nearest application, or throws if none encloses [context].
+  static SuperApp of(BuildContext context) {
+    final app = maybeOf(context);
+    if (app == null) {
+      throw FlutterError(
+        'SuperApp.of() called with a context that does not contain a SuperApp.',
+      );
+    }
+    return app;
+  }
 
   @override
   State<SuperApp> createState() => _SuperAppState();
+
+  ValueNotifier<SuperLayoutConfig> getLayoutConfigById(String id) {
+    registry!.superLayoutConfigById[id] ??= ValueNotifier(SuperLayoutConfig());
+    return registry!.superLayoutConfigById[id]!;
+  }
 }
 
 class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
@@ -178,97 +203,109 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => AppearanceScope(
-    controller: _appearance,
-    child: LayoutResetShortcut(
-      onReset: _resetLayouts,
-      child: StyleEditScope(
-        controller: _styleEditMode,
-        child: ValueListenableBuilder<Appearance>(
-          valueListenable: _appearance,
-          builder: (context, value, _) => MaterialApp(
-            title: widget.title,
-            debugShowCheckedModeBanner: false,
-            scaffoldMessengerKey: _messenger,
-            navigatorKey: _navigator,
-            localizationsDelegates: GlobalMaterialLocalizations.delegates,
-            themeMode: value.mode,
-            theme: value.theme(Brightness.light),
-            darkTheme: value.theme(Brightness.dark),
-            builder: (context, child) => Stack(
-              children: [
-                Positioned.fill(
-                  child: NeonSurface(
-                    key: const ValueKey('background-neon'),
-                    style: value.backgroundStyle.neon ?? const NeonStyle(),
-                    accent: value.accent,
-                    radius: 0,
-                    child: DecoratedBox(
-                      key: const ValueKey('background-border'),
-                      position: DecorationPosition.foreground,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color:
-                              value.backgroundStyle.borderColor ??
-                              Theme.of(context).colorScheme.outlineVariant,
-                          width: value.backgroundStyle.borderWidth,
-                          style: value.backgroundStyle.borderWidth == 0
-                              ? BorderStyle.none
-                              : BorderStyle.solid,
-                        ),
-                      ),
+  Widget build(BuildContext context) => _SuperAppScope(
+    app: widget,
+    child: AppearanceScope(
+      controller: _appearance,
+      child: LayoutResetShortcut(
+        onReset: _resetLayouts,
+        child: StyleEditScope(
+          controller: _styleEditMode,
+          child: ValueListenableBuilder<Appearance>(
+            valueListenable: _appearance,
+            builder: (context, value, _) => MaterialApp(
+              title: widget.title,
+              debugShowCheckedModeBanner: false,
+              scaffoldMessengerKey: _messenger,
+              navigatorKey: _navigator,
+              localizationsDelegates: GlobalMaterialLocalizations.delegates,
+              themeMode: value.mode,
+              theme: value.theme(Brightness.light),
+              darkTheme: value.theme(Brightness.dark),
+              builder: (context, child) => Stack(
+                children: [
+                  Positioned.fill(
+                    child: NeonSurface(
+                      key: const ValueKey('background-neon'),
+                      style: value.backgroundStyle.neon ?? const NeonStyle(),
+                      accent: value.accent,
+                      radius: 0,
                       child: DecoratedBox(
+                        key: const ValueKey('background-border'),
+                        position: DecorationPosition.foreground,
                         decoration: BoxDecoration(
-                          gradient: value.backgroundStyle.fill.gradient(
-                            opacity: value.backgroundOpacity,
+                          border: Border.all(
+                            color:
+                                value.backgroundStyle.borderColor ??
+                                Theme.of(context).colorScheme.outlineVariant,
+                            width: value.backgroundStyle.borderWidth,
+                            style: value.backgroundStyle.borderWidth == 0
+                                ? BorderStyle.none
+                                : BorderStyle.solid,
                           ),
                         ),
-                        child: child,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: value.backgroundStyle.fill.gradient(
+                              opacity: value.backgroundOpacity,
+                            ),
+                          ),
+                          child: child,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Positioned.fill(
-                  child: StyleEditBanner(navigatorKey: _navigator),
-                ),
-              ],
-            ),
-            home: _loading
-                ? const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  )
-                : _loadError != null
-                ? Scaffold(
-                    body: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_loadError!, textAlign: TextAlign.center),
-                            const SizedBox(height: 16),
-                            FilledButton(
-                              onPressed: _restore,
-                              child: const Text('Réessayer'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                _appearance.value = const Appearance();
-                                setState(() => _loadError = null);
-                              },
-                              child: const Text(
-                                'Réinitialiser les paramètres',
+                  Positioned.fill(
+                    child: StyleEditBanner(navigatorKey: _navigator),
+                  ),
+                ],
+              ),
+              home: _loading
+                  ? const Scaffold(
+                      body: Center(child: CircularProgressIndicator()),
+                    )
+                  : _loadError != null
+                  ? Scaffold(
+                      body: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_loadError!, textAlign: TextAlign.center),
+                              const SizedBox(height: 16),
+                              FilledButton(
+                                onPressed: _restore,
+                                child: const Text('Réessayer'),
                               ),
-                            ),
-                          ],
+                              TextButton(
+                                onPressed: () {
+                                  _appearance.value = const Appearance();
+                                  setState(() => _loadError = null);
+                                },
+                                child: const Text(
+                                  'Réinitialiser les paramètres',
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                : widget.home,
+                    )
+                  : widget.home,
+            ),
           ),
         ),
       ),
     ),
   );
+}
+
+class _SuperAppScope extends InheritedWidget {
+  const _SuperAppScope({required this.app, required super.child});
+
+  final SuperApp app;
+
+  @override
+  bool updateShouldNotify(_SuperAppScope oldWidget) => app != oldWidget.app;
 }

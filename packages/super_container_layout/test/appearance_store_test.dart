@@ -206,10 +206,10 @@ void main() {
       );
       final oldStored = jsonEncode({'version': 1, 'mode': 'dark'});
       expect(AppearanceStore.isOutdated(oldStored), isTrue);
-      SharedPreferences.setMockInitialValues({AppearanceStore.key: oldStored});
+      SharedPreferences.setMockInitialValues({'appearance.v1': oldStored});
       expect(await AppearanceStore().load(), isA<Appearance>());
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.containsKey(AppearanceStore.key), isFalse);
+      expect(prefs.containsKey('appearance.v1'), isFalse);
       for (final stored in [
         'not json',
         '{"version":1,"mode":"dark"}',
@@ -241,7 +241,7 @@ void main() {
           throwsA(isA<FormatException>()),
         );
       }
-      SharedPreferences.setMockInitialValues({AppearanceStore.key: 42});
+      SharedPreferences.setMockInitialValues({'appearance.v1': 42});
       await expectLater(
         AppearanceStore().load(),
         throwsA(isA<FormatException>()),

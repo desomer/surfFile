@@ -1,3 +1,4 @@
+export 'models/registry.dart';
 export 'models/super_layout_config.dart';
 export 'services/appearance_store.dart';
 export 'services/appearance_transfer.dart';

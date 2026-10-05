@@ -290,6 +290,189 @@ void main() {
     expect(find.byKey(swap), findsNothing);
   });
 
+  Future<void> pumpSlotPicker(
+    WidgetTester tester, {
+    required ValueNotifier<bool> editMode,
+    SuperLayoutConfig config = const SuperLayoutConfig(
+      placements: {
+        SuperLayoutZone.center: ['placed'],
+      },
+    ),
+    ValueChanged<SuperLayoutConfig>? onChanged,
+    bool editable = true,
+    bool showZoneNames = true,
+    bool withSlots = true,
+  }) => tester.pumpWidget(
+    StyleEditScope(
+      controller: editMode,
+      child: MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 600,
+            height: 400,
+            child: SuperLayout(
+              config: config,
+              editable: editable,
+              showZoneNames: showZoneNames,
+              onChanged: onChanged,
+              slots: withSlots
+                  ? [
+                      BuilderSlot(
+                        id: 'placed',
+                        label: 'Slot placé',
+                        builder: (_) => const Text('Contenu placé'),
+                      ),
+                      BuilderSlot(
+                        id: 'available',
+                        label: 'Slot disponible',
+                        builder: (_) => const Text('Nouveau contenu'),
+                      ),
+                      BuilderSlot(
+                        id: 'hidden',
+                        label: 'Slot masqué',
+                        visible: false,
+                        builder: (_) => const Text('Contenu masqué'),
+                      ),
+                    ]
+                  : const [],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  testWidgets('empty zones offer visible slots only in editable overlays', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(false);
+    addTearDown(editMode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await pumpSlotPicker(tester, editMode: editMode, onChanged: changes.add);
+    expect(find.byIcon(Icons.add), findsNothing);
+
+    editMode.value = true;
+    await tester.pumpAndSettle();
+    for (final zone in SuperLayoutZone.values) {
+      expect(
+        find.byKey(ValueKey('super-layout-add-${zone.name}')),
+        zone == SuperLayoutZone.center ? findsNothing : findsOneWidget,
+      );
+    }
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-ne')));
+    await tester.pumpAndSettle();
+    expect(find.text('Ajouter un slot dans Nord-Est'), findsOneWidget);
+    expect(find.text('Slot masqué'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('super-layout-add-slot-placed')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-add-slot-available')),
+    );
+    await tester.pumpAndSettle();
+    expect(changes.single.placementsOf(SuperLayoutZone.ne), ['available']);
+    expect(find.text('Nouveau contenu'), findsOneWidget);
+    expect(find.byKey(const ValueKey('super-layout-add-ne')), findsNothing);
+    expect(find.byKey(const ValueKey('super-layout-name-ne')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot picker moves without duplication and respects swaps', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await pumpSlotPicker(
+      tester,
+      editMode: editMode,
+      config: const SuperLayoutConfig(
+        swaps: {SuperLayoutZone.north},
+        placements: {
+          SuperLayoutZone.center: ['placed'],
+        },
+      ),
+      onChanged: changes.add,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-add-slot-placed')),
+    );
+    await tester.pumpAndSettle();
+    expect(changes.single.placementsOf(SuperLayoutZone.south), ['placed']);
+    expect(changes.single.placementsOf(SuperLayoutZone.center), isEmpty);
+    expect(find.text('Contenu placé'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('super-layout-name-north')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('super-layout-add-center')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot picker can be cancelled and explains unavailable slots', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await pumpSlotPicker(
+      tester,
+      editMode: editMode,
+      withSlots: false,
+      onChanged: changes.add,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-south')));
+    await tester.pumpAndSettle();
+    expect(find.text('Aucun slot visible disponible.'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(changes, isEmpty);
+    expect(find.byType(SimpleDialog), findsNothing);
+  });
+
+  testWidgets('add buttons respect overlay visibility and existing zones', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    await pumpSlotPicker(tester, editMode: editMode, editable: false);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.add), findsNothing);
+    await pumpSlotPicker(tester, editMode: editMode, showZoneNames: false);
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.add), findsNothing);
+    await pumpSlotPicker(
+      tester,
+      editMode: editMode,
+      config: const SuperLayoutConfig(north: false, se: CornerMerge.row),
+    );
+    await tester.pumpAndSettle();
+    for (final zone in [
+      SuperLayoutZone.north,
+      SuperLayoutZone.nw,
+      SuperLayoutZone.ne,
+      SuperLayoutZone.se,
+    ]) {
+      expect(
+        find.byKey(ValueKey('super-layout-add-${zone.name}')),
+        findsNothing,
+      );
+    }
+    expect(
+      find.byKey(const ValueKey('super-layout-add-center')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   test('swaps are symmetric and round-trip through json', () {
     final config = const SuperLayoutConfig()
         .withSwap(SuperLayoutZone.east)

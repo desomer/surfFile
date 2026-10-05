@@ -13,7 +13,8 @@ import '../theme/disk_gauge_style.dart';
 import '../theme/folder_transition.dart';
 
 class AppearanceStore {
-  static const key = 'appearance.v1';
+  AppearanceStore({this.key = 'appearance.v1'});
+  final String key;
   static const version = 2;
 
   Future<Appearance> load() async {
