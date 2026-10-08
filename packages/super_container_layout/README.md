@@ -69,6 +69,14 @@ import 'package:super_container_layout/super_container_layout.dart';
 `SuperLayoutConfig`. `SuperContainer` fournit l’édition contextuelle des styles
 et peut partager les styles via `AppearanceScope` et `AppearanceSlot`.
 
+Le point d'entree `lib/widgets/super_layout.dart` conserve les imports publics
+existants. Son implementation est repartie en fichiers `part` dans
+`lib/widgets/super_layout/` : `layout.dart` (widget et etat),
+`label_scope.dart` (selection des dispositions imbriquees), `zone_layout.dart`
+(mesure et rendu des zones), `zone_interactions.dart` (etiquettes et cibles de
+depot) et `layout_editor.dart` (formulaire d'edition). Ces fichiers partagent
+la meme bibliotheque Dart afin de garder les classes internes privees.
+
 Les slots et les `RegisteredComponent` acceptent `preferredSize: Size(largeur,
 hauteur)`. En mode edition, le clic droit sur un slot ajoute l'entree
 « Taille préférée » au menu des styles : le dialogue regle les dimensions en
@@ -82,6 +90,16 @@ dans `SuperLayoutConfig.slotPreferredSizes`, y compris apres deplacement,
 sauvegarde ou export de la disposition.
 Une entree `null` force le mode automatique ; une entree absente utilise
 `SlotImplementation.preferredSize`.
+
+L'editeur de disposition propose un selecteur **Row / Column** pour chacune
+des neuf zones (desactive si la zone est absente ou fusionnee). `Column` reste
+la valeur par defaut. `SuperLayoutConfig.withAxis(zone, Axis.horizontal)`
+active `Row` ; `axisOf(zone)` lit l'axe de la zone affichee. Les axes sont
+persistes dans `zoneAxes` sous la forme `"north": "row"` ou `"center": "column"`.
+Ils suivent le contenu lors d'un echange de zones. Les slots `fill` se partagent
+l'espace sur l'axe choisi, les tailles preferees et les cotes automatiques
+restent pris en compte, et le glisser-deposer utilise gauche/droite en `Row`
+ou haut/bas en `Column`.
 
 `AppearanceSlot` est une classe extensible sans catalogue prédéfini.
 L'application définit ses slots et fournit leurs fonctions de lecture,
@@ -120,6 +138,10 @@ pour choisir un slot visible parmi ceux fournis à `slots`. Un slot déjà plac�
 est déplacé, sans duplication. Le placement passe par `onChanged`, comme le
 glisser-déposer. Ces boutons sont masqués si `editable` ou `showZoneNames` est
 désactivé, et suivent la sélection du parent pour les dispositions imbriquées.
+Le fond des boutons « + » est translucide (35 % d'opacite), sans attenuer
+leurs icones ni modifier leur zone cliquable.
+Les etiquettes des zones (Nord, Sud, etc.) utilisent la meme transparence,
+y compris pendant le glisser-deposer ; leur texte reste opaque.
 
 Si le `SuperApp` possède un `registry`, le sélecteur propose aussi ses composants
 sous le nom `Registre : <clé>`. Ils deviennent des slots déplaçables du layout,
@@ -196,6 +218,12 @@ qu'une coquille `MaterialApp` avec le mode d'édition et le fond stylé :
 ```dart
 const SuperApp(home: MyHomePage(), title: 'Mon application')
 ```
+
+La banniere `StyleEditBanner` se deplace par glisser-deposer, notamment depuis
+son titre « Mode édition ». Elle reste dans les limites de la fenetre, meme
+lors d'un redimensionnement. La position est conservee tant que le widget reste
+monte (y compris en quittant puis en reactivant le mode edition), sans sauvegarde
+dans les preferences. Les boutons et les segments du chemin restent cliquables.
 
 Un `AppearanceStore` personnalise peut etre fourni via `appearanceStore`.
 Son `AppearanceCodec` definit les valeurs par defaut, le format/version JSON,

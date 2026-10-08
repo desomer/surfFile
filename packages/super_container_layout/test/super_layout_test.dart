@@ -233,6 +233,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Ouest'), findsOneWidget);
     expect(find.text('Centre'), findsOneWidget);
+    for (final name in ['Ouest', 'Centre']) {
+      final label = find.text(name);
+      final colors = Theme.of(tester.element(label)).colorScheme;
+      final badge = tester.widget<Material>(
+        find.ancestor(of: label, matching: find.byType(Material)).first,
+      );
+      expect(badge.color, colors.primary.withValues(alpha: .35));
+      expect(tester.widget<Text>(label).style!.color, colors.onSurface);
+    }
     expect(find.byKey(const ValueKey('super-layout-name-north')), findsNothing);
     final zoneCentre = tester.getCenter(
       find.byKey(const ValueKey('super-layout-west')),
@@ -359,6 +368,14 @@ void main() {
         zone == SuperLayoutZone.center ? findsNothing : findsOneWidget,
       );
     }
+    final addFinder = find.byKey(const ValueKey('super-layout-add-ne'));
+    final button = tester.widget<IconButton>(addFinder);
+    final colors = Theme.of(tester.element(addFinder)).colorScheme;
+    expect(
+      button.style!.backgroundColor!.resolve({}),
+      colors.primary.withValues(alpha: .35),
+    );
+    expect(button.style!.foregroundColor!.resolve({}), colors.onSurface);
     await tester.tap(find.byKey(const ValueKey('super-layout-add-ne')));
     await tester.pumpAndSettle();
     expect(find.text('Ajouter un slot dans Nord-Est'), findsOneWidget);

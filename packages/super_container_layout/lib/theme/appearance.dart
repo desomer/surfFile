@@ -23,6 +23,7 @@ class Appearance {
            entry.key: entry.value.copyWith(
              swaps: Set.unmodifiable(entry.value.swaps),
              autoSides: Set.unmodifiable(entry.value.autoSides),
+             zoneAxes: Map.unmodifiable(entry.value.zoneAxes),
              slotTypes: Map.unmodifiable(entry.value.slotTypes),
              slotPreferredSizes: Map.unmodifiable(
                entry.value.slotPreferredSizes,

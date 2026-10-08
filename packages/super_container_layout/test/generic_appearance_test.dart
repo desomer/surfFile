@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/painting.dart' show Axis;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
@@ -21,7 +22,8 @@ void main() {
                 SuperLayoutZone.center,
                 type: 'registry:New%20Layout',
               )
-              .withSlotPreferredSize('nested-instance', const Size(250, 150)),
+              .withSlotPreferredSize('nested-instance', const Size(250, 150))
+              .withAxis(SuperLayoutZone.center, Axis.horizontal),
           'nested-instance': const SuperLayoutConfig(
             swaps: {SuperLayoutZone.west},
           ),
@@ -36,6 +38,10 @@ void main() {
         'registry:New%20Layout',
       );
       expect(restored.layout('nested-instance').swaps, {SuperLayoutZone.west});
+      expect(
+        restored.layout('workspace').axisOf(SuperLayoutZone.center),
+        Axis.horizontal,
+      );
       expect(
         restored.layout('workspace').slotPreferredSizes['nested-instance'],
         const Size(250, 150),
@@ -59,11 +65,13 @@ void main() {
       final ids = ['preview'];
       final placements = {SuperLayoutZone.center: ids};
       final slotTypes = {'preview': 'registry:preview'};
+      final axes = {SuperLayoutZone.center: Axis.horizontal};
       final styles = {'custom': const ContainerStyle(radius: 11)};
       final layouts = {
         'workspace': SuperLayoutConfig(
           placements: placements,
           slotTypes: slotTypes,
+          zoneAxes: axes,
         ),
       };
       final a = Appearance(styles: styles, layouts: layouts);
@@ -72,6 +80,15 @@ void main() {
       ids.add('other');
       placements.clear();
       slotTypes.clear();
+      axes.clear();
+      expect(
+        a.layout('workspace').axisOf(SuperLayoutZone.center),
+        Axis.horizontal,
+      );
+      expect(
+        () => a.layout('workspace').zoneAxes.clear(),
+        throwsUnsupportedError,
+      );
       expect(a.layout('workspace').slotTypeOf('preview'), 'registry:preview');
       expect(
         () => a.layout('workspace').slotTypes.clear(),

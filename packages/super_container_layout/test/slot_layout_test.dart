@@ -7,6 +7,8 @@ import 'package:super_container_layout/widgets/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
 
+import '../lib/widgets/style_edit_banner.dart';
+
 Widget _box(String id, {double? width, double? height}) =>
     SizedBox(key: ValueKey('box-$id'), width: width, height: height);
 

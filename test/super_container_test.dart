@@ -14,6 +14,8 @@ import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
 import 'package:super_container_layout/widgets/styled_surface.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
+import '../packages/super_container_layout/lib/widgets/style_edit_banner.dart';
+
 void main() {
   Future<List<ContainerStyle>> pump(WidgetTester tester) async {
     final changes = <ContainerStyle>[];

@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'package:flutter/painting.dart' show Axis;
+
 /// Les neuf zones d'un [SuperLayoutConfig].
 enum SuperLayoutZone {
   nw('Nord-Ouest'),
@@ -86,6 +88,7 @@ class SuperLayoutConfig {
     this.placements = const {},
     this.slotTypes = const {},
     this.slotPreferredSizes = const {},
+    this.zoneAxes = const {},
   });
 
   static const minSize = 20.0;
@@ -124,6 +127,15 @@ class SuperLayoutConfig {
 
   /// Tailles preferees par ID d'instance ; null force la taille automatique.
   final Map<String, Size?> slotPreferredSizes;
+
+  /// Axe des slots par zone de contenu ; une zone absente utilise Column.
+  final Map<SuperLayoutZone, Axis> zoneAxes;
+
+  Axis axisOf(SuperLayoutZone zone) =>
+      zoneAxes[contentZone(zone)] ?? Axis.vertical;
+
+  SuperLayoutConfig withAxis(SuperLayoutZone zone, Axis axis) =>
+      copyWith(zoneAxes: {...zoneAxes, contentZone(zone): axis});
 
   SuperLayoutConfig withSlotPreferredSize(String id, Size? size) {
     if (size != null &&
@@ -320,6 +332,7 @@ class SuperLayoutConfig {
     Map<SuperLayoutZone, List<String>>? placements,
     Map<String, String>? slotTypes,
     Map<String, Size?>? slotPreferredSizes,
+    Map<SuperLayoutZone, Axis>? zoneAxes,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
     south: south ?? this.south,
@@ -338,6 +351,7 @@ class SuperLayoutConfig {
     placements: placements ?? this.placements,
     slotTypes: slotTypes ?? this.slotTypes,
     slotPreferredSizes: slotPreferredSizes ?? this.slotPreferredSizes,
+    zoneAxes: zoneAxes ?? this.zoneAxes,
   );
 
   SuperLayoutConfig withCorner(SuperLayoutZone corner, CornerMerge merge) =>
@@ -373,6 +387,10 @@ class SuperLayoutConfig {
     'eastSize': eastSize,
     'swaps': [for (final zone in swaps) zone.name],
     'autoSides': [for (final zone in autoSides) zone.name],
+    'zoneAxes': {
+      for (final entry in zoneAxes.entries)
+        entry.key.name: entry.value == Axis.horizontal ? 'row' : 'column',
+    },
     'slotPreferredSizes': {
       for (final entry in slotPreferredSizes.entries)
         entry.key: entry.value == null
@@ -531,6 +549,29 @@ class SuperLayoutConfig {
       return result;
     }
 
+    Map<SuperLayoutZone, Axis> axes() {
+      final raw = value['zoneAxes'];
+      if (raw == null) return fallback.zoneAxes;
+      if (raw is! Map) {
+        throw const FormatException('Axes des zones invalides.');
+      }
+      return {
+        for (final entry in raw.entries)
+          SuperLayoutZone.values
+                  .where((zone) => zone.name == entry.key)
+                  .firstOrNull ??
+              (throw const FormatException(
+                'Zone invalide pour "zoneAxes".',
+              )): switch (entry.value) {
+            'row' => Axis.horizontal,
+            'column' => Axis.vertical,
+            _ => throw const FormatException(
+              'Axe invalide : row ou column requis.',
+            ),
+          },
+      };
+    }
+
     return SuperLayoutConfig(
       north: flag('north', fallback.north),
       south: flag('south', fallback.south),
@@ -549,6 +590,7 @@ class SuperLayoutConfig {
       placements: placementMap(),
       slotTypes: value['placements'] == null ? fallback.slotTypes : slotTypes,
       slotPreferredSizes: preferredSizes(),
+      zoneAxes: axes(),
     );
   }
 
@@ -642,6 +684,10 @@ class SuperLayoutConfig {
       other.swaps.containsAll(swaps) &&
       other.autoSides.length == autoSides.length &&
       other.autoSides.containsAll(autoSides) &&
+      other.zoneAxes.length == zoneAxes.length &&
+      zoneAxes.entries.every(
+        (entry) => other.zoneAxes[entry.key] == entry.value,
+      ) &&
       other.slotPreferredSizes.length == slotPreferredSizes.length &&
       slotPreferredSizes.entries.every(
         (entry) =>
@@ -681,6 +727,9 @@ class SuperLayoutConfig {
     eastSize,
     Object.hashAllUnordered(swaps),
     Object.hashAllUnordered(autoSides),
+    Object.hashAllUnordered([
+      for (final entry in zoneAxes.entries) Object.hash(entry.key, entry.value),
+    ]),
     Object.hashAllUnordered([
       for (final entry in slotPreferredSizes.entries)
         Object.hash(entry.key, entry.value),

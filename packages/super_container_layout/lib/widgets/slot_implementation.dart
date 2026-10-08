@@ -78,10 +78,11 @@ class BuilderSlot extends SlotImplementation {
   Widget buildSlot(BuildContext context) => builder(context);
 }
 
-/// Empile les [slots] visibles d'une zone, de haut en bas.
+/// Aligne les [slots] visibles d'une zone selon [axis].
 class SlotStack extends StatelessWidget {
   const SlotStack({
     required this.slots,
+    this.axis = Axis.vertical,
     this.expand = true,
     this.stretch = true,
     this.showLabels = false,
@@ -94,13 +95,14 @@ class SlotStack extends StatelessWidget {
   });
 
   final List<SlotImplementation> slots;
+  final Axis axis;
 
-  /// Les slots [SlotSizing.fill] se partagent la hauteur de la zone. Désactivé
-  /// dans une zone de hauteur automatique, où tout slot a sa hauteur naturelle.
+  /// Les slots [SlotSizing.fill] se partagent l'espace sur l'axe principal.
+  /// Desactive dans une zone automatique sur cet axe.
   final bool expand;
 
-  /// Les slots prennent toute la largeur de la zone. Désactivé dans une zone de
-  /// largeur automatique, où la largeur vient du slot le plus large.
+  /// Les slots occupent tout l'axe transversal, sauf taille preferee.
+  /// Desactive dans une zone automatique sur cet axe.
   final bool stretch;
 
   /// Pose le [SlotImplementation.label] de chaque slot sur son rectangle. Le
@@ -128,7 +130,8 @@ class SlotStack extends StatelessWidget {
         if (slot.visible) slot,
     ];
     final ids = [for (final slot in visible) slot.id];
-    return _SlotColumn(
+    return _SlotFlex(
+      axis: axis,
       expand: expand,
       stretch: stretch,
       preferredSizes: [
@@ -157,6 +160,7 @@ class SlotStack extends StatelessWidget {
     onEdit: () async => onEditPreferredSize?.call(slot),
     child: _LabeledSlot(
       slot: slot,
+      axis: axis,
       showLabel: showLabels,
       mover: mover,
       emphasis: emphasis,
@@ -169,8 +173,9 @@ class SlotStack extends StatelessWidget {
   );
 }
 
-class _SlotColumn extends MultiChildRenderObjectWidget {
-  const _SlotColumn({
+class _SlotFlex extends MultiChildRenderObjectWidget {
+  const _SlotFlex({
+    required this.axis,
     required this.expand,
     required this.stretch,
     required this.preferredSizes,
@@ -179,30 +184,29 @@ class _SlotColumn extends MultiChildRenderObjectWidget {
   });
 
   final bool expand;
+  final Axis axis;
   final bool stretch;
   final List<Size?> preferredSizes;
   final List<SlotSizing> sizing;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderSlotColumn()..configure(this);
+      _RenderSlotFlex()..configure(this);
 
   @override
-  void updateRenderObject(
-    BuildContext context,
-    _RenderSlotColumn renderObject,
-  ) => renderObject.configure(this);
+  void updateRenderObject(BuildContext context, _RenderSlotFlex renderObject) =>
+      renderObject.configure(this);
 }
 
 class _SlotParentData extends ContainerBoxParentData<RenderBox> {}
 
-class _RenderSlotColumn extends RenderBox
+class _RenderSlotFlex extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _SlotParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _SlotParentData> {
-  late _SlotColumn _configuration;
+  late _SlotFlex _configuration;
 
-  void configure(_SlotColumn value) {
+  void configure(_SlotFlex value) {
     _configuration = value;
     markNeedsLayout();
   }
@@ -218,22 +222,33 @@ class _RenderSlotColumn extends RenderBox
   void performLayout() {
     final children = getChildrenAsList();
     final preferences = _configuration.preferredSizes;
-    final expand = _configuration.expand && constraints.hasBoundedHeight;
-    final stretch = _configuration.stretch && constraints.hasBoundedWidth;
-    var naturalHeight = 0.0;
-    var preferredHeight = 0.0;
+    final horizontal = _configuration.axis == Axis.horizontal;
+    double mainExtent(Size size) => horizontal ? size.width : size.height;
+    double crossExtent(Size size) => horizontal ? size.height : size.width;
+    Size dimensions(double main, double cross) =>
+        horizontal ? Size(main, cross) : Size(cross, main);
+    final maxMain = mainExtent(constraints.biggest);
+    final maxCross = crossExtent(constraints.biggest);
+    final expand = _configuration.expand && maxMain.isFinite;
+    final stretch = _configuration.stretch && maxCross.isFinite;
+    var naturalExtent = 0.0;
+    var preferredExtent = 0.0;
     var fills = 0;
     bool fillsSpace(int index) =>
         expand &&
         preferences[index] == null &&
         _configuration.sizing[index] == SlotSizing.fill;
-    BoxConstraints childConstraints({Size? preferred, double? height}) {
-      final width = preferred?.width.clamp(0.0, constraints.maxWidth);
+    BoxConstraints childConstraints({Size? preferred, double? extent}) {
+      final cross = preferred == null
+          ? null
+          : crossExtent(preferred).clamp(0.0, maxCross);
+      final min = dimensions(extent ?? 0, cross ?? (stretch ? maxCross : 0));
+      final max = dimensions(extent ?? maxMain, cross ?? maxCross);
       return BoxConstraints(
-        minWidth: width ?? (stretch ? constraints.maxWidth : 0),
-        maxWidth: width ?? constraints.maxWidth,
-        minHeight: height ?? 0,
-        maxHeight: height ?? constraints.maxHeight,
+        minWidth: min.width,
+        maxWidth: max.width,
+        minHeight: min.height,
+        maxHeight: max.height,
       );
     }
 
@@ -242,47 +257,45 @@ class _RenderSlotColumn extends RenderBox
     for (final (index, child) in children.indexed) {
       final preferred = preferences[index];
       if (preferred != null) {
-        preferredHeight += preferred.height;
+        preferredExtent += mainExtent(preferred);
       } else if (fillsSpace(index)) {
         fills++;
       } else {
         child.layout(childConstraints(), parentUsesSize: true);
-        naturalHeight += child.size.height;
+        naturalExtent += mainExtent(child.size);
       }
     }
-    final available = (constraints.maxHeight - naturalHeight).clamp(
-      0.0,
-      double.infinity,
-    );
-    final scale = preferredHeight > available
-        ? available / preferredHeight
+    final available = (maxMain - naturalExtent).clamp(0.0, double.infinity);
+    final scale = preferredExtent > available
+        ? available / preferredExtent
         : 1.0;
-    final fillHeight = fills == 0
+    final fillExtent = fills == 0
         ? 0.0
-        : (available - preferredHeight * scale).clamp(0.0, double.infinity) /
+        : (available - preferredExtent * scale).clamp(0.0, double.infinity) /
               fills;
-    var height = 0.0;
-    var width = 0.0;
+    var main = 0.0;
+    var cross = 0.0;
     for (final (index, child) in children.indexed) {
       final preferred = preferences[index];
       if (preferred != null || fillsSpace(index)) {
         child.layout(
           childConstraints(
             preferred: preferred,
-            height: preferred == null ? fillHeight : preferred.height * scale,
+            extent: preferred == null
+                ? fillExtent
+                : mainExtent(preferred) * scale,
           ),
           parentUsesSize: true,
         );
       }
-      (child.parentData! as _SlotParentData).offset = Offset(0, height);
-      height += child.size.height;
-      if (child.size.width > width) width = child.size.width;
+      (child.parentData! as _SlotParentData).offset = horizontal
+          ? Offset(main, 0)
+          : Offset(0, main);
+      main += mainExtent(child.size);
+      if (crossExtent(child.size) > cross) cross = crossExtent(child.size);
     }
     size = constraints.constrain(
-      Size(
-        stretch ? constraints.maxWidth : width,
-        expand ? constraints.maxHeight : height,
-      ),
+      dimensions(expand ? maxMain : main, stretch ? maxCross : cross),
     );
   }
 
@@ -435,6 +448,7 @@ class SlotMover {
 class _LabeledSlot extends StatefulWidget {
   const _LabeledSlot({
     required this.slot,
+    required this.axis,
     required this.showLabel,
     required this.caption,
     required this.mover,
@@ -444,6 +458,7 @@ class _LabeledSlot extends StatefulWidget {
   });
 
   final SlotImplementation slot;
+  final Axis axis;
   final bool showLabel;
   final String caption;
   final SlotMover? mover;
@@ -458,7 +473,7 @@ class _LabeledSlot extends StatefulWidget {
 }
 
 class _LabeledSlotState extends State<_LabeledSlot> {
-  /// Vrai quand le glisser survole la moitié basse du slot.
+  /// Vrai quand le glisser survole la seconde moitie sur l'axe du slot.
   bool _after = false;
 
   /// L'étiquette est survolée ou glissée : le slot qu'elle désigne est surligné.
@@ -515,7 +530,10 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   void _track(Offset pointer) {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return;
-    final after = box.globalToLocal(pointer).dy > box.size.height / 2;
+    final local = box.globalToLocal(pointer);
+    final after = widget.axis == Axis.horizontal
+        ? local.dx > box.size.width / 2
+        : local.dy > box.size.height / 2;
     if (after != _after) setState(() => _after = after);
   }
 
@@ -568,7 +586,10 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         // contient ne doit pas le ranger en dernier.
         onWillAcceptWithDetails: (details) {
           final accepts = _accepts(details.data);
-          if (accepts) details.data.hint.value = _hintFor(details.data);
+          if (accepts) {
+            _track(details.offset);
+            details.data.hint.value = _hintFor(details.data);
+          }
           return accepts;
         },
         onMove: (details) {
@@ -604,11 +625,12 @@ class _LabeledSlotState extends State<_LabeledSlot> {
             if (candidates.any((data) => data != null && data.id != slot.id))
               Positioned(
                 key: ValueKey('slot-drop-position-${slot.id}'),
-                left: 0,
-                right: 0,
-                top: _after ? null : 0,
-                bottom: _after ? 0 : null,
-                height: 3,
+                left: widget.axis == Axis.horizontal && _after ? null : 0,
+                right: widget.axis == Axis.horizontal && !_after ? null : 0,
+                top: widget.axis == Axis.vertical && _after ? null : 0,
+                bottom: widget.axis == Axis.vertical && !_after ? null : 0,
+                width: widget.axis == Axis.horizontal ? 3 : null,
+                height: widget.axis == Axis.vertical ? 3 : null,
                 child: IgnorePointer(
                   child: ColoredBox(
                     key: ValueKey('slot-drop-${slot.id}'),

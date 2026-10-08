@@ -115,6 +115,270 @@ void main() {
     }
   });
 
+  test('zone axes round trip, follow swaps and reject invalid JSON', () {
+    final config = base
+        .withAxis(SuperLayoutZone.center, Axis.horizontal)
+        .withAxis(SuperLayoutZone.north, Axis.horizontal);
+    final restored = SuperLayoutConfig.fromJson(config.toJson());
+    expect(restored, config);
+    expect(restored.hashCode, config.hashCode);
+    expect(restored.copyWith(), config);
+    expect(base.axisOf(SuperLayoutZone.center), Axis.vertical);
+    expect(SuperLayoutConfig.fromJson({}).zoneAxes, isEmpty);
+    expect(SuperLayoutConfig.fromJson({}, fallback: config), config);
+    expect(config.toJson()['zoneAxes'], {'center': 'row', 'north': 'row'});
+    expect(config, isNot(base));
+    final swapped = config.withSwap(SuperLayoutZone.north);
+    expect(swapped.axisOf(SuperLayoutZone.south), Axis.horizontal);
+    expect(swapped.axisOf(SuperLayoutZone.north), Axis.vertical);
+    final edited = swapped.withAxis(SuperLayoutZone.south, Axis.vertical);
+    expect(edited.zoneAxes[SuperLayoutZone.north], Axis.vertical);
+    for (final axes in [
+      [],
+      {'nowhere': 'row'},
+      {'center': 'diagonal'},
+      {'center': 1},
+      {'center': null},
+    ]) {
+      expect(
+        () => SuperLayoutConfig.fromJson({'zoneAxes': axes}),
+        throwsFormatException,
+      );
+    }
+  });
+
+  testWidgets('row splits fill slots horizontally', (tester) async {
+    await pump(
+      tester,
+      config: base.withAxis(SuperLayoutZone.center, Axis.horizontal),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('content-first'))),
+      const Rect.fromLTWH(0, 0, 300, 400),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('content-second'))),
+      const Rect.fromLTWH(300, 0, 300, 400),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('row respects preferred sizes and remaining fill width', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      config: base
+          .withAxis(SuperLayoutZone.center, Axis.horizontal)
+          .withSlotPreferredSize('first', const Size(240, 90)),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('content-first'))),
+      const Rect.fromLTWH(0, 0, 240, 90),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('content-second'))),
+      const Rect.fromLTWH(240, 0, 360, 400),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('row bounds oversized preferences proportionally', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      config: base
+          .withAxis(SuperLayoutZone.center, Axis.horizontal)
+          .withSlotPreferredSize('first', const Size(600, 1000))
+          .withSlotPreferredSize('second', const Size(200, 1000)),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('content-first'))),
+      const Rect.fromLTWH(0, 0, 450, 400),
+    );
+    expect(
+      tester.getRect(find.byKey(const ValueKey('content-second'))),
+      const Rect.fromLTWH(450, 0, 150, 400),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('row reserves width for intrinsic siblings', (tester) async {
+    await pump(
+      tester,
+      config: base
+          .withAxis(SuperLayoutZone.center, Axis.horizontal)
+          .withSlotPreferredSize('first', const Size(1000, 90)),
+      slots: [
+        slot('first'),
+        BuilderSlot(
+          id: 'second',
+          label: 'second',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) =>
+              const SizedBox(key: ValueKey('content-second'), width: 50),
+        ),
+      ],
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(550, 90),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-second'))),
+      const Size(50, 400),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('row automatic sides measure the appropriate dimension', (
+    tester,
+  ) async {
+    for (final zone in [SuperLayoutZone.north, SuperLayoutZone.west]) {
+      await pump(
+        tester,
+        config: base.copyWith(
+          north: zone == SuperLayoutZone.north,
+          west: zone == SuperLayoutZone.west,
+          autoSides: {zone},
+          zoneAxes: {zone: Axis.horizontal},
+          placements: {
+            zone: ['first', 'second'],
+          },
+          slotPreferredSizes: {
+            'first': const Size(150, 60),
+            'second': const Size(100, 40),
+          },
+        ),
+      );
+      expect(
+        tester.getRect(find.byKey(const ValueKey('content-first'))),
+        const Rect.fromLTWH(0, 0, 150, 60),
+      );
+      expect(
+        tester.getRect(find.byKey(const ValueKey('content-second'))),
+        const Rect.fromLTWH(150, 0, 100, 40),
+      );
+      expect(
+        tester.getSize(find.byKey(ValueKey('super-layout-${zone.name}'))),
+        zone == SuperLayoutZone.north
+            ? const Size(600, 60)
+            : const Size(250, 400),
+      );
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets('row dragging uses left and right halves and a vertical marker', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    SuperLayoutConfig? changed;
+    final config = base.withAxis(SuperLayoutZone.center, Axis.horizontal);
+    for (final after in [true, false]) {
+      await pump(
+        tester,
+        config: config,
+        editMode: editMode,
+        onChanged: (value) => changed = value,
+      );
+      await tester.pumpAndSettle();
+      final source = after ? 'first' : 'second';
+      final target = after ? 'second' : 'first';
+      final rect = tester.getRect(find.byKey(ValueKey('content-$target')));
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byKey(ValueKey('slot-label-$source'))),
+      );
+      await gesture.moveBy(const Offset(0, 25));
+      await gesture.moveTo(
+        Offset(after ? rect.right - 20 : rect.left + 20, rect.top + 80),
+      );
+      await tester.pump();
+      final marker = tester.getRect(
+        find.byKey(ValueKey('slot-drop-position-$target')),
+      );
+      expect(marker.width, 3);
+      expect(marker.height, rect.height);
+      expect(marker.left, after ? rect.right - 3 : rect.left);
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(changed!.placementsOf(SuperLayoutZone.center), [
+        'second',
+        'first',
+      ]);
+      // Reset the widget identity so each direction starts from the same order.
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets('zone axis selector updates live, cancels and resets', (
+    tester,
+  ) async {
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      editMode: editMode,
+      onChanged: (value) => changed = value,
+    );
+    Future<void> openLayoutEditor() async {
+      await tester.tap(
+        find.byKey(const ValueKey('content-first')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-Super layout')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> chooseRow() async {
+      final selector = find.byKey(const ValueKey('super-layout-axis-center'));
+      await tester.ensureVisible(selector);
+      await tester.tap(selector);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Row').last);
+      await tester.pumpAndSettle();
+    }
+
+    await openLayoutEditor();
+    for (final zone in SuperLayoutZone.values) {
+      final dropdown = tester.widget<DropdownButton<Axis>>(
+        find.byKey(ValueKey('super-layout-axis-${zone.name}')),
+      );
+      expect(dropdown.value, Axis.vertical);
+      expect(
+        dropdown.onChanged,
+        zone == SuperLayoutZone.center ? isNotNull : isNull,
+      );
+    }
+    await chooseRow();
+    expect(changed!.axisOf(SuperLayoutZone.center), Axis.horizontal);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(300, 400),
+    );
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(changed!.axisOf(SuperLayoutZone.center), Axis.vertical);
+    await openLayoutEditor();
+    await chooseRow();
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(changed!.axisOf(SuperLayoutZone.center), Axis.horizontal);
+    await openLayoutEditor();
+    await tester.ensureVisible(find.text('Réinitialiser'));
+    await tester.tap(find.text('Réinitialiser'));
+    await tester.pumpAndSettle();
+    expect(changed!.zoneAxes, isEmpty);
+    expect(changed!.placements, base.placements);
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   test('appearance snapshots sizes and registry forwards defaults', () {
     final sizes = {'first': const Size(120, 50)};
     final appearance = Appearance(
@@ -287,6 +551,20 @@ void main() {
       slot('second'),
     ];
     await pump(tester, slots: slots);
+    expect(created, 1);
+    await pump(
+      tester,
+      slots: slots,
+      config: base.withAxis(SuperLayoutZone.center, Axis.horizontal),
+    );
+    expect(created, 1);
+    await pump(
+      tester,
+      slots: slots,
+      config: base
+          .withAxis(SuperLayoutZone.center, Axis.horizontal)
+          .withSlotPreferredSize('first', const Size(150, 60)),
+    );
     expect(created, 1);
     await pump(
       tester,

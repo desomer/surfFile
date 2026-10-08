@@ -14,6 +14,7 @@ import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
 import 'widgets/layout_reset_shortcut.dart';
 import 'widgets/neon_surface.dart';
+import 'widgets/style_edit_banner.dart';
 import 'widgets/super_container.dart';
 
 /// Application shell managing appearance persistence, layout reset and window
