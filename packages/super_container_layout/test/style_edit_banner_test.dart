@@ -79,7 +79,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('consecutive pointer events accumulate before the next frame', (tester) async {
+  testWidgets('consecutive pointer events accumulate before the next frame', (
+    tester,
+  ) async {
     final mode = ValueNotifier(true);
     addTearDown(mode.dispose);
     await pump(tester, mode);
@@ -127,11 +129,15 @@ void main() {
       tester.view.physicalSize = const Size(360, 240);
       await pump(tester, mode);
       await move(tester, const Offset(1000, 1000));
-      var cleared = false;
+      String? selected;
+      LayoutSelection.register(owner, [
+        'Disposition avec un titre tres long',
+      ], (zone) => selected = zone);
+      addTearDown(() => LayoutSelection.unregister(owner));
       LayoutSelection.report(owner, [
         'Disposition avec un titre tres long',
         'Nord',
-      ], clear: () => cleared = true);
+      ]);
       await tester.pumpAndSettle();
       expect(banner(tester).right, lessThanOrEqualTo(360));
       expect(banner(tester).bottom, lessThanOrEqualTo(240));
@@ -139,7 +145,7 @@ void main() {
       await tester.ensureVisible(segment);
       await tester.tap(segment);
       await tester.pump();
-      expect(cleared, isTrue);
+      expect(selected, 'Nord');
       await move(tester, const Offset(-20, -20));
       expect(banner(tester).left, greaterThanOrEqualTo(0));
       expect(tester.takeException(), isNull);

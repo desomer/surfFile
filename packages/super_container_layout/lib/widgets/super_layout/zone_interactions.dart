@@ -327,23 +327,27 @@ class _SlotZoneTarget extends StatelessWidget {
 }
 
 class _ZonePlaceholder extends StatelessWidget {
-  const _ZonePlaceholder({required this.zone});
+  const _ZonePlaceholder({required this.zone, this.showLabel = true});
 
   final SuperLayoutZone zone;
+  final bool showLabel;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final editMode = StyleEditScope.controllerOf(context)?.value ?? false;
     return DecoratedBox(
       decoration: BoxDecoration(
-        border: Border.all(color: colors.outlineVariant),
+        border: editMode ? Border.all(color: colors.outlineVariant) : null,
       ),
       child: Center(
-        // child: Text(
-        //   zone.label,
-        //   overflow: TextOverflow.ellipsis,
-        //   style: TextStyle(color: colors.onSurfaceVariant),
-        // ),
+        child: showLabel && editMode
+            ? Text(
+                zone.label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: colors.onSurfaceVariant),
+              )
+            : null,
       ),
     );
   }

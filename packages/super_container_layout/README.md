@@ -77,6 +77,21 @@ existants. Son implementation est repartie en fichiers `part` dans
 depot) et `layout_editor.dart` (formulaire d'edition). Ces fichiers partagent
 la meme bibliotheque Dart afin de garder les classes internes privees.
 
+En mode edition, les overlays (noms de zones, boutons « + », etiquettes de
+slots et cibles de depot) ne sont affiches que pour le `SuperLayout` selectionne.
+Un clic gauche sur son contenu le selectionne et deselectionne les autres
+dispositions. Dans des layouts imbriques, le plus profond sous le pointeur est
+selectionne ; les boutons du contenu conservent leur action habituelle.
+Un clic sur un segment du chemin de la banniere selectionne egalement la
+disposition correspondante et affiche ses overlays ; un segment de zone
+selectionne cette zone dans sa disposition.
+Les zones vides affichent le cadre du placeholder uniquement en mode edition,
+meme dans les dispositions non selectionnees. Son texte est masque quand le
+bouton d'ajout de slot est affiche.
+L'entree du layout dans le menu contextuel propose aussi un bouton « + » en
+mode edition : il ouvre le choix de slot pour la zone selectionnee, ou le
+Centre si aucune zone n'est selectionnee. Le nom ouvre toujours l'editeur.
+
 Les slots et les `RegisteredComponent` acceptent `preferredSize: Size(largeur,
 hauteur)`. En mode edition, le clic droit sur un slot ajoute l'entree
 « Taille préférée » au menu des styles : le dialogue regle les dimensions en
@@ -137,7 +152,7 @@ En mode édition, les zones vides de `SuperLayout` affichent un bouton « + »
 pour choisir un slot visible parmi ceux fournis à `slots`. Un slot déjà placé
 est déplacé, sans duplication. Le placement passe par `onChanged`, comme le
 glisser-déposer. Ces boutons sont masqués si `editable` ou `showZoneNames` est
-désactivé, et suivent la sélection du parent pour les dispositions imbriquées.
+désactivé, et ne sont visibles que dans la disposition selectionnee.
 Le fond des boutons « + » est translucide (35 % d'opacite), sans attenuer
 leurs icones ni modifier leur zone cliquable.
 Les etiquettes des zones (Nord, Sud, etc.) utilisent la meme transparence,

@@ -80,6 +80,7 @@ class SuperContainer extends StatefulWidget {
     this.applyPadding,
     this.editable = true,
     this.onEdit,
+    this.onAdd,
     super.key,
   });
 
@@ -103,6 +104,9 @@ class SuperContainer extends StatefulWidget {
 
   /// Éditeur personnalisé ouvert à la place du [ContainerStyleEditor].
   final Future<void> Function()? onEdit;
+
+  /// Action d'ajout affichee dans le menu contextuel en mode edition.
+  final Future<void> Function()? onAdd;
 
   @override
   State<SuperContainer> createState() => SuperContainerState();
@@ -513,6 +517,17 @@ class SuperContainerState extends State<SuperContainer> {
                   Flexible(
                     child: Text(state._label, overflow: TextOverflow.ellipsis),
                   ),
+                  if ((StyleEditScope.controllerOf(state.context)?.value ??
+                          false) &&
+                      state.widget.onAdd != null)
+                    IconButton(
+                      key: ValueKey('style-menu-add-${state._label}'),
+                      tooltip: 'Ajouter un slot',
+                      icon: const Icon(Icons.add),
+                      onPressed: () => Navigator.of(context).pop(
+                        state.widget.onAdd,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -630,4 +645,3 @@ class _DashedOutlinePainter extends CustomPainter {
   bool shouldRepaint(_DashedOutlinePainter old) =>
       old.color != color || old.radius != radius;
 }
-

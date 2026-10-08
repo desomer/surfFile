@@ -231,6 +231,8 @@ void main() {
 
     editMode.value = true;
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Contenu'));
+    await tester.pumpAndSettle();
     expect(find.text('Ouest'), findsOneWidget);
     expect(find.text('Centre'), findsOneWidget);
     for (final name in ['Ouest', 'Centre']) {
@@ -283,6 +285,8 @@ void main() {
     const swap = ValueKey('super-layout-swap-west');
     expect(find.byKey(swap), findsNothing);
 
+    await tester.tap(find.text('Contenu'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Centre'));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.swap_calls), findsNothing);
@@ -311,45 +315,51 @@ void main() {
     bool editable = true,
     bool showZoneNames = true,
     bool withSlots = true,
-  }) => tester.pumpWidget(
-    StyleEditScope(
-      controller: editMode,
-      child: MaterialApp(
-        home: Scaffold(
-          body: SizedBox(
-            width: 600,
-            height: 400,
-            child: SuperLayout(
-              config: config,
-              editable: editable,
-              showZoneNames: showZoneNames,
-              onChanged: onChanged,
-              slots: withSlots
-                  ? [
-                      BuilderSlot(
-                        id: 'placed',
-                        label: 'Slot placé',
-                        builder: (_) => const Text('Contenu placé'),
-                      ),
-                      BuilderSlot(
-                        id: 'available',
-                        label: 'Slot disponible',
-                        builder: (_) => const Text('Nouveau contenu'),
-                      ),
-                      BuilderSlot(
-                        id: 'hidden',
-                        label: 'Slot masqué',
-                        visible: false,
-                        builder: (_) => const Text('Contenu masqué'),
-                      ),
-                    ]
-                  : const [],
+  }) async {
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: SuperLayout(
+                config: config,
+                editable: editable,
+                showZoneNames: showZoneNames,
+                onChanged: onChanged,
+                slots: withSlots
+                    ? [
+                        BuilderSlot(
+                          id: 'placed',
+                          label: 'Slot placé',
+                          builder: (_) => const Text('Contenu placé'),
+                        ),
+                        BuilderSlot(
+                          id: 'available',
+                          label: 'Slot disponible',
+                          builder: (_) => const Text('Nouveau contenu'),
+                        ),
+                        BuilderSlot(
+                          id: 'hidden',
+                          label: 'Slot masqué',
+                          visible: false,
+                          builder: (_) => const Text('Contenu masqué'),
+                        ),
+                      ]
+                    : const [],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+    if (editMode.value) {
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+    }
+  }
 
   testWidgets('empty zones offer visible slots only in editable overlays', (
     tester,
@@ -361,6 +371,8 @@ void main() {
     expect(find.byIcon(Icons.add), findsNothing);
 
     editMode.value = true;
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(20, 20));
     await tester.pumpAndSettle();
     for (final zone in SuperLayoutZone.values) {
       expect(
@@ -569,6 +581,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     final before = tester.getCenter(find.text('Panneau'));
+    await tester.tap(find.text('Panneau'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Ouest'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-swap-west')));

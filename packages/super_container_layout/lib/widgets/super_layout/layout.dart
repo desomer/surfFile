@@ -55,8 +55,7 @@ class SuperLayoutState extends State<SuperLayout> {
   final _centerHint = ValueNotifier(false);
   final _hinting = <SuperLayoutZone>{};
 
-  /// Zone sélectionnée par un clic sur son nom : seule elle montre les
-  /// étiquettes des dispositions imbriquées dans ses slots.
+  /// Zone selectionnee par un clic sur son nom, affichee dans la banniere.
   final _selected = ValueNotifier<SuperLayoutZone?>(null);
 
   void _select(SuperLayoutZone zone) =>
@@ -110,15 +109,19 @@ class SuperLayoutState extends State<SuperLayout> {
 
   @override
   void dispose() {
+    LayoutSelection.unregister(this);
     _config.dispose();
     _overCenter.dispose();
     _centerHint.dispose();
     _emphasis.dispose();
     _selected.dispose();
     final owner = this;
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => LayoutSelection.report(owner, const []),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      LayoutSelection.report(owner, const []);
+      if (identical(_LayoutEditSelection.selected.value, owner)) {
+        _LayoutEditSelection.selected.value = null;
+      }
+    });
     super.dispose();
   }
 
@@ -394,7 +397,12 @@ class SuperLayoutState extends State<SuperLayout> {
   ) {
     final content = config.contentZone(zone);
     final slots = _slotsOf(config, content);
-    if (slots.isEmpty) return _ZonePlaceholder(zone: zone);
+    if (slots.isEmpty) {
+      return _ZonePlaceholder(
+        zone: zone,
+        showLabel: !(editMode && widget.showZoneNames && widget.editable),
+      );
+    }
     final auto = autoSides.contains(zone);
     final axis = config.axisOf(zone);
     final autoHeight =
@@ -431,140 +439,167 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   @override
-  Widget build(BuildContext context) => SuperContainer(
-    decorate: false,
-    label: widget.label,
-    editable: widget.editable,
-    onEdit: _openEditor,
-    child: ListenableBuilder(
-      listenable: Listenable.merge([_config, _selected]),
-      builder: (context, _) {
-        final config = _config.value;
-        // Une disposition imbriquée n'affiche ses étiquettes que si la zone
-        // qui la contient est sélectionnée dans sa disposition parente.
-        final editMode =
-            (StyleEditScope.controllerOf(context)?.value ?? false) &&
-            _LabelScope.of(context);
-        final parentPath = _LabelScope.pathOf(context);
-        final selected = _selected.value;
-        final name = widget.name ?? widget.label;
-        // Une disposition sans sélection et sans parent sélectionné n'apporte
-        // rien au chemin.
-        _reportPath(
-          editMode && (parentPath.isNotEmpty || selected != null)
-              ? [...parentPath, name, if (selected != null) selected.label]
-              : const [],
-        );
-        final editing = widget.showZoneNames && editMode;
-        final zones = config.visibleZones;
-        // Un côté automatique sans contenu garde sa taille fixe.
-        final autoSides = {
-          for (final side in config.autoSides)
-            if (zones.contains(side) &&
-                _hasContent(config, config.contentZone(side)))
-              side,
-        };
-        return _ZoneLayout(
-          config: config,
-          autoSides: autoSides,
-          children: [
-            for (final zone in zones)
-              _ZoneEntry(
-                key: ValueKey('super-layout-${zone.name}'),
-                zone: zone,
-                child: _LabelScope(
-                  visible: editMode && selected == zone,
-                  path: [...parentPath, name, zone.label],
-                  child: _contentOf(config, zone, autoSides, editMode),
-                ),
-              ),
-            // Une zone reçoit un slot glissé sur sa partie libre : il s'y range
-            // en dernier.
-            if (editMode && widget.editable)
+  Widget build(BuildContext context) => Listener(
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: (event) {
+      if ((StyleEditScope.controllerOf(context)?.value ?? false) &&
+          event.buttons == kPrimaryButton) {
+        _LayoutEditSelection.select(this, event);
+      }
+    },
+    child: SuperContainer(
+      decorate: false,
+      label: widget.label,
+      editable: widget.editable,
+      onEdit: _openEditor,
+      onAdd: () => _addSlot(
+        _config.value.visibleZones.contains(_selected.value)
+            ? _selected.value!
+            : SuperLayoutZone.center,
+      ),
+      child: ListenableBuilder(
+        listenable: Listenable.merge([
+          _config,
+          _selected,
+          _LayoutEditSelection.selected,
+        ]),
+        builder: (context, _) {
+          final config = _config.value;
+          // Seule la disposition selectionnee affiche ses actions overlay.
+          final editMode =
+              (StyleEditScope.controllerOf(context)?.value ?? false) &&
+              identical(_LayoutEditSelection.selected.value, this);
+          final parentPath = _LabelScope.pathOf(context);
+          final selected = _selected.value;
+          final name = widget.name ?? widget.label;
+          LayoutSelection.register(this, [...parentPath, name], (zoneLabel) {
+            if (!mounted) return;
+            _selected.value = zoneLabel == null
+                ? null
+                : SuperLayoutZone.values
+                      .where((zone) => zone.label == zoneLabel)
+                      .firstOrNull;
+            _LayoutEditSelection.selected.value = this;
+          }, parent: this.context.findAncestorStateOfType<SuperLayoutState>());
+          _reportPath(
+            editMode
+                ? [...parentPath, name, if (selected != null) selected.label]
+                : const [],
+          );
+          final editing = widget.showZoneNames && editMode;
+          final zones = config.visibleZones;
+          // Un côté automatique sans contenu garde sa taille fixe.
+          final autoSides = {
+            for (final side in config.autoSides)
+              if (zones.contains(side) &&
+                  _hasContent(config, config.contentZone(side)))
+                side,
+          };
+          return _ZoneLayout(
+            config: config,
+            autoSides: autoSides,
+            children: [
               for (final zone in zones)
                 _ZoneEntry(
-                  key: ValueKey('super-layout-slot-drop-${zone.name}'),
+                  key: ValueKey('super-layout-${zone.name}'),
                   zone: zone,
-                  overlay: true,
-                  dropTarget: true,
-                  child: _SlotZoneTarget(
-                    owner: this,
-                    zoneLabel: zone.label,
-                    ids: [
-                      for (final slot in _slotsOf(
-                        config,
-                        config.contentZone(zone),
-                      ))
-                        slot.id,
-                    ],
-                    onMove: (id) => _update(
-                      config.withSlotMoved(id, config.contentZone(zone)),
-                    ),
+                  child: _LabelScope(
+                    path: [...parentPath, name, zone.label],
+                    child: _contentOf(config, zone, autoSides, editMode),
                   ),
                 ),
-            // Noms des zones utilisées, au-dessus de leur centre.
-            if (editing) ...[
-              _ZoneEntry(
-                key: const ValueKey('super-layout-center-target'),
-                zone: SuperLayoutZone.center,
-                overlay: true,
-                dropTarget: true,
-                child: _CenterSwapTarget(
-                  overCenter: _overCenter,
-                  hint: _centerHint,
-                  canSwap: (zone) =>
-                      widget.editable &&
-                      zones.contains(zone) &&
-                      config.canSwap(zone),
-                  onSwap: (zone) => _update(config.withSwap(zone)),
-                ),
-              ),
-              for (final zone in zones)
-                if (_hasContent(config, config.contentZone(zone)))
+              // Une zone reçoit un slot glissé sur sa partie libre : il s'y range
+              // en dernier.
+              if (editMode && widget.editable)
+                for (final zone in zones)
                   _ZoneEntry(
-                    key: ValueKey('super-layout-name-${zone.name}'),
+                    key: ValueKey('super-layout-slot-drop-${zone.name}'),
                     zone: zone,
                     overlay: true,
-                    child: _ZoneNameBadge(
-                      zone: zone,
-                      overCenter: _overCenter,
-                      onCenterHint: (active) => _hintCenter(zone, active),
-                      emphasis: _emphasisFor(zone),
-                      selected: selected == zone,
-                      onSelect: () => _select(zone),
-                      swapTarget: widget.editable && config.canSwap(zone)
-                          ? zone.opposite
-                          : null,
-                      moves: !zones.contains(zone.opposite),
-                      onSwap: () => _update(config.withSwap(zone)),
-                    ),
-                  )
-                else if (widget.editable)
-                  _ZoneEntry(
-                    key: ValueKey('super-layout-add-overlay-${zone.name}'),
-                    zone: zone,
-                    overlay: true,
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: IconButton.filled(
-                          key: ValueKey('super-layout-add-${zone.name}'),
-                          tooltip: 'Ajouter un slot dans ${zone.label}',
-                          style: IconButton.styleFrom(
-                            backgroundColor: Theme.of(context)
-                                .colorScheme.primary.withValues(alpha: .35),
-                            foregroundColor: Theme.of(context).colorScheme.onSurface,
-                          ),
-                          icon: const Icon(Icons.add),
-                          onPressed: () => _addSlot(zone),
-                        ),
+                    dropTarget: true,
+                    child: _SlotZoneTarget(
+                      owner: this,
+                      zoneLabel: zone.label,
+                      ids: [
+                        for (final slot in _slotsOf(
+                          config,
+                          config.contentZone(zone),
+                        ))
+                          slot.id,
+                      ],
+                      onMove: (id) => _update(
+                        config.withSlotMoved(id, config.contentZone(zone)),
                       ),
                     ),
                   ),
+              // Noms des zones utilisées, au-dessus de leur centre.
+              if (editing) ...[
+                _ZoneEntry(
+                  key: const ValueKey('super-layout-center-target'),
+                  zone: SuperLayoutZone.center,
+                  overlay: true,
+                  dropTarget: true,
+                  child: _CenterSwapTarget(
+                    overCenter: _overCenter,
+                    hint: _centerHint,
+                    canSwap: (zone) =>
+                        widget.editable &&
+                        zones.contains(zone) &&
+                        config.canSwap(zone),
+                    onSwap: (zone) => _update(config.withSwap(zone)),
+                  ),
+                ),
+                for (final zone in zones)
+                  if (_hasContent(config, config.contentZone(zone)))
+                    _ZoneEntry(
+                      key: ValueKey('super-layout-name-${zone.name}'),
+                      zone: zone,
+                      overlay: true,
+                      child: _ZoneNameBadge(
+                        zone: zone,
+                        overCenter: _overCenter,
+                        onCenterHint: (active) => _hintCenter(zone, active),
+                        emphasis: _emphasisFor(zone),
+                        selected: selected == zone,
+                        onSelect: () => _select(zone),
+                        swapTarget: widget.editable && config.canSwap(zone)
+                            ? zone.opposite
+                            : null,
+                        moves: !zones.contains(zone.opposite),
+                        onSwap: () => _update(config.withSwap(zone)),
+                      ),
+                    )
+                  else if (widget.editable)
+                    _ZoneEntry(
+                      key: ValueKey('super-layout-add-overlay-${zone.name}'),
+                      zone: zone,
+                      overlay: true,
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: IconButton.filled(
+                            key: ValueKey('super-layout-add-${zone.name}'),
+                            tooltip: 'Ajouter un slot dans ${zone.label}',
+                            style: IconButton.styleFrom(
+                              backgroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withValues(alpha: .35),
+                              foregroundColor: Theme.of(context)
+                                  .colorScheme
+                                  .onSurface,
+                            ),
+                            icon: const Icon(Icons.add),
+                            onPressed: () => _addSlot(zone),
+                          ),
+                        ),
+                      ),
+                    ),
+              ],
             ],
-          ],
-        );
-      },
+          );
+        },
+      ),
     ),
   );
 }

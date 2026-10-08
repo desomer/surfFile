@@ -484,9 +484,10 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // Les étiquettes de la disposition imbriquée n'apparaissent qu'une fois
-    // la zone qui la contient sélectionnée.
-    await tester.tap(find.text('Centre'));
+    await tester.tapAt(
+      tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
+          const Offset(20, 20),
+    );
     await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(const ValueKey('box-bar'))).top, 0);
 
@@ -601,6 +602,7 @@ void main() {
           ),
         ),
       );
+      await tester.tapAt(const Offset(500, 200));
       await tester.pumpAndSettle();
       return changes;
     }
@@ -926,7 +928,7 @@ void main() {
                 child: SuperLayout(
                   editable: false,
                   config: const SuperLayoutConfig(
-                    north: false,
+                    north: true,
                     south: false,
                     west: false,
                     east: false,
@@ -965,9 +967,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // Les étiquettes de la disposition imbriquée n'apparaissent qu'une fois
-      // la zone qui la contient sélectionnée.
-      await tester.tap(find.text('Centre'));
+      await tester.tapAt(const Offset(590, 10));
       await tester.pumpAndSettle();
 
       final container = find.byKey(const ValueKey('slot-label-main'));
@@ -977,136 +977,134 @@ void main() {
         tester.getBottomRight(container),
       );
       expect(rect.right, 596);
-      expect(rect.top, 4);
+      expect(rect.top, 84);
       // Les étiquettes de la disposition interne restent à gauche, sans
       // recouvrement, et le conteneur est dessiné au-dessus du contenu.
+      expect(find.byKey(const ValueKey('slot-label-bar')), findsNothing);
+      await tester.tapAt(const Offset(500, 150));
+      await tester.pumpAndSettle();
+      expect(container, findsNothing);
       final bar = tester.getRect(find.byKey(const ValueKey('slot-label-bar')));
-      expect(bar.topLeft, const Offset(4, 4));
+      expect(bar.topLeft, const Offset(4, 84));
       expect(rect.overlaps(bar), isFalse);
       // Le Centre de la disposition qui contient main et celui de la
       // disposition interne affichent chacun leur nom.
-      expect(find.text('Centre'), findsNWidgets(2));
+      expect(find.text('Centre'), findsOneWidget);
       expect(find.text('Nord'), findsOneWidget);
     });
 
-    testWidgets(
-      'clicking a zone name selects the zone that shows its children',
-      (tester) async {
-        final editMode = ValueNotifier(true);
-        addTearDown(editMode.dispose);
-        await tester.pumpWidget(
-          StyleEditScope(
-            controller: editMode,
-            child: MaterialApp(
-              home: Scaffold(
-                body: SizedBox(
-                  width: size.width,
-                  height: size.height,
-                  child: SuperLayout(
-                    editable: false,
-                    config: const SuperLayoutConfig(
-                      north: false,
-                      south: false,
-                      east: false,
-                      placements: {
-                        SuperLayoutZone.west: ['side'],
-                        SuperLayoutZone.center: ['main'],
-                      },
-                    ),
-                    slots: [
-                      BuilderSlot(
-                        id: 'side',
-                        label: 'side',
-                        builder: (_) => SuperLayout(
-                          editable: false,
-                          config: const SuperLayoutConfig(
-                            north: false,
-                            west: false,
-                            east: false,
-                            placements: {
-                              SuperLayoutZone.center: ['places'],
-                              SuperLayoutZone.south: ['disks'],
-                            },
-                          ),
-                          slots: [
-                            _slot('places', sizing: SlotSizing.fill),
-                            _slot('disks', height: 30),
-                          ],
-                        ),
-                      ),
-                      BuilderSlot(
-                        id: 'main',
-                        label: 'main',
-                        builder: (_) => SuperLayout(
-                          editable: false,
-                          config: const SuperLayoutConfig(
-                            south: false,
-                            west: false,
-                            east: false,
-                            autoSides: {SuperLayoutZone.north},
-                            placements: {
-                              SuperLayoutZone.north: ['bar'],
-                              SuperLayoutZone.center: ['content'],
-                            },
-                          ),
-                          slots: [
-                            _slot('bar', height: 40),
-                            _slot('content', sizing: SlotSizing.fill),
-                          ],
-                        ),
-                      ),
-                    ],
+    testWidgets('clicking nested content selects only its layout overlays', (
+      tester,
+    ) async {
+      final editMode = ValueNotifier(true);
+      addTearDown(editMode.dispose);
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: editMode,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: SuperLayout(
+                  editable: false,
+                  config: const SuperLayoutConfig(
+                    north: false,
+                    south: false,
+                    east: false,
+                    placements: {
+                      SuperLayoutZone.west: ['side'],
+                      SuperLayoutZone.center: ['main'],
+                    },
                   ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'side',
+                      label: 'side',
+                      builder: (_) => SuperLayout(
+                        editable: false,
+                        config: const SuperLayoutConfig(
+                          north: false,
+                          west: false,
+                          east: false,
+                          placements: {
+                            SuperLayoutZone.center: ['places'],
+                            SuperLayoutZone.south: ['disks'],
+                          },
+                        ),
+                        slots: [
+                          _slot('places', sizing: SlotSizing.fill),
+                          _slot('disks', height: 30),
+                        ],
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'main',
+                      label: 'main',
+                      builder: (_) => SuperLayout(
+                        editable: false,
+                        config: const SuperLayoutConfig(
+                          south: false,
+                          west: false,
+                          east: false,
+                          autoSides: {SuperLayoutZone.north},
+                          placements: {
+                            SuperLayoutZone.north: ['bar'],
+                            SuperLayoutZone.center: ['content'],
+                          },
+                        ),
+                        slots: [
+                          _slot('bar', height: 40),
+                          _slot('content', sizing: SlotSizing.fill),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        );
-        await tester.pumpAndSettle();
-        final mainChild = find.byKey(const ValueKey('slot-label-bar'));
-        final sideChild = find.byKey(const ValueKey('slot-label-places'));
-        // Les labels de la racine sont visibles, ceux des dispositions enfants non.
-        expect(find.byKey(const ValueKey('slot-label-main')), findsOneWidget);
-        expect(find.byKey(const ValueKey('slot-label-side')), findsOneWidget);
-        expect(find.text('Nord'), findsNothing);
-        expect(mainChild, findsNothing);
-        expect(sideChild, findsNothing);
+        ),
+      );
+      await tester.pumpAndSettle();
+      final mainChild = find.byKey(const ValueKey('slot-label-bar'));
+      final sideChild = find.byKey(const ValueKey('slot-label-places'));
+      expect(find.byKey(const ValueKey('slot-label-main')), findsNothing);
+      expect(find.byKey(const ValueKey('slot-label-side')), findsNothing);
+      expect(find.text('Nord'), findsNothing);
+      expect(mainChild, findsNothing);
+      expect(sideChild, findsNothing);
 
-        // Sélection du centre : seule sa disposition enfant montre ses labels.
-        await tester.tap(find.text('Centre'));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('super-layout-zone-selected-center')),
-          findsOneWidget,
-        );
-        expect(mainChild, findsOneWidget);
-        expect(find.text('Nord'), findsOneWidget);
-        expect(sideChild, findsNothing);
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
+            const Offset(20, 20),
+      );
+      await tester.pumpAndSettle();
+      expect(mainChild, findsOneWidget);
+      expect(find.text('Nord'), findsOneWidget);
+      expect(sideChild, findsNothing);
 
-        // Sélection de l'ouest : le centre est désélectionné.
-        await tester.tap(find.text('Ouest'));
-        await tester.pumpAndSettle();
-        expect(
-          find.byKey(const ValueKey('super-layout-zone-selected-center')),
-          findsNothing,
-        );
-        expect(
-          find.byKey(const ValueKey('super-layout-zone-selected-west')),
-          findsOneWidget,
-        );
-        expect(mainChild, findsNothing);
-        expect(sideChild, findsOneWidget);
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('box-places'))) +
+            const Offset(20, 20),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-layout-zone-selected-center')),
+        findsNothing,
+      );
+      expect(mainChild, findsNothing);
+      expect(sideChild, findsOneWidget);
 
-        // Un second clic désélectionne.
-        await tester.tap(find.text('Ouest'));
-        await tester.pumpAndSettle();
-        expect(sideChild, findsNothing);
-        expect(
-          find.byKey(const ValueKey('super-layout-zone-selected-west')),
-          findsNothing,
-        );
-      },
-    );
+      // Un clic sur le nom selectionne la zone, sans deselectionner le layout.
+      await tester.tap(find.text('Centre'));
+      await tester.pumpAndSettle();
+      expect(sideChild, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-layout-zone-selected-center')),
+        findsOneWidget,
+      );
+    });
 
     testWidgets('a root layout always shows its labels', (tester) async {
       await pumpMovable(tester);
@@ -1219,11 +1217,10 @@ void main() {
       expect(find.text('Mode édition'), findsOneWidget);
       expect(path(), isNull);
 
-      await tester.tap(name('center'));
-      await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur');
-
-      await tester.tap(name('west'));
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('box-y'))) +
+            const Offset(20, 20),
+      );
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
 
@@ -1231,53 +1228,23 @@ void main() {
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
 
-      // Un clic sur une zone du chemin la désélectionne, comme un clic sur son
-      // nom, y compris la dernière.
+      // Un clic sur une zone du chemin selectionne sa disposition et sa zone.
       await tester.tap(segment('Est'));
       await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
       expect(
         find.byKey(const ValueKey('super-layout-zone-selected-east')),
-        findsNothing,
+        findsOneWidget,
       );
 
-      // ... et désélectionne aussi tout ce qui est dessous.
-      await tester.tap(name('east'));
-      await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
-      await tester.tap(segment('Ouest'));
-      await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur');
-      expect(
-        find.byKey(const ValueKey('super-layout-zone-selected-west')),
-        findsNothing,
+      // Selectionner le contenu de l'autre layout change le chemin actif.
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
+            const Offset(20, 100),
       );
-      await tester.tap(name('west'));
-      await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
-
-      // Une disposition du chemin ramène la sélection à son niveau.
-      await tester.tap(segment('Explorateur'));
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur');
-
-      // Dernier niveau, une disposition : ce n'est pas un lien.
-      await tester.tap(segment('Explorateur'));
-      await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur');
-
-      await tester.tap(segment('Centre'));
-      await tester.pumpAndSettle();
-      expect(path(), isNull);
-      expect(
-        find.byKey(const ValueKey('super-layout-zone-selected-center')),
-        findsNothing,
-      );
-
-      await tester.tap(name('center').last);
-      await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur');
-      await tester.tap(segment('Page'));
+      editMode.value = false;
       await tester.pumpAndSettle();
       expect(path(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -1343,9 +1310,10 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      // Les étiquettes de la disposition imbriquée n'apparaissent qu'une fois
-      // la zone qui la contient sélectionnée.
-      await tester.tap(find.text('Centre'));
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
+            const Offset(20, 20),
+      );
       await tester.pumpAndSettle();
       final gesture = await tester.startGesture(
         tester.getCenter(find.byKey(const ValueKey('slot-label-bar'))),
@@ -1414,6 +1382,8 @@ void main() {
 
       editMode.value = true;
       await tester.pump();
+      await tester.tapAt(const Offset(500, 200));
+      await tester.pump();
       expect(find.text('bar · Nord 1/2'), findsOneWidget);
       expect(find.text('quiet · Nord 2/2'), findsOneWidget);
       expect(find.text('content · Centre 1/1'), findsOneWidget);
@@ -1441,6 +1411,8 @@ void main() {
         _slot('content', sizing: SlotSizing.fill),
       ]);
       editMode.value = true;
+      await tester.pump();
+      await tester.tapAt(const Offset(500, 200));
       await tester.pump();
       expect(find.text('bar · Nord 1/2'), findsOneWidget);
       expect(find.textContaining('quiet'), findsNothing);
@@ -1485,6 +1457,8 @@ void main() {
           ),
         ),
       );
+      await tester.pump();
+      await tester.tapAt(const Offset(500, 200));
       await tester.pump();
       expect(find.text('Nord'), findsOneWidget);
       expect(find.text('Centre'), findsOneWidget);

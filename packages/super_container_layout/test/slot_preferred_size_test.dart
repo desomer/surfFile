@@ -34,25 +34,33 @@ void main() {
     ValueChanged<SuperLayoutConfig>? onChanged,
     bool editable = true,
     List<SlotImplementation>? slots,
-  }) => tester.pumpWidget(
-    MaterialApp(
-      home: StyleEditScope(
-        controller: editMode ?? ValueNotifier(false),
-        child: Scaffold(
-          body: SizedBox(
-            width: 600,
-            height: 400,
-            child: SuperLayout(
-              config: config,
-              onChanged: onChanged,
-              editable: editable,
-              slots: slots ?? [slot('first'), slot('second')],
+  }) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StyleEditScope(
+          controller: editMode ?? ValueNotifier(false),
+          child: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: SuperLayout(
+                config: config,
+                onChanged: onChanged,
+                editable: editable,
+                slots: slots ?? [slot('first'), slot('second')],
+              ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+    if (editMode?.value ?? false) {
+      await tester.tapAt(
+        tester.getTopLeft(find.byType(SuperLayout)) + const Offset(10, 10),
+      );
+      await tester.pumpAndSettle();
+    }
+  }
 
   Future<void> openEditor(WidgetTester tester) async {
     await tester.tap(

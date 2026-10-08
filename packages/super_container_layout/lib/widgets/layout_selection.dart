@@ -12,6 +12,59 @@ class LayoutSelection {
 
   static final _reported = <Object, List<String>>{};
   static final _clears = <Object, VoidCallback>{};
+  static final _targets =
+      <
+        Object,
+        ({List<String> path, ValueChanged<String?> select, Object? parent})
+      >{};
+
+  static void register(
+    Object owner,
+    List<String> path,
+    ValueChanged<String?> select, {
+    Object? parent,
+  }) {
+    _targets[owner] = (
+      path: List.unmodifiable(path),
+      select: select,
+      parent: parent,
+    );
+  }
+
+  static void unregister(Object owner) => _targets.remove(owner);
+
+  /// Active la disposition du segment, et sa zone si le segment en est une.
+  static void select(List<String> prefix) {
+    Object? active;
+    var depth = -1;
+    for (final entry in _reported.entries) {
+      if (entry.value.length >= depth) {
+        active = entry.key;
+        depth = entry.value.length;
+      }
+    }
+    // Les libelles peuvent etre identiques : preferer les ancetres de la
+    // disposition active aux autres instances portant le meme nom.
+    while (active != null) {
+      final target = _targets[active];
+      if (target == null) break;
+      final length = target.path.length;
+      if ((prefix.length == length || prefix.length == length + 1) &&
+          listEquals(prefix.take(length).toList(), target.path)) {
+        target.select(prefix.length == length ? null : prefix.last);
+        return;
+      }
+      active = target.parent;
+    }
+    for (final target in _targets.values.toList().reversed) {
+      final length = target.path.length;
+      if ((prefix.length == length || prefix.length == length + 1) &&
+          listEquals(prefix.take(length).toList(), target.path)) {
+        target.select(prefix.length == length ? null : prefix.last);
+        return;
+      }
+    }
+  }
 
   /// Désélectionne les dispositions dont le chemin prolonge [prefix] : le
   /// niveau désigné devient le plus profond. Les autres sont inchangées.

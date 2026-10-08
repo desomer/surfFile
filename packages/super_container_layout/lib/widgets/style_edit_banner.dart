@@ -48,6 +48,22 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (AppearanceScope.controllerOf(context)
+                    case final appearance?)
+                  IconButton(
+                    key: const ValueKey('style-edit-banner-transfer'),
+                    tooltip: 'Importer / exporter le style et la disposition',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: scheme.onPrimary,
+                    icon: const Icon(Icons.import_export),
+                    onPressed: () {
+                      final target =
+                          widget.navigatorKey?.currentContext ?? context;
+                      if (Navigator.maybeOf(target) == null) return;
+                      AppearanceTransferDialog.show(target, appearance);
+                    },
+                  ),
                 MouseRegion(
                   cursor: SystemMouseCursors.move,
                   child: Row(
@@ -105,22 +121,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                         ),
                                         label: label,
                                         current: index == path.length - 1,
-                                        // Les niveaux pairs sont des dispositions,
-                                        // les impairs leurs zones sélectionnées.
-                                        // Le dernier niveau ne sert que s'il
-                                        // s'agit d'une zone.
-                                        onTap:
-                                            index == path.length - 1 &&
-                                                index.isEven
-                                            ? null
-                                            : () => LayoutSelection.cut(
-                                                path.sublist(
-                                                  0,
-                                                  index.isOdd
-                                                      ? index
-                                                      : index + 1,
-                                                ),
-                                              ),
+                                        onTap: () => LayoutSelection.select(
+                                          path.sublist(0, index + 1),
+                                        ),
                                       ),
                                     ],
                                   ],
@@ -131,22 +134,6 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                if (AppearanceScope.controllerOf(context)
-                    case final appearance?)
-                  IconButton(
-                    key: const ValueKey('style-edit-banner-transfer'),
-                    tooltip: 'Importer / exporter le style et la disposition',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: scheme.onPrimary,
-                    icon: const Icon(Icons.import_export),
-                    onPressed: () {
-                      final target =
-                          widget.navigatorKey?.currentContext ?? context;
-                      if (Navigator.maybeOf(target) == null) return;
-                      AppearanceTransferDialog.show(target, appearance);
-                    },
-                  ),
                 IconButton(
                   key: const ValueKey('style-edit-banner-close'),
                   tooltip: 'Quitter le mode édition',
@@ -196,9 +183,8 @@ class _BannerLayout extends SingleChildLayoutDelegate {
       position != oldDelegate.position;
 }
 
-/// Un niveau du chemin de la bannière. Un clic sur une zone la désélectionne,
-/// avec tout ce qui est dessous ; un clic sur une disposition ne garde que son
-/// niveau.
+/// Un niveau du chemin : un clic active sa disposition et, le cas echeant,
+/// la zone designee.
 class _PathSegment extends StatelessWidget {
   const _PathSegment({
     required this.label,

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart'
     show ValueListenable, listEquals, setEquals;
 import 'package:flutter/rendering.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDownEvent, PointerEvent, kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';
