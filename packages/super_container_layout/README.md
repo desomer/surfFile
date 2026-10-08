@@ -69,6 +69,20 @@ import 'package:super_container_layout/super_container_layout.dart';
 `SuperLayoutConfig`. `SuperContainer` fournit l’édition contextuelle des styles
 et peut partager les styles via `AppearanceScope` et `AppearanceSlot`.
 
+Les slots et les `RegisteredComponent` acceptent `preferredSize: Size(largeur,
+hauteur)`. En mode edition, le clic droit sur un slot ajoute l'entree
+« Taille préférée » au menu des styles : le dialogue regle les dimensions en
+pixels ou retablit la taille automatique, meme si le slot declare une taille
+preferee par defaut.
+Les dimensions sont limitees par la zone disponible ; des hauteurs preferees
+qui depassent ensemble la zone sont reduites proportionnellement. Les slots
+sans taille preferee conservent leur comportement `fill` ou `intrinsic`.
+Les modifications passent par `onChanged` et sont persistees par ID d'instance
+dans `SuperLayoutConfig.slotPreferredSizes`, y compris apres deplacement,
+sauvegarde ou export de la disposition.
+Une entree `null` force le mode automatique ; une entree absente utilise
+`SlotImplementation.preferredSize`.
+
 `AppearanceSlot` est une classe extensible sans catalogue prédéfini.
 L'application définit ses slots et fournit leurs fonctions de lecture,
 écriture et remise à zéro dans `Appearance` :
@@ -112,16 +126,46 @@ sous le nom `Registre : <clé>`. Ils deviennent des slots déplaçables du layou
 identifiés par `registry:<clé encodée comme composant URI>` (préfixe répété si
 un slot fourni utilise déjà cet identifiant). Ces identifiants sont enregistrés dans `placements` via
 `onChanged` ; conserver les mêmes clés de registre et identifiants de slots
-permet de restaurer la disposition. Choisir à nouveau un composant le déplace,
-sans le dupliquer dans ce layout.
+permet de restaurer la disposition. Choisir un composant du registre cree une
+nouvelle instance avec un ID persistant ; plusieurs instances du meme type
+peuvent coexister. Le glisser-deposer deplace une instance sans changer son ID.
+Les slots fournis explicitement restent uniques et sont deplaces par le selecteur.
+
+Dans le JSON, chaque placement contient le type de fabrique et l'ID d'instance :
+
+```json
+"placements": {
+  "center": [
+    {"type": "registry:New%20Layout", "id": "t1OTp3MeR9"}
+  ]
+}
+```
+
+`placements` conserve les listes d'IDs dans l'API Dart, et `slotTypes` associe
+les IDs a leurs types (`slotTypeOf(id)`). `withSlotMoved(..., type: ...)` ajoute
+une instance ; sans `type`, il conserve celui du slot deplace. Les anciennes
+chaines JSON restent lisibles avec `type == id`. Les layouts imbriques utilisent
+l'ID persistant de leur placement pour retrouver leur configuration. Un ancien
+ID aleatoire de layout absent de son placement ne peut pas etre reconstitue.
+
+Le contenu d'une zone utilise `SuperLayoutState.searchSlot(id)` pour ne creer
+que les slots demandes par `placements`. La liste complete reste reservee au
+selecteur d'ajout. La recherche conserve les identifiants historiques, les
+regles de collision et le filtre `isAvailable` du composant recherche ; elle
+renvoie `null` pour un identifiant inconnu.
 
 ```dart
 final registry = Registry();
-registry.registry['horloge'] = const Text('Horloge');
+registry.registerFactory('horloge', const Text('Horloge'));
 SuperApp(registry: registry, home: const SuperLayout());
 ```
 
 Le registre accepte aussi des fabriques avec `registerComponent` :
+
+`Registry()..bootstrap()` enregistre les fabriques `New Layout` et
+`New Container`. Cette derniere cree un `SuperContainer` vide et editable,
+dont le style est sauvegarde sous l'ID persistant du placement. Plusieurs
+instances conservent ainsi des styles independants.
 
 ```dart
 registry.registerComponent(

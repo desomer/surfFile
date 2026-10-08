@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Size;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,12 +14,32 @@ void main() {
     () async {
       final value = Appearance(
         styles: {'editor/preview': const ContainerStyle(radius: 23)},
-        layouts: {'workspace': const SuperLayoutConfig(westSize: 203)},
+        layouts: {
+          'workspace': const SuperLayoutConfig(westSize: 203)
+              .withSlotMoved(
+                'nested-instance',
+                SuperLayoutZone.center,
+                type: 'registry:New%20Layout',
+              )
+              .withSlotPreferredSize('nested-instance', const Size(250, 150)),
+          'nested-instance': const SuperLayoutConfig(
+            swaps: {SuperLayoutZone.west},
+          ),
+        },
       );
       final store = AppearanceStore();
       await store.save(value);
       final restored = await AppearanceStore().load();
       expect(AppearanceStore.encode(restored), AppearanceStore.encode(value));
+      expect(
+        restored.layout('workspace').slotTypeOf('nested-instance'),
+        'registry:New%20Layout',
+      );
+      expect(restored.layout('nested-instance').swaps, {SuperLayoutZone.west});
+      expect(
+        restored.layout('workspace').slotPreferredSizes['nested-instance'],
+        const Size(250, 150),
+      );
       final export = AppearanceTransfer.export(value, {
         ...TransferGroup.values,
       });
@@ -37,13 +58,25 @@ void main() {
     () {
       final ids = ['preview'];
       final placements = {SuperLayoutZone.center: ids};
+      final slotTypes = {'preview': 'registry:preview'};
       final styles = {'custom': const ContainerStyle(radius: 11)};
-      final layouts = {'workspace': SuperLayoutConfig(placements: placements)};
+      final layouts = {
+        'workspace': SuperLayoutConfig(
+          placements: placements,
+          slotTypes: slotTypes,
+        ),
+      };
       final a = Appearance(styles: styles, layouts: layouts);
       styles.clear();
       layouts.clear();
       ids.add('other');
       placements.clear();
+      slotTypes.clear();
+      expect(a.layout('workspace').slotTypeOf('preview'), 'registry:preview');
+      expect(
+        () => a.layout('workspace').slotTypes.clear(),
+        throwsUnsupportedError,
+      );
       expect(a.style('custom').radius, 11);
       expect(a.layout('workspace').placementsOf(SuperLayoutZone.center), [
         'preview',

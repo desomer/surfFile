@@ -1,5 +1,8 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
+
+import 'super_container.dart';
 
 /// Taille qu'un slot demande à la zone qui le reçoit.
 enum SlotSizing {
@@ -21,6 +24,7 @@ abstract class SlotImplementation extends StatelessWidget {
     required this.id,
     required this.label,
     this.sizing = SlotSizing.fill,
+    this.preferredSize,
     this.visible = true,
     this.showLabel = true,
     this.labelAlignment = Alignment.topLeft,
@@ -31,6 +35,9 @@ abstract class SlotImplementation extends StatelessWidget {
   final String id;
   final String label;
   final SlotSizing sizing;
+
+  /// Dimensions demandees, limitees par l'espace disponible dans la zone.
+  final Size? preferredSize;
 
   /// Un slot masqué n'est affiché dans aucune zone et n'occupe aucune place.
   final bool visible;
@@ -58,6 +65,7 @@ class BuilderSlot extends SlotImplementation {
     required super.label,
     required this.builder,
     super.sizing,
+    super.preferredSize,
     super.visible,
     super.showLabel,
     super.labelAlignment,
@@ -80,6 +88,8 @@ class SlotStack extends StatelessWidget {
     this.zoneLabel,
     this.mover,
     this.emphasis,
+    this.preferredSizes = const {},
+    this.onEditPreferredSize,
     super.key,
   });
 
@@ -108,6 +118,8 @@ class SlotStack extends StatelessWidget {
 
   /// Grossissement partagé des étiquettes (zones et slots) de la disposition.
   final LabelEmphasis? emphasis;
+  final Map<String, Size?> preferredSizes;
+  final Future<void> Function(SlotImplementation)? onEditPreferredSize;
 
   @override
   Widget build(BuildContext context) {
@@ -116,37 +128,21 @@ class SlotStack extends StatelessWidget {
         if (slot.visible) slot,
     ];
     final ids = [for (final slot in visible) slot.id];
-    Widget column(double maxHeight) => Column(
-      mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
-      crossAxisAlignment: stretch
-          ? CrossAxisAlignment.stretch
-          : CrossAxisAlignment.start,
+    return _SlotColumn(
+      expand: expand,
+      stretch: stretch,
+      preferredSizes: [
+        for (final slot in visible)
+          preferredSizes.containsKey(slot.id)
+              ? preferredSizes[slot.id]
+              : slot.preferredSize,
+      ],
+      sizing: [for (final slot in visible) slot.sizing],
       children: [
         for (final (index, slot) in visible.indexed)
-          if (expand && slot.sizing == SlotSizing.fill)
-            Expanded(
-              key: ValueKey('slot-fill-${slot.id}'),
-              child: _labeled(slot, index, visible.length, ids),
-            )
-          else
-            KeyedSubtree(
-              key: ValueKey('slot-item-${slot.id}'),
-              // Un Column donne une hauteur illimitée à ses enfants : en zone
-              // automatique, la hauteur disponible reste la borne du slot.
-              child: expand
-                  ? _labeled(slot, index, visible.length, ids)
-                  : ConstrainedBox(
-                      constraints: BoxConstraints(maxHeight: maxHeight),
-                      child: _labeled(slot, index, visible.length, ids),
-                    ),
-            ),
+          _labeled(slot, index, visible.length, ids),
       ],
     );
-    return expand
-        ? column(double.infinity)
-        : LayoutBuilder(
-            builder: (context, constraints) => column(constraints.maxHeight),
-          );
   }
 
   Widget _labeled(
@@ -154,17 +150,149 @@ class SlotStack extends StatelessWidget {
     int index,
     int count,
     List<String> ids,
-  ) => _LabeledSlot(
-    slot: slot,
-    showLabel: showLabels,
-    mover: mover,
-    emphasis: emphasis,
-    zoneLabel: zoneLabel,
-    ids: ids,
-    caption: zoneLabel == null
-        ? slot.label
-        : '${slot.label} · $zoneLabel ${index + 1}/$count',
+  ) => ContainerMenuAction(
+    key: ValueKey('slot-item-${slot.id}'),
+    label: 'Taille préférée : ${slot.label}',
+    enabled: showLabels && onEditPreferredSize != null,
+    onEdit: () async => onEditPreferredSize?.call(slot),
+    child: _LabeledSlot(
+      slot: slot,
+      showLabel: showLabels,
+      mover: mover,
+      emphasis: emphasis,
+      zoneLabel: zoneLabel,
+      ids: ids,
+      caption: zoneLabel == null
+          ? slot.label
+          : '${slot.label} · $zoneLabel ${index + 1}/$count',
+    ),
   );
+}
+
+class _SlotColumn extends MultiChildRenderObjectWidget {
+  const _SlotColumn({
+    required this.expand,
+    required this.stretch,
+    required this.preferredSizes,
+    required this.sizing,
+    required super.children,
+  });
+
+  final bool expand;
+  final bool stretch;
+  final List<Size?> preferredSizes;
+  final List<SlotSizing> sizing;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderSlotColumn()..configure(this);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderSlotColumn renderObject,
+  ) => renderObject.configure(this);
+}
+
+class _SlotParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderSlotColumn extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _SlotParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _SlotParentData> {
+  late _SlotColumn _configuration;
+
+  void configure(_SlotColumn value) {
+    _configuration = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _SlotParentData) {
+      child.parentData = _SlotParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final children = getChildrenAsList();
+    final preferences = _configuration.preferredSizes;
+    final expand = _configuration.expand && constraints.hasBoundedHeight;
+    final stretch = _configuration.stretch && constraints.hasBoundedWidth;
+    var naturalHeight = 0.0;
+    var preferredHeight = 0.0;
+    var fills = 0;
+    bool fillsSpace(int index) =>
+        expand &&
+        preferences[index] == null &&
+        _configuration.sizing[index] == SlotSizing.fill;
+    BoxConstraints childConstraints({Size? preferred, double? height}) {
+      final width = preferred?.width.clamp(0.0, constraints.maxWidth);
+      return BoxConstraints(
+        minWidth: width ?? (stretch ? constraints.maxWidth : 0),
+        maxWidth: width ?? constraints.maxWidth,
+        minHeight: height ?? 0,
+        maxHeight: height ?? constraints.maxHeight,
+      );
+    }
+
+    // Mesurer le contenu naturel avant de partager le reste entre les tailles
+    // preferees et les slots fill evite un debordement avec des slots mixtes.
+    for (final (index, child) in children.indexed) {
+      final preferred = preferences[index];
+      if (preferred != null) {
+        preferredHeight += preferred.height;
+      } else if (fillsSpace(index)) {
+        fills++;
+      } else {
+        child.layout(childConstraints(), parentUsesSize: true);
+        naturalHeight += child.size.height;
+      }
+    }
+    final available = (constraints.maxHeight - naturalHeight).clamp(
+      0.0,
+      double.infinity,
+    );
+    final scale = preferredHeight > available
+        ? available / preferredHeight
+        : 1.0;
+    final fillHeight = fills == 0
+        ? 0.0
+        : (available - preferredHeight * scale).clamp(0.0, double.infinity) /
+              fills;
+    var height = 0.0;
+    var width = 0.0;
+    for (final (index, child) in children.indexed) {
+      final preferred = preferences[index];
+      if (preferred != null || fillsSpace(index)) {
+        child.layout(
+          childConstraints(
+            preferred: preferred,
+            height: preferred == null ? fillHeight : preferred.height * scale,
+          ),
+          parentUsesSize: true,
+        );
+      }
+      (child.parentData! as _SlotParentData).offset = Offset(0, height);
+      height += child.size.height;
+      if (child.size.width > width) width = child.size.width;
+    }
+    size = constraints.constrain(
+      Size(
+        stretch ? constraints.maxWidth : width,
+        expand ? constraints.maxHeight : height,
+      ),
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
 
 /// Données d'un glisser de slot.
@@ -423,104 +551,117 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     final colors = Theme.of(context).colorScheme;
     final slot = widget.slot;
     final mover = widget.mover;
-    return DragTarget<SlotDragData>(
-      // Déposer un slot sur lui-même est accepté sans effet : la zone qui le
-      // contient ne doit pas le ranger en dernier.
-      onWillAcceptWithDetails: (details) {
-        final accepts = _accepts(details.data);
-        if (accepts) details.data.hint.value = _hintFor(details.data);
-        return accepts;
-      },
-      onMove: (details) {
-        _track(details.offset);
-        details.data.hint.value = _hintFor(details.data);
-      },
-      onLeave: (data) => data?.hint.value = null,
-      onAcceptWithDetails: (details) {
-        if (details.data.id == slot.id) return;
-        mover!.onMove(
-          details.data.id,
-          beforeId: _after ? null : slot.id,
-          afterId: _after ? slot.id : null,
-        );
-      },
-      builder: (context, candidates, _) => Stack(
-        fit: StackFit.passthrough,
-        clipBehavior: Clip.none,
-        children: [
-          slot,
-          if (_hover || _dragging)
-            Positioned.fill(
-              key: ValueKey('slot-highlight-${slot.id}'),
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.tertiary.withValues(alpha: .12),
-                    border: Border.all(color: colors.tertiary, width: 2),
-                  ),
-                ),
-              ),
-            ),
-          if (candidates.any((data) => data != null && data.id != slot.id))
-            Positioned(
-              key: ValueKey('slot-drop-position-${slot.id}'),
-              left: 0,
-              right: 0,
-              top: _after ? null : 0,
-              bottom: _after ? 0 : null,
-              height: 3,
-              child: IgnorePointer(
-                child: ColoredBox(
-                  key: ValueKey('slot-drop-${slot.id}'),
-                  color: colors.tertiary,
-                ),
-              ),
-            ),
-          if (widget.showLabel && slot.showLabel)
-            Positioned.fill(
-              key: ValueKey('slot-label-position-${slot.id}'),
-              child: Align(
-                alignment: slot.labelAlignment,
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: EmphasizedLabel(
-                    emphasis: widget.emphasis,
-                    alignment: slot.labelAlignment,
-                    child: MouseRegion(
-                      hitTestBehavior: HitTestBehavior.translucent,
-                      onEnter: (_) => _setHover(true),
-                      onExit: (_) => _setHover(false),
-                      child: mover == null
-                          ? IgnorePointer(child: _chip(colors))
-                          : Draggable<SlotDragData>(
-                              data: SlotDragData(
-                                id: slot.id,
-                                owner: mover.owner,
-                                hint: _hint,
-                              ),
-                              dragAnchorStrategy: pointerDragAnchorStrategy,
-                              hitTestBehavior: HitTestBehavior.translucent,
-                              onDragStarted: () => _setDragging(true),
-                              onDragEnd: (_) => _setDragging(false),
-                              feedback: _chip(
-                                colors,
-                                opacity: 1,
-                                dragged: true,
-                              ),
-                              childWhenDragging: Opacity(
-                                opacity: .35,
-                                child: _chip(colors),
-                              ),
-                              // Le contenu sous l'étiquette reste atteignable (clic
-                              // droit du style) : seul le Draggable écoute le glisser.
-                              child: IgnorePointer(child: _chip(colors)),
-                            ),
+    final canEditSize =
+        widget.showLabel && ContainerMenuAction.of(context).isNotEmpty;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onSecondaryTapUp: canEditSize
+          ? (details) => context
+                .findAncestorStateOfType<SuperContainerState>()
+                ?.openMenu(
+                  details.globalPosition,
+                  actions: ContainerMenuAction.of(context),
+                )
+          : null,
+      child: DragTarget<SlotDragData>(
+        // Déposer un slot sur lui-même est accepté sans effet : la zone qui le
+        // contient ne doit pas le ranger en dernier.
+        onWillAcceptWithDetails: (details) {
+          final accepts = _accepts(details.data);
+          if (accepts) details.data.hint.value = _hintFor(details.data);
+          return accepts;
+        },
+        onMove: (details) {
+          _track(details.offset);
+          details.data.hint.value = _hintFor(details.data);
+        },
+        onLeave: (data) => data?.hint.value = null,
+        onAcceptWithDetails: (details) {
+          if (details.data.id == slot.id) return;
+          mover!.onMove(
+            details.data.id,
+            beforeId: _after ? null : slot.id,
+            afterId: _after ? slot.id : null,
+          );
+        },
+        builder: (context, candidates, _) => Stack(
+          fit: StackFit.passthrough,
+          clipBehavior: Clip.none,
+          children: [
+            slot,
+            if (_hover || _dragging)
+              Positioned.fill(
+                key: ValueKey('slot-highlight-${slot.id}'),
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.tertiary.withValues(alpha: .12),
+                      border: Border.all(color: colors.tertiary, width: 2),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+            if (candidates.any((data) => data != null && data.id != slot.id))
+              Positioned(
+                key: ValueKey('slot-drop-position-${slot.id}'),
+                left: 0,
+                right: 0,
+                top: _after ? null : 0,
+                bottom: _after ? 0 : null,
+                height: 3,
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    key: ValueKey('slot-drop-${slot.id}'),
+                    color: colors.tertiary,
+                  ),
+                ),
+              ),
+            if (widget.showLabel && slot.showLabel)
+              Positioned.fill(
+                key: ValueKey('slot-label-position-${slot.id}'),
+                child: Align(
+                  alignment: slot.labelAlignment,
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: EmphasizedLabel(
+                      emphasis: widget.emphasis,
+                      alignment: slot.labelAlignment,
+                      child: MouseRegion(
+                        hitTestBehavior: HitTestBehavior.translucent,
+                        onEnter: (_) => _setHover(true),
+                        onExit: (_) => _setHover(false),
+                        child: mover == null
+                            ? IgnorePointer(child: _chip(colors))
+                            : Draggable<SlotDragData>(
+                                data: SlotDragData(
+                                  id: slot.id,
+                                  owner: mover.owner,
+                                  hint: _hint,
+                                ),
+                                dragAnchorStrategy: pointerDragAnchorStrategy,
+                                hitTestBehavior: HitTestBehavior.translucent,
+                                onDragStarted: () => _setDragging(true),
+                                onDragEnd: (_) => _setDragging(false),
+                                feedback: _chip(
+                                  colors,
+                                  opacity: 1,
+                                  dragged: true,
+                                ),
+                                childWhenDragging: Opacity(
+                                  opacity: .35,
+                                  child: _chip(colors),
+                                ),
+                                // Le contenu sous l'étiquette reste atteignable (clic
+                                // droit du style) : seul le Draggable écoute le glisser.
+                                child: IgnorePointer(child: _chip(colors)),
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

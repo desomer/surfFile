@@ -28,6 +28,48 @@ void main() {
   const size = Size(600, 400);
 
   group('SuperLayoutConfig auto sides and placements', () {
+    test('placement types and instance IDs survive JSON and moves', () {
+      final config = const SuperLayoutConfig()
+          .withSlotMoved(
+            'first',
+            SuperLayoutZone.center,
+            type: 'registry:clock',
+          )
+          .withSlotMoved(
+            'second',
+            SuperLayoutZone.center,
+            type: 'registry:clock',
+          );
+      expect(config.toJson()['placements'], {
+        'center': [
+          {'type': 'registry:clock', 'id': 'first'},
+          {'type': 'registry:clock', 'id': 'second'},
+        ],
+      });
+      final restored = SuperLayoutConfig.fromJson(config.toJson());
+      expect(restored, config);
+      expect(restored.hashCode, config.hashCode);
+      final moved = restored.withSlotMoved('first', SuperLayoutZone.east);
+      expect(moved.slotTypeOf('first'), 'registry:clock');
+      expect(moved.placementsOf(SuperLayoutZone.center), ['second']);
+      expect(moved.placementsOf(SuperLayoutZone.east), ['first']);
+      expect(config.copyWith(slotTypes: {'first': 'other'}), isNot(config));
+    });
+
+    test('legacy string placements remain readable', () {
+      final config = SuperLayoutConfig.fromJson({
+        'placements': {
+          'center': ['registry:clock'],
+        },
+      });
+      expect(config.slotTypeOf('registry:clock'), 'registry:clock');
+      expect(config.toJson()['placements'], {
+        'center': [
+          {'type': 'registry:clock', 'id': 'registry:clock'},
+        ],
+      });
+    });
+
     test('measured sizes replace fixed sizes of auto sides only', () {
       final rects =
           const SuperLayoutConfig(
@@ -111,6 +153,28 @@ void main() {
           },
         },
         {'placements': <String>[]},
+        {
+          'placements': {
+            'center': [
+              {'type': 'clock'},
+            ],
+          },
+        },
+        {
+          'placements': {
+            'center': [
+              {'type': '', 'id': 'instance'},
+            ],
+          },
+        },
+        {
+          'placements': {
+            'center': [
+              {'type': 'clock', 'id': 'instance'},
+              {'type': 'other', 'id': 'instance'},
+            ],
+          },
+        },
       ]) {
         expect(
           () => SuperLayoutConfig.fromJson(json),

@@ -3,6 +3,7 @@ import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/widgets/appearance_settings.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
 
@@ -19,7 +20,7 @@ class TestApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final registry = Registry()..bootstrap();
-    registry.registerWidget('A', Center(child: Text('A')));
+    registry.registerFactory('A', Center(child: Text('A')));
 
     return SuperApp(
       title: 'Super Container Layout demo',
@@ -81,14 +82,25 @@ class TestApp extends StatelessWidget {
     return Builder(
       builder: (context) {
         if (StyleEditScope.controllerOf(context) case final editMode?) {
-          return _NavigationButton(
-            key: const ValueKey('style-edit-mode'),
-            tooltip: editMode.value
-                ? 'Quitter l’édition du style'
-                : 'Éditer le style (clic droit sur une zone)',
-            icon: Icons.brush_outlined,
-            selected: editMode.value,
-            onPressed: () => editMode.value = !editMode.value,
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _NavigationButton(
+                key: const ValueKey('style-edit-mode'),
+                tooltip: editMode.value
+                    ? 'Quitter l’édition du style'
+                    : 'Éditer le style (clic droit sur une zone)',
+                icon: Icons.brush_outlined,
+                selected: editMode.value,
+                onPressed: () => editMode.value = !editMode.value,
+              ),
+              _NavigationButton(
+                key: const ValueKey('appearance-settings'),
+                tooltip: 'Paramètres d’apparence',
+                icon: Icons.settings_outlined,
+                onPressed: () => AppearanceSettings.show(context),
+              ),
+            ],
           );
         }
         return const SizedBox();

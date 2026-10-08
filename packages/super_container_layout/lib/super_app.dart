@@ -52,10 +52,11 @@ class SuperApp extends StatefulWidget {
 
   ValueNotifier<SuperLayoutConfig> getLayoutConfigById(String id) {
     final currentRegistry = registry;
-    if (currentRegistry == null)
+    if (currentRegistry == null) {
       throw StateError(
         'SuperApp requires a registry for ID-based controllers.',
       );
+    }
     return currentRegistry.layoutController(id);
   }
 

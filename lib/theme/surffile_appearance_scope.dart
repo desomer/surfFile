@@ -5,7 +5,11 @@ import 'package:super_container_layout/services/appearance_store.dart';
 import '../services/appearance_store.dart' as app;
 import 'surffile_appearance.dart';
 
-/// Typed package-model adapter and independent application preferences.
+/// Point d'entree SurfFile pour l'apparence et les preferences metier.
+///
+/// Le package gere le modele DefaultAppearance et son adaptation typee.
+/// Ce scope lui fournit le codec SurfFile, complete le catalogue de styles
+/// et de layouts, puis expose les preferences metier dans l'arbre de widgets.
 class AppearanceScope extends StatefulWidget {
   const AppearanceScope({
     required this.controller,
@@ -17,9 +21,13 @@ class AppearanceScope extends StatefulWidget {
   final ValueNotifier<SurfFilePreferences>? preferences;
   final Widget child;
 
+  /// Retourne le controleur du scope le plus proche, ou null sans scope.
+  /// Le widget appelant depend du scope et suit ses notifications.
   static ValueNotifier<DefaultAppearance>? controllerOf(BuildContext context) =>
       TypedAppearanceScope.controllerOf<DefaultAppearance>(context);
 
+  /// Sans scope, utilise les valeurs par defaut SurfFile.
+  /// Un scope contenant un autre type de modele produit une StateError.
   static DefaultAppearance of(BuildContext context) {
     return TypedAppearanceScope.maybeOf<DefaultAppearance>(context) ??
         defaultSurfFileAppearance();
@@ -52,6 +60,8 @@ class _AppearanceScopeState extends State<AppearanceScope> {
   }
 
   void _bindPreferences() {
+    // Priorite : preferences explicites, puis celles du controleur persistant.
+    // Seul le notifier de secours appartient au scope et sera dispose ici.
     final controller = widget.controller;
     final provided =
         widget.preferences ??
@@ -64,6 +74,8 @@ class _AppearanceScopeState extends State<AppearanceScope> {
   }
 
   void _configure() {
+    // Complete les identifiants du catalogue manquants via le codec, sans
+    // remplacer les styles et layouts deja personnalises par l'utilisateur.
     final value = widget.controller.value;
     if (!value.styles.keys.toSet().containsAll(
           SurfFileAppearanceDefaults.defaultStyles.keys,
@@ -77,12 +89,12 @@ class _AppearanceScopeState extends State<AppearanceScope> {
 
   @override
   Widget build(BuildContext context) => SurfFilePreferencesScope(
-      controller: _preferences,
-      child: TypedAppearanceScope<DefaultAppearance>(
-        controller: widget.controller,
-        codec: _codec,
-        child: widget.child,
-      ),
+    controller: _preferences,
+    child: TypedAppearanceScope<DefaultAppearance>(
+      controller: widget.controller,
+      codec: _codec,
+      child: widget.child,
+    ),
   );
   @override
   void dispose() {
@@ -91,6 +103,10 @@ class _AppearanceScopeState extends State<AppearanceScope> {
   }
 }
 
+/// Expose les preferences propres a SurfFile, hors du modele du package :
+/// jauge disque et animation de navigation.
+///
+/// Les consommateurs sont reconstruits quand le notifier change.
 class SurfFilePreferencesScope
     extends InheritedNotifier<ValueNotifier<SurfFilePreferences>> {
   const SurfFilePreferencesScope({
@@ -104,16 +120,21 @@ class SurfFilePreferencesScope
     final scope = context
         .dependOnInheritedWidgetOfExactType<SurfFilePreferencesScope>();
     if (scope != null) return scope.notifier!;
+    // Un dialogue peut etre hors du scope local. Les dialogues d'apparence
+    // transmettent le codec, qui conserve le meme notifier de preferences.
     final codec = AppearanceServicesScope.codecOf(context);
     if (codec is app.SurfFileAppearanceCodec) return codec.preferences;
     return null;
   }
 
+  /// Pour modifier les preferences : exige un controleur disponible.
   static ValueNotifier<SurfFilePreferences> controllerOf(
     BuildContext context,
   ) =>
       maybeControllerOf(context) ??
       (throw StateError('SurfFile preferences unavailable.'));
+
+  /// Pour lire les preferences : utilise les valeurs par defaut sans scope.
   static SurfFilePreferences of(BuildContext context) =>
       maybeControllerOf(context)?.value ?? const SurfFilePreferences();
 }

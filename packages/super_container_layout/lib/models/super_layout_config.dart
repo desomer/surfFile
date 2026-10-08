@@ -84,6 +84,8 @@ class SuperLayoutConfig {
     this.swaps = const {},
     this.autoSides = const {},
     this.placements = const {},
+    this.slotTypes = const {},
+    this.slotPreferredSizes = const {},
   });
 
   static const minSize = 20.0;
@@ -116,6 +118,27 @@ class SuperLayoutConfig {
   /// Les clés sont celles de [contentZone] : un échange de zones déplace donc
   /// aussi les slots avec leur zone.
   final Map<SuperLayoutZone, List<String>> placements;
+
+  /// Type de fabrique par ID d'instance ; sans entree, le type est l'ID.
+  final Map<String, String> slotTypes;
+
+  /// Tailles preferees par ID d'instance ; null force la taille automatique.
+  final Map<String, Size?> slotPreferredSizes;
+
+  SuperLayoutConfig withSlotPreferredSize(String id, Size? size) {
+    if (size != null &&
+        (!size.width.isFinite ||
+            !size.height.isFinite ||
+            size.width <= 0 ||
+            size.height <= 0)) {
+      throw ArgumentError.value(size, 'size', 'Dimensions positives requises.');
+    }
+    final sizes = {...slotPreferredSizes};
+    sizes[id] = size;
+    return copyWith(slotPreferredSizes: sizes);
+  }
+
+  String slotTypeOf(String id) => slotTypes[id] ?? id;
 
   bool isAuto(SuperLayoutZone side) => autoSides.contains(side);
 
@@ -221,6 +244,7 @@ class SuperLayoutConfig {
     SuperLayoutZone zone, {
     String? beforeId,
     String? afterId,
+    String? type,
   }) {
     assert(beforeId == null || afterId == null);
     final next = {
@@ -242,6 +266,7 @@ class SuperLayoutConfig {
     ids.insert(at, id);
     next[zone] = ids;
     return copyWith(
+      slotTypes: type == null ? slotTypes : {...slotTypes, id: type},
       placements: {
         for (final MapEntry(:key, :value) in next.entries)
           if (value.isNotEmpty) key: List.unmodifiable(value),
@@ -293,6 +318,8 @@ class SuperLayoutConfig {
     Set<SuperLayoutZone>? swaps,
     Set<SuperLayoutZone>? autoSides,
     Map<SuperLayoutZone, List<String>>? placements,
+    Map<String, String>? slotTypes,
+    Map<String, Size?>? slotPreferredSizes,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
     south: south ?? this.south,
@@ -309,6 +336,8 @@ class SuperLayoutConfig {
     swaps: swaps ?? this.swaps,
     autoSides: autoSides ?? this.autoSides,
     placements: placements ?? this.placements,
+    slotTypes: slotTypes ?? this.slotTypes,
+    slotPreferredSizes: slotPreferredSizes ?? this.slotPreferredSizes,
   );
 
   SuperLayoutConfig withCorner(SuperLayoutZone corner, CornerMerge merge) =>
@@ -344,9 +373,17 @@ class SuperLayoutConfig {
     'eastSize': eastSize,
     'swaps': [for (final zone in swaps) zone.name],
     'autoSides': [for (final zone in autoSides) zone.name],
+    'slotPreferredSizes': {
+      for (final entry in slotPreferredSizes.entries)
+        entry.key: entry.value == null
+            ? null
+            : {'width': entry.value!.width, 'height': entry.value!.height},
+    },
     'placements': {
       for (final MapEntry(:key, :value) in placements.entries)
-        key.name: [...value],
+        key.name: [
+          for (final id in value) {'type': slotTypeOf(id), 'id': id},
+        ],
     },
   };
 
@@ -414,6 +451,32 @@ class SuperLayoutConfig {
       };
     }
 
+    final slotTypes = <String, String>{};
+    final seenTypes = <String, String>{};
+    String placementId(Object? placement) {
+      final String id;
+      final String type;
+      if (placement is String) {
+        id = placement;
+        type = placement;
+      } else if (placement is Map &&
+          placement['id'] is String &&
+          placement['type'] is String &&
+          (placement['id'] as String).isNotEmpty &&
+          (placement['type'] as String).isNotEmpty) {
+        id = placement['id'] as String;
+        type = placement['type'] as String;
+      } else {
+        throw const FormatException('Placement invalide : type et id requis.');
+      }
+      if (seenTypes.containsKey(id) && seenTypes[id] != type) {
+        throw FormatException('Types incompatibles pour le slot "$id".');
+      }
+      seenTypes[id] = type;
+      if (type != id) slotTypes[id] = type;
+      return id;
+    }
+
     Map<SuperLayoutZone, List<String>> placementMap() {
       final v = value['placements'];
       if (v == null) return fallback.placements;
@@ -426,14 +489,46 @@ class SuperLayoutConfig {
               (throw const FormatException(
                 'Valeur invalide pour "placements".',
               )): switch (value) {
-            List() when value.every((id) => id is String) => [
-              ...value.cast<String>(),
-            ],
+            List() => [for (final placement in value) placementId(placement)],
             _ => throw const FormatException(
               'Valeur invalide pour "placements".',
             ),
           },
       };
+    }
+
+    Map<String, Size?> preferredSizes() {
+      final sizes = value['slotPreferredSizes'];
+      if (sizes == null) return fallback.slotPreferredSizes;
+      if (sizes is! Map) {
+        throw const FormatException('Tailles preferees invalides.');
+      }
+      final result = <String, Size?>{};
+      for (final entry in sizes.entries) {
+        final dimensions = entry.value;
+        if (entry.key is! String || (entry.key as String).isEmpty) {
+          throw const FormatException('Taille preferee invalide.');
+        }
+        if (dimensions == null) {
+          result[entry.key as String] = null;
+          continue;
+        }
+        if (dimensions is! Map) {
+          throw const FormatException('Taille preferee invalide.');
+        }
+        final width = dimensions['width'];
+        final height = dimensions['height'];
+        if (width is! num ||
+            height is! num ||
+            !width.isFinite ||
+            !height.isFinite ||
+            width <= 0 ||
+            height <= 0) {
+          throw const FormatException('Dimensions positives requises.');
+        }
+        result[entry.key as String] = Size(width.toDouble(), height.toDouble());
+      }
+      return result;
     }
 
     return SuperLayoutConfig(
@@ -452,6 +547,8 @@ class SuperLayoutConfig {
       swaps: swapSet(),
       autoSides: autoSet(),
       placements: placementMap(),
+      slotTypes: value['placements'] == null ? fallback.slotTypes : slotTypes,
+      slotPreferredSizes: preferredSizes(),
     );
   }
 
@@ -545,15 +642,24 @@ class SuperLayoutConfig {
       other.swaps.containsAll(swaps) &&
       other.autoSides.length == autoSides.length &&
       other.autoSides.containsAll(autoSides) &&
-      _samePlacements(other.placements);
+      other.slotPreferredSizes.length == slotPreferredSizes.length &&
+      slotPreferredSizes.entries.every(
+        (entry) =>
+            other.slotPreferredSizes.containsKey(entry.key) &&
+            other.slotPreferredSizes[entry.key] == entry.value,
+      ) &&
+      _samePlacements(other);
 
-  bool _samePlacements(Map<SuperLayoutZone, List<String>> other) {
-    if (other.length != placements.length) return false;
+  bool _samePlacements(SuperLayoutConfig other) {
+    if (other.placements.length != placements.length) return false;
     for (final MapEntry(:key, :value) in placements.entries) {
-      final ids = other[key];
+      final ids = other.placements[key];
       if (ids == null || ids.length != value.length) return false;
       for (var i = 0; i < ids.length; i++) {
-        if (ids[i] != value[i]) return false;
+        if (ids[i] != value[i] ||
+            other.slotTypeOf(ids[i]) != slotTypeOf(value[i])) {
+          return false;
+        }
       }
     }
     return true;
@@ -576,8 +682,17 @@ class SuperLayoutConfig {
     Object.hashAllUnordered(swaps),
     Object.hashAllUnordered(autoSides),
     Object.hashAllUnordered([
+      for (final entry in slotPreferredSizes.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
       for (final MapEntry(:key, :value) in placements.entries)
-        Object.hash(key, Object.hashAll(value)),
+        Object.hash(
+          key,
+          Object.hashAll([
+            for (final id in value) Object.hash(id, slotTypeOf(id)),
+          ]),
+        ),
     ]),
   );
 }

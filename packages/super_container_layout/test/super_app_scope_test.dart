@@ -53,7 +53,8 @@ void main() {
         slotId: 'historical-slot',
         sizing: SlotSizing.intrinsic,
         isAvailable: (context) =>
-            context.dependOnInheritedWidgetOfExactType<_TestComponentScope>() != null,
+            context.dependOnInheritedWidgetOfExactType<_TestComponentScope>() !=
+            null,
         builder: (context) {
           expect(
             context.dependOnInheritedWidgetOfExactType<_TestComponentScope>(),
@@ -90,9 +91,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Scoped component'), findsOneWidget);
     expect(find.text('Unavailable component'), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('super-layout-add-slot-historical-slot')));
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-add-slot-historical-slot')),
+    );
     await tester.pumpAndSettle();
-    expect(changes.single.placementsOf(SuperLayoutZone.center), ['historical-slot']);
+    final instance = changes.single.placementsOf(SuperLayoutZone.center).single;
+    expect(changes.single.slotTypeOf(instance), 'historical-slot');
+    expect(instance, isNot('historical-slot'));
     expect(find.text('Factory content'), findsOneWidget);
     final stack = tester.widget<SlotStack>(find.byType(SlotStack));
     expect(stack.slots.single.sizing, SlotSizing.intrinsic);
@@ -142,6 +147,127 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('slot lookup only creates and checks requested components', (
+    tester,
+  ) async {
+    final registry = Registry();
+    var requestedCreations = 0;
+    var unusedCreations = 0;
+    var unusedAvailabilityChecks = 0;
+    var unusedWidgetBuilds = 0;
+    registry.registerComponent(
+      'requested',
+      _CountingComponent(
+        label: 'Requested',
+        slotId: 'historical-slot',
+        sizing: SlotSizing.intrinsic,
+        onCreate: () => requestedCreations++,
+        builder: (_) => const Text('Requested content'),
+      ),
+    );
+    registry.registerComponent(
+      'unused',
+      _CountingComponent(
+        label: 'Unused',
+        onCreate: () => unusedCreations++,
+        isAvailable: (_) {
+          unusedAvailabilityChecks++;
+          return true;
+        },
+        builder: (_) => const Text('Unused content'),
+      ),
+    );
+    registry.registry['unused-widget'] = ComponentBuilderDynamic(
+      dynamicBuilder: (_) {
+        unusedWidgetBuilds++;
+        return const Text('Unused registry content');
+      },
+    );
+    await tester.pumpWidget(
+      SuperApp(
+        registry: registry,
+        home: const SuperLayout(
+          config: SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['historical-slot', 'unknown'],
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Requested content'), findsOneWidget);
+    expect(requestedCreations, greaterThan(0));
+    expect(unusedCreations, 0);
+    expect(unusedAvailabilityChecks, 0);
+    expect(unusedWidgetBuilds, 0);
+    final stack = tester.widget<SlotStack>(find.byType(SlotStack));
+    expect(stack.slots.single.sizing, SlotSizing.intrinsic);
+    final state = tester.state<SuperLayoutState>(find.byType(SuperLayout));
+    expect(state.searchSlot('unknown'), isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot lookup preserves duplicate precedence and visibility', (
+    tester,
+  ) async {
+    final registry = Registry();
+    registry.registerComponent(
+      'first',
+      RegisteredComponent(
+        label: 'First',
+        slotId: 'duplicate',
+        builder: (_) => const SizedBox(),
+      ),
+    );
+    registry.registerComponent(
+      'last',
+      RegisteredComponent(
+        label: 'Last',
+        slotId: 'duplicate',
+        builder: (_) => const SizedBox(),
+      ),
+    );
+    registry.registerComponent(
+      'unavailable',
+      RegisteredComponent(
+        label: 'Unavailable',
+        slotId: 'duplicate',
+        isAvailable: (_) => false,
+        builder: (_) => const SizedBox(),
+      ),
+    );
+    final hidden = BuilderSlot(
+      id: 'hidden',
+      label: 'Hidden',
+      visible: false,
+      builder: (_) => const Text('Hidden content'),
+    );
+    await tester.pumpWidget(
+      SuperApp(
+        registry: registry,
+        home: SuperLayout(
+          slots: [hidden],
+          config: const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['hidden', 'duplicate'],
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final state = tester.state<SuperLayoutState>(find.byType(SuperLayout));
+    expect(state.searchSlot('duplicate')?.label, 'Last');
+    expect(state.searchSlot('hidden'), same(hidden));
+    expect(find.text('Hidden content'), findsNothing);
+    expect(
+      tester.widget<SlotStack>(find.byType(SlotStack)).slots.single.id,
+      'duplicate',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('dialog routes can access the enclosing SuperApp', (
     tester,
   ) async {
@@ -168,11 +294,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('empty zone picker adds and moves application registry slots', (
+  testWidgets('empty zone picker adds independent registry instances', (
     tester,
   ) async {
     final registry = Registry();
-    registry.registry['clock'] = const Text('Registry content');
+    registry.registerFactory('clock', const Text('Registry content'));
     final changes = <SuperLayoutConfig>[];
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
@@ -204,7 +330,8 @@ void main() {
       find.byKey(const ValueKey('super-layout-add-slot-registry:clock')),
     );
     await tester.pumpAndSettle();
-    expect(changes.single.placementsOf(SuperLayoutZone.ne), ['registry:clock']);
+    final firstId = changes.single.placementsOf(SuperLayoutZone.ne).single;
+    expect(changes.single.slotTypeOf(firstId), 'registry:clock');
     expect(find.text('Registry content'), findsOneWidget);
     expect(find.byKey(const ValueKey('super-layout-name-ne')), findsOneWidget);
 
@@ -214,12 +341,11 @@ void main() {
       find.byKey(const ValueKey('super-layout-add-slot-registry:clock')),
     );
     await tester.pumpAndSettle();
-    expect(changes.last.placementsOf(SuperLayoutZone.ne), isEmpty);
-    expect(changes.last.placementsOf(SuperLayoutZone.south), [
-      'registry:clock',
-    ]);
-    expect(find.text('Registry content'), findsOneWidget);
-    expect(find.byKey(const ValueKey('super-layout-add-ne')), findsOneWidget);
+    final secondId = changes.last.placementsOf(SuperLayoutZone.south).single;
+    expect(secondId, isNot(firstId));
+    expect(changes.last.slotTypeOf(secondId), 'registry:clock');
+    expect(changes.last.placementsOf(SuperLayoutZone.ne), [firstId]);
+    expect(find.text('Registry content'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
 
     final restored = SuperLayoutConfig.fromJson(changes.last.toJson());
@@ -232,7 +358,163 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Registry content'), findsOneWidget);
+    expect(restored.placementsOf(SuperLayoutZone.ne), [firstId]);
+    expect(restored.placementsOf(SuperLayoutZone.south), [secondId]);
+    expect(find.text('Registry content'), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('default containers have independent persistent styles', (
+    tester,
+  ) async {
+    final registry = Registry()..bootstrap();
+    final config = const SuperLayoutConfig()
+        .withSlotMoved(
+          'container-first',
+          SuperLayoutZone.center,
+          type: 'registry:New%20Container',
+        )
+        .withSlotMoved(
+          'container-second',
+          SuperLayoutZone.center,
+          type: 'registry:New%20Container',
+        );
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    await tester.pumpWidget(
+      SuperApp(
+        registry: registry,
+        home: StyleEditScope(
+          controller: editMode,
+          child: SuperLayout(config: config),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final containers = find.byWidgetPredicate(
+      (widget) => widget is SuperContainer && widget.label == 'New Container',
+    );
+    expect(containers, findsNWidgets(2));
+    const style = ContainerStyle(radius: 23, padding: 12);
+    tester.widgetList<SuperContainer>(containers).first.onStyleChanged!(style);
+    await tester.pumpAndSettle();
+    expect(registry.styleController('container-first').value, style);
+    expect(
+      registry.styleController('container-second').value,
+      const ContainerStyle(),
+    );
+    expect(tester.widgetList<SuperContainer>(containers).first.style, style);
+
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
+    await tester.pumpAndSettle();
+    expect(find.text('Registre : New Container'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+
+    final loaded = await AppearanceStore().load();
+    expect(loaded.style('container-first').toJson(), style.toJson());
+    final restarted = Registry()..bootstrap();
+    await tester.pumpWidget(
+      SuperApp(
+        registry: restarted,
+        home: SuperLayout(config: SuperLayoutConfig.fromJson(config.toJson())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(containers, findsNWidgets(2));
+    expect(
+      tester.widgetList<SuperContainer>(containers).first.style.toJson(),
+      style.toJson(),
+    );
+    expect(
+      restarted.styleController('container-first').value.toJson(),
+      style.toJson(),
+    );
+    expect(
+      restarted.styleController('container-second').value,
+      const ContainerStyle(),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('nested layouts reuse placement IDs after reconstruction', (
+    tester,
+  ) async {
+    final registry = Registry()..bootstrap();
+    final config = const SuperLayoutConfig()
+        .withSlotMoved(
+          'nested-first',
+          SuperLayoutZone.center,
+          type: 'registry:New%20Layout',
+        )
+        .withSlotMoved(
+          'nested-second',
+          SuperLayoutZone.center,
+          type: 'registry:New%20Layout',
+        );
+    final firstController = registry.layoutController('nested-first');
+    firstController.value = const SuperLayoutConfig(
+      swaps: {SuperLayoutZone.west},
+    );
+    await tester.pumpWidget(
+      SuperApp(
+        registry: registry,
+        home: SuperLayout(config: config),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(registry.superLayoutConfigById.keys.toSet(), {
+      'nested-first',
+      'nested-second',
+    });
+    expect(
+      tester
+          .widgetList<SuperLayout>(find.byType(SuperLayout))
+          .map((w) => w.config),
+      contains(firstController.value),
+    );
+    await tester.pumpWidget(
+      SuperApp(
+        registry: registry,
+        home: SuperLayout(config: SuperLayoutConfig.fromJson(config.toJson())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(registry.superLayoutConfigById.keys.toSet(), {
+      'nested-first',
+      'nested-second',
+    });
+    expect(registry.layoutController('nested-first'), same(firstController));
+    expect(tester.takeException(), isNull);
+    final snapshot = Appearance(
+      layouts: {
+        'parent': config,
+        'nested-first': firstController.value,
+        'nested-second': registry.layoutController('nested-second').value,
+      },
+    );
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpAndSettle();
+    await AppearanceStore().save(snapshot);
+    final loaded = await AppearanceStore().load();
+    final restartedRegistry = Registry()..bootstrap();
+    await tester.pumpWidget(
+      SuperApp(
+        registry: restartedRegistry,
+        home: SuperLayout(config: loaded.layout('parent')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(restartedRegistry.superLayoutConfigById.keys.toSet(), {
+      'nested-first',
+      'nested-second',
+    });
+    expect(
+      restartedRegistry.layoutController('nested-first').value,
+      snapshot.layout('nested-first'),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -240,8 +522,11 @@ void main() {
     tester,
   ) async {
     final registry = Registry();
-    registry.registry['clock'] = const Text('Registry content');
-    registry.registry['registry:clock'] = const Text('Other registry content');
+    registry.registerFactory('clock', const Text('Registry content'));
+    registry.registerFactory(
+      'registry:clock',
+      const Text('Other registry content'),
+    );
     final changes = <SuperLayoutConfig>[];
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
@@ -285,9 +570,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(changes.single.placementsOf(SuperLayoutZone.south), [
-      'registry:registry:clock',
-    ]);
+    final instance = changes.single.placementsOf(SuperLayoutZone.south).single;
+    expect(changes.single.slotTypeOf(instance), 'registry:registry:clock');
     expect(changes.single.placementsOf(SuperLayoutZone.center), [
       'registry:clock',
     ]);
@@ -302,4 +586,23 @@ class _TestComponentScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_TestComponentScope oldWidget) => false;
+}
+
+class _CountingComponent extends RegisteredComponent {
+  const _CountingComponent({
+    required super.label,
+    required super.builder,
+    required this.onCreate,
+    super.slotId,
+    super.sizing,
+    super.isAvailable,
+  });
+
+  final VoidCallback onCreate;
+
+  @override
+  BuilderSlot createSlot(String id, {bool visible = true}) {
+    onCreate();
+    return super.createSlot(id, visible: visible);
+  }
 }

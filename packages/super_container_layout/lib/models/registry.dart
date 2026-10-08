@@ -5,9 +5,33 @@ import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/super_container.dart';
+
+class XuiBuildCtx {
+  XuiBuildCtx({required this.id});
+
+  final String id;
+}
+
+class ComponentBuilder {
+  Widget getWidget(XuiBuildCtx ctx) {
+    return SizedBox.shrink();
+  }
+}
+
+class RegisteredComponentImpl extends ComponentBuilder {
+  RegisteredComponentImpl({required this.widget});
+
+  final Widget widget;
+
+  @override
+  Widget getWidget(XuiBuildCtx ctx) {
+    return widget;
+  }
+}
 
 class Registry {
-  final Map<String, Widget> registry = {};
+  final Map<String, ComponentBuilder> registry = {};
   final Map<String, RegisteredComponent> components = {};
   final Map<String, ValueNotifier<SuperLayoutConfig>> superLayoutConfigById =
       {};
@@ -112,8 +136,8 @@ class Registry {
     }
   }
 
-  void registerWidget(String key, Widget widget) {
-    registry[key] = widget;
+  void registerFactory(String key, Widget widget) {
+    registry[key] = ComponentBuilderDynamic(dynamicBuilder: (xuiCtx) => widget);
   }
 
   void registerComponent(String key, RegisteredComponent component) {
@@ -132,28 +156,58 @@ class Registry {
   }
 
   void bootstrap() {
-    registry['New Layout'] = Builder(
-      builder: (ctx) {
-        return BuilderSlot(
-          id: 'new-layout',
-          label: 'New Layout',
-          builder: (ctx) {
-            final superapp = SuperApp.of(ctx);
-            final superLayoutConfig = superapp.getLayoutConfigById('contB');
-            return ValueListenableBuilder<SuperLayoutConfig>(
-              valueListenable: superLayoutConfig,
-              builder: (context, config, _) => SuperLayout(
-                config: config,
-                onChanged: (value) => superLayoutConfig.value = value,
-              ),
-            );
-          },
-        );
-      },
+    registry['NewContainer'] = ComponentBuilderDynamic(
+      dynamicBuilder: (xuiCtx) => Builder(
+        builder: (context) {
+          final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
+          return ValueListenableBuilder<ContainerStyle>(
+            valueListenable: style,
+            builder: (context, value, _) => SuperContainer(
+              label: 'New Container',
+              style: value,
+              onStyleChanged: (value) => style.value = value,
+              child: const SizedBox.expand(),
+            ),
+          );
+        },
+      ),
+    );
+    registry['NewLayout'] = ComponentBuilderDynamic(
+      dynamicBuilder: (xuiCtx) => Builder(
+        builder: (ctx) {
+          final id = xuiCtx.id;
+
+          return BuilderSlot(
+            id: id,
+            label: 'New Layout',
+            builder: (ctx) {
+              final superapp = SuperApp.of(ctx);
+              final superLayoutConfig = superapp.getLayoutConfigById(id);
+              return ValueListenableBuilder<SuperLayoutConfig>(
+                valueListenable: superLayoutConfig,
+                builder: (context, config, _) => SuperLayout(
+                  config: config,
+                  onChanged: (value) => superLayoutConfig.value = value,
+                ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
-  Widget getWidget(String key) => registry[key] ?? const SizedBox();
+  Widget getWidget(String key, XuiBuildCtx ctx) =>
+      registry[key]?.getWidget(ctx) ?? const SizedBox();
+}
+
+class ComponentBuilderDynamic extends ComponentBuilder {
+  final Widget Function(XuiBuildCtx) dynamicBuilder;
+
+  ComponentBuilderDynamic({required this.dynamicBuilder});
+
+  @override
+  Widget getWidget(XuiBuildCtx ctx) => dynamicBuilder(ctx);
 }
 
 class RegisteredComponent {
@@ -162,6 +216,7 @@ class RegisteredComponent {
     required this.builder,
     this.slotId,
     this.sizing = SlotSizing.fill,
+    this.preferredSize,
     this.isAvailable,
   });
 
@@ -171,12 +226,14 @@ class RegisteredComponent {
   /// Identifiant historique, conservé dans les dispositions existantes.
   final String? slotId;
   final SlotSizing sizing;
+  final Size? preferredSize;
   final bool Function(BuildContext)? isAvailable;
 
   BuilderSlot createSlot(String id, {bool visible = true}) => BuilderSlot(
     id: id,
     label: label,
     sizing: sizing,
+    preferredSize: preferredSize,
     visible: visible,
     builder: builder,
   );

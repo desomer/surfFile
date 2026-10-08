@@ -27,6 +27,37 @@ class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {
       context.dependOnInheritedWidgetOfExactType<StyleEditScope>()?.notifier;
 }
 
+/// Entree contextuelle supplementaire pour le contenu d'un conteneur.
+class ContainerMenuAction extends InheritedWidget {
+  const ContainerMenuAction({
+    required this.label,
+    required this.onEdit,
+    required this.enabled,
+    required super.child,
+    super.key,
+  });
+
+  final String label;
+  final Future<void> Function() onEdit;
+  final bool enabled;
+
+  static List<ContainerMenuAction> of(BuildContext context) {
+    final actions = <ContainerMenuAction>[];
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is ContainerMenuAction && widget.enabled) actions.add(widget);
+      return true;
+    });
+    return actions;
+  }
+
+  @override
+  bool updateShouldNotify(ContainerMenuAction oldWidget) =>
+      label != oldWidget.label ||
+      enabled != oldWidget.enabled ||
+      onEdit != oldWidget.onEdit;
+}
+
 /// Conteneur stylé par un [ContainerStyle] qui ouvre le
 /// [ContainerStyleEditor] pour se styler lui-même. Un clic droit ouvre un menu
 /// listant ce conteneur et ses [SuperContainer] parents éditables.
@@ -267,7 +298,9 @@ class SuperContainerState extends State<SuperContainer> {
                           borderColor: style.borderColor ?? border,
                           elevation: style.elevation,
                           shadowOpacity: style.shadowOpacity,
-                          opacity: widget.slot?.role == AppearanceSurfaceRole.applicationBackground
+                          opacity:
+                              widget.slot?.role ==
+                                  AppearanceSurfaceRole.applicationBackground
                               ? appearance!.value.backgroundOpacity
                               : 1,
                           neon: style.neon ?? const NeonStyle(),
@@ -317,7 +350,8 @@ class SuperContainerState extends State<SuperContainer> {
                               update(style.copyWith(resetColor: true)),
                           onReset: () => _reset(slot: slot),
                           extraSections: [
-                            if (widget.slot?.role == AppearanceSurfaceRole.applicationBackground)
+                            if (widget.slot?.role ==
+                                AppearanceSurfaceRole.applicationBackground)
                               StyleEditorSection(
                                 id: 'window',
                                 title: 'Fenêtre',
@@ -435,13 +469,17 @@ class SuperContainerState extends State<SuperContainer> {
     return chain;
   }
 
-  Future<void> openMenu(Offset globalPosition) async {
+  Future<void> openMenu(
+    Offset globalPosition, {
+    List<ContainerMenuAction>? actions,
+  }) async {
     final chain = editableChain;
-    if (chain.isEmpty) return;
+    final extraActions = actions ?? ContainerMenuAction.of(context);
+    if (chain.isEmpty && extraActions.isEmpty) return;
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
-    final selected = await showMenu<SuperContainerState>(
+    final selected = await showMenu<Object>(
       context: context,
       constraints: const BoxConstraints(minWidth: 200, maxWidth: 420),
       position: RelativeRect.fromLTRB(
@@ -451,8 +489,13 @@ class SuperContainerState extends State<SuperContainer> {
         overlay.size.height - position.dy,
       ),
       items: [
+        for (final action in extraActions)
+          PopupMenuItem<Future<void> Function()>(
+            value: action.onEdit,
+            child: Text(action.label),
+          ),
         for (final (index, state) in chain.indexed)
-          PopupMenuItem(
+          PopupMenuItem<SuperContainerState>(
             key: ValueKey('style-menu-${state._label}'),
             value: state,
             child: Padding(
@@ -476,7 +519,12 @@ class SuperContainerState extends State<SuperContainer> {
           ),
       ],
     );
-    if (selected != null && selected.mounted) await selected.openEditor();
+    if (!mounted) return;
+    if (selected is SuperContainerState && selected.mounted) {
+      await selected.openEditor();
+    } else if (selected is Future<void> Function()) {
+      await selected();
+    }
   }
 
   @override
@@ -511,7 +559,9 @@ class SuperContainerState extends State<SuperContainer> {
       _cachedDepth = _depth;
       final painter = _DashedOutlinePainter(
         color: AppearanceScope.of(context).accent.withValues(alpha: .8),
-        radius: widget.slot?.role == AppearanceSurfaceRole.applicationBackground ? 0 : style.maxRadius,
+        radius: widget.slot?.role == AppearanceSurfaceRole.applicationBackground
+            ? 0
+            : style.maxRadius,
       );
       content = MouseRegion(
         onEnter: (_) => _setHovered(true),

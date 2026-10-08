@@ -9,7 +9,7 @@ class AppearanceSlot {
     this.label, {
     required this.name,
     required this._read,
-    required Appearance Function(Appearance, ContainerStyle) write,
+    required this._write,
     required this._reset,
     this.editShape = true,
     this.extendedLook = true,
@@ -17,7 +17,7 @@ class AppearanceSlot {
     this._selectedVariant,
     this._standard,
     this._selectedVariantResolver,
-  }) : _write = write;
+  });
 
   final String name;
   final String label;
