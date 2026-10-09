@@ -75,6 +75,7 @@ class LegacyAppearanceCodec {
     'iconSize': a.iconSize,
     'folderTransition': preferences.folderTransition.name,
     'folderTransitionDuration': preferences.folderTransitionDuration,
+    'fileDragMode': preferences.fileDragMode.name,
     'scrollFadeEnabled': a.scrollFadeEnabled,
     'scrollFadeExtent': a.scrollFadeExtent,
   });
@@ -119,6 +120,13 @@ class LegacyAppearanceCodec {
       'zoom' => FolderTransition.zoom,
       _ => throw const FormatException('Animation de dossier invalide.'),
     };
+    final dragName = json['fileDragMode'] ?? SurfFileAppearanceDefaults.fileDragMode.name;
+    final fileDragMode = FileDragMode.values
+        .where((value) => value.name == dragName)
+        .firstOrNull;
+    if (fileDragMode == null) {
+      throw const FormatException('Mode de glisser-déposer invalide.');
+    }
     final effectName = json['windowEffect'] ?? WindowEffect.transparent.name;
     final windowEffect = WindowEffect.values
         .where((e) => e.name == effectName)
@@ -138,6 +146,7 @@ class LegacyAppearanceCodec {
         SurfFileAppearanceDefaults.minTransitionDuration,
         SurfFileAppearanceDefaults.maxTransitionDuration,
       ),
+      fileDragMode: fileDragMode,
     );
     return (preferences: preferences, appearance: DefaultAppearance(
       mode: mode,
@@ -243,7 +252,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
   static const businessKeys = {
     'diskGaugeStyle', 'cardHeight', 'cardWidth', 'rowHeight', 'spacing',
     'fontSize', 'iconSize', 'folderTransition', 'folderTransitionDuration',
-    'scrollFadeEnabled', 'scrollFadeExtent',
+    'fileDragMode', 'scrollFadeEnabled', 'scrollFadeExtent',
   };
   static const optionalStyles = {'selectedDiskTileStyle', 'selectedCardStyle', 'selectedFolderStyle', 'folderStyle'};
 
@@ -326,6 +335,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
       'fontSize': a.fontSize, 'iconSize': a.iconSize,
       'folderTransition': p.folderTransition.name,
       'folderTransitionDuration': p.folderTransitionDuration,
+      'fileDragMode': p.fileDragMode.name,
       'scrollFadeEnabled': a.scrollFadeEnabled,
       'scrollFadeExtent': a.scrollFadeExtent,
     }};

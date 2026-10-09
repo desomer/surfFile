@@ -7,6 +7,7 @@
 #include <shlobj.h>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "external_file_drag.h"
 #include "window_transparency.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -37,6 +38,17 @@ bool FlutterWindow::OnCreate() {
     std::cerr << "Cannot register Windows file drop: " << drop_result << std::endl;
     return false;
   }
+  flutter::MethodChannel<flutter::EncodableValue> external_file_drag(
+      flutter_controller_->engine()->messenger(), "surf_file/external_drop",
+      &flutter::StandardMethodCodec::GetInstance());
+  external_file_drag.SetMethodCallHandler(
+      [](const auto& call, auto result) {
+        if (call.method_name() != "startDrag") {
+          result->NotImplemented();
+          return;
+        }
+        StartWindowsFileDrag(call.arguments(), std::move(result));
+      });
   flutter::MethodChannel<flutter::EncodableValue> disk_space(
       flutter_controller_->engine()->messenger(), "surf_file/disk_space",
       &flutter::StandardMethodCodec::GetInstance());

@@ -38,6 +38,12 @@ class AppearanceSettings extends StatelessWidget {
           icon: Icons.animation,
           builder: _navigation,
         ),
+        shell.AppearanceSettingsSection(
+          id: 'file-drag',
+          label: 'Glisser-déposer',
+          icon: Icons.drag_indicator,
+          builder: _fileDrag,
+        ),
       ],
       previewBuilder: _preview,
     );
@@ -77,6 +83,34 @@ Widget _navigation(BuildContext context) {
       ),
       const Text('S’applique uniquement aux changements de dossier réussis. '
         'Respecte la réduction des animations du système.'),
+    ],
+  );
+}
+
+Widget _fileDrag(BuildContext context) {
+  final preferences = SurfFilePreferencesScope.controllerOf(context);
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      DropdownButtonFormField<FileDragMode>(
+        key: const ValueKey('file-drag-mode'),
+        initialValue: preferences.value.fileDragMode,
+        decoration: const InputDecoration(
+          labelText: 'Déplacer des fichiers par glisser-déposer',
+        ),
+        items: [
+          for (final mode in FileDragMode.values)
+            DropdownMenuItem(value: mode, child: Text(mode.label)),
+        ],
+        onChanged: (value) {
+          if (value != null) {
+            preferences.value = preferences.value.copyWith(fileDragMode: value);
+          }
+        },
+      ),
+      const SizedBox(height: 8),
+      const Text('Ailleurs, glisser trace un cadre de sélection.'),
     ],
   );
 }

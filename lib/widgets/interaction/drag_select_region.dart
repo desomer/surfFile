@@ -41,6 +41,12 @@ class DragSelectRegion extends StatefulWidget {
 
   @override
   State<DragSelectRegion> createState() => DragSelectRegionState();
+
+  static final _excludedPointers = <int>{};
+
+  /// Empêche le pointeur [pointer] (en cours d'appui) de démarrer un cadre :
+  /// un widget descendant gère lui-même ce glisser.
+  static void excludePointer(int pointer) => _excludedPointers.add(pointer);
 }
 
 @visibleForTesting
@@ -114,7 +120,10 @@ class DragSelectRegionState extends State<DragSelectRegion>
   }
 
   void _onDown(PointerDownEvent event) {
-    if (_pointer != null ||
+    final excluded = DragSelectRegion._excludedPointers.contains(event.pointer);
+    DragSelectRegion._excludedPointers.clear();
+    if (excluded ||
+        _pointer != null ||
         event.kind != PointerDeviceKind.mouse ||
         event.buttons != kPrimaryButton ||
         event.localPosition.dx > _size.width - _scrollbarWidth) {

@@ -275,6 +275,7 @@ class SuperLayoutConfig {
       final index = ids.indexOf(afterId);
       if (index >= 0) at = index + 1;
     }
+
     ids.insert(at, id);
     next[zone] = ids;
     return copyWith(
@@ -288,6 +289,20 @@ class SuperLayoutConfig {
 
   SuperLayoutConfig _reflectCorners(SuperLayoutZone a, SuperLayoutZone b) =>
       withCorner(a, mergeOf(b)).withCorner(b, mergeOf(a));
+
+  /// Retire une instance de slot et ses reglages sans supprimer son composant.
+  SuperLayoutConfig withoutSlot(String id) => copyWith(
+    placements: {
+      for (final entry in placements.entries)
+        if (entry.value.any((other) => other != id))
+          entry.key: List.unmodifiable([
+            for (final other in entry.value)
+              if (other != id) other,
+          ]),
+    },
+    slotTypes: {...slotTypes}..remove(id),
+    slotPreferredSizes: {...slotPreferredSizes}..remove(id),
+  );
 
   bool hasSide(SuperLayoutZone zone) => switch (zone) {
     SuperLayoutZone.north => north,

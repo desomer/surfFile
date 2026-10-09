@@ -9,11 +9,11 @@ import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/container_style.dart';
 import '../theme/neon_style.dart';
-import 'appearance_transfer_dialog.dart';
 import 'container_style_editor.dart';
 import 'layout_selection.dart';
 import 'style_editor_panel.dart';
 import 'styled_surface.dart';
+import 'zone_axis_button.dart';
 
 /// Active ou non l'édition des styles par clic droit sur les [SuperContainer].
 class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {
@@ -33,6 +33,7 @@ class ContainerMenuAction extends InheritedWidget {
     required this.label,
     required this.onEdit,
     required this.enabled,
+    this.onRemove,
     required super.child,
     super.key,
   });
@@ -40,6 +41,7 @@ class ContainerMenuAction extends InheritedWidget {
   final String label;
   final Future<void> Function() onEdit;
   final bool enabled;
+  final Future<void> Function()? onRemove;
 
   static List<ContainerMenuAction> of(BuildContext context) {
     final actions = <ContainerMenuAction>[];
@@ -55,7 +57,8 @@ class ContainerMenuAction extends InheritedWidget {
   bool updateShouldNotify(ContainerMenuAction oldWidget) =>
       label != oldWidget.label ||
       enabled != oldWidget.enabled ||
-      onEdit != oldWidget.onEdit;
+      onEdit != oldWidget.onEdit ||
+      onRemove != oldWidget.onRemove;
 }
 
 /// Conteneur stylé par un [ContainerStyle] qui ouvre le
@@ -81,6 +84,7 @@ class SuperContainer extends StatefulWidget {
     this.editable = true,
     this.onEdit,
     this.onAdd,
+    this.axisAction,
     super.key,
   });
 
@@ -107,6 +111,8 @@ class SuperContainer extends StatefulWidget {
 
   /// Action d'ajout affichee dans le menu contextuel en mode edition.
   final Future<void> Function()? onAdd;
+
+  final LayoutAxisAction Function()? axisAction;
 
   @override
   State<SuperContainer> createState() => SuperContainerState();
@@ -496,7 +502,19 @@ class SuperContainerState extends State<SuperContainer> {
         for (final action in extraActions)
           PopupMenuItem<Future<void> Function()>(
             value: action.onEdit,
-            child: Text(action.label),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(child: Text(action.label)),
+                if (action.onRemove case final remove?)
+                  IconButton(
+                    key: ValueKey('style-menu-remove-${action.label}'),
+                    tooltip: 'Supprimer le slot',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => Navigator.of(context).pop(remove),
+                  ),
+              ],
+            ),
           ),
         for (final (index, state) in chain.indexed)
           PopupMenuItem<SuperContainerState>(
@@ -519,14 +537,30 @@ class SuperContainerState extends State<SuperContainer> {
                   ),
                   if ((StyleEditScope.controllerOf(state.context)?.value ??
                           false) &&
+                      state.widget.axisAction != null)
+                    ZoneAxisButton(
+                      key: ValueKey('style-menu-axis-${state._label}'),
+                      action: LayoutAxisAction(
+                        zoneLabel: state.widget.axisAction!().zoneLabel,
+                        axis: state.widget.axisAction!().axis,
+                        onToggle: () =>
+                            Navigator.of(context)
+                                .pop<Future<void> Function()>(() async {
+                                  if (state.mounted) {
+                                    state.widget.axisAction!().onToggle();
+                                  }
+                                }),
+                      ),
+                    ),
+                  if ((StyleEditScope.controllerOf(state.context)?.value ??
+                          false) &&
                       state.widget.onAdd != null)
                     IconButton(
                       key: ValueKey('style-menu-add-${state._label}'),
                       tooltip: 'Ajouter un slot',
                       icon: const Icon(Icons.add),
-                      onPressed: () => Navigator.of(context).pop(
-                        state.widget.onAdd,
-                      ),
+                      onPressed: () =>
+                          Navigator.of(context).pop(state.widget.onAdd),
                     ),
                 ],
               ),
@@ -594,6 +628,10 @@ class SuperContainerState extends State<SuperContainer> {
       _removeHoveredSafely();
     }
     content = GestureDetector(
+      // Le clic droit d'édition n'est pas une action d'accessibilité : sans
+      // cela, le nœud sémantique apparaît/disparaît avec le mode édition et
+      // reparente le sous-arbre, ce que le pont AXTree Windows ne gère pas.
+      excludeFromSemantics: true,
       onSecondaryTapUp: canEdit
           ? (details) => openMenu(details.globalPosition)
           : null,

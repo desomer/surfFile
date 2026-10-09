@@ -141,6 +141,9 @@ class Appearance {
         backgroundColor: surface,
         surfaceTintColor: Colors.transparent,
       ),
+      // Les tooltips (OverlayPortal) réorganisent l'arbre sémantique et font
+      // planter le pont AXTree Windows (flutter/flutter#182444).
+      tooltipTheme: const TooltipThemeData(excludeFromSemantics: true),
     );
   }
 

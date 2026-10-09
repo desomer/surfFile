@@ -91,11 +91,20 @@ bouton d'ajout de slot est affiche.
 L'entree du layout dans le menu contextuel propose aussi un bouton « + » en
 mode edition : il ouvre le choix de slot pour la zone selectionnee, ou le
 Centre si aucune zone n'est selectionnee. Le nom ouvre toujours l'editeur.
+Un bouton d'axe permet de basculer entre Row et Column dans ce menu et dans
+la banniere (zone selectionnee, ou Centre par defaut), ainsi que sur chaque
+zone contenant des slots dans le layout selectionne. Les zones vides gardent
+uniquement le bouton « + ». L'icone indique l'axe actuel et
+l'info-bulle precise l'axe cible. Ces actions utilisent la configuration
+persistante de la zone et ne sont disponibles que pour les layouts editables.
 
 Les slots et les `RegisteredComponent` acceptent `preferredSize: Size(largeur,
 hauteur)`. En mode edition, le clic droit sur un slot ajoute l'entree
 « Taille préférée » au menu des styles : le dialogue regle les dimensions en
-pixels ou retablit la taille automatique, meme si le slot declare une taille
+pixels. Le bouton « Supprimer le slot » de cette entree retire le slot du
+layout et efface ses reglages de taille et de type d'instance. Le composant
+reste disponible pour un nouvel ajout. Le dialogue permet aussi de retablir
+la taille automatique, meme si le slot declare une taille
 preferee par defaut.
 Les dimensions sont limitees par la zone disponible ; des hauteurs preferees
 qui depassent ensemble la zone sont reduites proportionnellement. Les slots

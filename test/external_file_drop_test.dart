@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -9,6 +10,7 @@ import 'package:surf_file/services/file_operations.dart';
 import 'package:surf_file/services/windows_file_drop.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/folder_size_service.dart';
+import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_heatmap_view.dart';
 import 'package:surf_file/widgets/file_operations/external_file_drop.dart';
@@ -32,6 +34,180 @@ Future<void> nativeEvent(String method, Object? arguments) async {
 }
 
 void main() {
+  for (final mode in FileDragMode.values) {
+    testWidgets('$mode separates file drags from marquee selection', (
+      tester,
+    ) async {
+      final calls = <List<String>>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        WindowsFileDrop.channel,
+        (call) async {
+          if (call.method == 'startDrag') {
+            calls.add((call.arguments as List).cast<String>());
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          WindowsFileDrop.channel,
+          null,
+        ),
+      );
+      final preferences = ValueNotifier(
+        SurfFilePreferences(fileDragMode: mode),
+      );
+      addTearDown(preferences.dispose);
+      final entries = [
+        for (final name in ['a.txt', 'b.txt', 'c.txt'])
+          ExplorerEntry(
+            entity: File('C:\\drag\\$name'),
+            name: name,
+            isDirectory: false,
+            modified: DateTime(2026),
+            size: 1,
+          ),
+      ];
+      final all = {for (final entry in entries) entry.entity.path};
+      var selection = <String>{};
+      var opens = 0;
+      late StateSetter rebuild;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SurfFilePreferencesScope(
+              controller: preferences,
+              child: StatefulBuilder(
+                builder: (context, setState) {
+                  rebuild = setState;
+                  return ExplorerEntriesView(
+                    entries: entries,
+                    gridView: false,
+                    selectedPath: null,
+                    selectedPaths: selection,
+                    onSelectionChanged: (paths) =>
+                        setState(() => selection = paths.toSet()),
+                    onSelected: (path) => setState(() => selection = {path}),
+                    onOpen: (_) => opens++,
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Point de la ligne hors de l'icône et du nom.
+      Offset beside(String name) =>
+          tester.getRect(find.text(name)).centerRight + const Offset(60, 0);
+
+      Future<void> drag(Offset from, Offset to) async {
+        final gesture = await tester.startGesture(
+          from,
+          kind: PointerDeviceKind.mouse,
+        );
+        for (var step = 1; step <= 5; step++) {
+          await gesture.moveTo(Offset.lerp(from, to, step / 5)!);
+          await tester.pump();
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+      }
+
+      // Hors du nom et de l'icône, un élément non sélectionné trace un cadre.
+      await drag(beside('a.txt'), beside('c.txt'));
+      expect(selection, all);
+      expect(calls, isEmpty);
+
+      // Élément sélectionné, hors du nom : glisse seulement en mode selected.
+      await drag(beside('b.txt'), beside('a.txt'));
+      if (mode == FileDragMode.selected) {
+        expect(calls, [all.toList()]);
+        calls.clear();
+      } else {
+        expect(calls, isEmpty);
+      }
+      rebuild(() => selection = {});
+      await tester.pump();
+
+      // Nom d'un élément non sélectionné : glisse seulement en nameAndIcon.
+      await drag(
+        tester.getCenter(find.text('a.txt')),
+        tester.getCenter(find.text('c.txt')),
+      );
+      if (mode == FileDragMode.nameAndIcon) {
+        expect(calls, [
+          [r'C:\drag\a.txt'],
+        ]);
+      } else {
+        expect(calls, isEmpty);
+      }
+      calls.clear();
+
+      // Un double-clic avec un léger tremblement ne lance pas de glisser,
+      // que l'élément soit déjà sélectionné ou non.
+      Future<void> doubleClick(Offset at) async {
+        for (var click = 0; click < 2; click++) {
+          final gesture = await tester.startGesture(
+            at,
+            kind: PointerDeviceKind.mouse,
+          );
+          await gesture.moveBy(const Offset(3, 2));
+          await tester.pump();
+          await gesture.up();
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        await tester.pumpAndSettle();
+      }
+
+      for (final selected in [true, false]) {
+        for (final at in [
+          tester.getCenter(find.text('b.txt')),
+          beside('b.txt'),
+        ]) {
+          rebuild(() => selection = selected ? {...all} : {});
+          await tester.pump();
+          opens = 0;
+          await doubleClick(at);
+          expect(calls, isEmpty, reason: 'selected: $selected, at: $at');
+          expect(opens, 1, reason: 'selected: $selected, at: $at');
+          await tester.pump(const Duration(seconds: 1));
+        }
+      }
+    });
+  }
+  testWidgets('internal drags ignore drops near the origin or onto a source', (
+    tester,
+  ) async {
+    final pending = Completer<void>();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      WindowsFileDrop.channel,
+      (call) => pending.future,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        WindowsFileDrop.channel,
+        null,
+      ),
+    );
+    const origin = Offset(100, 100);
+    expect(WindowsFileDrop.ignoresInternalDrop(origin, r'C:\a'), isFalse);
+    final drag = WindowsFileDrop.startDrag([r'C:\a\b'], origin: origin);
+    expect(WindowsFileDrop.ignoresInternalDrop(origin, r'C:\a'), isTrue);
+    expect(
+      WindowsFileDrop.ignoresInternalDrop(const Offset(200, 100), r'c:/A/B/'),
+      isTrue,
+    );
+    expect(
+      WindowsFileDrop.ignoresInternalDrop(const Offset(200, 100), r'C:\a'),
+      isFalse,
+    );
+    pending.complete();
+    await drag;
+    expect(WindowsFileDrop.ignoresInternalDrop(origin, r'C:\a\b'), isFalse);
+  });
+
   testWidgets('native coordinates select folders, background and split pane', (
     tester,
   ) async {

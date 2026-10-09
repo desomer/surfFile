@@ -97,6 +97,35 @@ void main() {
     iconSize: 60,
   );
 
+  test('file drag mode survives encoding and rejects unknown values', () {
+    for (final mode in FileDragMode.values) {
+      final json = SurfFileAppearanceCodec(
+        preferences: ValueNotifier(SurfFilePreferences(fileDragMode: mode)),
+      ).toJson(Appearance());
+      expect((json['application'] as Map)['fileDragMode'], mode.name);
+      final decoded = SurfFileAppearanceCodec().decodeDocument(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      );
+      expect(decoded.preferences.fileDragMode, mode);
+    }
+    final json = SurfFileAppearanceCodec().toJson(Appearance());
+    (json['application'] as Map)['fileDragMode'] = 'sometimes';
+    expect(
+      () => SurfFileAppearanceCodec().decodeDocument(
+        jsonDecode(jsonEncode(json)) as Map<String, dynamic>,
+      ),
+      throwsFormatException,
+    );
+    (json['application'] as Map).remove('fileDragMode');
+    expect(
+      SurfFileAppearanceCodec()
+          .decodeDocument(jsonDecode(jsonEncode(json)) as Map<String, dynamic>)
+          .preferences
+          .fileDragMode,
+      FileDragMode.nameAndIcon,
+    );
+  });
+
   test('all settings survive saving and a fresh controller', () async {
     final errors = <Object>[];
     final first = PersistentAppearanceController(AppearanceStore(), errors.add);

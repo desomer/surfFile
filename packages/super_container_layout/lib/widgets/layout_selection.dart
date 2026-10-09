@@ -1,4 +1,17 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Axis;
+
+class LayoutAxisAction {
+  const LayoutAxisAction({
+    required this.zoneLabel,
+    required this.axis,
+    required this.onToggle,
+  });
+
+  final String zoneLabel;
+  final Axis axis;
+  final VoidCallback onToggle;
+}
 
 /// Chemin des zones sélectionnées (parent > ... > enfant) dans les dispositions
 /// imbriquées, affiché par la bannière du mode édition.
@@ -9,8 +22,10 @@ class LayoutSelection {
 
   /// Noms des zones sélectionnées, de la plus englobante à la plus profonde.
   static final path = ValueNotifier<List<String>>(const []);
+  static final axisAction = ValueNotifier<LayoutAxisAction?>(null);
 
   static final _reported = <Object, List<String>>{};
+  static final _axisActions = <Object, LayoutAxisAction>{};
   static final _clears = <Object, VoidCallback>{};
   static final _targets =
       <
@@ -79,22 +94,37 @@ class LayoutSelection {
 
   /// La disposition [owner] déclare son chemin ; vide, elle se retire. [clear]
   /// désélectionne ses zones.
-  static void report(Object owner, List<String> value, {VoidCallback? clear}) {
+  static void report(
+    Object owner,
+    List<String> value, {
+    VoidCallback? clear,
+    LayoutAxisAction? axis,
+  }) {
     final previous = _reported[owner];
     if (value.isEmpty) {
       _clears.remove(owner);
+      _axisActions.remove(owner);
       if (_reported.remove(owner) == null) return;
     } else {
       if (clear != null) _clears[owner] = clear;
-      if (listEquals(previous, value)) return;
+      if (axis == null) {
+        _axisActions.remove(owner);
+      } else {
+        _axisActions[owner] = axis;
+      }
       // Réinsérée en dernier : à profondeur égale, la plus récente l'emporte.
-      _reported.remove(owner);
+      if (!listEquals(previous, value)) _reported.remove(owner);
       _reported[owner] = value;
     }
     var best = const <String>[];
-    for (final candidate in _reported.values) {
-      if (candidate.length >= best.length) best = candidate;
+    Object? bestOwner;
+    for (final entry in _reported.entries) {
+      if (entry.value.length >= best.length) {
+        best = entry.value;
+        bestOwner = entry.key;
+      }
     }
     if (!listEquals(path.value, best)) path.value = best;
+    axisAction.value = _axisActions[bestOwner];
   }
 }

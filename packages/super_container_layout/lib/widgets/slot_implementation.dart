@@ -91,6 +91,7 @@ class SlotStack extends StatelessWidget {
     this.emphasis,
     this.preferredSizes = const {},
     this.onEditPreferredSize,
+    this.onRemoveSlot,
     super.key,
   });
 
@@ -122,6 +123,7 @@ class SlotStack extends StatelessWidget {
   final LabelEmphasis? emphasis;
   final Map<String, Size?> preferredSizes;
   final Future<void> Function(SlotImplementation)? onEditPreferredSize;
+  final Future<void> Function(SlotImplementation)? onRemoveSlot;
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +160,9 @@ class SlotStack extends StatelessWidget {
     label: 'Taille préférée : ${slot.label}',
     enabled: showLabels && onEditPreferredSize != null,
     onEdit: () async => onEditPreferredSize?.call(slot),
+    onRemove: showLabels && onRemoveSlot != null
+        ? () async => onRemoveSlot?.call(slot)
+        : null,
     child: _LabeledSlot(
       slot: slot,
       axis: axis,
@@ -573,6 +578,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         widget.showLabel && ContainerMenuAction.of(context).isNotEmpty;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      excludeFromSemantics: true,
       onSecondaryTapUp: canEditSize
           ? (details) => context
                 .findAncestorStateOfType<SuperContainerState>()

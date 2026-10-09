@@ -123,6 +123,86 @@ void main() {
     }
   });
 
+  test('removing a slot cleans only its instance configuration', () {
+    final config = base
+        .copyWith(
+          placements: {
+            SuperLayoutZone.center: ['first', 'second'],
+            SuperLayoutZone.north: ['first'],
+          },
+          slotTypes: {'first': 'component', 'second': 'component'},
+          slotPreferredSizes: {
+            'first': const Size(100, 50),
+            'second': const Size(200, 70),
+          },
+        )
+        .withAxis(SuperLayoutZone.center, Axis.horizontal);
+    final removed = config.withoutSlot('first');
+    expect(removed.placements, {
+      SuperLayoutZone.center: ['second'],
+    });
+    expect(removed.slotTypes, {'second': 'component'});
+    expect(removed.slotPreferredSizes, {'second': const Size(200, 70)});
+    expect(removed.axisOf(SuperLayoutZone.center), Axis.horizontal);
+    expect(config.placementsOf(SuperLayoutZone.north), ['first']);
+    expect(SuperLayoutConfig.fromJson(removed.toJson()), removed);
+    expect(removed.withoutSlot('second').placements, isEmpty);
+  });
+
+  testWidgets('preferred size menu removes a slot and allows adding it again', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    final changes = <SuperLayoutConfig>[];
+    await pump(
+      tester,
+      editMode: mode,
+      config: base.withSlotPreferredSize('first', const Size(120, 90)),
+      slots: [slot('first', styled: true), slot('second')],
+      onChanged: changes.add,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('content-first')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Taille préférée : first'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('style-menu-Style du slot')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('content-first')), findsNothing);
+    expect(find.byKey(const ValueKey('content-second')), findsOneWidget);
+    expect(find.text('Taille préférée : first'), findsNothing);
+    expect(find.text('Largeur (px)'), findsNothing);
+    expect(changes.single.placementsOf(SuperLayoutZone.center), ['second']);
+    expect(changes.single.slotPreferredSizes.containsKey('first'), isFalse);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-second'))),
+      const Size(600, 400),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('content-second')),
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-menu-add-Super layout')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-slot-first')));
+    await tester.pumpAndSettle();
+    expect(changes.last.placementsOf(SuperLayoutZone.center), [
+      'second',
+      'first',
+    ]);
+    expect(find.byKey(const ValueKey('content-first')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('zone axes round trip, follow swaps and reject invalid JSON', () {
     final config = base
         .withAxis(SuperLayoutZone.center, Axis.horizontal)
@@ -338,7 +418,7 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-menu-Super layout')));
+      await tester.tap(find.text('Super layout'));
       await tester.pumpAndSettle();
     }
 

@@ -11,11 +11,11 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_monaco: 3.4.3
-  material_ui: 1.5.0
+  material_ui: ^1.6.0
   flex_color_picker: ^4.0.0
   flutter_acrylic: ^1.1.4
   shared_preferences: ^2.5.5
-  pro_image_editor: 14.6.2
+  pro_image_editor: ^14.10.2
   super_container_layout:
     path: packages/super_container_layout
   video_player: ^2.9.2

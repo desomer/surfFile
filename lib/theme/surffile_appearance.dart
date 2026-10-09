@@ -5,6 +5,7 @@ import 'package:super_container_layout/theme/default_appearance.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'disk_gauge_style.dart';
+import 'file_drag_mode.dart';
 import 'folder_transition.dart';
 
 export 'surffile_appearance_scope.dart';
@@ -24,6 +25,7 @@ abstract final class SurfFileAppearanceDefaults {
 
   static const folderTransitionDuration = 220.0;
   static const folderTransition = FolderTransition.none;
+  static const fileDragMode = FileDragMode.nameAndIcon;
   static const diskGaugeStyle = DiskGaugeStyle();
   static const cardHeight = 142.0;
   static const cardWidth = 180.0;

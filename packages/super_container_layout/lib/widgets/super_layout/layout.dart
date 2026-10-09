@@ -62,14 +62,47 @@ class SuperLayoutState extends State<SuperLayout> {
       _selected.value = _selected.value == zone ? null : zone;
 
   List<String> _reportedPath = const [];
+  LayoutAxisAction? _reportedAxis;
+
+  SuperLayoutZone get _actionZone =>
+      _config.value.visibleZones.contains(_selected.value)
+      ? _selected.value!
+      : SuperLayoutZone.center;
+
+  LayoutAxisAction _axisAction(SuperLayoutZone zone) => LayoutAxisAction(
+    zoneLabel: zone.label,
+    axis: _config.value.axisOf(zone),
+    onToggle: () {
+      if (!mounted || !widget.editable) return;
+      final config = _config.value;
+      _update(
+        config.withAxis(
+          zone,
+          config.axisOf(zone) == Axis.horizontal
+              ? Axis.vertical
+              : Axis.horizontal,
+        ),
+      );
+    },
+  );
 
   /// Déclare le chemin des zones sélectionnées à la bannière du mode édition.
-  void _reportPath(List<String> path) {
-    if (listEquals(_reportedPath, path)) return;
+  void _reportPath(List<String> path, {LayoutAxisAction? axis}) {
+    if (listEquals(_reportedPath, path) &&
+        _reportedAxis?.axis == axis?.axis &&
+        _reportedAxis?.zoneLabel == axis?.zoneLabel) {
+      return;
+    }
     _reportedPath = path;
+    _reportedAxis = axis;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && listEquals(_reportedPath, path)) {
-        LayoutSelection.report(this, path, clear: () => _selected.value = null);
+        LayoutSelection.report(
+          this,
+          path,
+          clear: () => _selected.value = null,
+          axis: _reportedAxis,
+        );
       }
     });
   }
@@ -417,6 +450,11 @@ class SuperLayoutState extends State<SuperLayout> {
       onEditPreferredSize: editMode && widget.editable
           ? _editSlotPreferredSize
           : null,
+      onRemoveSlot: editMode && widget.editable
+          ? (slot) async {
+              if (mounted) _update(_config.value.withoutSlot(slot.id));
+            }
+          : null,
       showLabels: editMode,
       emphasis: _emphasisFor(zone),
       zoneLabel: zone.label,
@@ -452,11 +490,8 @@ class SuperLayoutState extends State<SuperLayout> {
       label: widget.label,
       editable: widget.editable,
       onEdit: _openEditor,
-      onAdd: () => _addSlot(
-        _config.value.visibleZones.contains(_selected.value)
-            ? _selected.value!
-            : SuperLayoutZone.center,
-      ),
+      onAdd: () => _addSlot(_actionZone),
+      axisAction: () => _axisAction(_actionZone),
       child: ListenableBuilder(
         listenable: Listenable.merge([
           _config,
@@ -485,6 +520,7 @@ class SuperLayoutState extends State<SuperLayout> {
             editMode
                 ? [...parentPath, name, if (selected != null) selected.label]
                 : const [],
+            axis: editMode && widget.editable ? _axisAction(_actionZone) : null,
           );
           final editing = widget.showZoneNames && editMode;
           final zones = config.visibleZones;
@@ -557,6 +593,7 @@ class SuperLayoutState extends State<SuperLayout> {
                       overlay: true,
                       child: _ZoneNameBadge(
                         zone: zone,
+                        axisAction: widget.editable ? _axisAction(zone) : null,
                         overCenter: _overCenter,
                         onCenterHint: (active) => _hintCenter(zone, active),
                         emphasis: _emphasisFor(zone),

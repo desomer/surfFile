@@ -10,7 +10,7 @@ import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/widgets/dialogs/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
-import '../packages/super_container_layout/lib/widgets/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/style_edit_banner.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

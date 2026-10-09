@@ -4,6 +4,8 @@ import 'package:super_container_layout/widgets/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/layout_selection.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
+import 'zone_axis_button.dart';
+
 /// Pastille deplacable, initialement en haut au centre du mode edition.
 ///
 /// Peut être placée au-dessus du [Navigator] (ex. `MaterialApp.builder`) :
@@ -48,6 +50,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                IconButton(
+                  key: const ValueKey('style-edit-banner-close'),
+                  tooltip: 'Quitter le mode édition',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: scheme.onPrimary,
+                  icon: const Icon(Icons.close),
+                  onPressed: () => editMode.value = false,
+                ),
                 if (AppearanceScope.controllerOf(context)
                     case final appearance?)
                   IconButton(
@@ -70,12 +81,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     key: const ValueKey('style-edit-banner-drag'),
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.brush_outlined,
-                        size: 16,
-                        color: scheme.onPrimary,
-                      ),
-                      const SizedBox(width: 8),
+                      // Icon(
+                      //   Icons.brush_outlined,
+                      //   size: 16,
+                      //   color: scheme.onPrimary,
+                      // ),
+                      // const SizedBox(width: 8),
                       Text(
                         'Mode édition',
                         style: TextStyle(
@@ -134,14 +145,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                IconButton(
-                  key: const ValueKey('style-edit-banner-close'),
-                  tooltip: 'Quitter le mode édition',
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: scheme.onPrimary,
-                  icon: const Icon(Icons.close),
-                  onPressed: () => editMode.value = false,
+                ValueListenableBuilder<LayoutAxisAction?>(
+                  valueListenable: LayoutSelection.axisAction,
+                  builder: (context, action, _) => action == null
+                      ? const SizedBox.shrink()
+                      : ZoneAxisButton(
+                          key: const ValueKey('style-edit-banner-axis'),
+                          action: action,
+                          color: scheme.onPrimary,
+                        ),
                 ),
               ],
             ),

@@ -12,6 +12,7 @@ import '../super_app.dart';
 import 'layout_selection.dart';
 import 'slot_implementation.dart';
 import 'super_container.dart';
+import 'zone_axis_button.dart';
 
 part 'super_layout/layout.dart';
 part 'super_layout/label_scope.dart';

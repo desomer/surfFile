@@ -4,11 +4,15 @@ import 'package:material_ui/material_ui.dart';
 class PressFeedback extends StatefulWidget {
   const PressFeedback({
     required this.onMouseDown,
+    this.onPress,
     required this.child,
     super.key,
   });
 
   final VoidCallback onMouseDown;
+
+  /// Appui principal, quel que soit le type de pointeur.
+  final ValueChanged<PointerDownEvent>? onPress;
   final Widget child;
 
   @override
@@ -27,6 +31,7 @@ class _PressFeedbackState extends State<PressFeedback> {
     onPointerDown: (event) {
       if (event.buttons != kPrimaryMouseButton || _pointer != null) return;
       _pointer = event.pointer;
+      widget.onPress?.call(event);
       if (event.kind == PointerDeviceKind.mouse) widget.onMouseDown();
     },
     onPointerUp: _release,

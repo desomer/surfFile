@@ -143,6 +143,16 @@ locaux. Reconstruire l'executable Windows pour activer la cible native OLE.
 La cible annonce uniquement un effet de copie a Windows ; le deplacement
 eventuel est realise par SurfFile apres confirmation, pour que l'annulation
 ne puisse pas provoquer de suppression du cote de la source.
+Depuis SurfFile, un fichier, un dossier ou une selection multiple peut aussi
+etre glisse vers l'Explorateur Windows. Le glissement vers un dossier de
+SurfFile ouvre la meme confirmation de transfert. Le mode se regle dans
+Parametres d'apparence > Glisser-deposer : « Jamais » (glisser trace toujours
+un cadre de selection), « Si selectionne » (seuls les elements deja
+selectionnes se glissent, depuis n'importe ou sur la ligne ou la carte) ou
+« Depuis le nom et l'icone » (par defaut, comme l'Explorateur : le nom ou
+l'icone se glisse meme non selectionne). Ailleurs, glisser trace un cadre de
+selection. Un depot a moins de 24 px du point de
+depart, ou sur l'un des elements glisses, est ignore.
 
 Le calcul de taille d'un dossier affiche un panneau flottant, comme les copies,
 avec le chemin traite, la taille cumulee, le nombre de fichiers et de dossiers

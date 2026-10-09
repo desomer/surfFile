@@ -15,6 +15,7 @@ class _ZoneNameBadge extends StatefulWidget {
     required this.onSelect,
     this.swapTarget,
     this.moves = false,
+    this.axisAction,
   });
 
   final SuperLayoutZone zone;
@@ -30,6 +31,7 @@ class _ZoneNameBadge extends StatefulWidget {
   /// La zone est sélectionnée ; un clic sur son nom la (dé)sélectionne.
   final bool selected;
   final VoidCallback onSelect;
+  final LayoutAxisAction? axisAction;
 
   @override
   State<_ZoneNameBadge> createState() => _ZoneNameBadgeState();
@@ -101,44 +103,45 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
           width: 1.5,
         ),
       ),
-      child: target == null
-          ? Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              child: label,
-            )
-          : InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                setState(() => _open = !_open);
-                widget.onSelect();
-              },
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 1, 4, 1),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    label,
-                    if (_open)
-                      IconButton(
-                        key: ValueKey('super-layout-swap-${widget.zone.name}'),
-                        tooltip: widget.moves
-                            ? 'Déplacer vers ${target.label}'
-                            : 'Échanger avec ${target.label}',
-                        visualDensity: VisualDensity.compact,
-                        iconSize: 16,
-                        color: colors.onSurface,
-                        icon: Icon(_icon),
-                        onPressed: () {
-                          setState(() => _open = false);
-                          widget.onSwap();
-                        },
-                      )
-                    else
-                      const SizedBox(width: 4),
-                  ],
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          setState(() => _open = !_open);
+          widget.onSelect();
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(8, 1, 4, 1),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              label,
+              if (widget.axisAction case final action?)
+                ZoneAxisButton(
+                  key: ValueKey('super-layout-toggle-axis-${widget.zone.name}'),
+                  action: action,
+                  color: colors.onSurface,
                 ),
-              ),
-            ),
+              if (_open && target != null)
+                IconButton(
+                  key: ValueKey('super-layout-swap-${widget.zone.name}'),
+                  tooltip: widget.moves
+                      ? 'Déplacer vers ${target.label}'
+                      : 'Échanger avec ${target.label}',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 16,
+                  color: colors.onSurface,
+                  icon: Icon(_icon),
+                  onPressed: () {
+                    setState(() => _open = false);
+                    widget.onSwap();
+                  },
+                )
+              else
+                const SizedBox(width: 4),
+            ],
+          ),
+        ),
+      ),
     );
     return Stack(
       fit: StackFit.expand,

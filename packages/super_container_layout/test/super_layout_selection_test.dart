@@ -54,6 +54,206 @@ void main() {
     matching: find.byKey(ValueKey(key)),
   );
 
+  testWidgets('axis controls share zone configuration across all surfaces', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    final key = GlobalKey<SuperLayoutState>();
+    final changes = <SuperLayoutConfig>[];
+    await pump(
+      tester,
+      mode,
+      Stack(
+        children: [
+          Positioned.fill(
+            child: SuperLayout(
+              key: key,
+              config: const SuperLayoutConfig(
+                north: true,
+                south: false,
+                east: false,
+                west: false,
+                placements: {
+                  SuperLayoutZone.center: ['a', 'b'],
+                  SuperLayoutZone.north: ['n'],
+                },
+              ),
+              onChanged: changes.add,
+              slots: [
+                for (final id in ['a', 'b', 'n'])
+                  BuilderSlot(
+                    id: id,
+                    label: id,
+                    builder: (_) => Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(id, key: ValueKey('axis-content-$id')),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const Positioned.fill(child: StyleEditBanner()),
+        ],
+      ),
+    );
+    final banner = find.byKey(const ValueKey('style-edit-banner-axis'));
+    expect(banner, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('axis-content-a')));
+    await tester.pumpAndSettle();
+    expect(banner, findsOneWidget);
+    await tester.drag(
+      find.byKey(const ValueKey('style-edit-banner-drag')),
+      const Offset(0, 450),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Centre : Column - Passer en Row'), findsNWidgets(2));
+    final a = find.byKey(const ValueKey('axis-content-a'));
+    final b = find.byKey(const ValueKey('axis-content-b'));
+    expect(tester.getTopLeft(a).dx, tester.getTopLeft(b).dx);
+    expect(tester.getTopLeft(b).dy, greaterThan(tester.getTopLeft(a).dy));
+    await tester.tap(banner);
+    await tester.pumpAndSettle();
+    expect(
+      key.currentState!.config.axisOf(SuperLayoutZone.center),
+      Axis.horizontal,
+    );
+    expect(tester.getTopLeft(a).dy, tester.getTopLeft(b).dy);
+    expect(tester.getTopLeft(b).dx, greaterThan(tester.getTopLeft(a).dx));
+    expect(find.byTooltip('Centre : Row - Passer en Column'), findsNWidgets(2));
+
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-toggle-axis-center')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      key.currentState!.config.axisOf(SuperLayoutZone.center),
+      Axis.vertical,
+    );
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('super-layout-name-north')),
+        matching: find.text('Nord'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Nord : Column - Passer en Row'), findsNWidgets(2));
+    await tester.tap(a, buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('style-menu-axis-Super layout')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('style-menu-Super layout')), findsNothing);
+    expect(find.byType(SuperLayoutEditor), findsNothing);
+    expect(
+      key.currentState!.config.axisOf(SuperLayoutZone.north),
+      Axis.horizontal,
+    );
+    expect(
+      key.currentState!.config.axisOf(SuperLayoutZone.center),
+      Axis.vertical,
+    );
+    expect(find.byTooltip('Nord : Row - Passer en Column'), findsNWidgets(2));
+    await tester.tap(banner);
+    await tester.pumpAndSettle();
+    expect(
+      key.currentState!.config.axisOf(SuperLayoutZone.north),
+      Axis.vertical,
+    );
+
+    expect(
+      find.byKey(const ValueKey('super-layout-toggle-axis-north')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('super-layout-toggle-axis-nw')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-toggle-axis-center')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      key.currentState!.config.axisOf(SuperLayoutZone.center),
+      Axis.horizontal,
+    );
+    expect(changes.length, 5);
+    final restored = SuperLayoutConfig.fromJson(changes.last.toJson());
+    expect(restored.axisOf(SuperLayoutZone.center), Axis.horizontal);
+    mode.value = false;
+    await tester.pumpAndSettle();
+    expect(banner, findsNothing);
+    expect(
+      find.byKey(const ValueKey('super-layout-toggle-axis-center')),
+      findsNothing,
+    );
+    mode.value = true;
+    await tester.pumpAndSettle();
+    expect(banner, findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.axisAction.value, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'banner axis follows nested selection and hides for read-only layouts',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(
+        tester,
+        mode,
+        Stack(
+          children: [
+            Positioned.fill(child: layout('parent', child: layout('child'))),
+            const Positioned.fill(child: StyleEditBanner()),
+          ],
+        ),
+      );
+      await tester.tapAt(const Offset(600, 350));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-axis')));
+      await tester.pumpAndSettle();
+      final child = tester.state<SuperLayoutState>(
+        find.byKey(const ValueKey('child')),
+      );
+      final parent = tester.state<SuperLayoutState>(
+        find.byKey(const ValueKey('parent')),
+      );
+      expect(child.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      expect(parent.config.axisOf(SuperLayoutZone.center), Axis.vertical);
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-axis')));
+      await tester.pumpAndSettle();
+      expect(parent.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      expect(child.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      await pump(
+        tester,
+        mode,
+        Stack(
+          children: [
+            Positioned.fill(child: layout('read-only', editable: false)),
+            const Positioned.fill(child: StyleEditBanner()),
+          ],
+        ),
+      );
+      await tester.tapAt(const Offset(600, 350));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-axis')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('super-layout-toggle-axis-center')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('context menu adds slots to centre or selected zone', (
     tester,
   ) async {
@@ -130,7 +330,12 @@ void main() {
 
     await tester.tap(find.text('North content'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('super-layout-name-north')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('super-layout-name-north')),
+        matching: find.text('Nord'),
+      ),
+    );
     await tester.pumpAndSettle();
     await openMenu();
     await tester.tap(find.byKey(const ValueKey('style-menu-add-Menu layout')));
@@ -203,6 +408,7 @@ void main() {
         findsNothing,
       );
       expect(inside('left', 'super-layout-add-north'), findsOneWidget);
+      expect(inside('left', 'super-layout-toggle-axis-north'), findsNothing);
       expect(placeholderBorder(), border);
       expect(find.text('Nord'), findsOneWidget);
 
@@ -286,7 +492,12 @@ void main() {
 
     await tester.tapAt(const Offset(600, 350));
     await tester.pumpAndSettle();
-    await tester.tap(inside('child', 'super-layout-name-center'));
+    await tester.tap(
+      find.descendant(
+        of: inside('child', 'super-layout-name-center'),
+        matching: find.text('Centre'),
+      ),
+    );
     await tester.pumpAndSettle();
     await clickSegment(2);
     expect(inside('child', 'super-layout-name-center'), findsOneWidget);

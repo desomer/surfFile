@@ -7,7 +7,7 @@ import 'package:super_container_layout/widgets/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
 
-import '../lib/widgets/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/style_edit_banner.dart';
 
 Widget _box(String id, {double? width, double? height}) =>
     SizedBox(key: ValueKey('box-$id'), width: width, height: height);
@@ -1224,7 +1224,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
 
-      await tester.tap(name('east'));
+      await tester.tap(
+        find.descendant(of: name('east'), matching: find.text('Est')),
+      );
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
 
