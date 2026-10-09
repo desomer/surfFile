@@ -68,7 +68,9 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Taille préférée : first'));
+    await tester.tap(
+      find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+    );
     await tester.pumpAndSettle();
   }
 
@@ -265,11 +267,26 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    expect(find.text('Taille préférée : first'), findsOneWidget);
+    expect(find.text('Taille préférée : first'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+      findsOneWidget,
+    );
     expect(
       find.byKey(const ValueKey('style-menu-Style du slot')),
       findsOneWidget,
     );
+    for (final action in ['size', 'remove']) {
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Style du slot')),
+          matching: find.byKey(
+            ValueKey('style-menu-$action-Taille préférée : first'),
+          ),
+        ),
+        findsOneWidget,
+      );
+    }
     await tester.tap(
       find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
     );
@@ -781,7 +798,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Style du slot'), findsOneWidget);
       expect(find.text('Super layout'), findsOneWidget);
-      await tester.tap(find.text('Taille préférée : first'));
+      await tester.tap(
+        find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+      );
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('slot-preferred-width')),
@@ -841,6 +860,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Taille préférée : first'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
+        findsNothing,
+      );
       editMode.value = true;
       await pump(tester, editMode: editMode, editable: false);
       await tester.tap(
@@ -849,6 +876,14 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Taille préférée : first'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
+        findsNothing,
+      );
     },
   );
 }

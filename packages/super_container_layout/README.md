@@ -120,14 +120,16 @@ l'info-bulle precise l'axe cible. Ces actions utilisent la configuration
 persistante de la zone et ne sont disponibles que pour les layouts editables.
 
 Les slots et les `RegisteredComponent` acceptent `preferredSize: Size(largeur,
-hauteur)`. En mode edition, le clic droit sur un slot ajoute l'entree
-« Taille préférée » au menu des styles : le dialogue regle les tailles
+hauteur)`. En mode edition, le clic droit sur un slot ajoute une icone de
+reglage des tailles et une icone « Supprimer le slot » sur la premiere ligne
+de style du menu contextuel, sans entree de taille separee. L'icone de tailles
+ouvre le dialogue qui regle les tailles
 minimale, préférée et maximale, en pixels ou en pourcentage de la zone qui
 contient le slot ou de tout le `SuperLayout` (base sélectionnable dans le
 dialogue). Chaque dimension peut utiliser son unité. Les contraintes
 minimales et maximales sont appliquees même aux slots de taille intrinsèque ou
 `fill`; une taille préférée reste facultative. Le bouton « Supprimer le slot »
-de cette entree retire le slot du
+de la ligne de style retire le slot du
 layout et efface ses reglages de taille et de type d'instance. Le composant
 reste disponible pour un nouvel ajout. Le dialogue permet aussi de retablir
 la taille automatique, meme si le slot declare une taille

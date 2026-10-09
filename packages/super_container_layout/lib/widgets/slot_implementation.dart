@@ -167,6 +167,7 @@ class SlotStack extends StatelessWidget {
   ) => ContainerMenuAction(
     key: ValueKey('slot-item-${slot.id}'),
     label: 'Taille préférée : ${slot.label}',
+    inline: true,
     enabled: showLabels && onEditPreferredSize != null,
     onEdit: () async => onEditPreferredSize?.call(slot),
     onRemove: showLabels && onRemoveSlot != null

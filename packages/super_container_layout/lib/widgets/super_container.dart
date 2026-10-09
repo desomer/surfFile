@@ -34,6 +34,7 @@ class ContainerMenuAction extends InheritedWidget {
     required this.onEdit,
     required this.enabled,
     this.onRemove,
+    this.inline = false,
     required super.child,
     super.key,
   });
@@ -42,6 +43,7 @@ class ContainerMenuAction extends InheritedWidget {
   final Future<void> Function() onEdit;
   final bool enabled;
   final Future<void> Function()? onRemove;
+  final bool inline;
 
   static List<ContainerMenuAction> of(BuildContext context) {
     final actions = <ContainerMenuAction>[];
@@ -58,7 +60,8 @@ class ContainerMenuAction extends InheritedWidget {
       label != oldWidget.label ||
       enabled != oldWidget.enabled ||
       onEdit != oldWidget.onEdit ||
-      onRemove != oldWidget.onRemove;
+      onRemove != oldWidget.onRemove ||
+      inline != oldWidget.inline;
 }
 
 /// Conteneur stylé par un [ContainerStyle] qui ouvre le
@@ -500,22 +503,23 @@ class SuperContainerState extends State<SuperContainer> {
       ),
       items: [
         for (final action in extraActions)
-          PopupMenuItem<Future<void> Function()>(
-            value: action.onEdit,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Flexible(child: Text(action.label)),
-                if (action.onRemove case final remove?)
-                  IconButton(
-                    key: ValueKey('style-menu-remove-${action.label}'),
-                    tooltip: 'Supprimer le slot',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => Navigator.of(context).pop(remove),
-                  ),
-              ],
+          if (!action.inline)
+            PopupMenuItem<Future<void> Function()>(
+              value: action.onEdit,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: Text(action.label)),
+                  if (action.onRemove case final remove?)
+                    IconButton(
+                      key: ValueKey('style-menu-remove-${action.label}'),
+                      tooltip: 'Supprimer le slot',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => Navigator.of(context).pop(remove),
+                    ),
+                ],
+              ),
             ),
-          ),
         for (final (index, state) in chain.indexed)
           PopupMenuItem<SuperContainerState>(
             key: ValueKey('style-menu-${state._label}'),
@@ -535,6 +539,25 @@ class SuperContainerState extends State<SuperContainer> {
                   Flexible(
                     child: Text(state._label, overflow: TextOverflow.ellipsis),
                   ),
+                  if (index == 0)
+                    for (final action in extraActions.where(
+                      (action) => action.inline,
+                    )) ...[
+                      IconButton(
+                        key: ValueKey('style-menu-size-${action.label}'),
+                        tooltip: action.label,
+                        icon: const Icon(Icons.straighten),
+                        onPressed: () =>
+                            Navigator.of(context).pop(action.onEdit),
+                      ),
+                      if (action.onRemove case final remove?)
+                        IconButton(
+                          key: ValueKey('style-menu-remove-${action.label}'),
+                          tooltip: 'Supprimer le slot',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => Navigator.of(context).pop(remove),
+                        ),
+                    ],
                   if ((StyleEditScope.controllerOf(state.context)?.value ??
                           false) &&
                       state.widget.axisAction != null)
