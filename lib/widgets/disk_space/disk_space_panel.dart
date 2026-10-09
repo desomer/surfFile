@@ -72,6 +72,37 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
     }
   }
 
+  /// Disques en cours d'éjection.
+  final _ejecting = <String>{};
+
+  Future<void> _eject(DiskSpace disk) async {
+    if (!_ejecting.add(disk.path)) return;
+    setState(() {});
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    // Quitter le disque avant de l'éjecter : la vue ne doit pas le garder
+    // ouvert (listage, aperçus, calcul de tailles).
+    if (_selectedPath == disk.path) {
+      final fallback = _disks!.where((other) => !other.ejectable).firstOrNull;
+      if (fallback != null) widget.onNavigate(fallback.path);
+    }
+    String message;
+    try {
+      await DiskSpace.eject(disk.path);
+      message = 'Vous pouvez retirer ${disk.path} en toute sécurité.';
+    } on PlatformException catch (error) {
+      message = error.code == 'in_use'
+          ? 'Impossible d’éjecter ${disk.path} : des fichiers sont encore '
+                'ouverts.'
+          : 'Impossible d’éjecter ${disk.path} : ${error.message ?? error.code}';
+    } on MissingPluginException {
+      message = 'L’éjection n’est pas disponible.';
+    }
+    messenger?.showSnackBar(SnackBar(content: Text(message)));
+    if (!mounted) return;
+    setState(() => _ejecting.remove(disk.path));
+    await _load();
+  }
+
   /// Disque contenant [DiskSpacePanel.currentPath] (préfixe le plus long).
   String? get _selectedPath {
     final current = widget.currentPath?.toLowerCase();
@@ -175,6 +206,8 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
                             revision: _revision,
                             selected: disk.path == selectedPath,
                             onTap: () => widget.onNavigate(disk.path),
+                            ejecting: _ejecting.contains(disk.path),
+                            onEject: disk.ejectable ? () => _eject(disk) : null,
                           ),
                         ),
                     ],
@@ -194,12 +227,18 @@ class _DiskTile extends StatelessWidget {
     required this.revision,
     required this.selected,
     required this.onTap,
+    this.ejecting = false,
+    this.onEject,
   });
 
   final DiskSpace disk;
   final int revision;
   final bool selected;
   final VoidCallback onTap;
+  final bool ejecting;
+
+  /// Éjection du disque, `null` s'il n'est pas éjectable.
+  final VoidCallback? onEject;
 
   String _capacity(int bytes) {
     const gib = 1024 * 1024 * 1024;
@@ -247,54 +286,90 @@ class _DiskTile extends StatelessWidget {
           borderColor: selected
               ? colors.primary
               : foreground.withValues(alpha: .12),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: style.borderRadius,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-              child: Column(
-                children: [
-                  SuperContainer(
-                    key: ValueKey('disk-gauge-${disk.path}'),
-                    decorate: false,
-                    label: 'Style de la jauge des disques',
-                    onEdit: () => showDiskGaugeStyleEditor(context),
-                    child: DiskGauge(
-                      value: used,
-                      style: gauge,
-                      revision: revision,
-                      fillColor: gauge.fillColor ?? colors.primary,
-                      alertColor: gauge.alertColor ?? colors.error,
-                      trackColor:
-                          gauge.trackColor ?? foreground.withValues(alpha: .12),
-                      foreground: foreground,
-                    ),
+          child: Stack(
+            children: [
+              InkWell(
+                onTap: onTap,
+                borderRadius: style.borderRadius,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
+                  child: Column(
+                    children: [
+                      SuperContainer(
+                        key: ValueKey('disk-gauge-${disk.path}'),
+                        decorate: false,
+                        label: 'Style de la jauge des disques',
+                        onEdit: () => showDiskGaugeStyleEditor(context),
+                        child: DiskGauge(
+                          value: used,
+                          style: gauge,
+                          revision: revision,
+                          fillColor: gauge.fillColor ?? colors.primary,
+                          alertColor: gauge.alertColor ?? colors.error,
+                          trackColor:
+                              gauge.trackColor ?? foreground.withValues(alpha: .12),
+                          foreground: foreground,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        disk.path,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: foreground,
+                          fontSize: gauge.nameSize,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        used == null
+                            ? 'Indisponible'
+                            : '${_capacity(disk.freeBytes!)} libres',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: foreground,
+                          fontSize: gauge.captionSize,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    disk.path,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: gauge.nameSize,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    used == null
-                        ? 'Indisponible'
-                        : '${_capacity(disk.freeBytes!)} libres',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: gauge.captionSize,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
+              if (onEject != null)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: ejecting
+                      ? Padding(
+                          padding: const EdgeInsets.all(6),
+                          child: SizedBox.square(
+                            dimension: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: foreground,
+                            ),
+                          ),
+                        )
+                      : IconButton(
+                          key: ValueKey('disk-eject-${disk.path}'),
+                          tooltip: 'Éjecter ${disk.path}',
+                          onPressed: onEject,
+                          icon: Icon(
+                            Icons.eject_rounded,
+                            size: 16,
+                            color: foreground,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 26,
+                            height: 26,
+                          ),
+                        ),
+                ),
+            ],
           ),
         ),
       ),

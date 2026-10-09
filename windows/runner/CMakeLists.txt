@@ -11,6 +11,7 @@ add_executable(${BINARY_NAME} WIN32
   "../../packages/super_container_layout/windows/window_transparency.cpp"
   "external_file_drop.cpp"
   "external_file_drag.cpp"
+  "disk_eject.cpp"
   "shell_context_menu.cpp"
   "main.cpp"
   "utils.cpp"
@@ -39,7 +40,7 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
 target_link_libraries(${BINARY_NAME} PRIVATE flutter flutter_wrapper_app)
 target_link_libraries(${BINARY_NAME} PRIVATE "dwmapi.lib")
 target_link_libraries(${BINARY_NAME} PRIVATE
-  "shell32.lib" "shlwapi.lib" "ole32.lib")
+  "shell32.lib" "shlwapi.lib" "ole32.lib" "setupapi.lib" "cfgmgr32.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 target_include_directories(${BINARY_NAME} PRIVATE
   "${CMAKE_CURRENT_SOURCE_DIR}/../../packages/super_container_layout/windows")

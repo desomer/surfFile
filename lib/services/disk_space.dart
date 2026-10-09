@@ -8,12 +8,16 @@ class DiskSpace {
     this.totalBytes,
     this.freeBytes,
     this.error,
+    this.ejectable = false,
   });
 
   final String path;
   final int? totalBytes;
   final int? freeBytes;
   final String? error;
+
+  /// Support amovible, lecteur optique ou disque externe (USB…).
+  final bool ejectable;
 
   double? get usedFraction => totalBytes == null || freeBytes == null
       ? null
@@ -38,11 +42,19 @@ class DiskSpace {
       final total = value['totalBytes'];
       final free = value['freeBytes'];
       final error = value['error'];
+      final ejectable = value['ejectable'] ?? false;
+      if (ejectable is! bool) {
+        throw const FormatException('Indicateur d’éjection invalide.');
+      }
       if (error != null) {
         if (error is! String || error.isEmpty) {
           throw const FormatException('Erreur de disque invalide.');
         }
-        return DiskSpace(path: value['path'] as String, error: error);
+        return DiskSpace(
+          path: value['path'] as String,
+          error: error,
+          ejectable: ejectable,
+        );
       }
       if (total is! int ||
           free is! int ||
@@ -55,7 +67,15 @@ class DiskSpace {
         path: value['path'] as String,
         totalBytes: total,
         freeBytes: free,
+        ejectable: ejectable,
       );
     }).toList();
   }
+
+  /// Éjecte le disque [path] (retrait sécurisé).
+  ///
+  /// Lève une [PlatformException] de code `in_use` quand des fichiers du
+  /// disque sont encore ouverts.
+  static Future<void> eject(String path) =>
+      channel.invokeMethod<void>('eject', path);
 }

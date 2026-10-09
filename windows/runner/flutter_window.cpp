@@ -7,6 +7,7 @@
 #include <shlobj.h>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "disk_eject.h"
 #include "external_file_drag.h"
 #include "window_transparency.h"
 
@@ -53,7 +54,11 @@ bool FlutterWindow::OnCreate() {
       flutter_controller_->engine()->messenger(), "surf_file/disk_space",
       &flutter::StandardMethodCodec::GetInstance());
   disk_space.SetMethodCallHandler(
-      [](const auto& call, auto result) {
+      [window = GetHandle()](const auto& call, auto result) {
+        if (call.method_name() == "eject") {
+          StartDiskEject(window, call.arguments(), std::move(result));
+          return;
+        }
         if (call.method_name() != "getDisks") {
           result->NotImplemented();
           return;
@@ -80,6 +85,8 @@ bool FlutterWindow::OnCreate() {
           const BOOL success = GetDiskFreeSpaceExW(
               wide_path.c_str(), &available, &total, &free);
           const DWORD error = success ? ERROR_SUCCESS : GetLastError();
+          disk[flutter::EncodableValue("ejectable")] = flutter::EncodableValue(
+              IsEjectableDrive(static_cast<wchar_t>('A' + index)));
           SetThreadErrorMode(previous_mode, nullptr);
           if (!success || total.QuadPart == 0) {
             disk[flutter::EncodableValue("error")] = flutter::EncodableValue(
@@ -195,6 +202,10 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == kDiskEjectDoneMessage) {
+    HandleDiskEjectDone(lparam);
+    return 0;
+  }
   if (shell_context_menu_) {
     const auto result = shell_context_menu_->HandleMessage(message, wparam, lparam);
     if (result) return *result;

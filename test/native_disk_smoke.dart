@@ -18,7 +18,12 @@ Future<void> main() async {
         system.freeBytes! > system.totalBytes!) {
       throw StateError('Windows did not return a valid system drive capacity.');
     }
-    stdout.writeln('NATIVE_DISK_SMOKE_PASSED (${disks.length} disks)');
+    if (system.ejectable) {
+      throw StateError('The system drive must never be ejectable.');
+    }
+    final ejectable = disks.where((disk) => disk.ejectable).map((d) => d.path);
+    stdout.writeln('NATIVE_DISK_SMOKE_PASSED (${disks.length} disks, '
+        'ejectable: ${ejectable.join(', ')})');
   } catch (error, stack) {
     stderr.writeln('$error\n$stack');
     exitCode = 1;

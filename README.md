@@ -197,6 +197,11 @@ Un clic ouvre la racine du disque et une infobulle detaille sa capacite totale.
 Les capacites sont actualisees au retour dans l'application ou manuellement.
 Les lecteurs sans media affichent « Indisponible » ; les erreurs de lecture
 de la liste proposent de reessayer. La zone est defilante sur les petites fenetres.
+Les cles USB, lecteurs optiques et disques durs externes USB/FireWire/SD
+affichent un bouton « Ejecter » (jamais le disque systeme ; les disques
+externes NVMe/Thunderbolt ne sont pas detectes). L'ejection quitte d'abord le
+disque s'il est ouvert, puis demande a Windows un retrait securise ; si des
+fichiers sont encore ouverts, un message l'indique.
 Cette fonctionnalite utilise les API Windows et necessite une reconstruction
 complete apres sa premiere installation, pas seulement un rechargement a chaud.
 

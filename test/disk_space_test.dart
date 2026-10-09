@@ -28,6 +28,7 @@ void main() {
   test('capacity reports real used fractions and unavailable media', () async {
     final values = await DiskSpace.load();
     expect(values.map((disk) => disk.usedFraction), [.75, .95, 0, null, 1]);
+    expect(values.any((disk) => disk.ejectable), isFalse);
   });
 
   test('invalid capacity is rejected', () async {
@@ -70,6 +71,72 @@ void main() {
     expect(path, 'D:\\');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('only ejectable disks offer ejection and report its outcome', (
+    tester,
+  ) async {
+    final ejected = <Object?>[];
+    var inUse = false;
+    messenger.setMockMethodCallHandler(DiskSpace.channel, (call) async {
+      if (call.method == 'eject') {
+        ejected.add(call.arguments);
+        if (inUse) throw PlatformException(code: 'in_use');
+        return null;
+      }
+      return [
+        {'path': 'C:\\', 'totalBytes': 100 * gib, 'freeBytes': 25 * gib},
+        {
+          'path': 'E:\\',
+          'totalBytes': 100 * gib,
+          'freeBytes': 50 * gib,
+          'ejectable': true,
+        },
+      ];
+    });
+    final navigated = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: SizedBox(
+          width: 210,
+          child: DiskSpacePanel(
+            currentPath: 'E:\\Photos',
+            onNavigate: navigated.add,
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('disk-eject-C:\\')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('disk-eject-E:\\')));
+    await tester.pumpAndSettle();
+    expect(ejected, ['E:\\']);
+    // La vue quitte le disque avant son éjection.
+    expect(navigated, ['C:\\']);
+    expect(find.text('Vous pouvez retirer E:\\ en toute sécurité.'),
+        findsOneWidget);
+
+    inUse = true;
+    ScaffoldMessenger.of(tester.element(find.byType(DiskSpacePanel)))
+        .removeCurrentSnackBar();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('disk-eject-E:\\')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+          'Impossible d’éjecter E:\\ : des fichiers sont encore ouverts.'),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('ejectable flag must be a boolean', () async {
+    messenger.setMockMethodCallHandler(
+        DiskSpace.channel,
+        (_) async => [
+              {'path': 'E:\\', 'error': 'No media', 'ejectable': 'yes'},
+            ]);
+    await expectLater(DiskSpace.load(), throwsFormatException);
   });
 
   testWidgets('failure is visible and refresh can recover', (tester) async {

@@ -337,6 +337,7 @@ class _ZonePlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    
     final colors = Theme.of(context).colorScheme;
     final editMode = StyleEditScope.controllerOf(context)?.value ?? false;
     return DecoratedBox(
@@ -344,7 +345,7 @@ class _ZonePlaceholder extends StatelessWidget {
         border: editMode ? Border.all(color: colors.outlineVariant) : null,
       ),
       child: Center(
-        child: showLabel && editMode
+        child: false && showLabel && editMode
             ? Text(
                 zone.label,
                 overflow: TextOverflow.ellipsis,
