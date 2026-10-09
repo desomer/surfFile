@@ -329,6 +329,125 @@ class _SlotZoneTarget extends StatelessWidget {
   }
 }
 
+class _ZoneResizeHandle extends StatefulWidget {
+  const _ZoneResizeHandle({
+    required this.zone,
+    required this.onResize,
+    required this.bounds,
+  });
+
+  final SuperLayoutZone zone;
+  final ValueChanged<double> onResize;
+  final ({double min, double max}) Function(Size) bounds;
+
+  @override
+  State<_ZoneResizeHandle> createState() => _ZoneResizeHandleState();
+}
+
+class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
+  _RenderZoneLayout? _layout;
+  Offset? _start;
+  double _extent = 0;
+  bool _reportedBlocked = false;
+
+  bool get _vertical =>
+      widget.zone == SuperLayoutZone.north ||
+      widget.zone == SuperLayoutZone.south;
+
+  void _begin(DragStartDetails details) {
+    final layout = context.findAncestorRenderObjectOfType<_RenderZoneLayout>()!;
+    final rect = layout.rects[widget.zone]!;
+    _layout = layout;
+    _start = layout.globalToLocal(details.globalPosition);
+    _extent = _vertical ? rect.height : rect.width;
+    _reportedBlocked = false;
+  }
+
+  void _drag(DragUpdateDetails details) {
+    final layout = _layout;
+    final start = _start;
+    if (layout == null || start == null || !layout.attached) return;
+    final position = layout.globalToLocal(details.globalPosition);
+    final delta = _vertical ? position.dy - start.dy : position.dx - start.dx;
+    final growsForward =
+        widget.zone == SuperLayoutZone.north ||
+        widget.zone == SuperLayoutZone.west;
+    final opposite = layout.rects[widget.zone.opposite];
+    final remaining =
+        (_vertical ? layout.size.height : layout.size.width) -
+        (opposite == null
+            ? 0
+            : _vertical
+            ? opposite.height
+            : opposite.width) -
+        SuperLayoutConfig.minSize;
+    // Garder de la place pour le centre et le cote oppose.
+    final bounds = widget.bounds(layout.size);
+    final upper = remaining < bounds.max ? remaining : bounds.max;
+    if (upper < bounds.min) {
+      if (!_reportedBlocked) {
+        _reportedBlocked = true;
+        final message =
+            'Redimensionnement de ${widget.zone.label} impossible : '
+            'les bornes min/max sont incompatibles avec l’espace disponible.';
+        debugPrint(message);
+        if (Scaffold.maybeOf(context) != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(message)),
+          );
+        }
+      }
+      return;
+    }
+    widget.onResize(
+      (_extent + (growsForward ? delta : -delta)).clamp(
+        bounds.min,
+        upper,
+      ),
+    );
+  }
+
+  void _finish() {
+    _layout = null;
+    _start = null;
+  }
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: switch (widget.zone) {
+      SuperLayoutZone.north => Alignment.bottomCenter,
+      SuperLayoutZone.south => Alignment.topCenter,
+      SuperLayoutZone.west => Alignment.centerRight,
+      _ => Alignment.centerLeft,
+    },
+    child: MouseRegion(
+      cursor: _vertical
+          ? SystemMouseCursors.resizeUpDown
+          : SystemMouseCursors.resizeLeftRight,
+      child: GestureDetector(
+        key: ValueKey('super-layout-resize-${widget.zone.name}'),
+        behavior: HitTestBehavior.opaque,
+        dragStartBehavior: DragStartBehavior.down,
+        onVerticalDragStart: _vertical ? _begin : null,
+        onVerticalDragUpdate: _vertical ? _drag : null,
+        onVerticalDragEnd: _vertical ? (_) => _finish() : null,
+        onHorizontalDragStart: !_vertical ? _begin : null,
+        onHorizontalDragUpdate: !_vertical ? _drag : null,
+        onHorizontalDragEnd: !_vertical ? (_) => _finish() : null,
+        onVerticalDragCancel: _vertical ? _finish : null,
+        onHorizontalDragCancel: !_vertical ? _finish : null,
+        child: SizedBox(
+          width: _vertical ? double.infinity : 5,
+          height: _vertical ? 5 : double.infinity,
+          child: ColoredBox(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class _ZonePlaceholder extends StatelessWidget {
   const _ZonePlaceholder({required this.zone, this.showLabel = true});
 

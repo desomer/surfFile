@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../models/super_layout_config.dart';
 import 'super_container.dart';
 
 /// Taille qu'un slot demande à la zone qui le reçoit.
@@ -90,6 +91,8 @@ class SlotStack extends StatelessWidget {
     this.mover,
     this.emphasis,
     this.preferredSizes = const {},
+    this.sizeConstraints = const {},
+    this.layoutSize = Size.zero,
     this.onEditPreferredSize,
     this.onRemoveSlot,
     super.key,
@@ -122,6 +125,8 @@ class SlotStack extends StatelessWidget {
   /// Grossissement partagé des étiquettes (zones et slots) de la disposition.
   final LabelEmphasis? emphasis;
   final Map<String, Size?> preferredSizes;
+  final Map<String, SlotSizeConstraints> sizeConstraints;
+  final Size layoutSize;
   final Future<void> Function(SlotImplementation)? onEditPreferredSize;
   final Future<void> Function(SlotImplementation)? onRemoveSlot;
 
@@ -138,10 +143,14 @@ class SlotStack extends StatelessWidget {
       stretch: stretch,
       preferredSizes: [
         for (final slot in visible)
-          preferredSizes.containsKey(slot.id)
+          sizeConstraints.containsKey(slot.id)
+              ? null
+              : preferredSizes.containsKey(slot.id)
               ? preferredSizes[slot.id]
               : slot.preferredSize,
       ],
+      sizeConstraints: [for (final slot in visible) sizeConstraints[slot.id]],
+      layoutSize: layoutSize,
       sizing: [for (final slot in visible) slot.sizing],
       children: [
         for (final (index, slot) in visible.indexed)
@@ -184,6 +193,8 @@ class _SlotFlex extends MultiChildRenderObjectWidget {
     required this.expand,
     required this.stretch,
     required this.preferredSizes,
+    required this.sizeConstraints,
+    required this.layoutSize,
     required this.sizing,
     required super.children,
   });
@@ -192,6 +203,8 @@ class _SlotFlex extends MultiChildRenderObjectWidget {
   final Axis axis;
   final bool stretch;
   final List<Size?> preferredSizes;
+  final List<SlotSizeConstraints?> sizeConstraints;
+  final Size layoutSize;
   final List<SlotSizing> sizing;
 
   @override
@@ -227,6 +240,7 @@ class _RenderSlotFlex extends RenderBox
   void performLayout() {
     final children = getChildrenAsList();
     final preferences = _configuration.preferredSizes;
+    final sizeConstraints = _configuration.sizeConstraints;
     final horizontal = _configuration.axis == Axis.horizontal;
     double mainExtent(Size size) => horizontal ? size.width : size.height;
     double crossExtent(Size size) => horizontal ? size.height : size.width;
@@ -234,21 +248,136 @@ class _RenderSlotFlex extends RenderBox
         horizontal ? Size(main, cross) : Size(cross, main);
     final maxMain = mainExtent(constraints.biggest);
     final maxCross = crossExtent(constraints.biggest);
+    final layoutMain = mainExtent(_configuration.layoutSize);
+    final layoutCross = crossExtent(_configuration.layoutSize);
     final expand = _configuration.expand && maxMain.isFinite;
     final stretch = _configuration.stretch && maxCross.isFinite;
+    final bounds = <(double, double, double?, double, double, double?)>[];
+    for (final (index, _) in children.indexed) {
+      final legacy = preferences[index];
+      final configured = sizeConstraints[index];
+      double? value(
+        SlotDimension? dimension,
+        double available,
+        double wholeLayout,
+      ) => dimension?.resolve(
+        configured?.percentBasis == SlotPercentBasis.layout
+            ? wholeLayout
+            : available,
+      );
+      double? preferredMain = configured == null
+          ? legacy == null
+                ? null
+                : mainExtent(legacy)
+          : value(
+              horizontal
+                  ? configured.preferredWidth
+                  : configured.preferredHeight,
+              maxMain,
+              layoutMain,
+            );
+      double? preferredCross = configured == null
+          ? legacy == null
+                ? null
+                : crossExtent(legacy)
+          : value(
+              horizontal
+                  ? configured.preferredHeight
+                  : configured.preferredWidth,
+              maxCross,
+              layoutCross,
+            );
+      double bound(
+        SlotDimension? dimension,
+        double available,
+        double wholeLayout,
+        double fallback,
+      ) => (value(dimension, available, wholeLayout) ?? fallback).clamp(
+        0.0,
+        available.isFinite ? available : double.infinity,
+      );
+      final minMain = bound(
+        configured == null
+            ? null
+            : horizontal
+            ? configured.minWidth
+            : configured.minHeight,
+        maxMain,
+        layoutMain,
+        0,
+      );
+      final maxConfiguredMain = bound(
+        configured == null
+            ? null
+            : horizontal
+            ? configured.maxWidth
+            : configured.maxHeight,
+        maxMain,
+        layoutMain,
+        maxMain,
+      );
+      final minCross = bound(
+        configured == null
+            ? null
+            : horizontal
+            ? configured.minHeight
+            : configured.minWidth,
+        maxCross,
+        layoutCross,
+        0,
+      );
+      final maxConfiguredCross = bound(
+        configured == null
+            ? null
+            : horizontal
+            ? configured.maxHeight
+            : configured.maxWidth,
+        maxCross,
+        layoutCross,
+        maxCross,
+      );
+      final effectiveMaxMain = maxConfiguredMain < minMain
+          ? minMain
+          : maxConfiguredMain;
+      final effectiveMaxCross = maxConfiguredCross < minCross
+          ? minCross
+          : maxConfiguredCross;
+      if (preferredMain != null) {
+        final hasConfiguredMax = configured != null &&
+            (horizontal
+                ? configured.maxWidth != null
+                : configured.maxHeight != null);
+        preferredMain = preferredMain.clamp(
+          minMain,
+          hasConfiguredMax ? effectiveMaxMain : double.infinity,
+        );
+      }
+      if (preferredCross != null) {
+        preferredCross = preferredCross.clamp(minCross, effectiveMaxCross);
+      }
+      bounds.add((
+        minMain,
+        effectiveMaxMain,
+        preferredMain,
+        minCross,
+        effectiveMaxCross,
+        preferredCross,
+      ));
+    }
     var naturalExtent = 0.0;
     var preferredExtent = 0.0;
     var fills = 0;
     bool fillsSpace(int index) =>
         expand &&
-        preferences[index] == null &&
+        bounds[index].$3 == null &&
         _configuration.sizing[index] == SlotSizing.fill;
-    BoxConstraints childConstraints({Size? preferred, double? extent}) {
-      final cross = preferred == null
-          ? null
-          : crossExtent(preferred).clamp(0.0, maxCross);
-      final min = dimensions(extent ?? 0, cross ?? (stretch ? maxCross : 0));
-      final max = dimensions(extent ?? maxMain, cross ?? maxCross);
+    BoxConstraints childConstraints(int index, {double? main, double? cross}) {
+      final bound = bounds[index];
+      final min = dimensions(
+        main ?? bound.$1,
+        cross ?? (stretch ? maxCross : bound.$4),
+      );
+      final max = dimensions(main ?? bound.$2, cross ?? bound.$5);
       return BoxConstraints(
         minWidth: min.width,
         maxWidth: max.width,
@@ -260,13 +389,16 @@ class _RenderSlotFlex extends RenderBox
     // Mesurer le contenu naturel avant de partager le reste entre les tailles
     // preferees et les slots fill evite un debordement avec des slots mixtes.
     for (final (index, child) in children.indexed) {
-      final preferred = preferences[index];
-      if (preferred != null) {
-        preferredExtent += mainExtent(preferred);
+      final bound = bounds[index];
+      if (bound.$3 != null) {
+        preferredExtent += bound.$3!;
       } else if (fillsSpace(index)) {
         fills++;
       } else {
-        child.layout(childConstraints(), parentUsesSize: true);
+        child.layout(
+          childConstraints(index, cross: bound.$6),
+          parentUsesSize: true,
+        );
         naturalExtent += mainExtent(child.size);
       }
     }
@@ -281,15 +413,14 @@ class _RenderSlotFlex extends RenderBox
     var main = 0.0;
     var cross = 0.0;
     for (final (index, child) in children.indexed) {
-      final preferred = preferences[index];
-      if (preferred != null || fillsSpace(index)) {
+      final bound = bounds[index];
+      if (bound.$3 != null || fillsSpace(index)) {
+        final desiredMain = bound.$3 ?? fillExtent.clamp(bound.$1, bound.$2);
+        final scaledMain = bound.$3 == null
+            ? desiredMain
+            : (desiredMain * scale).clamp(bound.$1, bound.$2);
         child.layout(
-          childConstraints(
-            preferred: preferred,
-            extent: preferred == null
-                ? fillExtent
-                : mainExtent(preferred) * scale,
-          ),
+          childConstraints(index, main: scaledMain, cross: bound.$6),
           parentUsesSize: true,
         );
       }

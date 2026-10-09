@@ -123,6 +123,104 @@ void main() {
     }
   });
 
+  test('slot size constraints serialize pixel and percentage dimensions', () {
+    final config = base.copyWith(
+      slotSizeConstraints: {
+        'first': const SlotSizeConstraints(
+          minWidth: SlotDimension(25, SlotSizeUnit.percent),
+          minHeight: SlotDimension(80, SlotSizeUnit.pixels),
+          maxWidth: SlotDimension(500, SlotSizeUnit.pixels),
+          maxHeight: SlotDimension(75, SlotSizeUnit.percent),
+          preferredWidth: SlotDimension(240, SlotSizeUnit.pixels),
+          preferredHeight: SlotDimension(50, SlotSizeUnit.percent),
+          percentBasis: SlotPercentBasis.layout,
+        ),
+      },
+    );
+    expect(SuperLayoutConfig.fromJson(config.toJson()), config);
+    expect(config.copyWith(), config);
+    expect(config.withoutSlot('first').slotSizeConstraints, isEmpty);
+    expect(
+      () => SuperLayoutConfig.fromJson({
+        'slotSizeConstraints': {
+          'first': {
+            'preferredWidth': {'value': -1, 'unit': 'px'},
+          },
+        },
+      }),
+      throwsFormatException,
+    );
+  });
+
+  testWidgets('slot percentage sizes and limits use the available zone', (
+    tester,
+  ) async {
+    final config = base.copyWith(
+      slotSizeConstraints: {
+        'first': const SlotSizeConstraints(
+          minWidth: SlotDimension(50, SlotSizeUnit.percent),
+          minHeight: SlotDimension(120, SlotSizeUnit.pixels),
+          maxWidth: SlotDimension(350, SlotSizeUnit.pixels),
+          maxHeight: SlotDimension(50, SlotSizeUnit.percent),
+          preferredWidth: SlotDimension(40, SlotSizeUnit.percent),
+          preferredHeight: SlotDimension(25, SlotSizeUnit.percent),
+        ),
+      },
+    );
+    await pump(tester, config: config, slots: [slot('first')]);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(300, 120),
+    );
+  });
+
+  testWidgets('slot size editor stores percentage preferences', (tester) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      config: base.copyWith(north: true),
+      editMode: mode,
+      onChanged: (value) => changed = value,
+    );
+    await openEditor(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-width')),
+      '40',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-height')),
+      '25',
+    );
+    await tester.tap(find.byKey(const ValueKey('slot-unit-preferred-width')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('%').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('slot-unit-preferred-height')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('%').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('slot-percent-basis')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Tout le SuperLayout').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(
+      changed!.slotSizeConstraints['first'],
+      const SlotSizeConstraints(
+        preferredWidth: SlotDimension(40, SlotSizeUnit.percent),
+        preferredHeight: SlotDimension(25, SlotSizeUnit.percent),
+        percentBasis: SlotPercentBasis.layout,
+      ),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(240, 100),
+    );
+  });
+
   test('removing a slot cleans only its instance configuration', () {
     final config = base
         .copyWith(

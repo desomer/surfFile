@@ -249,54 +249,140 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   Future<void> _editSlotPreferredSize(SlotImplementation slot) async {
-    final sizes = _config.value.slotPreferredSizes;
-    final initial = sizes.containsKey(slot.id)
-        ? sizes[slot.id]
+    final config = _config.value;
+    final saved = config.slotSizeConstraints[slot.id];
+    final legacy = config.slotPreferredSizes.containsKey(slot.id)
+        ? config.slotPreferredSizes[slot.id]
         : slot.preferredSize;
-    final width = TextEditingController(text: initial?.width.toString() ?? '');
-    final height = TextEditingController(
-      text: initial?.height.toString() ?? '',
+    final fields = {
+      'min-width': (saved?.minWidth, 'Largeur minimale'),
+      'min-height': (saved?.minHeight, 'Hauteur minimale'),
+      'preferred-width': (
+        saved?.preferredWidth ??
+            (saved == null && legacy != null
+                ? SlotDimension(legacy.width, SlotSizeUnit.pixels)
+                : null),
+        'Largeur préférée',
+      ),
+      'preferred-height': (
+        saved?.preferredHeight ??
+            (saved == null && legacy != null
+                ? SlotDimension(legacy.height, SlotSizeUnit.pixels)
+                : null),
+        'Hauteur préférée',
+      ),
+      'max-width': (saved?.maxWidth, 'Largeur maximale'),
+      'max-height': (saved?.maxHeight, 'Hauteur maximale'),
+    };
+    final controllers = {
+      for (final entry in fields.entries)
+        entry.key: TextEditingController(
+          text: entry.value.$1?.value.toString() ?? '',
+        ),
+    };
+    final units = {
+      for (final entry in fields.entries)
+        entry.key: ValueNotifier(entry.value.$1?.unit ?? SlotSizeUnit.pixels),
+    };
+    final percentBasis = ValueNotifier(
+      saved?.percentBasis ?? SlotPercentBasis.zone,
     );
     final form = GlobalKey<FormState>();
     String? validate(String? text) {
-      final value = double.tryParse((text ?? '').replaceAll(',', '.'));
-      return value != null && value.isFinite && value > 0
+      if ((text ?? '').trim().isEmpty) return null;
+      final value = double.tryParse(text!.replaceAll(',', '.'));
+      return value != null && value.isFinite && value >= 0
           ? null
           : 'Saisissez une dimension positive en pixels.';
     }
 
     try {
-      final result = await showDialog<({Size? size})>(
+      final result = await showDialog<SlotSizeConstraints>(
         context: context,
         builder: (context) => AlertDialog(
-          title: Text('Taille préférée : ${slot.label}'),
+          title: Text('Tailles du slot : ${slot.label}'),
           content: SizedBox(
-            width: 320,
+            width: 420,
             child: Form(
               key: form,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final field in [
-                    (controller: width, label: 'Largeur (px)', key: 'width'),
-                    (controller: height, label: 'Hauteur (px)', key: 'height'),
-                  ])
-                    TextFormField(
-                      key: ValueKey('slot-preferred-${field.key}'),
-                      controller: field.controller,
-                      decoration: InputDecoration(labelText: field.label),
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      validator: validate,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Base de calcul des pourcentages'),
+                    ValueListenableBuilder<SlotPercentBasis>(
+                      valueListenable: percentBasis,
+                      builder: (context, value, _) =>
+                          DropdownButton<SlotPercentBasis>(
+                            key: const ValueKey('slot-percent-basis'),
+                            value: value,
+                            onChanged: (basis) {
+                              if (basis != null) percentBasis.value = basis;
+                            },
+                            items: const [
+                              DropdownMenuItem(
+                                value: SlotPercentBasis.zone,
+                                child: Text('Espace disponible de la zone'),
+                              ),
+                              DropdownMenuItem(
+                                value: SlotPercentBasis.layout,
+                                child: Text('Tout le SuperLayout'),
+                              ),
+                            ],
+                          ),
                     ),
-                ],
+                    for (final entry in fields.entries)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              key: ValueKey('slot-${entry.key}'),
+                              controller: controllers[entry.key],
+                              decoration: InputDecoration(
+                                labelText: entry.value.$2,
+                              ),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              validator: validate,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ValueListenableBuilder<SlotSizeUnit>(
+                            valueListenable: units[entry.key]!,
+                            builder: (context, unit, _) =>
+                                DropdownButton<SlotSizeUnit>(
+                                  key: ValueKey('slot-unit-${entry.key}'),
+                                  value: unit,
+                                  onChanged: (value) {
+                                    if (value != null) {
+                                      units[entry.key]!.value = value;
+                                    }
+                                  },
+                                  items: const [
+                                    DropdownMenuItem(
+                                      value: SlotSizeUnit.pixels,
+                                      child: Text('px'),
+                                    ),
+                                    DropdownMenuItem(
+                                      value: SlotSizeUnit.percent,
+                                      child: Text('%'),
+                                    ),
+                                  ],
+                                ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop((size: null)),
+              onPressed: () =>
+                  Navigator.of(context).pop(const SlotSizeConstraints()),
               child: const Text('Taille automatique'),
             ),
             TextButton(
@@ -306,12 +392,26 @@ class SuperLayoutState extends State<SuperLayout> {
             FilledButton(
               onPressed: () {
                 if (!form.currentState!.validate()) return;
-                Navigator.of(context).pop((
-                  size: Size(
-                    double.parse(width.text.replaceAll(',', '.')),
-                    double.parse(height.text.replaceAll(',', '.')),
+                SlotDimension? dimension(String key) {
+                  final text = controllers[key]!.text.trim();
+                  if (text.isEmpty) return null;
+                  return SlotDimension(
+                    double.parse(text.replaceAll(',', '.')),
+                    units[key]!.value,
+                  );
+                }
+
+                Navigator.of(context).pop(
+                  SlotSizeConstraints(
+                    minWidth: dimension('min-width'),
+                    minHeight: dimension('min-height'),
+                    preferredWidth: dimension('preferred-width'),
+                    preferredHeight: dimension('preferred-height'),
+                    maxWidth: dimension('max-width'),
+                    maxHeight: dimension('max-height'),
+                    percentBasis: percentBasis.value,
                   ),
-                ));
+                );
               },
               child: const Text('Appliquer'),
             ),
@@ -319,13 +419,70 @@ class SuperLayoutState extends State<SuperLayout> {
         ),
       );
       if (result != null && mounted) {
-        _update(_config.value.withSlotPreferredSize(slot.id, result.size));
+        final current = _config.value;
+        if (result.minWidth == null &&
+            result.minHeight == null &&
+            result.maxWidth == null &&
+            result.maxHeight == null &&
+            result.preferredWidth == null &&
+            result.preferredHeight == null) {
+          _update(
+            current
+                .withSlotPreferredSize(slot.id, null)
+                .copyWith(
+                  slotSizeConstraints: {...current.slotSizeConstraints}
+                    ..remove(slot.id),
+                ),
+          );
+        } else if (result.minWidth == null &&
+            result.minHeight == null &&
+            result.maxWidth == null &&
+            result.maxHeight == null &&
+            result.preferredWidth?.unit == SlotSizeUnit.pixels &&
+            result.preferredHeight?.unit == SlotSizeUnit.pixels &&
+            result.percentBasis == SlotPercentBasis.zone &&
+            result.preferredWidth!.value > 0 &&
+            result.preferredHeight!.value > 0) {
+          _update(
+            current
+                .withSlotPreferredSize(
+                  slot.id,
+                  Size(
+                    result.preferredWidth!.value,
+                    result.preferredHeight!.value,
+                  ),
+                )
+                .copyWith(
+                  slotSizeConstraints: {...current.slotSizeConstraints}
+                    ..remove(slot.id),
+                ),
+          );
+        } else {
+          _update(
+            current
+                .copyWith(
+                  slotPreferredSizes: {...current.slotPreferredSizes}
+                    ..remove(slot.id),
+                )
+                .copyWith(
+                  slotSizeConstraints: {
+                    ...current.slotSizeConstraints,
+                    slot.id: result,
+                  },
+                ),
+          );
+        }
       }
     } finally {
       // Le dialogue peut encore terminer son animation de fermeture.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        width.dispose();
-        height.dispose();
+        for (final controller in controllers.values) {
+          controller.dispose();
+        }
+        for (final unit in units.values) {
+          unit.dispose();
+        }
+        percentBasis.dispose();
       });
     }
   }
@@ -427,6 +584,7 @@ class SuperLayoutState extends State<SuperLayout> {
     SuperLayoutZone zone,
     Set<SuperLayoutZone> autoSides,
     bool editMode,
+    Size layoutSize,
   ) {
     final content = config.contentZone(zone);
     final slots = _slotsOf(config, content);
@@ -447,6 +605,8 @@ class SuperLayoutState extends State<SuperLayout> {
       slots: slots,
       axis: axis,
       preferredSizes: config.slotPreferredSizes,
+      sizeConstraints: config.slotSizeConstraints,
+      layoutSize: layoutSize,
       onEditPreferredSize: editMode && widget.editable
           ? _editSlotPreferredSize
           : null,
@@ -531,17 +691,26 @@ class SuperLayoutState extends State<SuperLayout> {
                   _hasContent(config, config.contentZone(side)))
                 side,
           };
-          return _ZoneLayout(
-            config: config,
-            autoSides: autoSides,
-            children: [
+          return LayoutBuilder(
+            builder: (context, constraints) {
+              final layoutSize = constraints.biggest;
+              return _ZoneLayout(
+                config: config,
+                autoSides: autoSides,
+                children: [
               for (final zone in zones)
                 _ZoneEntry(
                   key: ValueKey('super-layout-${zone.name}'),
                   zone: zone,
                   child: _LabelScope(
                     path: [...parentPath, name, zone.label],
-                    child: _contentOf(config, zone, autoSides, editMode),
+                    child: _contentOf(
+                      config,
+                      zone,
+                      autoSides,
+                      editMode,
+                      layoutSize,
+                    ),
                   ),
                 ),
               // Une zone reçoit un slot glissé sur sa partie libre : il s'y range
@@ -633,7 +802,46 @@ class SuperLayoutState extends State<SuperLayout> {
                       ),
                     ),
               ],
-            ],
+                  if (widget.editable)
+                    for (final side in SuperLayoutZone.values)
+                      if (config.canResize(side) && zones.contains(side))
+                        _ZoneEntry(
+                          key: ValueKey(
+                            'super-layout-resize-overlay-${side.name}',
+                          ),
+                          zone: side,
+                          overlay: true,
+                          child: _ZoneResizeHandle(
+                            zone: side,
+                            bounds: (size) => _config.value.resizeBounds(
+                              side,
+                              _slotsOf(
+                                _config.value,
+                                _config.value.contentZone(side),
+                              ).map((slot) => slot.id),
+                              side == SuperLayoutZone.north ||
+                                      side == SuperLayoutZone.south
+                                  ? size.height
+                                  : size.width,
+                            ),
+                            onResize: (extent) {
+                              if (!mounted || !widget.editable) return;
+                              final current = _config.value;
+                              if (!current.canResize(side) ||
+                                  !current.hasSide(side)) {
+                                return;
+                              }
+                              _update(
+                                current
+                                    .withAuto(side, false)
+                                    .withSize(side, extent),
+                              );
+                            },
+                          ),
+                        ),
+                ],
+              );
+            },
           );
         },
       ),

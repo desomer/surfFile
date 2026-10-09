@@ -64,6 +64,123 @@ enum CornerMerge {
   column,
 }
 
+enum SlotSizeUnit { pixels, percent }
+
+enum SlotPercentBasis { zone, layout }
+
+class SlotDimension {
+  const SlotDimension(this.value, this.unit);
+
+  final double value;
+  final SlotSizeUnit unit;
+
+  double resolve(double available) =>
+      unit == SlotSizeUnit.percent ? available * value / 100 : value;
+
+  Map<String, Object> toJson() => {
+    'value': value,
+    'unit': unit == SlotSizeUnit.pixels ? 'px' : 'percent',
+  };
+
+  static SlotDimension fromJson(Object? value) {
+    if (value is! Map ||
+        value['value'] is! num ||
+        !(value['value'] as num).isFinite ||
+        (value['value'] as num) < 0 ||
+        (value['unit'] != 'px' && value['unit'] != 'percent')) {
+      throw const FormatException('Dimension de slot invalide.');
+    }
+    return SlotDimension(
+      (value['value'] as num).toDouble(),
+      value['unit'] == 'px' ? SlotSizeUnit.pixels : SlotSizeUnit.percent,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SlotDimension && other.value == value && other.unit == unit;
+
+  @override
+  int get hashCode => Object.hash(value, unit);
+}
+
+class SlotSizeConstraints {
+  const SlotSizeConstraints({
+    this.minWidth,
+    this.minHeight,
+    this.maxWidth,
+    this.maxHeight,
+    this.preferredWidth,
+    this.preferredHeight,
+    this.percentBasis = SlotPercentBasis.zone,
+  });
+
+  final SlotDimension? minWidth;
+  final SlotDimension? minHeight;
+  final SlotDimension? maxWidth;
+  final SlotDimension? maxHeight;
+  final SlotDimension? preferredWidth;
+  final SlotDimension? preferredHeight;
+  final SlotPercentBasis percentBasis;
+
+  Map<String, Object?> toJson() => {
+    'percentBasis': percentBasis.name,
+    for (final (key, dimension) in [
+      ('minWidth', minWidth),
+      ('minHeight', minHeight),
+      ('maxWidth', maxWidth),
+      ('maxHeight', maxHeight),
+      ('preferredWidth', preferredWidth),
+      ('preferredHeight', preferredHeight),
+    ])
+      if (dimension != null) key: dimension.toJson(),
+  };
+
+  static SlotSizeConstraints fromJson(Object? value) {
+    if (value is! Map) {
+      throw const FormatException('Contraintes de taille invalides.');
+    }
+    SlotDimension? dimension(String key) =>
+        value.containsKey(key) ? SlotDimension.fromJson(value[key]) : null;
+    final basis = switch (value['percentBasis']) {
+      null || 'zone' => SlotPercentBasis.zone,
+      'layout' => SlotPercentBasis.layout,
+      _ => throw const FormatException('Base de pourcentage invalide.'),
+    };
+    return SlotSizeConstraints(
+      minWidth: dimension('minWidth'),
+      minHeight: dimension('minHeight'),
+      maxWidth: dimension('maxWidth'),
+      maxHeight: dimension('maxHeight'),
+      preferredWidth: dimension('preferredWidth'),
+      preferredHeight: dimension('preferredHeight'),
+      percentBasis: basis,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is SlotSizeConstraints &&
+      other.minWidth == minWidth &&
+      other.minHeight == minHeight &&
+      other.maxWidth == maxWidth &&
+      other.maxHeight == maxHeight &&
+      other.preferredWidth == preferredWidth &&
+      other.preferredHeight == preferredHeight &&
+      other.percentBasis == percentBasis;
+
+  @override
+  int get hashCode => Object.hash(
+    minWidth,
+    minHeight,
+    maxWidth,
+    maxHeight,
+    preferredWidth,
+    preferredHeight,
+    percentBasis,
+  );
+}
+
 /// Disposition en grille 3×3 : les zones Nord, Sud, Est et Ouest sont
 /// optionnelles et les coins peuvent fusionner avec l'un de leurs voisins.
 ///
@@ -83,11 +200,14 @@ class SuperLayoutConfig {
     this.southSize = 80,
     this.westSize = 120,
     this.eastSize = 120,
+    this.resizeSides = false,
+    this.sideResizing = const {},
     this.swaps = const {},
     this.autoSides = const {},
     this.placements = const {},
     this.slotTypes = const {},
     this.slotPreferredSizes = const {},
+    this.slotSizeConstraints = const {},
     this.zoneAxes = const {},
   });
 
@@ -109,6 +229,84 @@ class SuperLayoutConfig {
   final double westSize;
   final double eastSize;
 
+  /// Autorise le redimensionnement des quatre cotes par leur bord interieur.
+  final bool resizeSides;
+
+  /// Reglages par cote ; sans entree, utilise [resizeSides].
+  final Map<SuperLayoutZone, bool> sideResizing;
+
+  bool canResize(SuperLayoutZone side) =>
+      side.isSide && (sideResizing[side] ?? resizeSides);
+
+  SuperLayoutConfig withSideResizing(SuperLayoutZone side, bool enabled) {
+    if (!side.isSide) throw ArgumentError.value(side, 'side', 'Pas un cote');
+    return copyWith(sideResizing: {...sideResizing, side: enabled});
+  }
+
+  /// Bornes du glisser, en resolvant les % de zone sur la taille candidate.
+  ({double min, double max}) resizeBounds(
+    SuperLayoutZone side,
+    Iterable<String> visibleSlotIds,
+    double layoutExtent,
+  ) {
+    if (!side.isSide) throw ArgumentError.value(side, 'side', 'Pas un cote');
+    final vertical =
+        side == SuperLayoutZone.north || side == SuperLayoutZone.south;
+    final stacked = axisOf(side) == (vertical ? Axis.vertical : Axis.horizontal);
+    var lower = minSize;
+    var upper = maxSize;
+    void constrain(double coefficient, double constant) {
+      if (coefficient > 0) {
+        final bound = constant / coefficient;
+        if (bound < upper) upper = bound;
+      } else if (coefficient < 0) {
+        final bound = constant / coefficient;
+        if (bound > lower) lower = bound;
+      } else if (constant < 0) {
+        lower = double.infinity;
+      }
+    }
+
+    (double, double) term(SlotDimension? dimension, SlotPercentBasis basis) {
+      if (dimension == null) return (0, 0);
+      if (dimension.unit == SlotSizeUnit.pixels) return (0, dimension.value);
+      return basis == SlotPercentBasis.zone
+          ? (dimension.value / 100, 0)
+          : (0, dimension.resolve(layoutExtent));
+    }
+
+    var minCoefficient = 0.0;
+    var minConstant = 0.0;
+    var maxCoefficient = 0.0;
+    var maxConstant = 0.0;
+    var boundedMax = true;
+    var count = 0;
+    for (final id in visibleSlotIds) {
+      count++;
+      final constraints = slotSizeConstraints[id];
+      final minimum = vertical ? constraints?.minHeight : constraints?.minWidth;
+      final maximum = vertical ? constraints?.maxHeight : constraints?.maxWidth;
+      final basis = constraints?.percentBasis ?? SlotPercentBasis.zone;
+      final (minA, minB) = term(minimum, basis);
+      final (maxA, maxB) = term(maximum, basis);
+      if (stacked) {
+        minCoefficient += minA;
+        minConstant += minB;
+        maxCoefficient += maxA;
+        maxConstant += maxB;
+        boundedMax &= maximum != null;
+      } else {
+        if (minimum != null) constrain(minA - 1, -minB);
+        if (maximum != null) constrain(1 - maxA, maxB);
+      }
+    }
+    if (stacked && count > 0) {
+      constrain(minCoefficient - 1, -minConstant);
+      if (boundedMax) constrain(1 - maxCoefficient, maxConstant);
+    }
+    return (min: lower, max: upper);
+  }
+
   /// Paires de zones opposées dont les contenus sont échangés, identifiées par
   /// leur représentant (Nord, Ouest, Nord-Ouest ou Nord-Est).
   final Set<SuperLayoutZone> swaps;
@@ -127,6 +325,10 @@ class SuperLayoutConfig {
 
   /// Tailles preferees par ID d'instance ; null force la taille automatique.
   final Map<String, Size?> slotPreferredSizes;
+
+  /// Bornes min/max et tailles preferees par instance, en pixels ou en
+  /// pourcentage de la zone qui contient le slot.
+  final Map<String, SlotSizeConstraints> slotSizeConstraints;
 
   /// Axe des slots par zone de contenu ; une zone absente utilise Column.
   final Map<SuperLayoutZone, Axis> zoneAxes;
@@ -219,6 +421,13 @@ class SuperLayoutConfig {
     _ => eastSize,
   };
 
+  SuperLayoutConfig withSize(SuperLayoutZone side, double value) {
+    if (!side.isSide || !value.isFinite || value < minSize || value > maxSize) {
+      throw ArgumentError('Cote et taille entre $minSize et $maxSize requis.');
+    }
+    return _withSize(side, value);
+  }
+
   SuperLayoutConfig _withSize(SuperLayoutZone side, double value) =>
       switch (side) {
         SuperLayoutZone.north => copyWith(northSize: value),
@@ -302,6 +511,7 @@ class SuperLayoutConfig {
     },
     slotTypes: {...slotTypes}..remove(id),
     slotPreferredSizes: {...slotPreferredSizes}..remove(id),
+    slotSizeConstraints: {...slotSizeConstraints}..remove(id),
   );
 
   bool hasSide(SuperLayoutZone zone) => switch (zone) {
@@ -342,11 +552,14 @@ class SuperLayoutConfig {
     double? southSize,
     double? westSize,
     double? eastSize,
+    bool? resizeSides,
+    Map<SuperLayoutZone, bool>? sideResizing,
     Set<SuperLayoutZone>? swaps,
     Set<SuperLayoutZone>? autoSides,
     Map<SuperLayoutZone, List<String>>? placements,
     Map<String, String>? slotTypes,
     Map<String, Size?>? slotPreferredSizes,
+    Map<String, SlotSizeConstraints>? slotSizeConstraints,
     Map<SuperLayoutZone, Axis>? zoneAxes,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
@@ -361,11 +574,14 @@ class SuperLayoutConfig {
     southSize: southSize ?? this.southSize,
     westSize: westSize ?? this.westSize,
     eastSize: eastSize ?? this.eastSize,
+    resizeSides: resizeSides ?? this.resizeSides,
+    sideResizing: sideResizing ?? this.sideResizing,
     swaps: swaps ?? this.swaps,
     autoSides: autoSides ?? this.autoSides,
     placements: placements ?? this.placements,
     slotTypes: slotTypes ?? this.slotTypes,
     slotPreferredSizes: slotPreferredSizes ?? this.slotPreferredSizes,
+    slotSizeConstraints: slotSizeConstraints ?? this.slotSizeConstraints,
     zoneAxes: zoneAxes ?? this.zoneAxes,
   );
 
@@ -400,6 +616,10 @@ class SuperLayoutConfig {
     'southSize': southSize,
     'westSize': westSize,
     'eastSize': eastSize,
+    'resizeSides': resizeSides,
+    'sideResizing': {
+      for (final entry in sideResizing.entries) entry.key.name: entry.value,
+    },
     'swaps': [for (final zone in swaps) zone.name],
     'autoSides': [for (final zone in autoSides) zone.name],
     'zoneAxes': {
@@ -411,6 +631,10 @@ class SuperLayoutConfig {
         entry.key: entry.value == null
             ? null
             : {'width': entry.value!.width, 'height': entry.value!.height},
+    },
+    'slotSizeConstraints': {
+      for (final entry in slotSizeConstraints.entries)
+        entry.key: entry.value.toJson(),
     },
     'placements': {
       for (final MapEntry(:key, :value) in placements.entries)
@@ -433,6 +657,23 @@ class SuperLayoutConfig {
       final v = value[key] ?? fallback;
       if (v is! bool) throw FormatException('Valeur invalide pour "$key".');
       return v;
+    }
+
+    Map<SuperLayoutZone, bool> resizing() {
+      final raw = value['sideResizing'];
+      if (raw == null) return fallback.sideResizing;
+      if (raw is! Map) throw const FormatException('Redimensionnement invalide.');
+      final result = <SuperLayoutZone, bool>{};
+      for (final entry in raw.entries) {
+        final side = SuperLayoutZone.values
+            .where((side) => side.isSide && side.name == entry.key)
+            .firstOrNull;
+        if (side == null || entry.value is! bool) {
+          throw const FormatException('Redimensionnement par cote invalide.');
+        }
+        result[side] = entry.value as bool;
+      }
+      return result;
     }
 
     CornerMerge merge(String key, CornerMerge fallback) {
@@ -564,6 +805,22 @@ class SuperLayoutConfig {
       return result;
     }
 
+    Map<String, SlotSizeConstraints> slotConstraints() {
+      final raw = value['slotSizeConstraints'];
+      if (raw == null) return fallback.slotSizeConstraints;
+      if (raw is! Map) {
+        throw const FormatException('Contraintes de taille invalides.');
+      }
+      final result = <String, SlotSizeConstraints>{};
+      for (final entry in raw.entries) {
+        if (entry.key is! String || (entry.key as String).isEmpty) {
+          throw const FormatException('Identifiant de slot invalide.');
+        }
+        result[entry.key as String] = SlotSizeConstraints.fromJson(entry.value);
+      }
+      return result;
+    }
+
     Map<SuperLayoutZone, Axis> axes() {
       final raw = value['zoneAxes'];
       if (raw == null) return fallback.zoneAxes;
@@ -600,11 +857,14 @@ class SuperLayoutConfig {
       southSize: size('southSize', fallback.southSize),
       westSize: size('westSize', fallback.westSize),
       eastSize: size('eastSize', fallback.eastSize),
+      resizeSides: flag('resizeSides', fallback.resizeSides),
+      sideResizing: resizing(),
       swaps: swapSet(),
       autoSides: autoSet(),
       placements: placementMap(),
       slotTypes: value['placements'] == null ? fallback.slotTypes : slotTypes,
       slotPreferredSizes: preferredSizes(),
+      slotSizeConstraints: slotConstraints(),
       zoneAxes: axes(),
     );
   }
@@ -695,6 +955,11 @@ class SuperLayoutConfig {
       other.southSize == southSize &&
       other.westSize == westSize &&
       other.eastSize == eastSize &&
+      other.resizeSides == resizeSides &&
+      other.sideResizing.length == sideResizing.length &&
+      sideResizing.entries.every(
+        (entry) => other.sideResizing[entry.key] == entry.value,
+      ) &&
       other.swaps.length == swaps.length &&
       other.swaps.containsAll(swaps) &&
       other.autoSides.length == autoSides.length &&
@@ -708,6 +973,12 @@ class SuperLayoutConfig {
         (entry) =>
             other.slotPreferredSizes.containsKey(entry.key) &&
             other.slotPreferredSizes[entry.key] == entry.value,
+      ) &&
+      other.slotSizeConstraints.length == slotSizeConstraints.length &&
+      slotSizeConstraints.entries.every(
+        (entry) =>
+            other.slotSizeConstraints.containsKey(entry.key) &&
+            other.slotSizeConstraints[entry.key] == entry.value,
       ) &&
       _samePlacements(other);
 
@@ -740,6 +1011,13 @@ class SuperLayoutConfig {
     southSize,
     westSize,
     eastSize,
+    Object.hash(
+      resizeSides,
+      Object.hashAllUnordered([
+        for (final entry in sideResizing.entries)
+          Object.hash(entry.key, entry.value),
+      ]),
+    ),
     Object.hashAllUnordered(swaps),
     Object.hashAllUnordered(autoSides),
     Object.hashAllUnordered([
@@ -747,6 +1025,10 @@ class SuperLayoutConfig {
     ]),
     Object.hashAllUnordered([
       for (final entry in slotPreferredSizes.entries)
+        Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in slotSizeConstraints.entries)
         Object.hash(entry.key, entry.value),
     ]),
     Object.hashAllUnordered([

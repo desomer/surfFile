@@ -34,12 +34,7 @@ class SuperLayoutEditor extends StatelessWidget {
       };
 
   SuperLayoutConfig _withSize(SuperLayoutZone side, double value) =>
-      switch (side) {
-        SuperLayoutZone.north => config.copyWith(northSize: value),
-        SuperLayoutZone.south => config.copyWith(southSize: value),
-        SuperLayoutZone.west => config.copyWith(westSize: value),
-        _ => config.copyWith(eastSize: value),
-      };
+      config.withSize(side, value);
 
   /// Voisins d'un coin : (zone de sa ligne, zone de sa colonne).
   static (SuperLayoutZone, SuperLayoutZone) _neighbors(
@@ -102,6 +97,19 @@ class SuperLayoutEditor extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
+        SwitchListTile(
+          key: const ValueKey('super-layout-resize-sides'),
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Redimensionner tous les côtés par glisser'),
+          subtitle: const Text(
+            'Bord intérieur de 5 px, même hors du mode édition. '
+            'Le glisser désactive la taille automatique du côté.',
+          ),
+          value: _sides.every(config.canResize),
+          onChanged: (value) =>
+              onChanged(config.copyWith(resizeSides: value, sideResizing: {})),
+        ),
         for (final side in _sides) ...[
           SwitchListTile(
             key: ValueKey('super-layout-side-${side.name}'),
@@ -111,6 +119,16 @@ class SuperLayoutEditor extends StatelessWidget {
             value: config.hasSide(side),
             onChanged: (v) => onChanged(config.withSide(side, v)),
           ),
+          if (config.hasSide(side))
+            SwitchListTile(
+              key: ValueKey('super-layout-resize-side-${side.name}'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: Text('Redimensionner ${side.label} par glisser'),
+              value: config.canResize(side),
+              onChanged: (value) =>
+                  onChanged(config.withSideResizing(side, value)),
+            ),
           if (config.hasSide(side))
             SwitchListTile(
               key: ValueKey('super-layout-auto-${side.name}'),

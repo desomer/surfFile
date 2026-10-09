@@ -77,6 +77,27 @@ existants. Son implementation est repartie en fichiers `part` dans
 depot) et `layout_editor.dart` (formulaire d'edition). Ces fichiers partagent
 la meme bibliotheque Dart afin de garder les classes internes privees.
 
+L'editeur propose une activation du glisser separee pour chaque cote et un
+interrupteur pour tous les cotes, desactives par defaut. Les reglages sont
+persistes dans `SuperLayoutConfig.sideResizing` ; sans reglage individuel,
+`resizeSides` reste utilise pour les anciennes configurations.
+Une fois active, le bord interieur
+de 5 px des zones Nord, Sud, Ouest et Est devient une poignee de type SplitView,
+y compris hors du mode edition. Les coins et le centre n'ont pas de poignee ;
+les dispositions non editables n'en affichent pas. Le glisser part de la
+taille effectivement affichee, passe le cote en taille fixe et transmet les
+modifications par `onChanged`. Les tailles sont limitees a 20–400 px et
+conservent au moins 20 px pour le centre lorsque l'espace le permet.
+L'option et les tailles sont conservees lors d'une sauvegarde ou d'un export.
+Les min/max renseignes dans `slotSizeConstraints` des composants visibles de
+la zone limitent aussi le glisser : somme sur l'axe d'empilement, intersection
+sur l'axe transversal. Un maximum absent dans une pile laisse son maximum
+total non borne ; un minimum absent contribue zero. Les pourcentages de zone
+sont resolus sur la taille candidate, ceux du SuperLayout sur sa taille totale.
+Les tailles preferees ne constituent pas des bornes. Si les contraintes sont
+incompatibles entre elles ou avec l'espace disponible, le glisser ne modifie
+pas la taille de la zone.
+
 En mode edition, les overlays (noms de zones, boutons « + », etiquettes de
 slots et cibles de depot) ne sont affiches que pour le `SuperLayout` selectionne.
 Un clic gauche sur son contenu le selectionne et deselectionne les autres
@@ -100,20 +121,27 @@ persistante de la zone et ne sont disponibles que pour les layouts editables.
 
 Les slots et les `RegisteredComponent` acceptent `preferredSize: Size(largeur,
 hauteur)`. En mode edition, le clic droit sur un slot ajoute l'entree
-« Taille préférée » au menu des styles : le dialogue regle les dimensions en
-pixels. Le bouton « Supprimer le slot » de cette entree retire le slot du
+« Taille préférée » au menu des styles : le dialogue regle les tailles
+minimale, préférée et maximale, en pixels ou en pourcentage de la zone qui
+contient le slot ou de tout le `SuperLayout` (base sélectionnable dans le
+dialogue). Chaque dimension peut utiliser son unité. Les contraintes
+minimales et maximales sont appliquees même aux slots de taille intrinsèque ou
+`fill`; une taille préférée reste facultative. Le bouton « Supprimer le slot »
+de cette entree retire le slot du
 layout et efface ses reglages de taille et de type d'instance. Le composant
 reste disponible pour un nouvel ajout. Le dialogue permet aussi de retablir
 la taille automatique, meme si le slot declare une taille
 preferee par defaut.
-Les dimensions sont limitees par la zone disponible ; des hauteurs preferees
-qui depassent ensemble la zone sont reduites proportionnellement. Les slots
+Les dimensions sont limitees par la zone disponible ; des tailles preferees
+qui depassent ensemble l'axe principal de la zone sont reduites
+proportionnellement. Les slots
 sans taille preferee conservent leur comportement `fill` ou `intrinsic`.
 Les modifications passent par `onChanged` et sont persistees par ID d'instance
-dans `SuperLayoutConfig.slotPreferredSizes`, y compris apres deplacement,
-sauvegarde ou export de la disposition.
-Une entree `null` force le mode automatique ; une entree absente utilise
-`SlotImplementation.preferredSize`.
+dans `SuperLayoutConfig.slotPreferredSizes` pour les anciennes tailles en
+pixels, ou `slotSizeConstraints` pour les contraintes et dimensions en
+pourcentage, y compris apres deplacement, sauvegarde ou export de la
+disposition. Une entree `null` dans `slotPreferredSizes` force le mode
+automatique ; une entree absente utilise `SlotImplementation.preferredSize`.
 
 L'editeur de disposition propose un selecteur **Row / Column** pour chacune
 des neuf zones (desactive si la zone est absente ou fusionnee). `Column` reste

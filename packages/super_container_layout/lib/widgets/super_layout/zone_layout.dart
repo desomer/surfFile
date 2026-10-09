@@ -76,6 +76,8 @@ class _RenderZoneLayout extends RenderBox
         RenderBoxContainerDefaultsMixin<RenderBox, _ZoneParentData> {
   _RenderZoneLayout(this._config, this._autoSides);
 
+  Map<SuperLayoutZone, Rect> rects = const {};
+
   SuperLayoutConfig _config;
   set config(SuperLayoutConfig value) {
     if (value == _config) return;
@@ -144,7 +146,7 @@ class _RenderZoneLayout extends RenderBox
       measured[side] = child.size.height;
     }
 
-    final rects = _config.resolve(size, measured: measured);
+    rects = _config.resolve(size, measured: measured);
     for (final (zone, child, overlay) in [
       for (final entry in content.entries) (entry.key, entry.value, false),
       for (final (zone, child) in overlays) (zone, child, true),
