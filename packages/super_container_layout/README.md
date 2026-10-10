@@ -83,6 +83,22 @@ depot), `zone_resize_handle.dart` (poignees de redimensionnement) et
 `layout_editor.dart` (formulaire d'edition). Ces fichiers partagent
 la meme bibliotheque Dart afin de garder les classes internes privees.
 
+En mode edition, cliquer sur le label d'un slot le selectionne et affiche
+le chemin disposition > zone > slot dans `StyleEditBanner`. Un second clic
+sur le meme label deselectionne le slot. Les segments du chemin permettent
+de revenir a la zone ou a la disposition ; le glisser des labels est conserve.
+Cliquer sur le segment courant du chemin le deselectionne : un slot revient
+a sa zone, une zone a sa disposition, et une disposition quitte la selection.
+Cliquer sur un segment parent le selectionne.
+
+L'editeur des tailles des slots propose un slider pour chaque dimension,
+synchronise avec le champ numerique et l'unite px/%. Les valeurs valides,
+les unites et la base des pourcentages mettent a jour le rendu en temps reel.
+Appliquer conserve les modifications ; Annuler ou fermer le dialogue restaure
+les reglages initiaux du slot. Un champ vide reste automatique/non renseigne.
+Les sliders couvrent 0-100 % ou au moins 0-1000 px (et la dimension du layout),
+avec extension de la plage si une valeur saisie depasse ce maximum.
+
 L'editeur propose une activation du glisser separee pour chaque cote et un
 interrupteur pour tous les cotes, desactives par defaut. Les reglages sont
 persistes dans `SuperLayoutConfig.sideResizing` ; sans reglage individuel,

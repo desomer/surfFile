@@ -74,6 +74,46 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets(
+    'size sliders preview immediately and cancel restores saved sizes',
+    (tester) async {
+      final editMode = ValueNotifier(true);
+      addTearDown(editMode.dispose);
+      SuperLayoutConfig? changed;
+      await pump(
+        tester,
+        editMode: editMode,
+        slots: [slot('first', styled: true), slot('second')],
+        onChanged: (value) => changed = value,
+      );
+      await openEditor(tester);
+      expect(find.byType(Slider), findsNWidgets(6));
+      final slider = find.byKey(const ValueKey('slot-slider-preferred-height'));
+      await tester.ensureVisible(slider);
+      await tester.pumpAndSettle();
+      await tester.drag(slider, const Offset(70, 0));
+      await tester.pump();
+      final preferred = changed!.slotSizeConstraints['first']!.preferredHeight!;
+      expect(preferred.unit, SlotSizeUnit.pixels);
+      expect(preferred.value, greaterThan(0));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('content-first'))).height,
+        preferred.value.clamp(0, 400),
+      );
+      final field = tester.widget<TextFormField>(
+        find.byKey(const ValueKey('slot-preferred-height')),
+      );
+      expect(double.parse(field.controller!.text), preferred.value);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(changed, base);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('content-first'))).height,
+        200,
+      );
+    },
+  );
+
   test('preferred sizes survive copies, moves, swaps and JSON', () {
     final config = base.withSlotPreferredSize('first', const Size(240, 90));
     final restored = SuperLayoutConfig.fromJson(config.toJson());
@@ -195,18 +235,39 @@ void main() {
       find.byKey(const ValueKey('slot-preferred-height')),
       '25',
     );
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('slot-unit-preferred-width')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('slot-unit-preferred-width')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('%').last);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('slot-unit-preferred-height')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('slot-unit-preferred-height')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('%').last);
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('slot-percent-basis')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('slot-percent-basis')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Tout le SuperLayout').last);
     await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(240, 100),
+    );
+    final percentSlider = tester.widget<Slider>(
+      find.byKey(const ValueKey('slot-slider-preferred-width')),
+    );
+    expect(percentSlider.max, 100);
+    expect(percentSlider.value, 40);
     await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();
     expect(
@@ -813,13 +874,19 @@ void main() {
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Saisissez une dimension positive en pixels.'),
+        find.text('Saisissez une dimension positive en pixels ou en %.'),
         findsOneWidget,
       );
       expect(changed, isNull);
       await tester.enterText(
         find.byKey(const ValueKey('slot-preferred-width')),
         '240,5',
+      );
+      await tester.pump();
+      expect(changed!.slotPreferredSizes['first'], const Size(240.5, 90));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('content-first'))),
+        const Size(240.5, 90),
       );
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();

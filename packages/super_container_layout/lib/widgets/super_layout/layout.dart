@@ -57,9 +57,20 @@ class SuperLayoutState extends State<SuperLayout> {
 
   /// Zone selectionnee par un clic sur son nom, affichee dans la banniere.
   final _selected = ValueNotifier<SuperLayoutZone?>(null);
+  final _selectedSlot = ValueNotifier<String?>(null);
 
-  void _select(SuperLayoutZone zone) =>
-      _selected.value = _selected.value == zone ? null : zone;
+  void _select(SuperLayoutZone zone) {
+    _selectedSlot.value = null;
+    _selected.value = _selected.value == zone ? null : zone;
+  }
+
+  void _selectSlot(SuperLayoutZone zone, SlotImplementation slot) {
+    _selectedSlot.value = _selected.value == zone && _selectedSlot.value == slot.id
+        ? null
+        : slot.id;
+    _selected.value = zone;
+    _LayoutEditSelection.selected.value = this;
+  }
 
   List<String> _reportedPath = const [];
   LayoutAxisAction? _reportedAxis;
@@ -100,7 +111,10 @@ class SuperLayoutState extends State<SuperLayout> {
         LayoutSelection.report(
           this,
           path,
-          clear: () => _selected.value = null,
+          clear: () {
+            _selectedSlot.value = null;
+            _selected.value = null;
+          },
           axis: _reportedAxis,
         );
       }
@@ -148,6 +162,7 @@ class SuperLayoutState extends State<SuperLayout> {
     _centerHint.dispose();
     _emphasis.dispose();
     _selected.dispose();
+    _selectedSlot.dispose();
     final owner = this;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       LayoutSelection.report(owner, const []);

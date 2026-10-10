@@ -20,6 +20,7 @@ extension _SuperLayoutView on SuperLayoutState {
         listenable: Listenable.merge([
           _config,
           _selected,
+          _selectedSlot,
           _LayoutEditSelection.selected,
         ]),
         builder: (context, _) {
@@ -30,19 +31,42 @@ extension _SuperLayoutView on SuperLayoutState {
               identical(_LayoutEditSelection.selected.value, this);
           final parentPath = _LabelScope.pathOf(context);
           final selected = _selected.value;
+          final selectedSlot = selected == null ? null : _slotsOf(
+            config, config.contentZone(selected),
+          ).where((slot) => slot.id == _selectedSlot.value).firstOrNull;
           final name = widget.name ?? widget.label;
           LayoutSelection.register(this, [...parentPath, name], (zoneLabel) {
             if (!mounted) return;
+            _selectedSlot.value = null;
             _selected.value = zoneLabel == null
                 ? null
                 : SuperLayoutZone.values
                       .where((zone) => zone.label == zoneLabel)
                       .firstOrNull;
             _LayoutEditSelection.selected.value = this;
-          }, parent: this.context.findAncestorStateOfType<SuperLayoutState>());
+          }, parent: this.context.findAncestorStateOfType<SuperLayoutState>(),
+            selectSlot: (label) {
+              final zone = _selected.value;
+              if (!mounted || zone == null) return;
+              final slots = _slotsOf(_config.value, _config.value.contentZone(zone));
+              final slot = slots.where(
+                (slot) => slot.id == selectedSlot?.id && slot.label == label,
+              ).firstOrNull ?? slots.where((slot) => slot.label == label).firstOrNull;
+              if (slot != null) _selectedSlot.value = slot.id;
+            },
+            onDeselect: () {
+              if (!mounted) return;
+              _selectedSlot.value = null;
+              _selected.value = null;
+              if (identical(_LayoutEditSelection.selected.value, this)) {
+                _LayoutEditSelection.selected.value = null;
+              }
+            },
+          );
           _reportPath(
             editMode
-                ? [...parentPath, name, if (selected != null) selected.label]
+                ? [...parentPath, name, if (selected != null) selected.label,
+                    if (selectedSlot != null) selectedSlot.label]
                 : const [],
             axis: editMode && widget.editable ? _axisAction(_actionZone) : null,
           );

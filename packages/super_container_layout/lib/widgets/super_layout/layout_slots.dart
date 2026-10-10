@@ -32,7 +32,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     String id,
   ) => BuilderSlot(
     id: id,
-    label: 'Registre : $key',
+    label: key,
     builder: (_) => component.getWidget(XuiBuildCtx(id: id)),
   );
 
@@ -121,6 +121,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       preferredSizes: config.slotPreferredSizes,
       sizeConstraints: config.slotSizeConstraints,
       layoutSize: layoutSize,
+      onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
       onEditPreferredSize: editMode && widget.editable
           ? _editSlotPreferredSize
           : null,

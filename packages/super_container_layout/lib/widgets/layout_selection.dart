@@ -32,13 +32,27 @@ class LayoutSelection {
         Object,
         ({List<String> path, ValueChanged<String?> select, Object? parent})
       >{};
+  static final _slotSelectors = <Object, ValueChanged<String>>{};
+  static final _deselects = <Object, VoidCallback>{};
 
   static void register(
     Object owner,
     List<String> path,
     ValueChanged<String?> select, {
     Object? parent,
+    ValueChanged<String>? selectSlot,
+    VoidCallback? onDeselect,
   }) {
+    if (onDeselect == null) {
+      _deselects.remove(owner);
+    } else {
+      _deselects[owner] = onDeselect;
+    }
+    if (selectSlot == null) {
+      _slotSelectors.remove(owner);
+    } else {
+      _slotSelectors[owner] = selectSlot;
+    }
     _targets[owner] = (
       path: List.unmodifiable(path),
       select: select,
@@ -46,7 +60,30 @@ class LayoutSelection {
     );
   }
 
-  static void unregister(Object owner) => _targets.remove(owner);
+  static void unregister(Object owner) {
+    _targets.remove(owner);
+    _slotSelectors.remove(owner);
+    _deselects.remove(owner);
+  }
+
+  /// Bascule le segment courant, ou selectionne un segment parent.
+  static void toggle(List<String> prefix) {
+    if (!listEquals(prefix, path.value)) {
+      select(prefix);
+      return;
+    }
+    Object? active;
+    for (final entry in _reported.entries) {
+      if (listEquals(entry.value, prefix)) active = entry.key;
+    }
+    final target = _targets[active];
+    if (target == null) return;
+    if (prefix.length > target.path.length) {
+      select(prefix.sublist(0, prefix.length - 1));
+    } else {
+      _deselects[active]?.call();
+    }
+  }
 
   /// Active la disposition du segment, et sa zone si le segment en est une.
   static void select(List<String> prefix) {
@@ -64,6 +101,13 @@ class LayoutSelection {
       final target = _targets[active];
       if (target == null) break;
       final length = target.path.length;
+      if (prefix.length == length + 2 &&
+          _slotSelectors.containsKey(active) &&
+          listEquals(prefix.take(length).toList(), target.path)) {
+        target.select(prefix[length]);
+        _slotSelectors[active]!(prefix.last);
+        return;
+      }
       if ((prefix.length == length || prefix.length == length + 1) &&
           listEquals(prefix.take(length).toList(), target.path)) {
         target.select(prefix.length == length ? null : prefix.last);
@@ -71,8 +115,16 @@ class LayoutSelection {
       }
       active = target.parent;
     }
-    for (final target in _targets.values.toList().reversed) {
+    for (final entry in _targets.entries.toList().reversed) {
+      final target = entry.value;
       final length = target.path.length;
+      if (prefix.length == length + 2 &&
+          _slotSelectors.containsKey(entry.key) &&
+          listEquals(prefix.take(length).toList(), target.path)) {
+        target.select(prefix[length]);
+        _slotSelectors[entry.key]!(prefix.last);
+        return;
+      }
       if ((prefix.length == length || prefix.length == length + 1) &&
           listEquals(prefix.take(length).toList(), target.path)) {
         target.select(prefix.length == length ? null : prefix.last);

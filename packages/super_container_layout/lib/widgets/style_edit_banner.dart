@@ -132,7 +132,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                         ),
                                         label: label,
                                         current: index == path.length - 1,
-                                        onTap: () => LayoutSelection.select(
+                                        onTap: () => LayoutSelection.toggle(
                                           path.sublist(0, index + 1),
                                         ),
                                       ),

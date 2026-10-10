@@ -95,6 +95,7 @@ class SlotStack extends StatelessWidget {
     this.layoutSize = Size.zero,
     this.onEditPreferredSize,
     this.onRemoveSlot,
+    this.onSelectSlot,
     super.key,
   });
 
@@ -129,6 +130,7 @@ class SlotStack extends StatelessWidget {
   final Size layoutSize;
   final Future<void> Function(SlotImplementation)? onEditPreferredSize;
   final Future<void> Function(SlotImplementation)? onRemoveSlot;
+  final ValueChanged<SlotImplementation>? onSelectSlot;
 
   @override
   Widget build(BuildContext context) {
@@ -181,6 +183,7 @@ class SlotStack extends StatelessWidget {
       emphasis: emphasis,
       zoneLabel: zoneLabel,
       ids: ids,
+      onSelect: onSelectSlot == null ? null : () => onSelectSlot!(slot),
       caption: zoneLabel == null
           ? slot.label
           : '${slot.label} · $zoneLabel ${index + 1}/$count',
@@ -592,6 +595,7 @@ class _LabeledSlot extends StatefulWidget {
     required this.emphasis,
     required this.zoneLabel,
     required this.ids,
+    required this.onSelect,
   });
 
   final SlotImplementation slot;
@@ -601,6 +605,7 @@ class _LabeledSlot extends StatefulWidget {
   final SlotMover? mover;
   final LabelEmphasis? emphasis;
   final String? zoneLabel;
+  final VoidCallback? onSelect;
 
   /// Slots visibles de la zone, dans l'ordre.
   final List<String> ids;
@@ -790,7 +795,11 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                         hitTestBehavior: HitTestBehavior.translucent,
                         onEnter: (_) => _setHover(true),
                         onExit: (_) => _setHover(false),
-                        child: mover == null
+                        child: GestureDetector(
+                          key: ValueKey('slot-label-select-${slot.id}'),
+                          onTap: widget.onSelect,
+                          behavior: HitTestBehavior.translucent,
+                          child: mover == null
                             ? IgnorePointer(child: _chip(colors))
                             : Draggable<SlotDragData>(
                                 data: SlotDragData(
@@ -815,6 +824,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                                 // droit du style) : seul le Draggable écoute le glisser.
                                 child: IgnorePointer(child: _chip(colors)),
                               ),
+                        ),
                       ),
                     ),
                   ),

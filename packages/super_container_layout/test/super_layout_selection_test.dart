@@ -54,6 +54,90 @@ void main() {
     matching: find.byKey(ValueKey(key)),
   );
 
+  testWidgets(
+    'clicking slot labels selects their banner path without changing layout',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      final changes = <SuperLayoutConfig>[];
+      await pump(
+        tester,
+        mode,
+        Stack(
+          children: [
+            Positioned.fill(
+              child: SuperLayout(
+                name: 'Layout',
+                config: config.copyWith(
+                  placements: {
+                    SuperLayoutZone.center: ['a', 'b'],
+                  },
+                ),
+                onChanged: changes.add,
+                slots: [
+                  for (final id in ['a', 'b'])
+                    BuilderSlot(
+                      id: id,
+                      label: 'Slot $id',
+                      builder: (_) =>
+                          SizedBox.expand(key: ValueKey('select-content-$id')),
+                    ),
+                ],
+              ),
+            ),
+            const Positioned.fill(child: StyleEditBanner()),
+          ],
+        ),
+      );
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const ValueKey('select-content-a'))),
+      );
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const ValueKey('style-edit-banner-drag')),
+        const Offset(0, 450),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-a')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout', 'Centre', 'Slot a']);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-edit-banner-path')),
+          matching: find.text('Slot a'),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-b')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout', 'Centre', 'Slot b']);
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-2')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout', 'Centre']);
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-1')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout']);
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-a')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout', 'Centre']);
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout']);
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, isEmpty);
+      await tester.tapAt(tester.getCenter(find.byKey(const ValueKey('select-content-a'))));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Layout']);
+      expect(changes, isEmpty);
+      mode.value = false;
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, isEmpty);
+    },
+  );
+
   testWidgets('axis controls share zone configuration across all surfaces', (
     tester,
   ) async {
@@ -502,6 +586,12 @@ void main() {
     await clickSegment(2);
     expect(inside('child', 'super-layout-name-center'), findsOneWidget);
     expect(inside('child', 'super-layout-zone-selected-center'), findsNothing);
+    await clickSegment(2);
+    expect(LayoutSelection.path.value, isEmpty);
+    expect(inside('child', 'super-layout-name-center'), findsNothing);
+    await tester.tapAt(const Offset(600, 350));
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['parent', 'Centre', 'child']);
     expect(tester.takeException(), isNull);
   });
 
