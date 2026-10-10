@@ -24,6 +24,7 @@ class Appearance {
              swaps: Set.unmodifiable(entry.value.swaps),
              autoSides: Set.unmodifiable(entry.value.autoSides),
              sideResizing: Map.unmodifiable(entry.value.sideResizing),
+             collapsedSides: Map.unmodifiable(entry.value.collapsedSides),
              zoneAxes: Map.unmodifiable(entry.value.zoneAxes),
              slotTypes: Map.unmodifiable(entry.value.slotTypes),
              slotPreferredSizes: Map.unmodifiable(

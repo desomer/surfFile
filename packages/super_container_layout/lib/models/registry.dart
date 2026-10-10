@@ -3,7 +3,7 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/widgets/slot_implementation.dart';
+import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 

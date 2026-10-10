@@ -71,10 +71,16 @@ et peut partager les styles via `AppearanceScope` et `AppearanceSlot`.
 
 Le point d'entree `lib/widgets/super_layout.dart` conserve les imports publics
 existants. Son implementation est repartie en fichiers `part` dans
-`lib/widgets/super_layout/` : `layout.dart` (widget et etat),
+`lib/widgets/super_layout/` : `layout.dart` (widget public, etat et cycle de vie),
+`layout_view.dart` (construction des zones et overlays),
+`layout_slots.dart` (resolution et affichage des slots),
+`layout_dialogs.dart` (dialogues d'edition et d'ajout de slots),
+`slot_size_editor.dart` (editeur des tailles min/max/preferees, unites et
+base des pourcentages),
 `label_scope.dart` (selection des dispositions imbriquees), `zone_layout.dart`
 (mesure et rendu des zones), `zone_interactions.dart` (etiquettes et cibles de
-depot) et `layout_editor.dart` (formulaire d'edition). Ces fichiers partagent
+depot), `zone_resize_handle.dart` (poignees de redimensionnement) et
+`layout_editor.dart` (formulaire d'edition). Ces fichiers partagent
 la meme bibliotheque Dart afin de garder les classes internes privees.
 
 L'editeur propose une activation du glisser separee pour chaque cote et un
@@ -89,6 +95,19 @@ taille effectivement affichee, passe le cote en taille fixe et transmet les
 modifications par `onChanged`. Les tailles sont limitees a 20–400 px et
 conservent au moins 20 px pour le centre lorsque l'espace le permet.
 L'option et les tailles sont conservees lors d'une sauvegarde ou d'un export.
+Chaque poignee affiche trois petits points et deux triangles.
+La bordure et les boutons sont mis en surbrillance au survol avec les couleurs
+du theme et retrouvent leur couleur normale lorsque la souris sort.
+Le triangle est affiche a 15 px dans une zone cliquable de 15 x 15 px sur fond contraste,
+sans elargir la bordure de glissement de 5 px. Le triangle
+dirige vers l'exterieur reduit la zone a zero, meme si ses composants ont un
+minimum. Le separateur reste accessible et le contenu conserve son etat.
+Lorsque la zone est reduite, sa bordure est alignee sur le bord du SuperLayout
+sans decalage ; les boutons restent a l'interieur pour permettre la restauration.
+L'autre triangle restaure la taille precedente si la zone est reduite, sinon
+il l'agrandit au maximum autorise par les contraintes et l'espace disponible.
+La restauration respecte les limites actuelles. L'etat reduit et la taille
+a restaurer sont sauvegardes dans `SuperLayoutConfig.collapsedSides`.
 Les min/max renseignes dans `slotSizeConstraints` des composants visibles de
 la zone limitent aussi le glisser : somme sur l'axe d'empilement, intersection
 sur l'axe transversal. Un maximum absent dans une pile laisse son maximum
@@ -134,6 +153,9 @@ layout et efface ses reglages de taille et de type d'instance. Le composant
 reste disponible pour un nouvel ajout. Le dialogue permet aussi de retablir
 la taille automatique, meme si le slot declare une taille
 preferee par defaut.
+En mode edition, le survol d'une ligne du menu contextuel souligne son
+conteneur cible avec le contour d'edition. La surbrillance suit la ligne
+survolee, y compris ses icones, et disparait a la fermeture du menu.
 Les dimensions sont limitees par la zone disponible ; des tailles preferees
 qui depassent ensemble l'axe principal de la zone sont reduites
 proportionnellement. Les slots

@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/slot_implementation.dart';
+import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 import 'package:super_container_layout/widgets/super_layout.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';

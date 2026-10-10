@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -33,6 +34,152 @@ void main() {
     ),
   );
 
+  testWidgets('resize handle highlights on border and controls hover', (
+    tester,
+  ) async {
+    await pump(tester);
+    final border = handle(SuperLayoutZone.north);
+    Color borderColor() => tester
+        .widget<ColoredBox>(
+          find.descendant(of: border, matching: find.byType(ColoredBox)),
+        )
+        .color;
+    final normalColor = borderColor();
+    final colors = Theme.of(tester.element(border)).colorScheme;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getRect(border).topLeft + const Offset(10, 2));
+    await tester.pump();
+    expect(borderColor(), colors.primary);
+    final expand = find.byKey(const ValueKey('super-layout-expand-north'));
+    await mouse.moveTo(tester.getCenter(expand));
+    await tester.pump();
+    expect(borderColor(), colors.primary);
+    final icon = tester.widget<Icon>(
+      find.descendant(of: expand, matching: find.byType(Icon)),
+    );
+    expect(icon.color, colors.onPrimaryContainer);
+    await mouse.moveTo(Offset.zero);
+    await tester.pump();
+    expect(borderColor(), normalColor);
+    expect(layoutKey.currentState!.config, enabled);
+    await mouse.removePointer();
+  });
+
+  for (final side in [
+    SuperLayoutZone.north,
+    SuperLayoutZone.south,
+    SuperLayoutZone.west,
+    SuperLayoutZone.east,
+  ]) {
+    testWidgets('${side.name} collapses, restores and maximizes', (
+      tester,
+    ) async {
+      await pump(tester);
+      for (final action in ['collapse', 'expand']) {
+        final button = find.byKey(
+          ValueKey('super-layout-$action-${side.name}'),
+        );
+        expect(tester.getSize(button), const Size(15, 15));
+        final iconFinder = find.descendant(
+          of: button,
+          matching: find.byType(Icon),
+        );
+        expect(tester.widget<Icon>(iconFinder).size, 15);
+        expect(tester.getSize(iconFinder), const Size(15, 15));
+      }
+      final original = enabled.sizeOf(side);
+      await tester.tap(
+        find.byKey(ValueKey('super-layout-collapse-${side.name}')),
+      );
+      await tester.pump();
+      final rect = layoutKey.currentState!.config.resolve(
+        const Size(600, 400),
+      )[side]!;
+      expect(
+        side == SuperLayoutZone.north || side == SuperLayoutZone.south
+            ? rect.height
+            : rect.width,
+        0,
+      );
+      expect(handle(side), findsOneWidget);
+      final layoutRect = tester.getRect(find.byType(SuperLayout));
+      final handleRect = tester.getRect(handle(side));
+      switch (side) {
+        case SuperLayoutZone.north:
+          expect(handleRect.top, layoutRect.top);
+        case SuperLayoutZone.south:
+          expect(handleRect.bottom, layoutRect.bottom);
+        case SuperLayoutZone.west:
+          expect(handleRect.left, layoutRect.left);
+        case SuperLayoutZone.east:
+          expect(handleRect.right, layoutRect.right);
+        default:
+          fail('Not a side');
+      }
+      final expandRect = tester.getRect(
+        find.byKey(ValueKey('super-layout-expand-${side.name}')),
+      );
+      expect(layoutRect.contains(expandRect.topLeft), isTrue);
+      expect(expandRect.right <= layoutRect.right, isTrue);
+      expect(expandRect.bottom <= layoutRect.bottom, isTrue);
+      expect(
+        SuperLayoutConfig.fromJson(layoutKey.currentState!.config.toJson()),
+        layoutKey.currentState!.config,
+      );
+      await tester.tap(
+        find.byKey(ValueKey('super-layout-expand-${side.name}')),
+      );
+      await tester.pump();
+      expect(layoutKey.currentState!.config.collapsedSides, isEmpty);
+      expect(layoutKey.currentState!.config.sizeOf(side), original);
+      await tester.tap(
+        find.byKey(ValueKey('super-layout-expand-${side.name}')),
+      );
+      await tester.pump();
+      expect(
+        layoutKey.currentState!.config.sizeOf(side),
+        side == SuperLayoutZone.north || side == SuperLayoutZone.south
+            ? 300
+            : 400,
+      );
+    });
+  }
+
+  testWidgets('saved collapsed side restores within current component bounds', (
+    tester,
+  ) async {
+    final saved = enabled.copyWith(
+      collapsedSides: {SuperLayoutZone.west: 120},
+      placements: {
+        SuperLayoutZone.west: ['panel'],
+      },
+      slotSizeConstraints: {
+        'panel': const SlotSizeConstraints(
+          minWidth: SlotDimension(30, SlotSizeUnit.pixels),
+          maxWidth: SlotDimension(60, SlotSizeUnit.pixels),
+        ),
+      },
+    );
+    await pump(
+      tester,
+      config: SuperLayoutConfig.fromJson(saved.toJson()),
+      slots: [
+        BuilderSlot(
+          id: 'panel',
+          label: 'Panel',
+          builder: (_) => const Text('Saved panel'),
+        ),
+      ],
+    );
+    expect(find.text('Saved panel'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('super-layout-expand-west')));
+    await tester.pump();
+    expect(layoutKey.currentState!.config.westSize, 60);
+    expect(find.text('Saved panel'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('resize option survives JSON, copies and swaps', () {
     final restored = SuperLayoutConfig.fromJson(enabled.toJson());
     expect(restored, enabled);
@@ -60,6 +207,89 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test(
+    'collapsed sizes are validated and included in equality and hashing',
+    () {
+      final collapsed = enabled.copyWith(
+        collapsedSides: {SuperLayoutZone.north: 80},
+      );
+      final restored = SuperLayoutConfig.fromJson(collapsed.toJson());
+      expect(restored, collapsed);
+      expect(restored.hashCode, collapsed.hashCode);
+      expect(restored.copyWith(), collapsed);
+      expect(restored, isNot(enabled));
+      expect(SuperLayoutConfig.fromJson({}, fallback: collapsed), collapsed);
+      for (final raw in [
+        [],
+        {'center': 80},
+        {'north': 0},
+        {'west': 401},
+        {'east': double.nan},
+        {'south': '80'},
+      ]) {
+        expect(
+          () => SuperLayoutConfig.fromJson({'collapsedSides': raw}),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
+  testWidgets(
+    'automatic content is hidden then restored at its displayed size',
+    (tester) async {
+      await pump(
+        tester,
+        config: enabled.copyWith(
+          autoSides: {SuperLayoutZone.north},
+          placements: {
+            SuperLayoutZone.north: ['toolbar'],
+          },
+          slotSizeConstraints: {
+            'toolbar': const SlotSizeConstraints(
+              minHeight: SlotDimension(40, SlotSizeUnit.pixels),
+              maxHeight: SlotDimension(100, SlotSizeUnit.pixels),
+            ),
+          },
+        ),
+        slots: [
+          BuilderSlot(
+            id: 'toolbar',
+            label: 'Toolbar',
+            sizing: SlotSizing.intrinsic,
+            builder: (_) => const SizedBox(height: 50, child: Text('Content')),
+          ),
+        ],
+      );
+      final collapse = find.byKey(
+        const ValueKey('super-layout-collapse-north'),
+      );
+      final expand = find.byKey(const ValueKey('super-layout-expand-north'));
+      await tester.tap(collapse);
+      await tester.pump();
+      expect(find.text('Content'), findsNothing);
+      expect(find.text('Content', skipOffstage: false), findsOneWidget);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('super-layout-north'))).height,
+        0,
+      );
+      await tester.tap(expand);
+      await tester.pump();
+      expect(find.text('Content'), findsOneWidget);
+      expect(layoutKey.currentState!.config.northSize, 50);
+      await tester.tap(expand);
+      await tester.pump();
+      expect(layoutKey.currentState!.config.northSize, 100);
+      await tester.tap(collapse);
+      await tester.pump();
+      await tester.drag(handle(SuperLayoutZone.north), const Offset(0, 10));
+      await tester.pump();
+      expect(layoutKey.currentState!.config.northSize, 40);
+      expect(layoutKey.currentState!.config.collapsedSides, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test(
     'per-side activation overrides the legacy setting and survives JSON',

@@ -10,12 +10,17 @@ import 'package:shortid/shortid.dart';
 import '../models/super_layout_config.dart';
 import '../super_app.dart';
 import 'layout_selection.dart';
-import 'slot_implementation.dart';
+import 'super_layout/slot_implementation.dart';
 import 'super_container.dart';
 import 'zone_axis_button.dart';
 
 part 'super_layout/layout.dart';
+part 'super_layout/layout_dialogs.dart';
+part 'super_layout/slot_size_editor.dart';
+part 'super_layout/layout_slots.dart';
+part 'super_layout/layout_view.dart';
 part 'super_layout/label_scope.dart';
 part 'super_layout/zone_layout.dart';
 part 'super_layout/zone_interactions.dart';
 part 'super_layout/layout_editor.dart';
+part 'super_layout/zone_resize_handle.dart';

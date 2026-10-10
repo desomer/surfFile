@@ -196,12 +196,13 @@ class SuperLayoutConfig {
     this.ne = CornerMerge.none,
     this.sw = CornerMerge.none,
     this.se = CornerMerge.none,
-    this.northSize = 80,
-    this.southSize = 80,
-    this.westSize = 120,
-    this.eastSize = 120,
+    this.northSize = 30,
+    this.southSize = 30,
+    this.westSize = 30,
+    this.eastSize = 30,
     this.resizeSides = false,
     this.sideResizing = const {},
+    this.collapsedSides = const {},
     this.swaps = const {},
     this.autoSides = const {},
     this.placements = const {},
@@ -234,6 +235,8 @@ class SuperLayoutConfig {
 
   /// Reglages par cote ; sans entree, utilise [resizeSides].
   final Map<SuperLayoutZone, bool> sideResizing;
+  /// Taille fixe a restaurer pour les cotes reduits a zero.
+  final Map<SuperLayoutZone, double> collapsedSides;
 
   bool canResize(SuperLayoutZone side) =>
       side.isSide && (sideResizing[side] ?? resizeSides);
@@ -554,6 +557,7 @@ class SuperLayoutConfig {
     double? eastSize,
     bool? resizeSides,
     Map<SuperLayoutZone, bool>? sideResizing,
+    Map<SuperLayoutZone, double>? collapsedSides,
     Set<SuperLayoutZone>? swaps,
     Set<SuperLayoutZone>? autoSides,
     Map<SuperLayoutZone, List<String>>? placements,
@@ -576,6 +580,7 @@ class SuperLayoutConfig {
     eastSize: eastSize ?? this.eastSize,
     resizeSides: resizeSides ?? this.resizeSides,
     sideResizing: sideResizing ?? this.sideResizing,
+    collapsedSides: collapsedSides ?? this.collapsedSides,
     swaps: swaps ?? this.swaps,
     autoSides: autoSides ?? this.autoSides,
     placements: placements ?? this.placements,
@@ -619,6 +624,9 @@ class SuperLayoutConfig {
     'resizeSides': resizeSides,
     'sideResizing': {
       for (final entry in sideResizing.entries) entry.key.name: entry.value,
+    },
+    'collapsedSides': {
+      for (final entry in collapsedSides.entries) entry.key.name: entry.value,
     },
     'swaps': [for (final zone in swaps) zone.name],
     'autoSides': [for (final zone in autoSides) zone.name],
@@ -672,6 +680,25 @@ class SuperLayoutConfig {
           throw const FormatException('Redimensionnement par cote invalide.');
         }
         result[side] = entry.value as bool;
+      }
+      return result;
+    }
+
+    Map<SuperLayoutZone, double> collapsed() {
+      final raw = value['collapsedSides'];
+      if (raw == null) return fallback.collapsedSides;
+      if (raw is! Map) throw const FormatException('Cotes reduits invalides.');
+      final result = <SuperLayoutZone, double>{};
+      for (final entry in raw.entries) {
+        final side = SuperLayoutZone.values
+            .where((side) => side.isSide && side.name == entry.key)
+            .firstOrNull;
+        final extent = entry.value;
+        if (side == null || extent is! num || !extent.isFinite ||
+            extent < minSize || extent > maxSize) {
+          throw const FormatException('Cote reduit invalide.');
+        }
+        result[side] = extent.toDouble();
       }
       return result;
     }
@@ -859,6 +886,7 @@ class SuperLayoutConfig {
       eastSize: size('eastSize', fallback.eastSize),
       resizeSides: flag('resizeSides', fallback.resizeSides),
       sideResizing: resizing(),
+      collapsedSides: collapsed(),
       swaps: swapSet(),
       autoSides: autoSet(),
       placements: placementMap(),
@@ -878,7 +906,9 @@ class SuperLayoutConfig {
     Map<SuperLayoutZone, double> measured = const {},
   }) {
     double extent(SuperLayoutZone side) =>
-        isAuto(side) ? measured[side] ?? sizeOf(side) : sizeOf(side);
+        collapsedSides.containsKey(side)
+        ? 0
+        : isAuto(side) ? measured[side] ?? sizeOf(side) : sizeOf(side);
     final (x1, x2) = _tracks(
       size.width,
       west ? extent(SuperLayoutZone.west) : 0,
@@ -956,6 +986,10 @@ class SuperLayoutConfig {
       other.westSize == westSize &&
       other.eastSize == eastSize &&
       other.resizeSides == resizeSides &&
+      other.collapsedSides.length == collapsedSides.length &&
+      collapsedSides.entries.every(
+        (entry) => other.collapsedSides[entry.key] == entry.value,
+      ) &&
       other.sideResizing.length == sideResizing.length &&
       sideResizing.entries.every(
         (entry) => other.sideResizing[entry.key] == entry.value,
@@ -1015,6 +1049,10 @@ class SuperLayoutConfig {
       resizeSides,
       Object.hashAllUnordered([
         for (final entry in sideResizing.entries)
+          Object.hash(entry.key, entry.value),
+      ]),
+      Object.hashAllUnordered([
+        for (final entry in collapsedSides.entries)
           Object.hash(entry.key, entry.value),
       ]),
     ),

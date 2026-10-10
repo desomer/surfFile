@@ -155,6 +155,7 @@ class SuperContainerState extends State<SuperContainer> {
   static final ValueNotifier<SuperContainerState?> _hoveredTarget =
       ValueNotifier(null);
   static bool _hoveredTargetUpdateScheduled = false;
+  static SuperContainerState? _menuHoveredTarget;
 
   int _cachedDepth = 0;
 
@@ -179,7 +180,12 @@ class SuperContainerState extends State<SuperContainer> {
   }
 
   void _removeHoveredSafely() {
-    if (!_hovered.remove(this) || _hoveredTargetUpdateScheduled) return;
+    final wasHovered = _hovered.remove(this);
+    final wasMenuTarget = identical(_menuHoveredTarget, this);
+    if (wasMenuTarget) _menuHoveredTarget = null;
+    if ((!wasHovered && !wasMenuTarget) || _hoveredTargetUpdateScheduled) {
+      return;
+    }
     _hoveredTargetUpdateScheduled = true;
     scheduleMicrotask(() {
       _hoveredTargetUpdateScheduled = false;
@@ -188,6 +194,11 @@ class SuperContainerState extends State<SuperContainer> {
   }
 
   static void _refreshHoveredTarget() {
+    final menuTarget = _menuHoveredTarget;
+    if (menuTarget != null && menuTarget.mounted && menuTarget._canEdit) {
+      _hoveredTarget.value = menuTarget;
+      return;
+    }
     SuperContainerState? deepest;
     var maxDepth = -1;
     for (final state in _hovered) {
@@ -200,6 +211,29 @@ class SuperContainerState extends State<SuperContainer> {
     }
     _hoveredTarget.value = deepest;
   }
+
+  Widget _menuHover(SuperContainerState target, Widget child) => MouseRegion(
+    onEnter: (_) {
+      if (!(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+        return;
+      }
+      _menuHoveredTarget = target;
+      _refreshHoveredTarget();
+    },
+    onExit: (_) {
+      if (identical(_menuHoveredTarget, target)) {
+        _menuHoveredTarget = null;
+        _refreshHoveredTarget();
+      }
+    },
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: child,
+      ),
+    ),
+  );
 
   void _update(ContainerStyle value, {AppearanceSlot? slot}) {
     final appearance = _appearance;
@@ -492,64 +526,29 @@ class SuperContainerState extends State<SuperContainer> {
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
-    final selected = await showMenu<Object>(
-      context: context,
-      constraints: const BoxConstraints(minWidth: 200, maxWidth: 420),
-      position: RelativeRect.fromLTRB(
-        position.dx,
-        position.dy,
-        overlay.size.width - position.dx,
-        overlay.size.height - position.dy,
-      ),
-      items: [
-        for (final action in extraActions)
-          if (!action.inline)
-            PopupMenuItem<Future<void> Function()>(
-              value: action.onEdit,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(child: Text(action.label)),
-                  if (action.onRemove case final remove?)
-                    IconButton(
-                      key: ValueKey('style-menu-remove-${action.label}'),
-                      tooltip: 'Supprimer le slot',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => Navigator.of(context).pop(remove),
-                    ),
-                ],
-              ),
-            ),
-        for (final (index, state) in chain.indexed)
-          PopupMenuItem<SuperContainerState>(
-            key: ValueKey('style-menu-${state._label}'),
-            value: state,
-            child: Padding(
-              padding: EdgeInsets.only(left: 12.0 * index),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    index == 0
-                        ? Icons.brush_outlined
-                        : Icons.subdirectory_arrow_left,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text(state._label, overflow: TextOverflow.ellipsis),
-                  ),
-                  if (index == 0)
-                    for (final action in extraActions.where(
-                      (action) => action.inline,
-                    )) ...[
-                      IconButton(
-                        key: ValueKey('style-menu-size-${action.label}'),
-                        tooltip: action.label,
-                        icon: const Icon(Icons.straighten),
-                        onPressed: () =>
-                            Navigator.of(context).pop(action.onEdit),
-                      ),
+    Object? selected;
+    try {
+      selected = await showMenu<Object>(
+        context: context,
+        constraints: const BoxConstraints(minWidth: 200, maxWidth: 420),
+        position: RelativeRect.fromLTRB(
+          position.dx,
+          position.dy,
+          overlay.size.width - position.dx,
+          overlay.size.height - position.dy,
+        ),
+        items: [
+          for (final action in extraActions)
+            if (!action.inline)
+              PopupMenuItem<Future<void> Function()>(
+                value: action.onEdit,
+                padding: EdgeInsets.zero,
+                child: _menuHover(
+                  this,
+                  Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Flexible(child: Text(action.label)),
                       if (action.onRemove case final remove?)
                         IconButton(
                           key: ValueKey('style-menu-remove-${action.label}'),
@@ -558,39 +557,94 @@ class SuperContainerState extends State<SuperContainer> {
                           onPressed: () => Navigator.of(context).pop(remove),
                         ),
                     ],
-                  if ((StyleEditScope.controllerOf(state.context)?.value ??
-                          false) &&
-                      state.widget.axisAction != null)
-                    ZoneAxisButton(
-                      key: ValueKey('style-menu-axis-${state._label}'),
-                      action: LayoutAxisAction(
-                        zoneLabel: state.widget.axisAction!().zoneLabel,
-                        axis: state.widget.axisAction!().axis,
-                        onToggle: () =>
-                            Navigator.of(context)
-                                .pop<Future<void> Function()>(() async {
-                                  if (state.mounted) {
-                                    state.widget.axisAction!().onToggle();
-                                  }
-                                }),
+                  ),
+                ),
+              ),
+          for (final (index, state) in chain.indexed)
+            PopupMenuItem<SuperContainerState>(
+              key: ValueKey('style-menu-${state._label}'),
+              value: state,
+              padding: EdgeInsets.zero,
+              child: _menuHover(
+                state,
+                Padding(
+                  padding: EdgeInsets.only(left: 12.0 * index),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      Icon(
+                        index == 0
+                            ? Icons.brush_outlined
+                            : Icons.subdirectory_arrow_left,
+                        size: 18,
                       ),
-                    ),
-                  if ((StyleEditScope.controllerOf(state.context)?.value ??
-                          false) &&
-                      state.widget.onAdd != null)
-                    IconButton(
-                      key: ValueKey('style-menu-add-${state._label}'),
-                      tooltip: 'Ajouter un slot',
-                      icon: const Icon(Icons.add),
-                      onPressed: () =>
-                          Navigator.of(context).pop(state.widget.onAdd),
-                    ),
-                ],
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text(
+                          state._label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (index == 0)
+                        for (final action in extraActions.where(
+                          (action) => action.inline,
+                        )) ...[
+                          IconButton(
+                            key: ValueKey('style-menu-size-${action.label}'),
+                            tooltip: action.label,
+                            icon: const Icon(Icons.straighten),
+                            onPressed: () =>
+                                Navigator.of(context).pop(action.onEdit),
+                          ),
+                          if (action.onRemove case final remove?)
+                            IconButton(
+                              key: ValueKey(
+                                'style-menu-remove-${action.label}',
+                              ),
+                              tooltip: 'Supprimer le slot',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () =>
+                                  Navigator.of(context).pop(remove),
+                            ),
+                        ],
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state.widget.axisAction != null)
+                        ZoneAxisButton(
+                          key: ValueKey('style-menu-axis-${state._label}'),
+                          action: LayoutAxisAction(
+                            zoneLabel: state.widget.axisAction!().zoneLabel,
+                            axis: state.widget.axisAction!().axis,
+                            onToggle: () =>
+                                Navigator.of(context)
+                                    .pop<Future<void> Function()>(() async {
+                                      if (state.mounted) {
+                                        state.widget.axisAction!().onToggle();
+                                      }
+                                    }),
+                          ),
+                        ),
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state.widget.onAdd != null)
+                        IconButton(
+                          key: ValueKey('style-menu-add-${state._label}'),
+                          tooltip: 'Ajouter un slot',
+                          icon: const Icon(Icons.add),
+                          onPressed: () =>
+                              Navigator.of(context).pop(state.widget.onAdd),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-      ],
-    );
+        ],
+      );
+    } finally {
+      _menuHoveredTarget = null;
+      _refreshHoveredTarget();
+    }
     if (!mounted) return;
     if (selected is SuperContainerState && selected.mounted) {
       await selected.openEditor();

@@ -9,6 +9,7 @@ class _ZoneParentData extends ContainerBoxParentData<RenderBox> {
   /// Cible de dépôt : testée après le contenu, pour qu'une cible imbriquée soit
   /// consultée avant celle de la disposition qui la contient.
   bool dropTarget = false;
+  bool resizeHandle = false;
 }
 
 /// Rattache un enfant de [_ZoneLayout] à une zone.
@@ -18,25 +19,29 @@ class _ZoneEntry extends ParentDataWidget<_ZoneParentData> {
     required super.child,
     this.overlay = false,
     this.dropTarget = false,
+    this.resizeHandle = false,
     super.key,
   });
 
   final SuperLayoutZone zone;
   final bool overlay;
   final bool dropTarget;
+  final bool resizeHandle;
 
   @override
   void applyParentData(RenderObject renderObject) {
     final data = renderObject.parentData! as _ZoneParentData;
     if (data.zone == zone &&
         data.overlay == overlay &&
-        data.dropTarget == dropTarget) {
+        data.dropTarget == dropTarget &&
+        data.resizeHandle == resizeHandle) {
       return;
     }
     data
       ..zone = zone
       ..overlay = overlay
       ..dropTarget = dropTarget;
+    data.resizeHandle = resizeHandle;
     renderObject.parent?.markNeedsLayout();
   }
 
@@ -151,7 +156,36 @@ class _RenderZoneLayout extends RenderBox
       for (final entry in content.entries) (entry.key, entry.value, false),
       for (final (zone, child) in overlays) (zone, child, true),
     ]) {
-      final rect = rects[zone] ?? Rect.zero;
+      var rect = rects[zone] ?? Rect.zero;
+      final data = child.parentData! as _ZoneParentData;
+      if (data.resizeHandle) {
+        rect = switch (zone) {
+          SuperLayoutZone.north => Rect.fromLTWH(
+            rect.left,
+            (rect.bottom - 24).clamp(0, size.height),
+            rect.width,
+            24,
+          ),
+          SuperLayoutZone.south => Rect.fromLTWH(
+            rect.left,
+            rect.top.clamp(0, (size.height - 24).clamp(0, size.height)),
+            rect.width,
+            24,
+          ),
+          SuperLayoutZone.west => Rect.fromLTWH(
+            (rect.right - 24).clamp(0, size.width),
+            rect.top,
+            24,
+            rect.height,
+          ),
+          _ => Rect.fromLTWH(
+            rect.left.clamp(0, (size.width - 24).clamp(0, size.width)),
+            rect.top,
+            24,
+            rect.height,
+          ),
+        };
+      }
       final autoAxis = overlay || !measured.containsKey(zone)
           ? null
           : (zone == SuperLayoutZone.north || zone == SuperLayoutZone.south)

@@ -22,7 +22,7 @@ export 'widgets/container_style_editor.dart';
 export 'widgets/interaction_effect_box.dart';
 export 'widgets/layout_selection.dart';
 export 'widgets/neon_surface.dart';
-export 'widgets/slot_implementation.dart';
+export 'widgets/super_layout/slot_implementation.dart';
 export 'widgets/style_editor_panel.dart';
 export 'widgets/style_extras_controls.dart';
 export 'widgets/styled_surface.dart';

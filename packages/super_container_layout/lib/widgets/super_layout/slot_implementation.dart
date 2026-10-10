@@ -2,8 +2,8 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../models/super_layout_config.dart';
-import 'super_container.dart';
+import '../../models/super_layout_config.dart';
+import '../super_container.dart';
 
 /// Taille qu'un slot demande à la zone qui le reçoit.
 enum SlotSizing {
