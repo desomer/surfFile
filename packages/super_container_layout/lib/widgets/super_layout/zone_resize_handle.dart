@@ -34,6 +34,7 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
       widget.zone == SuperLayoutZone.south;
 
   void _begin(DragStartDetails details) {
+    EditorHistoryScope.controllerOf(context)?.beginTransaction();
     final layout = context.findAncestorRenderObjectOfType<_RenderZoneLayout>()!;
     final rect = layout.rects[widget.zone]!;
     _layout = layout;
@@ -68,6 +69,7 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
   void _finish() {
     _layout = null;
     _start = null;
+    EditorHistoryScope.controllerOf(context)?.commitTransaction();
   }
 
   void _collapse() {

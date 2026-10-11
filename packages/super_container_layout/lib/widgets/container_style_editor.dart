@@ -1,5 +1,6 @@
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
+import 'editor_history.dart';
 
 import '../theme/container_fill.dart';
 import '../theme/design_system.dart';
@@ -616,7 +617,7 @@ class ContainerStyleEditor extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text('$label : ${value.toStringAsFixed(1)}'),
-          Slider(
+          EditorHistorySlider(
             key: key,
             value: value,
             min: min,
@@ -674,7 +675,7 @@ class NeonStyleEditor extends StatelessWidget {
           child: const Text('Utiliser la couleur d’accent'),
         ),
         Text('Intensité : ${(value.intensity * 100).round()} %'),
-        Slider(
+        EditorHistorySlider(
           key: ValueKey('neon-intensity-$label'),
           value: value.intensity,
           max: NeonStyle.maxIntensity,

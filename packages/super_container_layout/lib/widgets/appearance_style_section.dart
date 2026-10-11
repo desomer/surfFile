@@ -6,6 +6,7 @@ import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/services/window_transparency.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
+import 'editor_history.dart';
 
 import '../theme/appearance.dart';
 
@@ -110,7 +111,7 @@ class AppearanceStyleSection extends StatelessWidget {
                     Text(
                       'Opacité du fond : ${a.backgroundOpacity.toStringAsFixed(1)}',
                     ),
-                    Slider(
+                    EditorHistorySlider(
                       key: const ValueKey('Opacité du fond'),
                       value: a.backgroundOpacity,
                       onChanged: (value) => controller.value = controller.value

@@ -12,6 +12,7 @@ import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
+import 'widgets/editor_history.dart';
 import 'widgets/layout_reset_shortcut.dart';
 import 'widgets/neon_surface.dart';
 import 'widgets/style_edit_banner.dart';
@@ -74,6 +75,7 @@ class SuperApp extends StatefulWidget {
 
 class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   late PersistentAppearanceController _appearance;
+  late EditorHistoryController _editorHistory;
   final _styleEditMode = ValueNotifier(false);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   final _navigator = GlobalKey<NavigatorState>();
@@ -90,6 +92,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       widget.appearanceStore ?? AppearanceStore(),
       _saveFailed,
     )..addListener(_updateWindow);
+    _editorHistory = _createEditorHistory();
     widget.registry?.bindAppearance(_appearance);
     _restore();
   }
@@ -99,12 +102,14 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.appearanceStore != widget.appearanceStore) {
       oldWidget.registry?.unbindAppearance();
+      _editorHistory.dispose();
       _appearance.removeListener(_updateWindow);
       _appearance.dispose();
       _appearance = PersistentAppearanceController(
         widget.appearanceStore ?? AppearanceStore(),
         _saveFailed,
       )..addListener(_updateWindow);
+      _editorHistory = _createEditorHistory();
       widget.registry?.bindAppearance(_appearance);
       _restore();
     } else if (oldWidget.registry != widget.registry) {
@@ -112,6 +117,11 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       widget.registry?.bindAppearance(_appearance);
     }
   }
+
+  EditorHistoryController _createEditorHistory() => EditorHistoryController(
+    appearance: _appearance,
+    editMode: _styleEditMode,
+  );
 
   @override
   void didChangePlatformBrightness() => _updateWindow();
@@ -191,6 +201,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     });
     try {
       await _appearance.restore();
+      _editorHistory.clear();
       _updateWindow();
       if (mounted) setState(() => _loading = false);
     } on FormatException catch (error) {
@@ -219,6 +230,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.registry?.unbindAppearance();
+    _editorHistory.dispose();
     _appearance
       ..removeListener(_updateWindow)
       ..dispose();
@@ -235,90 +247,104 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         controller: _appearance,
         child: LayoutResetShortcut(
           onReset: _resetLayouts,
-          child: StyleEditScope(
-            controller: _styleEditMode,
-            child: ValueListenableBuilder<Appearance>(
-              valueListenable: _appearance,
-              builder: (context, value, _) => MaterialApp(
-                title: widget.title,
-                debugShowCheckedModeBanner: false,
-                scaffoldMessengerKey: _messenger,
-                navigatorKey: _navigator,
-                localizationsDelegates: GlobalMaterialLocalizations.delegates,
-                themeMode: value.mode,
-                theme: value.theme(Brightness.light),
-                darkTheme: value.theme(Brightness.dark),
-                builder: (context, child) => Stack(
-                  children: [
-                    Positioned.fill(
-                      child: NeonSurface(
-                        key: const ValueKey('background-neon'),
-                        style: value.backgroundStyle.neon ?? const NeonStyle(),
-                        accent: value.accent,
-                        radius: 0,
-                        child: DecoratedBox(
-                          key: const ValueKey('background-border'),
-                          position: DecorationPosition.foreground,
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color:
-                                  value.backgroundStyle.borderColor ??
-                                  Theme.of(context).colorScheme.outlineVariant,
-                              width: value.backgroundStyle.borderWidth,
-                              style: value.backgroundStyle.borderWidth == 0
-                                  ? BorderStyle.none
-                                  : BorderStyle.solid,
-                            ),
-                          ),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: value.backgroundStyle.fill.gradient(
-                                opacity: value.backgroundOpacity,
-                              ),
-                            ),
-                            child: child,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: StyleEditBanner(navigatorKey: _navigator),
-                    ),
-                  ],
-                ),
-                home: _loading
-                    ? const Scaffold(
-                        body: Center(child: CircularProgressIndicator()),
-                      )
-                    : _loadError != null
-                    ? Scaffold(
-                        body: Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(_loadError!, textAlign: TextAlign.center),
-                                const SizedBox(height: 16),
-                                FilledButton(
-                                  onPressed: _restore,
-                                  child: const Text('Réessayer'),
+          child: EditorHistoryShortcut(
+            editMode: _styleEditMode,
+            history: _editorHistory,
+            child: EditorHistoryScope(
+              controller: _editorHistory,
+              child: StyleEditScope(
+                controller: _styleEditMode,
+                child: ValueListenableBuilder<Appearance>(
+                  valueListenable: _appearance,
+                  builder: (context, value, _) => MaterialApp(
+                    title: widget.title,
+                    debugShowCheckedModeBanner: false,
+                    scaffoldMessengerKey: _messenger,
+                    navigatorKey: _navigator,
+                    localizationsDelegates:
+                        GlobalMaterialLocalizations.delegates,
+                    themeMode: value.mode,
+                    theme: value.theme(Brightness.light),
+                    darkTheme: value.theme(Brightness.dark),
+                    builder: (context, child) => Stack(
+                      children: [
+                        Positioned.fill(
+                          child: NeonSurface(
+                            key: const ValueKey('background-neon'),
+                            style:
+                                value.backgroundStyle.neon ?? const NeonStyle(),
+                            accent: value.accent,
+                            radius: 0,
+                            child: DecoratedBox(
+                              key: const ValueKey('background-border'),
+                              position: DecorationPosition.foreground,
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color:
+                                      value.backgroundStyle.borderColor ??
+                                      Theme.of(context)
+                                          .colorScheme
+                                          .outlineVariant,
+                                  width: value.backgroundStyle.borderWidth,
+                                  style: value.backgroundStyle.borderWidth == 0
+                                      ? BorderStyle.none
+                                      : BorderStyle.solid,
                                 ),
-                                TextButton(
-                                  onPressed: () {
-                                    _appearance.reset();
-                                    setState(() => _loadError = null);
-                                  },
-                                  child: const Text(
-                                    'Réinitialiser les paramètres',
+                              ),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: value.backgroundStyle.fill.gradient(
+                                    opacity: value.backgroundOpacity,
                                   ),
                                 ),
-                              ],
+                                child: child,
+                              ),
                             ),
                           ),
                         ),
-                      )
-                    : widget.home,
+                        Positioned.fill(
+                          child: StyleEditBanner(navigatorKey: _navigator),
+                        ),
+                      ],
+                    ),
+                    home: _loading
+                        ? const Scaffold(
+                            body: Center(child: CircularProgressIndicator()),
+                          )
+                        : _loadError != null
+                        ? Scaffold(
+                            body: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _loadError!,
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 16),
+                                    FilledButton(
+                                      onPressed: _restore,
+                                      child: const Text('Réessayer'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () {
+                                        _appearance.reset();
+                                        setState(() => _loadError = null);
+                                      },
+                                      child: const Text(
+                                        'Réinitialiser les paramètres',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          )
+                        : widget.home,
+                  ),
+                ),
               ),
             ),
           ),

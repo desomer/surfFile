@@ -10,6 +10,7 @@ import '../theme/appearance_slot.dart';
 import '../theme/container_style.dart';
 import '../theme/neon_style.dart';
 import 'container_style_editor.dart';
+import 'editor_history.dart';
 import 'layout_selection.dart';
 import 'style_editor_panel.dart';
 import 'styled_surface.dart';
@@ -413,7 +414,7 @@ class SuperContainerState extends State<SuperContainer> {
                                       'Opacité du fond : '
                                       '${appearance!.value.backgroundOpacity.toStringAsFixed(1)}',
                                     ),
-                                    Slider(
+                                    EditorHistorySlider(
                                       key: const ValueKey('Opacité du fond'),
                                       value: appearance.value.backgroundOpacity,
                                       onChanged: (v) =>

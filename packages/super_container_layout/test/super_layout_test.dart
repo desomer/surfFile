@@ -60,6 +60,20 @@ void main() {
       );
     });
 
+    test('shrunk tracks never yield a negative extent', () {
+      for (var i = 0; i <= 2000; i++) {
+        final height = i * 0.137;
+        final rects = const SuperLayoutConfig(
+          northSize: 83.3,
+          southSize: 61.7,
+        ).resolve(Size(2170, height));
+        for (final rect in rects.values) {
+          expect(rect.width.isNegative, isFalse, reason: 'h=$height');
+          expect(rect.height.isNegative, isFalse, reason: 'h=$height');
+        }
+      }
+    });
+
     test('corner merges into the row side', () {
       final rects = const SuperLayoutConfig(sw: CornerMerge.row).resolve(size);
       expect(rects.containsKey(SuperLayoutZone.sw), isFalse);

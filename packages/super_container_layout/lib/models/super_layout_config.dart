@@ -967,7 +967,12 @@ class SuperLayoutConfig {
   static (double, double) _tracks(double total, double start, double end) {
     final fixed = start + end;
     final scale = fixed > total && fixed > 0 ? total / fixed : 1.0;
-    return (start * scale, total - end * scale);
+    final first = start * scale;
+    // La réduction peut produire un arrondi négatif (-0.0) pour la piste
+    // centrale : la dernière piste ne commence jamais avant la fin de la
+    // première.
+    final last = total - end * scale;
+    return (first, last <= first ? first : last);
   }
 
   @override

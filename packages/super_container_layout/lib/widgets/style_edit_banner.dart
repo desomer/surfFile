@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/appearance_transfer_dialog.dart';
+import 'package:super_container_layout/widgets/editor_history.dart';
 import 'package:super_container_layout/widgets/layout_selection.dart';
 import 'package:super_container_layout/widgets/super_container.dart';
 
@@ -59,6 +60,34 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   icon: const Icon(Icons.close),
                   onPressed: () => editMode.value = false,
                 ),
+                if (EditorHistoryScope.controllerOf(context)
+                    case final history?)
+                  ListenableBuilder(
+                    listenable: history,
+                    builder: (context, _) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: const ValueKey('style-edit-banner-undo'),
+                          tooltip: 'Annuler (Ctrl+Z)',
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 18,
+                          color: scheme.onPrimary,
+                          onPressed: history.canUndo ? history.undo : null,
+                          icon: const Icon(Icons.undo),
+                        ),
+                        IconButton(
+                          key: const ValueKey('style-edit-banner-redo'),
+                          tooltip: 'Rétablir (Ctrl+Y)',
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 18,
+                          color: scheme.onPrimary,
+                          onPressed: history.canRedo ? history.redo : null,
+                          icon: const Icon(Icons.redo),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (AppearanceScope.controllerOf(context)
                     case final appearance?)
                   IconButton(

@@ -139,7 +139,7 @@ class SuperLayoutEditor extends StatelessWidget {
               onChanged: (v) => onChanged(config.withAuto(side, v)),
             ),
           if (config.hasSide(side) && !config.isAuto(side))
-            Slider(
+            EditorHistorySlider(
               key: ValueKey('super-layout-size-${side.name}'),
               min: SuperLayoutConfig.minSize,
               max: SuperLayoutConfig.maxSize,

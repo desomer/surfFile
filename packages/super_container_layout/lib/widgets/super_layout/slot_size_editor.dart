@@ -3,6 +3,9 @@ part of '../super_layout.dart';
 extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
   Future<void> _editSlotPreferredSize(SlotImplementation slot) async {
     final config = _config.value;
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    var transactionCompleted = false;
     final saved = config.slotSizeConstraints[slot.id];
     final legacy = config.slotPreferredSizes.containsKey(slot.id)
         ? config.slotPreferredSizes[slot.id]
@@ -203,7 +206,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
                                     value > baseMax
                                 ? value
                                 : baseMax;
-                            return Slider(
+                            return EditorHistorySlider(
                               key: ValueKey('slot-slider-$key'),
                               value: value != null && value.isFinite
                                   ? value.clamp(0, max)
@@ -245,27 +248,31 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
           ],
         ),
       );
-      if (mounted) {
-        if (result != null) {
-          _applySlotDimensions(slot, result);
-        } else {
-          final current = _config.value;
-          _update(
-            current.copyWith(
-              slotPreferredSizes: {...current.slotPreferredSizes}
-                ..remove(slot.id)
-                ..addAll({
-                  if (config.slotPreferredSizes.containsKey(slot.id))
-                    slot.id: config.slotPreferredSizes[slot.id],
-                }),
-              slotSizeConstraints: {...current.slotSizeConstraints}
-                ..remove(slot.id)
-                ..addAll({if (saved != null) slot.id: saved}),
-            ),
-          );
-        }
+      if (result == null && mounted) {
+        final current = _config.value;
+        _update(
+          current.copyWith(
+            slotPreferredSizes: {...current.slotPreferredSizes}
+              ..remove(slot.id)
+              ..addAll({
+                if (config.slotPreferredSizes.containsKey(slot.id))
+                  slot.id: config.slotPreferredSizes[slot.id],
+              }),
+            slotSizeConstraints: {...current.slotSizeConstraints}
+              ..remove(slot.id)
+              ..addAll({if (saved != null) slot.id: saved}),
+          ),
+        );
+        history?.cancelTransaction();
+      } else if (result != null && mounted) {
+        _applySlotDimensions(slot, result);
+        history?.commitTransaction();
+      } else {
+        history?.commitTransaction();
       }
+      transactionCompleted = true;
     } finally {
+      if (!transactionCompleted) history?.commitTransaction();
       for (final controller in controllers.values) {
         controller.removeListener(preview);
       }

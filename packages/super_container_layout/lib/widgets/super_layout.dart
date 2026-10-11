@@ -4,6 +4,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart'
     show DragStartBehavior, PointerDownEvent, PointerEvent, kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
+
+import 'editor_history.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';
 

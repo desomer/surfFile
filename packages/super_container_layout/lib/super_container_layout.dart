@@ -19,6 +19,7 @@ export 'widgets/appearance_transfer_dialog.dart';
 export 'widgets/appearance_settings.dart';
 export 'widgets/appearance_style_section.dart';
 export 'widgets/container_style_editor.dart';
+export 'widgets/editor_history.dart';
 export 'widgets/interaction_effect_box.dart';
 export 'widgets/layout_selection.dart';
 export 'widgets/neon_surface.dart';

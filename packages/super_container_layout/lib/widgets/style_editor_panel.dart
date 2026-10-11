@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'editor_history.dart';
+
 /// Groupe de propriétés d'un éditeur de style : une carte au centre et une
 /// entrée dans la liste de gauche.
 class StyleEditorSection {
@@ -471,7 +473,7 @@ class StyleSliderField extends StatelessWidget {
             ),
           ],
         ),
-        Slider(
+        EditorHistorySlider(
           key: sliderKey,
           value: value.clamp(min, max),
           min: min,

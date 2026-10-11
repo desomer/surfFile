@@ -6,6 +6,7 @@ import '../theme/appearance.dart';
 import '../theme/appearance_slot.dart';
 import '../theme/default_appearance.dart';
 import 'appearance_style_section.dart';
+import 'editor_history.dart';
 
 /// Captured by the caller before opening a route, then applied to every dialog.
 typedef AppearanceDialogWrapper = Widget Function(Widget child);
@@ -410,7 +411,7 @@ class AppearanceSettingsSlider extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text('$label : ${value.toStringAsFixed(1)}'),
-      Slider(
+      EditorHistorySlider(
         key: ValueKey(label),
         value: value,
         min: min,
