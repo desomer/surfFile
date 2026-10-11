@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../theme/neon_style.dart';
+import '../../theme/neon_style.dart';
 
 class NeonSurface extends StatelessWidget {
   const NeonSurface({

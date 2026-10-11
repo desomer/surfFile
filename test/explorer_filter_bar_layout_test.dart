@@ -4,7 +4,7 @@ import 'package:super_container_layout/widgets/super_layout/slot_implementation.
 import 'package:surf_file/models/explorer_filter.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_filter_bar.dart';
-import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 void main() {
   const filterBar = ExplorerFilterBar(

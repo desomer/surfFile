@@ -8,7 +8,7 @@ import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:super_container_layout/widgets/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 

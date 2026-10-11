@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/registry.dart';
-import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';

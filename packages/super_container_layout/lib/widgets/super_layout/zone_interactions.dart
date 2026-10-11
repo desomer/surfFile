@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 /// Pastille du nom d'une zone, centrée sur celle-ci pendant le mode édition.
 /// Un clic sur une zone ayant une opposée ([swapTarget]) révèle un bouton qui

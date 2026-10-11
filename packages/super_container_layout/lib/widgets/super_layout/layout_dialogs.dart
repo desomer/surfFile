@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 extension _SuperLayoutDialogs on SuperLayoutState {
   Future<void> _openEditor() async {

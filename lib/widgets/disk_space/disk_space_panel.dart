@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../../theme/surffile_appearance_slots.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
 import '../../services/disk_space.dart';
 import 'disk_gauge.dart';

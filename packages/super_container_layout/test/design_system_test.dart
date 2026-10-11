@@ -5,7 +5,7 @@ import 'package:super_container_layout/services/appearance_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/design_system.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
 void main() {
   test('design system persists, defaults to Material and rejects unknowns', () {

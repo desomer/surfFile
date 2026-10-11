@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart' as shell;
-import 'package:super_container_layout/widgets/styled_surface.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_settings.dart' as shell;
+import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
 import '../../theme/folder_transition.dart';
 import '../../theme/surffile_appearance.dart';
 import '../../theme/surffile_appearance_slots.dart';

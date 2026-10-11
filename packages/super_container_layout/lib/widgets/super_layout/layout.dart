@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 /// Disposition en neuf zones (Nord, Sud, Est, Ouest, coins et Centre) dont la
 /// structure s'édite par clic droit, comme un [SuperContainer].

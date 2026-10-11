@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
-import 'package:super_container_layout/widgets/appearance_style_section.dart'
+import 'package:super_container_layout/widgets/appearance/appearance_style_section.dart'
     as shell;
 import '../../theme/surffile_appearance.dart';
 

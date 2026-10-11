@@ -1,1 +1,1 @@
-export 'package:super_container_layout/widgets/container_style_editor.dart';
+export 'package:super_container_layout/widgets/editing/container_style_editor.dart';

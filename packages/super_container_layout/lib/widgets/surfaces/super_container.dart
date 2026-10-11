@@ -4,17 +4,17 @@ import 'dart:math' as math;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
-import '../services/window_transparency.dart';
-import '../theme/appearance.dart';
-import '../theme/appearance_slot.dart';
-import '../theme/container_style.dart';
-import '../theme/neon_style.dart';
-import 'container_style_editor.dart';
-import 'editor_history.dart';
-import 'layout_selection.dart';
-import 'style_editor_panel.dart';
+import '../../services/window_transparency.dart';
+import '../../theme/appearance.dart';
+import '../../theme/appearance_slot.dart';
+import '../../theme/container_style.dart';
+import '../../theme/neon_style.dart';
+import '../editing/container_style_editor.dart';
+import '../editing/editor_history.dart';
+import '../super_layout/layout_selection.dart';
+import '../editing/style_editor_panel.dart';
 import 'styled_surface.dart';
-import 'zone_axis_button.dart';
+import '../super_layout/zone_axis_button.dart';
 
 /// Active ou non l'édition des styles par clic droit sur les [SuperContainer].
 class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {

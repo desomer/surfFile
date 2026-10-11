@@ -2,12 +2,12 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/widgets/layout_selection.dart';
+import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
-import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
-import 'package:super_container_layout/widgets/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
 
 Widget _box(String id, {double? width, double? height}) =>
     SizedBox(key: ValueKey('box-$id'), width: width, height: height);
@@ -366,7 +366,7 @@ void main() {
       expect(rectOf(tester, 'content').top, 20);
     });
 
-    testWidgets('an auto side without content keeps its fixed size', (
+    testWidgets('an auto side without content is zero outside edit mode', (
       tester,
     ) async {
       await pump(
@@ -382,8 +382,194 @@ void main() {
         ),
         slots: [_slot('content', sizing: SlotSizing.fill)],
       );
-      expect(rectOf(tester, 'content').top, 80);
-      expect(find.text('Nord'), findsOneWidget);
+      expect(rectOf(tester, 'content'), const Rect.fromLTWH(0, 0, 600, 400));
+      expect(find.text('Nord'), findsNothing);
+    });
+
+    testWidgets('empty automatic sides collapse but fixed sides remain', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        config: const SuperLayoutConfig(
+          northSize: 45,
+          southSize: 50,
+          westSize: 90,
+          eastSize: 70,
+          autoSides: {
+            SuperLayoutZone.north,
+            SuperLayoutZone.west,
+            SuperLayoutZone.east,
+          },
+          resizeSides: true,
+          placements: {
+            SuperLayoutZone.north: ['hidden'],
+            SuperLayoutZone.west: ['missing'],
+            SuperLayoutZone.center: ['content'],
+          },
+        ),
+        slots: [
+          _slot('hidden', height: 80, visible: false),
+          _slot('content', sizing: SlotSizing.fill),
+        ],
+      );
+      expect(rectOf(tester, 'content'), const Rect.fromLTWH(0, 0, 600, 350));
+      for (final side in ['north', 'west', 'east']) {
+        expect(
+          find.byKey(ValueKey('super-layout-resize-overlay-$side')),
+          findsNothing,
+        );
+      }
+      expect(
+        find.byKey(const ValueKey('super-layout-resize-overlay-south')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('empty automatic sides restore edit space without saving', (
+      tester,
+    ) async {
+      final mode = ValueNotifier(false);
+      addTearDown(mode.dispose);
+      var updates = 0;
+      const config = SuperLayoutConfig(
+        autoSides: {
+          SuperLayoutZone.north,
+          SuperLayoutZone.south,
+          SuperLayoutZone.west,
+          SuperLayoutZone.east,
+        },
+        placements: {
+          SuperLayoutZone.center: ['content'],
+        },
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: mode,
+            child: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: SuperLayout(
+                  config: config,
+                  onChanged: (_) => updates++,
+                  slots: [_slot('content', sizing: SlotSizing.fill)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(rectOf(tester, 'content'), const Rect.fromLTWH(0, 0, 600, 400));
+      mode.value = true;
+      await tester.pumpAndSettle();
+      final expected = config.resolve(size)[SuperLayoutZone.center]!;
+      expect(rectOf(tester, 'content'), expected);
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const ValueKey('box-content'))),
+      );
+      await tester.pumpAndSettle();
+      expect(rectOf(tester, 'content'), expected);
+      mode.value = false;
+      await tester.pumpAndSettle();
+      expect(rectOf(tester, 'content'), const Rect.fromLTWH(0, 0, 600, 400));
+      expect(updates, 0);
+      expect(
+        tester.state<SuperLayoutState>(find.byType(SuperLayout)).config,
+        config,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('automatic side reacts when its last slot changes visibility', (
+      tester,
+    ) async {
+      const config = SuperLayoutConfig(
+        south: false,
+        west: false,
+        east: false,
+        autoSides: {SuperLayoutZone.north},
+        placements: {
+          SuperLayoutZone.north: ['bar'],
+          SuperLayoutZone.center: ['content'],
+        },
+      );
+      for (final visible in [true, false, true]) {
+        await pump(
+          tester,
+          config: config,
+          slots: [
+            _slot('bar', height: 50, visible: visible),
+            _slot('content', sizing: SlotSizing.fill),
+          ],
+        );
+        expect(rectOf(tester, 'content').top, visible ? 50 : 0);
+      }
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('automatic empty sides preserve an occupied corner', (
+      tester,
+    ) async {
+      const config = SuperLayoutConfig(
+        south: false,
+        east: false,
+        autoSides: {SuperLayoutZone.north, SuperLayoutZone.west},
+        placements: {
+          SuperLayoutZone.nw: ['corner'],
+          SuperLayoutZone.center: ['content'],
+        },
+      );
+      await pump(
+        tester,
+        config: config,
+        slots: [
+          _slot('corner', sizing: SlotSizing.fill),
+          _slot('content', sizing: SlotSizing.fill),
+        ],
+      );
+      expect(
+        rectOf(tester, 'corner'),
+        config.resolve(size)[SuperLayoutZone.nw],
+      );
+      expect(rectOf(tester, 'corner').size.isEmpty, isFalse);
+      expect(
+        rectOf(tester, 'content'),
+        config.resolve(size)[SuperLayoutZone.center],
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('automatic emptiness follows swapped and merged content', (
+      tester,
+    ) async {
+      const config = SuperLayoutConfig(
+        south: true,
+        west: true,
+        east: false,
+        nw: CornerMerge.row,
+        autoSides: {SuperLayoutZone.north, SuperLayoutZone.south},
+        swaps: {SuperLayoutZone.north},
+        placements: {
+          SuperLayoutZone.north: ['bar'],
+          SuperLayoutZone.center: ['content'],
+        },
+      );
+      await pump(
+        tester,
+        config: config,
+        slots: [
+          _slot('bar', height: 50),
+          _slot('content', sizing: SlotSizing.fill),
+        ],
+      );
+      expect(rectOf(tester, 'bar').bottom, 400);
+      expect(rectOf(tester, 'bar').height, 50);
+      expect(rectOf(tester, 'content').top, 0);
+      expect(rectOf(tester, 'content').bottom, 350);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('fill slots share the zone, intrinsic ones keep their height', (

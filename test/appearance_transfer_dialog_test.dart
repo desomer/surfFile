@@ -8,9 +8,9 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/services/appearance_transfer.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/widgets/dialogs/appearance_transfer_dialog.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
-import 'package:super_container_layout/widgets/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

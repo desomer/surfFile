@@ -2,11 +2,11 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../theme/container_style.dart';
-import '../theme/design_system.dart';
-import '../theme/interaction_effect.dart';
-import '../theme/style_extras.dart';
-import '../theme/appearance.dart';
+import '../../theme/container_style.dart';
+import '../../theme/design_system.dart';
+import '../../theme/interaction_effect.dart';
+import '../../theme/style_extras.dart';
+import '../../theme/appearance.dart';
 import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
 import 'surface_painters.dart';

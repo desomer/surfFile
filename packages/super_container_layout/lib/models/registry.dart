@@ -4,8 +4,8 @@ import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
-import 'package:super_container_layout/widgets/super_layout.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
 class XuiBuildCtx {
   XuiBuildCtx({required this.id});

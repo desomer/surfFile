@@ -14,8 +14,8 @@ import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_view_mode_bar.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
-import 'package:super_container_layout/widgets/container_style_editor.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
 
 void _ignoreGridChange(bool _) {}
 

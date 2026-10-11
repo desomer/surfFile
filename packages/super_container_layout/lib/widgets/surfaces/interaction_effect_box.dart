@@ -1,7 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../theme/interaction_effect.dart';
+import '../../theme/interaction_effect.dart';
 
 /// Applique un [InteractionEffect] à la surface construite par [builder].
 ///

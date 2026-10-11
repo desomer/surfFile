@@ -3,9 +3,9 @@ import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
-import 'package:super_container_layout/widgets/appearance_settings.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
-import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 export 'package:super_container_layout/models/registry.dart';
 

@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 extension _SuperLayoutSlots on SuperLayoutState {
   List<SlotImplementation> _availableSlots(
@@ -121,6 +121,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
       preferredSizes: config.slotPreferredSizes,
       sizeConstraints: config.slotSizeConstraints,
       layoutSize: layoutSize,
+      selectedSlotId: _selected.value == zone ? _selectedSlot.value : null,
+      onResizeSlot: editMode && widget.editable ? _applySlotDimensions : null,
       onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
       onEditPreferredSize: editMode && widget.editable
           ? _editSlotPreferredSize

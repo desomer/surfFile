@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/appearance_transfer_dialog.dart' as shell;
+import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart' as shell;
 import '../../services/appearance_store.dart';
 import '../../theme/surffile_appearance.dart';
 

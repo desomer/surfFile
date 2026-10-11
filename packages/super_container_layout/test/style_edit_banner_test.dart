@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/layout_selection.dart';
-import 'package:super_container_layout/widgets/style_edit_banner.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
 void main() {
   Future<void> pump(WidgetTester tester, ValueNotifier<bool> editMode) =>

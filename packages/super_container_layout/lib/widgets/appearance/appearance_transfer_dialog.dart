@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../services/appearance_transfer.dart';
-import '../services/appearance_store.dart';
-import '../theme/appearance.dart';
+import '../../services/appearance_transfer.dart';
+import '../../services/appearance_store.dart';
+import '../../theme/appearance.dart';
 
 /// Boîte d'export et d'import du style et de la disposition.
 ///

@@ -13,7 +13,7 @@ import 'package:surf_file/widgets/explorer/explorer_components.dart';
 import 'package:surf_file/widgets/explorer/explorer_scope.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
-import 'package:super_container_layout/widgets/super_layout.dart';
+import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_filter.dart';

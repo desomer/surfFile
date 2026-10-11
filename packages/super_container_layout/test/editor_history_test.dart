@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
 
 void main() {
   test('undo and redo restore snapshots and discard a stale redo branch', () {

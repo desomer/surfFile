@@ -9,12 +9,12 @@ import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:super_container_layout/widgets/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
-import 'package:super_container_layout/widgets/styled_surface.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
-import 'package:super_container_layout/widgets/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
 
 void main() {
   Future<List<ContainerStyle>> pump(WidgetTester tester) async {

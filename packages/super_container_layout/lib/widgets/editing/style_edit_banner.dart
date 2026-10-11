@@ -1,11 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/widgets/appearance_transfer_dialog.dart';
-import 'package:super_container_layout/widgets/editor_history.dart';
-import 'package:super_container_layout/widgets/layout_selection.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
+import 'package:super_container_layout/widgets/editing/editor_history.dart';
+import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
-import 'zone_axis_button.dart';
+import '../super_layout/zone_axis_button.dart';
 
 /// Pastille deplacable, initialement en haut au centre du mode edition.
 ///

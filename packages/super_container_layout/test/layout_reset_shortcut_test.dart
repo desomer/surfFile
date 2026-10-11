@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/widgets/layout_reset_shortcut.dart';
+import 'package:super_container_layout/widgets/super_layout/layout_reset_shortcut.dart';
 
 void main() {
   group('LayoutResetShortcut', () {

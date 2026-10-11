@@ -274,7 +274,8 @@ apercu. Le fond respecte aussi le curseur d'opacite global. Les cartes en liste
 et en grille partagent le meme degrade ; la selection garde sa surbrillance.
 Les nouveaux styles sont sauvegardes et les anciens reglages restent compatibles.
 Le composant reutilisable `ContainerStyleEditor` dans
-`lib/widgets/container_style_editor.dart` recoit un `ContainerFill` et un
+`packages/super_container_layout/lib/widgets/editing/container_style_editor.dart`
+recoit un `ContainerFill` et un
 callback `onChanged`. Ses callbacks optionnels exposent aussi l'arrondi, la
 bordure, l'elevation et l'opacite de l'ombre ; `solidColor` et
 `onSolidColorChanged` permettent d'editer la couleur unie.
@@ -394,7 +395,8 @@ Le test non destructif du vrai Shell Windows se lance avec
 
 
 
-**SuperLayout** (`lib/widgets/super_layout.dart`) est une disposition en grille
+**SuperLayout** (`packages/super_container_layout/lib/widgets/super_layout/super_layout.dart`)
+est une disposition en grille
 3x3 (Nord-Ouest, Nord, Nord-Est, Ouest, Centre, Est, Sud-Ouest, Sud, Sud-Est)
 qui s'edite par clic droit, comme un `SuperContainer`. L'editeur affiche un
 apercu et permet de choisir si le Nord, le Sud, l'Est et l'Ouest existent (avec

@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 class _ZoneParentData extends ContainerBoxParentData<RenderBox> {
   SuperLayoutZone? zone;
@@ -56,15 +56,17 @@ class _ZoneLayout extends MultiChildRenderObjectWidget {
   const _ZoneLayout({
     required this.config,
     required this.autoSides,
+    required this.emptyAutoSides,
     required super.children,
   });
 
   final SuperLayoutConfig config;
   final Set<SuperLayoutZone> autoSides;
+  final Set<SuperLayoutZone> emptyAutoSides;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderZoneLayout(config, autoSides);
+      _RenderZoneLayout(config, autoSides, emptyAutoSides);
 
   @override
   void updateRenderObject(
@@ -72,14 +74,15 @@ class _ZoneLayout extends MultiChildRenderObjectWidget {
     covariant _RenderZoneLayout renderObject,
   ) => renderObject
     ..config = config
-    ..autoSides = autoSides;
+    ..autoSides = autoSides
+    ..emptyAutoSides = emptyAutoSides;
 }
 
 class _RenderZoneLayout extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, _ZoneParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _ZoneParentData> {
-  _RenderZoneLayout(this._config, this._autoSides);
+  _RenderZoneLayout(this._config, this._autoSides, this._emptyAutoSides);
 
   Map<SuperLayoutZone, Rect> rects = const {};
 
@@ -94,6 +97,13 @@ class _RenderZoneLayout extends RenderBox
   set autoSides(Set<SuperLayoutZone> value) {
     if (setEquals(value, _autoSides)) return;
     _autoSides = value;
+    markNeedsLayout();
+  }
+
+  Set<SuperLayoutZone> _emptyAutoSides;
+  set emptyAutoSides(Set<SuperLayoutZone> value) {
+    if (setEquals(value, _emptyAutoSides)) return;
+    _emptyAutoSides = value;
     markNeedsLayout();
   }
 
@@ -124,7 +134,9 @@ class _RenderZoneLayout extends RenderBox
       }
     }
 
-    final measured = <SuperLayoutZone, double>{};
+    final measured = <SuperLayoutZone, double>{
+      for (final side in _emptyAutoSides) side: 0,
+    };
     for (final side in const [SuperLayoutZone.west, SuperLayoutZone.east]) {
       final child = content[side];
       if (child == null || !_autoSides.contains(side)) continue;
@@ -186,7 +198,8 @@ class _RenderZoneLayout extends RenderBox
           ),
         };
       }
-      final autoAxis = overlay || !measured.containsKey(zone)
+      final autoAxis = overlay || !measured.containsKey(zone) ||
+          _emptyAutoSides.contains(zone)
           ? null
           : (zone == SuperLayoutZone.north || zone == SuperLayoutZone.south)
           ? Axis.vertical

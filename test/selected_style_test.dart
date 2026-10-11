@@ -15,10 +15,10 @@ import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:surf_file/widgets/dialogs/appearance_settings.dart';
-import 'package:super_container_layout/widgets/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer/views/explorer_entries_view.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
-import 'package:super_container_layout/widgets/neon_surface.dart';
+import 'package:super_container_layout/widgets/surfaces/neon_surface.dart';
 
 void main() {
   const custom = ContainerStyle(

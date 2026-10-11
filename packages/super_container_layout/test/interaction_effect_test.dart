@@ -4,9 +4,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/design_system.dart';
 import 'package:super_container_layout/theme/interaction_effect.dart';
-import 'package:super_container_layout/widgets/interaction_effect_box.dart';
-import 'package:super_container_layout/widgets/styled_surface.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
+import 'package:super_container_layout/widgets/surfaces/interaction_effect_box.dart';
+import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
 void main() {
   test('interaction effect persists, defaults to ripple, rejects unknowns', () {

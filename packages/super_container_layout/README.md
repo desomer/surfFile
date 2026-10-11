@@ -69,8 +69,17 @@ import 'package:super_container_layout/super_container_layout.dart';
 `SuperLayoutConfig`. `SuperContainer` fournit l’édition contextuelle des styles
 et peut partager les styles via `AppearanceScope` et `AppearanceSlot`.
 
-Le point d'entree `lib/widgets/super_layout.dart` conserve les imports publics
-existants. Son implementation est repartie en fichiers `part` dans
+Les widgets sont classes par role sous `lib/widgets/` :
+
+- `appearance/` : reglages d'apparence, sections de styles et dialogue de transfert.
+- `editing/` : editeurs de styles, controles, banniere et historique d'edition.
+- `surfaces/` : conteneurs, rendu des surfaces, effets d'interaction et painters.
+- `super_layout/` : disposition, slots, selection, axes et raccourci de reinitialisation.
+
+Le point d'entree public `super_container_layout.dart` reste inchange.
+Les imports directs de widgets utilisent desormais ces sous-dossiers.
+La bibliotheque `lib/widgets/super_layout/super_layout.dart` regroupe
+son implementation en fichiers `part` dans
 `lib/widgets/super_layout/` : `layout.dart` (widget public, etat et cycle de vie),
 `layout_view.dart` (construction des zones et overlays),
 `layout_slots.dart` (resolution et affichage des slots),
@@ -90,6 +99,23 @@ de revenir a la zone ou a la disposition ; le glisser des labels est conserve.
 Cliquer sur le segment courant du chemin le deselectionne : un slot revient
 a sa zone, une zone a sa disposition, et une disposition quitte la selection.
 Cliquer sur un segment parent le selectionne.
+Le slot selectionne affiche quatre poignees dans ses coins lorsque la
+disposition est editable. Elles restent au-dessus des noms de zones pour
+ne pas etre masquees. Leur position est calculee pendant le layout pour
+permettre l'affichage des tooltips au survol. Leur glisser ajuste ses tailles preferees en temps
+reel, sans le deplacer dans la zone. Les bornes min/max, l'espace disponible
+et les minima des autres slots sont respectes ; les unites px/% et la base
+des pourcentages sont conservees. Les modifications passent par `onChanged`
+et chaque glisser constitue une seule operation dans l'historique d'edition.
+Les poignees disparaissent a la deselection et hors du mode edition.
+Hors edition, un cote en taille automatique sans slot visible occupe zero
+pixel ; les slots masques ou introuvables ne comptent pas comme du contenu.
+Les tailles fixes restent reservees, meme pour une zone vide. Les cotes
+automatiques retrouvent leur taille de repere en mode edition, y compris
+dans les dispositions non selectionnees, sans modifier la configuration.
+Un cote necessaire a un coin contenant un slot visible conserve son espace.
+Les separateurs de redimensionnement des cotes automatiquement vides sont
+masques hors edition.
 L'entree contextuelle du SuperLayout affiche le nom de la zone active entre
 le label de la disposition et ses boutons d'action (axe, ajout de slot).
 

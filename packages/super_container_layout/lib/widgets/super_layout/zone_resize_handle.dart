@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 class _ZoneResizeHandle extends StatefulWidget {
   const _ZoneResizeHandle({

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
-import 'package:super_container_layout/widgets/neon_surface.dart';
+import 'package:super_container_layout/widgets/surfaces/neon_surface.dart';
 
 class SlidingSelectionList extends StatefulWidget {
   const SlidingSelectionList({

@@ -12,11 +12,11 @@ import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
-import 'widgets/editor_history.dart';
-import 'widgets/layout_reset_shortcut.dart';
-import 'widgets/neon_surface.dart';
-import 'widgets/style_edit_banner.dart';
-import 'widgets/super_container.dart';
+import 'widgets/editing/editor_history.dart';
+import 'widgets/super_layout/layout_reset_shortcut.dart';
+import 'widgets/surfaces/neon_surface.dart';
+import 'widgets/editing/style_edit_banner.dart';
+import 'widgets/surfaces/super_container.dart';
 
 /// Application shell managing appearance persistence, layout reset and window
 /// transparency.

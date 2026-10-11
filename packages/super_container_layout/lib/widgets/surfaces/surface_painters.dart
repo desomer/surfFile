@@ -3,7 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../theme/style_extras.dart';
+import '../../theme/style_extras.dart';
 
 /// Bordure à côtés d'épaisseurs différentes et/ou au trait tireté ou
 /// pointillé, que BoxDecoration ne sait pas dessiner avec des coins arrondis.

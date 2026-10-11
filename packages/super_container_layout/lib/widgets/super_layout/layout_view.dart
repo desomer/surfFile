@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 extension _SuperLayoutView on SuperLayoutState {
   Widget _buildLayout(BuildContext context) => Listener(
@@ -26,8 +26,9 @@ extension _SuperLayoutView on SuperLayoutState {
         builder: (context, _) {
           final config = _config.value;
           // Seule la disposition selectionnee affiche ses actions overlay.
+          final styleEditMode = StyleEditScope.controllerOf(context)?.value ?? false;
           final editMode =
-              (StyleEditScope.controllerOf(context)?.value ?? false) &&
+              styleEditMode &&
               identical(_LayoutEditSelection.selected.value, this);
           final parentPath = _LabelScope.pathOf(context);
           final selected = _selected.value;
@@ -72,7 +73,23 @@ extension _SuperLayoutView on SuperLayoutState {
           );
           final editing = widget.showZoneNames && editMode;
           final zones = config.visibleZones;
-          // Un côté automatique sans contenu garde sa taille fixe.
+          final emptyAutoSides = {
+            if (!styleEditMode)
+              for (final side in config.autoSides)
+                if (zones.contains(side) &&
+                    !_hasContent(config, config.contentZone(side)) &&
+                    !zones.any((zone) =>
+                        zone.isCorner &&
+                        switch (side) {
+                          SuperLayoutZone.north => zone == SuperLayoutZone.nw || zone == SuperLayoutZone.ne,
+                          SuperLayoutZone.south => zone == SuperLayoutZone.sw || zone == SuperLayoutZone.se,
+                          SuperLayoutZone.west => zone == SuperLayoutZone.nw || zone == SuperLayoutZone.sw,
+                          SuperLayoutZone.east => zone == SuperLayoutZone.ne || zone == SuperLayoutZone.se,
+                          _ => false,
+                        } &&
+                        _hasContent(config, config.contentZone(zone))))
+                  side,
+          };
           final autoSides = {
             for (final side in config.autoSides)
               if (zones.contains(side) &&
@@ -86,6 +103,7 @@ extension _SuperLayoutView on SuperLayoutState {
               return _ZoneLayout(
                 config: config,
                 autoSides: autoSides,
+                emptyAutoSides: emptyAutoSides,
                 children: [
                   for (final zone in zones)
                     _ZoneEntry(
@@ -232,7 +250,8 @@ extension _SuperLayoutView on SuperLayoutState {
                   ],
                   if (widget.editable)
                     for (final side in SuperLayoutZone.values)
-                      if (config.canResize(side) && zones.contains(side))
+                      if (config.canResize(side) && zones.contains(side) &&
+                          !emptyAutoSides.contains(side))
                         _ZoneEntry(
                           key: ValueKey(
                             'super-layout-resize-overlay-${side.name}',

@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../theme/appearance.dart';
+import '../../theme/appearance.dart';
 
 class EditorHistoryController extends ChangeNotifier {
   EditorHistoryController({

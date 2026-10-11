@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
   Future<void> _editSlotPreferredSize(SlotImplementation slot) async {

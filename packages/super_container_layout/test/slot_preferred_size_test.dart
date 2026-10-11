@@ -74,6 +74,476 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('corner handles belong only to the selected editable slot', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(tester, editMode: mode);
+    Finder handle(String id, String corner) =>
+        find.byKey(ValueKey('slot-resize-$id-$corner'));
+    expect(handle('first', 'se'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    for (final corner in ['nw', 'ne', 'sw', 'se']) {
+      expect(handle('first', corner), findsOneWidget);
+      expect(handle('second', corner), findsNothing);
+    }
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-second')));
+    await tester.pumpAndSettle();
+    expect(handle('first', 'se'), findsNothing);
+    expect(handle('second', 'se'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-second')));
+    await tester.pumpAndSettle();
+    expect(handle('second', 'se'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    mode.value = false;
+    await tester.pumpAndSettle();
+    expect(handle('first', 'se'), findsNothing);
+    mode.value = true;
+    await pump(tester, editMode: mode, editable: false);
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    expect(handle('first', 'se'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final (corner, delta) in [
+    ('nw', const Offset(-40, -30)),
+    ('ne', const Offset(40, -30)),
+    ('sw', const Offset(-40, 30)),
+    ('se', const Offset(40, 30)),
+  ]) {
+    testWidgets('$corner handle resizes from displayed size and persists', (
+      tester,
+    ) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      SuperLayoutConfig? changed;
+      await pump(
+        tester,
+        editMode: mode,
+        slots: [
+          slot('first', preferredSize: const Size(240, 120)),
+          slot('second'),
+        ],
+        onChanged: (value) => changed = value,
+      );
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(ValueKey('slot-resize-first-$corner')),
+        delta,
+      );
+      await tester.pumpAndSettle();
+      expect(changed!.slotPreferredSizes['first'], const Size(280, 150));
+      expect(
+        tester.getSize(find.byKey(const ValueKey('content-first'))),
+        const Size(280, 150),
+      );
+      final restored = SuperLayoutConfig.fromJson(changed!.toJson());
+      await pump(tester, config: restored, editMode: mode);
+      expect(
+        tester.getSize(find.byKey(const ValueKey('content-first'))),
+        const Size(280, 150),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('corner handle tooltips can appear and resize while hovered', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(
+      tester,
+      editMode: mode,
+      slots: [
+        slot('first', preferredSize: const Size(240, 120)),
+        slot('second'),
+      ],
+    );
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(700, 500));
+    for (final corner in ['nw', 'ne', 'sw', 'se']) {
+      final handle = find.byKey(ValueKey('slot-resize-first-$corner'));
+      await mouse.moveTo(tester.getCenter(handle));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('Redimensionner first'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await mouse.moveTo(const Offset(700, 500));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+    }
+    final handle = find.byKey(const ValueKey('slot-resize-first-se'));
+    await mouse.moveTo(tester.getCenter(handle));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    await tester.drag(handle, const Offset(40, 30));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(280, 150),
+    );
+    await mouse.removePointer();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('corner overlays follow a translated and scaled layout', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    final translation = ValueNotifier(Offset.zero);
+    addTearDown(mode.dispose);
+    addTearDown(translation.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StyleEditScope(
+          controller: mode,
+          child: Scaffold(
+            body: Center(
+              child: ValueListenableBuilder<Offset>(
+                valueListenable: translation,
+                builder: (context, offset, child) =>
+                    Transform.translate(offset: offset, child: child),
+                child: Transform.scale(
+                  scale: .75,
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(
+                    width: 600,
+                    height: 400,
+                    child: SuperLayout(
+                      config: base,
+                      slots: [
+                        slot('first', preferredSize: const Size(240, 120)),
+                        slot('second'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tapAt(
+      tester.getTopLeft(find.byType(SuperLayout)) + const Offset(100, 50),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    final content = find.byKey(const ValueKey('content-first'));
+    final handle = find.byKey(const ValueKey('slot-resize-first-se'));
+    expect(tester.getBottomRight(handle), tester.getBottomRight(content));
+    final before = tester.getBottomRight(handle);
+    translation.value = const Offset(40, 30);
+    await tester.pumpAndSettle();
+    expect(tester.getBottomRight(handle), before + const Offset(40, 30));
+    expect(tester.getBottomRight(handle), tester.getBottomRight(content));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: tester.getCenter(handle));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Redimensionner first'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.drag(handle, const Offset(30, 22.5));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(content), const Size(280, 150));
+    expect(tester.getBottomRight(handle), tester.getBottomRight(content));
+    await mouse.removePointer();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('corner resizing preserves percentage units and sibling minima', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    final config = base.copyWith(
+      slotSizeConstraints: {
+        'first': const SlotSizeConstraints(
+          minWidth: SlotDimension(20, SlotSizeUnit.percent),
+          maxWidth: SlotDimension(75, SlotSizeUnit.percent),
+          minHeight: SlotDimension(50, SlotSizeUnit.pixels),
+          preferredWidth: SlotDimension(50, SlotSizeUnit.percent),
+          preferredHeight: SlotDimension(25, SlotSizeUnit.percent),
+          percentBasis: SlotPercentBasis.layout,
+        ),
+        'second': const SlotSizeConstraints(
+          minHeight: SlotDimension(100, SlotSizeUnit.pixels),
+        ),
+      },
+    );
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      config: config,
+      editMode: mode,
+      onChanged: (value) => changed = value,
+    );
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('slot-resize-first-se')),
+      const Offset(500, 500),
+    );
+    await tester.pumpAndSettle();
+    final dimensions = changed!.slotSizeConstraints['first']!;
+    expect(
+      dimensions.preferredWidth,
+      const SlotDimension(75, SlotSizeUnit.percent),
+    );
+    expect(
+      dimensions.preferredHeight,
+      const SlotDimension(75, SlotSizeUnit.percent),
+    );
+    expect(dimensions.minWidth, config.slotSizeConstraints['first']!.minWidth);
+    expect(dimensions.maxWidth, config.slotSizeConstraints['first']!.maxWidth);
+    expect(dimensions.percentBasis, SlotPercentBasis.layout);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(450, 300),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-second'))).height,
+      100,
+    );
+    await tester.drag(
+      find.byKey(const ValueKey('slot-resize-first-se')),
+      const Offset(-600, -600),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(120, 50),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('horizontal corner resizing allows fill siblings to shrink', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(
+      tester,
+      config: base
+          .withAxis(SuperLayoutZone.center, Axis.horizontal)
+          .copyWith(
+            slotSizeConstraints: {
+              'second': const SlotSizeConstraints(
+                minWidth: SlotDimension(100, SlotSizeUnit.pixels),
+              ),
+            },
+          ),
+      editMode: mode,
+    );
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('slot-resize-first-se')),
+      const Offset(400, -80),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(500, 320),
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-second'))).width,
+      100,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('corner resizing starts from the clamped displayed size', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      editMode: mode,
+      slots: [
+        slot('first', preferredSize: const Size(1000, 1000)),
+        slot('second'),
+      ],
+      onChanged: (value) => changed = value,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(600, 400),
+    );
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('slot-resize-first-se')),
+      const Offset(-50, -50),
+    );
+    await tester.pumpAndSettle();
+    expect(changed!.slotPreferredSizes['first'], const Size(550, 350));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(550, 350),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('corner resizing resolves percentages against the zone', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      config: base.copyWith(
+        north: true,
+        slotSizeConstraints: {
+          'first': const SlotSizeConstraints(
+            preferredWidth: SlotDimension(50, SlotSizeUnit.percent),
+            preferredHeight: SlotDimension(50, SlotSizeUnit.percent),
+          ),
+        },
+      ),
+      editMode: mode,
+      onChanged: (value) => changed = value,
+    );
+    final initial = tester.getSize(find.byKey(const ValueKey('content-first')));
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('slot-resize-first-se')),
+      Offset(initial.width * .2, initial.height * .2),
+    );
+    await tester.pumpAndSettle();
+    final dimensions = changed!.slotSizeConstraints['first']!;
+    expect(dimensions.percentBasis, SlotPercentBasis.zone);
+    expect(dimensions.preferredWidth!.unit, SlotSizeUnit.percent);
+    expect(dimensions.preferredHeight!.unit, SlotSizeUnit.percent);
+    expect(dimensions.preferredWidth!.value, closeTo(60, .001));
+    expect(dimensions.preferredHeight!.value, closeTo(60, .001));
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))).height,
+      closeTo(initial.height * 1.2, .001),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a continuous corner drag is a single undoable change', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier<Appearance>(
+      Appearance(layouts: {'resize': base}),
+    );
+    final history = EditorHistoryController(
+      appearance: appearance,
+      editMode: mode,
+    );
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    addTearDown(history.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EditorHistoryScope(
+          controller: history,
+          child: StyleEditScope(
+            controller: mode,
+            child: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: ValueListenableBuilder<Appearance>(
+                  valueListenable: appearance,
+                  builder: (context, value, _) => SuperLayout(
+                    config: value.layouts['resize']!,
+                    onChanged: (config) => appearance.value = appearance.value
+                        .withLayout('resize', config),
+                    slots: [slot('first'), slot('second')],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('slot-resize-first-se'))),
+    );
+    await gesture.moveBy(const Offset(-40, 30));
+    await tester.pump();
+    await gesture.moveBy(const Offset(-20, 30));
+    await tester.pump();
+    expect(history.canUndo, isFalse);
+    await gesture.up();
+    await tester.pumpAndSettle();
+    final changed = appearance.value.layouts['resize'];
+    expect(changed!.slotPreferredSizes['first'], const Size(540, 260));
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(appearance.value.layouts['resize'], base);
+    expect(history.canUndo, isFalse);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(600, 200),
+    );
+    history.redo();
+    await tester.pumpAndSettle();
+    expect(appearance.value.layouts['resize'], changed);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(540, 260),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('incompatible slot bounds report blocked corner resizing', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    var updates = 0;
+    await pump(
+      tester,
+      config: base.copyWith(
+        slotSizeConstraints: {
+          'first': const SlotSizeConstraints(
+            minHeight: SlotDimension(200, SlotSizeUnit.pixels),
+            maxHeight: SlotDimension(100, SlotSizeUnit.pixels),
+          ),
+        },
+      ),
+      editMode: mode,
+      onChanged: (_) => updates++,
+    );
+    await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const ValueKey('slot-resize-first-se')),
+      const Offset(-40, -40),
+    );
+    await tester.pump();
+    expect(updates, 0);
+    expect(
+      find.textContaining('Redimensionnement de first impossible'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'size sliders preview immediately and cancel restores saved sizes',
     (tester) async {

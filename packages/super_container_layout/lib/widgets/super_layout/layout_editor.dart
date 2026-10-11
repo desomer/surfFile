@@ -1,4 +1,4 @@
-part of '../super_layout.dart';
+part of 'super_layout.dart';
 
 /// Formulaire d'édition d'un [SuperLayoutConfig] : aperçu, présence des côtés,
 /// fusion des coins et tailles.

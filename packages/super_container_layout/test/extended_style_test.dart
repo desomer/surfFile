@@ -4,9 +4,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/style_extras.dart';
-import 'package:super_container_layout/widgets/styled_surface.dart';
-import 'package:super_container_layout/widgets/super_container.dart';
-import 'package:super_container_layout/widgets/surface_painters.dart';
+import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
+import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/surfaces/surface_painters.dart';
 
 void main() {
   group('model', () {
