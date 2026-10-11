@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_monaco: 3.4.3
+  flutter_monaco: ^4.0.0
   material_ui: ^1.6.0
   flex_color_picker: ^4.0.0
   flutter_acrylic: ^1.1.4

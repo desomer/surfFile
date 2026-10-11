@@ -53,6 +53,39 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 add_subdirectory("runner")
 
 
+# The video and WebView plugins download incompatible NuGet versions to the
+# same filename. Resolve one executable before configuring either plugin.
+if(DEFINED NUGET AND NOT EXISTS "${NUGET}")
+  unset(NUGET CACHE)
+  unset(NUGET)
+endif()
+find_program(NUGET NAMES nuget)
+if(NOT NUGET)
+  set(NUGET_DOWNLOAD "${CMAKE_BINARY_DIR}/tools/nuget-7.6.0.exe")
+  set(NUGET_DOWNLOAD_SHA256
+    "751ee5e79481626a428c1241dc7f94bca2739b32588e669715bc5fb54d8fb8a2")
+  if(NOT EXISTS "${NUGET_DOWNLOAD}")
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
+    file(DOWNLOAD
+      "https://dist.nuget.org/win-x86-commandline/v7.6.0/nuget.exe"
+      "${NUGET_DOWNLOAD}"
+      EXPECTED_HASH "SHA256=${NUGET_DOWNLOAD_SHA256}"
+      TLS_VERIFY ON
+      STATUS NUGET_DOWNLOAD_STATUS)
+    list(GET NUGET_DOWNLOAD_STATUS 0 NUGET_DOWNLOAD_CODE)
+    if(NOT NUGET_DOWNLOAD_CODE EQUAL 0)
+      list(GET NUGET_DOWNLOAD_STATUS 1 NUGET_DOWNLOAD_MESSAGE)
+      file(REMOVE "${NUGET_DOWNLOAD}")
+      message(FATAL_ERROR "NuGet download failed: ${NUGET_DOWNLOAD_MESSAGE}")
+    endif()
+  endif()
+  file(SHA256 "${NUGET_DOWNLOAD}" NUGET_DOWNLOAD_HASH)
+  if(NOT NUGET_DOWNLOAD_HASH STREQUAL NUGET_DOWNLOAD_SHA256)
+    message(FATAL_ERROR "Integrity check for ${NUGET_DOWNLOAD} failed.")
+  endif()
+  set(NUGET "${NUGET_DOWNLOAD}" CACHE FILEPATH "NuGet executable for plugins" FORCE)
+endif()
+
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)

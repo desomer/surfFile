@@ -101,6 +101,21 @@ continuent d'etre sauvegardees par le controleur d'apparence.
 
 ## Installateur Windows (Inno Setup)
 
+### Depannage de la compilation Windows
+
+Si MSBuild signale `MSB8066` sur `wil_download.stamp.rule` ou
+`video_player_win_DEPENDENCIES_DOWNLOAD`, verifier les messages precedents :
+ils indiquent l'erreur de telechargement de la dependance native WIL.
+Un chemin NuGet mis en cache peut pointer vers un dossier temporaire supprime.
+La configuration CMake invalide automatiquement ce chemin s'il n'existe plus ;
+elle recherche NuGet puis, si necessaire, telecharge une version commune aux
+plugins video et WebView dans `build\windows\x64\tools`, avec verification SHA-256.
+Cela evite aussi leurs telechargements de versions differentes vers le meme fichier.
+Relancer `flutter build windows --debug --no-pub` (ou le lancement depuis VS Code).
+Le premier telechargement necessite un acces a `dist.nuget.org` et aux sources NuGet.
+
+### Creation de l'installateur
+
 Prerequis : Flutter 3.44.0 ou plus recent (Dart 3.12.0 ou plus recent),
 Visual Studio avec les outils C++ de bureau, et Inno Setup 6.
 Pour installer ce dernier : `winget install --id JRSoftware.InnoSetup --exact`.

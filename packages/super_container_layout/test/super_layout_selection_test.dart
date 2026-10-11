@@ -128,7 +128,9 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, isEmpty);
-      await tester.tapAt(tester.getCenter(find.byKey(const ValueKey('select-content-a'))));
+      await tester.tapAt(
+        tester.getCenter(find.byKey(const ValueKey('select-content-a'))),
+      );
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Layout']);
       expect(changes, isEmpty);
@@ -224,6 +226,22 @@ void main() {
     expect(find.byTooltip('Nord : Column - Passer en Row'), findsNWidgets(2));
     await tester.tap(a, buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
+    final menuZone = find.byKey(const ValueKey('style-menu-zone-Super layout'));
+    expect(tester.widget<Text>(menuZone).data, 'Nord');
+    final menuRow = find.byKey(const ValueKey('style-menu-Super layout'));
+    final menuLabel = find.descendant(
+      of: menuRow,
+      matching: find.text('Super layout'),
+    );
+    final menuAxis = find.byKey(const ValueKey('style-menu-axis-Super layout'));
+    expect(
+      tester.getRect(menuLabel).right,
+      lessThan(tester.getRect(menuZone).left),
+    );
+    expect(
+      tester.getRect(menuZone).right,
+      lessThan(tester.getRect(menuAxis).left),
+    );
     await tester.tap(
       find.byKey(const ValueKey('style-menu-axis-Super layout')),
     );

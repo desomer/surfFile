@@ -77,10 +77,10 @@ packages:
     dependency: transitive
     description:
       name: cupertino_ui
-      sha256: c23816577a1280cff409e989541767887011f8f1d8c1863a794ed308af46f2a9
+      sha256: ea0b8170b40a86262b2fc21ac0625303f52df209dbf6fccc2b98b27eff44f6ce
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.1"
+    version: "1.1.2"
   fake_async:
     dependency: transitive
     description:
@@ -151,10 +151,10 @@ packages:
     dependency: "direct main"
     description:
       name: flutter_monaco
-      sha256: "37cb6084dc28656bef57a4206e823cef273772c733085dc0918f4ef766295b45"
+      sha256: f06c349b47191845692fff090d4a060da4a17e8ccbb7615fe43e733fa66241b2
       url: "https://pub.dev"
     source: hosted
-    version: "3.4.3"
+    version: "4.0.0"
   flutter_test:
     dependency: "direct dev"
     description: flutter
@@ -225,10 +225,10 @@ packages:
     dependency: transitive
     description:
       name: jni_flutter
-      sha256: b2310cdd4c18c65c081ab141a41efa94aa26c65431803703ece51996f174f351
+      sha256: "0dd33d67797560f66e961a6053882d4df54bd345bf063b8fe7ea133f7ad8b191"
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.3"
+    version: "1.0.4+1"
   jni_util:
     dependency: transitive
     description:
@@ -417,10 +417,10 @@ packages:
     dependency: "direct main"
     description:
       name: pro_image_editor
-      sha256: "78545d55e4df91200a18d0f6b9810fb24167b068899eec58a932c8a6584d414a"
+      sha256: "1bfabaad1a920fc7e23b32b95f6bfd3023d3abe862dcf6e4ae3aefbdeace2adb"
       url: "https://pub.dev"
     source: hosted
-    version: "14.10.2"
+    version: "14.11.0"
   pub_semver:
     dependency: transitive
     description:
@@ -441,10 +441,10 @@ packages:
     dependency: "direct main"
     description:
       name: shared_preferences
-      sha256: c3025c5534b01739267eb7d76959bbc25a6d10f6988e1c2a3036940133dd10bf
+      sha256: "1e85e0dccf5b4a016077fea7dfbb4a7cb39c759ac1596fcf60c06deadb7da91f"
       url: "https://pub.dev"
     source: hosted
-    version: "2.5.5"
+    version: "2.5.6"
   shared_preferences_android:
     dependency: transitive
     description:
@@ -597,10 +597,10 @@ packages:
     dependency: transitive
     description:
       name: video_player_avfoundation
-      sha256: "2fc56e537324a19eb649fca991aa308ac961b5406292876fa657b062de461fd8"
+      sha256: "4f8a845173377ab250a50f9b9dfe4a43500cc76a7c49dd8410d02d8fc29dfd8b"
       url: "https://pub.dev"
     source: hosted
-    version: "2.12.0"
+    version: "2.12.1"
   video_player_platform_interface:
     dependency: transitive
     description:
@@ -699,4 +699,4 @@ packages:
     version: "3.1.4"
 sdks:
   dart: ">=3.13.5 <4.0.0"
-  flutter: ">=3.47.6"
+  flutter: ">=3.47.7"

@@ -585,6 +585,16 @@ class SuperContainerState extends State<SuperContainer> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      if ((StyleEditScope.controllerOf(state.context)?.value ??
+                              false) &&
+                          state.widget.axisAction != null) ...[
+                        const SizedBox(width: 10),
+                        Text(
+                          state.widget.axisAction!().zoneLabel,
+                          key: ValueKey('style-menu-zone-${state._label}'),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                       if (index == 0)
                         for (final action in extraActions.where(
                           (action) => action.inline,

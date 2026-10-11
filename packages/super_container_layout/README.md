@@ -90,6 +90,8 @@ de revenir a la zone ou a la disposition ; le glisser des labels est conserve.
 Cliquer sur le segment courant du chemin le deselectionne : un slot revient
 a sa zone, une zone a sa disposition, et une disposition quitte la selection.
 Cliquer sur un segment parent le selectionne.
+L'entree contextuelle du SuperLayout affiche le nom de la zone active entre
+le label de la disposition et ses boutons d'action (axe, ajout de slot).
 
 L'editeur des tailles des slots propose un slider pour chaque dimension,
 synchronise avec le champ numerique et l'unite px/%. Les valeurs valides,
