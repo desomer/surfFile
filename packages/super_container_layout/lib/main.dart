@@ -30,7 +30,10 @@ class _TestAppState extends State<TestApp> {
   @override
   void initState() {
     super.initState();
-    _registry.registerFactory('A', const Center(child: Text('A')));
+    _registry.registerFactory(
+      'A',
+      const SuperContainer(label: "AB", child: Center(child: Text('A'))),
+    );
     _router = GoRouter(
       routes: [
         GoRoute(
@@ -49,10 +52,10 @@ class _TestAppState extends State<TestApp> {
 
   @override
   Widget build(BuildContext context) => SuperApp(
-      router: _router,
-      title: 'Super Container Layout demo',
-      registry: _registry,
-    );
+    router: _router,
+    title: 'Super Container Layout demo',
+    registry: _registry,
+  );
 
   Widget getRootWidget(Registry registry) {
     return Builder(

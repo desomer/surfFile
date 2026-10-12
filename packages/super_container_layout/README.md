@@ -141,6 +141,12 @@ slot initial ; les composants du registre peuvent aussi etre ajoutes depuis
 l'editeur. Les emplacements peuvent accueillir plusieurs composants, comme
 les autres zones de `SuperLayout`. La zone action est horizontale et sa
 largeur s'adapte au contenu. Le bouton de retour automatique est conserve.
+En mode edition, le clic droit sur la barre ou ses composants propose la
+taille preferee et la suppression des slots dans le menu contextuel.
+Le menu cible uniquement le slot le plus proche du clic, sans cumuler les
+icones de ses slots parents. Sur une partie vide de la barre, ces actions
+ciblent le slot de la barre dans la page, meme lorsque sa disposition interne
+est selectionnee.
 
 Les dispositions sont sauvegardees dans les preferences via
 `Registry.layoutController`. Donnez un `id` stable et distinct a chaque

@@ -48,9 +48,15 @@ class ContainerMenuAction extends InheritedWidget {
 
   static List<ContainerMenuAction> of(BuildContext context) {
     final actions = <ContainerMenuAction>[];
+    var hasInlineAction = false;
     context.visitAncestorElements((element) {
       final widget = element.widget;
-      if (widget is ContainerMenuAction && widget.enabled) actions.add(widget);
+      if (widget is ContainerMenuAction && widget.enabled) {
+        if (!widget.inline || !hasInlineAction) {
+          actions.add(widget);
+        }
+        if (widget.inline) hasInlineAction = true;
+      }
       return true;
     });
     return actions;

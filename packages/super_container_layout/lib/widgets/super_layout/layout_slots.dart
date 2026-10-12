@@ -116,6 +116,9 @@ extension _SuperLayoutSlots on SuperLayoutState {
         (zone == SuperLayoutZone.north || zone == SuperLayoutZone.south);
     final autoWidth =
         auto && (zone == SuperLayoutZone.west || zone == SuperLayoutZone.east);
+    final canEditSlots =
+        widget.editable &&
+        (StyleEditScope.controllerOf(context)?.value ?? false);
     return SlotStack(
       slots: slots,
       axis: axis,
@@ -125,10 +128,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
       selectedSlotId: _selected.value == zone ? _selectedSlot.value : null,
       onResizeSlot: editMode && widget.editable ? _applySlotDimensions : null,
       onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
-      onEditPreferredSize: editMode && widget.editable
-          ? _editSlotPreferredSize
-          : null,
-      onRemoveSlot: editMode && widget.editable
+      onEditPreferredSize: canEditSlots ? _editSlotPreferredSize : null,
+      onRemoveSlot: canEditSlots
           ? (slot) async {
               if (mounted) _update(_config.value.withoutSlot(slot.id));
             }
