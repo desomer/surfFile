@@ -29,7 +29,10 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   @override
   void initState() {
     super.initState();
-    _layout = _BannerLayout(null, available: LayoutSelection.editorViewport.value);
+    _layout = _BannerLayout(
+      null,
+      available: LayoutSelection.editorViewport.value,
+    );
     LayoutSelection.editorViewport.addListener(_reposition);
   }
 
@@ -87,6 +90,28 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   icon: const Icon(Icons.close),
                   onPressed: () => editMode.value = false,
                 ),
+                MouseRegion(
+                  cursor: SystemMouseCursors.move,
+                  child: Row(
+                    key: const ValueKey('style-edit-banner-drag'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Icon(
+                      //   Icons.brush_outlined,
+                      //   size: 16,
+                      //   color: scheme.onPrimary,
+                      // ),
+                      // const SizedBox(width: 8),
+                      Text(
+                        'Mode édition',
+                        style: TextStyle(
+                          color: scheme.onPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 if (EditorHistoryScope.controllerOf(context)
                     case final history?)
                   ListenableBuilder(
@@ -131,28 +156,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                       AppearanceTransferDialog.show(target, appearance);
                     },
                   ),
-                MouseRegion(
-                  cursor: SystemMouseCursors.move,
-                  child: Row(
-                    key: const ValueKey('style-edit-banner-drag'),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Icon(
-                      //   Icons.brush_outlined,
-                      //   size: 16,
-                      //   color: scheme.onPrimary,
-                      // ),
-                      // const SizedBox(width: 8),
-                      Text(
-                        'Mode édition',
-                        style: TextStyle(
-                          color: scheme.onPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+
                 // Dispositions et zones sélectionnées : parent > ... > enfant.
                 Flexible(
                   child: ValueListenableBuilder<List<String>>(

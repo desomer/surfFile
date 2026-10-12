@@ -196,6 +196,21 @@ class SuperLayoutState extends State<SuperLayout> {
       ? _selected.value!
       : SuperLayoutZone.center;
 
+  void _selectContextZone(Offset position) {
+    for (final zone in _config.value.visibleZones) {
+      final box = _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize ||
+         box.size.isEmpty ||
+         !(Offset.zero & box.size).contains(box.globalToLocal(position))) {
+       continue;
+      }
+      _selectedSlot.value = null;
+      _selected.value = zone;
+      _LayoutEditSelection.activate(this);
+      return;
+    }
+  }
+
   LayoutAxisAction _axisAction(SuperLayoutZone zone) => LayoutAxisAction(
     zoneLabel: widget.zoneLabel(zone),
     axis: _config.value.axisOf(zone),

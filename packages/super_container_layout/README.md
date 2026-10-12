@@ -157,6 +157,9 @@ selection jusqu'au centrage a x3. Le cadrage automatique des dialogues peut
 toujours descendre sous x1 pour laisser le composant visible. Une nouvelle
 selection ou la sortie du mode edition retablit le cadrage automatique.
 Les zones defilantes gardent la priorite pour leur propre defilement.
+Le clic droit selectionne la zone sous le pointeur avant d'ouvrir le menu,
+y compris dans les layouts imbriques et apres zoom. Les actions de chaque
+layout parent ciblent egalement sa zone situee sous ce clic.
 Le zoom vise 70 % de la largeur et de la hauteur de
 l'ecran, sans reduction et avec un agrandissement limite a x3. La transition
 dure 300 ms ; la deselection ou la sortie du mode edition retablit la vue
@@ -237,7 +240,11 @@ de revenir a la zone ou a la disposition ; le glisser des labels est conserve.
 Cliquer sur le segment courant du chemin le deselectionne : un slot revient
 a sa zone, une zone a sa disposition, et une disposition quitte la selection.
 Cliquer sur un segment parent le selectionne.
-Le slot selectionne affiche quatre poignees dans ses coins lorsque la
+Le slot selectionne affiche huit poignees a fleches : diagonales aux coins,
+horizontales et verticales au milieu des cotes (une seule dimension modifiee).
+Les pastilles de 24 px ont une zone de saisie de 32 px, une couleur accentuee
+au survol et un tooltip. La taille en pixels s'affiche pendant le glissement.
+Ces controles restent sans zoom. Les poignees apparaissent lorsque la
 disposition est editable. Elles restent au-dessus des noms de zones pour
 ne pas etre masquees. Leur position est calculee pendant le layout pour
 permettre l'affichage des tooltips au survol. Leur glisser ajuste ses tailles preferees en temps

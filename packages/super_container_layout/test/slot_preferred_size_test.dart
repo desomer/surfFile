@@ -85,9 +85,10 @@ void main() {
     expect(handle('first', 'se'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
     await tester.pumpAndSettle();
-    for (final corner in ['nw', 'ne', 'sw', 'se']) {
+    for (final corner in ['nw', 'ne', 'sw', 'se', 'n', 's', 'e', 'w']) {
       expect(handle('first', corner), findsOneWidget);
       expect(handle('second', corner), findsNothing);
+      expect(tester.getSize(handle('first', corner)), const Size(32, 32));
     }
     await tester.tap(find.byKey(const ValueKey('slot-label-select-second')));
     await tester.pumpAndSettle();
@@ -108,6 +109,53 @@ void main() {
     expect(handle('first', 'se'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (side, delta, expected) in [
+    ('e', const Offset(40, 30), const Size(280, 120)),
+    ('w', const Offset(-40, 30), const Size(280, 120)),
+    ('n', const Offset(40, -30), const Size(240, 150)),
+    ('s', const Offset(40, 30), const Size(240, 150)),
+  ]) {
+    testWidgets('$side arrow adjusts only its dimension and shows live size', (
+      tester,
+    ) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      SuperLayoutConfig? changed;
+      await pump(
+        tester,
+        editMode: mode,
+        config: base.copyWith(
+          slotPreferredSizes: {'first': const Size(240, 120)},
+        ),
+        onChanged: (value) => changed = value,
+      );
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
+      await tester.pumpAndSettle();
+      final handle = find.byKey(ValueKey('slot-resize-first-$side'));
+      final gesture = await tester.startGesture(tester.getCenter(handle));
+      await gesture.moveBy(delta / 2);
+      await tester.pump();
+      await gesture.moveBy(delta / 2);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('slot-resize-size-first')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('${expected.width.round()} × ${expected.height.round()} px'),
+        findsOneWidget,
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(changed!.slotPreferredSizes['first'], expected);
+      expect(
+        find.byKey(const ValueKey('slot-resize-size-first')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final (corner, delta) in [
     ('nw', const Offset(-40, -30)),
@@ -1547,27 +1595,38 @@ void main() {
       final mode = ValueNotifier(true);
       addTearDown(mode.dispose);
       SuperLayoutConfig? changed;
-      await pump(tester, editMode: mode,
-        config: base.copyWith(slotSizeConstraints: {
-          'first': SlotSizeConstraints(
-            preferredWidth: const SlotDimension(300, SlotSizeUnit.pixels),
-            preferredHeight: const SlotDimension(100, SlotSizeUnit.pixels),
-            percentBasis: basis,
-          ),
-        }),
+      await pump(
+        tester,
+        editMode: mode,
+        config: base.copyWith(
+          slotSizeConstraints: {
+            'first': SlotSizeConstraints(
+              preferredWidth: const SlotDimension(300, SlotSizeUnit.pixels),
+              preferredHeight: const SlotDimension(100, SlotSizeUnit.pixels),
+              percentBasis: basis,
+            ),
+          },
+        ),
         onChanged: (value) => changed = value,
       );
       await openEditor(tester);
       await tester.enterText(
-        find.byKey(const ValueKey('slot-preferred-width')), '320');
+        find.byKey(const ValueKey('slot-preferred-width')),
+        '320',
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(changed!.slotSizeConstraints['first']!.percentBasis, basis);
       await openEditor(tester);
-      expect(tester.widget<DropdownButton<SlotPercentBasis>>(
-        find.byKey(const ValueKey('slot-percent-basis')),
-      ).value, basis);
+      expect(
+        tester
+            .widget<DropdownButton<SlotPercentBasis>>(
+              find.byKey(const ValueKey('slot-percent-basis')),
+            )
+            .value,
+        basis,
+      );
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
@@ -1585,7 +1644,10 @@ void main() {
     final clear = find.byKey(const ValueKey('slot-clear-max-height'));
     await tester.ensureVisible(clear);
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('slot-max-height')), '200');
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-max-height')),
+      '200',
+    );
     await tester.pumpAndSettle();
     await tester.tap(clear);
     await tester.pumpAndSettle();
@@ -1609,29 +1671,31 @@ void main() {
     addTearDown(mode.dispose);
     addTearDown(appearance.dispose);
     addTearDown(history.dispose);
-    await tester.pumpWidget(MaterialApp(
-      home: EditorHistoryScope(
-        controller: history,
-        child: StyleEditScope(
-          controller: mode,
-          child: Scaffold(
-            body: SizedBox(
-              width: 600,
-              height: 400,
-              child: ValueListenableBuilder<Appearance>(
-                valueListenable: appearance,
-                builder: (context, value, _) => SuperLayout(
-                  config: value.layouts['editor']!,
-                  onChanged: (config) => appearance.value =
-                      appearance.value.withLayout('editor', config),
-                  slots: [slot('first'), slot('second')],
+    await tester.pumpWidget(
+      MaterialApp(
+        home: EditorHistoryScope(
+          controller: history,
+          child: StyleEditScope(
+            controller: mode,
+            child: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: ValueListenableBuilder<Appearance>(
+                  valueListenable: appearance,
+                  builder: (context, value, _) => SuperLayout(
+                    config: value.layouts['editor']!,
+                    onChanged: (config) => appearance.value = appearance.value
+                        .withLayout('editor', config),
+                    slots: [slot('first'), slot('second')],
+                  ),
                 ),
               ),
             ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
     await openEditor(tester);
@@ -1642,7 +1706,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(history.canUndo, isFalse);
     await tester.enterText(
-      find.byKey(const ValueKey('slot-preferred-height')), '120');
+      find.byKey(const ValueKey('slot-preferred-height')),
+      '120',
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();

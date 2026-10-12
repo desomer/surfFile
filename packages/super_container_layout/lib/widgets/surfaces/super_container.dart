@@ -98,6 +98,7 @@ class SuperContainer extends StatefulWidget {
     this.onEdit,
     this.onAdd,
     this.axisAction,
+    this.onContextMenu,
     super.key,
   });
 
@@ -128,6 +129,9 @@ class SuperContainer extends StatefulWidget {
   final Future<void> Function()? onAdd;
 
   final LayoutAxisAction Function()? axisAction;
+
+  /// Updates editor selection before building the menu at this screen position.
+  final ValueChanged<Offset>? onContextMenu;
 
   @override
   State<SuperContainer> createState() => SuperContainerState();
@@ -580,6 +584,11 @@ class SuperContainerState extends State<SuperContainer> {
     List<ContainerMenuAction>? actions,
   }) async {
     final chain = editableChain;
+    for (final state in chain.reversed) {
+      if (StyleEditScope.controllerOf(state.context)?.value ?? false) {
+        state.widget.onContextMenu?.call(globalPosition);
+      }
+    }
     final extraActions = actions ?? ContainerMenuAction.of(context);
     if (chain.isEmpty && extraActions.isEmpty) return;
     final overlay =

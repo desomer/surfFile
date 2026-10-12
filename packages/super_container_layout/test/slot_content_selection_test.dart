@@ -75,7 +75,7 @@ void main() {
       expect(LayoutSelection.path.value.last, 'First');
       await tester.tap(second, buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value.last, 'First');
+      expect(LayoutSelection.path.value.last, SuperLayoutZone.center.label);
       await tester.tapAt(const Offset(10, 590));
       await tester.pumpAndSettle();
       await tester.tap(second);

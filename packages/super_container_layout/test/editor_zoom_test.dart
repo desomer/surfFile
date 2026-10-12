@@ -192,6 +192,13 @@ void main() {
       final handle = find.byKey(const ValueKey('slot-resize-target-se'));
       final handleSize = screenRect(tester, handle).size;
       final before = screenRect(tester, target);
+      final east = find.byKey(const ValueKey('slot-resize-target-e'));
+      expect(screenRect(tester, east).size, const Size(32, 32));
+      expect(
+        screenRect(tester, east).center.dy,
+        closeTo(before.center.dy, .01),
+      );
+      expect(screenRect(tester, east).right, closeTo(before.right, .01));
       await tester.sendEventToBinding(
         PointerScrollEvent(
           position: screenRect(tester, handle).center,
@@ -427,6 +434,9 @@ void main() {
         findsOneWidget,
       );
       await tester.tapAt(const Offset(790, 590));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, 'Centre');
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-target')));
       await tester.pumpAndSettle();
 
       await tester.binding.setSurfaceSize(const Size(1000, 700));

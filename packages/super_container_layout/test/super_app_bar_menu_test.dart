@@ -303,7 +303,10 @@ void main() {
         final content = slot == 'title'
             ? find.text('Editable title')
             : find.byKey(const ValueKey('editable-action'));
-        await tester.tap(content, buttons: kSecondaryMouseButton);
+        await tester.tapAt(
+          tester.getTopLeft(content) + const Offset(4, 4),
+          buttons: kSecondaryMouseButton,
+        );
         await tester.pumpAndSettle();
         expect(
           find.byKey(ValueKey('style-menu-size-Taille préférée : $slot')),

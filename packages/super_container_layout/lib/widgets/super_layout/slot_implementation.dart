@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart'
@@ -94,14 +96,14 @@ class InstanceSlot extends SlotImplementation {
     required this.onRestore,
     required this.overridden,
   }) : super(
-    id: component.id,
-    label: label,
-    sizing: component.sizing,
-    preferredSize: component.preferredSize,
-    visible: component.visible,
-    showLabel: component.showLabel,
-    labelAlignment: component.labelAlignment,
-  );
+         id: component.id,
+         label: label,
+         sizing: component.sizing,
+         preferredSize: component.preferredSize,
+         visible: component.visible,
+         showLabel: component.showLabel,
+         labelAlignment: component.labelAlignment,
+       );
 
   final SlotImplementation component;
   final ValueChanged<String> onRename;
@@ -740,14 +742,20 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   Offset? _resizeStart;
   Size _resizeSize = Size.zero;
   SlotSizeConstraints? _resizeConstraints;
+  Size? _resizeLegacySize;
   EditorHistoryController? _resizeHistory;
   bool _resizeBlocked = false;
+  String? _hoveredResize;
 
   static const _resizeCorners = [
     ('nw', Alignment.topLeft),
     ('ne', Alignment.topRight),
     ('sw', Alignment.bottomLeft),
     ('se', Alignment.bottomRight),
+    ('n', Alignment.topCenter),
+    ('s', Alignment.bottomCenter),
+    ('w', Alignment.centerLeft),
+    ('e', Alignment.centerRight),
   ];
 
   bool get _showResizeHandles =>
@@ -784,9 +792,13 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     _resizeStart = layout.globalToLocal(details.globalPosition);
     _resizeSize = box.size;
     _resizeConstraints = widget.sizeConstraints;
+    _resizeLegacySize = layout
+        ._configuration
+        .preferredSizes[widget.ids.indexOf(widget.slot.id)];
     _resizeBlocked = false;
     _resizeHistory = EditorHistoryScope.controllerOf(context);
     _resizeHistory?.beginTransaction();
+    setState(() {});
   }
 
   void _resize(DragUpdateDetails details, Alignment corner) {
@@ -795,6 +807,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     if (layout == null || start == null || !layout.attached) return;
     final bounds = layout.resizeBounds(widget.ids.indexOf(widget.slot.id));
     final saved = _resizeConstraints;
+    final legacySize = _resizeLegacySize;
     final basis = saved?.percentBasis == SlotPercentBasis.layout
         ? layout._configuration.layoutSize
         : layout.resizeBasis;
@@ -844,55 +857,88 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         minHeight: saved?.minHeight,
         maxWidth: saved?.maxWidth,
         maxHeight: saved?.maxHeight,
-        preferredWidth: dimension(width, saved?.preferredWidth, basis.width),
-        preferredHeight: dimension(
-          height,
-          saved?.preferredHeight,
-          basis.height,
-        ),
+        preferredWidth: corner.x == 0
+            ? saved?.preferredWidth ??
+                  (saved == null && legacySize != null
+                      ? SlotDimension(legacySize.width, SlotSizeUnit.pixels)
+                      : null)
+            : dimension(width, saved?.preferredWidth, basis.width),
+        preferredHeight: corner.y == 0
+            ? saved?.preferredHeight ??
+                  (saved == null && legacySize != null
+                      ? SlotDimension(legacySize.height, SlotSizeUnit.pixels)
+                      : null)
+            : dimension(height, saved?.preferredHeight, basis.height),
         percentBasis: saved?.percentBasis ?? SlotPercentBasis.zone,
       ),
     );
   }
 
   void _finishResize() {
+    final wasResizing = _resizeStart != null;
     _resizeLayout = null;
     _resizeStart = null;
     _resizeHistory?.commitTransaction();
     _resizeHistory = null;
+    if (wasResizing && mounted) setState(() {});
   }
 
   Widget _resizeHandle(String name, Alignment corner, ColorScheme colors) =>
       SizedBox(
-        width: 18,
-        height: 18,
+        width: 32,
+        height: 32,
         child: MouseRegion(
-          cursor: corner.x == corner.y
+          onEnter: (_) => setState(() => _hoveredResize = name),
+          onExit: (_) => setState(() => _hoveredResize = null),
+          cursor: corner.x == 0
+              ? SystemMouseCursors.resizeUpDown
+              : corner.y == 0
+              ? SystemMouseCursors.resizeLeftRight
+              : corner.x == corner.y
               ? SystemMouseCursors.resizeUpLeftDownRight
               : SystemMouseCursors.resizeUpRightDownLeft,
           child: Listener(
             onPointerSignal: (event) =>
-                EditorZoomScope.controllerOf(context)?.handlePointerSignal(event),
+                EditorZoomScope.controllerOf(context)
+                    ?.handlePointerSignal(event),
             child: GestureDetector(
-            key: ValueKey('slot-resize-${widget.slot.id}-$name'),
-            behavior: HitTestBehavior.opaque,
-            dragStartBehavior: DragStartBehavior.down,
-            onPanStart: _beginResize,
-            onPanUpdate: (details) => _resize(details, corner),
-            onPanEnd: (_) => _finishResize(),
-            onPanCancel: _finishResize,
-            child: Tooltip(
-              message: 'Redimensionner ${widget.slot.label}',
-              child: Center(
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: colors.surface,
-                    border: Border.all(color: colors.tertiary, width: 2),
-                    borderRadius: BorderRadius.circular(2),
+              key: ValueKey('slot-resize-${widget.slot.id}-$name'),
+              behavior: HitTestBehavior.opaque,
+              dragStartBehavior: DragStartBehavior.down,
+              onPanStart: _beginResize,
+              onPanUpdate: (details) => _resize(details, corner),
+              onPanEnd: (_) => _finishResize(),
+              onPanCancel: _finishResize,
+              child: Tooltip(
+                message: corner.x == 0
+                    ? 'Modifier la hauteur de ${widget.slot.label}'
+                    : corner.y == 0
+                    ? 'Modifier la largeur de ${widget.slot.label}'
+                    : 'Redimensionner ${widget.slot.label}',
+                child: Center(
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: _hoveredResize == name
+                          ? colors.tertiary
+                          : colors.surface,
+                      border: Border.all(color: colors.tertiary, width: 2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Transform.rotate(
+                      angle: corner.x != 0 && corner.y != 0
+                          ? (corner.x == corner.y ? math.pi / 4 : -math.pi / 4)
+                          : 0,
+                      child: Icon(
+                        corner.x == 0 ? Icons.height : Icons.swap_horiz,
+                        size: 16,
+                        color: _hoveredResize == name
+                            ? colors.onTertiary
+                            : colors.tertiary,
+                      ),
+                    ),
                   ),
-                ),
                 ),
               ),
             ),
@@ -995,12 +1041,42 @@ class _LabeledSlotState extends State<_LabeledSlot> {
           clipBehavior: Clip.none,
           children: [
             for (final (name, corner) in _resizeCorners)
-              Positioned(
-                left: corner.x < 0 ? 0 : null,
-                right: corner.x > 0 ? 0 : null,
-                top: corner.y < 0 ? 0 : null,
-                bottom: corner.y > 0 ? 0 : null,
-                child: _resizeHandle(name, corner, colors),
+              Positioned.fill(
+                child: Align(
+                  alignment: corner,
+                  child: _resizeHandle(name, corner, colors),
+                ),
+              ),
+            if (_resizeStart != null)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 34),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.tertiaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          child: Text(
+                            '${info.childSize.width.round()} × ${info.childSize.height.round()} px',
+                            key: ValueKey('slot-resize-size-${slot.id}'),
+                            style: TextStyle(
+                              color: colors.onTertiaryContainer,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
           ],
         );
