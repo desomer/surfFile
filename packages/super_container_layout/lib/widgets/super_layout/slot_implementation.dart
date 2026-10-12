@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
 import '../editing/editor_history.dart';
+import '../editing/editor_overlay.dart';
+import '../editing/editor_zoom.dart';
 import '../surfaces/super_container.dart';
 
 /// Taille qu'un slot demande à la zone qui le reçoit.
@@ -100,10 +102,12 @@ class SlotStack extends StatelessWidget {
     this.onSelectSlot,
     this.selectedSlotId,
     this.onResizeSlot,
+    this.focusKeys,
     super.key,
   });
 
   final List<SlotImplementation> slots;
+  final Map<String, GlobalKey>? focusKeys;
   final Axis axis;
 
   /// Les slots [SlotSizing.fill] se partagent l'espace sur l'axe principal.
@@ -181,23 +185,26 @@ class SlotStack extends StatelessWidget {
     onRemove: onRemoveSlot != null
         ? () async => onRemoveSlot?.call(slot)
         : null,
-    child: _LabeledSlot(
-      slot: slot,
-      axis: axis,
-      showLabel: showLabels,
-      mover: mover,
-      emphasis: emphasis,
-      zoneLabel: zoneLabel,
-      ids: ids,
-      onSelect: onSelectSlot == null ? null : () => onSelectSlot!(slot),
-      selected: selectedSlotId == slot.id,
-      onResize: onResizeSlot == null
-          ? null
-          : (dimensions) => onResizeSlot!(slot, dimensions),
-      sizeConstraints: sizeConstraints[slot.id],
-      caption: zoneLabel == null
-          ? slot.label
-          : '${slot.label} · $zoneLabel ${index + 1}/$count',
+    child: KeyedSubtree(
+      key: focusKeys?.putIfAbsent(slot.id, GlobalKey.new),
+      child: _LabeledSlot(
+        slot: slot,
+        axis: axis,
+        showLabel: showLabels,
+        mover: mover,
+        emphasis: emphasis,
+        zoneLabel: zoneLabel,
+        ids: ids,
+        onSelect: onSelectSlot == null ? null : () => onSelectSlot!(slot),
+        selected: selectedSlotId == slot.id,
+        onResize: onResizeSlot == null
+            ? null
+            : (dimensions) => onResizeSlot!(slot, dimensions),
+        sizeConstraints: sizeConstraints[slot.id],
+        caption: zoneLabel == null
+            ? slot.label
+            : '${slot.label} · $zoneLabel ${index + 1}/$count',
+      ),
     ),
   );
 }
@@ -927,29 +934,38 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     final canEditSize = ContainerMenuAction.of(context).isNotEmpty;
     return OverlayPortal.overlayChildLayoutBuilder(
       controller: _resizeOverlay,
-      overlayChildBuilder: (context, info) => Positioned(
-        left: 0,
-        top: 0,
-        child: Transform(
-          transform: info.childPaintTransform,
-          child: SizedBox.fromSize(
-            size: info.childSize,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                for (final (name, corner) in _resizeCorners)
-                  Positioned(
-                    left: corner.x < 0 ? 0 : null,
-                    right: corner.x > 0 ? 0 : null,
-                    top: corner.y < 0 ? 0 : null,
-                    bottom: corner.y > 0 ? 0 : null,
-                    child: _resizeHandle(name, corner, colors),
-                  ),
-              ],
+      overlayChildBuilder: (context, info) {
+        final handles = Stack(
+          clipBehavior: Clip.none,
+          children: [
+            for (final (name, corner) in _resizeCorners)
+              Positioned(
+                left: corner.x < 0 ? 0 : null,
+                right: corner.x > 0 ? 0 : null,
+                top: corner.y < 0 ? 0 : null,
+                bottom: corner.y > 0 ? 0 : null,
+                child: _resizeHandle(name, corner, colors),
+              ),
+          ],
+        );
+        if (EditorZoomScope.contains(context)) {
+          return Positioned.fromRect(
+            rect: MatrixUtils.transformRect(
+              info.childPaintTransform,
+              Offset.zero & info.childSize,
             ),
+            child: handles,
+          );
+        }
+        return Positioned(
+          left: 0,
+          top: 0,
+          child: Transform(
+            transform: info.childPaintTransform,
+            child: SizedBox.fromSize(size: info.childSize, child: handles),
           ),
-        ),
-      ),
+        );
+      },
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         excludeFromSemantics: true,
@@ -993,76 +1009,95 @@ class _LabeledSlotState extends State<_LabeledSlot> {
               if (_hover || _dragging || (widget.showLabel && widget.selected))
                 Positioned.fill(
                   key: ValueKey('slot-highlight-${slot.id}'),
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: colors.tertiary.withValues(alpha: .12),
-                        border: Border.all(color: colors.tertiary, width: 2),
+                  child: EditorOverlay(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: colors.tertiary.withValues(alpha: .12),
+                          border: Border.all(color: colors.tertiary, width: 2),
+                        ),
                       ),
                     ),
                   ),
                 ),
               if (candidates.any((data) => data != null && data.id != slot.id))
-                Positioned(
-                  key: ValueKey('slot-drop-position-${slot.id}'),
-                  left: widget.axis == Axis.horizontal && _after ? null : 0,
-                  right: widget.axis == Axis.horizontal && !_after ? null : 0,
-                  top: widget.axis == Axis.vertical && _after ? null : 0,
-                  bottom: widget.axis == Axis.vertical && !_after ? null : 0,
-                  width: widget.axis == Axis.horizontal ? 3 : null,
-                  height: widget.axis == Axis.vertical ? 3 : null,
-                  child: IgnorePointer(
-                    child: ColoredBox(
-                      key: ValueKey('slot-drop-${slot.id}'),
-                      color: colors.tertiary,
+                Positioned.fill(
+                  child: EditorOverlay(
+                    child: Align(
+                      alignment: widget.axis == Axis.horizontal
+                          ? (_after
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft)
+                          : (_after
+                                ? Alignment.bottomCenter
+                                : Alignment.topCenter),
+                      child: SizedBox(
+                        key: ValueKey('slot-drop-position-${slot.id}'),
+                        width: widget.axis == Axis.horizontal
+                            ? 3
+                            : double.infinity,
+                        height: widget.axis == Axis.vertical
+                            ? 3
+                            : double.infinity,
+                        child: IgnorePointer(
+                          child: ColoredBox(
+                            key: ValueKey('slot-drop-${slot.id}'),
+                            color: colors.tertiary,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
               if (widget.showLabel && slot.showLabel)
                 Positioned.fill(
                   key: ValueKey('slot-label-position-${slot.id}'),
-                  child: Align(
-                    alignment: slot.labelAlignment,
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: EmphasizedLabel(
-                        emphasis: widget.emphasis,
-                        alignment: slot.labelAlignment,
-                        child: MouseRegion(
-                          hitTestBehavior: HitTestBehavior.translucent,
-                          onEnter: (_) => _setHover(true),
-                          onExit: (_) => _setHover(false),
-                          child: GestureDetector(
-                            key: ValueKey('slot-label-select-${slot.id}'),
-                            onTap: widget.onSelect,
-                            behavior: HitTestBehavior.translucent,
-                            child: mover == null
-                                ? IgnorePointer(child: _chip(colors))
-                                : Draggable<SlotDragData>(
-                                    data: SlotDragData(
-                                      id: slot.id,
-                                      owner: mover.owner,
-                                      hint: _hint,
+                  child: EditorOverlay(
+                    child: Align(
+                      alignment: slot.labelAlignment,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: EmphasizedLabel(
+                          emphasis: widget.emphasis,
+                          alignment: slot.labelAlignment,
+                          child: MouseRegion(
+                            hitTestBehavior: HitTestBehavior.translucent,
+                            onEnter: (_) => _setHover(true),
+                            onExit: (_) => _setHover(false),
+                            child: GestureDetector(
+                              key: ValueKey('slot-label-select-${slot.id}'),
+                              onTap: widget.onSelect,
+                              behavior: HitTestBehavior.translucent,
+                              child: mover == null
+                                  ? IgnorePointer(child: _chip(colors))
+                                  : Draggable<SlotDragData>(
+                                      data: SlotDragData(
+                                        id: slot.id,
+                                        owner: mover.owner,
+                                        hint: _hint,
+                                      ),
+                                      dragAnchorStrategy:
+                                          pointerDragAnchorStrategy,
+                                      hitTestBehavior:
+                                          HitTestBehavior.translucent,
+                                      onDragStarted: () => _setDragging(true),
+                                      onDragEnd: (_) => _setDragging(false),
+                                      feedback: _chip(
+                                        colors,
+                                        opacity: 1,
+                                        dragged: true,
+                                      ),
+                                      childWhenDragging: Opacity(
+                                        opacity: .35,
+                                        child: _chip(colors),
+                                      ),
+                                      // Le contenu sous l'étiquette reste atteignable (clic
+                                      // droit du style) : seul le Draggable écoute le glisser.
+                                      child: IgnorePointer(
+                                        child: _chip(colors),
+                                      ),
                                     ),
-                                    dragAnchorStrategy:
-                                        pointerDragAnchorStrategy,
-                                    hitTestBehavior:
-                                        HitTestBehavior.translucent,
-                                    onDragStarted: () => _setDragging(true),
-                                    onDragEnd: (_) => _setDragging(false),
-                                    feedback: _chip(
-                                      colors,
-                                      opacity: 1,
-                                      dragged: true,
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: .35,
-                                      child: _chip(colors),
-                                    ),
-                                    // Le contenu sous l'étiquette reste atteignable (clic
-                                    // droit du style) : seul le Draggable écoute le glisser.
-                                    child: IgnorePointer(child: _chip(colors)),
-                                  ),
+                            ),
                           ),
                         ),
                       ),

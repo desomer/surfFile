@@ -148,6 +148,17 @@ icones de ses slots parents. Sur une partie vide de la barre, ces actions
 ciblent le slot de la barre dans la page, meme lorsque sa disposition interne
 est selectionnee.
 
+En mode edition, `SuperPage` centre automatiquement la disposition, la zone
+ou le slot selectionne. Le zoom vise 70 % de la largeur et de la hauteur de
+l'ecran, sans reduction et avec un agrandissement limite a x3. La transition
+dure 300 ms ; la deselection ou la sortie du mode edition retablit la vue
+normale avec la meme animation. Les preferences d'accessibilite demandant
+moins d'animations sont respectees.
+La banniere, les labels, les commandes de redimensionnement, les menus et
+les dialogues gardent leur taille a l'ecran. Les labels et commandes suivent
+les nouvelles positions du contenu. Le zoom ne modifie pas les tailles
+enregistrees des slots.
+
 Les dispositions sont sauvegardees dans les preferences via
 `Registry.layoutController`. Donnez un `id` stable et distinct a chaque
 page et barre configuree dans le code (`root` et `root-appBar` par defaut).

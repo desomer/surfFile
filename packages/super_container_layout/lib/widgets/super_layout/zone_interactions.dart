@@ -256,7 +256,7 @@ class _CenterSwapTarget extends StatelessWidget {
         overCenter.value = false;
         onSwap(details.data);
       },
-      builder: (context, candidates, _) => IgnorePointer(
+      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
         child: candidates.isEmpty
             ? ValueListenableBuilder<bool>(
                 valueListenable: hint,
@@ -281,7 +281,7 @@ class _CenterSwapTarget extends StatelessWidget {
                   border: Border.all(color: colors.primary, width: 2),
                 ),
               ),
-      ),
+      )),
     );
   }
 }
@@ -319,7 +319,7 @@ class _SlotZoneTarget extends StatelessWidget {
       },
       onLeave: (data) => data?.hint.value = null,
       onAcceptWithDetails: (details) => onMove(details.data.id),
-      builder: (context, candidates, _) => IgnorePointer(
+      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
         child: candidates.isEmpty
             ? const SizedBox.expand()
             : DecoratedBox(
@@ -328,7 +328,7 @@ class _SlotZoneTarget extends StatelessWidget {
                   border: Border.all(color: colors.tertiary, width: 2),
                 ),
               ),
-      ),
+      )),
     );
   }
 }

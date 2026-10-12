@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'models/super_layout_config.dart';
+import 'widgets/editing/editor_zoom.dart';
 import 'widgets/super_layout/registered_super_layout.dart';
 import 'widgets/super_layout/slot_implementation.dart';
 
@@ -22,52 +23,56 @@ class SuperPage extends StatelessWidget {
   final PreferredSizeWidget? appBar;
   final Widget? bottomBar;
   final List<SlotImplementation> slots;
+
   /// Initial layout; registry preferences take precedence when available.
   final SuperLayoutConfig? config;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: RegisteredSuperLayout(
-      id: id,
-      label: 'Super page',
-      zoneLabels: const {
-        SuperLayoutZone.north: 'appBar',
-        SuperLayoutZone.center: 'body',
-        SuperLayoutZone.south: 'bottomBar',
-      },
-      config: config ?? SuperLayoutConfig(
-        west: false,
-        east: false,
-        northSize: kToolbarHeight,
-        southSize: kBottomNavigationBarHeight,
-        autoSides: const {SuperLayoutZone.north, SuperLayoutZone.south},
-        placements: {
-          if (appBar != null) SuperLayoutZone.north: const ['appBar'],
-          SuperLayoutZone.center: const ['body'],
-          if (bottomBar != null) SuperLayoutZone.south: const ['bottomBar'],
+  Widget build(BuildContext context) => EditorZoom(
+    child: Scaffold(
+      body: RegisteredSuperLayout(
+        id: id,
+        label: 'Super page',
+        zoneLabels: const {
+          SuperLayoutZone.north: 'appBar',
+          SuperLayoutZone.center: 'body',
+          SuperLayoutZone.south: 'bottomBar',
         },
-      ),
-      slots: [
-        if (appBar case final bar?)
-          BuilderSlot(
-            id: 'appBar',
-            label: 'appBar',
-            sizing: SlotSizing.intrinsic,
-            builder: (_) => SizedBox(
-              height: bar.preferredSize.height,
-              child: bar,
+        config:
+            config ??
+            SuperLayoutConfig(
+              west: false,
+              east: false,
+              northSize: kToolbarHeight,
+              southSize: kBottomNavigationBarHeight,
+              autoSides: const {SuperLayoutZone.north, SuperLayoutZone.south},
+              placements: {
+                if (appBar != null) SuperLayoutZone.north: const ['appBar'],
+                SuperLayoutZone.center: const ['body'],
+                if (bottomBar != null)
+                  SuperLayoutZone.south: const ['bottomBar'],
+              },
             ),
-          ),
-        BuilderSlot(id: 'body', label: 'body', builder: (_) => child),
-        if (bottomBar case final bar?)
-          BuilderSlot(
-            id: 'bottomBar',
-            label: 'bottomBar',
-            sizing: SlotSizing.intrinsic,
-            builder: (_) => bar,
-          ),
-        ...slots,
-      ],
+        slots: [
+          if (appBar case final bar?)
+            BuilderSlot(
+              id: 'appBar',
+              label: 'appBar',
+              sizing: SlotSizing.intrinsic,
+              builder: (_) =>
+                  SizedBox(height: bar.preferredSize.height, child: bar),
+            ),
+          BuilderSlot(id: 'body', label: 'body', builder: (_) => child),
+          if (bottomBar case final bar?)
+            BuilderSlot(
+              id: 'bottomBar',
+              label: 'bottomBar',
+              sizing: SlotSizing.intrinsic,
+              builder: (_) => bar,
+            ),
+          ...slots,
+        ],
+      ),
     ),
   );
 }

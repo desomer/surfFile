@@ -125,8 +125,9 @@ void main() {
     final barLayout = find.byWidgetPredicate(
       (widget) => widget is SuperLayout && widget.label == 'Super app bar',
     );
-    final position = tester.getTopLeft(barLayout) + const Offset(100, 48);
-    await tester.tapAt(position);
+    Offset position() => tester.renderObject<RenderBox>(barLayout)
+        .localToGlobal(const Offset(100, 48));
+    await tester.tapAt(position());
     await tester.pumpAndSettle();
     expect(
       find.descendant(
@@ -136,7 +137,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tapAt(position, buttons: kSecondaryMouseButton);
+    await tester.tapAt(position(), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
     final sizeAction = find.byKey(
       const ValueKey('style-menu-size-Taille préférée : SuperAppBar'),
@@ -164,7 +165,7 @@ void main() {
       80,
     );
 
-    await tester.tapAt(position, buttons: kSecondaryMouseButton);
+    await tester.tapAt(position(), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
     await tester.tap(removeAction);
     await tester.pumpAndSettle();
@@ -178,7 +179,7 @@ void main() {
     expect(find.byType(SuperAppBar), findsOneWidget);
     editMode.value = false;
     await tester.pumpAndSettle();
-    await tester.tapAt(position, buttons: kSecondaryMouseButton);
+    await tester.tapAt(position(), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
     expect(sizeAction, findsNothing);
     expect(removeAction, findsNothing);

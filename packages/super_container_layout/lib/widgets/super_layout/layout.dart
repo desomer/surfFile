@@ -62,6 +62,9 @@ class SuperLayoutState extends State<SuperLayout> {
   /// Zone selectionnee par un clic sur son nom, affichee dans la banniere.
   final _selected = ValueNotifier<SuperLayoutZone?>(null);
   final _selectedSlot = ValueNotifier<String?>(null);
+  final _zoneFocusKeys = <SuperLayoutZone, GlobalKey>{};
+  final _slotFocusKeys = <String, GlobalKey>{};
+  SuperLayoutConfig? _reportedConfig;
 
   void _select(SuperLayoutZone zone) {
     _selectedSlot.value = null;
@@ -103,12 +106,14 @@ class SuperLayoutState extends State<SuperLayout> {
 
   /// Déclare le chemin des zones sélectionnées à la bannière du mode édition.
   void _reportPath(List<String> path, {LayoutAxisAction? axis}) {
-    if (listEquals(_reportedPath, path) &&
+    if (identical(_reportedConfig, _config.value) &&
+        listEquals(_reportedPath, path) &&
         _reportedAxis?.axis == axis?.axis &&
         _reportedAxis?.zoneLabel == axis?.zoneLabel) {
       return;
     }
     _reportedPath = path;
+    _reportedConfig = _config.value;
     _reportedAxis = axis;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && listEquals(_reportedPath, path)) {
@@ -120,6 +125,8 @@ class SuperLayoutState extends State<SuperLayout> {
             _selected.value = null;
           },
           axis: _reportedAxis,
+          focusContext: _slotFocusKeys[_selectedSlot.value]?.currentContext ??
+              _zoneFocusKeys[_selected.value]?.currentContext ?? context,
         );
       }
     });

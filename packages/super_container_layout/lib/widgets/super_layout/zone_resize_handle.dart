@@ -167,7 +167,7 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
   );
 
   @override
-  Widget build(BuildContext context) => Stack(
+  Widget build(BuildContext context) => EditorOverlay(child: Stack(
     children: [
       Align(
         alignment: switch (widget.restoreSize != null
@@ -273,7 +273,7 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
         ),
       ),
     ],
-  );
+  ));
   Offset getOffsetZoneAction(bool isNorW) {
     if (isNorW) {
       return widget.restoreSize != null

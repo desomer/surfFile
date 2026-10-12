@@ -1,5 +1,6 @@
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
+
 import 'editor_history.dart';
 
 import '../../theme/container_fill.dart';
@@ -454,6 +455,7 @@ class ContainerStyleEditor extends StatelessWidget {
             ..._borderColorControls(context),
           ];
     final sections = [
+      ...extraSections,
       if (onDesignSystemChanged != null)
         StyleEditorSection(
           id: 'design',
@@ -594,7 +596,6 @@ class ContainerStyleEditor extends StatelessWidget {
             onChanged: onNeonChanged!,
           ),
         ),
-      ...extraSections,
     ];
     return StyleEditorPanel(
       sections: sections,

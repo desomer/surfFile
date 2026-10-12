@@ -1,5 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Axis;
+import 'package:flutter/widgets.dart' show BuildContext;
+
+class LayoutFocus {
+  const LayoutFocus(this.context);
+
+  final BuildContext context;
+}
 
 class LayoutAxisAction {
   const LayoutAxisAction({
@@ -23,9 +30,11 @@ class LayoutSelection {
   /// Noms des zones sélectionnées, de la plus englobante à la plus profonde.
   static final path = ValueNotifier<List<String>>(const []);
   static final axisAction = ValueNotifier<LayoutAxisAction?>(null);
+  static final focus = ValueNotifier<LayoutFocus?>(null);
 
   static final _reported = <Object, List<String>>{};
   static final _axisActions = <Object, LayoutAxisAction>{};
+  static final _focusTargets = <Object, LayoutFocus>{};
   static final _clears = <Object, VoidCallback>{};
   static final _targets =
       <
@@ -151,14 +160,21 @@ class LayoutSelection {
     List<String> value, {
     VoidCallback? clear,
     LayoutAxisAction? axis,
+    BuildContext? focusContext,
   }) {
     final previous = _reported[owner];
     if (value.isEmpty) {
       _clears.remove(owner);
       _axisActions.remove(owner);
+      _focusTargets.remove(owner);
       if (_reported.remove(owner) == null) return;
     } else {
       if (clear != null) _clears[owner] = clear;
+      if (focusContext == null) {
+        _focusTargets.remove(owner);
+      } else {
+        _focusTargets[owner] = LayoutFocus(focusContext);
+      }
       if (axis == null) {
         _axisActions.remove(owner);
       } else {
@@ -178,5 +194,6 @@ class LayoutSelection {
     }
     if (!listEquals(path.value, best)) path.value = best;
     axisAction.value = _axisActions[bestOwner];
+    focus.value = _focusTargets[bestOwner];
   }
 }

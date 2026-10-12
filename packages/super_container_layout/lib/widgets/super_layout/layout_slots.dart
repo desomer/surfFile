@@ -121,6 +121,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
         (StyleEditScope.controllerOf(context)?.value ?? false);
     return SlotStack(
       slots: slots,
+      focusKeys: _slotFocusKeys,
       axis: axis,
       preferredSizes: config.slotPreferredSizes,
       sizeConstraints: config.slotSizeConstraints,

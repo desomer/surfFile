@@ -109,7 +109,9 @@ extension _SuperLayoutView on SuperLayoutState {
                     _ZoneEntry(
                       key: ValueKey('super-layout-${zone.name}'),
                       zone: zone,
-                      child: _LabelScope(
+                      child: KeyedSubtree(
+                        key: _zoneFocusKeys.putIfAbsent(zone, GlobalKey.new),
+                        child: _LabelScope(
                         path: [...parentPath, name, widget.zoneLabel(zone)],
                         child: Offstage(
                           offstage:
@@ -153,6 +155,7 @@ extension _SuperLayoutView on SuperLayoutState {
                             layoutSize,
                           ),
                         ),
+                      ),
                       ),
                     ),
                   // Une zone reçoit un slot glissé sur sa partie libre : il s'y range
@@ -202,7 +205,7 @@ extension _SuperLayoutView on SuperLayoutState {
                           key: ValueKey('super-layout-name-${zone.name}'),
                           zone: zone,
                           overlay: true,
-                          child: _ZoneNameBadge(
+                          child: EditorOverlay(child: _ZoneNameBadge(
                             zone: zone,
                             label: widget.zoneLabel(zone),
                             zoneLabel: widget.zoneLabel,
@@ -219,7 +222,7 @@ extension _SuperLayoutView on SuperLayoutState {
                                 : null,
                             moves: !zones.contains(zone.opposite),
                             onSwap: () => _update(config.withSwap(zone)),
-                          ),
+                          )),
                         )
                       else if (widget.editable)
                         _ZoneEntry(
@@ -228,7 +231,7 @@ extension _SuperLayoutView on SuperLayoutState {
                           ),
                           zone: zone,
                           overlay: true,
-                          child: Center(
+                          child: EditorOverlay(child: Center(
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               child: IconButton.filled(
@@ -247,7 +250,7 @@ extension _SuperLayoutView on SuperLayoutState {
                                 onPressed: () => _addSlot(zone),
                               ),
                             ),
-                          ),
+                          )),
                         ),
                   ],
                   if (widget.editable)
