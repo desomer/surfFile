@@ -27,6 +27,26 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   _BannerLayout _layout = _BannerLayout(null);
 
   @override
+  void initState() {
+    super.initState();
+    _layout = _BannerLayout(null, available: LayoutSelection.editorViewport.value);
+    LayoutSelection.editorViewport.addListener(_reposition);
+  }
+
+  void _reposition() => setState(() {
+    _layout = _BannerLayout(
+      _layout.position,
+      available: LayoutSelection.editorViewport.value,
+    );
+  });
+
+  @override
+  void dispose() {
+    LayoutSelection.editorViewport.removeListener(_reposition);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => Semantics(
     container: true,
     explicitChildNodes: true,
@@ -43,8 +63,10 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       delegate: _layout,
       child: GestureDetector(
         onPanUpdate: (details) => setState(
-          () =>
-              _layout = _BannerLayout(_layout.resolvedPosition + details.delta),
+          () => _layout = _BannerLayout(
+            _layout.resolvedPosition + details.delta,
+            available: LayoutSelection.editorViewport.value,
+          ),
         ),
         child: Material(
           key: const ValueKey('style-edit-banner'),
@@ -199,26 +221,37 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
 }
 
 class _BannerLayout extends SingleChildLayoutDelegate {
-  _BannerLayout(this.position) : resolvedPosition = position ?? Offset.zero;
+  _BannerLayout(this.position, {this.available})
+    : resolvedPosition = position ?? Offset.zero;
 
   final Offset? position;
   Offset resolvedPosition;
+  final Rect? available;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      constraints.loosen();
+      available == null
+      ? constraints.loosen()
+      : constraints.loosen().enforce(
+          BoxConstraints(
+            maxWidth: available!.width,
+            maxHeight: available!.height,
+          ),
+        );
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final desired = position ?? Offset((size.width - childSize.width) / 2, 8);
+    final bounds =
+        available?.intersect(Offset.zero & size) ?? (Offset.zero & size);
     resolvedPosition = Offset(
       desired.dx.clamp(
-        0.0,
-        (size.width - childSize.width).clamp(0.0, double.infinity),
+        bounds.left,
+        (bounds.right - childSize.width).clamp(bounds.left, double.infinity),
       ),
       desired.dy.clamp(
-        0.0,
-        (size.height - childSize.height).clamp(0.0, double.infinity),
+        bounds.top,
+        (bounds.bottom - childSize.height).clamp(bounds.top, double.infinity),
       ),
     );
     return resolvedPosition;
@@ -226,7 +259,7 @@ class _BannerLayout extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_BannerLayout oldDelegate) =>
-      position != oldDelegate.position;
+      position != oldDelegate.position || available != oldDelegate.available;
 }
 
 /// Un niveau du chemin : un clic active sa disposition et, le cas echeant,

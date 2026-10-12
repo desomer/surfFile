@@ -38,12 +38,17 @@ class StyleEditorPanel extends StatefulWidget {
     required this.sections,
     required this.preview,
     this.onReset,
+    this.dense = false,
+    this.onDenseChanged,
     super.key,
   });
 
   final List<StyleEditorSection> sections;
   final Widget preview;
   final VoidCallback? onReset;
+  /// Masque la preview et réduit la navigation aux icônes.
+  final bool dense;
+  final ValueChanged<bool>? onDenseChanged;
 
   static const wideBreakpoint = 860.0;
   static const sidebarWidth = 190.0;
@@ -56,6 +61,13 @@ class StyleEditorPanel extends StatefulWidget {
 class _StyleEditorPanelState extends State<StyleEditorPanel> {
   final _keys = <String, GlobalKey>{};
   String? _current;
+  late bool _dense = widget.dense;
+
+  @override
+  void didUpdateWidget(StyleEditorPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.dense != widget.dense) _dense = widget.dense;
+  }
 
   GlobalKey _key(String id) => _keys.putIfAbsent(id, GlobalKey.new);
 
@@ -131,7 +143,7 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!wide) ...[widget.preview, const SizedBox(height: 12)],
+            if (!wide && !_dense) ...[widget.preview, const SizedBox(height: 12)],
             ..._rows(constraints.maxWidth >= 520),
           ],
         ),
@@ -140,10 +152,27 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
   );
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Align(
+        alignment: Alignment.centerRight,
+        child: IconButton(
+          key: const ValueKey('style-dense-toggle'),
+          tooltip: _dense ? 'Mode complet' : 'Mode dense',
+          isSelected: _dense,
+          selectedIcon: const Icon(Icons.view_agenda_outlined),
+          icon: const Icon(Icons.view_sidebar_outlined),
+          onPressed: () {
+            setState(() => _dense = !_dense);
+            widget.onDenseChanged?.call(_dense);
+          },
+        ),
+      ),
+      Expanded(child: LayoutBuilder(
     builder: (context, constraints) {
       final wide = constraints.maxWidth >= StyleEditorPanel.wideBreakpoint;
-      if (!wide) {
+      if (!wide && !_dense) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -162,24 +191,29 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            width: StyleEditorPanel.sidebarWidth,
+            width: _dense ? 56 : StyleEditorPanel.sidebarWidth,
             child: _Sidebar(
               sections: widget.sections,
               selected: _selected,
               onSelected: _go,
               onReset: widget.onReset,
+              dense: _dense,
             ),
           ),
           const SizedBox(width: 16),
           Expanded(child: _cards(wide: true)),
+          if (!_dense) ...[
           const SizedBox(width: 16),
           SizedBox(
             width: StyleEditorPanel.previewWidth,
             child: SingleChildScrollView(child: widget.preview),
           ),
+          ],
         ],
       );
     },
+  )),
+    ],
   );
 }
 
@@ -249,12 +283,14 @@ class _Sidebar extends StatelessWidget {
     required this.selected,
     required this.onSelected,
     required this.onReset,
+    required this.dense,
   });
 
   final List<StyleEditorSection> sections;
   final String selected;
   final ValueChanged<String> onSelected;
   final VoidCallback? onReset;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -263,6 +299,7 @@ class _Sidebar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (!dense)
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
           child: Text(
@@ -283,11 +320,13 @@ class _Sidebar extends StatelessWidget {
                   section: section,
                   selected: section.id == selected,
                   onTap: () => onSelected(section.id),
+                  dense: dense,
                 ),
             ],
           ),
         ),
         Divider(color: scheme.outlineVariant),
+        if (!dense) ...[
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Row(
@@ -312,8 +351,16 @@ class _Sidebar extends StatelessWidget {
             style: TextStyle(fontSize: 11, color: muted),
           ),
         ),
+        ],
         if (onReset != null)
-          TextButton(
+          if (dense)
+            IconButton(
+              key: const ValueKey('style-dense-reset'),
+              tooltip: 'Réinitialiser ce style',
+              onPressed: onReset,
+              icon: const Icon(Icons.restart_alt),
+            )
+          else TextButton(
             onPressed: onReset,
             child: const Text('Réinitialiser ce style'),
           ),
@@ -327,16 +374,36 @@ class _SidebarItem extends StatelessWidget {
     required this.section,
     required this.selected,
     required this.onTap,
+    required this.dense,
   });
 
   final StyleEditorSection section;
   final bool selected;
   final VoidCallback onTap;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    if (dense) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 2),
+        child: IconButton(
+          key: ValueKey('style-nav-${section.id}'),
+          tooltip: section.title,
+          isSelected: selected,
+          style: IconButton.styleFrom(
+            backgroundColor: selected
+                ? scheme.primaryContainer.withValues(alpha: .6)
+                : Colors.transparent,
+            foregroundColor: color,
+          ),
+          icon: Icon(section.icon),
+          onPressed: onTap,
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Material(

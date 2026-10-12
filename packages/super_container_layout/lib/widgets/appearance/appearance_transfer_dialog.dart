@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../services/appearance_transfer.dart';
 import '../../services/appearance_store.dart';
 import '../../theme/appearance.dart';
+import '../editing/editor_dialog.dart';
 
 /// Boîte d'export et d'import du style et de la disposition.
 ///
@@ -14,7 +15,11 @@ import '../../theme/appearance.dart';
 /// ou lu depuis un fichier), propose les groupes qu'il contient et applique
 /// ceux qui sont cochés.
 class AppearanceTransferDialog extends StatefulWidget {
-  const AppearanceTransferDialog({required this.controller, this.codec = const AppearanceCodec(), super.key});
+  const AppearanceTransferDialog({
+    required this.controller,
+    this.codec = const AppearanceCodec(),
+    super.key,
+  });
 
   final ValueNotifier<Appearance> controller;
   final AppearanceCodec codec;
@@ -23,10 +28,12 @@ class AppearanceTransferDialog extends StatefulWidget {
     BuildContext context,
     ValueNotifier<Appearance> controller, {
     AppearanceCodec? codec,
-    }
-  ) => showDialog<void>(
+  }) => showEditorDialog<void>(
     context: context,
-    builder: (_) => AppearanceTransferDialog(controller: controller, codec: codec ?? AppearanceServicesScope.codecOf(context)),
+    builder: (_) => AppearanceTransferDialog(
+      controller: controller,
+      codec: codec ?? AppearanceServicesScope.codecOf(context),
+    ),
   );
 
   @override
@@ -71,7 +78,11 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
 
   void _refreshExport() => _exportText.text = _exportGroups.isEmpty
       ? ''
-      : AppearanceTransfer.export(widget.controller.value, _exportGroups, codec: widget.codec);
+      : AppearanceTransfer.export(
+          widget.controller.value,
+          _exportGroups,
+          codec: widget.codec,
+        );
 
   /// Relit le texte à importer : groupes présents, ou erreur à afficher.
   void _refreshImport() {

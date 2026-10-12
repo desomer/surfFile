@@ -129,6 +129,18 @@ extension _SuperLayoutSlots on SuperLayoutState {
       selectedSlotId: _selected.value == zone ? _selectedSlot.value : null,
       onResizeSlot: editMode && widget.editable ? _applySlotDimensions : null,
       onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
+      onTapSlot: editMode
+          ? (slot, event) {
+              if (!mounted ||
+                  !_LayoutEditSelection.wasSelected(this, event) ||
+                  !(StyleEditScope.controllerOf(context)?.value ?? false) ||
+                  !identical(_LayoutEditSelection.selected.value, this)) {
+                return;
+              }
+              _selectedSlot.value = slot.id;
+              _selected.value = zone;
+            }
+          : null,
       onEditPreferredSize: canEditSlots ? _editSlotPreferredSize : null,
       onRemoveSlot: canEditSlots
           ? (slot) async {

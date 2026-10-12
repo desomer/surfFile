@@ -41,8 +41,10 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         entry.key: ValueNotifier(entry.value.$1?.unit ?? SlotSizeUnit.pixels),
     };
     final percentBasis = ValueNotifier(
-      saved?.percentBasis ?? SlotPercentBasis.zone,
+      saved?.percentBasis ?? SlotPercentBasis.layout,
     );
+    final sliderGroup = ValueNotifier('preferred');
+    var percentBasisChanged = false;
     final form = GlobalKey<FormState>();
     String? validate(String? text) {
       if ((text ?? '').trim().isEmpty) return null;
@@ -73,18 +75,79 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
       );
     }
 
+    ({Size layout, Rect zone, Rect slot})? measure() {
+      final layout = this.context.findRenderObject();
+      final slotBox = _slotFocusKeys[slot.id]?.currentContext
+          ?.findRenderObject();
+      final zone = SuperLayoutZone.values
+          .where(
+            (zone) => _config.value
+                .placementsOf(_config.value.contentZone(zone))
+                .contains(slot.id),
+          )
+          .firstOrNull;
+      final zoneBox = _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
+      if (layout is! RenderBox ||
+          !layout.hasSize ||
+          slotBox is! RenderBox ||
+          !slotBox.hasSize ||
+          zoneBox is! RenderBox ||
+          !zoneBox.hasSize) {
+        return null;
+      }
+      Rect bounds(RenderBox box) => MatrixUtils.transformRect(
+        box.getTransformTo(layout),
+        Offset.zero & box.size,
+      );
+      return (
+        layout: layout.size,
+        zone: bounds(zoneBox),
+        slot: bounds(slotBox),
+      );
+    }
+
+    String? boundsError() {
+      if (controllers.values.any((c) => validate(c.text) != null)) return null;
+      final geometry = measure();
+      if (geometry == null) return null;
+      final basis = percentBasis.value == SlotPercentBasis.layout
+          ? geometry.layout
+          : geometry.zone.size;
+      final dimensions = readDimensions();
+      for (final (minimum, maximum, extent, label) in [
+        (dimensions.minWidth, dimensions.maxWidth, basis.width, 'largeur'),
+        (dimensions.minHeight, dimensions.maxHeight, basis.height, 'hauteur'),
+      ]) {
+        if (minimum != null &&
+            maximum != null &&
+            minimum.resolve(extent) > maximum.resolve(extent)) {
+          return 'La $label minimale dépasse la $label maximale.';
+        }
+      }
+      return null;
+    }
+
     var lastPreview = readDimensions();
+    void applyDimensions(SlotSizeConstraints dimensions) {
+      _applySlotDimensions(
+        slot,
+        dimensions,
+        useLegacyPixels: saved == null && !percentBasisChanged,
+      );
+    }
+
     void preview() {
       if (!mounted ||
           controllers.values.any(
             (controller) => validate(controller.text) != null,
-          )) {
+          ) ||
+          boundsError() != null) {
         return;
       }
       final dimensions = readDimensions();
       if (dimensions == lastPreview) return;
       lastPreview = dimensions;
-      _applySlotDimensions(slot, dimensions);
+      applyDimensions(dimensions);
     }
 
     for (final controller in controllers.values) {
@@ -97,13 +160,14 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
     final layoutSize = context.size ?? Size.zero;
 
     try {
-      final result = await showDialog<SlotSizeConstraints>(
+      final result = await showEditorDialog<SlotSizeConstraints>(
         context: context,
+        target: _slotFocusKeys[slot.id]?.currentContext ?? context,
         barrierColor: Colors.transparent,
         builder: (context) => AlertDialog(
           title: Text('Tailles du slot : ${slot.label}'),
           content: SizedBox(
-            width: 420,
+            width: 560,
             child: Form(
               key: form,
               child: SingleChildScrollView(
@@ -112,6 +176,8 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
                     ...controllers.values,
                     ...units.values,
                     percentBasis,
+                    sliderGroup,
+                    _config,
                   ]),
                   builder: (context, _) => Column(
                     mainAxisSize: MainAxisSize.min,
@@ -122,9 +188,13 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
                         builder: (context, value, _) =>
                             DropdownButton<SlotPercentBasis>(
                               key: const ValueKey('slot-percent-basis'),
+                              isExpanded: true,
                               value: value,
                               onChanged: (basis) {
-                                if (basis != null) percentBasis.value = basis;
+                                if (basis != null) {
+                                  percentBasisChanged = true;
+                                  percentBasis.value = basis;
+                                }
                               },
                               items: const [
                                 DropdownMenuItem(
@@ -133,10 +203,77 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
                                 ),
                                 DropdownMenuItem(
                                   value: SlotPercentBasis.layout,
-                                  child: Text('Tout le SuperLayout'),
+                                  child: Text('Toute la place du layout'),
                                 ),
                               ],
                             ),
+                      ),
+                      _SlotSizePreview(
+                        measure: measure,
+                        dimensions:
+                            controllers.values.any(
+                              (c) => validate(c.text) != null,
+                            )
+                            ? lastPreview
+                            : readDimensions(),
+                      ),
+                      if (boundsError() case final error?)
+                        Text(
+                          error,
+                          key: const ValueKey('slot-bounds-error'),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final (group, label) in [
+                            ('min', 'Min'),
+                            ('preferred', 'Préférée'),
+                            ('max', 'Max'),
+                          ])
+                            ChoiceChip(
+                              key: ValueKey('slot-slider-group-$group'),
+                              label: Text(label),
+                              selected: sliderGroup.value == group,
+                              onSelected: (_) => sliderGroup.value = group,
+                            ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              children: [
+                                const Text('Largeur'),
+                                _slotDimensionSlider(
+                                  '${sliderGroup.value}-width',
+                                  controllers,
+                                  units,
+                                  layoutSize,
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            children: [
+                              const Text('Hauteur'),
+                              SizedBox(
+                                height: 120,
+                                child: RotatedBox(
+                                  quarterTurns: 3,
+                                  child: _slotDimensionSlider(
+                                    '${sliderGroup.value}-height',
+                                    controllers,
+                                    units,
+                                    layoutSize,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       for (final entry in fields.entries) ...[
                         Row(
@@ -147,6 +284,21 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
                                 controller: controllers[entry.key],
                                 decoration: InputDecoration(
                                   labelText: entry.value.$2,
+                                  hintText: entry.key.startsWith('max')
+                                      ? 'Sans limite'
+                                      : entry.key.startsWith('min')
+                                      ? 'Aucune'
+                                      : 'Auto',
+                                  suffixIcon: IconButton(
+                                    key: ValueKey('slot-clear-${entry.key}'),
+                                    tooltip:
+                                        'Effacer ${entry.value.$2.toLowerCase()}',
+                                    onPressed:
+                                        controllers[entry.key]!.text.isEmpty
+                                        ? null
+                                        : controllers[entry.key]!.clear,
+                                    icon: const Icon(Icons.clear),
+                                  ),
                                 ),
                                 keyboardType:
                                     const TextInputType.numberWithOptions(
@@ -183,44 +335,6 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
                             ),
                           ],
                         ),
-                        Builder(
-                          builder: (context) {
-                            final key = entry.key;
-                            final value = double.tryParse(
-                              controllers[key]!.text.trim().replaceAll(
-                                ',',
-                                '.',
-                              ),
-                            );
-                            final percent =
-                                units[key]!.value == SlotSizeUnit.percent;
-                            final extent = key.endsWith('width')
-                                ? layoutSize.width
-                                : layoutSize.height;
-                            final baseMax = percent
-                                ? 100.0
-                                : (extent > 1000 ? extent : 1000.0);
-                            final max =
-                                value != null &&
-                                    value.isFinite &&
-                                    value > baseMax
-                                ? value
-                                : baseMax;
-                            return EditorHistorySlider(
-                              key: ValueKey('slot-slider-$key'),
-                              value: value != null && value.isFinite
-                                  ? value.clamp(0, max)
-                                  : 0,
-                              max: max,
-                              label: '${value ?? 0} ${percent ? '%' : 'px'}',
-                              onChanged: (value) {
-                                controllers[key]!.text = value
-                                    .round()
-                                    .toString();
-                              },
-                            );
-                          },
-                        ),
                       ],
                     ],
                   ),
@@ -240,7 +354,8 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
             ),
             FilledButton(
               onPressed: () {
-                if (!form.currentState!.validate()) return;
+                if (!form.currentState!.validate() || boundsError() != null)
+                  return;
                 Navigator.of(context).pop(readDimensions());
               },
               child: const Text('Appliquer'),
@@ -265,7 +380,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         );
         history?.cancelTransaction();
       } else if (result != null && mounted) {
-        _applySlotDimensions(slot, result);
+        applyDimensions(result);
         history?.commitTransaction();
       } else {
         history?.commitTransaction();
@@ -289,14 +404,16 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
           unit.dispose();
         }
         percentBasis.dispose();
+        sliderGroup.dispose();
       });
     }
   }
 
   void _applySlotDimensions(
     SlotImplementation slot,
-    SlotSizeConstraints result,
-  ) {
+    SlotSizeConstraints result, {
+    bool useLegacyPixels = false,
+  }) {
     final current = _config.value;
     if (result.minWidth == null &&
         result.minHeight == null &&
@@ -316,9 +433,11 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         result.minHeight == null &&
         result.maxWidth == null &&
         result.maxHeight == null &&
+        (useLegacyPixels ||
+            (result.percentBasis == SlotPercentBasis.zone &&
+                current.slotSizeConstraints[slot.id] == null)) &&
         result.preferredWidth?.unit == SlotSizeUnit.pixels &&
         result.preferredHeight?.unit == SlotSizeUnit.pixels &&
-        result.percentBasis == SlotPercentBasis.zone &&
         result.preferredWidth!.value > 0 &&
         result.preferredHeight!.value > 0) {
       _update(
@@ -348,4 +467,228 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
       );
     }
   }
+}
+
+Widget _slotDimensionSlider(
+  String key,
+  Map<String, TextEditingController> controllers,
+  Map<String, ValueNotifier<SlotSizeUnit>> units,
+  Size layoutSize,
+) {
+  final value = double.tryParse(
+    controllers[key]!.text.trim().replaceAll(',', '.'),
+  );
+  final percent = units[key]!.value == SlotSizeUnit.percent;
+  final extent = key.endsWith('width') ? layoutSize.width : layoutSize.height;
+  final baseMax = percent ? 100.0 : (extent > 0 ? extent : 1000.0);
+  final max = value != null && value.isFinite && value > baseMax
+      ? value
+      : baseMax;
+  return Slider(
+    key: ValueKey('slot-slider-$key'),
+    value: value != null && value.isFinite ? value.clamp(0, max) : 0,
+    max: max,
+    label: value == null
+        ? key.startsWith('max')
+              ? 'Sans limite'
+              : key.startsWith('min')
+              ? 'Aucune'
+              : 'Auto'
+        : '$value ${percent ? '%' : 'px'}',
+    semanticFormatterCallback: (value) =>
+        '${key.endsWith('width') ? 'Largeur' : 'Hauteur'} : '
+        '${value.round()} ${percent ? '%' : 'px'}',
+    onChanged: (value) => controllers[key]!.text = value.round().toString(),
+  );
+}
+
+class _SlotSizePreview extends StatefulWidget {
+  const _SlotSizePreview({required this.measure, required this.dimensions});
+
+  final ({Size layout, Rect zone, Rect slot})? Function() measure;
+  final SlotSizeConstraints dimensions;
+
+  @override
+  State<_SlotSizePreview> createState() => _SlotSizePreviewState();
+}
+
+class _SlotSizePreviewState extends State<_SlotSizePreview> {
+  ({Size layout, Rect zone, Rect slot})? geometry;
+
+  @override
+  void initState() {
+    super.initState();
+    geometry = widget.measure();
+    refresh();
+  }
+
+  @override
+  void didUpdateWidget(_SlotSizePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    refresh();
+  }
+
+  void refresh() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final next = widget.measure();
+      if (next != geometry) setState(() => geometry = next);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final measured = geometry;
+    if (measured == null || measured.layout.isEmpty) {
+      return const Text(
+        'Preview indisponible : géométrie du slot non mesurable.',
+      );
+    }
+    final colors = Theme.of(context).colorScheme;
+    final basis = widget.dimensions.percentBasis == SlotPercentBasis.layout
+        ? measured.layout
+        : measured.zone.size;
+    String dimension(SlotDimension? value, double extent) => value == null
+        ? 'Auto'
+        : '${value.resolve(extent).toStringAsFixed(1)} px';
+    return Column(
+      children: [
+        const Text('Layout / zone / slot'),
+        SizedBox(
+          height: 150,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final scale = (constraints.maxWidth / measured.layout.width)
+                  .clamp(0.0, 150 / measured.layout.height);
+              Rect scaled(Rect rect) => Rect.fromLTWH(
+                rect.left * scale,
+                rect.top * scale,
+                rect.width * scale,
+                rect.height * scale,
+              );
+              return Center(
+                child: SizedBox(
+                  width: measured.layout.width * scale,
+                  height: measured.layout.height * scale,
+                  child: Stack(
+                    clipBehavior: Clip.hardEdge,
+                    children: [
+                      Positioned.fill(
+                        child: DecoratedBox(
+                          key: const ValueKey('slot-preview-layout'),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: colors.outline),
+                          ),
+                        ),
+                      ),
+                      Positioned.fromRect(
+                        rect: scaled(measured.zone),
+                        child: DecoratedBox(
+                          key: const ValueKey('slot-preview-zone'),
+                          decoration: BoxDecoration(
+                            color: colors.secondaryContainer.withValues(
+                              alpha: .4,
+                            ),
+                            border: Border.all(color: colors.secondary),
+                          ),
+                        ),
+                      ),
+                      for (final (name, width, height) in [
+                        (
+                          'min',
+                          widget.dimensions.minWidth,
+                          widget.dimensions.minHeight,
+                        ),
+                        (
+                          'max',
+                          widget.dimensions.maxWidth,
+                          widget.dimensions.maxHeight,
+                        ),
+                      ])
+                        if (width != null || height != null)
+                          Positioned.fromRect(
+                            rect: scaled(
+                              Rect.fromLTWH(
+                                measured.slot.left,
+                                measured.slot.top,
+                                (width?.resolve(basis.width) ??
+                                        measured.slot.width)
+                                    .clamp(0, measured.layout.width),
+                                (height?.resolve(basis.height) ??
+                                        measured.slot.height)
+                                    .clamp(0, measured.layout.height),
+                              ),
+                            ),
+                            child: CustomPaint(
+                              key: ValueKey('slot-preview-$name'),
+                              painter: _SlotSizeBoundsPainter(colors.tertiary),
+                            ),
+                          ),
+                      Positioned.fromRect(
+                        rect: scaled(measured.slot),
+                        child: DecoratedBox(
+                          key: const ValueKey('slot-preview-slot'),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: .25),
+                            border: Border.all(color: colors.primary, width: 2),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        Text(
+          'Préférée : ${dimension(widget.dimensions.preferredWidth, basis.width)}'
+          ' × ${dimension(widget.dimensions.preferredHeight, basis.height)}',
+        ),
+        Text(
+          'Effective : ${measured.slot.width.toStringAsFixed(1)}'
+          ' × ${measured.slot.height.toStringAsFixed(1)} px',
+          key: const ValueKey('slot-preview-effective'),
+        ),
+        if (widget.dimensions.minWidth != null ||
+            widget.dimensions.minHeight != null ||
+            widget.dimensions.maxWidth != null ||
+            widget.dimensions.maxHeight != null)
+          const Text('Pointillés : limites min / max'),
+      ],
+    );
+  }
+}
+
+class _SlotSizeBoundsPainter extends CustomPainter {
+  const _SlotSizeBoundsPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    void dashed(Offset start, Offset end) {
+      final length = (end - start).distance;
+      if (length == 0) return;
+      final direction = (end - start) / length;
+      for (var position = 0.0; position < length; position += 8) {
+        canvas.drawLine(
+          start + direction * position,
+          start + direction * (position + 4).clamp(0, length),
+          paint,
+        );
+      }
+    }
+
+    dashed(Offset.zero, Offset(size.width, 0));
+    dashed(Offset(size.width, 0), Offset(size.width, size.height));
+    dashed(Offset(size.width, size.height), Offset(0, size.height));
+    dashed(Offset(0, size.height), Offset.zero);
+  }
+
+  @override
+  bool shouldRepaint(_SlotSizeBoundsPainter oldDelegate) =>
+      color != oldDelegate.color;
 }

@@ -44,7 +44,7 @@ extension _SuperLayoutView on SuperLayoutState {
                 : SuperLayoutZone.values
                       .where((zone) => widget.zoneLabel(zone) == zoneLabel)
                       .firstOrNull;
-            _LayoutEditSelection.selected.value = this;
+            _LayoutEditSelection.activate(this);
           }, parent: this.context.findAncestorStateOfType<SuperLayoutState>(),
             selectSlot: (label) {
               final zone = _selected.value;

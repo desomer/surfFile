@@ -54,6 +54,126 @@ void main() {
     matching: find.byKey(ValueKey(key)),
   );
 
+  for (final breadcrumb in [true, false]) {
+    testWidgets(
+      'returning to parent clears child and grandchild selections via ${breadcrumb ? 'breadcrumb' : 'click'}',
+      (tester) async {
+        final mode = ValueNotifier(true);
+        addTearDown(mode.dispose);
+        await pump(
+          tester,
+          mode,
+          layout('parent', child: layout('child', child: layout('grandchild'))),
+        );
+        await tester.tapAt(const Offset(600, 400));
+        await tester.pumpAndSettle();
+        await tester.tap(inside('grandchild', 'slot-label-select-content'));
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value.last, 'grandchild');
+        expect(inside('grandchild', 'slot-resize-content-se'), findsOneWidget);
+        await tester.tapAt(const Offset(600, 80));
+        await tester.pumpAndSettle();
+        LayoutSelection.select([
+          'parent',
+          'Centre',
+          'child',
+          'Centre',
+          'child',
+        ]);
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value.last, 'child');
+        if (breadcrumb) {
+          LayoutSelection.select(['parent']);
+        } else {
+          await tester.tapAt(const Offset(600, 20));
+        }
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, ['parent']);
+        await tester.tapAt(const Offset(600, 80));
+        await tester.pumpAndSettle();
+        expect(inside('child', 'slot-resize-content-se'), findsNothing);
+        await tester.tapAt(
+          tester.getTopLeft(find.byKey(const ValueKey('grandchild'))) +
+              const Offset(600, 10),
+        );
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, [
+          'parent',
+          'Centre',
+          'child',
+          'Centre',
+          'grandchild',
+        ]);
+        expect(inside('grandchild', 'slot-resize-content-se'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  test('descendant clearing uses ancestry rather than identical labels', () {
+    final root = Object();
+    final child = Object();
+    final grandchild = Object();
+    final sibling = Object();
+    final cleared = <Object>[];
+    for (final owner in [root, child, grandchild, sibling]) {
+      LayoutSelection.register(
+        owner,
+        ['Same'],
+        (_) {},
+        parent: identical(owner, child)
+            ? root
+            : identical(owner, grandchild)
+            ? child
+            : null,
+        onDeselect: () => cleared.add(owner),
+      );
+    }
+    addTearDown(() {
+      for (final owner in [root, child, grandchild, sibling]) {
+        LayoutSelection.unregister(owner);
+      }
+    });
+    LayoutSelection.deselectDescendants(root);
+    expect(cleared, [child, grandchild]);
+  });
+
+  testWidgets('switching layouts by content click clears the previous zone and slot', (tester) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(tester, mode, Row(children: [
+      Expanded(child: layout('first')),
+      Expanded(child: layout('second')),
+    ]));
+    await tester.tapAt(const Offset(300, 350));
+    await tester.pumpAndSettle();
+    LayoutSelection.select(['first', 'Centre', 'first']);
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
+    expect(inside('first', 'slot-resize-content-se'), findsOneWidget);
+    await tester.tapAt(const Offset(700, 350));
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['second']);
+    await tester.tapAt(const Offset(300, 350));
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['first']);
+    expect(inside('first', 'slot-resize-content-se'), findsNothing);
+    expect(inside('first', 'super-layout-zone-selected-center'), findsNothing);
+
+    LayoutSelection.select(['first', 'Centre']);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(700, 350));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(300, 350));
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['first']);
+    // A subsequent click in the same layout still selects its slot.
+    await tester.tapAt(const Offset(300, 350));
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'clicking slot labels selects their banner path without changing layout',
     (tester) async {

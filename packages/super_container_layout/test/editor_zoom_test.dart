@@ -198,11 +198,27 @@ void main() {
           .toString(),
     );
     expect(screenRect(tester, button).size, tester.getSize(button));
+    final banner = find.byKey(const ValueKey('style-edit-banner'));
+    final bannerBefore = screenRect(tester, banner);
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(find.text('Tailles du slot : Target'), findsOneWidget);
+    expect(
+      screenRect(tester, target).overlaps(
+        screenRect(tester, find.byKey(const ValueKey('editor-dialog-panel'))),
+      ),
+      isFalse,
+    );
+    expect(
+      screenRect(tester, banner).overlaps(screenRect(
+        tester, find.byKey(const ValueKey('editor-dialog-panel')),
+      )),
+      isFalse,
+    );
     await tester.tap(find.text('Annuler'));
     await tester.pumpAndSettle();
+    expect(screenRect(tester, target), rect);
+    expect(screenRect(tester, banner), bannerBefore);
     expect(tester.takeException(), isNull);
   });
 

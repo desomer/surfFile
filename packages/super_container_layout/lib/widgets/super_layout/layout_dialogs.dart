@@ -3,8 +3,9 @@ part of 'super_layout.dart';
 extension _SuperLayoutDialogs on SuperLayoutState {
   Future<void> _openEditor() async {
     final initial = _config.value;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showEditorDialog<bool>(
       context: context,
+      target: context,
       barrierDismissible: true,
       barrierColor: Colors.transparent,
       builder: (context) => AlertDialog(
@@ -14,12 +15,11 @@ extension _SuperLayoutDialogs on SuperLayoutState {
           child: SingleChildScrollView(
             child: ListenableBuilder(
               listenable: _config,
-              builder: (context, _) =>
-                  SuperLayoutEditor(
-                    config: _config.value,
-                    onChanged: _update,
-                    zoneLabels: widget.zoneLabels,
-                  ),
+              builder: (context, _) => SuperLayoutEditor(
+                config: _config.value,
+                onChanged: _update,
+                zoneLabels: widget.zoneLabels,
+              ),
             ),
           ),
         ),
@@ -40,8 +40,9 @@ extension _SuperLayoutDialogs on SuperLayoutState {
 
   Future<void> _addSlot(SuperLayoutZone zone) async {
     final slots = _availableSlots(context, includeRegistry: true);
-    final id = await showDialog<String>(
+    final id = await showEditorDialog<String>(
       context: context,
+      target: _zoneFocusKeys[zone]?.currentContext ?? context,
       builder: (dialogContext) {
         return SimpleDialog(
           title: Text('Ajouter un slot dans ${widget.zoneLabel(zone)}'),
@@ -82,19 +83,26 @@ extension _SuperLayoutDialogs on SuperLayoutState {
 
     final contentZone = config.contentZone(zone);
     final component = slots.firstWhere((slot) => slot.id == id);
-    _update(widget.onSlotAdded(SlotAddition(
-      slotId: instanceId,
-      component: component,
-      zone: zone,
-      contentZone: contentZone,
-      existingSlots: List.unmodifiable(
-        _slotsOf(config, contentZone).where((slot) => slot.id != instanceId),
+    _update(
+      widget.onSlotAdded(
+        SlotAddition(
+          slotId: instanceId,
+          component: component,
+          zone: zone,
+          contentZone: contentZone,
+          existingSlots: List.unmodifiable(
+            _slotsOf(
+              config,
+              contentZone,
+            ).where((slot) => slot.id != instanceId),
+          ),
+          config: config.withSlotMoved(
+            instanceId,
+            contentZone,
+            type: supplied ? null : id,
+          ),
+        ),
       ),
-      config: config.withSlotMoved(
-        instanceId,
-        contentZone,
-        type: supplied ? null : id,
-      ),
-    )));
+    );
   }
 }

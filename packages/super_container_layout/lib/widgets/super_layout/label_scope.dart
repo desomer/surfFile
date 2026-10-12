@@ -3,13 +3,29 @@ part of 'super_layout.dart';
 class _LayoutEditSelection {
   static final selected = ValueNotifier<SuperLayoutState?>(null);
   static PointerEvent? _lastEvent;
+  static SuperLayoutState? _previous;
+
+  static void activate(SuperLayoutState layout) {
+    LayoutSelection.deselectDescendants(layout);
+    selected.value = layout;
+  }
+
+  static bool wasSelected(SuperLayoutState layout, PointerDownEvent event) =>
+      identical(event.original ?? event, _lastEvent)
+      ? identical(_previous, layout)
+      : identical(selected.value, layout);
 
   static void select(SuperLayoutState layout, PointerDownEvent event) {
     // Les listeners sont appeles du contenu le plus profond vers ses parents.
     final original = event.original ?? event;
     if (identical(original, _lastEvent)) return;
     _lastEvent = original;
-    selected.value = layout;
+    _previous = selected.value;
+    if (!identical(_previous, layout)) {
+      layout._selectedSlot.value = null;
+      layout._selected.value = null;
+    }
+    activate(layout);
   }
 }
 

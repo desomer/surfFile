@@ -185,7 +185,7 @@ class SuperLayoutState extends State<SuperLayout> {
         ? null
         : slot.id;
     _selected.value = zone;
-    _LayoutEditSelection.selected.value = this;
+    _LayoutEditSelection.activate(this);
   }
 
   List<String> _reportedPath = const [];

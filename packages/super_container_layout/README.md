@@ -159,6 +159,18 @@ les dialogues gardent leur taille a l'ecran. Les labels et commandes suivent
 les nouvelles positions du contenu. Le zoom ne modifie pas les tailles
 enregistrees des slots.
 
+Quand son `SuperLayout` est deja selectionne en mode edition, un clic sur
+le contenu d'un slot selectionne ce slot. Cliquer de nouveau sur le contenu
+le garde selectionne ; son label permet toujours de basculer la selection.
+Le premier clic sur une disposition non selectionnee active uniquement
+la disposition. Les glissers et clics droits ne selectionnent pas le slot,
+et les boutons du composant conservent leur action.
+Revenir sur une disposition parente, par clic ou via le fil d'Ariane,
+deselectionne les zones et slots de toutes ses dispositions descendantes,
+y compris celles qui ne sont pas actives.
+Changer de disposition par clic efface aussi la zone et le slot memorises
+de la disposition activee : le zoom cible d'abord la disposition entiere.
+
 Les dispositions sont sauvegardees dans les preferences via
 `Registry.layoutController`. Donnez un `id` stable et distinct a chaque
 page et barre configuree dans le code (`root` et `root-appBar` par defaut).
@@ -244,12 +256,42 @@ masques hors edition.
 L'entree contextuelle du SuperLayout affiche le nom de la zone active entre
 le label de la disposition et ses boutons d'action (axe, ajout de slot).
 
-L'editeur des tailles des slots propose un slider pour chaque dimension,
-synchronise avec le champ numerique et l'unite px/%. Les valeurs valides,
+L'editeur de style propose un bouton Mode dense / Mode complet. Le mode dense
+masque la preview et remplace les libelles du menu de gauche par des icones
+avec une largeur de contenu du dialogue reduite de 1080 a 680 px maximum
+(toujours adaptee a l'ecran). Le retour au mode complet restaure la largeur.
+Les icones conservent leurs infobulles, meme sur ecran etroit. Les cartes de reglages et la remise
+a zero restent accessibles. `ContainerStyleEditor(dense: true)` permet de
+demarrer le mode panneau (`collapsible: false`) directement en mode dense ;
+`StyleEditorPanel` expose aussi ce parametre. Le mode complet reste le defaut.
+
+En mode edition dans une `SuperPage`, les dialogues de style, de taille,
+de configuration du layout, d'ajout de slot et d'apparence utilisent un panneau
+a droite. Un bouton permet de le placer a gauche. Le composant edite est cadre
+avec animation dans l'espace restant, avec dezoom sous x1 si necessaire.
+Sur un ecran de moins de 900 px de large, le panneau passe en bas et le composant
+au-dessus. Le cadrage suit les modifications de taille du composant, le mode
+dense et les redimensionnements de fenetre, sans modifier la disposition
+enregistree ni agrandir les overlays d'edition. La banniere reste dans l'espace
+libre pour ne pas intercepter les boutons du dialogue. Fermer un dialogue restaure le
+cadrage precedent (ou celui du dialogue parent). Les dialogues d'apparence
+cadrent la selection active ; sans page zoomable en mode edition, les dialogues
+conservent leur presentation classique centree.
+
+L'editeur des tailles des slots propose une preview proportionnelle du layout,
+de la zone et du slot, avec les dimensions preferees et effectives en pixels.
+Les limites min/max apparaissent en pointilles. Deux sliders, horizontal pour
+la largeur et vertical pour la hauteur, pilotent le groupe Min/Preferee/Max
+selectionne et restent synchronises avec les six champs numeriques et l'unite
+px/%. Chaque champ dispose d'un bouton pour effacer uniquement sa contrainte.
+Les nouveaux reglages utilisent par defaut la base « Toute la place du layout »
+pour les pourcentages ; une base de zone deja enregistree reste conservee.
+Les bornes min/max incompatibles sont signalees et ne sont pas appliquees.
+Les valeurs valides,
 les unites et la base des pourcentages mettent a jour le rendu en temps reel.
 Appliquer conserve les modifications ; Annuler ou fermer le dialogue restaure
 les reglages initiaux du slot. Un champ vide reste automatique/non renseigne.
-Les sliders couvrent 0-100 % ou au moins 0-1000 px (et la dimension du layout),
+Les sliders couvrent 0-100 % ou la dimension du layout en pixels,
 avec extension de la plage si une valeur saisie depasse ce maximum.
 
 L'editeur propose une activation du glisser separee pour chaque cote et un
@@ -326,11 +368,11 @@ preferee par defaut.
 Lors d'un ajout dans un `SuperLayout`, la largeur preferee est initialisee
 pour Est/Ouest, et la hauteur preferee pour Nord/Sud : la premiere preference
 definie par un autre composant visible de la zone est reprise, sinon 20 %
-avec la base « Tout le layout » (largeur ou hauteur totale du `SuperLayout`).
+avec la base « Toute la place du layout » (largeur ou hauteur totale du `SuperLayout`).
 L'autre dimension et les bornes existantes sont conservees. Une preference
 en pourcentage est reprise avec sa base, sauf si elle modifierait la base
 de bornes ou d'une autre dimension deja en pourcentage. Dans ce cas, la valeur
-par defaut de 20 % et la base « Tout le layout » sont appliquees ; cette base
+par defaut de 20 % et la base « Toute la place du layout » sont appliquees ; cette base
 est commune a toutes les dimensions en pourcentage du slot. Centre et coins
 restent inchanges. Cette regle concerne les ajouts de l'editeur, pas les
 placements initiaux, les deplacements par glisser-deposer ou les preferences

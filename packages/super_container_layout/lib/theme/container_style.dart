@@ -346,7 +346,7 @@ class ContainerStyle {
       borderWidth: number('borderWidth', 0, 4),
       borderColor: borderColor == null ? null : Color(borderColor as int),
       elevation: number('elevation', 0, 16),
-      shadowOpacity: number('shadowOpacity', 0, .6),
+      shadowOpacity: number('shadowOpacity', 0, 1),
       neon: value['neon'] == null ? null : NeonStyle.fromJson(value['neon']),
       padding: number('padding', 0, maxSpacing, fallback.padding),
       margin: number('margin', 0, maxSpacing, fallback.margin),

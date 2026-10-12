@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart' show Axis;
+import 'package:flutter/painting.dart' show Axis, Rect;
 import 'package:flutter/widgets.dart' show BuildContext;
 
 class LayoutFocus {
@@ -31,6 +31,8 @@ class LayoutSelection {
   static final path = ValueNotifier<List<String>>(const []);
   static final axisAction = ValueNotifier<LayoutAxisAction?>(null);
   static final focus = ValueNotifier<LayoutFocus?>(null);
+  /// Free screen area while an editor dialog is docked.
+  static final editorViewport = ValueNotifier<Rect?>(null);
 
   static final _reported = <Object, List<String>>{};
   static final _axisActions = <Object, LayoutAxisAction>{};
@@ -73,6 +75,21 @@ class LayoutSelection {
     _targets.remove(owner);
     _slotSelectors.remove(owner);
     _deselects.remove(owner);
+  }
+
+  /// Clears descendants by identity, including inactive layouts with saved
+  /// zone or slot selections.
+  static void deselectDescendants(Object owner) {
+    for (final entry in _targets.entries.toList()) {
+      var parent = entry.value.parent;
+      while (parent != null) {
+        if (identical(parent, owner)) {
+          _deselects[entry.key]?.call();
+          break;
+        }
+        parent = _targets[parent]?.parent;
+      }
+    }
   }
 
   /// Bascule le segment courant, ou selectionne un segment parent.

@@ -557,11 +557,11 @@ void main() {
         onChanged: (value) => changed = value,
       );
       await openEditor(tester);
-      expect(find.byType(Slider), findsNWidgets(6));
+      expect(find.byType(Slider), findsNWidgets(2));
       final slider = find.byKey(const ValueKey('slot-slider-preferred-height'));
       await tester.ensureVisible(slider);
       await tester.pumpAndSettle();
-      await tester.drag(slider, const Offset(70, 0));
+      await tester.drag(slider, const Offset(0, -30));
       await tester.pump();
       final preferred = changed!.slotSizeConstraints['first']!.preferredHeight!;
       expect(preferred.unit, SlotSizeUnit.pixels);
@@ -727,7 +727,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('slot-percent-basis')));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Tout le SuperLayout').last);
+    await tester.tap(find.text('Toute la place du layout').last);
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byKey(const ValueKey('content-first'))),
@@ -1384,6 +1384,280 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('size editor clears each constraint and cancel restores all', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    final initial = base.copyWith(
+      slotSizeConstraints: {
+        'first': const SlotSizeConstraints(
+          minWidth: SlotDimension(10, SlotSizeUnit.pixels),
+          minHeight: SlotDimension(10, SlotSizeUnit.pixels),
+          preferredWidth: SlotDimension(300, SlotSizeUnit.pixels),
+          preferredHeight: SlotDimension(100, SlotSizeUnit.pixels),
+          maxWidth: SlotDimension(500, SlotSizeUnit.pixels),
+          maxHeight: SlotDimension(300, SlotSizeUnit.pixels),
+          percentBasis: SlotPercentBasis.zone,
+        ),
+      },
+    );
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      config: initial,
+      editMode: mode,
+      onChanged: (value) => changed = value,
+    );
+    await openEditor(tester);
+    expect(
+      tester
+          .widget<DropdownButton<SlotPercentBasis>>(
+            find.byKey(const ValueKey('slot-percent-basis')),
+          )
+          .value,
+      SlotPercentBasis.zone,
+    );
+    for (final key in [
+      'min-width',
+      'min-height',
+      'preferred-width',
+      'preferred-height',
+      'max-width',
+      'max-height',
+    ]) {
+      final clear = find.byKey(ValueKey('slot-clear-$key'));
+      await tester.ensureVisible(clear);
+      await tester.pumpAndSettle();
+      await tester.tap(clear);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(find.byKey(ValueKey('slot-$key')))
+            .controller!
+            .text,
+        isEmpty,
+      );
+    }
+    expect(changed!.slotSizeConstraints, isEmpty);
+    expect(changed!.slotPreferredSizes['first'], isNull);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(changed, initial);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('size editor preview matches proportions and sliders retarget', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(tester, editMode: mode);
+    await openEditor(tester);
+    expect(
+      tester
+          .widget<DropdownButton<SlotPercentBasis>>(
+            find.byKey(const ValueKey('slot-percent-basis')),
+          )
+          .value,
+      SlotPercentBasis.layout,
+    );
+    final layoutPreview = find.byKey(const ValueKey('slot-preview-layout'));
+    final slotPreview = find.byKey(const ValueKey('slot-preview-slot'));
+    final layoutSize = tester.getSize(layoutPreview);
+    expect(layoutSize.width / layoutSize.height, closeTo(1.5, .001));
+    expect(tester.getSize(slotPreview).height / layoutSize.height, .5);
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-width')),
+      '300',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-height')),
+      '100',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(slotPreview).width / layoutSize.width, .5);
+    expect(tester.getSize(slotPreview).height / layoutSize.height, .25);
+    expect(find.text('Effective : 300.0 × 100.0 px'), findsOneWidget);
+    final vertical = tester.widget<RotatedBox>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('slot-slider-preferred-height')),
+        matching: find.byType(RotatedBox),
+      ),
+    );
+    expect(vertical.quarterTurns, 3);
+    for (final group in ['min', 'max']) {
+      final chip = find.byKey(ValueKey('slot-slider-group-$group'));
+      await tester.ensureVisible(chip);
+      await tester.pumpAndSettle();
+      await tester.tap(chip);
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('slot-slider-$group-width')), findsOneWidget);
+      expect(find.byKey(ValueKey('slot-slider-$group-height')), findsOneWidget);
+    }
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-max-width')),
+      '2000',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Slider>(find.byKey(const ValueKey('slot-slider-max-width')))
+          .max,
+      2000,
+    );
+    expect(find.byKey(const ValueKey('slot-preview-max')), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('size editor rejects conflicting bounds before applying', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(tester, editMode: mode, onChanged: (value) => changed = value);
+    await openEditor(tester);
+    await tester.enterText(find.byKey(const ValueKey('slot-max-width')), '100');
+    await tester.pumpAndSettle();
+    final valid = changed;
+    await tester.enterText(find.byKey(const ValueKey('slot-min-width')), '200');
+    await tester.pumpAndSettle();
+    expect(
+      find.text('La largeur minimale dépasse la largeur maximale.'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(changed, valid);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(changed, base);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final basis in SlotPercentBasis.values) {
+    testWidgets('size editor preserves saved ${basis.name} basis with pixels', (
+      tester,
+    ) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      SuperLayoutConfig? changed;
+      await pump(tester, editMode: mode,
+        config: base.copyWith(slotSizeConstraints: {
+          'first': SlotSizeConstraints(
+            preferredWidth: const SlotDimension(300, SlotSizeUnit.pixels),
+            preferredHeight: const SlotDimension(100, SlotSizeUnit.pixels),
+            percentBasis: basis,
+          ),
+        }),
+        onChanged: (value) => changed = value,
+      );
+      await openEditor(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-width')), '320');
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(changed!.slotSizeConstraints['first']!.percentBasis, basis);
+      await openEditor(tester);
+      expect(tester.widget<DropdownButton<SlotPercentBasis>>(
+        find.byKey(const ValueKey('slot-percent-basis')),
+      ).value, basis);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('size editor remains usable on a narrow screen', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(tester, editMode: mode);
+    await openEditor(tester);
+    expect(find.byKey(const ValueKey('slot-preview-slot')), findsOneWidget);
+    final clear = find.byKey(const ValueKey('slot-clear-max-height'));
+    await tester.ensureVisible(clear);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const ValueKey('slot-max-height')), '200');
+    await tester.pumpAndSettle();
+    await tester.tap(clear);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AlertDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot editor changes apply as one undoable transaction', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier<Appearance>(
+      Appearance(layouts: {'editor': base}),
+    );
+    final history = EditorHistoryController(
+      appearance: appearance,
+      editMode: mode,
+    );
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    addTearDown(history.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: EditorHistoryScope(
+        controller: history,
+        child: StyleEditScope(
+          controller: mode,
+          child: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: ValueListenableBuilder<Appearance>(
+                valueListenable: appearance,
+                builder: (context, value, _) => SuperLayout(
+                  config: value.layouts['editor']!,
+                  onChanged: (config) => appearance.value =
+                      appearance.value.withLayout('editor', config),
+                  slots: [slot('first'), slot('second')],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    await openEditor(tester);
+    final slider = find.byKey(const ValueKey('slot-slider-preferred-width'));
+    await tester.ensureVisible(slider);
+    await tester.pumpAndSettle();
+    await tester.drag(slider, const Offset(40, 0));
+    await tester.pumpAndSettle();
+    expect(history.canUndo, isFalse);
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-height')), '120');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    final saved = appearance.value.layouts['editor'];
+    expect(saved, isNot(base));
+    expect(history.canUndo, isTrue);
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(appearance.value.layouts['editor'], base);
+    expect(history.canUndo, isFalse);
+    history.redo();
+    await tester.pumpAndSettle();
+    expect(appearance.value.layouts['editor'], saved);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'size editing is disabled outside edit mode or on readonly layouts',

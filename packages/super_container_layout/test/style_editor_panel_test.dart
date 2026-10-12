@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/style_editor_panel.dart';
 
 void main() {
   Future<void> openEditor(WidgetTester tester, Size size) async {
@@ -78,6 +79,100 @@ void main() {
     expect(find.text('PROPRIÉTÉS'), findsNothing);
     expect(find.byType(ChoiceChip), findsWidgets);
     expect(find.byKey(const ValueKey('style-preview')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [const Size(1400, 1000), const Size(400, 700)]) {
+    testWidgets('dense mode hides preview and navigation labels at $size', (
+      tester,
+    ) async {
+      await openEditor(tester, size);
+      double contentWidth() => tester
+          .getSize(
+            find.byWidget(
+              tester.widget<AlertDialog>(find.byType(AlertDialog)).content!,
+            ),
+          )
+          .width;
+      final completeWidth = contentWidth();
+      final toggle = find.byKey(const ValueKey('style-dense-toggle'));
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      final denseWidth = contentWidth();
+      if (size.width > 1000) {
+        expect(denseWidth, completeWidth - 400);
+      } else {
+        expect(denseWidth, completeWidth);
+      }
+      expect(find.byKey(const ValueKey('style-preview')), findsNothing);
+      expect(find.text('PROPRIÉTÉS'), findsNothing);
+      expect(find.text('Du visuel au code'), findsNothing);
+      expect(find.byType(ChoiceChip), findsNothing);
+      final navigation = find.byKey(const ValueKey('style-nav-fill'));
+      expect(
+        tester.widget<IconButton>(navigation).tooltip,
+        'Fond & décoration',
+      );
+      expect(
+        find.descendant(of: navigation, matching: find.byType(Text)),
+        findsNothing,
+      );
+      final card = find.byKey(const ValueKey('style-card-interaction'));
+      final before = tester.getTopLeft(card).dy;
+      final interaction = find.byKey(const ValueKey('style-nav-interaction'));
+      await tester.scrollUntilVisible(
+        interaction,
+        120,
+        scrollable: find.descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(interaction);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(card).dy, lessThan(before));
+      expect(find.byKey(const ValueKey('style-dense-reset')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-preview')), findsOneWidget);
+      expect(contentWidth(), completeWidth);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('panel can start dense and preserves control state on toggle', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StyleEditorPanel(
+            dense: true,
+            preview: const Text('Test preview'),
+            sections: const [
+              StyleEditorSection(
+                id: 'test',
+                title: 'Test section',
+                icon: Icons.settings,
+                child: TextField(key: ValueKey('dense-test-input')),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Test preview'), findsNothing);
+    final input = find.byKey(const ValueKey('dense-test-input'));
+    await tester.enterText(input, 'kept');
+    await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.text('Test preview'), findsOneWidget);
+    expect(find.text('kept'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
+    await tester.pumpAndSettle();
+    expect(find.text('kept'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

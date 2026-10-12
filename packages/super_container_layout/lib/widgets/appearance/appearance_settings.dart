@@ -7,6 +7,7 @@ import '../../theme/appearance_slot.dart';
 import '../../theme/default_appearance.dart';
 import 'appearance_style_section.dart';
 import '../editing/editor_history.dart';
+import '../editing/editor_dialog.dart';
 
 /// Captured by the caller before opening a route, then applied to every dialog.
 typedef AppearanceDialogWrapper = Widget Function(Widget child);
@@ -223,7 +224,7 @@ Future<void> showAppearanceDialog(
     throw StateError('Appearance controller unavailable.');
   }
   final codec = AppearanceServicesScope.codecOf(context);
-  return showDialog<void>(
+  return showEditorDialog<void>(
     context: context,
     barrierColor: Colors.transparent,
     barrierDismissible: false,

@@ -28,11 +28,14 @@ class _EditorZoomState extends State<EditorZoom>
   ({double scale, Offset offset}) _to = (scale: 1, offset: Offset.zero);
   ({double scale, Offset offset}) _current = (scale: 1, offset: Offset.zero);
   bool _scheduled = false;
+  final _controller = EditorZoomController();
+  final _viewportKey = GlobalKey();
 
   @override
   void initState() {
     super.initState();
     LayoutSelection.focus.addListener(_schedule);
+    _controller.dialog.addListener(_schedule);
   }
 
   @override
@@ -44,6 +47,7 @@ class _EditorZoomState extends State<EditorZoom>
       _editMode = mode;
       mode?.addListener(_schedule);
     }
+    _controller.enabled = mode?.value ?? false;
     _schedule();
   }
 
@@ -59,44 +63,37 @@ class _EditorZoomState extends State<EditorZoom>
 
   void _frameSelection() {
     var destination = (scale: 1.0, offset: Offset.zero);
-    final focus = LayoutSelection.focus.value?.context;
-    final contentContext = _content.currentContext;
-    if ((_editMode?.value ?? false) &&
-        focus != null &&
-        focus.mounted &&
-        contentContext != null) {
-      var belongsToPage = identical(focus, contentContext);
-      focus.visitAncestorElements((element) {
-        if (identical(element, contentContext)) belongsToPage = true;
-        return !belongsToPage;
-      });
-      final target = focus.findRenderObject();
-      final content = contentContext.findRenderObject();
-      if (belongsToPage &&
-          target is RenderBox &&
-          content is RenderBox &&
-          target.attached &&
-          target.hasSize &&
-          content.hasSize) {
-        final rect = MatrixUtils.transformRect(
-          target.getTransformTo(content),
-          Offset.zero & target.size,
-        );
-        if (!rect.isEmpty && rect.isFinite && !_viewport.isEmpty) {
-          final scale = math.min(
-            _viewport.width * .7 / rect.width,
-            _viewport.height * .7 / rect.height,
-          ).clamp(1.0, 3.0);
-          destination = (
-            scale: scale,
-            offset: _viewport.center(Offset.zero) - rect.center * scale,
-          );
+    _controller.enabled = _editMode?.value ?? false;
+    final dialog = _controller.dialog.value;
+    final focus = dialog?.target ?? LayoutSelection.focus.value?.context;
+    _controller.contentContext = _content.currentContext;
+    final rect = _controller.targetBounds(focus);
+    if (_controller.enabled && rect != null) {
+      if (!rect.isEmpty && rect.isFinite && !_viewport.isEmpty) {
+        var available = Offset.zero & _viewport;
+        final viewport = _viewportKey.currentContext?.findRenderObject();
+        if (dialog?.available case final screen? when viewport is RenderBox) {
+          available = Rect.fromPoints(
+            viewport.globalToLocal(screen.topLeft),
+            viewport.globalToLocal(screen.bottomRight),
+          ).intersect(available);
         }
+        if (available.isEmpty) return;
+        final scale = math
+            .min(
+              available.width * .7 / rect.width,
+              available.height * .7 / rect.height,
+            )
+            .clamp(dialog == null ? 1.0 : 0.0, 3.0);
+        destination = (
+          scale: scale,
+          offset: available.center - rect.center * scale,
+        );
       }
     }
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    if (destination == _to &&
-        !(disableAnimations && _animation.isAnimating)) return;
+    if (destination == _to && !(disableAnimations && _animation.isAnimating))
+      return;
     _from = _current;
     _to = destination;
     if (disableAnimations) {
@@ -120,6 +117,8 @@ class _EditorZoomState extends State<EditorZoom>
   @override
   void dispose() {
     LayoutSelection.focus.removeListener(_schedule);
+    _controller.dialog.removeListener(_schedule);
+    _controller.dispose();
     _editMode?.removeListener(_schedule);
     _animation.dispose();
     super.dispose();
@@ -129,6 +128,7 @@ class _EditorZoomState extends State<EditorZoom>
   Widget build(BuildContext context) => EditorZoomScope(
     scale: _current.scale,
     offset: _current.offset,
+    controller: _controller,
     child: LayoutBuilder(
       builder: (context, constraints) {
         if (_viewport != constraints.biggest) {
@@ -136,6 +136,7 @@ class _EditorZoomState extends State<EditorZoom>
           _schedule();
         }
         return ClipRect(
+          key: _viewportKey,
           child: Transform(
             key: const ValueKey('editor-zoom-transform'),
             alignment: Alignment.topLeft,
@@ -155,16 +156,92 @@ class EditorZoomScope extends InheritedWidget {
     required this.scale,
     required this.offset,
     required super.child,
+    this.controller,
     super.key,
   });
 
   final double scale;
   final Offset offset;
+  final EditorZoomController? controller;
+
+  static EditorZoomController? controllerOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<EditorZoomScope>()?.controller;
 
   static bool contains(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<EditorZoomScope>() != null;
 
   @override
   bool updateShouldNotify(EditorZoomScope oldWidget) =>
-      scale != oldWidget.scale || offset != oldWidget.offset;
+      scale != oldWidget.scale ||
+      offset != oldWidget.offset ||
+      controller != oldWidget.controller;
+}
+
+class EditorZoomController {
+  bool enabled = false;
+  bool disposed = false;
+  final dialog = EditorDialogNotifier();
+  BuildContext? contentContext;
+
+  Rect? targetBounds(BuildContext? targetContext) {
+    if (targetContext == null ||
+        !targetContext.mounted ||
+        contentContext == null ||
+        !contentContext!.mounted)
+      return null;
+    var belongs = identical(targetContext, contentContext);
+    targetContext.visitAncestorElements((element) {
+      if (identical(element, contentContext)) belongs = true;
+      return !belongs;
+    });
+    final target = targetContext.findRenderObject();
+    final content = contentContext!.findRenderObject();
+    if (!belongs ||
+        target is! RenderBox ||
+        content is! RenderBox ||
+        !target.attached ||
+        !content.attached ||
+        !target.hasSize ||
+        !content.hasSize)
+      return null;
+    return MatrixUtils.transformRect(
+      target.getTransformTo(content),
+      Offset.zero & target.size,
+    );
+  }
+
+  void dispose() {
+    disposed = true;
+    final available = dialog.value?.available;
+    if (available != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (LayoutSelection.editorViewport.value == available) {
+          LayoutSelection.editorViewport.value = null;
+        }
+      });
+    }
+    dialog.dispose();
+  }
+}
+
+class EditorDialogNotifier extends ValueNotifier<EditorDialogFocus?> {
+  EditorDialogNotifier() : super(null);
+
+  void frame(EditorDialogFocus request, Rect available) {
+    if (request.available == available && identical(value, request)) return;
+    request.available = available;
+    if (identical(value, request)) {
+      notifyListeners();
+    } else {
+      value = request;
+    }
+  }
+
+  void geometryChanged() => notifyListeners();
+}
+
+class EditorDialogFocus {
+  EditorDialogFocus({required this.target});
+  final BuildContext? target;
+  Rect? available;
 }

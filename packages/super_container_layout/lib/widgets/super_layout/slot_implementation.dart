@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
-import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/gestures.dart'
+    show DragStartBehavior, PointerDownEvent, kPrimaryButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
@@ -100,6 +101,7 @@ class SlotStack extends StatelessWidget {
     this.onEditPreferredSize,
     this.onRemoveSlot,
     this.onSelectSlot,
+    this.onTapSlot,
     this.selectedSlotId,
     this.onResizeSlot,
     this.focusKeys,
@@ -139,6 +141,9 @@ class SlotStack extends StatelessWidget {
   final Future<void> Function(SlotImplementation)? onEditPreferredSize;
   final Future<void> Function(SlotImplementation)? onRemoveSlot;
   final ValueChanged<SlotImplementation>? onSelectSlot;
+
+  /// Content clicks, distinct from the label's selection toggle.
+  final void Function(SlotImplementation, PointerDownEvent)? onTapSlot;
   final String? selectedSlotId;
   final void Function(SlotImplementation, SlotSizeConstraints)? onResizeSlot;
 
@@ -196,6 +201,9 @@ class SlotStack extends StatelessWidget {
         zoneLabel: zoneLabel,
         ids: ids,
         onSelect: onSelectSlot == null ? null : () => onSelectSlot!(slot),
+        onTapContent: onTapSlot == null
+            ? null
+            : (event) => onTapSlot!(slot, event),
         selected: selectedSlotId == slot.id,
         onResize: onResizeSlot == null
             ? null
@@ -432,7 +440,7 @@ class _RenderSlotFlex extends RenderBox
       final bound = bounds[index];
       final min = dimensions(
         main ?? bound.$1,
-        cross ?? (stretch ? maxCross : bound.$4),
+        cross ?? (stretch ? bound.$5 : bound.$4),
       );
       final max = dimensions(main ?? bound.$2, cross ?? bound.$5);
       return BoxConstraints(
@@ -649,6 +657,7 @@ class _LabeledSlot extends StatefulWidget {
     required this.zoneLabel,
     required this.ids,
     required this.onSelect,
+    required this.onTapContent,
     required this.selected,
     required this.onResize,
     required this.sizeConstraints,
@@ -662,6 +671,7 @@ class _LabeledSlot extends StatefulWidget {
   final LabelEmphasis? emphasis;
   final String? zoneLabel;
   final VoidCallback? onSelect;
+  final ValueChanged<PointerDownEvent>? onTapContent;
   final bool selected;
   final ValueChanged<SlotSizeConstraints>? onResize;
   final SlotSizeConstraints? sizeConstraints;
@@ -674,6 +684,11 @@ class _LabeledSlot extends StatefulWidget {
 }
 
 class _LabeledSlotState extends State<_LabeledSlot> {
+  int? _tapPointer;
+  Offset? _tapStart;
+  VoidCallback? _tapAction;
+  final _labelKey = GlobalKey();
+
   /// Vrai quand le glisser survole la seconde moitie sur l'axe du slot.
   bool _after = false;
 
@@ -1005,7 +1020,54 @@ class _LabeledSlotState extends State<_LabeledSlot> {
             fit: StackFit.passthrough,
             clipBehavior: Clip.none,
             children: [
-              slot,
+              Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (event) {
+                  // Portal labels can hit-test alongside the content below.
+                  final label = _labelKey.currentContext?.findRenderObject();
+                  final onLabel =
+                      label is RenderBox &&
+                      label.hasSize &&
+                      (Offset.zero & label.size).contains(
+                        label.globalToLocal(event.position),
+                      );
+                  if (event.buttons != kPrimaryButton ||
+                      onLabel ||
+                      _tapPointer != null) {
+                    _tapAction = null;
+                    return;
+                  }
+                  _tapPointer = event.pointer;
+                  _tapStart = event.position;
+                  final callback = widget.onTapContent;
+                  _tapAction = callback == null ? null : () => callback(event);
+                },
+                onPointerMove: (event) {
+                  if (event.pointer == _tapPointer &&
+                      (event.position - _tapStart!).distance > kTouchSlop) {
+                    _tapAction = null;
+                  }
+                },
+                onPointerCancel: (event) {
+                  if (event.pointer == _tapPointer) {
+                    _tapPointer = null;
+                    _tapStart = null;
+                    _tapAction = null;
+                  }
+                },
+                onPointerUp: (event) {
+                  if (event.pointer != _tapPointer) return;
+                  final action =
+                      (event.position - _tapStart!).distance <= kTouchSlop
+                      ? _tapAction
+                      : null;
+                  _tapPointer = null;
+                  _tapStart = null;
+                  _tapAction = null;
+                  action?.call();
+                },
+                child: slot,
+              ),
               if (_hover || _dragging || (widget.showLabel && widget.selected))
                 Positioned.fill(
                   key: ValueKey('slot-highlight-${slot.id}'),
@@ -1061,6 +1123,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                           emphasis: widget.emphasis,
                           alignment: slot.labelAlignment,
                           child: MouseRegion(
+                            key: _labelKey,
                             hitTestBehavior: HitTestBehavior.translucent,
                             onEnter: (_) => _setHover(true),
                             onExit: (_) => _setHover(false),

@@ -135,6 +135,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('NewContainer'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('NewContainer'));
       await tester.pumpAndSettle();
       final controller = registry.layoutController('root');
