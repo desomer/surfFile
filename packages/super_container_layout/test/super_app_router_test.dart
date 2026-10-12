@@ -38,7 +38,7 @@ void main() {
         GoRoute(
           path: '/',
           builder: (context, state) => SuperPage(
-            appBar: AppBar(title: const Text('Home')),
+            appBar: const SuperAppBar(title: Text('Home')),
             child: Center(
               child: FilledButton(
                 onPressed: () => context.push('/details/42'),
@@ -50,7 +50,11 @@ void main() {
         GoRoute(
           path: '/details/:id',
           builder: (context, state) => SuperPage(
-            appBar: AppBar(title: const Text('Details')),
+            id: 'details',
+            appBar: const SuperAppBar(
+              id: 'details-appBar',
+              title: Text('Details'),
+            ),
             child: Center(child: Text('Item ${state.pathParameters['id']}')),
           ),
         ),

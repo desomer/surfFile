@@ -15,7 +15,11 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             child: ListenableBuilder(
               listenable: _config,
               builder: (context, _) =>
-                  SuperLayoutEditor(config: _config.value, onChanged: _update),
+                  SuperLayoutEditor(
+                    config: _config.value,
+                    onChanged: _update,
+                    zoneLabels: widget.zoneLabels,
+                  ),
             ),
           ),
         ),
@@ -40,7 +44,7 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       builder: (dialogContext) {
         final slots = _availableSlots(context, includeRegistry: true);
         return SimpleDialog(
-          title: Text('Ajouter un slot dans ${zone.label}'),
+          title: Text('Ajouter un slot dans ${widget.zoneLabel(zone)}'),
           children: [
             if (!slots.any((slot) => slot.visible))
               const Padding(

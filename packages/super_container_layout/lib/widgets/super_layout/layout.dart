@@ -19,6 +19,7 @@ class SuperLayout extends StatefulWidget {
     this.name,
     this.editable = true,
     this.showZoneNames = true,
+    this.zoneLabels = const {},
     super.key,
   });
 
@@ -35,6 +36,9 @@ class SuperLayout extends StatefulWidget {
   /// Affiche le nom des zones pendant le mode édition ; à désactiver pour une
   /// disposition imbriquée qui ne s'édite pas.
   final bool showZoneNames;
+  final Map<SuperLayoutZone, String> zoneLabels;
+
+  String zoneLabel(SuperLayoutZone zone) => zoneLabels[zone] ?? zone.label;
 
   @override
   State<SuperLayout> createState() => SuperLayoutState();
@@ -81,7 +85,7 @@ class SuperLayoutState extends State<SuperLayout> {
       : SuperLayoutZone.center;
 
   LayoutAxisAction _axisAction(SuperLayoutZone zone) => LayoutAxisAction(
-    zoneLabel: zone.label,
+    zoneLabel: widget.zoneLabel(zone),
     axis: _config.value.axisOf(zone),
     onToggle: () {
       if (!mounted || !widget.editable) return;

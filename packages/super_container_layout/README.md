@@ -78,6 +78,7 @@ final router = GoRouter(
     GoRoute(
       path: '/details/:id',
       builder: (context, state) => SuperPage(
+        id: 'details',
         child: MyDetailsContent(id: state.pathParameters['id']!),
       ),
     ),
@@ -103,6 +104,53 @@ pas dans `build`. L'application reste responsable de son `dispose` ;
 par exemple `SuperPage(child: MyHomeContent())` dans le builder de `/`.
 L'application SurfFile et la demonstration du package utilisent cette route
 racine avec leur contenu existant.
+
+### Slots de page et barre d'application
+
+`SuperPage` utilise un `SuperLayout` avec trois zones nommees :
+`appBar` (Nord), `body` (Centre) et `bottomBar` (Sud). Les parametres
+`appBar`, `child` et `bottomBar` fournissent les composants initiaux.
+`slots` ajoute des `SlotImplementation` au catalogue local et `config`
+permet de definir leurs placements initiaux.
+
+```dart
+SuperPage(
+  id: 'explorer-page',
+  appBar: SuperAppBar(
+    id: 'explorer-appBar',
+    title: const Text('Explorateur'),
+    action: IconButton(
+      icon: const Icon(Icons.refresh),
+      onPressed: refresh,
+    ),
+  ),
+  child: const ExplorerContent(),
+  bottomBar: const Text('Pret'),
+)
+```
+
+Chaque `Registry()` enregistre automatiquement le composant `SuperAppBar`.
+Avec `SuperApp(registry: registry, router: router)`, activez le mode edition,
+selectionnez la disposition de la page, puis ajoutez ce composant dans
+`appBar`. Cette zone et `bottomBar` sont vides par defaut et n'occupent
+aucune hauteur hors edition. Le body conserve le contenu `child`.
+
+`SuperAppBar` fournit une barre Material avec deux zones : `title` (Centre)
+et `action` (Est). Les parametres `title` et `action` fournissent chacun un
+slot initial ; les composants du registre peuvent aussi etre ajoutes depuis
+l'editeur. Les emplacements peuvent accueillir plusieurs composants, comme
+les autres zones de `SuperLayout`. La zone action est horizontale et sa
+largeur s'adapte au contenu. Le bouton de retour automatique est conserve.
+
+Les dispositions sont sauvegardees dans les preferences via
+`Registry.layoutController`. Donnez un `id` stable et distinct a chaque
+page et barre configuree dans le code (`root` et `root-appBar` par defaut).
+Une barre ajoutee depuis le registre utilise l'identifiant unique de son
+instance : plusieurs barres ont des dispositions independantes.
+La reinitialisation des dispositions restaure leurs placements initiaux ;
+l'historique et les imports/exports utilisent le mecanisme existant.
+Sans registre, les slots fournis restent utilisables mais les changements
+de disposition ne sont pas persistants.
 
 Ajoutez le package à `pubspec.yaml` :
 
@@ -161,6 +209,13 @@ et les minima des autres slots sont respectes ; les unites px/% et la base
 des pourcentages sont conservees. Les modifications passent par `onChanged`
 et chaque glisser constitue une seule operation dans l'historique d'edition.
 Les poignees disparaissent a la deselection et hors du mode edition.
+Les nouvelles dispositions utilisent la taille automatique par defaut pour
+les quatre cotes (Nord, Sud, Est, Ouest). Pour demander des cotes fixes dans
+le code, fournissez `SuperLayoutConfig(autoSides: {})`, ou activez/desactivez
+la taille automatique par cote dans l'editeur. Les dispositions sauvegardees
+conservent leurs reglages ; les anciens documents sans `autoSides` restent
+en taille fixe.
+
 Hors edition, un cote en taille automatique sans slot visible occupe zero
 pixel ; les slots masques ou introuvables ne comptent pas comme du contenu.
 Les tailles fixes restent reservees, meme pour une zone vide. Les cotes

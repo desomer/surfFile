@@ -30,6 +30,31 @@ void main() {
   const size = Size(600, 400);
 
   group('SuperLayoutConfig auto sides and placements', () {
+    test('new layouts default to four automatic sides', () {
+      const config = SuperLayoutConfig();
+      expect(config.autoSides, {
+        SuperLayoutZone.north,
+        SuperLayoutZone.south,
+        SuperLayoutZone.east,
+        SuperLayoutZone.west,
+      });
+      expect(SuperLayoutConfig.fromJson(config.toJson()), config);
+      expect(config.copyWith().autoSides, config.autoSides);
+    });
+
+    test('saved fixed sides and legacy layouts remain fixed', () {
+      const fixed = SuperLayoutConfig(autoSides: {});
+      expect(SuperLayoutConfig.fromJson(fixed.toJson()).autoSides, isEmpty);
+      expect(
+        SuperLayoutConfig.fromJson({'northSize': 72}).autoSides,
+        isEmpty,
+      );
+      expect(
+        SuperLayoutConfig.fromJson({'northSize': 72}).northSize,
+        72,
+      );
+    });
+
     test('placement types and instance IDs survive JSON and moves', () {
       final config = const SuperLayoutConfig()
           .withSlotMoved(
@@ -245,6 +270,50 @@ void main() {
 
     Rect rectOf(WidgetTester tester, String id) =>
         tester.getRect(find.byKey(ValueKey('box-$id')));
+
+    testWidgets('default automatic sides measure all four contents', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        config: const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.north: ['north'],
+            SuperLayoutZone.south: ['south'],
+            SuperLayoutZone.west: ['west'],
+            SuperLayoutZone.east: ['east'],
+            SuperLayoutZone.center: ['content'],
+          },
+        ),
+        slots: [
+          _slot('north', height: 44),
+          _slot('south', height: 36),
+          _slot('west', width: 70),
+          _slot('east', width: 90),
+          _slot('content', sizing: SlotSizing.fill),
+        ],
+      );
+      expect(rectOf(tester, 'north').height, 44);
+      expect(rectOf(tester, 'south').height, 36);
+      expect(rectOf(tester, 'west').width, 70);
+      expect(rectOf(tester, 'east').width, 90);
+      expect(rectOf(tester, 'content'), const Rect.fromLTWH(70, 44, 440, 320));
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('default empty sides leave all space to the body', (
+      tester,
+    ) async {
+      await pump(
+        tester,
+        config: const SuperLayoutConfig(
+          placements: {SuperLayoutZone.center: ['content']},
+        ),
+        slots: [_slot('content', sizing: SlotSizing.fill)],
+      );
+      expect(rectOf(tester, 'content'), const Rect.fromLTWH(0, 0, 600, 400));
+      expect(tester.takeException(), isNull);
+    });
 
     testWidgets('auto north takes the height of its stacked slots', (
       tester,

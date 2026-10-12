@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
+import 'package:super_container_layout/super_app_bar.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
@@ -156,6 +157,10 @@ class Registry {
   }
 
   void bootstrap() {
+    registry['SuperAppBar'] = ComponentBuilderDynamic(
+      dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
+    );
+
     registry['NewContainer'] = ComponentBuilderDynamic(
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (context) {

@@ -11,6 +11,7 @@ import '../super_layout/zone_axis_button.dart';
 ///
 /// Peut être placée au-dessus du [Navigator] (ex. `MaterialApp.builder`) :
 /// elle fournit alors son propre [Overlay] pour l'info-bulle du bouton.
+/// Sa frontière sémantique sépare cet overlay de celui du navigateur.
 class StyleEditBanner extends StatefulWidget {
   const StyleEditBanner({this.navigatorKey, super.key});
 
@@ -26,9 +27,13 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   _BannerLayout _layout = _BannerLayout(null);
 
   @override
-  Widget build(BuildContext context) => Overlay.maybeOf(context) == null
-      ? Overlay.wrap(child: Builder(builder: _buildBanner))
-      : _buildBanner(context);
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    explicitChildNodes: true,
+    child: Overlay.maybeOf(context) == null
+        ? Overlay.wrap(child: Builder(builder: _buildBanner))
+        : _buildBanner(context),
+  );
 
   Widget _buildBanner(BuildContext context) {
     final editMode = StyleEditScope.controllerOf(context);

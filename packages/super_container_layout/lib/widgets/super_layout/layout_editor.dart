@@ -6,11 +6,15 @@ class SuperLayoutEditor extends StatelessWidget {
   const SuperLayoutEditor({
     required this.config,
     required this.onChanged,
+    this.zoneLabels = const {},
     super.key,
   });
 
   final SuperLayoutConfig config;
   final ValueChanged<SuperLayoutConfig> onChanged;
+  final Map<SuperLayoutZone, String> zoneLabels;
+
+  String _zoneLabel(SuperLayoutZone zone) => zoneLabels[zone] ?? zone.label;
 
   static const _sides = [
     SuperLayoutZone.north,
@@ -46,12 +50,12 @@ class SuperLayoutEditor extends StatelessWidget {
     _ => (SuperLayoutZone.south, SuperLayoutZone.east),
   };
 
-  static String _mergeLabel(SuperLayoutZone corner, CornerMerge merge) {
+  String _mergeLabel(SuperLayoutZone corner, CornerMerge merge) {
     final (row, column) = _neighbors(corner);
     return switch (merge) {
       CornerMerge.none => 'Case propre',
-      CornerMerge.row => 'Fusionné avec ${row.label}',
-      CornerMerge.column => 'Fusionné avec ${column.label}',
+      CornerMerge.row => 'Fusionné avec ${_zoneLabel(row)}',
+      CornerMerge.column => 'Fusionné avec ${_zoneLabel(column)}',
     };
   }
 
@@ -82,7 +86,7 @@ class SuperLayoutEditor extends StatelessWidget {
                       color: colors.primaryContainer,
                       child: Center(
                         child: Text(
-                          zone.label,
+                          _zoneLabel(zone),
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 11,
@@ -115,7 +119,7 @@ class SuperLayoutEditor extends StatelessWidget {
             key: ValueKey('super-layout-side-${side.name}'),
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: Text(side.label),
+            title: Text(_zoneLabel(side)),
             value: config.hasSide(side),
             onChanged: (v) => onChanged(config.withSide(side, v)),
           ),
@@ -124,7 +128,7 @@ class SuperLayoutEditor extends StatelessWidget {
               key: ValueKey('super-layout-resize-side-${side.name}'),
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: Text('Redimensionner ${side.label} par glisser'),
+              title: Text('Redimensionner ${_zoneLabel(side)} par glisser'),
               value: config.canResize(side),
               onChanged: (value) =>
                   onChanged(config.withSideResizing(side, value)),
@@ -155,7 +159,7 @@ class SuperLayoutEditor extends StatelessWidget {
         for (final corner in _corners)
           Row(
             children: [
-              Expanded(child: Text(corner.label)),
+              Expanded(child: Text(_zoneLabel(corner))),
               DropdownButton<CornerMerge>(
                 key: ValueKey('super-layout-corner-${corner.name}'),
                 value: config.mergeOf(corner),
@@ -177,7 +181,7 @@ class SuperLayoutEditor extends StatelessWidget {
         for (final zone in SuperLayoutZone.values)
           Row(
             children: [
-              Expanded(child: Text(zone.label)),
+              Expanded(child: Text(_zoneLabel(zone))),
               DropdownButton<Axis>(
                 key: ValueKey('super-layout-axis-${zone.name}'),
                 value: config.axisOf(zone),

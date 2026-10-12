@@ -3,6 +3,7 @@ part of 'super_layout.dart';
 class _ZoneResizeHandle extends StatefulWidget {
   const _ZoneResizeHandle({
     required this.zone,
+    required this.label,
     required this.onResize,
     required this.bounds,
     required this.onCollapse,
@@ -10,6 +11,7 @@ class _ZoneResizeHandle extends StatefulWidget {
   });
 
   final SuperLayoutZone zone;
+  final String label;
   final ValueChanged<double> onResize;
   final ({double min, double max}) Function(Size) bounds;
   final ValueChanged<double> onCollapse;
@@ -97,7 +99,7 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
 
   void _reportBlocked() {
     final message =
-        'Redimensionnement de ${widget.zone.label} impossible : '
+        'Redimensionnement de ${widget.label} impossible : '
         'les bornes min/max sont incompatibles avec l’espace disponible.';
     debugPrint(message);
     if (Scaffold.maybeOf(context) != null) {
@@ -123,10 +125,10 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
     height: 15,
     child: Tooltip(
       message: action == 'collapse'
-          ? 'Réduire ${widget.zone.label}'
+          ? 'Réduire ${widget.label}'
           : widget.restoreSize != null
-          ? 'Restaurer ${widget.zone.label}'
-          : 'Agrandir ${widget.zone.label} au maximum',
+          ? 'Restaurer ${widget.label}'
+          : 'Agrandir ${widget.label} au maximum',
       child: GestureDetector(
         key: ValueKey('super-layout-$action-${widget.zone.name}'),
         behavior: HitTestBehavior.opaque,
@@ -190,7 +192,8 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
               child: ColoredBox(
                 color: _hovered
                     ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.outlineVariant.withAlpha(128),
+                    : Theme.of(context).colorScheme.outlineVariant
+                          .withAlpha(128),
               ),
             ),
           ),
@@ -198,7 +201,10 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
       ),
       Center(
         child: Transform.translate(
-          offset: getOffsetZoneAction(widget.zone == SuperLayoutZone.north || widget.zone == SuperLayoutZone.west),
+          offset: getOffsetZoneAction(
+            widget.zone == SuperLayoutZone.north ||
+                widget.zone == SuperLayoutZone.west,
+          ),
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: MouseRegion(
@@ -213,7 +219,7 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
                     color: _hovered
                         ? Theme.of(context).colorScheme.primaryContainer
                         : Theme.of(context).colorScheme.surfaceContainerHighest
-                            .withAlpha(128),
+                              .withAlpha(128),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Flex(

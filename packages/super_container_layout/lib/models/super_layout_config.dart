@@ -204,7 +204,12 @@ class SuperLayoutConfig {
     this.sideResizing = const {},
     this.collapsedSides = const {},
     this.swaps = const {},
-    this.autoSides = const {},
+    this.autoSides = const {
+      SuperLayoutZone.north,
+      SuperLayoutZone.south,
+      SuperLayoutZone.east,
+      SuperLayoutZone.west,
+    },
     this.placements = const {},
     this.slotTypes = const {},
     this.slotPreferredSizes = const {},
@@ -235,6 +240,7 @@ class SuperLayoutConfig {
 
   /// Reglages par cote ; sans entree, utilise [resizeSides].
   final Map<SuperLayoutZone, bool> sideResizing;
+
   /// Taille fixe a restaurer pour les cotes reduits a zero.
   final Map<SuperLayoutZone, double> collapsedSides;
 
@@ -255,7 +261,8 @@ class SuperLayoutConfig {
     if (!side.isSide) throw ArgumentError.value(side, 'side', 'Pas un cote');
     final vertical =
         side == SuperLayoutZone.north || side == SuperLayoutZone.south;
-    final stacked = axisOf(side) == (vertical ? Axis.vertical : Axis.horizontal);
+    final stacked =
+        axisOf(side) == (vertical ? Axis.vertical : Axis.horizontal);
     var lower = minSize;
     var upper = maxSize;
     void constrain(double coefficient, double constant) {
@@ -652,10 +659,11 @@ class SuperLayoutConfig {
     },
   };
 
-  /// [fallback] fournit les valeurs des clés absentes.
+  /// [fallback] fournit les valeurs des clés absentes. Les anciens documents
+  /// sans autoSides conservent leurs tailles fixes par defaut.
   static SuperLayoutConfig fromJson(
     Object? value, {
-    SuperLayoutConfig fallback = const SuperLayoutConfig(),
+    SuperLayoutConfig fallback = const SuperLayoutConfig(autoSides: {}),
   }) {
     if (value == null) return fallback;
     if (value is! Map) {
@@ -670,7 +678,9 @@ class SuperLayoutConfig {
     Map<SuperLayoutZone, bool> resizing() {
       final raw = value['sideResizing'];
       if (raw == null) return fallback.sideResizing;
-      if (raw is! Map) throw const FormatException('Redimensionnement invalide.');
+      if (raw is! Map) {
+        throw const FormatException('Redimensionnement invalide.');
+      }
       final result = <SuperLayoutZone, bool>{};
       for (final entry in raw.entries) {
         final side = SuperLayoutZone.values
@@ -694,8 +704,11 @@ class SuperLayoutConfig {
             .where((side) => side.isSide && side.name == entry.key)
             .firstOrNull;
         final extent = entry.value;
-        if (side == null || extent is! num || !extent.isFinite ||
-            extent < minSize || extent > maxSize) {
+        if (side == null ||
+            extent is! num ||
+            !extent.isFinite ||
+            extent < minSize ||
+            extent > maxSize) {
           throw const FormatException('Cote reduit invalide.');
         }
         result[side] = extent.toDouble();
@@ -905,10 +918,11 @@ class SuperLayoutConfig {
     Size size, {
     Map<SuperLayoutZone, double> measured = const {},
   }) {
-    double extent(SuperLayoutZone side) =>
-        collapsedSides.containsKey(side)
+    double extent(SuperLayoutZone side) => collapsedSides.containsKey(side)
         ? 0
-        : isAuto(side) ? measured[side] ?? sizeOf(side) : sizeOf(side);
+        : isAuto(side)
+        ? measured[side] ?? sizeOf(side)
+        : sizeOf(side);
     final (x1, x2) = _tracks(
       size.width,
       west ? extent(SuperLayoutZone.west) : 0,

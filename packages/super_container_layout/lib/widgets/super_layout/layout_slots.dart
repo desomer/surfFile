@@ -105,6 +105,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     if (slots.isEmpty) {
       return _ZonePlaceholder(
         zone: zone,
+        label: widget.zoneLabel(zone),
         showLabel: !(editMode && widget.showZoneNames && widget.editable),
       );
     }
@@ -134,7 +135,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
           : null,
       showLabels: editMode,
       emphasis: _emphasisFor(zone),
-      zoneLabel: zone.label,
+      zoneLabel: widget.zoneLabel(zone),
       mover: editMode && widget.editable
           ? SlotMover(
               owner: this,

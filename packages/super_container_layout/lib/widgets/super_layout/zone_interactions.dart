@@ -7,6 +7,8 @@ part of 'super_layout.dart';
 class _ZoneNameBadge extends StatefulWidget {
   const _ZoneNameBadge({
     required this.zone,
+    required this.label,
+    required this.zoneLabel,
     required this.onSwap,
     required this.overCenter,
     required this.onCenterHint,
@@ -19,6 +21,8 @@ class _ZoneNameBadge extends StatefulWidget {
   });
 
   final SuperLayoutZone zone;
+  final String label;
+  final String Function(SuperLayoutZone) zoneLabel;
   final SuperLayoutZone? swapTarget;
   final bool moves;
   final VoidCallback onSwap;
@@ -91,7 +95,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
     final colors = Theme.of(context).colorScheme;
     final target = widget.swapTarget;
     final label = Text(
-      widget.zone.label,
+      widget.label,
       style: TextStyle(fontSize: 11, color: colors.onSurface),
     );
     final badge = Material(
@@ -125,8 +129,8 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                 IconButton(
                   key: ValueKey('super-layout-swap-${widget.zone.name}'),
                   tooltip: widget.moves
-                      ? 'Déplacer vers ${target.label}'
-                      : 'Échanger avec ${target.label}',
+                      ? 'Déplacer vers ${widget.zoneLabel(target)}'
+                      : 'Échanger avec ${widget.zoneLabel(target)}',
                   visualDensity: VisualDensity.compact,
                   iconSize: 16,
                   color: colors.onSurface,
@@ -200,7 +204,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                             child: ValueListenableBuilder<bool>(
                               valueListenable: widget.overCenter,
                               builder: (context, over, _) => Text(
-                                over ? target.label : widget.zone.label,
+                                over ? widget.zoneLabel(target) : widget.label,
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: colors.onSurface,
@@ -331,9 +335,14 @@ class _SlotZoneTarget extends StatelessWidget {
 
 
 class _ZonePlaceholder extends StatelessWidget {
-  const _ZonePlaceholder({required this.zone, this.showLabel = true});
+  const _ZonePlaceholder({
+    required this.zone,
+    required this.label,
+    this.showLabel = true,
+  });
 
   final SuperLayoutZone zone;
+  final String label;
   final bool showLabel;
 
   @override
@@ -347,7 +356,7 @@ class _ZonePlaceholder extends StatelessWidget {
       child: Center(
         child: false && showLabel && editMode
             ? Text(
-                zone.label,
+                label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(color: colors.onSurfaceVariant),
               )

@@ -42,7 +42,7 @@ extension _SuperLayoutView on SuperLayoutState {
             _selected.value = zoneLabel == null
                 ? null
                 : SuperLayoutZone.values
-                      .where((zone) => zone.label == zoneLabel)
+                      .where((zone) => widget.zoneLabel(zone) == zoneLabel)
                       .firstOrNull;
             _LayoutEditSelection.selected.value = this;
           }, parent: this.context.findAncestorStateOfType<SuperLayoutState>(),
@@ -66,7 +66,7 @@ extension _SuperLayoutView on SuperLayoutState {
           );
           _reportPath(
             editMode
-                ? [...parentPath, name, if (selected != null) selected.label,
+                ? [...parentPath, name, if (selected != null) widget.zoneLabel(selected),
                     if (selectedSlot != null) selectedSlot.label]
                 : const [],
             axis: editMode && widget.editable ? _axisAction(_actionZone) : null,
@@ -110,7 +110,7 @@ extension _SuperLayoutView on SuperLayoutState {
                       key: ValueKey('super-layout-${zone.name}'),
                       zone: zone,
                       child: _LabelScope(
-                        path: [...parentPath, name, zone.label],
+                        path: [...parentPath, name, widget.zoneLabel(zone)],
                         child: Offstage(
                           offstage:
                               config.collapsedSides.containsKey(zone) ||
@@ -166,7 +166,7 @@ extension _SuperLayoutView on SuperLayoutState {
                         dropTarget: true,
                         child: _SlotZoneTarget(
                           owner: this,
-                          zoneLabel: zone.label,
+                          zoneLabel: widget.zoneLabel(zone),
                           ids: [
                             for (final slot in _slotsOf(
                               config,
@@ -204,6 +204,8 @@ extension _SuperLayoutView on SuperLayoutState {
                           overlay: true,
                           child: _ZoneNameBadge(
                             zone: zone,
+                            label: widget.zoneLabel(zone),
+                            zoneLabel: widget.zoneLabel,
                             axisAction: widget.editable
                                 ? _axisAction(zone)
                                 : null,
@@ -231,7 +233,7 @@ extension _SuperLayoutView on SuperLayoutState {
                               fit: BoxFit.scaleDown,
                               child: IconButton.filled(
                                 key: ValueKey('super-layout-add-${zone.name}'),
-                                tooltip: 'Ajouter un slot dans ${zone.label}',
+                                tooltip: 'Ajouter un slot dans ${widget.zoneLabel(zone)}',
                                 style: IconButton.styleFrom(
                                   backgroundColor: Theme.of(context)
                                       .colorScheme
@@ -261,6 +263,7 @@ extension _SuperLayoutView on SuperLayoutState {
                           resizeHandle: true,
                           child: _ZoneResizeHandle(
                             zone: side,
+                            label: widget.zoneLabel(side),
                             restoreSize: config.collapsedSides[side],
                             onCollapse: (extent) => _update(
                               _config.value.copyWith(
