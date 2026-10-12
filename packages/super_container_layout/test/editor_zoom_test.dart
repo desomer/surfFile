@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/editor_zoom.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -105,6 +108,176 @@ void main() {
     await tester.pumpAndSettle();
     return mode;
   }
+
+  testWidgets(
+    'wheel zoom slows down, restores full page at one and centers at three',
+    (tester) async {
+      final mode = await pumpPage(tester);
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      final original = screenRect(tester, target);
+      Future<void> wheel(double delta) async {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: const Offset(700, 100),
+            scrollDelta: Offset(0, delta),
+          ),
+        );
+      }
+
+      await wheel(-60);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), original);
+      await tester.tapAt(original.topLeft + const Offset(100, 180));
+      await tester.pumpAndSettle();
+      final automatic = screenRect(tester, target);
+      final banner = find.byKey(const ValueKey('style-edit-banner-drag'));
+      final bannerSize = screenRect(tester, banner).size;
+      final label = find.byKey(const ValueKey('slot-label-select-target'));
+      final labelSize = screenRect(tester, label).size;
+      await wheel(-60);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(screenRect(tester, target).width, greaterThan(automatic.width));
+      await tester.pumpAndSettle();
+      expect(
+        (screenRect(tester, target).center - automatic.center).distance,
+        lessThan((original.center - automatic.center).distance),
+      );
+      expect(
+        screenRect(tester, target).width,
+        closeTo(automatic.width * math.exp(.15), .01),
+      );
+      expect(screenRect(tester, banner).size, bannerSize);
+      expect(screenRect(tester, label).size, labelSize);
+      await wheel(60);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target).width, closeTo(automatic.width, .01));
+      await wheel(-2000);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target).width, closeTo(320 * 3, .01));
+      expect(screenRect(tester, target).center, const Offset(400, 300));
+      await wheel(2000);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), original);
+      final transform = tester.widget<Transform>(
+        find.byKey(const ValueKey('editor-zoom-transform')),
+      );
+      expect(transform.transform, Matrix4.identity());
+      await wheel(2000);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), original);
+      LayoutSelection.focus.value = LayoutFocus(tester.element(target));
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target).width, closeTo(automatic.width, .01));
+      mode.value = false;
+      await tester.pumpAndSettle();
+      await wheel(-60);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), const Rect.fromLTWH(0, 0, 320, 240));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'wheel over an editor overlay zooms without scaling the overlay',
+    (tester) async {
+      await pumpPage(tester, twoSlots: true);
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      await tester.tapAt(
+        screenRect(tester, target).topLeft + const Offset(100, 50),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-target')));
+      await tester.pumpAndSettle();
+      final handle = find.byKey(const ValueKey('slot-resize-target-se'));
+      final handleSize = screenRect(tester, handle).size;
+      final before = screenRect(tester, target);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: screenRect(tester, handle).center,
+          scrollDelta: const Offset(0, 60),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        screenRect(tester, target).width,
+        closeTo(before.width * math.exp(-.15), .01),
+      );
+      expect(screenRect(tester, handle).size, handleSize);
+      final label = find.byKey(const ValueKey('slot-label-select-target'));
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: screenRect(tester, label).center,
+          scrollDelta: const Offset(0, 30),
+        ),
+      );
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: screenRect(tester, label).center,
+          scrollDelta: const Offset(0, 30),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        screenRect(tester, target).width,
+        closeTo(before.width * math.exp(-.3), .01),
+      );
+      expect(
+        screenRect(tester, label).width,
+        closeTo(tester.getSize(label).width, .01),
+      );
+      expect(
+        screenRect(tester, label).height,
+        closeTo(tester.getSize(label).height, .01),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('scrollable content keeps priority over wheel zoom', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    final scroll = ScrollController();
+    final targetKey = GlobalKey();
+    addTearDown(mode.dispose);
+    addTearDown(scroll.dispose);
+    addTearDown(() => LayoutSelection.focus.value = null);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StyleEditScope(
+          controller: mode,
+          child: EditorZoom(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                key: targetKey,
+                width: 320,
+                height: 240,
+                child: ListView(
+                  controller: scroll,
+                  children: const [SizedBox(height: 1600)],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    LayoutSelection.focus.value = LayoutFocus(targetKey.currentContext!);
+    await tester.pumpAndSettle();
+    final before = screenRect(tester, find.byKey(targetKey));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: before.center,
+        scrollDelta: const Offset(0, 60),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(scroll.offset, greaterThan(0));
+    expect(screenRect(tester, find.byKey(targetKey)), before);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'selection centers and fits content while editor overlays keep their scale',
@@ -210,9 +383,9 @@ void main() {
       isFalse,
     );
     expect(
-      screenRect(tester, banner).overlaps(screenRect(
-        tester, find.byKey(const ValueKey('editor-dialog-panel')),
-      )),
+      screenRect(tester, banner).overlaps(
+        screenRect(tester, find.byKey(const ValueKey('editor-dialog-panel'))),
+      ),
       isFalse,
     );
     await tester.tap(find.text('Annuler'));

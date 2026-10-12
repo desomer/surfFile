@@ -47,18 +47,23 @@ class _EditorOverlayState extends State<EditorOverlay> {
         );
         return Positioned.fromRect(
           rect: rect,
-          child: GestureDetector(
-            excludeFromSemantics: true,
-            onSecondaryTapUp:
-                (StyleEditScope.controllerOf(this.context)?.value ?? false)
-                ? (details) => this.context
-                      .findAncestorStateOfType<SuperContainerState>()
-                      ?.openMenu(
-                        details.globalPosition,
-                        actions: ContainerMenuAction.of(this.context),
-                      )
-                : null,
-            child: widget.child,
+          child: Listener(
+            onPointerSignal: (event) =>
+                EditorZoomScope.controllerOf(this.context)
+                    ?.handlePointerSignal(event),
+            child: GestureDetector(
+              excludeFromSemantics: true,
+              onSecondaryTapUp:
+                  (StyleEditScope.controllerOf(this.context)?.value ?? false)
+                  ? (details) => this.context
+                        .findAncestorStateOfType<SuperContainerState>()
+                        ?.openMenu(
+                          details.globalPosition,
+                          actions: ContainerMenuAction.of(this.context),
+                        )
+                  : null,
+              child: widget.child,
+            ),
           ),
         );
       },

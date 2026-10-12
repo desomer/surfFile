@@ -870,7 +870,10 @@ class _LabeledSlotState extends State<_LabeledSlot> {
           cursor: corner.x == corner.y
               ? SystemMouseCursors.resizeUpLeftDownRight
               : SystemMouseCursors.resizeUpRightDownLeft,
-          child: GestureDetector(
+          child: Listener(
+            onPointerSignal: (event) =>
+                EditorZoomScope.controllerOf(context)?.handlePointerSignal(event),
+            child: GestureDetector(
             key: ValueKey('slot-resize-${widget.slot.id}-$name'),
             behavior: HitTestBehavior.opaque,
             dragStartBehavior: DragStartBehavior.down,
@@ -889,6 +892,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                     border: Border.all(color: colors.tertiary, width: 2),
                     borderRadius: BorderRadius.circular(2),
                   ),
+                ),
                 ),
               ),
             ),

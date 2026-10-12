@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../super_layout/layout_selection.dart';
@@ -30,10 +31,13 @@ class _EditorZoomState extends State<EditorZoom>
   bool _scheduled = false;
   final _controller = EditorZoomController();
   final _viewportKey = GlobalKey();
+  BuildContext? _zoomTarget;
+  double? _manualScale;
 
   @override
   void initState() {
     super.initState();
+    _controller._pointerSignalHandler = _onPointerSignal;
     LayoutSelection.focus.addListener(_schedule);
     _controller.dialog.addListener(_schedule);
   }
@@ -66,6 +70,10 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.enabled = _editMode?.value ?? false;
     final dialog = _controller.dialog.value;
     final focus = dialog?.target ?? LayoutSelection.focus.value?.context;
+    if (!_controller.enabled || !identical(focus, _zoomTarget)) {
+      _manualScale = null;
+      _zoomTarget = focus;
+    }
     _controller.contentContext = _content.currentContext;
     final rect = _controller.targetBounds(focus);
     if (_controller.enabled && rect != null) {
@@ -79,15 +87,18 @@ class _EditorZoomState extends State<EditorZoom>
           ).intersect(available);
         }
         if (available.isEmpty) return;
-        final scale = math
+        final automaticScale = math
             .min(
               available.width * .7 / rect.width,
               available.height * .7 / rect.height,
             )
             .clamp(dialog == null ? 1.0 : 0.0, 3.0);
+        final scale = _manualScale ?? automaticScale;
         destination = (
           scale: scale,
-          offset: available.center - rect.center * scale,
+          offset: _manualScale == null
+              ? available.center - rect.center * scale
+              : (available.center - rect.center * 3) * ((scale - 1) / 2),
         );
       }
     }
@@ -102,6 +113,29 @@ class _EditorZoomState extends State<EditorZoom>
     } else {
       _animation.forward(from: 0);
     }
+  }
+
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent ||
+        event.scrollDelta.dy == 0 ||
+        !event.scrollDelta.dy.isFinite ||
+        !(_editMode?.value ?? false)) {
+      return;
+    }
+    final focus =
+        _controller.dialog.value?.target ??
+        LayoutSelection.focus.value?.context;
+    final rect = _controller.targetBounds(focus);
+    if (rect == null || rect.isEmpty || !rect.isFinite) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      if (!mounted) return;
+      _frameSelection();
+      _manualScale =
+          (_to.scale *
+                  math.exp(-event.scrollDelta.dy.clamp(-1200.0, 1200.0) * .0025))
+              .clamp(1.0, 3.0);
+      _frameSelection();
+    });
   }
 
   void _animate() {
@@ -135,15 +169,24 @@ class _EditorZoomState extends State<EditorZoom>
           _viewport = constraints.biggest;
           _schedule();
         }
-        return ClipRect(
-          key: _viewportKey,
-          child: Transform(
-            key: const ValueKey('editor-zoom-transform'),
-            alignment: Alignment.topLeft,
-            transform: Matrix4.identity()
-              ..translateByDouble(_current.offset.dx, _current.offset.dy, 0, 1)
-              ..scaleByDouble(_current.scale, _current.scale, 1, 1),
-            child: SizedBox.expand(key: _content, child: widget.child),
+        return Listener(
+          onPointerSignal: _onPointerSignal,
+          behavior: HitTestBehavior.translucent,
+          child: ClipRect(
+            key: _viewportKey,
+            child: Transform(
+              key: const ValueKey('editor-zoom-transform'),
+              alignment: Alignment.topLeft,
+              transform: Matrix4.identity()
+                ..translateByDouble(
+                  _current.offset.dx,
+                  _current.offset.dy,
+                  0,
+                  1,
+                )
+                ..scaleByDouble(_current.scale, _current.scale, 1, 1),
+              child: SizedBox.expand(key: _content, child: widget.child),
+            ),
           ),
         );
       },
@@ -178,6 +221,11 @@ class EditorZoomScope extends InheritedWidget {
 }
 
 class EditorZoomController {
+  void Function(PointerSignalEvent)? _pointerSignalHandler;
+
+  void handlePointerSignal(PointerSignalEvent event) =>
+      _pointerSignalHandler?.call(event);
+
   bool enabled = false;
   bool disposed = false;
   final dialog = EditorDialogNotifier();
@@ -212,6 +260,7 @@ class EditorZoomController {
 
   void dispose() {
     disposed = true;
+    _pointerSignalHandler = null;
     final available = dialog.value?.available;
     if (available != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

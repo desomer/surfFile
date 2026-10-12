@@ -149,7 +149,15 @@ ciblent le slot de la barre dans la page, meme lorsque sa disposition interne
 est selectionnee.
 
 En mode edition, `SuperPage` centre automatiquement la disposition, la zone
-ou le slot selectionne. Le zoom vise 70 % de la largeur et de la hauteur de
+ou le slot selectionne. La molette ajuste le zoom en mode edition lorsqu'une
+selection est active : vers le haut pour zoomer, vers le bas pour dezoomer
+(de x1 a x3), avec animation et une sensibilite reduite. A x1, la page
+retrouve sa position normale ; le cadrage se rapproche progressivement de la
+selection jusqu'au centrage a x3. Le cadrage automatique des dialogues peut
+toujours descendre sous x1 pour laisser le composant visible. Une nouvelle
+selection ou la sortie du mode edition retablit le cadrage automatique.
+Les zones defilantes gardent la priorite pour leur propre defilement.
+Le zoom vise 70 % de la largeur et de la hauteur de
 l'ecran, sans reduction et avec un agrandissement limite a x3. La transition
 dure 300 ms ; la deselection ou la sortie du mode edition retablit la vue
 normale avec la meme animation. Les preferences d'accessibilite demandant
