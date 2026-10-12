@@ -201,16 +201,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                ValueListenableBuilder<LayoutAxisAction?>(
-                  valueListenable: LayoutSelection.axisAction,
-                  builder: (context, action, _) => action == null
-                      ? const SizedBox.shrink()
-                      : ZoneAxisButton(
-                          key: const ValueKey('style-edit-banner-axis'),
-                          action: action,
-                          color: scheme.onPrimary,
-                        ),
-                ),
+                // ValueListenableBuilder<LayoutAxisAction?>(
+                //   valueListenable: LayoutSelection.axisAction,
+                //   builder: (context, action, _) => action == null
+                //       ? const SizedBox.shrink()
+                //       : ZoneAxisButton(
+                //           key: const ValueKey('style-edit-banner-axis'),
+                //           action: action,
+                //           color: scheme.onPrimary,
+                //         ),
+                // ),
               ],
             ),
           ),

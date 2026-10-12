@@ -5,6 +5,9 @@ import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 import 'package:super_container_layout/widgets/editing/style_editor_panel.dart';
 
 void main() {
+  setUp(() => StyleEditorPanel.preferredDense = false);
+  tearDown(() => StyleEditorPanel.preferredDense = false);
+
   Future<void> openEditor(WidgetTester tester, Size size) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -141,6 +144,59 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('dialog remembers both modes and width across openings', (
+    tester,
+  ) async {
+    await openEditor(tester, const Size(1400, 1000));
+    Future<void> reopen() async {
+      Navigator.of(tester.element(find.byType(StyleEditorPanel))).pop();
+      await tester.pumpAndSettle();
+      tester.state<SuperContainerState>(find.byType(SuperContainer)).openEditor();
+      await tester.pumpAndSettle();
+    }
+    double contentWidth() => tester.getSize(
+      find.byWidget(tester.widget<AlertDialog>(find.byType(AlertDialog)).content!),
+    ).width;
+    final completeWidth = contentWidth();
+    final toggle = find.byKey(const ValueKey('style-dense-toggle'));
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    final denseWidth = contentWidth();
+    await reopen();
+    expect(find.byKey(const ValueKey('style-preview')), findsNothing);
+    expect(contentWidth(), denseWidth);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await reopen();
+    expect(find.byKey(const ValueKey('style-preview')), findsOneWidget);
+    expect(contentWidth(), completeWidth);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('new panels inherit the mode unless explicitly overridden', (
+    tester,
+  ) async {
+    Widget panel({bool? dense}) => MaterialApp(
+      home: Scaffold(
+        body: StyleEditorPanel(
+          dense: dense,
+          preview: const Text('Shared preview'),
+          sections: const [],
+        ),
+      ),
+    );
+    await tester.pumpWidget(panel());
+    await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(panel());
+    expect(find.text('Shared preview'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(panel(dense: false));
+    expect(find.text('Shared preview'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('panel can start dense and preserves control state on toggle', (
     tester,

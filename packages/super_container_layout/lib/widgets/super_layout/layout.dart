@@ -297,12 +297,48 @@ class SuperLayoutState extends State<SuperLayout> {
 
   void _update(SuperLayoutConfig value) {
     if (value == _config.value) return;
-    _config.value = value;
+    if (value.label != _config.value.label) {
+      setState(() => _config.value = value);
+    } else {
+      _config.value = value;
+    }
     widget.onChanged?.call(value);
   }
 
   /// Resout uniquement le slot demande, y compris les slots masques.
-  SlotImplementation? searchSlot(String id) => _searchSlot(id);
+  SlotImplementation? searchSlot(String id) {
+    final slot = _searchSlot(id);
+    if (slot == null) return null;
+    final previousLabel = _config.value.slotLabels[id];
+    return InstanceSlot(
+      slot,
+      label: _config.value.slotLabels[id] ?? slot.label,
+      onRename: (label) => _update(label == slot.label
+          ? _config.value.copyWith(slotLabels: {..._config.value.slotLabels}..remove(id))
+          : _config.value.withSlotLabel(id, label)),
+      overridden: previousLabel != null,
+      onRestore: () => _update(_config.value.copyWith(
+        slotLabels: {..._config.value.slotLabels}..remove(id)..addAll({
+          if (previousLabel != null) id: previousLabel,
+        }),
+      )),
+    );
+  }
+
+  String get _displayLabel {
+    final instance = EditorComponentLabel.of(context);
+    return (instance?.overridden ?? false) ? instance!.label
+        : _config.value.label ?? widget.label;
+  }
+
+  void _rename(String label) {
+    final instance = EditorComponentLabel.of(context);
+    if (instance != null) {
+      instance.onChanged(label);
+    } else {
+      _update(_config.value.copyWith(label: label.trim()));
+    }
+  }
 
   @override
   Widget build(BuildContext context) => _buildLayout(context);

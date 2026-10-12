@@ -57,8 +57,9 @@ class ContainerStyleEditor extends StatelessWidget {
     this.style,
     this.onStyle,
     this.extended = false,
-    this.dense = false,
+    this.dense,
     this.onDenseChanged,
+    this.onLabelChanged,
     super.key,
   });
 
@@ -126,9 +127,10 @@ class ContainerStyleEditor extends StatelessWidget {
 
   /// Propose les réglages de forme et d'aspect étendus ([StyleExtrasControls]).
   final bool extended;
-  /// Mode panneau compact, sans preview ni libellés de navigation.
-  final bool dense;
+  /// Mode panneau compact ; si absent, reprend le mode mémorisé de la session.
+  final bool? dense;
   final ValueChanged<bool>? onDenseChanged;
+  final ValueChanged<String>? onLabelChanged;
 
   bool get _panel => !collapsible;
 
@@ -607,6 +609,8 @@ class ContainerStyleEditor extends StatelessWidget {
       preview: _PreviewPane(editor: this),
       dense: dense,
       onDenseChanged: onDenseChanged,
+      label: label,
+      onLabelChanged: onLabelChanged,
       onReset: onReset,
     );
   }

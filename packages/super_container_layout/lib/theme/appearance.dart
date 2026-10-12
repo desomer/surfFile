@@ -27,6 +27,7 @@ class Appearance {
              collapsedSides: Map.unmodifiable(entry.value.collapsedSides),
              zoneAxes: Map.unmodifiable(entry.value.zoneAxes),
              slotTypes: Map.unmodifiable(entry.value.slotTypes),
+             slotLabels: Map.unmodifiable(entry.value.slotLabels),
              slotPreferredSizes: Map.unmodifiable(
                entry.value.slotPreferredSizes,
              ),

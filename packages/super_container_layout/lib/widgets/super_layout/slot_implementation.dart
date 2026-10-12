@@ -8,6 +8,7 @@ import '../../models/super_layout_config.dart';
 import '../editing/editor_history.dart';
 import '../editing/editor_overlay.dart';
 import '../editing/editor_zoom.dart';
+import '../editing/editor_dialog_header.dart';
 import '../surfaces/super_container.dart';
 
 /// Taille qu'un slot demande à la zone qui le reçoit.
@@ -82,6 +83,42 @@ class BuilderSlot extends SlotImplementation {
 
   @override
   Widget buildSlot(BuildContext context) => builder(context);
+}
+
+/// Preserves a component's state while exposing its instance name to editors.
+class InstanceSlot extends SlotImplementation {
+  InstanceSlot(
+    this.component, {
+    required String label,
+    required this.onRename,
+    required this.onRestore,
+    required this.overridden,
+  }) : super(
+    id: component.id,
+    label: label,
+    sizing: component.sizing,
+    preferredSize: component.preferredSize,
+    visible: component.visible,
+    showLabel: component.showLabel,
+    labelAlignment: component.labelAlignment,
+  );
+
+  final SlotImplementation component;
+  final ValueChanged<String> onRename;
+  final VoidCallback onRestore;
+  final bool overridden;
+
+  @override
+  Widget build(BuildContext context) => buildSlot(context);
+
+  @override
+  Widget buildSlot(BuildContext context) => EditorComponentLabel(
+    label: label,
+    onChanged: onRename,
+    onRestore: onRestore,
+    overridden: overridden,
+    child: component,
+  );
 }
 
 /// Aligne les [slots] visibles d'une zone selon [axis].

@@ -8,6 +8,7 @@ import '../../theme/default_appearance.dart';
 import 'appearance_style_section.dart';
 import '../editing/editor_history.dart';
 import '../editing/editor_dialog.dart';
+import '../editing/editor_dialog_header.dart';
 
 /// Captured by the caller before opening a route, then applied to every dialog.
 typedef AppearanceDialogWrapper = Widget Function(Widget child);
@@ -134,7 +135,7 @@ class AppearanceSettings extends StatelessWidget {
       ),
     ];
     return AlertDialog(
-      title: const Text('Apparence'),
+      title: const EditorDialogHeader(label: 'Apparence'),
       content: SizedBox(
         width: 540,
         child: SingleChildScrollView(
@@ -259,7 +260,7 @@ class _SectionDialog extends StatelessWidget {
     // Subscribe even when the injected builder only reads its controller.
     AppearanceScope.of(context);
     return AlertDialog(
-      title: Text(section.label),
+      title: EditorDialogHeader(label: section.label),
       content: SizedBox(
         width: 540,
         child: SingleChildScrollView(child: section.builder(context)),
@@ -347,7 +348,7 @@ Widget _scrollFade(BuildContext context) {
   final c = AppearanceScope.controllerOf(context)!;
   return _controls([
     SwitchListTile(
-      title: const Text('Activer le fondu'),
+      title: const EditorDialogHeader(label: 'Activer le fondu'),
       value: a.scrollFadeEnabled,
       onChanged: (v) =>
           c.value = _defaultAppearance(context).copyWith(scrollFadeEnabled: v),

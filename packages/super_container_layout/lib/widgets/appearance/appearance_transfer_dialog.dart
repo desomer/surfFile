@@ -7,6 +7,7 @@ import '../../services/appearance_transfer.dart';
 import '../../services/appearance_store.dart';
 import '../../theme/appearance.dart';
 import '../editing/editor_dialog.dart';
+import '../editing/editor_dialog_header.dart';
 
 /// Boîte d'export et d'import du style et de la disposition.
 ///
@@ -298,7 +299,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     key: const ValueKey('appearance-transfer'),
-    title: const Text('Importer / exporter'),
+    title: const EditorDialogHeader(label: 'Importer / exporter'),
     content: SizedBox(
       width: 560,
       child: SingleChildScrollView(

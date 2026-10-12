@@ -7,6 +7,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
     history?.beginTransaction();
     var transactionCompleted = false;
     final saved = config.slotSizeConstraints[slot.id];
+    final label = ValueNotifier(config.slotLabels[slot.id] ?? slot.label);
     final legacy = config.slotPreferredSizes.containsKey(slot.id)
         ? config.slotPreferredSizes[slot.id]
         : slot.preferredSize;
@@ -165,7 +166,17 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         target: _slotFocusKeys[slot.id]?.currentContext ?? context,
         barrierColor: Colors.transparent,
         builder: (context) => AlertDialog(
-          title: Text('Tailles du slot : ${slot.label}'),
+          title: ValueListenableBuilder<String>(
+            valueListenable: label,
+            builder: (context, value, _) => EditorDialogHeader(
+              label: 'Tailles du slot : $value',
+              editableLabel: value,
+              onLabelChanged: (value) {
+                label.value = value;
+                _update(_config.value.withSlotLabel(slot.id, value));
+              },
+            ),
+          ),
           content: SizedBox(
             width: 560,
             child: Form(
@@ -367,6 +378,12 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         final current = _config.value;
         _update(
           current.copyWith(
+            slotLabels: {...current.slotLabels}
+              ..remove(slot.id)
+              ..addAll({
+                if (config.slotLabels.containsKey(slot.id))
+                  slot.id: config.slotLabels[slot.id]!,
+              }),
             slotPreferredSizes: {...current.slotPreferredSizes}
               ..remove(slot.id)
               ..addAll({
@@ -405,6 +422,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         }
         percentBasis.dispose();
         sliderGroup.dispose();
+        label.dispose();
       });
     }
   }

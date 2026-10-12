@@ -215,9 +215,20 @@ class SuperLayoutConfig {
     this.slotPreferredSizes = const {},
     this.slotSizeConstraints = const {},
     this.zoneAxes = const {},
+    this.label,
+    this.slotLabels = const {},
   });
 
   static const minSize = 20.0;
+  final String? label;
+  final Map<String, String> slotLabels;
+
+  SuperLayoutConfig withSlotLabel(String id, String label) {
+    if (id.isEmpty || label.trim().isEmpty) {
+      throw ArgumentError('Identifiant et nom de slot non vides requis.');
+    }
+    return copyWith(slotLabels: {...slotLabels, id: label.trim()});
+  }
   static const maxSize = 400.0;
 
   final bool north;
@@ -522,6 +533,7 @@ class SuperLayoutConfig {
     slotTypes: {...slotTypes}..remove(id),
     slotPreferredSizes: {...slotPreferredSizes}..remove(id),
     slotSizeConstraints: {...slotSizeConstraints}..remove(id),
+    slotLabels: {...slotLabels}..remove(id),
   );
 
   bool hasSide(SuperLayoutZone zone) => switch (zone) {
@@ -572,6 +584,8 @@ class SuperLayoutConfig {
     Map<String, Size?>? slotPreferredSizes,
     Map<String, SlotSizeConstraints>? slotSizeConstraints,
     Map<SuperLayoutZone, Axis>? zoneAxes,
+    String? label,
+    Map<String, String>? slotLabels,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
     south: south ?? this.south,
@@ -595,6 +609,8 @@ class SuperLayoutConfig {
     slotPreferredSizes: slotPreferredSizes ?? this.slotPreferredSizes,
     slotSizeConstraints: slotSizeConstraints ?? this.slotSizeConstraints,
     zoneAxes: zoneAxes ?? this.zoneAxes,
+    label: label ?? this.label,
+    slotLabels: slotLabels ?? this.slotLabels,
   );
 
   SuperLayoutConfig withCorner(SuperLayoutZone corner, CornerMerge merge) =>
@@ -651,6 +667,8 @@ class SuperLayoutConfig {
       for (final entry in slotSizeConstraints.entries)
         entry.key: entry.value.toJson(),
     },
+    if (label != null) 'label': label,
+    if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
     'placements': {
       for (final MapEntry(:key, :value) in placements.entries)
         key.name: [
@@ -668,6 +686,27 @@ class SuperLayoutConfig {
     if (value == null) return fallback;
     if (value is! Map) {
       throw const FormatException('Disposition invalide.');
+    }
+    String? displayLabel(Object? value) {
+      if (value == null) return null;
+      if (value is! String || value.trim().isEmpty) {
+        throw const FormatException('Nom de composant invalide.');
+      }
+      return value.trim();
+    }
+    Map<String, String> labels() {
+      final labels = value['slotLabels'];
+      if (labels == null) return fallback.slotLabels;
+      if (labels is! Map) throw const FormatException('Noms de slots invalides.');
+      final result = <String, String>{};
+      for (final entry in labels.entries) {
+        final key = entry.key;
+        if (key is! String || key.isEmpty || entry.value == null) {
+          throw const FormatException('Nom de slot invalide.');
+        }
+        result[key] = displayLabel(entry.value)!;
+      }
+      return result;
     }
     bool flag(String key, bool fallback) {
       final v = value[key] ?? fallback;
@@ -907,6 +946,8 @@ class SuperLayoutConfig {
       slotPreferredSizes: preferredSizes(),
       slotSizeConstraints: slotConstraints(),
       zoneAxes: axes(),
+      label: displayLabel(value['label']) ?? fallback.label,
+      slotLabels: labels(),
     );
   }
 
@@ -992,6 +1033,9 @@ class SuperLayoutConfig {
   @override
   bool operator ==(Object other) =>
       other is SuperLayoutConfig &&
+      other.label == label &&
+      other.slotLabels.length == slotLabels.length &&
+      slotLabels.entries.every((entry) => other.slotLabels[entry.key] == entry.value) &&
       other.north == north &&
       other.south == south &&
       other.west == west &&
@@ -1065,6 +1109,10 @@ class SuperLayoutConfig {
     westSize,
     eastSize,
     Object.hash(
+      label,
+      Object.hashAllUnordered(slotLabels.entries.map(
+        (entry) => Object.hash(entry.key, entry.value),
+      )),
       resizeSides,
       Object.hashAllUnordered([
         for (final entry in sideResizing.entries)

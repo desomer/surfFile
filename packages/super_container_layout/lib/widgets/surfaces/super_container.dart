@@ -12,6 +12,7 @@ import '../../theme/neon_style.dart';
 import '../editing/container_style_editor.dart';
 import '../editing/editor_history.dart';
 import '../editing/editor_dialog.dart';
+import '../editing/editor_dialog_header.dart';
 import '../super_layout/layout_selection.dart';
 import '../editing/style_editor_panel.dart';
 import 'styled_surface.dart';
@@ -86,6 +87,7 @@ class SuperContainer extends StatefulWidget {
     this.style = const ContainerStyle(),
     this.onStyleChanged,
     this.label,
+    this.onLabelChanged,
     this.fallbackColor,
     this.borderColor,
     this.padding,
@@ -104,6 +106,8 @@ class SuperContainer extends StatefulWidget {
   final ContainerStyle style;
   final ValueChanged<ContainerStyle>? onStyleChanged;
   final String? label;
+  /// Persists a standalone instance's name; slots use their layout config.
+  final ValueChanged<String>? onLabelChanged;
   final Color? fallbackColor;
   final Color? borderColor;
   final EdgeInsetsGeometry? padding;
@@ -131,12 +135,26 @@ class SuperContainer extends StatefulWidget {
 
 class SuperContainerState extends State<SuperContainer> {
   late final ValueNotifier<ContainerStyle> _local = ValueNotifier(widget.style);
+  String? _localLabel;
 
   ValueNotifier<Appearance>? get _appearance =>
       widget.slot == null ? null : AppearanceScope.controllerOf(context);
 
-  String get _label =>
-      widget.label ?? widget.slot?.standard.label ?? 'Super container';
+  String get _label {
+    final instance = EditorComponentLabel.of(context);
+    return (instance?.overridden ?? false) ? instance!.label :
+        _localLabel ?? widget.label ?? widget.slot?.standard.label ?? 'Super container';
+  }
+
+  void _renameLabel(String label) {
+    final instance = EditorComponentLabel.of(context);
+    if (instance != null) {
+      instance.onChanged(label);
+    } else {
+      setState(() => _localLabel = label);
+      widget.onLabelChanged?.call(label);
+    }
+  }
 
   ContainerStyle get style {
     final appearance = _appearance;
@@ -149,6 +167,7 @@ class SuperContainerState extends State<SuperContainer> {
   void didUpdateWidget(SuperContainer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.style != widget.style) _local.value = widget.style;
+    if (oldWidget.label != widget.label) _localLabel = null;
   }
 
   @override
@@ -274,6 +293,8 @@ class SuperContainerState extends State<SuperContainer> {
     final appearance = _appearance;
     final initialAppearance = appearance?.value;
     final initialStyle = _local.value;
+    final initialLabel = _label;
+    final initialInstance = EditorComponentLabel.of(context);
     final accent = AppearanceScope.of(context).accent;
     final shape = widget.slot?.editShape ?? true;
     final extended = widget.slot?.extendedLook ?? true;
@@ -284,8 +305,8 @@ class SuperContainerState extends State<SuperContainer> {
     // widget.
     var editSlot = widget.slot;
     final tabbed = selectedSlot != null;
-    var dense = false;
-    final dockWidth = ValueNotifier(1080.0);
+    var dense = StyleEditorPanel.preferredDense;
+    final dockWidth = ValueNotifier(dense ? 680.0 : 1080.0);
     bool? confirmed;
     try {
     confirmed = await showEditorDialog<bool>(
@@ -300,7 +321,6 @@ class SuperContainerState extends State<SuperContainer> {
           final width = math.min(dense ? 680.0 : 1080.0, screen.width - 96);
           final height = math.max(320.0, math.min(680.0, screen.height - 260));
           return AlertDialog(
-            title: Text(_label),
             insetPadding: const EdgeInsets.all(24),
             constraints: BoxConstraints(maxWidth: width + 48),
             content: SizedBox(
@@ -350,6 +370,7 @@ class SuperContainerState extends State<SuperContainer> {
                               _update(v, slot: slot);
                           return ContainerStyleEditor(
                             label: _label,
+                            onLabelChanged: (label) => setDialog(() => _renameLabel(label)),
                             collapsible: false,
                             dense: dense,
                             onDenseChanged: (value) =>
@@ -522,6 +543,13 @@ class SuperContainerState extends State<SuperContainer> {
       }
     } else if (_local.value != initialStyle) {
       _update(initialStyle);
+    }
+    if (_label != initialLabel) {
+      if (initialInstance != null) {
+        initialInstance.onRestore();
+      } else {
+        _renameLabel(initialLabel);
+      }
     }
   }
 

@@ -3,13 +3,21 @@ part of 'super_layout.dart';
 extension _SuperLayoutDialogs on SuperLayoutState {
   Future<void> _openEditor() async {
     final initial = _config.value;
+    final initialInstance = EditorComponentLabel.of(context);
+    var label = _displayLabel;
     final confirmed = await showEditorDialog<bool>(
       context: context,
       target: context,
       barrierDismissible: true,
       barrierColor: Colors.transparent,
-      builder: (context) => AlertDialog(
-        title: Text(widget.label),
+      builder: (context) => StatefulBuilder(builder: (context, setDialog) => AlertDialog(
+        title: EditorDialogHeader(
+          label: label,
+          onLabelChanged: (value) => setDialog(() {
+            label = value;
+            _rename(value);
+          }),
+        ),
         content: SizedBox(
           width: 420,
           child: SingleChildScrollView(
@@ -33,9 +41,12 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             child: const Text('Appliquer'),
           ),
         ],
-      ),
+      )),
     );
     if (confirmed != true && mounted) _update(initial);
+    if (confirmed != true && mounted && initialInstance != null) {
+      initialInstance.onRestore();
+    }
   }
 
   Future<void> _addSlot(SuperLayoutZone zone) async {
@@ -45,7 +56,9 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       target: _zoneFocusKeys[zone]?.currentContext ?? context,
       builder: (dialogContext) {
         return SimpleDialog(
-          title: Text('Ajouter un slot dans ${widget.zoneLabel(zone)}'),
+          title: EditorDialogHeader(
+            label: 'Ajouter un slot dans ${widget.zoneLabel(zone)}',
+          ),
           children: [
             if (!slots.any((slot) => slot.visible))
               const Padding(

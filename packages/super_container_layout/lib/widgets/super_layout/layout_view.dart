@@ -11,7 +11,7 @@ extension _SuperLayoutView on SuperLayoutState {
     },
     child: SuperContainer(
       decorate: false,
-      label: widget.label,
+      label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,
       onAdd: () => _addSlot(_actionZone),
@@ -35,7 +35,9 @@ extension _SuperLayoutView on SuperLayoutState {
           final selectedSlot = selected == null ? null : _slotsOf(
             config, config.contentZone(selected),
           ).where((slot) => slot.id == _selectedSlot.value).firstOrNull;
-          final name = widget.name ?? widget.label;
+          final name = _config.value.label != null ||
+              (EditorComponentLabel.of(context)?.overridden ?? false)
+              ? _displayLabel : widget.name ?? widget.label;
           LayoutSelection.register(this, [...parentPath, name], (zoneLabel) {
             if (!mounted) return;
             _selectedSlot.value = null;

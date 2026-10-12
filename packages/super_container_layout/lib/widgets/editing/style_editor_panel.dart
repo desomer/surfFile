@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'editor_history.dart';
+import 'editor_dialog_header.dart';
 
 /// Groupe de propriétés d'un éditeur de style : une carte au centre et une
 /// entrée dans la liste de gauche.
@@ -38,21 +39,30 @@ class StyleEditorPanel extends StatefulWidget {
     required this.sections,
     required this.preview,
     this.onReset,
-    this.dense = false,
+    this.dense,
     this.onDenseChanged,
+    this.label,
+    this.onLabelChanged,
     super.key,
   });
 
   final List<StyleEditorSection> sections;
   final Widget preview;
   final VoidCallback? onReset;
+
   /// Masque la preview et réduit la navigation aux icônes.
-  final bool dense;
+  /// Si absent, reprend le dernier mode choisi pendant la session.
+  final bool? dense;
   final ValueChanged<bool>? onDenseChanged;
+  final String? label;
+  final ValueChanged<String>? onLabelChanged;
 
   static const wideBreakpoint = 860.0;
   static const sidebarWidth = 190.0;
   static const previewWidth = 300.0;
+
+  /// Dernier mode choisi, partagé entre les éditeurs pendant la session.
+  static bool preferredDense = false;
 
   @override
   State<StyleEditorPanel> createState() => _StyleEditorPanelState();
@@ -61,12 +71,14 @@ class StyleEditorPanel extends StatefulWidget {
 class _StyleEditorPanelState extends State<StyleEditorPanel> {
   final _keys = <String, GlobalKey>{};
   String? _current;
-  late bool _dense = widget.dense;
+  late bool _dense = widget.dense ?? StyleEditorPanel.preferredDense;
 
   @override
   void didUpdateWidget(StyleEditorPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.dense != widget.dense) _dense = widget.dense;
+    if (oldWidget.dense != widget.dense) {
+      _dense = widget.dense ?? StyleEditorPanel.preferredDense;
+    }
   }
 
   GlobalKey _key(String id) => _keys.putIfAbsent(id, GlobalKey.new);
@@ -143,7 +155,10 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!wide && !_dense) ...[widget.preview, const SizedBox(height: 12)],
+            if (!wide && !_dense) ...[
+              widget.preview,
+              const SizedBox(height: 12),
+            ],
             ..._rows(constraints.maxWidth >= 520),
           ],
         ),
@@ -155,64 +170,71 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Align(
-        alignment: Alignment.centerRight,
-        child: IconButton(
-          key: const ValueKey('style-dense-toggle'),
-          tooltip: _dense ? 'Mode complet' : 'Mode dense',
-          isSelected: _dense,
-          selectedIcon: const Icon(Icons.view_agenda_outlined),
-          icon: const Icon(Icons.view_sidebar_outlined),
-          onPressed: () {
-            setState(() => _dense = !_dense);
-            widget.onDenseChanged?.call(_dense);
+      EditorDialogHeader(
+        label: widget.label ?? '',
+        onLabelChanged: widget.onLabelChanged,
+        actions: [
+          IconButton(
+            key: const ValueKey('style-dense-toggle'),
+            tooltip: _dense ? 'Mode complet' : 'Mode dense',
+            isSelected: _dense,
+            selectedIcon: const Icon(Icons.view_agenda_outlined),
+            icon: const Icon(Icons.view_sidebar_outlined),
+            onPressed: () {
+              setState(() => _dense = !_dense);
+              StyleEditorPanel.preferredDense = _dense;
+              widget.onDenseChanged?.call(_dense);
+            },
+          ),
+        ],
+      ),
+      Expanded(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final wide =
+                constraints.maxWidth >= StyleEditorPanel.wideBreakpoint;
+            if (!wide && !_dense) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Chips(
+                    sections: widget.sections,
+                    selected: _selected,
+                    onSelected: _go,
+                    onReset: widget.onReset,
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(child: _cards(wide: false)),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: _dense ? 56 : StyleEditorPanel.sidebarWidth,
+                  child: _Sidebar(
+                    sections: widget.sections,
+                    selected: _selected,
+                    onSelected: _go,
+                    onReset: widget.onReset,
+                    dense: _dense,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(child: _cards(wide: true)),
+                if (!_dense) ...[
+                  const SizedBox(width: 16),
+                  SizedBox(
+                    width: StyleEditorPanel.previewWidth,
+                    child: SingleChildScrollView(child: widget.preview),
+                  ),
+                ],
+              ],
+            );
           },
         ),
       ),
-      Expanded(child: LayoutBuilder(
-    builder: (context, constraints) {
-      final wide = constraints.maxWidth >= StyleEditorPanel.wideBreakpoint;
-      if (!wide && !_dense) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _Chips(
-              sections: widget.sections,
-              selected: _selected,
-              onSelected: _go,
-              onReset: widget.onReset,
-            ),
-            const SizedBox(height: 8),
-            Expanded(child: _cards(wide: false)),
-          ],
-        );
-      }
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            width: _dense ? 56 : StyleEditorPanel.sidebarWidth,
-            child: _Sidebar(
-              sections: widget.sections,
-              selected: _selected,
-              onSelected: _go,
-              onReset: widget.onReset,
-              dense: _dense,
-            ),
-          ),
-          const SizedBox(width: 16),
-          Expanded(child: _cards(wide: true)),
-          if (!_dense) ...[
-          const SizedBox(width: 16),
-          SizedBox(
-            width: StyleEditorPanel.previewWidth,
-            child: SingleChildScrollView(child: widget.preview),
-          ),
-          ],
-        ],
-      );
-    },
-  )),
     ],
   );
 }
@@ -300,18 +322,18 @@ class _Sidebar extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!dense)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-          child: Text(
-            'PROPRIÉTÉS',
-            style: TextStyle(
-              fontSize: 10,
-              letterSpacing: .8,
-              fontWeight: FontWeight.w600,
-              color: muted,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: Text(
+              'PROPRIÉTÉS',
+              style: TextStyle(
+                fontSize: 10,
+                letterSpacing: .8,
+                fontWeight: FontWeight.w600,
+                color: muted,
+              ),
             ),
           ),
-        ),
         Expanded(
           child: ListView(
             children: [
@@ -327,30 +349,30 @@ class _Sidebar extends StatelessWidget {
         ),
         Divider(color: scheme.outlineVariant),
         if (!dense) ...[
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, size: 14, color: scheme.primary),
-              const SizedBox(width: 6),
-              const Expanded(
-                child: Text(
-                  'Du visuel au code',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, size: 14, color: scheme.primary),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Du visuel au code',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-          child: Text(
-            'Chaque réglage correspond à une propriété du style.',
-            style: TextStyle(fontSize: 11, color: muted),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+            child: Text(
+              'Chaque réglage correspond à une propriété du style.',
+              style: TextStyle(fontSize: 11, color: muted),
+            ),
           ),
-        ),
         ],
         if (onReset != null)
           if (dense)
@@ -360,10 +382,11 @@ class _Sidebar extends StatelessWidget {
               onPressed: onReset,
               icon: const Icon(Icons.restart_alt),
             )
-          else TextButton(
-            onPressed: onReset,
-            child: const Text('Réinitialiser ce style'),
-          ),
+          else
+            TextButton(
+              onPressed: onReset,
+              child: const Text('Réinitialiser ce style'),
+            ),
       ],
     );
   }

@@ -263,7 +263,25 @@ avec une largeur de contenu du dialogue reduite de 1080 a 680 px maximum
 Les icones conservent leurs infobulles, meme sur ecran etroit. Les cartes de reglages et la remise
 a zero restent accessibles. `ContainerStyleEditor(dense: true)` permet de
 demarrer le mode panneau (`collapsible: false`) directement en mode dense ;
-`StyleEditorPanel` expose aussi ce parametre. Le mode complet reste le defaut.
+`StyleEditorPanel` expose aussi ce parametre. Sans valeur explicite, le dernier
+mode choisi est memorise pendant la session et repris aux ouvertures suivantes,
+meme pour un autre composant ou un style partage. La largeur du dialogue de
+composant suit le mode memorise. Le mode complet reste le defaut initial ;
+ce choix n'est pas conserve apres un redemarrage de l'application.
+Le nom du composant et le bouton Mode dense / Mode complet partagent le meme
+en-tete. Le crayon permet de renommer l'instance ; la coche valide le nom
+(non vide), sans modifier son identifiant technique ni son style partage.
+Les dialogues de taille et de layout utilisent le meme en-tete editable.
+Les noms sont conserves dans `SuperLayoutConfig.slotLabels` et `label`, suivent
+les deplacements et sont inclus dans la sauvegarde, l'export et l'historique.
+Annuler le dialogue restaure le nom initial. Les menus, labels et chemins de
+selection utilisent le nom personnalise. Les titres fonctionnels des dialogues
+d'apparence, d'ajout et de transfert restent non editables ; l'editeur d'un
+style partage ne renomme pas les instances.
+Hors d'un slot de layout, `SuperContainer.onLabelChanged` permet au proprietaire
+de sauvegarder le nom puis de le fournir via `label` ; sans callback, le nom
+reste local a l'instance. `ContainerStyleEditor.onLabelChanged` permet aussi
+d'integrer l'en-tete editable dans un editeur personnalise.
 
 En mode edition dans une `SuperPage`, les dialogues de style, de taille,
 de configuration du layout, d'ajout de slot et d'apparence utilisent un panneau

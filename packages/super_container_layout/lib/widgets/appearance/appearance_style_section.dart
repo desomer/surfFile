@@ -38,7 +38,6 @@ class AppearanceStyleSection extends StatelessWidget {
     ContainerStyle current() => slot.read(controller.value);
     final shape = slot.editShape;
     return AlertDialog(
-      title: Text(slot.label),
       content: SizedBox(
         width: 1020,
         height: 620,
