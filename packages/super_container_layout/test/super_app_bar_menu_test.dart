@@ -76,16 +76,24 @@ void main() {
     final menuRow = find.byKey(const ValueKey('style-menu-New Container'));
     expect(menuRow, findsOneWidget);
     for (final icon in [Icons.straighten, Icons.delete_outline]) {
-      expect(find.descendant(of: menuRow, matching: find.byIcon(icon)),
-          findsOneWidget);
+      expect(
+        find.descendant(of: menuRow, matching: find.byIcon(icon)),
+        findsOneWidget,
+      );
     }
-    expect(find.byKey(const ValueKey('style-menu-size-Taille préférée : body')),
-        findsNothing);
+    expect(
+      find.byKey(const ValueKey('style-menu-size-Taille préférée : body')),
+      findsNothing,
+    );
     for (final action in ['size', 'remove']) {
       expect(
-        tester.widget<IconButton>(find.byKey(
-          ValueKey('style-menu-$action-Taille préférée : NewContainer'),
-        )).onPressed,
+        tester
+            .widget<IconButton>(
+              find.byKey(
+                ValueKey('style-menu-$action-Taille préférée : NewContainer'),
+              ),
+            )
+            .onPressed,
         isNotNull,
       );
     }
@@ -93,6 +101,76 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'registered additions size the unique instance and undo atomically',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final additions = <SlotAddition>[];
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => SuperPage(
+              onSlotAdded: (addition) {
+                additions.add(addition);
+                return SuperLayout.defaultSlotAddition(addition);
+              },
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(SuperPage));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const ValueKey('style-edit-banner-drag')),
+        const Offset(0, 450),
+      );
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(400, 28));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('NewContainer'));
+      await tester.pumpAndSettle();
+      final controller = registry.layoutController('root');
+      final id = controller.value.placementsOf(SuperLayoutZone.north).single;
+      expect(id, isNot('registry:NewContainer'));
+      expect(additions.single.slotId, id);
+      expect(controller.value.slotTypeOf(id), 'registry:NewContainer');
+      expect(
+        controller.value.slotSizeConstraints[id]?.preferredHeight,
+        const SlotDimension(20, SlotSizeUnit.percent),
+      );
+      expect(
+        controller.value.slotSizeConstraints[id]?.percentBasis,
+        SlotPercentBasis.layout,
+      );
+      final restored = SuperLayoutConfig.fromJson(controller.value.toJson());
+      expect(
+        restored.slotSizeConstraints[id],
+        controller.value.slotSizeConstraints[id],
+      );
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(controller.value.placementsOf(SuperLayoutZone.north), isEmpty);
+      expect(controller.value.slotSizeConstraints.containsKey(id), isFalse);
+      history.redo();
+      await tester.pumpAndSettle();
+      expect(controller.value.placementsOf(SuperLayoutZone.north), [id]);
+      expect(
+        controller.value.slotSizeConstraints[id]?.preferredHeight,
+        const SlotDimension(20, SlotSizeUnit.percent),
+      );
+      expect(additions, hasLength(1));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('nested app bar menu edits and removes its parent slot', (
     tester,
@@ -125,7 +203,8 @@ void main() {
     final barLayout = find.byWidgetPredicate(
       (widget) => widget is SuperLayout && widget.label == 'Super app bar',
     );
-    Offset position() => tester.renderObject<RenderBox>(barLayout)
+    Offset position() => tester
+        .renderObject<RenderBox>(barLayout)
         .localToGlobal(const Offset(100, 48));
     await tester.tapAt(position());
     await tester.pumpAndSettle();

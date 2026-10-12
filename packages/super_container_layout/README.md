@@ -322,6 +322,47 @@ layout et efface ses reglages de taille et de type d'instance. Le composant
 reste disponible pour un nouvel ajout. Le dialogue permet aussi de retablir
 la taille automatique, meme si le slot declare une taille
 preferee par defaut.
+
+Lors d'un ajout dans un `SuperLayout`, la largeur preferee est initialisee
+pour Est/Ouest, et la hauteur preferee pour Nord/Sud : la premiere preference
+definie par un autre composant visible de la zone est reprise, sinon 20 %
+avec la base « Tout le layout » (largeur ou hauteur totale du `SuperLayout`).
+L'autre dimension et les bornes existantes sont conservees. Une preference
+en pourcentage est reprise avec sa base, sauf si elle modifierait la base
+de bornes ou d'une autre dimension deja en pourcentage. Dans ce cas, la valeur
+par defaut de 20 % et la base « Tout le layout » sont appliquees ; cette base
+est commune a toutes les dimensions en pourcentage du slot. Centre et coins
+restent inchanges. Cette regle concerne les ajouts de l'editeur, pas les
+placements initiaux, les deplacements par glisser-deposer ou les preferences
+deja enregistrees.
+
+`onSlotAdded` permet de remplacer cette regle sur `SuperLayout`,
+`RegisteredSuperLayout`, `SuperPage` et `SuperAppBar`. Le callback synchrone
+recoit l'identifiant de l'instance, le composant, la zone visuelle, la zone de
+contenu, les composants visibles deja presents et la configuration contenant
+le nouvel ajout. Il retourne la configuration a enregistrer ; placement et
+taille forment une seule modification annulable.
+
+```dart
+SuperLayout(
+  slots: slots,
+  onSlotAdded: (addition) {
+    final config = SuperLayout.defaultSlotAddition(addition);
+    if (addition.zone != SuperLayoutZone.east) return config;
+    return config.copyWith(
+      slotSizeConstraints: {
+        ...config.slotSizeConstraints,
+        addition.slotId: const SlotSizeConstraints(
+          preferredWidth: SlotDimension(300, SlotSizeUnit.pixels),
+        ),
+      },
+    );
+  },
+)
+```
+
+Pour desactiver l'initialisation automatique :
+`onSlotAdded: (addition) => addition.config`.
 En mode edition, le survol d'une ligne du menu contextuel souligne son
 conteneur cible avec le contour d'edition. La surbrillance suit la ligne
 survolee, y compris ses icones, et disparait a la fermeture du menu.

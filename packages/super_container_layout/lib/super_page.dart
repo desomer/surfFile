@@ -4,6 +4,7 @@ import 'models/super_layout_config.dart';
 import 'widgets/editing/editor_zoom.dart';
 import 'widgets/super_layout/registered_super_layout.dart';
 import 'widgets/super_layout/slot_implementation.dart';
+import 'widgets/super_layout/super_layout.dart';
 
 /// Page with editable appBar, body and bottomBar layout zones.
 class SuperPage extends StatelessWidget {
@@ -14,6 +15,7 @@ class SuperPage extends StatelessWidget {
     this.bottomBar,
     this.slots = const [],
     this.config,
+    this.onSlotAdded = SuperLayout.defaultSlotAddition,
     super.key,
   });
 
@@ -26,12 +28,14 @@ class SuperPage extends StatelessWidget {
 
   /// Initial layout; registry preferences take precedence when available.
   final SuperLayoutConfig? config;
+  final SlotAddedCallback onSlotAdded;
 
   @override
   Widget build(BuildContext context) => EditorZoom(
     child: Scaffold(
       body: RegisteredSuperLayout(
         id: id,
+        onSlotAdded: onSlotAdded,
         label: 'Super page',
         zoneLabels: const {
           SuperLayoutZone.north: 'appBar',

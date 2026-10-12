@@ -13,6 +13,7 @@ class RegisteredSuperLayout extends StatelessWidget {
     required this.label,
     this.slots = const [],
     this.zoneLabels = const {},
+    this.onSlotAdded = SuperLayout.defaultSlotAddition,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class RegisteredSuperLayout extends StatelessWidget {
   final String label;
   final List<SlotImplementation> slots;
   final Map<SuperLayoutZone, String> zoneLabels;
+  final SlotAddedCallback onSlotAdded;
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +34,7 @@ class RegisteredSuperLayout extends StatelessWidget {
       label: label,
       zoneLabels: zoneLabels,
       onChanged: onChanged,
+      onSlotAdded: onSlotAdded,
     );
     if (registry == null) return layout(config, null);
     final controller = registry.layoutController(id, fallback: config);

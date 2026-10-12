@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'models/super_layout_config.dart';
 import 'widgets/super_layout/registered_super_layout.dart';
 import 'widgets/super_layout/slot_implementation.dart';
+import 'widgets/super_layout/super_layout.dart';
 
 /// App bar with editable title and action layout zones.
 class SuperAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -12,6 +13,7 @@ class SuperAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.action,
     this.slots = const [],
     this.config,
+    this.onSlotAdded = SuperLayout.defaultSlotAddition,
     super.key,
   });
 
@@ -20,6 +22,7 @@ class SuperAppBar extends StatelessWidget implements PreferredSizeWidget {
   final Widget? action;
   final List<SlotImplementation> slots;
   final SuperLayoutConfig? config;
+  final SlotAddedCallback onSlotAdded;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -33,6 +36,7 @@ class SuperAppBar extends StatelessWidget implements PreferredSizeWidget {
         height: preferredSize.height,
         child: RegisteredSuperLayout(
           id: id,
+          onSlotAdded: onSlotAdded,
           label: 'Super app bar',
           zoneLabels: const {
             SuperLayoutZone.center: 'title',

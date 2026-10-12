@@ -1,5 +1,28 @@
 part of 'super_layout.dart';
 
+typedef SlotAddedCallback = SuperLayoutConfig Function(SlotAddition addition);
+
+/// An editor addition, before its configuration is committed.
+class SlotAddition {
+  const SlotAddition({
+    required this.slotId,
+    required this.component,
+    required this.zone,
+    required this.contentZone,
+    required this.config,
+    required this.existingSlots,
+  });
+
+  final String slotId;
+  final SlotImplementation component;
+  final SuperLayoutZone zone;
+  final SuperLayoutZone contentZone;
+
+  /// Configuration already containing the newly placed instance.
+  final SuperLayoutConfig config;
+  final List<SlotImplementation> existingSlots;
+}
+
 /// Disposition en neuf zones (Nord, Sud, Est, Ouest, coins et Centre) dont la
 /// structure s'édite par clic droit, comme un [SuperContainer].
 ///
@@ -15,6 +38,7 @@ class SuperLayout extends StatefulWidget {
     this.slots = const [],
     this.config = const SuperLayoutConfig(),
     this.onChanged,
+    this.onSlotAdded = defaultSlotAddition,
     this.label = 'Super layout',
     this.name,
     this.editable = true,
@@ -26,6 +50,90 @@ class SuperLayout extends StatefulWidget {
   final List<SlotImplementation> slots;
   final SuperLayoutConfig config;
   final ValueChanged<SuperLayoutConfig>? onChanged;
+
+  /// Customizes an editor addition atomically with placement and persistence.
+  /// Return [SlotAddition.config] to keep its sizes unchanged.
+  final SlotAddedCallback onSlotAdded;
+
+  /// Reuses the first sibling preference, or sets 20% of the whole layout.
+  /// The other dimension and existing bounds are preserved.
+  static SuperLayoutConfig defaultSlotAddition(SlotAddition addition) {
+    final zone = addition.zone;
+    if (!zone.isSide) return addition.config;
+    final width = zone == SuperLayoutZone.west || zone == SuperLayoutZone.east;
+    final config = addition.config;
+    final saved = config.slotSizeConstraints[addition.slotId];
+    final hasPercentBounds = [
+      saved?.minWidth,
+      saved?.minHeight,
+      saved?.maxWidth,
+      saved?.maxHeight,
+      width ? saved?.preferredHeight : saved?.preferredWidth,
+    ].any((dimension) => dimension?.unit == SlotSizeUnit.percent);
+    SlotDimension? dimension;
+    var basis = SlotPercentBasis.zone;
+    for (final slot in addition.existingSlots) {
+      final constraints = config.slotSizeConstraints[slot.id];
+      if (constraints != null) {
+        dimension = width
+            ? constraints.preferredWidth
+            : constraints.preferredHeight;
+        // A slot has one percentage basis for all its dimensions.
+        if (dimension?.unit == SlotSizeUnit.percent &&
+            hasPercentBounds &&
+            constraints.percentBasis != saved?.percentBasis) {
+          dimension = null;
+          continue;
+        }
+        basis = constraints.percentBasis;
+      } else {
+        final size = config.slotPreferredSizes.containsKey(slot.id)
+            ? config.slotPreferredSizes[slot.id]
+            : slot.preferredSize;
+        if (size != null) {
+          dimension = SlotDimension(
+            width ? size.width : size.height,
+            SlotSizeUnit.pixels,
+          );
+        }
+      }
+      if (dimension != null) break;
+    }
+    if (dimension == null) {
+      dimension = const SlotDimension(20, SlotSizeUnit.percent);
+      basis = SlotPercentBasis.layout;
+    }
+    final size = config.slotPreferredSizes.containsKey(addition.slotId)
+        ? config.slotPreferredSizes[addition.slotId]
+        : addition.component.preferredSize;
+    final preferredWidth = saved != null
+        ? saved.preferredWidth
+        : size == null
+        ? null
+        : SlotDimension(size.width, SlotSizeUnit.pixels);
+    final preferredHeight = saved != null
+        ? saved.preferredHeight
+        : size == null
+        ? null
+        : SlotDimension(size.height, SlotSizeUnit.pixels);
+    return config.copyWith(
+      slotSizeConstraints: {
+        ...config.slotSizeConstraints,
+        addition.slotId: SlotSizeConstraints(
+          minWidth: saved?.minWidth,
+          minHeight: saved?.minHeight,
+          maxWidth: saved?.maxWidth,
+          maxHeight: saved?.maxHeight,
+          preferredWidth: width ? dimension : preferredWidth,
+          preferredHeight: width ? preferredHeight : dimension,
+          percentBasis: dimension.unit == SlotSizeUnit.percent
+              ? basis
+              : saved?.percentBasis ?? SlotPercentBasis.zone,
+        ),
+      },
+    );
+  }
+
   final String label;
 
   /// Nom court de la disposition, affiché dans le chemin de la bannière du mode
@@ -72,7 +180,8 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   void _selectSlot(SuperLayoutZone zone, SlotImplementation slot) {
-    _selectedSlot.value = _selected.value == zone && _selectedSlot.value == slot.id
+    _selectedSlot.value =
+        _selected.value == zone && _selectedSlot.value == slot.id
         ? null
         : slot.id;
     _selected.value = zone;
@@ -125,8 +234,10 @@ class SuperLayoutState extends State<SuperLayout> {
             _selected.value = null;
           },
           axis: _reportedAxis,
-          focusContext: _slotFocusKeys[_selectedSlot.value]?.currentContext ??
-              _zoneFocusKeys[_selected.value]?.currentContext ?? context,
+          focusContext:
+              _slotFocusKeys[_selectedSlot.value]?.currentContext ??
+              _zoneFocusKeys[_selected.value]?.currentContext ??
+              context,
         );
       }
     });

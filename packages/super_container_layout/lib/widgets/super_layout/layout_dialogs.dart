@@ -39,10 +39,10 @@ extension _SuperLayoutDialogs on SuperLayoutState {
   }
 
   Future<void> _addSlot(SuperLayoutZone zone) async {
+    final slots = _availableSlots(context, includeRegistry: true);
     final id = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
-        final slots = _availableSlots(context, includeRegistry: true);
         return SimpleDialog(
           title: Text('Ajouter un slot dans ${widget.zoneLabel(zone)}'),
           children: [
@@ -80,12 +80,21 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       } while (used.contains(instanceId));
     }
 
-    _update(
-      config.withSlotMoved(
+    final contentZone = config.contentZone(zone);
+    final component = slots.firstWhere((slot) => slot.id == id);
+    _update(widget.onSlotAdded(SlotAddition(
+      slotId: instanceId,
+      component: component,
+      zone: zone,
+      contentZone: contentZone,
+      existingSlots: List.unmodifiable(
+        _slotsOf(config, contentZone).where((slot) => slot.id != instanceId),
+      ),
+      config: config.withSlotMoved(
         instanceId,
-        config.contentZone(zone),
+        contentZone,
         type: supplied ? null : id,
       ),
-    );
+    )));
   }
 }
