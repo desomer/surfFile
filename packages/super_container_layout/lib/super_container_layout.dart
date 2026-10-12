@@ -5,6 +5,7 @@ export 'services/default_appearance_codec.dart';
 export 'services/appearance_transfer.dart';
 export 'services/window_transparency.dart';
 export 'super_app.dart';
+export 'super_page.dart';
 export 'theme/appearance.dart';
 export 'theme/typed_appearance_scope.dart';
 export 'theme/appearance_slot.dart';

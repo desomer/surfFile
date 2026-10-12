@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:go_router/go_router.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
+import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
@@ -14,20 +16,43 @@ void main() {
   runApp(const TestApp());
 }
 
-class TestApp extends StatelessWidget {
+class TestApp extends StatefulWidget {
   const TestApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final registry = Registry()..bootstrap();
-    registry.registerFactory('A', Center(child: Text('A')));
+  State<TestApp> createState() => _TestAppState();
+}
 
-    return SuperApp(
-      title: 'Super Container Layout demo',
-      home: getRootWidget(registry),
-      registry: registry,
+class _TestAppState extends State<TestApp> {
+  final _registry = Registry()..bootstrap();
+  late final GoRouter _router;
+
+  @override
+  void initState() {
+    super.initState();
+    _registry.registerFactory('A', const Center(child: Text('A')));
+    _router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => getRootWidget(_registry),
+        ),
+      ],
     );
   }
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SuperApp(
+      router: _router,
+      title: 'Super Container Layout demo',
+      registry: _registry,
+    );
 
   Widget getRootWidget(Registry registry) {
     return Builder(
@@ -48,8 +73,8 @@ class TestApp extends StatelessWidget {
           ),
           decorate: false,
           applyPadding: true,
-          child: Scaffold(
-            body: Stack(
+          child: SuperPage(
+            child: Stack(
               children: [
                 Positioned.fill(
                   child: ValueListenableBuilder<SuperLayoutConfig>(

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/super_app.dart';
+import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../theme/surffile_appearance_slots.dart';
@@ -108,8 +109,8 @@ class _ExplorerPageState extends State<ExplorerPage> {
       slot: SurfFileAppearanceSlots.background,
       decorate: false,
       applyPadding: true,
-      child: Scaffold(
-        body: Stack(
+      child: SuperPage(
+        child: Stack(
           children: [
             Positioned.fill(child: _panesView()),
             const Positioned(

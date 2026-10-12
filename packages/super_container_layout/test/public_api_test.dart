@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -32,32 +33,37 @@ void main() {
   testWidgets('public entry point builds a configured layout in SuperApp', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      SuperApp(
-        home: Scaffold(
-          body: SuperContainer(
-            child: SuperLayout(
-              config: const SuperLayoutConfig(
-                north: false,
-                south: false,
-                west: false,
-                east: false,
-                placements: {
-                  SuperLayoutZone.center: ['content'],
-                },
-              ),
-              slots: [
-                BuilderSlot(
-                  id: 'content',
-                  label: 'Content',
-                  builder: (_) => const Text('Package API'),
+    final router = GoRouter(
+      routes: [
+        GoRoute(
+          path: '/',
+          builder: (context, state) => SuperPage(
+            child: SuperContainer(
+              child: SuperLayout(
+                config: const SuperLayoutConfig(
+                  north: false,
+                  south: false,
+                  west: false,
+                  east: false,
+                  placements: {
+                    SuperLayoutZone.center: ['content'],
+                  },
                 ),
-              ],
+                slots: [
+                  BuilderSlot(
+                    id: 'content',
+                    label: 'Content',
+                    builder: (_) => const Text('Package API'),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
-      ),
+      ],
     );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(SuperApp(router: router));
     await tester.pumpAndSettle();
 
     expect(
@@ -66,6 +72,7 @@ void main() {
     );
     expect(find.byType(SuperContainer), findsWidgets);
     expect(find.byType(SuperLayout), findsOneWidget);
+    expect(find.byType(SuperPage), findsOneWidget);
     expect(find.text('Package API'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

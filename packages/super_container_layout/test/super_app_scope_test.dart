@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -76,9 +77,9 @@ void main() {
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: _TestComponentScope(
+        page: _TestComponentScope(
           child: StyleEditScope(
             controller: editMode,
             child: SuperLayout(onChanged: changes.add),
@@ -129,7 +130,12 @@ void main() {
       ),
     );
     final store = AppearanceStore();
-    final first = SuperApp(title: 'First', home: home, appearanceStore: store);
+    final router = _rootRouter(home);
+    final first = SuperApp(
+      title: 'First',
+      router: router,
+      appearanceStore: store,
+    );
     await tester.pumpWidget(first);
     await tester.pumpAndSettle();
     expect(observed.last, same(first));
@@ -137,7 +143,7 @@ void main() {
 
     final second = SuperApp(
       title: 'Second',
-      home: home,
+      router: router,
       appearanceStore: store,
     );
     await tester.pumpWidget(second);
@@ -184,9 +190,9 @@ void main() {
       },
     );
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: const SuperLayout(
+        page: const SuperLayout(
           config: SuperLayoutConfig(
             placements: {
               SuperLayoutZone.center: ['historical-slot', 'unknown'],
@@ -244,9 +250,9 @@ void main() {
       builder: (_) => const Text('Hidden content'),
     );
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: SuperLayout(
+        page: SuperLayout(
           slots: [hidden],
           config: const SuperLayoutConfig(
             placements: {
@@ -272,8 +278,8 @@ void main() {
     tester,
   ) async {
     SuperApp? observed;
-    final app = SuperApp(
-      home: Builder(
+    final app = _routedApp(
+      page: Builder(
         builder: (context) => TextButton(
           onPressed: () => showDialog<void>(
             context: context,
@@ -303,9 +309,9 @@ void main() {
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: StyleEditScope(
+        page: StyleEditScope(
           controller: editMode,
           child: SuperLayout(
             onChanged: changes.add,
@@ -352,9 +358,9 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: SuperLayout(config: restored),
+        page: SuperLayout(config: restored),
       ),
     );
     await tester.pumpAndSettle();
@@ -382,9 +388,9 @@ void main() {
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: StyleEditScope(
+        page: StyleEditScope(
           controller: editMode,
           child: SuperLayout(config: config),
         ),
@@ -417,9 +423,9 @@ void main() {
     expect(loaded.style('container-first').toJson(), style.toJson());
     final restarted = Registry()..bootstrap();
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: restarted,
-        home: SuperLayout(config: SuperLayoutConfig.fromJson(config.toJson())),
+        page: SuperLayout(config: SuperLayoutConfig.fromJson(config.toJson())),
       ),
     );
     await tester.pumpAndSettle();
@@ -459,9 +465,9 @@ void main() {
       swaps: {SuperLayoutZone.west},
     );
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: SuperLayout(config: config),
+        page: SuperLayout(config: config),
       ),
     );
     await tester.pumpAndSettle();
@@ -476,9 +482,9 @@ void main() {
       contains(firstController.value),
     );
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: SuperLayout(config: SuperLayoutConfig.fromJson(config.toJson())),
+        page: SuperLayout(config: SuperLayoutConfig.fromJson(config.toJson())),
       ),
     );
     await tester.pumpAndSettle();
@@ -501,9 +507,9 @@ void main() {
     final loaded = await AppearanceStore().load();
     final restartedRegistry = Registry()..bootstrap();
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: restartedRegistry,
-        home: SuperLayout(config: loaded.layout('parent')),
+        page: SuperLayout(config: loaded.layout('parent')),
       ),
     );
     await tester.pumpAndSettle();
@@ -531,9 +537,9 @@ void main() {
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
     await tester.pumpWidget(
-      SuperApp(
+      _routedApp(
         registry: registry,
-        home: StyleEditScope(
+        page: StyleEditScope(
           controller: editMode,
           child: SuperLayout(
             onChanged: changes.add,
@@ -580,6 +586,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
+
+GoRouter _rootRouter(Widget page) {
+  final router = GoRouter(
+    routes: [
+      GoRoute(path: '/', builder: (context, state) => page),
+    ],
+  );
+  addTearDown(router.dispose);
+  return router;
+}
+
+SuperApp _routedApp({required Widget page, Registry? registry}) => SuperApp(
+  router: _rootRouter(page),
+  registry: registry,
+);
 
 class _TestComponentScope extends InheritedWidget {
   const _TestComponentScope({required super.child});

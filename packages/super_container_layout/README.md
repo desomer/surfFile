@@ -29,8 +29,8 @@ Pour sauvegarder ce modèle, fournir explicitement son codec :
 
 ```dart
 SuperApp(
+  router: router,
   appearanceStore: AppearanceStore(codec: const DefaultAppearanceCodec()),
-  home: const MyHomePage(),
 )
 ```
 
@@ -50,6 +50,59 @@ La lecture, les migrations et les imports utilisent le même codec.
 
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
+
+## Pages et routage
+
+`SuperApp` exige toujours un `GoRouter` et utilise exclusivement
+`MaterialApp.router`. Le parametre `home` et le constructeur
+`SuperApp.router` sont supprimes : utilisez `SuperApp(router: router)`.
+
+`SuperPage` fournit un `Scaffold` commun, avec un contenu `child` et une
+`appBar` optionnels. Sans contenu, `const SuperPage()` fournit la page racine
+vide par defaut. Declarez-la sur `/` dans le routeur fourni ; les routes ne
+sont pas ajoutees ni modifiees automatiquement par `SuperApp`.
+
+Pour utiliser le routage declaratif, ajoutez `go_router` aux dependances de
+l'application et fournissez un routeur a `SuperApp` :
+
+```dart
+import 'package:go_router/go_router.dart';
+import 'package:super_container_layout/super_container_layout.dart';
+
+final router = GoRouter(
+  routes: [
+    GoRoute(
+      path: '/',
+      builder: (context, state) => const SuperPage(),
+    ),
+    GoRoute(
+      path: '/details/:id',
+      builder: (context, state) => SuperPage(
+        child: MyDetailsContent(id: state.pathParameters['id']!),
+      ),
+    ),
+  ],
+);
+
+SuperApp(
+  router: router,
+  appearanceStore: AppearanceStore(codec: const DefaultAppearanceCodec()),
+);
+```
+
+Depuis une page, `context.go('/details/42')` change de route et
+`context.push('/details/42')` permet de revenir avec `context.pop()`.
+Les pages routees conservent les scopes d'apparence, le registre, les raccourcis
+et la banniere d'edition. Le chargement et les erreurs de restauration sont
+affiches avant le contenu route, sans perdre l'URL demandee. La banniere utilise
+le navigateur racine de `GoRouter` pour ouvrir les dialogues.
+
+Creez le routeur une seule fois (par exemple dans l'etat de l'application),
+pas dans `build`. L'application reste responsable de son `dispose` ;
+`SuperApp` ne le detruit pas. Pour personnaliser la page racine, fournissez
+par exemple `SuperPage(child: MyHomeContent())` dans le builder de `/`.
+L'application SurfFile et la demonstration du package utilisent cette route
+racine avec leur contenu existant.
 
 Ajoutez le package à `pubspec.yaml` :
 

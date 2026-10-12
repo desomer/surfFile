@@ -94,7 +94,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
       unit.addListener(preview);
     }
     percentBasis.addListener(preview);
-    final layoutSize = this.context.size ?? Size.zero;
+    final layoutSize = context.size ?? Size.zero;
 
     try {
       final result = await showDialog<SlotSizeConstraints>(
@@ -260,7 +260,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
               }),
             slotSizeConstraints: {...current.slotSizeConstraints}
               ..remove(slot.id)
-              ..addAll({if (saved != null) slot.id: saved}),
+              ..addAll({slot.id: ?saved}),
           ),
         );
         history?.cancelTransaction();
