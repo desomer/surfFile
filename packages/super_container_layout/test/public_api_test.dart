@@ -71,7 +71,7 @@ void main() {
       isA<PersistentAppearanceController>(),
     );
     expect(find.byType(SuperContainer), findsWidgets);
-    expect(find.byType(SuperLayout), findsNWidgets(2));
+    expect(find.byType(SuperLayout), findsOneWidget);
     expect(find.byType(SuperPage), findsOneWidget);
     expect(find.text('Package API'), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -38,6 +38,7 @@ class ContainerMenuAction extends InheritedWidget {
     required this.enabled,
     this.onRemove,
     this.inline = false,
+    this.showEdit = true,
     required super.child,
     super.key,
   });
@@ -47,6 +48,7 @@ class ContainerMenuAction extends InheritedWidget {
   final bool enabled;
   final Future<void> Function()? onRemove;
   final bool inline;
+  final bool showEdit;
 
   static List<ContainerMenuAction> of(BuildContext context) {
     final actions = <ContainerMenuAction>[];
@@ -71,6 +73,27 @@ class ContainerMenuAction extends InheritedWidget {
       onEdit != oldWidget.onEdit ||
       onRemove != oldWidget.onRemove ||
       inline != oldWidget.inline;
+}
+
+/// Inserts a command at its ancestor position among container menu entries.
+class ContainerContextMenuEntry extends InheritedWidget {
+  const ContainerContextMenuEntry({
+    required this.label,
+    required this.onSelected,
+    required this.enabled,
+    required super.child,
+    super.key,
+  });
+
+  final String label;
+  final Future<void> Function() onSelected;
+  final bool enabled;
+
+  @override
+  bool updateShouldNotify(ContainerContextMenuEntry oldWidget) =>
+      label != oldWidget.label ||
+      onSelected != oldWidget.onSelected ||
+      enabled != oldWidget.enabled;
 }
 
 /// Conteneur stylé par un [ContainerStyle] qui ouvre le
@@ -107,6 +130,7 @@ class SuperContainer extends StatefulWidget {
   final ContainerStyle style;
   final ValueChanged<ContainerStyle>? onStyleChanged;
   final String? label;
+
   /// Persists a standalone instance's name; slots use their layout config.
   final ValueChanged<String>? onLabelChanged;
   final Color? fallbackColor;
@@ -146,8 +170,12 @@ class SuperContainerState extends State<SuperContainer> {
 
   String get _label {
     final instance = EditorComponentLabel.of(context);
-    return (instance?.overridden ?? false) ? instance!.label :
-        _localLabel ?? widget.label ?? widget.slot?.standard.label ?? 'Super container';
+    return (instance?.overridden ?? false)
+        ? instance!.label
+        : _localLabel ??
+              widget.label ??
+              widget.slot?.standard.label ??
+              'Super container';
   }
 
   void _renameLabel(String label) {
@@ -313,229 +341,241 @@ class SuperContainerState extends State<SuperContainer> {
     final dockWidth = ValueNotifier(dense ? 680.0 : 1080.0);
     bool? confirmed;
     try {
-    confirmed = await showEditorDialog<bool>(
-      context: context,
-      target: context,
-      preferredWidth: dockWidth,
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialog) {
-          final screen = MediaQuery.sizeOf(context);
-          final width = math.min(dense ? 680.0 : 1080.0, screen.width - 96);
-          final height = math.max(320.0, math.min(680.0, screen.height - 260));
-          return AlertDialog(
-            insetPadding: const EdgeInsets.all(24),
-            constraints: BoxConstraints(maxWidth: width + 48),
-            content: SizedBox(
-              width: width,
-              height: height,
-              child: StatefulBuilder(
-                builder: (context, setTab) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (tabbed) ...[
-                      DefaultTabController(
-                        length: 2,
-                        initialIndex: editSlot == selectedSlot ? 1 : 0,
-                        child: TabBar(
-                          key: const ValueKey('style-editor-tabs'),
-                          onTap: (index) => setTab(
-                            () => editSlot = index == 1
-                                ? selectedSlot
-                                : standardSlot,
+      confirmed = await showEditorDialog<bool>(
+        context: context,
+        target: context,
+        preferredWidth: dockWidth,
+        barrierDismissible: true,
+        barrierColor: Colors.transparent,
+        builder: (context) => StatefulBuilder(
+          builder: (context, setDialog) {
+            final screen = MediaQuery.sizeOf(context);
+            final width = math.min(dense ? 680.0 : 1080.0, screen.width - 96);
+            final height = math.max(
+              320.0,
+              math.min(680.0, screen.height - 260),
+            );
+            return AlertDialog(
+              insetPadding: const EdgeInsets.all(24),
+              constraints: BoxConstraints(maxWidth: width + 48),
+              content: SizedBox(
+                width: width,
+                height: height,
+                child: StatefulBuilder(
+                  builder: (context, setTab) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (tabbed) ...[
+                        DefaultTabController(
+                          length: 2,
+                          initialIndex: editSlot == selectedSlot ? 1 : 0,
+                          child: TabBar(
+                            key: const ValueKey('style-editor-tabs'),
+                            onTap: (index) => setTab(
+                              () => editSlot = index == 1
+                                  ? selectedSlot
+                                  : standardSlot,
+                            ),
+                            tabs: const [
+                              Tab(text: 'Standard'),
+                              Tab(text: 'Sélectionné'),
+                            ],
                           ),
-                          tabs: const [
-                            Tab(text: 'Standard'),
-                            Tab(text: 'Sélectionné'),
-                          ],
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                    Expanded(
-                      child: ListenableBuilder(
-                        key: ValueKey(editSlot),
-                        listenable: appearance ?? _local,
-                        builder: (context, _) {
-                          final slot = editSlot;
-                          final style = slot != null && appearance != null
-                              ? slot.read(appearance.value)
-                              : this.style;
-                          final fallback = slot == widget.slot
-                              ? _fallback(context)
-                              : slot!.isSelectedVariant
-                              ? colors.primaryContainer
-                              : colors.surfaceContainerLow;
-                          final border = slot == widget.slot
-                              ? _border(context)
-                              : colors.primary;
-                          void update(ContainerStyle v) =>
-                              _update(v, slot: slot);
-                          return ContainerStyleEditor(
-                            label: _label,
-                            onLabelChanged: (label) => setDialog(() => _renameLabel(label)),
-                            collapsible: false,
-                            dense: dense,
-                            onDenseChanged: (value) =>
-                                setDialog(() {
-                                  dense = value;
-                                  dockWidth.value = value ? 680 : 1080;
-                                }),
-                            style: style,
-                            onStyle: update,
-                            extended: extended,
-                            value: style.fill,
-                            solidColor: style.color ?? fallback,
-                            radius: style.radius,
-                            borderWidth: style.borderWidth,
-                            borderColor: style.borderColor ?? border,
-                            elevation: style.elevation,
-                            shadowOpacity: style.shadowOpacity,
-                            opacity:
-                                widget.slot?.role ==
-                                    AppearanceSurfaceRole.applicationBackground
-                                ? appearance!.value.backgroundOpacity
-                                : 1,
-                            neon: style.neon ?? const NeonStyle(),
-                            accent: accent,
-                            onChanged: (v) => update(style.copyWith(fill: v)),
-                            onSolidColorChanged: (v) =>
-                                update(style.copyWith(color: v)),
-                            onRadiusChanged: shape
-                                ? (v) => update(style.copyWith(radius: v))
-                                : null,
-                            onBorderWidthChanged: (v) =>
-                                update(style.copyWith(borderWidth: v)),
-                            onBorderColorChanged: (v) =>
-                                update(style.copyWith(borderColor: v)),
-                            onResetBorderColor: () =>
-                                update(style.copyWith(resetBorderColor: true)),
-                            onElevationChanged: shape
-                                ? (v) => update(style.copyWith(elevation: v))
-                                : null,
-                            onShadowOpacityChanged: shape
-                                ? (v) =>
-                                      update(style.copyWith(shadowOpacity: v))
-                                : null,
-                            padding: style.padding,
-                            margin: style.margin,
-                            onPaddingChanged: (v) =>
-                                update(style.copyWith(padding: v)),
-                            onMarginChanged: (v) =>
-                                update(style.copyWith(margin: v)),
-                            onNeonChanged: (v) =>
-                                update(style.copyWith(neon: v)),
-                            hoverEffect: style.hoverEffect,
-                            onHoverEffectChanged: (v) =>
-                                update(style.copyWith(hoverEffect: v)),
-                            hoverTint: style.hoverTint,
-                            hoverColor: style.hoverColor,
-                            onHoverTintChanged: (v) =>
-                                update(style.copyWith(hoverTint: v)),
-                            onHoverColorChanged: (v) =>
-                                update(style.copyWith(hoverColor: v)),
-                            interactionEffect: style.interactionEffect,
-                            onInteractionEffectChanged: (v) =>
-                                update(style.copyWith(interactionEffect: v)),
-                            designSystem: style.designSystem,
-                            onDesignSystemChanged: shape
-                                ? (v) => update(v.apply(style))
-                                : null,
-                            onResetColor: () =>
-                                update(style.copyWith(resetColor: true)),
-                            onReset: () => _reset(slot: slot),
-                            extraSections: [
-                              if (widget.slot?.role ==
-                                  AppearanceSurfaceRole.applicationBackground)
-                                StyleEditorSection(
-                                  id: 'window',
-                                  title: 'Fenêtre',
-                                  tag: 'windowEffect',
-                                  icon: Icons.window_outlined,
-                                  count: 2,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Text(
-                                        'Opacité du fond : '
-                                        '${appearance!.value.backgroundOpacity.toStringAsFixed(1)}',
-                                      ),
-                                      EditorHistorySlider(
-                                        key: const ValueKey('Opacité du fond'),
-                                        value:
-                                            appearance.value.backgroundOpacity,
-                                        onChanged: (v) =>
-                                            appearance.value = appearance.value
-                                                .copyWith(backgroundOpacity: v),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      DropdownButtonFormField<WindowEffect>(
-                                        key: const ValueKey('window-effect'),
-                                        initialValue:
-                                            appearance.value.windowEffect,
-                                        isExpanded: true,
-                                        decoration: const InputDecoration(
-                                          labelText: 'Effet de la fenêtre',
-                                          helperText: 'Visible à travers le fond : baissez son opacité.',
+                        const SizedBox(height: 12),
+                      ],
+                      Expanded(
+                        child: ListenableBuilder(
+                          key: ValueKey(editSlot),
+                          listenable: appearance ?? _local,
+                          builder: (context, _) {
+                            final slot = editSlot;
+                            final style = slot != null && appearance != null
+                                ? slot.read(appearance.value)
+                                : this.style;
+                            final fallback = slot == widget.slot
+                                ? _fallback(context)
+                                : slot!.isSelectedVariant
+                                ? colors.primaryContainer
+                                : colors.surfaceContainerLow;
+                            final border = slot == widget.slot
+                                ? _border(context)
+                                : colors.primary;
+                            void update(ContainerStyle v) =>
+                                _update(v, slot: slot);
+                            return ContainerStyleEditor(
+                              label: _label,
+                              onLabelChanged: (label) =>
+                                  setDialog(() => _renameLabel(label)),
+                              collapsible: false,
+                              dense: dense,
+                              onDenseChanged: (value) => setDialog(() {
+                                dense = value;
+                                dockWidth.value = value ? 680 : 1080;
+                              }),
+                              style: style,
+                              onStyle: update,
+                              extended: extended,
+                              value: style.fill,
+                              solidColor: style.color ?? fallback,
+                              radius: style.radius,
+                              borderWidth: style.borderWidth,
+                              borderColor: style.borderColor ?? border,
+                              elevation: style.elevation,
+                              shadowOpacity: style.shadowOpacity,
+                              opacity:
+                                  widget.slot?.role ==
+                                      AppearanceSurfaceRole
+                                          .applicationBackground
+                                  ? appearance!.value.backgroundOpacity
+                                  : 1,
+                              neon: style.neon ?? const NeonStyle(),
+                              accent: accent,
+                              onChanged: (v) => update(style.copyWith(fill: v)),
+                              onSolidColorChanged: (v) =>
+                                  update(style.copyWith(color: v)),
+                              onRadiusChanged: shape
+                                  ? (v) => update(style.copyWith(radius: v))
+                                  : null,
+                              onBorderWidthChanged: (v) =>
+                                  update(style.copyWith(borderWidth: v)),
+                              onBorderColorChanged: (v) =>
+                                  update(style.copyWith(borderColor: v)),
+                              onResetBorderColor: () => update(
+                                style.copyWith(resetBorderColor: true),
+                              ),
+                              onElevationChanged: shape
+                                  ? (v) => update(style.copyWith(elevation: v))
+                                  : null,
+                              onShadowOpacityChanged: shape
+                                  ? (v) =>
+                                        update(style.copyWith(shadowOpacity: v))
+                                  : null,
+                              padding: style.padding,
+                              margin: style.margin,
+                              onPaddingChanged: (v) =>
+                                  update(style.copyWith(padding: v)),
+                              onMarginChanged: (v) =>
+                                  update(style.copyWith(margin: v)),
+                              onNeonChanged: (v) =>
+                                  update(style.copyWith(neon: v)),
+                              hoverEffect: style.hoverEffect,
+                              onHoverEffectChanged: (v) =>
+                                  update(style.copyWith(hoverEffect: v)),
+                              hoverTint: style.hoverTint,
+                              hoverColor: style.hoverColor,
+                              onHoverTintChanged: (v) =>
+                                  update(style.copyWith(hoverTint: v)),
+                              onHoverColorChanged: (v) =>
+                                  update(style.copyWith(hoverColor: v)),
+                              interactionEffect: style.interactionEffect,
+                              onInteractionEffectChanged: (v) =>
+                                  update(style.copyWith(interactionEffect: v)),
+                              designSystem: style.designSystem,
+                              onDesignSystemChanged: shape
+                                  ? (v) => update(v.apply(style))
+                                  : null,
+                              onResetColor: () =>
+                                  update(style.copyWith(resetColor: true)),
+                              onReset: () => _reset(slot: slot),
+                              extraSections: [
+                                if (widget.slot?.role ==
+                                    AppearanceSurfaceRole.applicationBackground)
+                                  StyleEditorSection(
+                                    id: 'window',
+                                    title: 'Fenêtre',
+                                    tag: 'windowEffect',
+                                    icon: Icons.window_outlined,
+                                    count: 2,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                          'Opacité du fond : '
+                                          '${appearance!.value.backgroundOpacity.toStringAsFixed(1)}',
                                         ),
-                                        items: [
-                                          for (final effect
-                                              in WindowEffect.values)
-                                            DropdownMenuItem(
-                                              value: effect,
-                                              enabled:
-                                                  WindowTransparency.isSupported(
-                                                    effect,
-                                                  ),
-                                              child: Text(
-                                                WindowTransparency.label(
-                                                  effect,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                                style:
+                                        EditorHistorySlider(
+                                          key: const ValueKey(
+                                            'Opacité du fond',
+                                          ),
+                                          value: appearance
+                                              .value
+                                              .backgroundOpacity,
+                                          onChanged: (v) => appearance.value =
+                                              appearance.value.copyWith(
+                                                backgroundOpacity: v,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        DropdownButtonFormField<WindowEffect>(
+                                          key: const ValueKey('window-effect'),
+                                          initialValue:
+                                              appearance.value.windowEffect,
+                                          isExpanded: true,
+                                          decoration: const InputDecoration(
+                                            labelText: 'Effet de la fenêtre',
+                                            helperText: 'Visible à travers le fond : baissez son opacité.',
+                                          ),
+                                          items: [
+                                            for (final effect
+                                                in WindowEffect.values)
+                                              DropdownMenuItem(
+                                                value: effect,
+                                                enabled:
                                                     WindowTransparency.isSupported(
                                                       effect,
-                                                    )
-                                                    ? null
-                                                    : TextStyle(
-                                                        color: Theme.of(context)
-                                                            .disabledColor,
-                                                      ),
+                                                    ),
+                                                child: Text(
+                                                  WindowTransparency.label(
+                                                    effect,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style:
+                                                      WindowTransparency.isSupported(
+                                                        effect,
+                                                      )
+                                                      ? null
+                                                      : TextStyle(
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).disabledColor,
+                                                        ),
+                                                ),
                                               ),
-                                            ),
-                                        ],
-                                        onChanged: (v) =>
-                                            appearance.value = appearance.value
-                                                .copyWith(windowEffect: v),
-                                      ),
-                                    ],
+                                          ],
+                                          onChanged: (v) =>
+                                              appearance.value = appearance
+                                                  .value
+                                                  .copyWith(windowEffect: v),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                            ],
-                          );
-                        },
+                              ],
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Annuler'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: const Text('Appliquer'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Appliquer'),
+                ),
+              ],
+            );
+          },
+        ),
+      );
     } finally {
       dockWidth.dispose();
     }
@@ -590,7 +630,22 @@ class SuperContainerState extends State<SuperContainer> {
       }
     }
     final extraActions = actions ?? ContainerMenuAction.of(context);
-    if (chain.isEmpty && extraActions.isEmpty) return;
+    final entries = <(int, Object)>[
+      if (chain.contains(this)) (chain.indexOf(this), this),
+    ];
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is ContainerContextMenuEntry && widget.enabled) {
+        entries.add((entries.length, widget));
+      } else if (element is StatefulElement) {
+        final state = element.state;
+        if (state is SuperContainerState && chain.contains(state)) {
+          entries.add((entries.length, state));
+        }
+      }
+      return true;
+    });
+    if (entries.isEmpty && extraActions.isEmpty) return;
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
@@ -628,95 +683,123 @@ class SuperContainerState extends State<SuperContainer> {
                   ),
                 ),
               ),
-          for (final (index, state) in chain.indexed)
-            PopupMenuItem<SuperContainerState>(
-              key: ValueKey('style-menu-${state._label}'),
-              value: state,
-              padding: EdgeInsets.zero,
-              child: _menuHover(
-                state,
-                Padding(
-                  padding: EdgeInsets.only(left: 12.0 * index),
+          for (final (index, entry) in entries)
+            if (entry is ContainerContextMenuEntry)
+              PopupMenuItem<Future<void> Function()>(
+                key: ValueKey('style-menu-entry-${entry.label}'),
+                value: entry.onSelected,
+                padding: EdgeInsets.zero,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(16 + 12.0 * index, 0, 16, 0),
                   child: Row(
-                    mainAxisSize: MainAxisSize.max,
                     children: [
-                      Icon(
-                        index == 0
-                            ? Icons.brush_outlined
-                            : Icons.subdirectory_arrow_left,
-                        size: 18,
-                      ),
+                      const Icon(Icons.subdirectory_arrow_left, size: 18),
                       const SizedBox(width: 10),
                       Flexible(
                         child: Text(
-                          state._label,
+                          entry.label,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state.widget.axisAction != null) ...[
-                        const SizedBox(width: 10),
-                        Text(
-                          state.widget.axisAction!().zoneLabel,
-                          key: ValueKey('style-menu-zone-${state._label}'),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                      if (index == 0)
-                        for (final action in extraActions.where(
-                          (action) => action.inline,
-                        )) ...[
-                          IconButton(
-                            key: ValueKey('style-menu-size-${action.label}'),
-                            tooltip: action.label,
-                            icon: const Icon(Icons.straighten),
-                            onPressed: () =>
-                                Navigator.of(context).pop(action.onEdit),
-                          ),
-                          if (action.onRemove case final remove?)
-                            IconButton(
-                              key: ValueKey(
-                                'style-menu-remove-${action.label}',
-                              ),
-                              tooltip: 'Supprimer le slot',
-                              icon: const Icon(Icons.delete_outline),
-                              onPressed: () =>
-                                  Navigator.of(context).pop(remove),
-                            ),
-                        ],
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state.widget.axisAction != null)
-                        ZoneAxisButton(
-                          key: ValueKey('style-menu-axis-${state._label}'),
-                          action: LayoutAxisAction(
-                            zoneLabel: state.widget.axisAction!().zoneLabel,
-                            axis: state.widget.axisAction!().axis,
-                            onToggle: () =>
-                                Navigator.of(context)
-                                    .pop<Future<void> Function()>(() async {
-                                      if (state.mounted) {
-                                        state.widget.axisAction!().onToggle();
-                                      }
-                                    }),
-                          ),
-                        ),
-                      if ((StyleEditScope.controllerOf(state.context)?.value ??
-                              false) &&
-                          state.widget.onAdd != null)
-                        IconButton(
-                          key: ValueKey('style-menu-add-${state._label}'),
-                          tooltip: 'Ajouter un slot',
-                          icon: const Icon(Icons.add),
-                          onPressed: () =>
-                              Navigator.of(context).pop(state.widget.onAdd),
-                        ),
                     ],
                   ),
                 ),
+              )
+            else if (entry case final SuperContainerState state)
+              PopupMenuItem<SuperContainerState>(
+                key: ValueKey('style-menu-${state._label}'),
+                value: state,
+                padding: EdgeInsets.zero,
+                child: _menuHover(
+                  state,
+                  Padding(
+                    padding: EdgeInsets.only(left: 12.0 * index),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        Icon(
+                          index == 0
+                              ? Icons.brush_outlined
+                              : Icons.subdirectory_arrow_left,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Text(
+                            state._label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if ((StyleEditScope.controllerOf(state.context)
+                                    ?.value ??
+                                false) &&
+                            state.widget.axisAction != null) ...[
+                          const SizedBox(width: 10),
+                          Text(
+                            state.widget.axisAction!().zoneLabel,
+                            key: ValueKey('style-menu-zone-${state._label}'),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                        if (identical(state, chain.first))
+                          for (final action in extraActions.where(
+                            (action) => action.inline,
+                          )) ...[
+                            if (action.showEdit)
+                              IconButton(
+                                key: ValueKey(
+                                  'style-menu-size-${action.label}',
+                                ),
+                                tooltip: action.label,
+                                icon: const Icon(Icons.straighten),
+                                onPressed: () =>
+                                    Navigator.of(context).pop(action.onEdit),
+                              ),
+                            if (action.onRemove case final remove?)
+                              IconButton(
+                                key: ValueKey(
+                                  'style-menu-remove-${action.label}',
+                                ),
+                                tooltip: 'Supprimer le slot',
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () =>
+                                    Navigator.of(context).pop(remove),
+                              ),
+                          ],
+                        if ((StyleEditScope.controllerOf(state.context)
+                                    ?.value ??
+                                false) &&
+                            state.widget.axisAction != null)
+                          ZoneAxisButton(
+                            key: ValueKey('style-menu-axis-${state._label}'),
+                            action: LayoutAxisAction(
+                              zoneLabel: state.widget.axisAction!().zoneLabel,
+                              axis: state.widget.axisAction!().axis,
+                              onToggle: () =>
+                                  Navigator.of(context)
+                                      .pop<Future<void> Function()>(() async {
+                                        if (state.mounted) {
+                                          state.widget.axisAction!().onToggle();
+                                        }
+                                      }),
+                            ),
+                          ),
+                        if ((StyleEditScope.controllerOf(state.context)
+                                    ?.value ??
+                                false) &&
+                            state.widget.onAdd != null)
+                          IconButton(
+                            key: ValueKey('style-menu-add-${state._label}'),
+                            tooltip: 'Ajouter un slot',
+                            icon: const Icon(Icons.add),
+                            onPressed: () =>
+                                Navigator.of(context).pop(state.widget.onAdd),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
         ],
       );
     } finally {

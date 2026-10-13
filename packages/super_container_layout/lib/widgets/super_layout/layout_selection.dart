@@ -1,6 +1,26 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Axis, Rect;
-import 'package:flutter/widgets.dart' show BuildContext;
+import 'package:flutter/widgets.dart' show BuildContext, InheritedWidget, PointerDownEvent, PointerEvent;
+
+/// Selection ancestry shared by native page regions and nested layouts.
+class LayoutSelectionScope extends InheritedWidget {
+  const LayoutSelectionScope({
+    required this.path,
+    required this.owner,
+    required super.child,
+    super.key,
+  });
+
+  final List<String> path;
+  final Object owner;
+
+  static LayoutSelectionScope? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<LayoutSelectionScope>();
+
+  @override
+  bool updateShouldNotify(LayoutSelectionScope oldWidget) =>
+      !listEquals(path, oldWidget.path) || owner != oldWidget.owner;
+}
 
 class LayoutFocus {
   const LayoutFocus(this.context);
@@ -31,6 +51,15 @@ class LayoutSelection {
   static final path = ValueNotifier<List<String>>(const []);
   static final axisAction = ValueNotifier<LayoutAxisAction?>(null);
   static final focus = ValueNotifier<LayoutFocus?>(null);
+  static PointerEvent? _pointer;
+
+  /// The deepest selection listener claims each pointer event first.
+  static bool claimPointer(PointerDownEvent event) {
+    final original = event.original ?? event;
+    if (identical(original, _pointer)) return false;
+    _pointer = original;
+    return true;
+  }
   /// Free screen area while an editor dialog is docked.
   static final editorViewport = ValueNotifier<Rect?>(null);
 

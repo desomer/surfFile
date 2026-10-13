@@ -23,12 +23,21 @@ extension _SuperLayoutGrid on SuperLayoutState {
       [...parentPath, name],
       (label) {
         _selected.value = null;
-        _selectedSlot.value = (slots.where(
-          (slot) => slot.id == _selectedSlot.value && slot.label == label,
-        ).firstOrNull ?? slots.where((slot) => slot.label == label).firstOrNull)?.id;
+        _selectedSlot.value =
+            (slots
+                        .where(
+                          (slot) =>
+                              slot.id == _selectedSlot.value &&
+                              slot.label == label,
+                        )
+                        .firstOrNull ??
+                    slots.where((slot) => slot.label == label).firstOrNull)
+                ?.id;
         _LayoutEditSelection.activate(this);
       },
-      parent: this.context.findAncestorStateOfType<SuperLayoutState>(),
+      parent:
+          this.context.findAncestorStateOfType<SuperLayoutState>() ??
+          LayoutSelectionScope.of(context)?.owner,
       onDeselect: () {
         _selectedSlot.value = null;
         _selected.value = null;
@@ -236,7 +245,9 @@ class _GridSurfaceState extends State<_GridSurface> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Flexible(child: Icon(Icons.drag_indicator, size: 16)),
+                          const Flexible(
+                            child: Icon(Icons.drag_indicator, size: 16),
+                          ),
                           Flexible(
                             child: Text(
                               slot.label,
@@ -307,137 +318,150 @@ class _GridSurfaceState extends State<_GridSurface> {
         p.width * _columnStep - gap,
         p.height * _rowStep - gap,
       );
-      return Stack(fit: StackFit.expand, children: [
-        ClipRect(
-        key: _viewport,
-        child: SingleChildScrollView(
-          key: const ValueKey('super-layout-grid-scroll'),
-          child: SizedBox(
-            key: _canvas,
-            width: width,
-            height: height,
-            child: Stack(
-              children: [
-                if (widget.editing)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: CustomPaint(
-                        painter: _GridPainter(
-                          columns: grid.columns,
-                          columnStep: _columnStep,
-                          rowStep: _rowStep,
-                          color: Theme.of(context).colorScheme.outlineVariant,
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRect(
+            key: _viewport,
+            child: SingleChildScrollView(
+              key: const ValueKey('super-layout-grid-scroll'),
+              child: SizedBox(
+                key: _canvas,
+                width: width,
+                height: height,
+                child: Stack(
+                  children: [
+                    if (widget.editing)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: CustomPaint(
+                            painter: _GridPainter(
+                              columns: grid.columns,
+                              columnStep: _columnStep,
+                              rowStep: _rowStep,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .outlineVariant,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                for (final slot in widget.slots)
-                  Positioned.fromRect(
-                    key: ValueKey('grid-position-${slot.id}'),
-                    rect: rect(grid.items[slot.id]!),
-                    child: ContainerMenuAction(
-                      label: 'Position et taille : ${slot.label}',
-                      enabled:
-                          widget.owner.widget.editable &&
-                          (StyleEditScope.controllerOf(context)?.value ??
-                              false),
-                      inline: true,
-                      onEdit: () => widget.owner._editGridSlot(slot),
-                      onRemove: () async => widget.owner._update(
-                        widget.owner.config.withoutSlot(slot.id),
-                      ),
-                      child: Builder(
-                        builder: (context) => _LabelScope(
-                          path: [...widget.path, slot.label],
-                          child: KeyedSubtree(
-                            key: widget.owner._slotFocusKeys.putIfAbsent(
-                              slot.id,
-                              GlobalKey.new,
-                            ),
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.translucent,
-                              excludeFromSemantics: true,
-                              onSecondaryTapUp:
-                                  widget.owner.widget.editable &&
-                                      (StyleEditScope.controllerOf(context)
-                                              ?.value ??
-                                          false)
-                                  ? (d) => context
-                                        .findAncestorStateOfType<
-                                          SuperContainerState
-                                        >()
-                                        ?.openMenu(
-                                          d.globalPosition,
-                                          actions: ContainerMenuAction.of(
-                                            context,
-                                          ),
-                                        )
-                                  : null,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  Listener(
-                                    behavior: HitTestBehavior.translucent,
-                                    onPointerDown: (event) =>
-                                        _pointerDown(slot.id, event),
-                                    onPointerUp: (event) {
-                                      if (event.pointer != _tapPointer) return;
-                                      if (_tapWasSelected &&
-                                          identical(
-                                            _LayoutEditSelection.selected.value,
-                                            widget.owner,
-                                          ) &&
-                                          (event.position - _tapStart!)
-                                                  .distance <=
-                                              kTouchSlop &&
-                                          _tapSlot != null) {
-                                        _select(_tapSlot!);
-                                      }
-                                      _tapPointer = null;
-                                      _tapSlot = null;
-                                      _tapStart = null;
-                                    },
-                                    onPointerCancel: (_) {
-                                      _tapPointer = null;
-                                      _tapSlot = null;
-                                      _tapStart = null;
-                                    },
-                                    child: slot,
-                                  ),
-                                  if (widget.editing)
-                                    Positioned.fill(
-                                      child: EditorOverlay(
-                                        clipKey: _viewport,
-                                        child: _controls(slot),
+                    for (final slot in widget.slots)
+                      Positioned.fromRect(
+                        key: ValueKey('grid-position-${slot.id}'),
+                        rect: rect(grid.items[slot.id]!),
+                        child: ContainerMenuAction(
+                          label: 'Position et taille : ${slot.label}',
+                          enabled:
+                              widget.owner.widget.editable &&
+                              (StyleEditScope.controllerOf(context)?.value ??
+                                  false),
+                          inline: true,
+                          onEdit: () => widget.owner._editGridSlot(slot),
+                          onRemove: () async => widget.owner._update(
+                            widget.owner.config.withoutSlot(slot.id),
+                          ),
+                          child: Builder(
+                            builder: (context) => _LabelScope(
+                              path: [...widget.path, slot.label],
+                              child: KeyedSubtree(
+                                key: widget.owner._slotFocusKeys.putIfAbsent(
+                                  slot.id,
+                                  GlobalKey.new,
+                                ),
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  excludeFromSemantics: true,
+                                  onSecondaryTapUp:
+                                      widget.owner.widget.editable &&
+                                          (StyleEditScope.controllerOf(context)
+                                                  ?.value ??
+                                              false)
+                                      ? (d) => context
+                                            .findAncestorStateOfType<
+                                              SuperContainerState
+                                            >()
+                                            ?.openMenu(
+                                              d.globalPosition,
+                                              actions: ContainerMenuAction.of(
+                                                context,
+                                              ),
+                                            )
+                                      : null,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Listener(
+                                        behavior: HitTestBehavior.translucent,
+                                        onPointerDown: (event) =>
+                                            _pointerDown(slot.id, event),
+                                        onPointerUp: (event) {
+                                          if (event.pointer != _tapPointer)
+                                            return;
+                                          if (_tapWasSelected &&
+                                              identical(
+                                                _LayoutEditSelection
+                                                    .selected
+                                                    .value,
+                                                widget.owner,
+                                              ) &&
+                                              (event.position - _tapStart!)
+                                                      .distance <=
+                                                  kTouchSlop &&
+                                              _tapSlot != null) {
+                                            _select(_tapSlot!);
+                                          }
+                                          _tapPointer = null;
+                                          _tapSlot = null;
+                                          _tapStart = null;
+                                        },
+                                        onPointerCancel: (_) {
+                                          _tapPointer = null;
+                                          _tapSlot = null;
+                                          _tapStart = null;
+                                        },
+                                        child: slot,
                                       ),
-                                    ),
-                                ],
+                                      if (widget.editing)
+                                        Positioned.fill(
+                                          child: EditorOverlay(
+                                            clipKey: _viewport,
+                                            child: _controls(slot),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-        ),
-        if (widget.editing && widget.owner.widget.editable)
-          Positioned.fill(child: EditorOverlay(child: Align(
-            alignment: Alignment.bottomRight,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: IconButton.filled(
-                key: const ValueKey('grid-add-slot'),
-                tooltip: 'Ajouter un slot dans la grille',
-                onPressed: () => widget.owner._addSlot(SuperLayoutZone.center),
-                icon: const Icon(Icons.add),
+                  ],
+                ),
               ),
             ),
-          ))),
-      ]);
+          ),
+          if (widget.editing && widget.owner.widget.editable)
+            Positioned.fill(
+              child: EditorOverlay(
+                child: Align(
+                  alignment: Alignment.bottomRight,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: IconButton.filled(
+                      key: const ValueKey('grid-add-slot'),
+                      tooltip: 'Ajouter un slot dans la grille',
+                      onPressed: () =>
+                          widget.owner._addSlot(SuperLayoutZone.center),
+                      icon: const Icon(Icons.add),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
     },
   );
 }
@@ -467,7 +491,11 @@ class _GridPainter extends CustomPainter {
     }
     final clip = canvas.getLocalClipBounds();
     final firstRow = math.max(0, (clip.top / rowStep).floor()) * rowStep;
-    for (var y = firstRow; y <= math.min(size.height, clip.bottom); y += rowStep) {
+    for (
+      var y = firstRow;
+      y <= math.min(size.height, clip.bottom);
+      y += rowStep
+    ) {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
     }
   }

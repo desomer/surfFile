@@ -1,85 +1,83 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'models/super_layout_config.dart';
+import 'models/scaffold_page_config.dart';
 import 'widgets/editing/editor_zoom.dart';
-import 'widgets/super_layout/registered_super_layout.dart';
+import 'widgets/scaffold_page_layout.dart';
 import 'widgets/super_layout/slot_implementation.dart';
-import 'widgets/super_layout/super_layout.dart';
 
-/// Page with editable appBar, body and bottomBar layout zones.
+/// Page whose editable regions map directly to the native [Scaffold] slots.
 class SuperPage extends StatelessWidget {
   const SuperPage({
     this.id = 'root',
     this.child = const SizedBox.shrink(),
     this.appBar,
     this.drawer,
+    this.endDrawer,
     this.bottomBar,
+    this.bottomNavigationBar,
+    this.floatingActionButton,
+    this.bottomSheet,
     this.slots = const [],
-    this.config,
-    this.onSlotAdded = SuperLayout.defaultSlotAddition,
+    this.pageConfig,
     super.key,
-  });
+  }) : assert(
+         bottomBar == null || bottomNavigationBar == null,
+         'Use either bottomBar or bottomNavigationBar, not both.',
+       );
 
   /// Stable persistence key. Use a different ID for each page.
   final String id;
   final Widget child;
   final PreferredSizeWidget? appBar;
   final Widget? drawer;
+  final Widget? endDrawer;
+
+  /// Compatibility alias for [bottomNavigationBar].
   final Widget? bottomBar;
+  final Widget? bottomNavigationBar;
+  final Widget? floatingActionButton;
+  final Widget? bottomSheet;
   final List<SlotImplementation> slots;
 
-  /// Initial layout; registry preferences take precedence when available.
-  final SuperLayoutConfig? config;
-  final SlotAddedCallback onSlotAdded;
+  /// Initial native Scaffold region placement; persisted edits take precedence.
+  final ScaffoldPageConfig? pageConfig;
 
   @override
-  Widget build(BuildContext context) => EditorZoom(
-    child: Scaffold(
-      drawer: drawer,
-      body: RegisteredSuperLayout(
+  Widget build(BuildContext context) {
+    final resolvedConfig = pageConfig ?? ScaffoldPageConfig(
+      placements: {
+        if (appBar != null)
+          ScaffoldPageRegion.appBar: const ['scaffold:appBar'],
+        ScaffoldPageRegion.body: const ['scaffold:body'],
+        if (drawer != null)
+          ScaffoldPageRegion.drawer: const ['scaffold:drawer'],
+        if (endDrawer != null)
+          ScaffoldPageRegion.endDrawer: const ['scaffold:endDrawer'],
+        if (bottomNavigationBar != null || bottomBar != null)
+          ScaffoldPageRegion.bottomNavigationBar: const [
+            'scaffold:bottomNavigationBar',
+          ],
+        if (floatingActionButton != null)
+          ScaffoldPageRegion.floatingActionButton: const [
+            'scaffold:floatingActionButton',
+          ],
+        if (bottomSheet != null)
+          ScaffoldPageRegion.bottomSheet: const ['scaffold:bottomSheet'],
+      },
+    );
+    return EditorZoom(
+      child: ScaffoldPageLayout(
         id: id,
-        onSlotAdded: onSlotAdded,
-        label: 'Super page',
-        zoneLabels: const {
-          SuperLayoutZone.north: 'appBar',
-          SuperLayoutZone.center: 'body',
-          SuperLayoutZone.south: 'bottomBar',
-        },
-        config:
-            config ??
-            SuperLayoutConfig(
-              west: false,
-              east: false,
-              northSize: kToolbarHeight,
-              southSize: kBottomNavigationBarHeight,
-              autoSides: const {SuperLayoutZone.north, SuperLayoutZone.south},
-              placements: {
-                if (appBar != null) SuperLayoutZone.north: const ['appBar'],
-                SuperLayoutZone.center: const ['body'],
-                if (bottomBar != null)
-                  SuperLayoutZone.south: const ['bottomBar'],
-              },
-            ),
-        slots: [
-          if (appBar case final bar?)
-            BuilderSlot(
-              id: 'appBar',
-              label: 'appBar',
-              sizing: SlotSizing.intrinsic,
-              builder: (_) =>
-                  SizedBox(height: bar.preferredSize.height, child: bar),
-            ),
-          BuilderSlot(id: 'body', label: 'body', builder: (_) => child),
-          if (bottomBar case final bar?)
-            BuilderSlot(
-              id: 'bottomBar',
-              label: 'bottomBar',
-              sizing: SlotSizing.intrinsic,
-              builder: (_) => bar,
-            ),
-          ...slots,
-        ],
+        config: resolvedConfig,
+        slots: slots,
+        appBar: appBar,
+        body: child,
+        drawer: drawer,
+        endDrawer: endDrawer,
+        bottomNavigationBar: bottomNavigationBar ?? bottomBar,
+        floatingActionButton: floatingActionButton,
+        bottomSheet: bottomSheet,
       ),
-    ),
-  );
+    );
+  }
 }

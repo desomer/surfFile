@@ -28,6 +28,14 @@ void main() {
             swaps: {SuperLayoutZone.west},
           ),
         },
+        scaffoldPages: {
+          'workspace': ScaffoldPageConfig(
+            placements: {
+              ScaffoldPageRegion.drawer: ['navigation'],
+            },
+            slotTypes: {'navigation': 'component:navigation'},
+          ).withRegionEnabled(ScaffoldPageRegion.drawer, false),
+        },
       );
       final store = AppearanceStore();
       await store.save(value);
@@ -45,6 +53,14 @@ void main() {
       expect(
         restored.layout('workspace').slotPreferredSizes['nested-instance'],
         const Size(250, 150),
+      );
+      expect(
+        restored.scaffoldPage('workspace').slotTypeOf('navigation'),
+        'component:navigation',
+      );
+      expect(
+        restored.scaffoldPage('workspace').isEnabled(ScaffoldPageRegion.drawer),
+        isFalse,
       );
       final export = AppearanceTransfer.export(value, {
         ...TransferGroup.values,

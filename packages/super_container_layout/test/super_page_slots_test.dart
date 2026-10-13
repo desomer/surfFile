@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/main.dart' as demo;
+import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -47,14 +48,429 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder layout(String label) => find.byWidgetPredicate(
-    (widget) => widget is SuperLayout && widget.label == label,
+  Future<void> toggleRegion(
+    WidgetTester tester,
+    ScaffoldPageRegion region,
+  ) async {
+    final toggle = find.byKey(ValueKey('scaffold-page-switch-${region.name}'));
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+  }
+
+  test('region switches round trip and keep disabled placements', () {
+    final config =
+        ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.drawer: ['navigation'],
+              },
+              slotTypes: {'navigation': 'component:navigation'},
+            )
+            .withRegionEnabled(ScaffoldPageRegion.drawer, false)
+            .withRegionEnabled(ScaffoldPageRegion.appBar, true);
+    final restored = ScaffoldPageConfig.fromJson(config.toJson());
+    expect(restored.isEnabled(ScaffoldPageRegion.body), isTrue);
+    expect(restored.isEnabled(ScaffoldPageRegion.appBar), isTrue);
+    expect(restored.isEnabled(ScaffoldPageRegion.drawer), isFalse);
+    expect(restored.slotsOf(ScaffoldPageRegion.drawer), ['navigation']);
+    expect(restored.withoutSlot('navigation').regions, restored.regions);
+    final legacy = ScaffoldPageConfig.fromJson({
+      'placements': {
+        'drawer': [
+          {'id': 'navigation', 'type': 'component:navigation'},
+        ],
+      },
+    });
+    expect(legacy.isEnabled(ScaffoldPageRegion.drawer), isTrue);
+    for (final regions in [
+      {'drawer': 'yes'},
+      {'unknown': true},
+      {'body': false},
+    ]) {
+      expect(
+        () =>
+            ScaffoldPageConfig.fromJson({'placements': {}, 'regions': regions}),
+        throwsFormatException,
+      );
+    }
+  });
+
+  testWidgets(
+    'context switches reveal selectable regions with local additions',
+    (tester) async {
+      final registry = Registry()
+        ..registerComponent(
+          'test-title',
+          const RegisteredComponent(label: 'Test title', builder: _title),
+        );
+      await pumpPage(tester, const SuperPage(), registry: registry);
+      final context = tester.element(find.byType(SuperPage));
+      final editMode = StyleEditScope.controllerOf(context)!;
+      final controller = registry.scaffoldPageController('root');
+      editMode.value = true;
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-appBar')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-drawer')),
+        findsNothing,
+      );
+      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Configurer la page…'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SwitchListTile), findsNWidgets(6));
+      expect(
+        find.byKey(const ValueKey('scaffold-page-switch-body')),
+        findsNothing,
+      );
+      await toggleRegion(tester, ScaffoldPageRegion.bottomNavigationBar);
+      expect(
+        controller.value.isEnabled(ScaffoldPageRegion.bottomNavigationBar),
+        isTrue,
+      );
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('scaffold-page-select-bottomNavigationBar')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey('scaffold-page-selected-bottomNavigationBar'),
+        ),
+        findsOneWidget,
+      );
+      expect(LayoutSelection.path.value, ['Page', 'barre basse']);
+      expect(
+        find
+            .byKey(const ValueKey('scaffold-page-add-bottomNavigationBar'))
+            .hitTestable(),
+        findsOneWidget,
+      );
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, isEmpty);
+      expect(
+        controller.value.isEnabled(ScaffoldPageRegion.bottomNavigationBar),
+        isFalse,
+      );
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-bottomNavigationBar')),
+        findsNothing,
+      );
+      history.redo();
+      await tester.pumpAndSettle();
+      LayoutSelection.select(['Page']);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-bottomNavigationBar')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('scaffold-page-add-bottomNavigationBar')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('scaffold-page-add-slot-component:test-title'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Registered title'), findsOneWidget);
+      history.undo();
+      await tester.pumpAndSettle();
+      editMode.value = false;
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-body')),
+        findsNothing,
+      );
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).bottomNavigationBar,
+        isNull,
+      );
+      expect(LayoutSelection.path.value, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
   );
 
-  Finder zone(Finder owner, SuperLayoutZone zone) => find.descendant(
-    of: owner,
-    matching: find.byKey(ValueKey('super-layout-${zone.name}')),
+  for (final region in [
+    ScaffoldPageRegion.drawer,
+    ScaffoldPageRegion.endDrawer,
+  ]) {
+    testWidgets('${region.name} switch opens its empty editing region', (
+      tester,
+    ) async {
+      final registry = Registry();
+      await pumpPage(tester, const SuperPage(), registry: registry);
+      StyleEditScope.controllerOf(tester.element(find.byType(SuperPage)))!
+              .value =
+          true;
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Configurer la page…'));
+      await tester.pumpAndSettle();
+      await toggleRegion(tester, region);
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey('scaffold-page-add-${region.name}')).hitTestable(),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(ValueKey('scaffold-page-select-${region.name}')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey('scaffold-page-selected-${region.name}')),
+        findsOneWidget,
+      );
+      await tester.tapAt(
+        tester.getTopLeft(find.byType(Drawer)) + const Offset(20, 100),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Configurer la page…'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'switches hide provided content without losing it across restart',
+    (tester) async {
+      final store = AppearanceStore();
+      final registry = Registry();
+      const page = SuperPage(
+        bottomNavigationBar: SizedBox(height: 32, child: Text('Saved footer')),
+        child: Text('Body'),
+      );
+      await pumpPage(tester, page, registry: registry, store: store);
+      final context = tester.element(find.byType(SuperPage));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Configurer la page…'));
+      await tester.pumpAndSettle();
+      await toggleRegion(tester, ScaffoldPageRegion.bottomNavigationBar);
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Saved footer'), findsNothing);
+      final appearance =
+          AppearanceScope.controllerOf(context)!
+              as PersistentAppearanceController;
+      await appearance.saved;
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      final restarted = Registry();
+      await pumpPage(tester, page, registry: restarted, store: store);
+      final controller = restarted.scaffoldPageController('root');
+      expect(
+        controller.value.isEnabled(ScaffoldPageRegion.bottomNavigationBar),
+        isFalse,
+      );
+      expect(controller.value.slotsOf(ScaffoldPageRegion.bottomNavigationBar), [
+        'scaffold:bottomNavigationBar',
+      ]);
+      expect(find.text('Saved footer'), findsNothing);
+      controller.value = controller.value.withRegionEnabled(
+        ScaffoldPageRegion.bottomNavigationBar,
+        true,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Saved footer'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
   );
+
+  testWidgets(
+    'page command follows its ancestor position between body and background',
+    (tester) async {
+      await tester.pumpWidget(const demo.TestApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      final body = find.byKey(const ValueKey('style-menu-corps'));
+      final command = find.byKey(
+        const ValueKey('style-menu-entry-Configurer la page…'),
+      );
+      final background = find.byKey(const ValueKey('style-menu-Fond'));
+      expect(body, findsOneWidget);
+      expect(command, findsOneWidget);
+      expect(background, findsOneWidget);
+      expect(
+        tester.getTopLeft(body).dy,
+        lessThan(tester.getTopLeft(command).dy),
+      );
+      expect(
+        tester.getTopLeft(command).dy,
+        lessThan(tester.getTopLeft(background).dy),
+      );
+      double labelLeft(Finder entry, String label) => tester
+          .getTopLeft(find.descendant(of: entry, matching: find.text(label)))
+          .dx;
+      expect(
+        labelLeft(command, 'Configurer la page…') - labelLeft(body, 'corps'),
+        12,
+      );
+      expect(
+        labelLeft(background, 'Fond') -
+            labelLeft(command, 'Configurer la page…'),
+        12,
+      );
+      await tester.tap(command);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('scaffold-page-settings')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(command, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final grid in [false, true]) {
+    testWidgets(
+      'page breadcrumbs navigate into and out of ${grid ? 'grid' : 'layout'} children',
+      (tester) async {
+        final registry = Registry();
+        await pumpPage(
+          tester,
+          SuperPage(
+            appBar: AppBar(title: const Text('Header')),
+            child: SuperLayout(
+              name: 'Child',
+              config: SuperLayoutConfig(
+                positioning: grid
+                    ? SuperLayoutPositioning.grid
+                    : SuperLayoutPositioning.zones,
+              ),
+              slots: const [],
+            ),
+          ),
+          registry: registry,
+        );
+        final context = tester.element(find.byType(SuperPage));
+        StyleEditScope.controllerOf(context)!.value = true;
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, ['Page']);
+        expect(
+          find.byKey(const ValueKey('scaffold-page-add-body')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('scaffold-page-add-appBar')),
+          findsOneWidget,
+        );
+        await tester.tapAt(const Offset(650, 450));
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value.take(3), ['Page', 'corps', 'Child']);
+        expect(
+          find.byKey(const ValueKey('scaffold-page-add-body')),
+          findsNothing,
+        );
+        expect(
+          find.byKey(const ValueKey('scaffold-page-select-body')),
+          findsNothing,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('style-edit-banner-path-0')),
+        );
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, ['Page']);
+        expect(
+          find.byKey(const ValueKey('scaffold-page-add-body')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('super-layout-add-center')),
+          findsNothing,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('scaffold-page-select-body')),
+        );
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, ['Page', 'corps']);
+        expect(
+          find.byKey(const ValueKey('scaffold-page-add-appBar')),
+          findsNothing,
+        );
+        await tester.tapAt(const Offset(650, 450));
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value.take(3), ['Page', 'corps', 'Child']);
+        await tester.tap(
+          find.byKey(const ValueKey('style-edit-banner-path-1')),
+        );
+        await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, ['Page', 'corps']);
+        expect(
+          find.byKey(const ValueKey('scaffold-page-add-body')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  for (final emptyBody in [false, true]) {
+    testWidgets(
+      'demo controls survive a persisted ${emptyBody ? 'empty' : 'replaced'} body',
+      (tester) async {
+        final store = AppearanceStore();
+        await store.save(
+          Appearance(
+            scaffoldPages: {
+              'root': ScaffoldPageConfig(
+                placements: {
+                  ScaffoldPageRegion.body: [if (!emptyBody) 'replacement'],
+                },
+                slotTypes: {if (!emptyBody) 'replacement': 'factory:NewLayout'},
+              ),
+            },
+          ),
+        );
+        await tester.pumpWidget(const demo.TestApp());
+        await tester.pumpAndSettle();
+        final edit = find.byKey(const ValueKey('style-edit-mode'));
+        final settings = find.byKey(const ValueKey('appearance-settings'));
+        expect(edit.hitTestable(), findsOneWidget);
+        expect(settings.hitTestable(), findsOneWidget);
+        expect(
+          find.descendant(of: find.byType(SuperPage), matching: edit),
+          findsNothing,
+        );
+        await tester.tap(edit);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('style-edit-banner')), findsOneWidget);
+        final context = tester.element(find.byType(SuperPage));
+        final config = SuperApp.of(context).registry!
+            .scaffoldPageController('root')
+            .value;
+        expect(
+          config.slotsOf(ScaffoldPageRegion.body),
+          emptyBody ? [] : ['replacement'],
+        );
+        await tester.tap(settings);
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsWidgets);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets('demo tooltips preserve semantics while editing', (tester) async {
     await tester.pumpWidget(const demo.TestApp());
@@ -73,22 +489,24 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
         await tester.pumpAndSettle();
       }
-      await mouse.moveTo(tester.getCenter(
-        find.byKey(const ValueKey('style-edit-banner-transfer')),
-      ));
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('style-edit-banner-transfer')),
+        ),
+      );
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
-      expect(find.text('Importer / exporter le style et la disposition'),
-          findsOneWidget);
+      expect(
+        find.text('Importer / exporter le style et la disposition'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       await mouse.moveTo(Offset.zero);
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-close')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('style-edit-banner')), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
-      await tester.pumpAndSettle();
       await mouse.moveTo(
         tester.getCenter(find.byKey(const ValueKey('appearance-settings'))),
       );
@@ -101,63 +519,136 @@ void main() {
     }
   });
 
-  testWidgets('empty bars take no space outside edit mode', (tester) async {
+  testWidgets('empty Scaffold regions take no space outside edit mode', (
+    tester,
+  ) async {
     final registry = Registry();
     await pumpPage(
       tester,
       const SuperPage(child: SizedBox.expand(key: ValueKey('body-content'))),
       registry: registry,
     );
-    final page = layout('Super page');
-    expect(tester.getSize(zone(page, SuperLayoutZone.north)).height, 0);
-    expect(tester.getSize(zone(page, SuperLayoutZone.south)).height, 0);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.appBar, isNull);
+    expect(scaffold.bottomNavigationBar, isNull);
     expect(
       tester.getSize(find.byKey(const ValueKey('body-content'))),
       const Size(800, 600),
     );
-    expect(find.byType(SuperAppBar), findsNothing);
-    expect(registry.registry.containsKey('SuperAppBar'), isTrue);
+    expect(find.byType(SuperLayout), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('provided page and app bar slots have their intended geometry', (
+  for (final region in [
+    ScaffoldPageRegion.bottomNavigationBar,
+    ScaffoldPageRegion.bottomSheet,
+    ScaffoldPageRegion.floatingActionButton,
+  ]) {
+    testWidgets('fill layout in ${region.name} keeps the body visible', (
+      tester,
+    ) async {
+      final registry = Registry()
+        ..registerComponent(
+          'nested-layout',
+          RegisteredComponent(
+            label: 'Nested layout',
+            builder: (_) =>
+                SuperLayout(config: const SuperLayoutConfig(), slots: const []),
+          ),
+        );
+      final store = AppearanceStore();
+      await store.save(
+        Appearance(
+          scaffoldPages: {
+            'root': ScaffoldPageConfig(
+              placements: {
+                ScaffoldPageRegion.body: ['scaffold:body'],
+                region: ['nested'],
+              },
+              slotTypes: {'nested': 'component:nested-layout'},
+            ),
+          },
+        ),
+      );
+      await pumpPage(
+        tester,
+        const SuperPage(
+          child: SizedBox.expand(
+            key: ValueKey('visible-body'),
+            child: Center(child: Text('Body remains visible')),
+          ),
+        ),
+        registry: registry,
+        store: store,
+      );
+      expect(
+        tester.getSize(find.byType(SuperLayout)).height,
+        region == ScaffoldPageRegion.floatingActionButton
+            ? 56
+            : kBottomNavigationBarHeight,
+      );
+      expect(
+        tester.getSize(find.byKey(const ValueKey('visible-body'))).height,
+        region == ScaffoldPageRegion.bottomNavigationBar
+            ? 600 - kBottomNavigationBarHeight
+            : 600,
+      );
+      expect(find.text('Body remains visible').hitTestable(), findsOneWidget);
+      if (region == ScaffoldPageRegion.floatingActionButton) {
+        expect(tester.getSize(find.byType(SuperLayout)).width, 56);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('provided page content uses native Scaffold regions', (
     tester,
   ) async {
     await pumpPage(
       tester,
       SuperPage(
         id: 'provided',
-        appBar: SuperAppBar(
-          id: 'provided-bar',
+        appBar: AppBar(
           title: const Text('Page title'),
-          action: IconButton(
-            key: const ValueKey('page-action'),
-            onPressed: () {},
-            icon: const Icon(Icons.settings),
-          ),
+          actions: [
+            IconButton(
+              key: const ValueKey('page-action'),
+              onPressed: () {},
+              icon: const Icon(Icons.settings),
+            ),
+          ],
         ),
-        bottomBar: const SizedBox(height: 32, child: Text('Bottom content')),
+        bottomNavigationBar: const SizedBox(
+          height: 32,
+          child: Text('Bottom content'),
+        ),
+        endDrawer: const Drawer(child: Text('End navigation')),
+        floatingActionButton: FloatingActionButton(
+          onPressed: null,
+          child: const Icon(Icons.add),
+        ),
+        bottomSheet: const SizedBox(height: 24, child: Text('Bottom sheet')),
         child: const SizedBox.expand(key: ValueKey('page-body')),
       ),
       registry: Registry(),
     );
-    final page = layout('Super page');
-    expect(
-      tester.getSize(zone(page, SuperLayoutZone.north)).height,
-      kToolbarHeight,
-    );
-    expect(tester.getSize(zone(page, SuperLayoutZone.south)).height, 32);
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.appBar, isA<PreferredSizeWidget>());
+    expect(scaffold.bottomNavigationBar, isNotNull);
+    expect(scaffold.endDrawer, isNotNull);
+    expect(scaffold.floatingActionButton, isNotNull);
+    expect(scaffold.bottomSheet, isNotNull);
     expect(
       tester.getSize(find.byKey(const ValueKey('page-body'))).height,
       600 - kToolbarHeight - 32,
     );
     expect(find.text('Page title'), findsOneWidget);
     expect(find.text('Bottom content'), findsOneWidget);
+    expect(find.text('Bottom sheet'), findsOneWidget);
     final action = tester.getRect(find.byKey(const ValueKey('page-action')));
     final title = tester.getRect(find.text('Page title'));
     expect(action.left, greaterThan(title.right));
-    expect(action.right, closeTo(800, 1));
-    expect(find.byType(Scaffold), findsOneWidget);
+    expect(action.right, lessThanOrEqualTo(800));
     expect(tester.takeException(), isNull);
   });
 
@@ -180,7 +671,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('editor adds a registered app bar and edits title and action', (
+  testWidgets('page editor adds a registered slot to a native region', (
     tester,
   ) async {
     final registry = Registry();
@@ -188,15 +679,11 @@ void main() {
       'test-title',
       const RegisteredComponent(label: 'Test title', builder: _title),
     );
-    registry.registerComponent(
-      'test-action',
-      const RegisteredComponent(
-        label: 'Test action',
-        sizing: SlotSizing.intrinsic,
-        builder: _action,
-      ),
+    await pumpPage(
+      tester,
+      SuperPage(appBar: AppBar(title: const Text('Page title'))),
+      registry: registry,
     );
-    await pumpPage(tester, const SuperPage(), registry: registry);
     final context = tester.element(find.byType(SuperPage));
     StyleEditScope.controllerOf(context)!.value = true;
     await tester.pumpAndSettle();
@@ -205,141 +692,54 @@ void main() {
       const Offset(0, 200),
     );
     await tester.pumpAndSettle();
-    final page = layout('Super page');
-    await tester.tap(zone(page, SuperLayoutZone.north));
+    await tester.tap(find.byKey(const ValueKey('scaffold-page-add-appBar')));
     await tester.pumpAndSettle();
     await tester.tap(
-      find.descendant(
-        of: page,
-        matching: find.byKey(const ValueKey('super-layout-add-north')),
-      ),
+      find.byKey(const ValueKey('scaffold-page-add-slot-component:test-title')),
     );
-    await tester.pumpAndSettle();
-    expect(find.text('Ajouter un slot dans appBar'), findsOneWidget);
-    await tester.tap(find.text('SuperAppBar'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SuperAppBar), findsOneWidget);
-    final bar = tester.widget<SuperAppBar>(find.byType(SuperAppBar));
-    expect(
-      registry.layoutController('root').value.slotTypeOf(bar.id),
-      'registry:SuperAppBar',
-    );
-    final barLayout = layout('Super app bar');
-    await tester.tapAt(
-      tester.getTopLeft(zone(barLayout, SuperLayoutZone.center)) +
-          const Offset(100, 48),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: barLayout,
-        matching: find.byKey(const ValueKey('super-layout-add-center')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Ajouter un slot dans title'), findsOneWidget);
-    await tester.tap(find.text('Test title'));
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.descendant(
-        of: barLayout,
-        matching: find.byKey(const ValueKey('super-layout-name-center')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, contains('title'));
-    expect(LayoutSelection.path.value, contains('appBar'));
-
-    await tester.tap(
-      find.descendant(
-        of: barLayout,
-        matching: find.byKey(const ValueKey('super-layout-add-east')),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Ajouter un slot dans action'), findsOneWidget);
-    await tester.tap(find.text('Test action'));
     await tester.pumpAndSettle();
     expect(find.text('Registered title'), findsOneWidget);
-    expect(find.byKey(const ValueKey('registered-action')), findsOneWidget);
-    final history = EditorHistoryScope.controllerOf(context)!;
-    history.undo();
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('registered-action')), findsNothing);
-    history.redo();
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('registered-action')), findsOneWidget);
+    expect(
+      registry.scaffoldPageController('root').value.slotTypes.values,
+      contains('component:test-title'),
+    );
     StyleEditScope.controllerOf(context)!.value = false;
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('page and bar layouts persist independently and reset', (
-    tester,
-  ) async {
+  testWidgets('Scaffold region placements persist and reset', (tester) async {
     final registry = Registry();
     registry.registerComponent(
       'test-title',
       const RegisteredComponent(label: 'Test title', builder: _title),
     );
-    registry.registerComponent(
-      'test-action',
-      const RegisteredComponent(
-        label: 'Test action',
-        sizing: SlotSizing.intrinsic,
-        builder: _action,
-      ),
-    );
     final store = AppearanceStore();
     const page = SuperPage(id: 'persisted-page', child: Text('Original body'));
     await pumpPage(tester, page, registry: registry, store: store);
-    final pageController = registry.layoutController('persisted-page');
+    final pageController = registry.scaffoldPageController('persisted-page');
     pageController.value = pageController.value
-        .withSlotMoved(
-          'first-bar',
-          SuperLayoutZone.north,
-          type: 'registry:SuperAppBar',
+        .withSlotAdded(
+          'header-title',
+          ScaffoldPageRegion.appBar,
+          type: 'component:test-title',
         )
-        .withSlotMoved(
-          'second-bar',
-          SuperLayoutZone.south,
-          type: 'registry:SuperAppBar',
-        )
-        .withSlotMoved(
-          'footer',
-          SuperLayoutZone.south,
-          type: 'registry:test-title',
-        )
-        .withSlotMoved(
-          'body-extra',
-          SuperLayoutZone.center,
-          type: 'registry:test-title',
+        .withSlotAdded(
+          'footer-title',
+          ScaffoldPageRegion.bottomNavigationBar,
+          type: 'component:test-title',
         );
     await tester.pumpAndSettle();
-    final first = registry.layoutController('first-bar');
-    final second = registry.layoutController('second-bar');
-    first.value = first.value.withSlotMoved(
-      'first-title',
-      SuperLayoutZone.center,
-      type: 'registry:test-title',
-    );
-    second.value = second.value.withSlotMoved(
-      'second-action',
-      SuperLayoutZone.east,
-      type: 'registry:test-action',
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Registered title'), findsNWidgets(3));
-    expect(find.byKey(const ValueKey('registered-action')), findsOneWidget);
-    expect(second.value.placementsOf(SuperLayoutZone.center), isEmpty);
+    expect(find.text('Registered title'), findsNWidgets(2));
     final appearance = AppearanceScope.controllerOf(
       tester.element(find.byType(SuperPage)),
     )!;
     await (appearance as PersistentAppearanceController).saved;
     final saved = await store.load();
-    expect(saved.layout('persisted-page'), pageController.value);
-    expect(saved.layout('first-bar'), first.value);
-    expect(saved.layout('second-bar'), second.value);
+    expect(
+      saved.scaffoldPage('persisted-page').placements,
+      pageController.value.placements,
+    );
 
     await tester.pumpWidget(const SizedBox());
     await tester.pumpAndSettle();
@@ -348,88 +748,54 @@ void main() {
       'test-title',
       const RegisteredComponent(label: 'Test title', builder: _title),
     );
-    restarted.registerComponent(
-      'test-action',
-      const RegisteredComponent(
-        label: 'Test action',
-        sizing: SlotSizing.intrinsic,
-        builder: _action,
-      ),
-    );
     await pumpPage(tester, page, registry: restarted, store: store);
-    expect(find.byType(SuperAppBar), findsNWidgets(2));
-    expect(find.text('Registered title'), findsNWidgets(3));
-    expect(find.byKey(const ValueKey('registered-action')), findsOneWidget);
+    expect(find.text('Registered title'), findsNWidgets(2));
     final restored = AppearanceScope.controllerOf(
       tester.element(find.byType(SuperPage)),
     )!;
     restored.value = restored.value.resetLayouts();
     await tester.pumpAndSettle();
-    expect(find.byType(SuperAppBar), findsNothing);
+    expect(find.text('Registered title'), findsNothing);
     expect(find.text('Original body'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'adding slots after accessibility is enabled preserves semantics',
-    (tester) async {
-      final registry = Registry();
-      registry.registerComponent(
-        'test-title',
-        const RegisteredComponent(label: 'Test title', builder: _title),
-      );
-      await pumpPage(tester, const SuperPage(), registry: registry);
-      final context = tester.element(find.byType(SuperPage));
-      StyleEditScope.controllerOf(context)!.value = true;
+  testWidgets('Scaffold region slots retain semantics in edit mode', (
+    tester,
+  ) async {
+    final registry = Registry();
+    registry.registerComponent(
+      'test-title',
+      const RegisteredComponent(label: 'Test title', builder: _title),
+    );
+    await pumpPage(tester, const SuperPage(), registry: registry);
+    final context = tester.element(find.byType(SuperPage));
+    StyleEditScope.controllerOf(context)!.value = true;
+    await tester.pumpAndSettle();
+    final semantics = tester.ensureSemantics();
+    try {
+      final controller = registry.scaffoldPageController('root');
+      controller.value = controller.value
+          .withSlotAdded(
+            'bar-title',
+            ScaffoldPageRegion.appBar,
+            type: 'component:test-title',
+          )
+          .withSlotAdded(
+            'footer-title',
+            ScaffoldPageRegion.bottomNavigationBar,
+            type: 'component:test-title',
+          );
       await tester.pumpAndSettle();
-      final semantics = tester.ensureSemantics();
-      try {
-        await tester.pumpAndSettle();
-        final controller = registry.layoutController('root');
-        controller.value = controller.value.withSlotMoved(
-          'bar',
-          SuperLayoutZone.north,
-          type: 'registry:SuperAppBar',
-        );
-        await tester.pumpAndSettle();
-        final bar = registry.layoutController('bar');
-        bar.value = bar.value.withSlotMoved(
-          'title',
-          SuperLayoutZone.center,
-          type: 'registry:test-title',
-        );
-        await tester.pumpAndSettle();
-        expect(find.bySemanticsLabel('Registered title'), findsOneWidget);
-        final titleNode = tester.getSemantics(find.text('Registered title'));
-        controller.value = controller.value.withSlotMoved(
-          'footer',
-          SuperLayoutZone.south,
-          type: 'registry:test-title',
-        );
-        await tester.pumpAndSettle();
-        expect(find.bySemanticsLabel('Registered title'), findsNWidgets(2));
-        final barTitle = find.descendant(
-          of: find.byType(SuperAppBar),
-          matching: find.text('Registered title'),
-        );
-        expect(tester.getSemantics(barTitle).id, titleNode.id);
-        controller.value = controller.value.withoutSlot('footer');
-        await tester.pumpAndSettle();
-        expect(find.bySemanticsLabel('Registered title'), findsOneWidget);
-        expect(tester.getSemantics(barTitle).id, titleNode.id);
-        expect(tester.takeException(), isNull);
-      } finally {
-        semantics.dispose();
-      }
-    },
-    semanticsEnabled: false,
-  );
+      expect(find.bySemanticsLabel('Registered title'), findsNWidgets(2));
+      controller.value = controller.value.withoutSlot('footer-title');
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Registered title'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      semantics.dispose();
+    }
+  }, semanticsEnabled: false);
 }
 
 Widget _title(BuildContext context) => const Text('Registered title');
-
-Widget _action(BuildContext context) => IconButton(
-  key: const ValueKey('registered-action'),
-  onPressed: () {},
-  icon: const Icon(Icons.refresh),
-);

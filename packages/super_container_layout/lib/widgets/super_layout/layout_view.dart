@@ -62,7 +62,8 @@ extension _SuperLayoutView on SuperLayoutState {
                         .firstOrNull;
               _LayoutEditSelection.activate(this);
             },
-            parent: this.context.findAncestorStateOfType<SuperLayoutState>(),
+            parent: this.context.findAncestorStateOfType<SuperLayoutState>() ??
+                LayoutSelectionScope.of(context)?.owner,
             selectSlot: (label) {
               final zone = _selected.value;
               if (!mounted || zone == null) return;
@@ -239,9 +240,12 @@ extension _SuperLayoutView on SuperLayoutState {
                       ),
                     ),
                     for (final zone in zones)
-                      if (_hasContent(config, config.contentZone(zone)))
                         _ZoneEntry(
-                          key: ValueKey('super-layout-name-${zone.name}'),
+                          key: ValueKey(
+                            _hasContent(config, config.contentZone(zone))
+                                ? 'super-layout-name-${zone.name}'
+                                : 'super-layout-add-overlay-${zone.name}',
+                          ),
                           zone: zone,
                           overlay: true,
                           child: EditorOverlay(
@@ -258,45 +262,13 @@ extension _SuperLayoutView on SuperLayoutState {
                               emphasis: _emphasisFor(zone),
                               selected: selected == zone,
                               onSelect: () => _select(zone),
+                              onAdd: widget.editable ? () => _addSlot(zone) : null,
                               swapTarget:
                                   widget.editable && config.canSwap(zone)
                                   ? zone.opposite
                                   : null,
                               moves: !zones.contains(zone.opposite),
                               onSwap: () => _update(config.withSwap(zone)),
-                            ),
-                          ),
-                        )
-                      else if (widget.editable)
-                        _ZoneEntry(
-                          key: ValueKey(
-                            'super-layout-add-overlay-${zone.name}',
-                          ),
-                          zone: zone,
-                          overlay: true,
-                          child: EditorOverlay(
-                            child: Center(
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: IconButton.filled(
-                                  key: ValueKey(
-                                    'super-layout-add-${zone.name}',
-                                  ),
-                                  tooltip:
-                                      'Ajouter un slot dans ${widget.zoneLabel(zone)}',
-                                  style: IconButton.styleFrom(
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .primary
-                                        .withValues(alpha: .35),
-                                    foregroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface,
-                                  ),
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () => _addSlot(zone),
-                                ),
-                              ),
                             ),
                           ),
                         ),

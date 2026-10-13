@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/super_app_bar.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -37,10 +38,13 @@ class Registry {
   final Map<String, ValueNotifier<SuperLayoutConfig>> superLayoutConfigById =
       {};
   final Map<String, ValueNotifier<ContainerStyle>> containerStyleById = {};
+  final Map<String, ValueNotifier<ScaffoldPageConfig>> scaffoldPageConfigById =
+      {};
   ValueNotifier<Appearance>? _appearance;
   bool _syncing = false;
   final Map<String, SuperLayoutConfig> _layoutDefaults = {};
   final Map<String, ContainerStyle> _styleDefaults = {};
+  final Map<String, ScaffoldPageConfig> _scaffoldPageDefaults = {};
   final Map<Listenable, VoidCallback> _listeners = {};
 
   void bindAppearance(ValueNotifier<Appearance> controller) {
@@ -52,6 +56,9 @@ class Registry {
     }
     for (final entry in containerStyleById.entries.toList()) {
       styleController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in scaffoldPageConfigById.entries.toList()) {
+      scaffoldPageController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -116,6 +123,34 @@ class Registry {
     return notifier;
   }
 
+  ValueNotifier<ScaffoldPageConfig> scaffoldPageController(
+    String id, {
+    ScaffoldPageConfig? fallback,
+  }) {
+    final initial = fallback ?? ScaffoldPageConfig();
+    _scaffoldPageDefaults.putIfAbsent(id, () => initial);
+    final notifier = scaffoldPageConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.scaffoldPage(id, fallback: initial) ?? initial,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withScaffoldPage(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
   void _readAppearance() {
     final appearance = _appearance!.value;
     _syncing = true;
@@ -130,6 +165,12 @@ class Registry {
         entry.value.value = appearance.style(
           entry.key,
           fallback: _styleDefaults[entry.key] ?? const ContainerStyle(),
+        );
+      }
+      for (final entry in scaffoldPageConfigById.entries) {
+        entry.value.value = appearance.scaffoldPage(
+          entry.key,
+          fallback: _scaffoldPageDefaults[entry.key],
         );
       }
     } finally {

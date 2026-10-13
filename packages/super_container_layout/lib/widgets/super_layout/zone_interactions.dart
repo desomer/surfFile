@@ -18,6 +18,7 @@ class _ZoneNameBadge extends StatefulWidget {
     this.swapTarget,
     this.moves = false,
     this.axisAction,
+    this.onAdd,
   });
 
   final SuperLayoutZone zone;
@@ -36,6 +37,7 @@ class _ZoneNameBadge extends StatefulWidget {
   final bool selected;
   final VoidCallback onSelect;
   final LayoutAxisAction? axisAction;
+  final VoidCallback? onAdd;
 
   @override
   State<_ZoneNameBadge> createState() => _ZoneNameBadgeState();
@@ -119,6 +121,16 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
             mainAxisSize: MainAxisSize.min,
             children: [
               label,
+              if (widget.onAdd case final onAdd?)
+                IconButton(
+                  key: ValueKey('super-layout-add-${widget.zone.name}'),
+                  tooltip: 'Ajouter un slot dans ${widget.label}',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: colors.onSurface,
+                  icon: const Icon(Icons.add),
+                  onPressed: onAdd,
+                ),
               if (widget.axisAction case final action?)
                 ZoneAxisButton(
                   key: ValueKey('super-layout-toggle-axis-${widget.zone.name}'),
@@ -256,32 +268,34 @@ class _CenterSwapTarget extends StatelessWidget {
         overCenter.value = false;
         onSwap(details.data);
       },
-      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
-        child: candidates.isEmpty
-            ? ValueListenableBuilder<bool>(
-                valueListenable: hint,
-                builder: (context, hinted, _) => hinted
-                    ? DecoratedBox(
-                        key: const ValueKey('super-layout-center-hint'),
-                        decoration: BoxDecoration(
-                          color: colors.primary.withValues(alpha: .08),
-                          border: Border.all(
-                            color: colors.primary.withValues(alpha: .7),
-                            width: 1.5,
+      builder: (context, candidates, _) => EditorOverlay(
+        child: IgnorePointer(
+          child: candidates.isEmpty
+              ? ValueListenableBuilder<bool>(
+                  valueListenable: hint,
+                  builder: (context, hinted, _) => hinted
+                      ? DecoratedBox(
+                          key: const ValueKey('super-layout-center-hint'),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: .08),
+                            border: Border.all(
+                              color: colors.primary.withValues(alpha: .7),
+                              width: 1.5,
+                            ),
                           ),
-                        ),
-                        child: const SizedBox.expand(),
-                      )
-                    : const SizedBox.expand(),
-              )
-            : DecoratedBox(
-                key: const ValueKey('super-layout-center-drop'),
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: .2),
-                  border: Border.all(color: colors.primary, width: 2),
+                          child: const SizedBox.expand(),
+                        )
+                      : const SizedBox.expand(),
+                )
+              : DecoratedBox(
+                  key: const ValueKey('super-layout-center-drop'),
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: .2),
+                    border: Border.all(color: colors.primary, width: 2),
+                  ),
                 ),
-              ),
-      )),
+        ),
+      ),
     );
   }
 }
@@ -319,20 +333,21 @@ class _SlotZoneTarget extends StatelessWidget {
       },
       onLeave: (data) => data?.hint.value = null,
       onAcceptWithDetails: (details) => onMove(details.data.id),
-      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
-        child: candidates.isEmpty
-            ? const SizedBox.expand()
-            : DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.tertiary.withValues(alpha: .15),
-                  border: Border.all(color: colors.tertiary, width: 2),
+      builder: (context, candidates, _) => EditorOverlay(
+        child: IgnorePointer(
+          child: candidates.isEmpty
+              ? const SizedBox.expand()
+              : DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.tertiary.withValues(alpha: .15),
+                    border: Border.all(color: colors.tertiary, width: 2),
+                  ),
                 ),
-              ),
-      )),
+        ),
+      ),
     );
   }
 }
-
 
 class _ZonePlaceholder extends StatelessWidget {
   const _ZonePlaceholder({

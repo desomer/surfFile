@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/super_layout_config.dart';
+import '../models/scaffold_page_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
 
@@ -31,10 +32,14 @@ class AppearanceCodec {
     'windowEffect': a.windowEffect.name,
     'styles': {for (final entry in a.styles.entries) entry.key: entry.value.toJson()},
     'layouts': {for (final entry in a.layouts.entries) entry.key: entry.value.toJson()},
+    'scaffoldPages': {
+      for (final entry in a.scaffoldPages.entries)
+        entry.key: entry.value.toJson(),
+    },
   };
   Appearance fromJson(Map<String, dynamic> json) {
     if (json['version'] != schemaVersion) throw const FormatException('Unsupported appearance version.');
-    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', ...additionalKeys};
+    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', 'scaffoldPages', ...additionalKeys};
     if (json.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown appearance preference.');
     double number(String key, double fallback, double min, double max) {
       final value = json[key] ?? fallback;
@@ -47,8 +52,9 @@ class AppearanceCodec {
     if (mode == null || effect == null || accent is! int || accent < 0 || accent > 0xFFFFFFFF) {
       throw const FormatException('Invalid theme or window preferences.');
     }
-    Map<String, dynamic> entries(String key) {
+    Map<String, dynamic> entries(String key, {bool optional = false}) {
       final value = json[key];
+      if (value == null && optional) return {};
       if (value is! Map<String, dynamic> || value.keys.any((id) => id.trim().isEmpty) ||
           value.values.any((v) => v is! Map<String, dynamic>)) {
         throw FormatException('Invalid "$key" map.');
@@ -62,6 +68,10 @@ class AppearanceCodec {
       windowOpacity: number('windowOpacity', 1, .2, 1),
       styles: {for (final entry in entries('styles').entries) entry.key: ContainerStyle.fromJson(entry.value)},
       layouts: {for (final entry in entries('layouts').entries) entry.key: SuperLayoutConfig.fromJson(entry.value)},
+      scaffoldPages: {
+        for (final entry in entries('scaffoldPages', optional: true).entries)
+          entry.key: ScaffoldPageConfig.fromJson(entry.value),
+      },
     );
   }
   Map<String, Object?> normalizeTransfer(Map<String, dynamic> data, int version) {

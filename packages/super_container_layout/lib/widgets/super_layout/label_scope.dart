@@ -19,6 +19,7 @@ class _LayoutEditSelection {
     // Les listeners sont appeles du contenu le plus profond vers ses parents.
     final original = event.original ?? event;
     if (identical(original, _lastEvent)) return;
+    if (!LayoutSelection.claimPointer(event)) return;
     _lastEvent = original;
     _previous = selected.value;
     if (!identical(_previous, layout)) {
@@ -39,7 +40,7 @@ class _LabelScope extends InheritedWidget {
 
   static List<String> pathOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_LabelScope>()?.path ??
-      const [];
+      LayoutSelectionScope.of(context)?.path ?? const [];
 
   @override
   bool updateShouldNotify(_LabelScope oldWidget) =>

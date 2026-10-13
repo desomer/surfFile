@@ -2,6 +2,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/super_layout_config.dart';
+import '../models/scaffold_page_config.dart';
 import 'appearance.dart';
 import 'container_style.dart';
 
@@ -23,6 +24,7 @@ class DefaultAppearance extends Appearance {
     super.windowEffect,
     super.styles,
     super.layouts,
+    super.scaffoldPages,
     this.cardHeight = 142,
     this.cardWidth = 180,
     this.rowHeight = 48,
@@ -58,12 +60,14 @@ class DefaultAppearance extends Appearance {
       copyWith(layouts: {...layouts, id: value});
 
   @override
-  DefaultAppearance resetLayouts() => copyWith(layouts: const {});
+  DefaultAppearance resetLayouts() =>
+      copyWith(layouts: const {}, scaffoldPages: const {});
 
   @override
   DefaultAppearance copyWith({
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
+    Map<String, ScaffoldPageConfig>? scaffoldPages,
     ThemeMode? mode,
     Color? accent,
     double? backgroundOpacity,
@@ -81,6 +85,7 @@ class DefaultAppearance extends Appearance {
   }) => DefaultAppearance(
     styles: {...styles ?? this.styles, 'background': ?backgroundStyle},
     layouts: layouts ?? this.layouts,
+    scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
     backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,

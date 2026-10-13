@@ -1,4 +1,5 @@
 export 'models/registry.dart';
+export 'models/scaffold_page_config.dart';
 export 'models/super_layout_config.dart';
 export 'services/appearance_store.dart';
 export 'services/default_appearance_codec.dart';

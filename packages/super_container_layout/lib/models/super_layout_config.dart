@@ -224,6 +224,7 @@ class SuperLayoutConfig {
     this.grid,
   });
 
+  static const maxSize = 400.0;
   static const minSize = 20.0;
   final String? label;
   final Map<String, String> slotLabels;
@@ -247,8 +248,6 @@ class SuperLayoutConfig {
     }
     return copyWith(slotLabels: {...slotLabels, id: label.trim()});
   }
-
-  static const maxSize = 400.0;
 
   final bool north;
   final bool south;

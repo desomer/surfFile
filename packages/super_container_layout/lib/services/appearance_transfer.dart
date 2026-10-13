@@ -12,7 +12,10 @@ enum TransferGroup {
 class AppearanceTransfer {
   const AppearanceTransfer._();
   static const format = 'super_container_layout.appearance';
-  static TransferGroup _groupOf(String key) => key == 'layouts' ? TransferGroup.layouts : TransferGroup.styles;
+  static TransferGroup _groupOf(String key) =>
+      key == 'layouts' || key == 'scaffoldPages'
+      ? TransferGroup.layouts
+      : TransferGroup.styles;
   static String export(Appearance appearance, Set<TransferGroup> groups, {
     AppearanceCodec codec = const AppearanceCodec(),
   }) {

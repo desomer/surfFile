@@ -222,7 +222,8 @@ class SlotStack extends StatelessWidget {
     key: ValueKey('slot-item-${slot.id}'),
     label: 'Taille préférée : ${slot.label}',
     inline: true,
-    enabled: onEditPreferredSize != null,
+    enabled: onEditPreferredSize != null || onRemoveSlot != null,
+    showEdit: onEditPreferredSize != null,
     onEdit: () async => onEditPreferredSize?.call(slot),
     onRemove: onRemoveSlot != null
         ? () async => onRemoveSlot?.call(slot)

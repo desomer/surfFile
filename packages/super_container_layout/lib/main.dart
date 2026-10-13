@@ -76,10 +76,10 @@ class _TestAppState extends State<TestApp> {
           ),
           decorate: false,
           applyPadding: true,
-          child: SuperPage(
-            child: Stack(
-              children: [
-                Positioned.fill(
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: SuperPage(
                   child: ValueListenableBuilder<SuperLayoutConfig>(
                     valueListenable: superLayoutConfig,
                     builder: (context, config, _) => SuperLayout(
@@ -89,17 +89,20 @@ class _TestAppState extends State<TestApp> {
                     ),
                   ),
                 ),
-                Positioned(
+              ),
+              Positioned(
                   top: 56,
                   right: 16,
                   bottom: 16,
                   child: Align(
                     alignment: Alignment.topRight,
-                    child: SingleChildScrollView(child: overlyRight(context)),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: SingleChildScrollView(child: overlyRight(context)),
+                    ),
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
         );
       },

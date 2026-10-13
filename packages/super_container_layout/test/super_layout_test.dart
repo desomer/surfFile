@@ -260,9 +260,15 @@ void main() {
     }
     expect(find.byKey(const ValueKey('super-layout-name-north')), findsNothing);
     final zoneCentre = tester.getCenter(
-      find.byKey(const ValueKey('super-layout-west')),
+      find.byKey(const ValueKey('super-layout-name-west')),
     );
-    expect(tester.getCenter(find.text('Ouest')), zoneCentre);
+    final badgeBox = tester.renderObject<RenderBox>(
+      find.descendant(
+        of: find.byKey(const ValueKey('super-layout-name-west')),
+        matching: find.byType(Material),
+      ).first,
+    );
+    expect(badgeBox.localToGlobal(badgeBox.size.center(Offset.zero)), zoneCentre);
 
     editMode.value = false;
     await tester.pumpAndSettle();
@@ -391,17 +397,26 @@ void main() {
     for (final zone in SuperLayoutZone.values) {
       expect(
         find.byKey(ValueKey('super-layout-add-${zone.name}')),
-        zone == SuperLayoutZone.center ? findsNothing : findsOneWidget,
+        findsOneWidget,
       );
     }
     final addFinder = find.byKey(const ValueKey('super-layout-add-ne'));
     final button = tester.widget<IconButton>(addFinder);
     final colors = Theme.of(tester.element(addFinder)).colorScheme;
-    expect(
-      button.style!.backgroundColor!.resolve({}),
-      colors.primary.withValues(alpha: .35),
+    final badge = tester.widget<Material>(
+      find.ancestor(of: addFinder, matching: find.byType(Material)).first,
     );
-    expect(button.style!.foregroundColor!.resolve({}), colors.onSurface);
+    expect(badge.color, colors.primary.withValues(alpha: .35));
+    expect(button.color, colors.onSurface);
+    final label = find.descendant(
+      of: find.byKey(const ValueKey('super-layout-add-overlay-ne')),
+      matching: find.text('Nord-Est'),
+    );
+    expect(label, findsOneWidget);
+    expect(
+      tester.getCenter(label).dx,
+      lessThan(tester.getCenter(addFinder).dx),
+    );
     await tester.tap(find.byKey(const ValueKey('super-layout-add-ne')));
     await tester.pumpAndSettle();
     expect(find.text('Ajouter un slot dans Nord-Est'), findsOneWidget);
@@ -416,7 +431,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(changes.single.placementsOf(SuperLayoutZone.ne), ['available']);
     expect(find.text('Nouveau contenu'), findsOneWidget);
-    expect(find.byKey(const ValueKey('super-layout-add-ne')), findsNothing);
+    expect(find.byKey(const ValueKey('super-layout-add-ne')), findsOneWidget);
     expect(find.byKey(const ValueKey('super-layout-name-ne')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

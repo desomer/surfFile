@@ -105,13 +105,70 @@ par exemple `SuperPage(child: MyHomeContent())` dans le builder de `/`.
 L'application SurfFile et la demonstration du package utilisent cette route
 racine avec leur contenu existant.
 
-### Slots de page et barre d'application
+### Zones natives de page
 
-`SuperPage` utilise un `SuperLayout` avec trois zones nommees :
-`appBar` (Nord), `body` (Centre) et `bottomBar` (Sud). Les parametres
-`appBar`, `child` et `bottomBar` fournissent les composants initiaux.
-`slots` ajoute des `SlotImplementation` au catalogue local et `config`
-permet de definir leurs placements initiaux.
+`SuperPage` rend ses zones directement dans les proprietes du `Scaffold` :
+`appBar`, `body`, `drawer`, `endDrawer`, `bottomNavigationBar`,
+`floatingActionButton` et `bottomSheet`. Il n'enveloppe plus la page dans un
+`RegisteredSuperLayout`. Les drawers restent donc geres par le `Scaffold`,
+y compris leur ouverture, leur fermeture et le glissement depuis le bord.
+`bottomBar` reste un alias de compatibilite de `bottomNavigationBar`.
+
+```dart
+SuperPage(
+  id: 'explorer-page',
+  appBar: SuperAppBar(
+    id: 'explorer-appBar',
+    title: const Text('Explorateur'),
+  ),
+  drawer: const Drawer(child: ExplorerNavigation()),
+  child: const ExplorerContent(),
+  bottomNavigationBar: const ExplorerBottomBar(),
+)
+```
+
+`slots` ajoute des `SlotImplementation` au catalogue local. En mode edition,
+le clic droit propose « Configurer la page… » : ses switches activent ou masquent
+les regions natives sans supprimer leurs slots. Le corps reste toujours actif.
+Cette commande utilise `ContainerContextMenuEntry`, un inherited generique :
+elle apparait a sa position dans la chaine des conteneurs, entre le corps et
+le fond, plutot qu'en tete des actions locales.
+Chaque region active affiche son nom selectionnable, son contour et son propre
+bouton « + ». Activer un drawer dans ce panneau l'ouvre a la fermeture du panneau.
+Les overlays ne sont visibles que lorsque la page ou la region est selectionnee.
+Selectionner une disposition enfant masque les overlays de la page ; le chemin
+de la banniere inclut `Page > region > disposition` et permet de revenir au parent.
+Les boutons du corps permettent ensuite de rouvrir les drawers actifs.
+Hors edition, les regions vides ne prennent aucune place. Les activations sont
+persistees avec les placements et prennent en charge annulation/retablissement.
+Le corps peut etre remplace ou vide. Dans la demo, les commandes d'edition et
+d'apparence sont donc placees hors de `SuperPage`, pour rester accessibles
+independamment des slots sauvegardes.
+Les regions qui contiennent plusieurs slots les composent avec `SlotStack`.
+Dans les regions peripheriques, les slots `fill` sans `preferredSize` sont
+dimensionnes par defaut a la hauteur d'une barre basse (barre de navigation
+et panneau bas) ou a 56 x 56 pour le bouton flottant. Une disposition imbriquee
+ne peut ainsi pas absorber toute la hauteur du corps. Les slots intrinsèques
+et les tailles preferees explicites conservent leur dimensionnement.
+`pageConfig` fournit les placements initiaux avec `ScaffoldPageRegion` :
+
+```dart
+SuperPage(
+  id: 'custom-page',
+  slots: [
+    BuilderSlot(
+      id: 'navigation',
+      label: 'Navigation',
+      builder: (_) => const ExplorerNavigation(),
+    ),
+  ],
+  pageConfig: ScaffoldPageConfig(
+    placements: {
+      ScaffoldPageRegion.drawer: ['navigation'],
+    },
+  ),
+)
+```
 
 ```dart
 SuperPage(
@@ -130,10 +187,9 @@ SuperPage(
 ```
 
 Chaque `Registry()` enregistre automatiquement le composant `SuperAppBar`.
-Avec `SuperApp(registry: registry, router: router)`, activez le mode edition,
-selectionnez la disposition de la page, puis ajoutez ce composant dans
-`appBar`. Cette zone et `bottomBar` sont vides par defaut et n'occupent
-aucune hauteur hors edition. Le body conserve le contenu `child`.
+Avec `SuperApp(registry: registry, router: router)`, activez le mode edition
+puis ajoutez-le dans la region `appBar`. Les regions non configurees restent
+vides et n'occupent pas d'espace ; le body conserve le contenu `child`.
 
 `SuperAppBar` fournit une barre Material avec deux zones : `title` (Centre)
 et `action` (Est). Les parametres `title` et `action` fournissent chacun un
@@ -182,15 +238,13 @@ y compris celles qui ne sont pas actives.
 Changer de disposition par clic efface aussi la zone et le slot memorises
 de la disposition activee : le zoom cible d'abord la disposition entiere.
 
-Les dispositions sont sauvegardees dans les preferences via
-`Registry.layoutController`. Donnez un `id` stable et distinct a chaque
-page et barre configuree dans le code (`root` et `root-appBar` par defaut).
-Une barre ajoutee depuis le registre utilise l'identifiant unique de son
-instance : plusieurs barres ont des dispositions independantes.
-La reinitialisation des dispositions restaure leurs placements initiaux ;
-l'historique et les imports/exports utilisent le mecanisme existant.
-Sans registre, les slots fournis restent utilisables mais les changements
-de disposition ne sont pas persistants.
+Les dispositions libres restent sauvegardees via `Registry.layoutController`.
+Les placements de `SuperPage` sont distincts et sauvegardes via
+`Registry.scaffoldPageController`. Donnez un `id` stable et distinct a chaque
+page. La reinitialisation des dispositions restaure les placements initiaux ;
+les imports/exports de dispositions incluent aussi les regions Scaffold.
+Sans registre, les slots fournis restent utilisables mais les changements de
+placement ne sont pas persistants.
 
 Ajoutez le package à `pubspec.yaml` :
 
@@ -429,8 +483,8 @@ mode edition : il ouvre le choix de slot pour la zone selectionnee, ou le
 Centre si aucune zone n'est selectionnee. Le nom ouvre toujours l'editeur.
 Un bouton d'axe permet de basculer entre Row et Column dans ce menu et dans
 la banniere (zone selectionnee, ou Centre par defaut), ainsi que sur chaque
-zone contenant des slots dans le layout selectionne. Les zones vides gardent
-uniquement le bouton « + ». L'icone indique l'axe actuel et
+zone du layout selectionne. Les zones vides comme remplies affichent un badge
+avec le nom selectionnable et un bouton « + » a sa droite. L'icone indique l'axe actuel et
 l'info-bulle precise l'axe cible. Ces actions utilisent la configuration
 persistante de la zone et ne sont disponibles que pour les layouts editables.
 
@@ -464,7 +518,7 @@ placements initiaux, les deplacements par glisser-deposer ou les preferences
 deja enregistrees.
 
 `onSlotAdded` permet de remplacer cette regle sur `SuperLayout`,
-`RegisteredSuperLayout`, `SuperPage` et `SuperAppBar`. Le callback synchrone
+`RegisteredSuperLayout` et `SuperAppBar`. Le callback synchrone
 recoit l'identifiant de l'instance, le composant, la zone visuelle, la zone de
 contenu, les composants visibles deja presents et la configuration contenant
 le nouvel ajout. Il retourne la configuration a enregistrer ; placement et
@@ -546,7 +600,7 @@ nouvelle valeur ; supprimer un style avec `null` restaure le fallback du slot.
 sélectionnée) par identifiants : sans surcharge, la forme est reprise du
 style standard, et son aspect aussi si `inheritLook` est vrai ; le néon absent hérite du standard.
 
-En mode édition, les zones vides de `SuperLayout` affichent un bouton « + »
+En mode édition, les zones de `SuperLayout` affichent leur nom et un bouton « + »
 pour choisir un slot visible parmi ceux fournis à `slots`. Un slot déjà placé
 est déplacé, sans duplication. Le placement passe par `onChanged`, comme le
 glisser-déposer. Ces boutons sont masqués si `editable` ou `showZoneNames` est

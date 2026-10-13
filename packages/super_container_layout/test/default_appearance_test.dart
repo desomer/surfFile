@@ -12,6 +12,14 @@ void main() {
       spacing: 18,
       fontSize: 14,
       scrollFadeEnabled: false,
+      scaffoldPages: {
+        'workspace': ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.drawer: ['navigation'],
+          },
+          slotTypes: {'navigation': 'component:navigation'},
+        ),
+      },
     );
     final updated = appearance
         .withStyle('panel', const ContainerStyle(radius: 18))
@@ -22,8 +30,13 @@ void main() {
     expect(updated.scrollFadeEnabled, isFalse);
     expect(updated.style('panel').radius, 18);
     expect(updated.layout('page').north, isFalse);
+    expect(
+      updated.scaffoldPage('workspace').slotTypeOf('navigation'),
+      'component:navigation',
+    );
     expect(updated.withStyle('panel', null).styles, isEmpty);
     expect(updated.resetLayouts().layouts, isEmpty);
+    expect(updated.resetLayouts().scaffoldPages, isEmpty);
     expect(updated.resetLayouts().cardHeight, 200);
     expect(() => updated.styles.clear(), throwsUnsupportedError);
     expect(() => updated.layouts.clear(), throwsUnsupportedError);
@@ -43,6 +56,13 @@ void main() {
       scrollFadeExtent: 0,
       styles: {'custom': const ContainerStyle(radius: 22)},
       layouts: {'custom': const SuperLayoutConfig(east: false)},
+      scaffoldPages: {
+        'custom': ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.endDrawer: ['slot'],
+          },
+        ),
+      },
     );
     final store = AppearanceStore(codec: codec);
     await store.save(appearance);
@@ -50,6 +70,13 @@ void main() {
     expect(restored, isA<DefaultAppearance>());
     expect(codec.encode(restored), codec.encode(appearance));
     expect(codec.fromJson(codec.toJson(appearance)).cardWidth, 240);
+    expect(
+      codec
+          .fromJson(codec.toJson(appearance))
+          .scaffoldPage('custom')
+          .slotsOf(ScaffoldPageRegion.endDrawer),
+      ['slot'],
+    );
   });
 
   test('codec rejects invalid fields and wrong model explicitly', () {

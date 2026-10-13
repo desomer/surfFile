@@ -2,6 +2,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/super_layout_config.dart';
+import '../models/scaffold_page_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
 import 'neon_style.dart';
@@ -17,6 +18,7 @@ class Appearance {
     this.windowEffect = WindowEffect.transparent,
     Map<String, ContainerStyle> styles = const {},
     Map<String, SuperLayoutConfig> layouts = const {},
+    Map<String, ScaffoldPageConfig> scaffoldPages = const {},
   }) : styles = Map.unmodifiable(styles),
        layouts = Map.unmodifiable({
          for (final entry in layouts.entries)
@@ -42,7 +44,8 @@ class Appearance {
                  placement.key: List<String>.unmodifiable(placement.value),
              }),
            ),
-       });
+       }),
+       scaffoldPages = Map.unmodifiable(scaffoldPages);
 
   final ThemeMode mode;
   final Color accent;
@@ -51,6 +54,7 @@ class Appearance {
   final WindowEffect windowEffect;
   final Map<String, ContainerStyle> styles;
   final Map<String, SuperLayoutConfig> layouts;
+  final Map<String, ScaffoldPageConfig> scaffoldPages;
 
   ContainerStyle style(
     String id, {
@@ -60,6 +64,10 @@ class Appearance {
     String id, {
     SuperLayoutConfig fallback = const SuperLayoutConfig(),
   }) => layouts[id] ?? fallback;
+  ScaffoldPageConfig scaffoldPage(
+    String id, {
+    ScaffoldPageConfig? fallback,
+  }) => scaffoldPages[id] ?? fallback ?? ScaffoldPageConfig();
   ContainerStyle get backgroundStyle => style('background');
 
   /// Resolves the optional variant [id] (a selected state, for instance) of
@@ -99,6 +107,7 @@ class Appearance {
     ContainerStyle? backgroundStyle,
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
+    Map<String, ScaffoldPageConfig>? scaffoldPages,
   }) => Appearance(
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
@@ -109,6 +118,7 @@ class Appearance {
         ? styles ?? this.styles
         : {...styles ?? this.styles, 'background': backgroundStyle},
     layouts: layouts ?? this.layouts,
+    scaffoldPages: scaffoldPages ?? this.scaffoldPages,
   );
 
   Appearance withStyle(String id, ContainerStyle? value) {
@@ -123,7 +133,10 @@ class Appearance {
 
   Appearance withLayout(String id, SuperLayoutConfig value) =>
       copyWith(layouts: {...layouts, id: value});
-  Appearance resetLayouts() => copyWith(layouts: const {});
+  Appearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
+      copyWith(scaffoldPages: {...scaffoldPages, id: value});
+  Appearance resetLayouts() =>
+      copyWith(layouts: const {}, scaffoldPages: const {});
 
   ThemeData theme(Brightness brightness) {
     final surface =

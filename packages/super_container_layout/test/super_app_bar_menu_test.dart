@@ -74,6 +74,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final menuRow = find.byKey(const ValueKey('style-menu-New Container'));
+    expect(find.text('Configurer la page…'), findsOneWidget);
     expect(menuRow, findsOneWidget);
     for (final icon in [Icons.straighten, Icons.delete_outline]) {
       expect(
@@ -103,81 +104,61 @@ void main() {
   });
 
   testWidgets(
-    'registered additions size the unique instance and undo atomically',
+    'registered Scaffold additions use unique instances and undo atomically',
     (tester) async {
       final registry = Registry()..bootstrap();
-      final additions = <SlotAddition>[];
       final router = GoRouter(
         routes: [
-          GoRoute(
-            path: '/',
-            builder: (context, state) => SuperPage(
-              onSlotAdded: (addition) {
-                additions.add(addition);
-                return SuperLayout.defaultSlotAddition(addition);
-              },
-            ),
-          ),
+          GoRoute(path: '/', builder: (context, state) => const SuperPage()),
         ],
       );
       addTearDown(router.dispose);
       await tester.pumpWidget(SuperApp(router: router, registry: registry));
       await tester.pumpAndSettle();
+      final page = registry.scaffoldPageController('root');
+      page.value = page.value.withRegionEnabled(
+        ScaffoldPageRegion.appBar,
+        true,
+      );
       final context = tester.element(find.byType(SuperPage));
       StyleEditScope.controllerOf(context)!.value = true;
       await tester.pumpAndSettle();
       await tester.drag(
         find.byKey(const ValueKey('style-edit-banner-drag')),
-        const Offset(0, 450),
+        const Offset(0, 200),
       );
       await tester.pumpAndSettle();
-      await tester.tapAt(const Offset(400, 28));
+      await tester.tap(find.byKey(const ValueKey('scaffold-page-add-appBar')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
-      await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('NewContainer'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('NewContainer'));
-      await tester.pumpAndSettle();
-      final controller = registry.layoutController('root');
-      final id = controller.value.placementsOf(SuperLayoutZone.north).single;
-      expect(id, isNot('registry:NewContainer'));
-      expect(additions.single.slotId, id);
-      expect(controller.value.slotTypeOf(id), 'registry:NewContainer');
-      expect(
-        controller.value.slotSizeConstraints[id]?.preferredHeight,
-        const SlotDimension(20, SlotSizeUnit.percent),
+      await tester.tap(
+        find.byKey(
+          const ValueKey('scaffold-page-add-slot-factory:NewContainer'),
+        ),
       );
-      expect(
-        controller.value.slotSizeConstraints[id]?.percentBasis,
-        SlotPercentBasis.layout,
-      );
-      final restored = SuperLayoutConfig.fromJson(controller.value.toJson());
-      expect(
-        restored.slotSizeConstraints[id],
-        controller.value.slotSizeConstraints[id],
-      );
+      await tester.pumpAndSettle();
+      final controller = registry.scaffoldPageController('root');
+      final id = controller.value.slotsOf(ScaffoldPageRegion.appBar).single;
+      expect(id, isNot('factory:NewContainer'));
+      expect(controller.value.slotTypeOf(id), 'factory:NewContainer');
       final history = EditorHistoryScope.controllerOf(context)!;
       history.undo();
       await tester.pumpAndSettle();
-      expect(controller.value.placementsOf(SuperLayoutZone.north), isEmpty);
-      expect(controller.value.slotSizeConstraints.containsKey(id), isFalse);
+      expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), isEmpty);
       history.redo();
       await tester.pumpAndSettle();
-      expect(controller.value.placementsOf(SuperLayoutZone.north), [id]);
-      expect(
-        controller.value.slotSizeConstraints[id]?.preferredHeight,
-        const SlotDimension(20, SlotSizeUnit.percent),
-      );
-      expect(additions, hasLength(1));
+      expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), [id]);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('nested app bar menu edits and removes its parent slot', (
+  testWidgets('native Scaffold region slot can be removed and undone', (
     tester,
   ) async {
-    final registry = Registry()..bootstrap();
+    final registry = Registry()
+      ..registerComponent(
+        'removable',
+        const RegisteredComponent(label: 'Removable', builder: _removable),
+      );
     final router = GoRouter(
       routes: [
         GoRoute(path: '/', builder: (context, state) => const SuperPage()),
@@ -186,84 +167,40 @@ void main() {
     addTearDown(router.dispose);
     await tester.pumpWidget(SuperApp(router: router, registry: registry));
     await tester.pumpAndSettle();
-    final page = registry.layoutController('root');
-    page.value = page.value.withSlotMoved(
-      'bar-instance',
-      SuperLayoutZone.north,
-      type: 'registry:SuperAppBar',
+    final page = registry.scaffoldPageController('root');
+    page.value = page.value.withSlotAdded(
+      'removable',
+      ScaffoldPageRegion.body,
+      type: 'component:removable',
     );
     await tester.pumpAndSettle();
-    final context = tester.element(find.byType(SuperAppBar));
+    final context = tester.element(find.byType(SuperPage));
     final editMode = StyleEditScope.controllerOf(context)!;
     editMode.value = true;
     await tester.pumpAndSettle();
-    await tester.drag(
-      find.byKey(const ValueKey('style-edit-banner-drag')),
-      const Offset(0, 200),
+    await tester.tapAt(
+      tester.getTopLeft(find.text('Removable content')) + const Offset(2, 2),
+      buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    final barLayout = find.byWidgetPredicate(
-      (widget) => widget is SuperLayout && widget.label == 'Super app bar',
-    );
-    Offset position() => tester
-        .renderObject<RenderBox>(barLayout)
-        .localToGlobal(const Offset(100, 48));
-    await tester.tapAt(position());
-    await tester.pumpAndSettle();
-    expect(
-      find.descendant(
-        of: barLayout,
-        matching: find.byKey(const ValueKey('super-layout-add-center')),
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tapAt(position(), buttons: kSecondaryMouseButton);
-    await tester.pumpAndSettle();
-    final sizeAction = find.byKey(
-      const ValueKey('style-menu-size-Taille préférée : SuperAppBar'),
-    );
     final removeAction = find.byKey(
-      const ValueKey('style-menu-remove-Taille préférée : SuperAppBar'),
+      const ValueKey('style-menu-remove-Taille préférée : Removable'),
     );
-    expect(sizeAction, findsOneWidget);
     expect(removeAction, findsOneWidget);
-    await tester.tap(sizeAction);
-    await tester.pumpAndSettle();
-    expect(find.text('Tailles du slot : SuperAppBar'), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const ValueKey('slot-preferred-height')),
-      '80',
-    );
-    await tester.tap(find.text('Appliquer'));
-    await tester.pumpAndSettle();
-    expect(
-      page.value.slotSizeConstraints['bar-instance']?.preferredHeight,
-      const SlotDimension(80, SlotSizeUnit.pixels),
-    );
-    expect(
-      tester.getSize(find.byKey(const ValueKey('slot-bar-instance'))).height,
-      80,
-    );
-
-    await tester.tapAt(position(), buttons: kSecondaryMouseButton);
-    await tester.pumpAndSettle();
     await tester.tap(removeAction);
     await tester.pumpAndSettle();
-    expect(find.byType(SuperAppBar), findsNothing);
-    expect(page.value.placementsOf(SuperLayoutZone.north), isEmpty);
-    final history = EditorHistoryScope.controllerOf(
-      tester.element(find.byType(SuperPage)),
-    )!;
+    expect(find.text('Removable content'), findsNothing);
+    expect(page.value.slotsOf(ScaffoldPageRegion.body), ['scaffold:body']);
+    final history = EditorHistoryScope.controllerOf(context)!;
     history.undo();
     await tester.pumpAndSettle();
-    expect(find.byType(SuperAppBar), findsOneWidget);
+    expect(find.text('Removable content'), findsOneWidget);
+    expect(page.value.slotsOf(ScaffoldPageRegion.body), [
+      'scaffold:body',
+      'removable',
+    ]);
     editMode.value = false;
     await tester.pumpAndSettle();
-    await tester.tapAt(position(), buttons: kSecondaryMouseButton);
-    await tester.pumpAndSettle();
-    expect(sizeAction, findsNothing);
-    expect(removeAction, findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -327,8 +264,11 @@ void main() {
           isEmpty,
         );
       }
+
       expect(find.byType(SuperAppBar), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
 }
+
+Widget _removable(BuildContext context) => const Text('Removable content');
