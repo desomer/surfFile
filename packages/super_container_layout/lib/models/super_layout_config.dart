@@ -2,6 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/painting.dart' show Axis;
 
+import 'grid_layout_config.dart';
+export 'grid_layout_config.dart';
+
 /// Les neuf zones d'un [SuperLayoutConfig].
 enum SuperLayoutZone {
   nw('Nord-Ouest'),
@@ -217,11 +220,26 @@ class SuperLayoutConfig {
     this.zoneAxes = const {},
     this.label,
     this.slotLabels = const {},
+    this.positioning = SuperLayoutPositioning.zones,
+    this.grid,
   });
 
   static const minSize = 20.0;
   final String? label;
   final Map<String, String> slotLabels;
+  final SuperLayoutPositioning positioning;
+  final GridLayoutConfig? grid;
+
+  Iterable<String> get placedSlotIds =>
+      placements.values.expand((ids) => ids).toSet();
+
+  GridLayoutConfig get effectiveGrid =>
+      (grid ?? const GridLayoutConfig()).synchronize(placedSlotIds);
+
+  SuperLayoutConfig withPositioning(SuperLayoutPositioning value) => copyWith(
+    positioning: value,
+    grid: value == SuperLayoutPositioning.grid ? effectiveGrid : grid,
+  );
 
   SuperLayoutConfig withSlotLabel(String id, String label) {
     if (id.isEmpty || label.trim().isEmpty) {
@@ -229,6 +247,7 @@ class SuperLayoutConfig {
     }
     return copyWith(slotLabels: {...slotLabels, id: label.trim()});
   }
+
   static const maxSize = 400.0;
 
   final bool north;
@@ -468,14 +487,18 @@ class SuperLayoutConfig {
     return _withAuto(side, auto);
   }
 
-  SuperLayoutConfig withPlacement(SuperLayoutZone zone, List<String> ids) =>
-      copyWith(
-        placements: {
-          for (final MapEntry(:key, :value) in placements.entries)
-            if (key != zone) key: value,
-          if (ids.isNotEmpty) zone: List.unmodifiable(ids),
-        },
-      );
+  SuperLayoutConfig withPlacement(SuperLayoutZone zone, List<String> ids) {
+    final next = copyWith(
+      placements: {
+        for (final MapEntry(:key, :value) in placements.entries)
+          if (key != zone) key: value,
+        if (ids.isNotEmpty) zone: List.unmodifiable(ids),
+      },
+    );
+    return grid == null
+        ? next
+        : next.copyWith(grid: grid!.synchronize(next.placedSlotIds));
+  }
 
   /// Range le slot [id] dans la zone de contenu [zone] (clé de [placements]),
   /// juste avant [beforeId] ou après [afterId], ou en dernier sans repère. Il
@@ -508,13 +531,20 @@ class SuperLayoutConfig {
 
     ids.insert(at, id);
     next[zone] = ids;
-    return copyWith(
+    final result = copyWith(
       slotTypes: type == null ? slotTypes : {...slotTypes, id: type},
       placements: {
         for (final MapEntry(:key, :value) in next.entries)
           if (value.isNotEmpty) key: List.unmodifiable(value),
       },
     );
+    return grid == null && positioning == SuperLayoutPositioning.zones
+        ? result
+        : result.copyWith(
+            grid: (grid ?? const GridLayoutConfig()).synchronize(
+              result.placedSlotIds,
+            ),
+          );
   }
 
   SuperLayoutConfig _reflectCorners(SuperLayoutZone a, SuperLayoutZone b) =>
@@ -534,6 +564,7 @@ class SuperLayoutConfig {
     slotPreferredSizes: {...slotPreferredSizes}..remove(id),
     slotSizeConstraints: {...slotSizeConstraints}..remove(id),
     slotLabels: {...slotLabels}..remove(id),
+    grid: grid?.copyWith(items: {...grid!.items}..remove(id)).arrange(),
   );
 
   bool hasSide(SuperLayoutZone zone) => switch (zone) {
@@ -586,6 +617,8 @@ class SuperLayoutConfig {
     Map<SuperLayoutZone, Axis>? zoneAxes,
     String? label,
     Map<String, String>? slotLabels,
+    SuperLayoutPositioning? positioning,
+    GridLayoutConfig? grid,
   }) => SuperLayoutConfig(
     north: north ?? this.north,
     south: south ?? this.south,
@@ -611,6 +644,8 @@ class SuperLayoutConfig {
     zoneAxes: zoneAxes ?? this.zoneAxes,
     label: label ?? this.label,
     slotLabels: slotLabels ?? this.slotLabels,
+    positioning: positioning ?? this.positioning,
+    grid: grid ?? this.grid,
   );
 
   SuperLayoutConfig withCorner(SuperLayoutZone corner, CornerMerge merge) =>
@@ -669,6 +704,8 @@ class SuperLayoutConfig {
     },
     if (label != null) 'label': label,
     if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+    'positioning': positioning.name,
+    if (grid != null) 'grid': grid!.toJson(),
     'placements': {
       for (final MapEntry(:key, :value) in placements.entries)
         key.name: [
@@ -694,10 +731,13 @@ class SuperLayoutConfig {
       }
       return value.trim();
     }
+
     Map<String, String> labels() {
       final labels = value['slotLabels'];
       if (labels == null) return fallback.slotLabels;
-      if (labels is! Map) throw const FormatException('Noms de slots invalides.');
+      if (labels is! Map) {
+        throw const FormatException('Noms de slots invalides.');
+      }
       final result = <String, String>{};
       for (final entry in labels.entries) {
         final key = entry.key;
@@ -708,6 +748,7 @@ class SuperLayoutConfig {
       }
       return result;
     }
+
     bool flag(String key, bool fallback) {
       final v = value[key] ?? fallback;
       if (v is! bool) throw FormatException('Valeur invalide pour "$key".');
@@ -948,6 +989,18 @@ class SuperLayoutConfig {
       zoneAxes: axes(),
       label: displayLabel(value['label']) ?? fallback.label,
       slotLabels: labels(),
+      positioning:
+          SuperLayoutPositioning.values
+              .where(
+                (mode) =>
+                    mode.name ==
+                    (value['positioning'] ?? fallback.positioning.name),
+              )
+              .firstOrNull ??
+          (throw const FormatException('Type de positionnement invalide.')),
+      grid: value['grid'] == null
+          ? fallback.grid
+          : GridLayoutConfig.fromJson(value['grid']),
     );
   }
 
@@ -1033,9 +1086,13 @@ class SuperLayoutConfig {
   @override
   bool operator ==(Object other) =>
       other is SuperLayoutConfig &&
+      other.positioning == positioning &&
+      other.grid == grid &&
       other.label == label &&
       other.slotLabels.length == slotLabels.length &&
-      slotLabels.entries.every((entry) => other.slotLabels[entry.key] == entry.value) &&
+      slotLabels.entries.every(
+        (entry) => other.slotLabels[entry.key] == entry.value,
+      ) &&
       other.north == north &&
       other.south == south &&
       other.west == west &&
@@ -1110,9 +1167,11 @@ class SuperLayoutConfig {
     eastSize,
     Object.hash(
       label,
-      Object.hashAllUnordered(slotLabels.entries.map(
-        (entry) => Object.hash(entry.key, entry.value),
-      )),
+      positioning,
+      grid,
+      Object.hashAllUnordered(
+        slotLabels.entries.map((entry) => Object.hash(entry.key, entry.value)),
+      ),
       resizeSides,
       Object.hashAllUnordered([
         for (final entry in sideResizing.entries)

@@ -197,6 +197,20 @@ class SuperLayoutState extends State<SuperLayout> {
       : SuperLayoutZone.center;
 
   void _selectContextZone(Offset position) {
+    if (_config.value.positioning == SuperLayoutPositioning.grid) {
+      _selected.value = null;
+      _selectedSlot.value = null;
+      for (final id in _config.value.placedSlotIds) {
+        final box = _slotFocusKeys[id]?.currentContext?.findRenderObject();
+        if (box is RenderBox && box.attached && box.hasSize &&
+            (Offset.zero & box.size).contains(box.globalToLocal(position))) {
+          _selectedSlot.value = id;
+          break;
+        }
+      }
+      _LayoutEditSelection.activate(this);
+      return;
+    }
     for (final zone in _config.value.visibleZones) {
       final box = _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
       if (box is! RenderBox || !box.attached || !box.hasSize ||
@@ -312,7 +326,8 @@ class SuperLayoutState extends State<SuperLayout> {
 
   void _update(SuperLayoutConfig value) {
     if (value == _config.value) return;
-    if (value.label != _config.value.label) {
+    if (value.label != _config.value.label ||
+        value.positioning != _config.value.positioning) {
       setState(() => _config.value = value);
     } else {
       _config.value = value;
@@ -334,7 +349,7 @@ class SuperLayoutState extends State<SuperLayout> {
       overridden: previousLabel != null,
       onRestore: () => _update(_config.value.copyWith(
         slotLabels: {..._config.value.slotLabels}..remove(id)..addAll({
-          if (previousLabel != null) id: previousLabel,
+          id: ?previousLabel,
         }),
       )),
     );

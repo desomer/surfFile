@@ -28,6 +28,9 @@ class Appearance {
              zoneAxes: Map.unmodifiable(entry.value.zoneAxes),
              slotTypes: Map.unmodifiable(entry.value.slotTypes),
              slotLabels: Map.unmodifiable(entry.value.slotLabels),
+             grid: entry.value.grid?.copyWith(
+               items: Map.unmodifiable(entry.value.grid!.items),
+             ),
              slotPreferredSizes: Map.unmodifiable(
                entry.value.slotPreferredSizes,
              ),

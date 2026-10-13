@@ -71,144 +71,251 @@ class SuperLayoutEditor extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          key: const ValueKey('super-layout-preview'),
-          height: 170,
-          child: LayoutBuilder(
-            builder: (context, constraints) => Stack(
-              children: [
-                for (final MapEntry(key: zone, value: rect)
-                    in preview.resolve(constraints.biggest).entries)
-                  Positioned.fromRect(
-                    key: ValueKey('super-layout-preview-${zone.name}'),
-                    rect: rect.deflate(1),
-                    child: ColoredBox(
-                      color: colors.primaryContainer,
-                      child: Center(
-                        child: Text(
-                          _zoneLabel(zone),
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: colors.onPrimaryContainer,
+        SegmentedButton<SuperLayoutPositioning>(
+          key: const ValueKey('super-layout-positioning'),
+          segments: const [
+            ButtonSegment(
+              value: SuperLayoutPositioning.zones,
+              label: Text('Zones'),
+              icon: Icon(Icons.view_quilt_outlined),
+            ),
+            ButtonSegment(
+              value: SuperLayoutPositioning.grid,
+              label: Text('Grille'),
+              icon: Icon(Icons.grid_view),
+            ),
+          ],
+          selected: {config.positioning},
+          onSelectionChanged: (modes) =>
+              onChanged(config.withPositioning(modes.single)),
+        ),
+        const SizedBox(height: 12),
+        if (config.positioning == SuperLayoutPositioning.grid)
+          ..._gridSettings()
+        else ...[
+          SizedBox(
+            key: const ValueKey('super-layout-preview'),
+            height: 170,
+            child: LayoutBuilder(
+              builder: (context, constraints) => Stack(
+                children: [
+                  for (final MapEntry(key: zone, value: rect)
+                      in preview.resolve(constraints.biggest).entries)
+                    Positioned.fromRect(
+                      key: ValueKey('super-layout-preview-${zone.name}'),
+                      rect: rect.deflate(1),
+                      child: ColoredBox(
+                        color: colors.primaryContainer,
+                        child: Center(
+                          child: Text(
+                            _zoneLabel(zone),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: colors.onPrimaryContainer,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        SwitchListTile(
-          key: const ValueKey('super-layout-resize-sides'),
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Redimensionner tous les côtés par glisser'),
-          subtitle: const Text(
-            'Bord intérieur de 5 px, même hors du mode édition. '
-            'Le glisser désactive la taille automatique du côté.',
-          ),
-          value: _sides.every(config.canResize),
-          onChanged: (value) =>
-              onChanged(config.copyWith(resizeSides: value, sideResizing: {})),
-        ),
-        for (final side in _sides) ...[
+          const SizedBox(height: 8),
           SwitchListTile(
-            key: ValueKey('super-layout-side-${side.name}'),
+            key: const ValueKey('super-layout-resize-sides'),
             dense: true,
             contentPadding: EdgeInsets.zero,
-            title: Text(_zoneLabel(side)),
-            value: config.hasSide(side),
-            onChanged: (v) => onChanged(config.withSide(side, v)),
+            title: const Text('Redimensionner tous les côtés par glisser'),
+            subtitle: const Text(
+              'Bord intérieur de 5 px, même hors du mode édition. '
+              'Le glisser désactive la taille automatique du côté.',
+            ),
+            value: _sides.every(config.canResize),
+            onChanged: (value) => onChanged(
+              config.copyWith(resizeSides: value, sideResizing: {}),
+            ),
           ),
-          if (config.hasSide(side))
+          for (final side in _sides) ...[
             SwitchListTile(
-              key: ValueKey('super-layout-resize-side-${side.name}'),
+              key: ValueKey('super-layout-side-${side.name}'),
               dense: true,
               contentPadding: EdgeInsets.zero,
-              title: Text('Redimensionner ${_zoneLabel(side)} par glisser'),
-              value: config.canResize(side),
-              onChanged: (value) =>
-                  onChanged(config.withSideResizing(side, value)),
+              title: Text(_zoneLabel(side)),
+              value: config.hasSide(side),
+              onChanged: (v) => onChanged(config.withSide(side, v)),
             ),
-          if (config.hasSide(side))
-            SwitchListTile(
-              key: ValueKey('super-layout-auto-${side.name}'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Taille automatique'),
-              value: config.isAuto(side),
-              onChanged: (v) => onChanged(config.withAuto(side, v)),
+            if (config.hasSide(side))
+              SwitchListTile(
+                key: ValueKey('super-layout-resize-side-${side.name}'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text('Redimensionner ${_zoneLabel(side)} par glisser'),
+                value: config.canResize(side),
+                onChanged: (value) =>
+                    onChanged(config.withSideResizing(side, value)),
+              ),
+            if (config.hasSide(side))
+              SwitchListTile(
+                key: ValueKey('super-layout-auto-${side.name}'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Taille automatique'),
+                value: config.isAuto(side),
+                onChanged: (v) => onChanged(config.withAuto(side, v)),
+              ),
+            if (config.hasSide(side) && !config.isAuto(side))
+              EditorHistorySlider(
+                key: ValueKey('super-layout-size-${side.name}'),
+                min: SuperLayoutConfig.minSize,
+                max: SuperLayoutConfig.maxSize,
+                value: _size(
+                  config,
+                  side,
+                ).clamp(SuperLayoutConfig.minSize, SuperLayoutConfig.maxSize),
+                label: '${_size(config, side).round()}',
+                onChanged: (v) => onChanged(_withSize(side, v)),
+              ),
+          ],
+          const Divider(),
+          for (final corner in _corners)
+            Row(
+              children: [
+                Expanded(child: Text(_zoneLabel(corner))),
+                DropdownButton<CornerMerge>(
+                  key: ValueKey('super-layout-corner-${corner.name}'),
+                  value: config.mergeOf(corner),
+                  onChanged: config.cornerExists(corner)
+                      ? (v) => onChanged(config.withCorner(corner, v!))
+                      : null,
+                  items: [
+                    for (final merge in CornerMerge.values)
+                      DropdownMenuItem(
+                        value: merge,
+                        child: Text(_mergeLabel(corner, merge)),
+                      ),
+                  ],
+                ),
+              ],
             ),
-          if (config.hasSide(side) && !config.isAuto(side))
-            EditorHistorySlider(
-              key: ValueKey('super-layout-size-${side.name}'),
-              min: SuperLayoutConfig.minSize,
-              max: SuperLayoutConfig.maxSize,
-              value: _size(
-                config,
-                side,
-              ).clamp(SuperLayoutConfig.minSize, SuperLayoutConfig.maxSize),
-              label: '${_size(config, side).round()}',
-              onChanged: (v) => onChanged(_withSize(side, v)),
+          const Divider(),
+          const Text('Axe d’affichage des zones'),
+          for (final zone in SuperLayoutZone.values)
+            Row(
+              children: [
+                Expanded(child: Text(_zoneLabel(zone))),
+                DropdownButton<Axis>(
+                  key: ValueKey('super-layout-axis-${zone.name}'),
+                  value: config.axisOf(zone),
+                  onChanged: config.visibleZones.contains(zone)
+                      ? (axis) {
+                          if (axis != null) {
+                            onChanged(config.withAxis(zone, axis));
+                          }
+                        }
+                      : null,
+                  items: const [
+                    DropdownMenuItem(
+                      value: Axis.horizontal,
+                      child: Text('Row'),
+                    ),
+                    DropdownMenuItem(
+                      value: Axis.vertical,
+                      child: Text('Column'),
+                    ),
+                  ],
+                ),
+              ],
             ),
         ],
-        const Divider(),
-        for (final corner in _corners)
-          Row(
-            children: [
-              Expanded(child: Text(_zoneLabel(corner))),
-              DropdownButton<CornerMerge>(
-                key: ValueKey('super-layout-corner-${corner.name}'),
-                value: config.mergeOf(corner),
-                onChanged: config.cornerExists(corner)
-                    ? (v) => onChanged(config.withCorner(corner, v!))
-                    : null,
-                items: [
-                  for (final merge in CornerMerge.values)
-                    DropdownMenuItem(
-                      value: merge,
-                      child: Text(_mergeLabel(corner, merge)),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        const Divider(),
-        const Text('Axe d’affichage des zones'),
-        for (final zone in SuperLayoutZone.values)
-          Row(
-            children: [
-              Expanded(child: Text(_zoneLabel(zone))),
-              DropdownButton<Axis>(
-                key: ValueKey('super-layout-axis-${zone.name}'),
-                value: config.axisOf(zone),
-                onChanged: config.visibleZones.contains(zone)
-                    ? (axis) {
-                        if (axis != null) {
-                          onChanged(config.withAxis(zone, axis));
-                        }
-                      }
-                    : null,
-                items: const [
-                  DropdownMenuItem(value: Axis.horizontal, child: Text('Row')),
-                  DropdownMenuItem(value: Axis.vertical, child: Text('Column')),
-                ],
-              ),
-            ],
-          ),
         TextButton(
-          onPressed: () => onChanged(
+          onPressed: () => onChanged(config.positioning == SuperLayoutPositioning.grid
+              ? config.copyWith(grid: GridLayoutConfig(
+                  items: config.effectiveGrid.items,
+                ).withColumns(12))
+              :
             const SuperLayoutConfig().copyWith(
               placements: config.placements,
               slotTypes: config.slotTypes,
+              slotLabels: config.slotLabels,
+              label: config.label,
+              positioning: config.positioning,
+              grid: config.grid,
             ),
           ),
           child: const Text('Réinitialiser'),
         ),
       ],
     );
+  }
+
+  List<Widget> _gridSettings() {
+    final grid = config.effectiveGrid;
+    Widget slider(
+      String name,
+      String label,
+      double value,
+      double min,
+      double max,
+      ValueChanged<double> change,
+    ) => Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('$label : ${value.round()}'),
+        EditorHistorySlider(
+          key: ValueKey('grid-setting-$name'),
+          value: value,
+          min: min,
+          max: max,
+          onChanged: change,
+        ),
+      ],
+    );
+    return [
+      const Text(
+        'Les composants se placent sur des cellules, sans chevauchement.',
+      ),
+      slider(
+        'columns',
+        'Colonnes',
+        grid.columns.toDouble(),
+        1,
+        48,
+        (v) => onChanged(config.copyWith(grid: grid.withColumns(v.round()))),
+      ),
+      slider(
+        'row-height',
+        'Hauteur des lignes (px)',
+        grid.rowHeight,
+        16,
+        400,
+        (v) => onChanged(
+          config.copyWith(grid: grid.copyWith(rowHeight: v.roundToDouble())),
+        ),
+      ),
+      slider(
+        'gap',
+        'Espacement (px)',
+        grid.gap,
+        0,
+        64,
+        (v) => onChanged(
+          config.copyWith(grid: grid.copyWith(gap: v.roundToDouble())),
+        ),
+      ),
+      SwitchListTile(
+        key: const ValueKey('grid-setting-compact'),
+        title: const Text('Compactage vertical'),
+        value: grid.compact,
+        onChanged: (v) => onChanged(
+          config.copyWith(grid: grid.copyWith(compact: v).arrange()),
+        ),
+      ),
+      const Text(
+        'Glisser le label pour déplacer un composant. '
+        'Les flèches redimensionnent en cellules. Les tailles px/% du mode Zones sont conservées.',
+      ),
+    ];
   }
 }

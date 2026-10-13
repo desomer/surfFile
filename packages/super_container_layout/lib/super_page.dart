@@ -12,6 +12,7 @@ class SuperPage extends StatelessWidget {
     this.id = 'root',
     this.child = const SizedBox.shrink(),
     this.appBar,
+    this.drawer,
     this.bottomBar,
     this.slots = const [],
     this.config,
@@ -23,6 +24,7 @@ class SuperPage extends StatelessWidget {
   final String id;
   final Widget child;
   final PreferredSizeWidget? appBar;
+  final Widget? drawer;
   final Widget? bottomBar;
   final List<SlotImplementation> slots;
 
@@ -33,6 +35,7 @@ class SuperPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => EditorZoom(
     child: Scaffold(
+      drawer: drawer,
       body: RegisteredSuperLayout(
         id: id,
         onSlotAdded: onSlotAdded,

@@ -5,9 +5,11 @@ import '../surfaces/super_container.dart';
 
 /// Keeps editor controls at screen scale while following their content bounds.
 class EditorOverlay extends StatefulWidget {
-  const EditorOverlay({required this.child, super.key});
+  const EditorOverlay({required this.child, this.clipKey, super.key});
 
   final Widget child;
+  /// Clips portaled controls to a scroll viewport, without scaling them.
+  final GlobalKey? clipKey;
 
   @override
   State<EditorOverlay> createState() => _EditorOverlayState();
@@ -45,9 +47,7 @@ class _EditorOverlayState extends State<EditorOverlay> {
           info.childPaintTransform,
           Offset.zero & info.childSize,
         );
-        return Positioned.fromRect(
-          rect: rect,
-          child: Listener(
+        final controls = Listener(
             onPointerSignal: (event) =>
                 EditorZoomScope.controllerOf(this.context)
                     ?.handlePointerSignal(event),
@@ -64,8 +64,27 @@ class _EditorOverlayState extends State<EditorOverlay> {
                   : null,
               child: widget.child,
             ),
-          ),
         );
+        final viewport = widget.clipKey?.currentContext?.findRenderObject();
+        final overlay = Overlay.of(this.context).context.findRenderObject();
+        if (viewport is RenderBox && viewport.hasSize && overlay is RenderBox) {
+          final clip = MatrixUtils.transformRect(
+            viewport.getTransformTo(overlay), Offset.zero & viewport.size,
+          );
+          final visible = rect.intersect(clip);
+          if (visible.isEmpty) return const SizedBox.shrink();
+          return Positioned.fromRect(
+            rect: visible,
+            child: ClipRect(child: Stack(children: [
+              Positioned(
+                left: rect.left - visible.left, top: rect.top - visible.top,
+                width: rect.width, height: rect.height,
+                child: controls,
+              ),
+            ])),
+          );
+        }
+        return Positioned.fromRect(rect: rect, child: controls);
       },
       child: const SizedBox.expand(),
     );

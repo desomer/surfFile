@@ -253,6 +253,58 @@ et les minima des autres slots sont respectes ; les unites px/% et la base
 des pourcentages sont conservees. Les modifications passent par `onChanged`
 et chaque glisser constitue une seule operation dans l'historique d'edition.
 Les poignees disparaissent a la deselection et hors du mode edition.
+
+### Positionnement Zones ou Grille
+
+L'editeur de `SuperLayout` propose un selecteur **Zones / Grille**.
+Le mode Zones conserve les reglages Nord/Sud/Est/Ouest, les coins, les axes
+et les tailles preferees px/%. Le mode Grille utilise des cellules entieres
+`x`, `y`, `width`, `height`, sans chevauchement.
+
+La grille demarre avec 12 colonnes, des lignes de 64 px et un espacement de
+8 px. Ces reglages et le compactage vertical sont editables. La largeur des
+cellules suit la largeur disponible ; la hauteur du contenu peut depasser
+le layout et defiler verticalement. Les controles overlay sont limites a la
+partie visible du layout et restent a l'echelle de l'ecran.
+
+- Le premier passage en Grille reprend tous les slots places, y compris
+  ceux des zones masquees. Les composants non disponibles restent dans la
+  configuration mais ne sont pas construits, comme en mode Zones.
+- Les deux dispositions sont conservees separement : changer de mode ne
+  remplace ni les placements Zones ni leurs tailles px/%.
+- Un ajout recoit un placement dans les deux modes (Centre pour un ajout
+  depuis la Grille). Une suppression retire l'instance des deux dispositions.
+- En edition, glisser le label deplace le slot ; les huit poignees ajustent
+  son rectangle en cellules. La grille, le surlignage de destination et les
+  dimensions en cellules accompagnent le glissement.
+- Le slot manipule a priorite ; les collisions poussent les autres vers le
+  bas. Le compactage vertical optionnel s'applique a la fin du glissement.
+- Le menu de taille ouvre un formulaire de position/dimensions en cellules,
+  avec renommage, validation et preview en direct. Les bornes px/% du mode
+  Zones ne s'appliquent pas a la Grille.
+- Selection, zoom, menus de style, sauvegarde JSON et historique restent
+  disponibles. Un glissement ou un dialogue applique constitue une operation
+  d'historique ; Annuler restaure la configuration initiale.
+
+`SuperLayoutConfig.positioning` vaut `SuperLayoutPositioning.zones` par
+defaut, y compris pour les anciens documents JSON. `withPositioning` prepare
+la grille lors de la premiere bascule :
+
+```dart
+final gridConfig = zoneConfig
+    .withPositioning(SuperLayoutPositioning.grid);
+final customGrid = gridConfig.copyWith(
+  grid: gridConfig.effectiveGrid
+      .withColumns(6)
+      .copyWith(rowHeight: 80, gap: 12),
+);
+```
+
+`GridLayoutConfig` sauvegarde les parametres et les `GridSlotPosition` par ID.
+Les layouts enregistres utilisent leur sauvegarde habituelle ; pour un
+`SuperLayout` autonome, conserver la configuration recue via `onChanged`.
+Cette premiere version utilise un nombre de colonnes commun a toutes les
+largeurs, sans configurations par breakpoint ni transfert entre grilles.
 Les nouvelles dispositions utilisent la taille automatique par defaut pour
 les quatre cotes (Nord, Sud, Est, Ouest). Pour demander des cotes fixes dans
 le code, fournissez `SuperLayoutConfig(autoSides: {})`, ou activez/desactivez

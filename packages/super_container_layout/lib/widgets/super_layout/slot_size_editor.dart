@@ -2,6 +2,9 @@ part of 'super_layout.dart';
 
 extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
   Future<void> _editSlotPreferredSize(SlotImplementation slot) async {
+    if (_config.value.positioning == SuperLayoutPositioning.grid) {
+      return _editGridSlot(slot);
+    }
     final config = _config.value;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
@@ -77,7 +80,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
     }
 
     ({Size layout, Rect zone, Rect slot})? measure() {
-      final layout = this.context.findRenderObject();
+      final layout = context.findRenderObject();
       final slotBox = _slotFocusKeys[slot.id]?.currentContext
           ?.findRenderObject();
       final zone = SuperLayoutZone.values
@@ -365,8 +368,9 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
             ),
             FilledButton(
               onPressed: () {
-                if (!form.currentState!.validate() || boundsError() != null)
+                if (!form.currentState!.validate() || boundsError() != null) {
                   return;
+                }
                 Navigator.of(context).pop(readDimensions());
               },
               child: const Text('Appliquer'),

@@ -161,6 +161,25 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('provided drawer opens from the app bar menu', (tester) async {
+    await pumpPage(
+      tester,
+      SuperPage(
+        appBar: AppBar(title: const Text('Page title')),
+        drawer: const Drawer(child: Text('Navigation drawer')),
+        child: const SizedBox.expand(),
+      ),
+      registry: Registry(),
+    );
+
+    expect(find.text('Navigation drawer'), findsNothing);
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Navigation drawer'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('editor adds a registered app bar and edits title and action', (
     tester,
   ) async {

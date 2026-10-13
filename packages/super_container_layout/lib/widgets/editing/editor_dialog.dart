@@ -131,8 +131,9 @@ class _EditorDialogState extends State<_EditorDialog> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted ||
             widget.controller.disposed ||
-            ModalRoute.of(context)?.isCurrent != true)
+            ModalRoute.of(context)?.isCurrent != true) {
           return;
+        }
         final box = _viewport.currentContext?.findRenderObject();
         if (box is! RenderBox || !box.hasSize) return;
         final screen = Rect.fromPoints(

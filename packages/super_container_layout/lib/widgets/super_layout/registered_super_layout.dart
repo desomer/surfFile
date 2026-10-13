@@ -27,6 +27,7 @@ class RegisteredSuperLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
+    
     Widget layout(SuperLayoutConfig value,
         ValueChanged<SuperLayoutConfig>? onChanged) => SuperLayout(
       config: value,
@@ -36,6 +37,7 @@ class RegisteredSuperLayout extends StatelessWidget {
       onChanged: onChanged,
       onSlotAdded: onSlotAdded,
     );
+
     if (registry == null) return layout(config, null);
     final controller = registry.layoutController(id, fallback: config);
     return ValueListenableBuilder<SuperLayoutConfig>(

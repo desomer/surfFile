@@ -5,7 +5,6 @@ import 'package:super_container_layout/widgets/editing/editor_history.dart';
 import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
-import '../super_layout/zone_axis_button.dart';
 
 /// Pastille deplacable, initialement en haut au centre du mode edition.
 ///

@@ -1,9 +1,7 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart'
-    show DragStartBehavior, PointerDownEvent, kPrimaryButton, kTouchSlop;
+    show PointerDownEvent, kPrimaryButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
@@ -11,6 +9,7 @@ import '../editing/editor_history.dart';
 import '../editing/editor_overlay.dart';
 import '../editing/editor_zoom.dart';
 import '../editing/editor_dialog_header.dart';
+import '../editing/editor_resize_handle.dart';
 import '../surfaces/super_container.dart';
 
 /// Taille qu'un slot demande à la zone qui le reçoit.
@@ -90,14 +89,13 @@ class BuilderSlot extends SlotImplementation {
 /// Preserves a component's state while exposing its instance name to editors.
 class InstanceSlot extends SlotImplementation {
   InstanceSlot(
-    this.component, {
-    required String label,
+    this.component, {super.key, 
+    required super.label,
     required this.onRename,
     required this.onRestore,
     required this.overridden,
   }) : super(
          id: component.id,
-         label: label,
          sizing: component.sizing,
          preferredSize: component.preferredSize,
          visible: component.visible,
@@ -745,18 +743,6 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   Size? _resizeLegacySize;
   EditorHistoryController? _resizeHistory;
   bool _resizeBlocked = false;
-  String? _hoveredResize;
-
-  static const _resizeCorners = [
-    ('nw', Alignment.topLeft),
-    ('ne', Alignment.topRight),
-    ('sw', Alignment.bottomLeft),
-    ('se', Alignment.bottomRight),
-    ('n', Alignment.topCenter),
-    ('s', Alignment.bottomCenter),
-    ('w', Alignment.centerLeft),
-    ('e', Alignment.centerRight),
-  ];
 
   bool get _showResizeHandles =>
       widget.showLabel && widget.selected && widget.onResize != null;
@@ -884,66 +870,13 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   }
 
   Widget _resizeHandle(String name, Alignment corner, ColorScheme colors) =>
-      SizedBox(
-        width: 32,
-        height: 32,
-        child: MouseRegion(
-          onEnter: (_) => setState(() => _hoveredResize = name),
-          onExit: (_) => setState(() => _hoveredResize = null),
-          cursor: corner.x == 0
-              ? SystemMouseCursors.resizeUpDown
-              : corner.y == 0
-              ? SystemMouseCursors.resizeLeftRight
-              : corner.x == corner.y
-              ? SystemMouseCursors.resizeUpLeftDownRight
-              : SystemMouseCursors.resizeUpRightDownLeft,
-          child: Listener(
-            onPointerSignal: (event) =>
-                EditorZoomScope.controllerOf(context)
-                    ?.handlePointerSignal(event),
-            child: GestureDetector(
-              key: ValueKey('slot-resize-${widget.slot.id}-$name'),
-              behavior: HitTestBehavior.opaque,
-              dragStartBehavior: DragStartBehavior.down,
-              onPanStart: _beginResize,
-              onPanUpdate: (details) => _resize(details, corner),
-              onPanEnd: (_) => _finishResize(),
-              onPanCancel: _finishResize,
-              child: Tooltip(
-                message: corner.x == 0
-                    ? 'Modifier la hauteur de ${widget.slot.label}'
-                    : corner.y == 0
-                    ? 'Modifier la largeur de ${widget.slot.label}'
-                    : 'Redimensionner ${widget.slot.label}',
-                child: Center(
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: _hoveredResize == name
-                          ? colors.tertiary
-                          : colors.surface,
-                      border: Border.all(color: colors.tertiary, width: 2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Transform.rotate(
-                      angle: corner.x != 0 && corner.y != 0
-                          ? (corner.x == corner.y ? math.pi / 4 : -math.pi / 4)
-                          : 0,
-                      child: Icon(
-                        corner.x == 0 ? Icons.height : Icons.swap_horiz,
-                        size: 16,
-                        color: _hoveredResize == name
-                            ? colors.onTertiary
-                            : colors.tertiary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+      EditorResizeHandle(
+        key: ValueKey('slot-resize-${widget.slot.id}-$name'),
+        direction: corner,
+        label: widget.slot.label,
+        onStart: _beginResize,
+        onUpdate: (details) => _resize(details, corner),
+        onEnd: _finishResize,
       );
 
   void _setHover(bool value) {
@@ -1040,7 +973,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         final handles = Stack(
           clipBehavior: Clip.none,
           children: [
-            for (final (name, corner) in _resizeCorners)
+            for (final (name, corner) in editorResizeDirections)
               Positioned.fill(
                 child: Align(
                   alignment: corner,

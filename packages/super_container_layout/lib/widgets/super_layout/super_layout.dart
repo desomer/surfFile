@@ -1,14 +1,25 @@
 import 'package:flutter/foundation.dart'
     show ValueListenable, debugPrint, listEquals, setEquals;
 import 'package:flutter/rendering.dart';
+
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart'
-    show DragStartBehavior, PointerDownEvent, PointerEvent, kPrimaryButton;
+    show
+        DragStartBehavior,
+        PointerDownEvent,
+        PointerEvent,
+        kPrimaryButton,
+        kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import '../editing/editor_history.dart';
 import '../editing/editor_dialog.dart';
 import '../editing/editor_dialog_header.dart';
 import '../editing/editor_overlay.dart';
+import '../editing/editor_resize_handle.dart';
+import '../editing/editor_zoom.dart';
+
 import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';
 
@@ -29,3 +40,5 @@ part 'zone_layout.dart';
 part 'zone_interactions.dart';
 part 'layout_editor.dart';
 part 'zone_resize_handle.dart';
+part 'grid_view.dart';
+part 'grid_slot_editor.dart';

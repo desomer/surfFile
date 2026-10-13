@@ -5,7 +5,11 @@ extension _SuperLayoutDialogs on SuperLayoutState {
     final initial = _config.value;
     final initialInstance = EditorComponentLabel.of(context);
     var label = _displayLabel;
-    final confirmed = await showEditorDialog<bool>(
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    var confirmed = false;
+    try {
+    confirmed = await showEditorDialog<bool>(
       context: context,
       target: context,
       barrierDismissible: true,
@@ -42,14 +46,24 @@ extension _SuperLayoutDialogs on SuperLayoutState {
           ),
         ],
       )),
-    );
-    if (confirmed != true && mounted) _update(initial);
-    if (confirmed != true && mounted && initialInstance != null) {
+    ) == true;
+    } finally {
+    if (!confirmed && mounted) _update(initial);
+    if (!confirmed && mounted && initialInstance != null) {
       initialInstance.onRestore();
+    }
+    if (confirmed) {
+      history?.commitTransaction();
+    } else {
+      history?.cancelTransaction();
+    }
     }
   }
 
   Future<void> _addSlot(SuperLayoutZone zone) async {
+    if (_config.value.positioning == SuperLayoutPositioning.grid) {
+      zone = SuperLayoutZone.center;
+    }
     final slots = _availableSlots(context, includeRegistry: true);
     final id = await showEditorDialog<String>(
       context: context,
@@ -57,7 +71,9 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       builder: (dialogContext) {
         return SimpleDialog(
           title: EditorDialogHeader(
-            label: 'Ajouter un slot dans ${widget.zoneLabel(zone)}',
+            label: _config.value.positioning == SuperLayoutPositioning.grid
+                ? 'Ajouter un slot dans la grille'
+                : 'Ajouter un slot dans ${widget.zoneLabel(zone)}',
           ),
           children: [
             if (!slots.any((slot) => slot.visible))

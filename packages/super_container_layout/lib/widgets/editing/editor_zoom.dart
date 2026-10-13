@@ -33,11 +33,21 @@ class _EditorZoomState extends State<EditorZoom>
   final _viewportKey = GlobalKey();
   BuildContext? _zoomTarget;
   double? _manualScale;
+  bool _framingHeld = false;
 
   @override
   void initState() {
     super.initState();
     _controller._pointerSignalHandler = _onPointerSignal;
+    _controller._interactionHandler = (held) {
+      _framingHeld = held;
+      if (held) {
+        _animation.stop();
+        _from = _to = _current;
+      } else {
+        _schedule();
+      }
+    };
     LayoutSelection.focus.addListener(_schedule);
     _controller.dialog.addListener(_schedule);
   }
@@ -68,6 +78,7 @@ class _EditorZoomState extends State<EditorZoom>
   void _frameSelection() {
     var destination = (scale: 1.0, offset: Offset.zero);
     _controller.enabled = _editMode?.value ?? false;
+    if (_framingHeld && _controller.enabled) return;
     final dialog = _controller.dialog.value;
     final focus = dialog?.target ?? LayoutSelection.focus.value?.context;
     if (!_controller.enabled || !identical(focus, _zoomTarget)) {
@@ -103,8 +114,9 @@ class _EditorZoomState extends State<EditorZoom>
       }
     }
     final disableAnimations = MediaQuery.disableAnimationsOf(context);
-    if (destination == _to && !(disableAnimations && _animation.isAnimating))
+    if (destination == _to && !(disableAnimations && _animation.isAnimating)) {
       return;
+    }
     _from = _current;
     _to = destination;
     if (disableAnimations) {
@@ -119,7 +131,7 @@ class _EditorZoomState extends State<EditorZoom>
     if (event is! PointerScrollEvent ||
         event.scrollDelta.dy == 0 ||
         !event.scrollDelta.dy.isFinite ||
-        !(_editMode?.value ?? false)) {
+        !(_editMode?.value ?? false) || _framingHeld) {
       return;
     }
     final focus =
@@ -222,6 +234,18 @@ class EditorZoomScope extends InheritedWidget {
 
 class EditorZoomController {
   void Function(PointerSignalEvent)? _pointerSignalHandler;
+  void Function(bool)? _interactionHandler;
+  int _interactions = 0;
+
+  /// Holds the viewport steady while dragging in content coordinates.
+  void beginInteraction() {
+    if (_interactions++ == 0) _interactionHandler?.call(true);
+  }
+
+  void endInteraction() {
+    if (_interactions == 0) return;
+    if (--_interactions == 0) _interactionHandler?.call(false);
+  }
 
   void handlePointerSignal(PointerSignalEvent event) =>
       _pointerSignalHandler?.call(event);
@@ -235,8 +259,9 @@ class EditorZoomController {
     if (targetContext == null ||
         !targetContext.mounted ||
         contentContext == null ||
-        !contentContext!.mounted)
+        !contentContext!.mounted) {
       return null;
+    }
     var belongs = identical(targetContext, contentContext);
     targetContext.visitAncestorElements((element) {
       if (identical(element, contentContext)) belongs = true;
@@ -250,8 +275,9 @@ class EditorZoomController {
         !target.attached ||
         !content.attached ||
         !target.hasSize ||
-        !content.hasSize)
+        !content.hasSize) {
       return null;
+    }
     return MatrixUtils.transformRect(
       target.getTransformTo(content),
       Offset.zero & target.size,
@@ -261,6 +287,7 @@ class EditorZoomController {
   void dispose() {
     disposed = true;
     _pointerSignalHandler = null;
+    _interactionHandler = null;
     final available = dialog.value?.available;
     if (available != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {

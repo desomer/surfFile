@@ -15,7 +15,8 @@ extension _SuperLayoutView on SuperLayoutState {
       editable: widget.editable,
       onEdit: _openEditor,
       onAdd: () => _addSlot(_actionZone),
-      axisAction: () => _axisAction(_actionZone),
+      axisAction: _config.value.positioning == SuperLayoutPositioning.grid
+          ? null : () => _axisAction(_actionZone),
       onContextMenu: _selectContextZone,
       child: ListenableBuilder(
         listenable: Listenable.merge([
@@ -26,6 +27,9 @@ extension _SuperLayoutView on SuperLayoutState {
         ]),
         builder: (context, _) {
           final config = _config.value;
+          if (config.positioning == SuperLayoutPositioning.grid) {
+            return _buildGrid(context);
+          }
           // Seule la disposition selectionnee affiche ses actions overlay.
           final styleEditMode =
               StyleEditScope.controllerOf(context)?.value ?? false;
