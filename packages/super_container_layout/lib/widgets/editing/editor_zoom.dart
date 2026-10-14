@@ -8,9 +8,19 @@ import '../surfaces/super_container.dart';
 
 /// Animates the page around the selected layout, zone or slot.
 class EditorZoom extends StatefulWidget {
-  const EditorZoom({required this.child, super.key});
+  const EditorZoom({
+    required this.child,
+    this.maxAutoZoomExtent = defaultMaxAutoZoomExtent,
+    super.key,
+  });
+
+  static const defaultMaxAutoZoomExtent = 200.0;
 
   final Widget child;
+
+  /// Une sélection dont la largeur ou la hauteur atteint cette taille (en px)
+  /// n'est pas zoomée automatiquement.
+  final double maxAutoZoomExtent;
 
   @override
   State<EditorZoom> createState() => _EditorZoomState();
@@ -88,7 +98,12 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.contentContext = _content.currentContext;
     final rect = _controller.targetBounds(focus);
     if (_controller.enabled && rect != null) {
-      if (!rect.isEmpty && rect.isFinite && !_viewport.isEmpty) {
+      final tooLarge =
+          dialog == null &&
+          _manualScale == null &&
+          (          rect.width >= widget.maxAutoZoomExtent ||
+                        rect.height >= widget.maxAutoZoomExtent);
+      if (!tooLarge && !rect.isEmpty && rect.isFinite && !_viewport.isEmpty) {
         var available = Offset.zero & _viewport;
         final viewport = _viewportKey.currentContext?.findRenderObject();
         if (dialog?.available case final screen? when viewport is RenderBox) {

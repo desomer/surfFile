@@ -51,6 +51,7 @@ void main() {
         GoRoute(
           path: '/',
           builder: (context, state) => SuperPage(
+            maxAutoZoomExtent: 1000,
             child: Align(
               alignment: Alignment.topLeft,
               child: SizedBox(

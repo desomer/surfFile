@@ -20,6 +20,7 @@ class SuperPage extends StatelessWidget {
     this.bottomSheet,
     this.slots = const [],
     this.pageConfig,
+    this.maxAutoZoomExtent = EditorZoom.defaultMaxAutoZoomExtent,
     super.key,
   }) : assert(
          bottomBar == null || bottomNavigationBar == null,
@@ -43,6 +44,9 @@ class SuperPage extends StatelessWidget {
 
   /// Initial native Scaffold region placement; persisted edits take precedence.
   final ScaffoldPageConfig? pageConfig;
+
+  /// Taille (px) à partir de laquelle une sélection n'est plus zoomée en mode édition.
+  final double maxAutoZoomExtent;
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +72,7 @@ class SuperPage extends StatelessWidget {
       },
     );
     return EditorZoom(
+      maxAutoZoomExtent: maxAutoZoomExtent,
       child: ScaffoldPageLayout(
         id: id,
         label: label,

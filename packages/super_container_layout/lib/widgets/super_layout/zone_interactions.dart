@@ -268,34 +268,32 @@ class _CenterSwapTarget extends StatelessWidget {
         overCenter.value = false;
         onSwap(details.data);
       },
-      builder: (context, candidates, _) => EditorOverlay(
-        child: IgnorePointer(
-          child: candidates.isEmpty
-              ? ValueListenableBuilder<bool>(
-                  valueListenable: hint,
-                  builder: (context, hinted, _) => hinted
-                      ? DecoratedBox(
-                          key: const ValueKey('super-layout-center-hint'),
-                          decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: .08),
-                            border: Border.all(
-                              color: colors.primary.withValues(alpha: .7),
-                              width: 1.5,
-                            ),
+      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
+        child: candidates.isEmpty
+            ? ValueListenableBuilder<bool>(
+                valueListenable: hint,
+                builder: (context, hinted, _) => hinted
+                    ? DecoratedBox(
+                        key: const ValueKey('super-layout-center-hint'),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: .08),
+                          border: Border.all(
+                            color: colors.primary.withValues(alpha: .7),
+                            width: 1.5,
                           ),
-                          child: const SizedBox.expand(),
-                        )
-                      : const SizedBox.expand(),
-                )
-              : DecoratedBox(
-                  key: const ValueKey('super-layout-center-drop'),
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: .2),
-                    border: Border.all(color: colors.primary, width: 2),
-                  ),
+                        ),
+                        child: const SizedBox.expand(),
+                      )
+                    : const SizedBox.expand(),
+              )
+            : DecoratedBox(
+                key: const ValueKey('super-layout-center-drop'),
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: .2),
+                  border: Border.all(color: colors.primary, width: 2),
                 ),
-        ),
-      ),
+              ),
+      )),
     );
   }
 }
@@ -333,21 +331,20 @@ class _SlotZoneTarget extends StatelessWidget {
       },
       onLeave: (data) => data?.hint.value = null,
       onAcceptWithDetails: (details) => onMove(details.data.id),
-      builder: (context, candidates, _) => EditorOverlay(
-        child: IgnorePointer(
-          child: candidates.isEmpty
-              ? const SizedBox.expand()
-              : DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: colors.tertiary.withValues(alpha: .15),
-                    border: Border.all(color: colors.tertiary, width: 2),
-                  ),
+      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
+        child: candidates.isEmpty
+            ? const SizedBox.expand()
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.tertiary.withValues(alpha: .15),
+                  border: Border.all(color: colors.tertiary, width: 2),
                 ),
-        ),
-      ),
+              ),
+      )),
     );
   }
 }
+
 
 class _ZonePlaceholder extends StatelessWidget {
   const _ZonePlaceholder({
@@ -368,15 +365,15 @@ class _ZonePlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         border: editMode ? Border.all(color: colors.outlineVariant) : null,
       ),
-      child: Center(
-        child: false && showLabel && editMode
-            ? Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: colors.onSurfaceVariant),
-              )
-            : null,
-      ),
+      // child: Center(
+      //   child: showLabel && editMode
+      //       ? Text(
+      //           label,
+      //           overflow: TextOverflow.ellipsis,
+      //           style: TextStyle(color: colors.onSurfaceVariant),
+      //         )
+      //       : null,
+      // ),
     );
   }
 }
