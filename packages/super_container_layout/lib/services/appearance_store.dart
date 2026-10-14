@@ -4,6 +4,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
+import '../models/native_component_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
 
@@ -36,10 +37,14 @@ class AppearanceCodec {
       for (final entry in a.scaffoldPages.entries)
         entry.key: entry.value.toJson(),
     },
+    'nativeComponents': {
+      for (final entry in a.nativeComponents.entries)
+        entry.key: entry.value.toJson(),
+    },
   };
   Appearance fromJson(Map<String, dynamic> json) {
     if (json['version'] != schemaVersion) throw const FormatException('Unsupported appearance version.');
-    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', 'scaffoldPages', ...additionalKeys};
+    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', 'scaffoldPages', 'nativeComponents', ...additionalKeys};
     if (json.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown appearance preference.');
     double number(String key, double fallback, double min, double max) {
       final value = json[key] ?? fallback;
@@ -71,6 +76,10 @@ class AppearanceCodec {
       scaffoldPages: {
         for (final entry in entries('scaffoldPages', optional: true).entries)
           entry.key: ScaffoldPageConfig.fromJson(entry.value),
+      },
+      nativeComponents: {
+        for (final entry in entries('nativeComponents', optional: true).entries)
+          entry.key: NativeComponentConfig.fromJson(entry.value),
       },
     );
   }

@@ -110,6 +110,7 @@ class SuperContainer extends StatefulWidget {
     this.style = const ContainerStyle(),
     this.onStyleChanged,
     this.label,
+    this.menuTitle,
     this.onLabelChanged,
     this.fallbackColor,
     this.borderColor,
@@ -130,6 +131,8 @@ class SuperContainer extends StatefulWidget {
   final ContainerStyle style;
   final ValueChanged<ContainerStyle>? onStyleChanged;
   final String? label;
+  /// Optional owner name displayed in bold before the container label.
+  final String? menuTitle;
 
   /// Persists a standalone instance's name; slots use their layout config.
   final ValueChanged<String>? onLabelChanged;
@@ -724,6 +727,13 @@ class SuperContainerState extends State<SuperContainer> {
                           size: 18,
                         ),
                         const SizedBox(width: 10),
+                        if (state.widget.menuTitle case final title?) ...[
+                          Text(
+                            title,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(width: 10),
+                        ],
                         Flexible(
                           child: Text(
                             state._label,

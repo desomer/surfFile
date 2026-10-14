@@ -128,11 +128,14 @@ SuperPage(
 ```
 
 `slots` ajoute des `SlotImplementation` au catalogue local. En mode edition,
-le clic droit propose « Configurer la page… » : ses switches activent ou masquent
+le clic droit sur une region (Corps, AppBar, drawers, etc.) propose son entree :
+cliquer sur son nom ouvre la configuration de page. Ses switches activent ou masquent
 les regions natives sans supprimer leurs slots. Le corps reste toujours actif.
-Cette commande utilise `ContainerContextMenuEntry`, un inherited generique :
-elle apparait a sa position dans la chaine des conteneurs, entre le corps et
-le fond, plutot qu'en tete des actions locales.
+Il n'y a pas d'entree « Configurer la page… » supplementaire. Le bouton « + »
+de chaque entree ajoute un slot dans la region ; Fond conserve son editeur de style.
+Les entrees de region affichent le `label` de `SuperPage` (par defaut `Page`)
+en gras, suivi du nom de la region. Ce label est aussi utilise dans le chemin
+de selection de la banniere.
 Chaque region active affiche son nom selectionnable, son contour et son propre
 bouton « + ». Activer un drawer dans ce panneau l'ouvre a la fermeture du panneau.
 Les overlays ne sont visibles que lorsque la page ou la region est selectionnee.
@@ -191,18 +194,92 @@ Avec `SuperApp(registry: registry, router: router)`, activez le mode edition
 puis ajoutez-le dans la region `appBar`. Les regions non configurees restent
 vides et n'occupent pas d'espace ; le body conserve le contenu `child`.
 
-`SuperAppBar` fournit une barre Material avec deux zones : `title` (Centre)
-et `action` (Est). Les parametres `title` et `action` fournissent chacun un
-slot initial ; les composants du registre peuvent aussi etre ajoutes depuis
-l'editeur. Les emplacements peuvent accueillir plusieurs composants, comme
-les autres zones de `SuperLayout`. La zone action est horizontale et sa
-largeur s'adapte au contenu. Le bouton de retour automatique est conserve.
-En mode edition, le clic droit sur la barre ou ses composants propose la
-taille preferee et la suppression des slots dans le menu contextuel.
-Le menu cible uniquement le slot le plus proche du clic, sans cumuler les
-icones de ses slots parents. Sur une partie vide de la barre, ces actions
-ciblent le slot de la barre dans la page, meme lorsque sa disposition interne
-est selectionnee.
+`SuperAppBar` utilise directement `AppBar.leading`, `title`, `actions`,
+`bottom` et `flexibleSpace`, sans `RegisteredSuperLayout`. `action` reste
+un raccourci compatible pour la premiere action ; `actions` accepte une liste
+native. Le titre compose ses slots horizontalement avec `SlotStack`.
+Navigation, Bas et Espace flexible acceptent un seul slot : un ajout y remplace
+le precedent en une operation annulable. Le bas est adapte en
+`PreferredSizeWidget` ; `SuperPage` suit ses changements de hauteur pour
+preserver la place du corps.
+
+Le clic droit n'importe ou sur la barre, meme vide ou sur un bouton natif,
+propose **AppBar** Configurer la barre et selectionne l'AppBar dans le chemin
+de la banniere. Cette entree permet d'activer les premieres regions d'une
+barre ajoutee depuis le catalogue.
+Le clic droit sur une region ouvre aussi un menu avec **AppBar** et son nom.
+Cliquer le nom ouvre les cinq switches de configuration. Les badges, ajouts,
+tailles preferees en pixels, suppressions et chemins de selection utilisent
+le meme editeur que la page. Entrer dans l'AppBar masque les overlays de page ;
+revenir au segment Page les retablit. Les regions masquees gardent leurs slots.
+Le bouton de retour automatique est conserve tant que Navigation n'a pas ete
+explicitement desactivee ; desactiver Actions supprime aussi les actions
+automatiques de Flutter.
+
+### Adaptateurs de composants natifs
+
+`SuperBottomNavigationBar` est une barre basse a widgets libres, rendue avec
+un vrai `BottomAppBar` (pas une liste de `BottomNavigationBarItem`).
+Ses regions `left`, `center`, `right` affichent Gauche, Centre et Droite.
+Chaque region accepte plusieurs slots horizontaux. Les regions visibles se
+partagent la largeur a parts egales ; hors edition, les regions vides ne
+reservent pas de largeur. La hauteur de contenu est bornee a 56 par defaut
+(`height`), meme lorsque la barre est vide, sans reduire le corps a zero.
+`BottomAppBar` gere la zone sure inferieure native.
+
+```dart
+SuperPage(
+  bottomNavigationBar: SuperBottomNavigationBar(
+    id: 'explorer-bottom-bar',
+    left: IconButton(icon: const Icon(Icons.home), onPressed: goHome),
+    center: const Text('Explorateur'),
+    right: IconButton(icon: const Icon(Icons.refresh), onPressed: refresh),
+  ),
+)
+```
+
+Depuis le catalogue, ajouter `SuperBottomNavigationBar` dans la region
+Barre basse de la page. En edition, le clic droit sur la barre, meme vide,
+propose « Configurer la barre basse » avec trois switches. Les badges
+Gauche / Centre / Droite et leurs boutons + utilisent le meme editeur que
+l'AppBar. Masquer une region conserve ses slots ; les modifications sont
+persistantes et annulables. `slots`, `nativeConfig` et `onNativeSlotAdded`
+permettent de personnaliser le catalogue et les placements initiaux.
+Chaque instance doit avoir son propre `id`. Les callbacks de navigation
+restent portes par les widgets fournis.
+
+`NativeComponentConfig` fournit un modele immutable commun : regions actives,
+placements ordonnes, types de slots et preferences de dimensions.
+`NativeRegion` decrit chaque propriete : nom stable, label, cardinalite,
+axe, contraintes de remplissage et taille du placeholder.
+`NativeComponentEditor` partage selection hierarchique, menu contextuel,
+switches, catalogue local/registre, ajouts et suppressions.
+L'adaptateur construit toujours le vrai widget Flutter ; il ne simule pas
+sa disposition. Les listes natives, comme `AppBar.actions`, restent natives.
+
+`Registry.nativeComponentController(id)` raccorde ces configurations a
+`Appearance.nativeComponents`, a la sauvegarde, au groupe de transfert
+Dispositions et a l'historique. Utiliser des IDs distincts pour chaque instance,
+y compris entre pages et barres. `ScaffoldPageConfig` et
+`Registry.scaffoldPageController` restent des facades typees compatibles sur
+ce modele et ce stockage communs. Les anciennes collections `scaffoldPages`
+et les anciens layouts d'AppBar Centre/Est sont lus sans effacement ; la
+prochaine edition de l'instance ecrit sa configuration native.
+Un ancien layout d'AppBar utilisant d'autres zones est signale explicitement.
+`SuperAppBar.config` et `onSlotAdded` sont conserves pour compatibilite ;
+preferer `nativeConfig` et `onNativeSlotAdded` pour les nouveaux composants.
+Les anciennes contraintes de taille sont conservees en lecture.
+
+Pour ajouter un composant, declarer ses `NativeRegion`, fournir ses slots et
+construire son widget dans le builder de `NativeComponentEditor`.
+`editor.region(id)` compose les slots ; `editor.region(id, item: slot)` permet
+de decorer chaque element d'une liste native. Un composant a hauteur editable
+peut implementer `NativePreferredSizeWidget` pour que son parent suive
+`preferredSizeIn(context)` et `sizeListenable(context)`.
+Les donnees qui ne sont pas des widgets (par exemple les
+`BottomNavigationBarItem`) necessitent un adaptateur type specifique.
+Les callbacks et l'etat de navigation restent controles par l'application,
+jamais serialises dans les placements.
 
 En mode edition, `SuperPage` centre automatiquement la disposition, la zone
 ou le slot selectionne. La molette ajuste le zoom en mode edition lorsqu'une
@@ -518,7 +595,9 @@ placements initiaux, les deplacements par glisser-deposer ou les preferences
 deja enregistrees.
 
 `onSlotAdded` permet de remplacer cette regle sur `SuperLayout`,
-`RegisteredSuperLayout` et `SuperAppBar`. Le callback synchrone
+et `RegisteredSuperLayout`. Sur `SuperAppBar`, utiliser `onNativeSlotAdded` ;
+son ancien `onSlotAdded` reste adapte pour Titre et Actions uniquement.
+Le callback synchrone des layouts
 recoit l'identifiant de l'instance, le composant, la zone visuelle, la zone de
 contenu, les composants visibles deja presents et la configuration contenant
 le nouvel ajout. Il retourne la configuration a enregistrer ; placement et

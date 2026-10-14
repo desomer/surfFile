@@ -1,8 +1,12 @@
 import 'package:material_ui/material_ui.dart';
+
+import 'native_component_config.dart';
+
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/super_app.dart';
-import 'package:super_container_layout/super_app_bar.dart';
+import 'package:super_container_layout/widgets/super_app_bar.dart';
+import '../widgets/super_bottom_navigation_bar.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
@@ -40,11 +44,16 @@ class Registry {
   final Map<String, ValueNotifier<ContainerStyle>> containerStyleById = {};
   final Map<String, ValueNotifier<ScaffoldPageConfig>> scaffoldPageConfigById =
       {};
+  final Map<String, ValueNotifier<NativeComponentConfig>>
+  nativeComponentConfigById = {};
   ValueNotifier<Appearance>? _appearance;
   bool _syncing = false;
   final Map<String, SuperLayoutConfig> _layoutDefaults = {};
   final Map<String, ContainerStyle> _styleDefaults = {};
-  final Map<String, ScaffoldPageConfig> _scaffoldPageDefaults = {};
+  final Map<String, NativeComponentConfig> _nativeDefaults = {};
+  final Map<String, NativeComponentConfig? Function(Appearance)>
+  _nativeMigrations = {};
+  final Set<String> _scaffoldBridges = {};
   final Map<Listenable, VoidCallback> _listeners = {};
 
   void bindAppearance(ValueNotifier<Appearance> controller) {
@@ -59,6 +68,9 @@ class Registry {
     }
     for (final entry in scaffoldPageConfigById.entries.toList()) {
       scaffoldPageController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in nativeComponentConfigById.entries.toList()) {
+      nativeComponentController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -128,25 +140,26 @@ class Registry {
     ScaffoldPageConfig? fallback,
   }) {
     final initial = fallback ?? ScaffoldPageConfig();
-    _scaffoldPageDefaults.putIfAbsent(id, () => initial);
+    final native = nativeComponentController(
+      id,
+      fallback: initial.native,
+      legacy: (appearance) => appearance.scaffoldPages[id]?.native,
+    );
     final notifier = scaffoldPageConfigById.putIfAbsent(
       id,
-      () => ValueNotifier(
-        _appearance?.value.scaffoldPage(id, fallback: initial) ?? initial,
-      ),
+      () => ValueNotifier(ScaffoldPageConfig.fromNative(native.value)),
     );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withScaffoldPage(
-            id,
-            notifier.value,
-          );
+    if (_scaffoldBridges.add(id)) {
+      native.addListener(() {
+        if (!identical(notifier.value.native, native.value)) {
+          notifier.value = ScaffoldPageConfig.fromNative(native.value);
         }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
+      });
+      notifier.addListener(() {
+        if (!identical(native.value, notifier.value.native)) {
+          native.value = notifier.value.native;
+        }
+      });
     }
     return notifier;
   }
@@ -167,11 +180,8 @@ class Registry {
           fallback: _styleDefaults[entry.key] ?? const ContainerStyle(),
         );
       }
-      for (final entry in scaffoldPageConfigById.entries) {
-        entry.value.value = appearance.scaffoldPage(
-          entry.key,
-          fallback: _scaffoldPageDefaults[entry.key],
-        );
+      for (final entry in nativeComponentConfigById.entries) {
+        entry.value.value = _nativeValue(appearance, entry.key);
       }
     } finally {
       _syncing = false;
@@ -181,6 +191,41 @@ class Registry {
   void registerFactory(String key, Widget widget) {
     registry[key] = ComponentBuilderDynamic(dynamicBuilder: (xuiCtx) => widget);
   }
+
+  ValueNotifier<NativeComponentConfig> nativeComponentController(
+    String id, {
+    NativeComponentConfig? fallback,
+    NativeComponentConfig? Function(Appearance)? legacy,
+  }) {
+    final initial = fallback ?? NativeComponentConfig();
+    _nativeDefaults.putIfAbsent(id, () => initial);
+    if (legacy != null) _nativeMigrations[id] = legacy;
+    final notifier = nativeComponentConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance == null ? initial : _nativeValue(_appearance!.value, id),
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withNativeComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  NativeComponentConfig _nativeValue(Appearance appearance, String id) =>
+      appearance.nativeComponents[id] ??
+      _nativeMigrations[id]?.call(appearance) ??
+      _nativeDefaults[id]!;
 
   void registerComponent(String key, RegisteredComponent component) {
     if (components.containsKey(key) || registry.containsKey(key)) {
@@ -200,6 +245,9 @@ class Registry {
   void bootstrap() {
     registry['SuperAppBar'] = ComponentBuilderDynamic(
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
+    );
+    registry['SuperBottomNavigationBar'] = ComponentBuilderDynamic(
+      dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
     registry['NewContainer'] = ComponentBuilderDynamic(

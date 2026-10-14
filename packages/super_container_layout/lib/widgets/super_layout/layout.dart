@@ -39,7 +39,7 @@ class SuperLayout extends StatefulWidget {
     this.config = const SuperLayoutConfig(),
     this.onChanged,
     this.onSlotAdded = defaultSlotAddition,
-    this.label = 'Super layout',
+    this.label = 'Layout',
     this.name,
     this.editable = true,
     this.showZoneNames = true,

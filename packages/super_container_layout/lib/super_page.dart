@@ -9,6 +9,7 @@ import 'widgets/super_layout/slot_implementation.dart';
 class SuperPage extends StatelessWidget {
   const SuperPage({
     this.id = 'root',
+    this.label = 'Page',
     this.child = const SizedBox.shrink(),
     this.appBar,
     this.drawer,
@@ -27,6 +28,7 @@ class SuperPage extends StatelessWidget {
 
   /// Stable persistence key. Use a different ID for each page.
   final String id;
+  final String label;
   final Widget child;
   final PreferredSizeWidget? appBar;
   final Widget? drawer;
@@ -68,6 +70,7 @@ class SuperPage extends StatelessWidget {
     return EditorZoom(
       child: ScaffoldPageLayout(
         id: id,
+        label: label,
         config: resolvedConfig,
         slots: slots,
         appBar: appBar,

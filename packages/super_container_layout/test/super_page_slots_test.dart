@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/main.dart' as demo;
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -120,7 +119,12 @@ void main() {
       );
       await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Configurer la page…'));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Corps')),
+          matching: find.text('Corps'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(SwitchListTile), findsNWidgets(6));
       expect(
@@ -144,7 +148,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(LayoutSelection.path.value, ['Page', 'barre basse']);
+      expect(LayoutSelection.path.value, ['Page', 'Barre basse']);
       expect(
         find
             .byKey(const ValueKey('scaffold-page-add-bottomNavigationBar'))
@@ -214,7 +218,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Configurer la page…'));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Corps')),
+          matching: find.text('Corps'),
+        ),
+      );
       await tester.pumpAndSettle();
       await toggleRegion(tester, region);
       await tester.tap(find.text('Fermer'));
@@ -236,7 +245,21 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Configurer la page…'), findsOneWidget);
+      expect(find.text('Configurer la page…'), findsNothing);
+      final label = region == ScaffoldPageRegion.drawer
+          ? 'Drawer gauche'
+          : 'Drawer droit';
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(ValueKey('style-menu-$label')),
+          matching: find.text(label),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('scaffold-page-settings')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     });
   }
@@ -256,7 +279,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Configurer la page…'));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Corps')),
+          matching: find.text('Corps'),
+        ),
+      );
       await tester.pumpAndSettle();
       await toggleRegion(tester, ScaffoldPageRegion.bottomNavigationBar);
       await tester.tap(find.text('Fermer'));
@@ -289,59 +317,112 @@ void main() {
     },
   );
 
-  testWidgets(
-    'page command follows its ancestor position between body and background',
-    (tester) async {
-      await tester.pumpWidget(const demo.TestApp());
+  for (final entry in {
+    ScaffoldPageRegion.appBar: 'AppBar',
+    ScaffoldPageRegion.bottomNavigationBar: 'Barre basse',
+    ScaffoldPageRegion.floatingActionButton: 'Bouton flottant',
+    ScaffoldPageRegion.bottomSheet: 'Panneau bas',
+  }.entries) {
+    testWidgets('${entry.key.name} menu opens page configuration', (
+      tester,
+    ) async {
+      await pumpPage(
+        tester,
+        SuperPage(
+          label: 'Workspace',
+          pageConfig: ScaffoldPageConfig(
+            placements: {
+              ScaffoldPageRegion.body: ['scaffold:body'],
+            },
+            regions: {entry.key: true},
+          ),
+        ),
+        registry: Registry(),
+      );
+      StyleEditScope.controllerOf(tester.element(find.byType(SuperPage)))!
+              .value =
+          true;
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+      final region = find.byWidgetPredicate(
+        (widget) => widget is SuperContainer && widget.label == entry.value,
+      );
+      await tester.tapAt(
+        tester.getTopLeft(region) + const Offset(24, 24),
+        buttons: kSecondaryMouseButton,
+      );
       await tester.pumpAndSettle();
-      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
-      await tester.pumpAndSettle();
-      final body = find.byKey(const ValueKey('style-menu-corps'));
-      final command = find.byKey(
-        const ValueKey('style-menu-entry-Configurer la page…'),
-      );
-      final background = find.byKey(const ValueKey('style-menu-Fond'));
-      expect(body, findsOneWidget);
-      expect(command, findsOneWidget);
-      expect(background, findsOneWidget);
+      final menu = find.byKey(ValueKey('style-menu-${entry.value}'));
+      final title = find.descendant(of: menu, matching: find.text('Workspace'));
+      expect(title, findsOneWidget);
+      expect(tester.widget<Text>(title).style?.fontWeight, FontWeight.bold);
       expect(
-        tester.getTopLeft(body).dy,
-        lessThan(tester.getTopLeft(command).dy),
-      );
-      expect(
-        tester.getTopLeft(command).dy,
-        lessThan(tester.getTopLeft(background).dy),
-      );
-      double labelLeft(Finder entry, String label) => tester
-          .getTopLeft(find.descendant(of: entry, matching: find.text(label)))
-          .dx;
-      expect(
-        labelLeft(command, 'Configurer la page…') - labelLeft(body, 'corps'),
-        12,
+        tester.getTopLeft(title).dx,
+        lessThan(
+          tester
+              .getTopLeft(
+                find.descendant(of: menu, matching: find.text(entry.value)),
+              )
+              .dx,
+        ),
       );
       expect(
-        labelLeft(background, 'Fond') -
-            labelLeft(command, 'Configurer la page…'),
-        12,
+        find.byKey(ValueKey('style-menu-add-${entry.value}')),
+        findsOneWidget,
       );
-      await tester.tap(command);
+      expect(find.text('Configurer la page…'), findsNothing);
+      await tester.tap(
+        find.descendant(of: menu, matching: find.text(entry.value)),
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('scaffold-page-settings')),
         findsOneWidget,
       );
-      await tester.tap(find.text('Fermer'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
-      await tester.pumpAndSettle();
-      await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
-      await tester.pumpAndSettle();
-      expect(command, findsNothing);
+      expect(find.byType(ContainerStyleEditor), findsNothing);
       expect(tester.takeException(), isNull);
-    },
-  );
+    });
+  }
+
+  testWidgets('body menu opens page configuration without a separate command', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const demo.TestApp());
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    final body = find.byKey(const ValueKey('style-menu-Corps'));
+    final command = find.byKey(
+      const ValueKey('style-menu-entry-Configurer la page…'),
+    );
+    final background = find.byKey(const ValueKey('style-menu-Fond'));
+    expect(body, findsOneWidget);
+    expect(command, findsNothing);
+    expect(background, findsOneWidget);
+    expect(
+      tester.getTopLeft(body).dy,
+      lessThan(tester.getTopLeft(background).dy),
+    );
+    double labelLeft(Finder entry, String label) => tester
+        .getTopLeft(find.descendant(of: entry, matching: find.text(label)))
+        .dx;
+    expect(labelLeft(background, 'Fond') - labelLeft(body, 'Page'), 12);
+    await tester.tap(find.descendant(of: body, matching: find.text('Page')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('scaffold-page-settings')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Fermer'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(command, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 
   for (final grid in [false, true]) {
     testWidgets(
@@ -378,7 +459,7 @@ void main() {
         );
         await tester.tapAt(const Offset(650, 450));
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value.take(3), ['Page', 'corps', 'Child']);
+        expect(LayoutSelection.path.value.take(3), ['Page', 'Corps', 'Child']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-body')),
           findsNothing,
@@ -404,19 +485,19 @@ void main() {
           find.byKey(const ValueKey('scaffold-page-select-body')),
         );
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value, ['Page', 'corps']);
+        expect(LayoutSelection.path.value, ['Page', 'Corps']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-appBar')),
           findsNothing,
         );
         await tester.tapAt(const Offset(650, 450));
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value.take(3), ['Page', 'corps', 'Child']);
+        expect(LayoutSelection.path.value.take(3), ['Page', 'Corps', 'Child']);
         await tester.tap(
           find.byKey(const ValueKey('style-edit-banner-path-1')),
         );
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value, ['Page', 'corps']);
+        expect(LayoutSelection.path.value, ['Page', 'Corps']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-body')),
           findsOneWidget,

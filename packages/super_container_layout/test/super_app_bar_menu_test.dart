@@ -74,7 +74,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final menuRow = find.byKey(const ValueKey('style-menu-New Container'));
-    expect(find.text('Configurer la page…'), findsOneWidget);
+    expect(find.text('Configurer la page…'), findsNothing);
     expect(menuRow, findsOneWidget);
     for (final icon in [Icons.straighten, Icons.delete_outline]) {
       expect(
@@ -256,11 +256,9 @@ void main() {
         expect(content, findsNothing);
         expect(
           registry
-              .layoutController('root-appBar')
+              .nativeComponentController('root-appBar')
               .value
-              .placementsOf(
-                slot == 'title' ? SuperLayoutZone.center : SuperLayoutZone.east,
-              ),
+              .slotsOf(slot == 'title' ? 'title' : 'actions'),
           isEmpty,
         );
       }

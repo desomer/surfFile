@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
+import '../models/native_component_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
 import 'neon_style.dart';
@@ -19,6 +20,7 @@ class Appearance {
     Map<String, ContainerStyle> styles = const {},
     Map<String, SuperLayoutConfig> layouts = const {},
     Map<String, ScaffoldPageConfig> scaffoldPages = const {},
+    Map<String, NativeComponentConfig> nativeComponents = const {},
   }) : styles = Map.unmodifiable(styles),
        layouts = Map.unmodifiable({
          for (final entry in layouts.entries)
@@ -45,7 +47,8 @@ class Appearance {
              }),
            ),
        }),
-       scaffoldPages = Map.unmodifiable(scaffoldPages);
+       scaffoldPages = Map.unmodifiable(scaffoldPages),
+       nativeComponents = Map.unmodifiable(nativeComponents);
 
   final ThemeMode mode;
   final Color accent;
@@ -55,6 +58,10 @@ class Appearance {
   final Map<String, ContainerStyle> styles;
   final Map<String, SuperLayoutConfig> layouts;
   final Map<String, ScaffoldPageConfig> scaffoldPages;
+  final Map<String, NativeComponentConfig> nativeComponents;
+
+  NativeComponentConfig nativeComponent(String id, {NativeComponentConfig? fallback}) =>
+      nativeComponents[id] ?? fallback ?? NativeComponentConfig();
 
   ContainerStyle style(
     String id, {
@@ -67,7 +74,9 @@ class Appearance {
   ScaffoldPageConfig scaffoldPage(
     String id, {
     ScaffoldPageConfig? fallback,
-  }) => scaffoldPages[id] ?? fallback ?? ScaffoldPageConfig();
+  }) => nativeComponents.containsKey(id)
+      ? ScaffoldPageConfig.fromNative(nativeComponents[id]!)
+      : scaffoldPages[id] ?? fallback ?? ScaffoldPageConfig();
   ContainerStyle get backgroundStyle => style('background');
 
   /// Resolves the optional variant [id] (a selected state, for instance) of
@@ -108,6 +117,7 @@ class Appearance {
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ScaffoldPageConfig>? scaffoldPages,
+    Map<String, NativeComponentConfig>? nativeComponents,
   }) => Appearance(
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
@@ -119,6 +129,7 @@ class Appearance {
         : {...styles ?? this.styles, 'background': backgroundStyle},
     layouts: layouts ?? this.layouts,
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
+    nativeComponents: nativeComponents ?? this.nativeComponents,
   );
 
   Appearance withStyle(String id, ContainerStyle? value) {
@@ -134,9 +145,14 @@ class Appearance {
   Appearance withLayout(String id, SuperLayoutConfig value) =>
       copyWith(layouts: {...layouts, id: value});
   Appearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
-      copyWith(scaffoldPages: {...scaffoldPages, id: value});
+      withNativeComponent(id, value.native);
+  Appearance withNativeComponent(String id, NativeComponentConfig value) =>
+      copyWith(
+        nativeComponents: {...nativeComponents, id: value},
+        scaffoldPages: {...scaffoldPages}..remove(id),
+      );
   Appearance resetLayouts() =>
-      copyWith(layouts: const {}, scaffoldPages: const {});
+      copyWith(layouts: const {}, scaffoldPages: const {}, nativeComponents: const {});
 
   ThemeData theme(Brightness brightness) {
     final surface =

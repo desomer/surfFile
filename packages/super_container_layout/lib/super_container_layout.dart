@@ -1,4 +1,6 @@
 export 'models/registry.dart';
+export 'models/native_component_config.dart';
+export 'widgets/native_component_editor.dart';
 export 'models/scaffold_page_config.dart';
 export 'models/super_layout_config.dart';
 export 'services/appearance_store.dart';
@@ -6,7 +8,8 @@ export 'services/default_appearance_codec.dart';
 export 'services/appearance_transfer.dart';
 export 'services/window_transparency.dart';
 export 'super_app.dart';
-export 'super_app_bar.dart';
+export 'widgets/super_app_bar.dart';
+export 'widgets/super_bottom_navigation_bar.dart';
 export 'super_page.dart';
 export 'theme/appearance.dart';
 export 'theme/typed_appearance_scope.dart';
