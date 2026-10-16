@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -82,6 +84,196 @@ void main() {
   );
 
   for (final appBar in [true, false]) {
+    testWidgets(
+      '${appBar ? 'AppBar' : 'bottom bar'} shares min preferred max editor and cancellation',
+      (tester) async {
+        final registry = Registry()
+          ..registerFactory('A', const SizedBox.expand());
+        final region = appBar ? 'title' : 'left';
+        final initial = NativeComponentConfig(
+          placements: {region: ['a']},
+          slotTypes: {'a': 'factory:A'},
+          slotPreferredSizes: {'a': const Size(100, 32)},
+        );
+        await mount(
+          appBar
+              ? SuperPage(appBar: SuperAppBar(
+                  id: 'size-bar', nativeConfig: initial,
+                ))
+              : SuperPage(bottomNavigationBar: SuperBottomNavigationBar(
+                  id: 'size-bar', nativeConfig: initial,
+                )),
+          tester, registry,
+        );
+        final context = tester.element(find.byType(
+            appBar ? SuperAppBar : SuperBottomNavigationBar));
+        StyleEditScope.controllerOf(context)!.value = true;
+        final history = EditorHistoryScope.controllerOf(context)!;
+        await tester.pumpAndSettle();
+        history.clear();
+        Future<void> open() async {
+          final stack = tester.widgetList<SlotStack>(find.byType(SlotStack))
+              .singleWhere((stack) => stack.slots.any((slot) => slot.id == 'a'));
+          unawaited(stack.onEditPreferredSize!(stack.slots.single));
+          await tester.pumpAndSettle();
+        }
+        Future<void> enter(String field, String text) async {
+          final finder = find.byKey(ValueKey('slot-$field'));
+          await tester.ensureVisible(finder);
+          await tester.pumpAndSettle();
+          await tester.enterText(finder, text);
+          await tester.pumpAndSettle();
+        }
+        await open();
+        expect(find.byType(TextFormField), findsNWidgets(6));
+        expect(find.byKey(const ValueKey('slot-preview-zone')), findsOneWidget);
+        await enter('min-width', '200');
+        await enter('max-width', '100');
+        expect(find.text('La largeur minimale dépasse la largeur maximale.'),
+            findsOneWidget);
+        await tester.tap(find.text('Appliquer'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AlertDialog), findsOneWidget);
+        await tester.tap(find.text('Annuler'));
+        await tester.pumpAndSettle();
+        final controller = registry.nativeComponentController('size-bar');
+        expect(controller.value.toJson(), initial.toJson());
+        expect(history.canUndo, isFalse);
+        await open();
+        await enter('min-width', '40');
+        await enter('preferred-width', '50');
+        final unit = find.byKey(const ValueKey('slot-unit-preferred-width'));
+        await tester.ensureVisible(unit);
+        await tester.tap(unit);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('%').last);
+        await tester.pumpAndSettle();
+        await enter('max-width', '180');
+        await tester.tap(find.text('Appliquer'));
+        await tester.pumpAndSettle();
+        final saved = controller.value.slotSizeConstraints['a']!;
+        expect(saved.minWidth, const SlotDimension(40, SlotSizeUnit.pixels));
+        expect(saved.preferredWidth, const SlotDimension(50, SlotSizeUnit.percent));
+        expect(saved.maxWidth, const SlotDimension(180, SlotSizeUnit.pixels));
+        expect(tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
+            lessThanOrEqualTo(180));
+        history.undo();
+        await tester.pumpAndSettle();
+        expect(controller.value.toJson(), initial.toJson());
+        history.redo();
+        await tester.pumpAndSettle();
+        expect(controller.value.slotSizeConstraints['a'], saved);
+        await open();
+        expect(tester.widget<TextFormField>(
+            find.byKey(const ValueKey('slot-max-width'))).controller!.text, '180.0');
+        await tester.tap(find.text('Taille automatique'));
+        await tester.pumpAndSettle();
+        expect(controller.value.slotSizeConstraints['a'],
+            const SlotSizeConstraints());
+        expect(controller.value.slotPreferredSizes.containsKey('a'), isFalse);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      '${appBar ? 'AppBar' : 'bottom bar'} resizes selected slots using handles',
+      (tester) async {
+        final registry = Registry()
+          ..registerFactory('A', const SuperContainer(
+            label: 'AB', child: Center(child: Text('A')),
+          ));
+        final region = appBar ? 'title' : 'left';
+        final initial = NativeComponentConfig(
+          placements: {region: ['a']},
+          slotTypes: {'a': 'factory:A'},
+          slotPreferredSizes: {'a': const Size(100, 32)},
+        );
+        await mount(
+          appBar
+              ? SuperPage(appBar: SuperAppBar(
+                  id: 'resize-bar', nativeConfig: initial,
+                ))
+              : SuperPage(bottomNavigationBar: SuperBottomNavigationBar(
+                  id: 'resize-bar', nativeConfig: initial,
+                )),
+          tester, registry,
+        );
+        final context = tester.element(find.byType(
+            appBar ? SuperAppBar : SuperBottomNavigationBar));
+        final mode = StyleEditScope.controllerOf(context)!;
+        final history = EditorHistoryScope.controllerOf(context)!;
+        final appearance = AppearanceScope.controllerOf(context)!
+            as PersistentAppearanceController;
+        mode.value = true;
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byKey(const ValueKey('style-edit-banner-drag')),
+          const Offset(0, 200),
+        );
+        await tester.pumpAndSettle();
+        final editor = tester.state<NativeComponentEditorState>(
+          find.descendant(
+            of: find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+            matching: find.byType(NativeComponentEditor),
+          ),
+        );
+        editor.select(region);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('slot-resize-a-e')), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('slot-label-select-a')));
+        await tester.pumpAndSettle();
+        final handle = find.byKey(const ValueKey('slot-resize-a-e'));
+        expect(handle, findsOneWidget);
+        final before = tester.getSize(find.byKey(const ValueKey('slot-a')));
+        final gesture = await tester.startGesture(tester.getCenter(handle));
+        await gesture.moveBy(const Offset(20, 0));
+        await tester.pump();
+        await gesture.moveBy(const Offset(20, 0));
+        await tester.pump();
+        expect(find.byKey(const ValueKey('slot-resize-size-a')), findsOneWidget);
+        await gesture.up();
+        await tester.pumpAndSettle();
+        final controller = registry.nativeComponentController('resize-bar');
+        final dimensions = controller.value.slotSizeConstraints['a']!;
+        expect(dimensions.preferredWidth!.value, closeTo(before.width + 40, 1));
+        expect(dimensions.preferredHeight!.value, 32);
+        expect(controller.value.slotPreferredSizes.containsKey('a'), isFalse);
+        expect(tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
+            closeTo(before.width + 40, 1));
+        history.undo();
+        await tester.pumpAndSettle();
+        expect(controller.value.slotSizeConstraints, isEmpty);
+        expect(controller.value.slotPreferredSizes['a'], const Size(100, 32));
+        history.redo();
+        await tester.pumpAndSettle();
+        expect(controller.value.slotSizeConstraints['a'], dimensions);
+        await appearance.saved;
+        expect((await AppearanceStore().load())
+            .nativeComponent('resize-bar').slotSizeConstraints['a'], dimensions);
+        final heightHandle = find.byKey(const ValueKey('slot-resize-a-s'));
+        expect(heightHandle, findsOneWidget);
+        final vertical = await tester.startGesture(tester.getCenter(heightHandle));
+        await vertical.moveBy(const Offset(0, 100));
+        await tester.pump();
+        await vertical.moveBy(const Offset(0, 100));
+        await tester.pump();
+        await vertical.up();
+        await tester.pumpAndSettle();
+        final height = controller.value.slotSizeConstraints['a']!
+            .preferredHeight!.value;
+        expect(height, greaterThanOrEqualTo(32));
+        expect(height, lessThanOrEqualTo(
+            appBar ? kToolbarHeight : kBottomNavigationBarHeight));
+        expect(tester.getSize(find.byKey(const ValueKey('slot-a'))).height,
+            lessThanOrEqualTo(
+                appBar ? kToolbarHeight : kBottomNavigationBarHeight));
+        mode.value = false;
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('slot-resize-a-e')), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
     testWidgets(
       '${appBar ? 'AppBar' : 'bottom bar'} moves A by dragging between native regions',
       (tester) async {
@@ -713,20 +905,28 @@ void main() {
         find.byKey(const ValueKey('style-menu-size-Taille préférée : title')),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextFormField).first, '-1');
+      await tester.enterText(find.byKey(const ValueKey('slot-preferred-width')), '-1');
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
-      expect(find.text('Saisissez une dimension positive.'), findsOneWidget);
-      await tester.enterText(find.byType(TextFormField).first, '120');
-      await tester.enterText(find.byType(TextFormField).last, '40');
+      expect(find.text('Saisissez une dimension positive en pixels ou en %.'), findsOneWidget);
+      await tester.enterText(find.byKey(const ValueKey('slot-preferred-width')), '120');
+      await tester.enterText(find.byKey(const ValueKey('slot-preferred-height')), '40');
+      await tester.enterText(find.byKey(const ValueKey('slot-min-width')), '80');
+      await tester.enterText(find.byKey(const ValueKey('slot-max-width')), '200');
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(
         registry
             .nativeComponentController('root-appBar')
             .value
-            .slotPreferredSizes['title'],
-        const Size(120, 40),
+            .slotSizeConstraints['title'],
+        const SlotSizeConstraints(
+          minWidth: SlotDimension(80, SlotSizeUnit.pixels),
+          preferredWidth: SlotDimension(120, SlotSizeUnit.pixels),
+          preferredHeight: SlotDimension(40, SlotSizeUnit.pixels),
+          maxWidth: SlotDimension(200, SlotSizeUnit.pixels),
+          percentBasis: SlotPercentBasis.layout,
+        ),
       );
       expect(find.byType(TextFormField), findsNothing);
       expect(tester.takeException(), isNull);

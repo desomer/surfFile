@@ -51,6 +51,68 @@ La lecture, les migrations et les imports utilisent le même codec.
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
+## SuperText : affichage ou saisie
+
+`Registry.bootstrap(availableFontFamilies: ['Segoe UI', 'Roboto'])` ajoute
+`SuperText` au catalogue avec les tags `text` et `input`. Chaque ajout possède
+son propre identifiant et sa propre configuration. Le composant est utilisable
+dans les dispositions et les zones internes des barres, mais ne remplace pas
+une barre native complète.
+
+```dart
+SuperText(
+  id: 'customer-name',
+  config: const SuperTextConfig(
+    mode: SuperTextMode.input,
+    initialText: '',
+    label: 'Nom',
+    placeholder: 'Votre nom',
+    minLines: 1,
+    maxLines: 3,
+  ),
+  controller: nameController,
+  availableFontFamilies: const ['Segoe UI', 'Roboto'],
+  onChanged: (text) => customer.name = text,
+)
+```
+
+L'application possède et libère le `TextEditingController`. Autre possibilité :
+passer `value: name` et `onChanged: (text) => setState(() => name = text)`, sans
+controller. Au premier montage, une liaison fournie par l'application est
+respectée sans appel de `onChanged`. Sans liaison, le texte initial est utilisé
+localement. Le composant fonctionne aussi sans `SuperApp` ; `onConfigChanged`
+permet alors de récupérer ses réglages locaux.
+
+En mode édition, clic droit puis **Texte** ouvre la configuration :
+affichage/saisie, texte initial, label, placeholder, activé, lecture seule,
+mot de passe, lignes min/max et typographie (famille, taille, graisse, italique,
+couleur AARRGGBB, alignement, interligne et espacement des lettres).
+Les options typographiques vides héritent du style du parent (par exemple le
+style du titre dans une AppBar). Le style de police peut être hérité, normal
+ou italique ; les anciennes valeurs explicites sont conservées. Les familles disponibles
+sont fournies par l'application, sans téléchargement ; une police sauvegardée
+mais absente est signalée en édition et doit être remplacée dans le dialogue.
+
+En affichage sans label, le texte est rendu sans décoration de champ ni marge
+de saisie. Le contenu est centré verticalement dans la hauteur du slot, notamment
+dans le titre d'une SuperAppBar.
+
+**Attention :** changer le mode ou le texte initial réinitialise la valeur
+courante au texte initial. La réinitialisation met à jour le controller fourni
+et appelle `onChanged` une seule fois ; avec `value`, le parent doit accepter
+la nouvelle valeur. L'activation du mot de passe efface aussi la valeur.
+Le mot de passe est masqué dans les deux modes, sur une seule ligne, et
+n'autorise aucun texte initial persistant.
+
+Seuls les réglages sont sauvegardés dans `Appearance.textComponents`, jamais
+la saisie courante ni le contenu du controller. Le dialogue ne publie rien
+avant **Appliquer** : **Annuler** ne touche ni les réglages ni la saisie.
+Une application validée constitue une seule étape d'annulation/rétablissement.
+L'annulation des changements de mode/texte initial applique également la règle
+de réinitialisation ; elle ne restaure pas les anciennes saisies.
+Les réglages texte font partie du groupe **Dispositions** à l'import/export
+et sont supprimés par la remise à zéro des dispositions.
+
 ## Tags des composants et restrictions des zones
 
 Les composants du registre et les slots fournis directement peuvent déclarer
@@ -137,6 +199,26 @@ son contenu. L'identifiant, le type et les dimensions suivent le slot ; les
 déplacements sont sauvegardés et peuvent être annulés/rétablis.
 Le glisser-déposer reste limité aux régions du même propriétaire, pas entre
 deux barres ou entre une barre et un `SuperLayout`.
+
+Dans les barres natives, cliquez sur l'étiquette d'un slot en mode édition
+pour afficher ses poignées de redimensionnement. Les dimensions sont limitées
+à l'espace disponible dans la région ; redimensionner un slot n'agrandit pas
+la hauteur fixe de la barre. Les dimensions sont sauvegardées et un geste
+complet peut être annulé/rétabli en une seule opération.
+
+L'éditeur de taille est commun aux zones de `SuperLayout`, aux régions
+natives de la page et aux barres : il propose les largeurs et hauteurs
+minimales, préférées et maximales, en pixels ou en pourcentage. Les
+pourcentages se rapportent au choix à la zone ou au composant parent.
+Il conserve l'aperçu en direct, les curseurs, la validation min/max,
+le retour à une taille automatique et l'annulation des changements.
+
+Dans la grille, l'éditeur « Position et taille » conserve les coordonnées
+et dimensions en cellules. Son bouton « Tailles min / préférée / max »
+ouvre le même formulaire pour dimensionner le contenu du slot dans sa
+cellule, sans déplacer ni agrandir celle-ci. La base « zone » correspond
+alors à la cellule ; la base « layout » à la surface visible du layout.
+Les contraintes de contenu restent enregistrées lors d'un changement de mode.
 
 Les documents existants restent lisibles : un ancien placement incompatible
 reste affiché, redimensionnable, réordonnable dans la même zone et supprimable.

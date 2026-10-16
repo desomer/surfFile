@@ -3,9 +3,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../models/native_component_config.dart';
+import '../models/super_layout_config.dart';
 import '../models/component_tag_filter.dart';
 import '../models/registry.dart';
 import 'editing/editor_dialog.dart';
+import 'editing/slot_size_editor.dart';
 import 'super_layout/layout_selection.dart';
 import 'super_layout/slot_implementation.dart';
 import 'surfaces/super_container.dart';
@@ -115,8 +117,10 @@ class NativeComponentEditor extends StatefulWidget {
 
 class NativeComponentEditorState extends State<NativeComponentEditor> {
   final _keys = <String, GlobalKey>{};
+  final _slotKeys = <String, GlobalKey>{};
   ValueNotifier<bool>? _editMode;
   String? _selected;
+  String? _selectedSlot;
   bool _active = false;
   List<String> _path = const [];
   Size _layoutSize = Size.zero;
@@ -150,6 +154,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   void didUpdateWidget(NativeComponentEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     _config.value = widget.config;
+    if (_selectedSlot != null &&
+        (_selected == null ||
+            !widget.config.slotsOf(_selected!).contains(_selectedSlot))) {
+      _selectedSlot = null;
+    }
     if (_selected != null && !enabled(_selected!)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _selected != null && !enabled(_selected!)) _clear();
@@ -192,6 +201,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     setState(() {
       _active = false;
       _selected = null;
+      _selectedSlot = null;
     });
     LayoutSelection.report(this, const []);
   }
@@ -202,6 +212,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     setState(() {
       _active = true;
       _selected = id;
+      _selectedSlot = null;
     });
     LayoutSelection.report(
       this,
@@ -209,6 +220,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       clear: _clear,
       focusContext: target ?? _keys[id]?.currentContext ?? context,
     );
+  }
+
+  void _selectSlot(String region, SlotImplementation slot) {
+    select(region);
+    setState(() => _selectedSlot = slot.id);
   }
 
   void _update(NativeComponentConfig config) {
@@ -510,85 +526,66 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   }
 
   Future<void> _editSize(SlotImplementation slot) async {
-    final saved =
-        _config.value.slotPreferredSizes[slot.id] ?? slot.preferredSize;
-    final width = TextEditingController(
-      text: saved?.width.isFinite == true ? saved!.width.toString() : '',
+    final initial = _config.value;
+    await showSlotSizeEditor(
+      context: context,
+      slot: slot,
+      saved: initial.slotSizeConstraints[slot.id],
+      legacy: preferredSizeFor(slot),
+      changes: _config,
+      target: _slotKeys[slot.id]?.currentContext,
+      measure: () {
+        final layout = context.findRenderObject();
+        final slotBox = _slotKeys[slot.id]?.currentContext?.findRenderObject();
+        final region = initial.placements.entries
+            .where((entry) => entry.value.contains(slot.id)).firstOrNull?.key;
+        final zoneBox = (_keys['$region:${slot.id}'] ?? _keys[region])
+            ?.currentContext?.findRenderObject();
+        if (layout is! RenderBox || !layout.hasSize ||
+            slotBox is! RenderBox || !slotBox.hasSize ||
+            zoneBox is! RenderBox || !zoneBox.hasSize) {
+          return null;
+        }
+        Rect bounds(RenderBox box) => MatrixUtils.transformRect(
+          box.getTransformTo(layout), Offset.zero & box.size,
+        );
+        return (layout: layout.size, zone: bounds(zoneBox), slot: bounds(slotBox));
+      },
+      onApply: (dimensions, useLegacyPixels) {
+        if (useLegacyPixels &&
+            dimensions.minWidth == null &&
+            dimensions.minHeight == null &&
+            dimensions.maxWidth == null &&
+            dimensions.maxHeight == null &&
+            dimensions.preferredWidth?.unit == SlotSizeUnit.pixels &&
+            dimensions.preferredHeight?.unit == SlotSizeUnit.pixels) {
+          _update(_config.value.withSlotSize(
+            slot.id,
+            Size(dimensions.preferredWidth!.value,
+                dimensions.preferredHeight!.value),
+          ));
+        } else {
+          _update(_config.value.withSlotSizeConstraints(slot.id, dimensions));
+        }
+      },
+      onRestore: () {
+        final current = _config.value;
+        _update(NativeComponentConfig(
+          placements: current.placements,
+          slotTypes: current.slotTypes,
+          regions: current.regions,
+          slotPreferredSizes: {...current.slotPreferredSizes}
+            ..remove(slot.id)
+            ..addAll({
+              if (initial.slotPreferredSizes.containsKey(slot.id))
+                slot.id: initial.slotPreferredSizes[slot.id],
+            }),
+          slotSizeConstraints: {...current.slotSizeConstraints}
+            ..remove(slot.id)
+            ..addAll({slot.id: ?initial.slotSizeConstraints[slot.id]}),
+        ));
+      },
     );
-    final height = TextEditingController(
-      text: saved?.height.isFinite == true ? saved!.height.toString() : '',
-    );
-    final form = GlobalKey<FormState>();
-    String? validate(String? value) {
-      if (value == null || value.trim().isEmpty) return null;
-      final number = double.tryParse(value.replaceAll(',', '.'));
-      return number != null && number.isFinite && number >= 0
-          ? null
-          : 'Saisissez une dimension positive.';
-    }
-
-    try {
-      final result = await showEditorDialog<Size>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('Taille du slot : ${slot.label}'),
-          content: Form(
-            key: form,
-            child: SizedBox(
-              width: 320,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: width,
-                      validator: validate,
-                      decoration: const InputDecoration(
-                        labelText: 'Largeur (px, vide = automatique)',
-                      ),
-                    ),
-                    TextFormField(
-                      controller: height,
-                      validator: validate,
-                      decoration: const InputDecoration(
-                        labelText: 'Hauteur (px, vide = automatique)',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Annuler'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (!form.currentState!.validate()) return;
-                double read(TextEditingController controller) =>
-                    controller.text.trim().isEmpty
-                    ? double.infinity
-                    : double.parse(controller.text.replaceAll(',', '.'));
-                Navigator.of(dialogContext)
-                    .pop(Size(read(width), read(height)));
-              },
-              child: const Text('Appliquer'),
-            ),
-          ],
-        ),
-      );
-      if (result != null && mounted) {
-        _update(_config.value.withSlotSize(slot.id, result));
-      }
-    } finally {
-      // Dialog reverse transitions may still refer to the text controllers.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        width.dispose();
-        height.dispose();
-      });
-    }
   }
 
   bool _showOverlay(String id) {
@@ -663,6 +660,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         child ??
         SlotStack(
           slots: slots,
+          focusKeys: _slotKeys,
           axis: spec.axis,
           expand: spec.expand,
           stretch: spec.stretch,
@@ -682,6 +680,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           layoutSize: _layoutSize,
           showLabels: overlay,
           zoneLabel: spec.label,
+          selectedSlotId: selected ? _selectedSlot : null,
+          onSelectSlot: editing && widget.editSurface
+              ? (slot) => _selectSlot(id, slot)
+              : null,
+          onResizeSlot: editing && widget.editSurface
+              ? (slot, dimensions) => _update(
+                  _config.value.withSlotSizeConstraints(slot.id, dimensions),
+                )
+              : null,
           mover: editing
               ? SlotMover(
                   owner: this,

@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
+import '../models/super_text_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
 
@@ -41,10 +42,14 @@ class AppearanceCodec {
       for (final entry in a.nativeComponents.entries)
         entry.key: entry.value.toJson(),
     },
+    'textComponents': {
+      for (final entry in a.textComponents.entries)
+        entry.key: entry.value.toJson(),
+    },
   };
   Appearance fromJson(Map<String, dynamic> json) {
     if (json['version'] != schemaVersion) throw const FormatException('Unsupported appearance version.');
-    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', 'scaffoldPages', 'nativeComponents', ...additionalKeys};
+    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', 'scaffoldPages', 'nativeComponents', 'textComponents', ...additionalKeys};
     if (json.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown appearance preference.');
     double number(String key, double fallback, double min, double max) {
       final value = json[key] ?? fallback;
@@ -80,6 +85,10 @@ class AppearanceCodec {
       nativeComponents: {
         for (final entry in entries('nativeComponents', optional: true).entries)
           entry.key: NativeComponentConfig.fromJson(entry.value),
+      },
+      textComponents: {
+        for (final entry in entries('textComponents', optional: true).entries)
+          entry.key: SuperTextConfig.fromJson(entry.value),
       },
     );
   }

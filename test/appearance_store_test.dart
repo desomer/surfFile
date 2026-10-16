@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_text_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/folder_transition.dart';
@@ -33,6 +34,21 @@ class _DelayedStore extends AppearanceStore {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('SurfFile codec preserves SuperText design and application preferences', () {
+    final appearance = defaultSurfFileAppearance().copyWith(
+      cardWidth: 240,
+      textComponents: {
+        'title': const SuperTextConfig(initialText: 'Titre'),
+        'password': const SuperTextConfig(obscureText: true),
+      },
+    );
+    final decoded = AppearanceStore.decode(AppearanceStore.encode(appearance));
+    expect(decoded.textComponents, appearance.textComponents);
+    expect(decoded.cardWidth, 240);
+    expect(decoded.copyWith(spacing: 24).textComponents, appearance.textComponents);
+    expect(decoded.resetLayouts().textComponents, isEmpty);
+  });
 
   test('independent preferences share immutable queued document snapshots', () async {
     final store = _DelayedStore();

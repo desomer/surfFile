@@ -74,6 +74,7 @@ class DefaultAppearanceCodec extends AppearanceCodec {
       layouts: base.layouts,
       scaffoldPages: base.scaffoldPages,
       nativeComponents: base.nativeComponents,
+      textComponents: base.textComponents,
       cardHeight: number('cardHeight', initial.cardHeight),
       cardWidth: number('cardWidth', initial.cardWidth),
       rowHeight: number('rowHeight', initial.rowHeight),

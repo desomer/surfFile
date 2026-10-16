@@ -283,6 +283,57 @@ void main() {
   );
 
   testWidgets(
+    'grid exposes shared size constraints alongside cell position',
+    (tester) async {
+      final (_, appearance, history) = await pumpGrid(tester);
+      final state = tester.state<SuperLayoutState>(find.byType(SuperLayout));
+      final action = ContainerMenuAction.of(
+        tester.element(find.byKey(const ValueKey('grid-content-a'))),
+      ).first;
+      action.onEdit();
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('grid-slot-width')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('grid-slot-size-constraints')));
+      await tester.pumpAndSettle();
+      final position = state.config.effectiveGrid.items['a'];
+      final before = state.config;
+      for (final dimension in [
+        'min-width', 'min-height', 'preferred-width',
+        'preferred-height', 'max-width', 'max-height',
+      ]) {
+        expect(find.byKey(ValueKey('slot-$dimension')), findsOneWidget);
+      }
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-min-width')), '80',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-width')), '120',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-max-width')), '160',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byKey(const ValueKey('grid-content-a'))).width,
+          closeTo(120, 1));
+      expect(state.config.effectiveGrid.items['a'], position);
+      expect(find.byKey(const ValueKey('slot-preview-zone')), findsOneWidget);
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      final saved = state.config.slotSizeConstraints['a']!;
+      expect(saved.minWidth, const SlotDimension(80, SlotSizeUnit.pixels));
+      expect(saved.maxWidth, const SlotDimension(160, SlotSizeUnit.pixels));
+      expect(SuperLayoutConfig.fromJson(state.config.toJson()), state.config);
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(appearance.value.layouts['grid'], before);
+      history.redo();
+      await tester.pumpAndSettle();
+      expect(state.config.slotSizeConstraints['a'], saved);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'grid size editor validates cells, renames and cancels atomically',
     (tester) async {
       final (_, appearance, history) = await pumpGrid(tester);

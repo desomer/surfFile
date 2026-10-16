@@ -1,4 +1,6 @@
 export 'models/registry.dart';
+export 'models/super_text_config.dart';
+export 'widgets/super_text.dart';
 export 'models/component_tag_filter.dart';
 export 'models/native_component_config.dart';
 export 'widgets/native_component_editor.dart';

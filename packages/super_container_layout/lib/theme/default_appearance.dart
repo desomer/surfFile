@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
+import '../models/super_text_config.dart';
 import 'appearance.dart';
 import 'container_style.dart';
 
@@ -27,6 +28,7 @@ class DefaultAppearance extends Appearance {
     super.layouts,
     super.scaffoldPages,
     super.nativeComponents,
+    super.textComponents,
     this.cardHeight = 142,
     this.cardWidth = 180,
     this.rowHeight = 48,
@@ -62,10 +64,17 @@ class DefaultAppearance extends Appearance {
       copyWith(layouts: {...layouts, id: value});
 
   @override
+  DefaultAppearance withTextComponent(String id, SuperTextConfig value) {
+    value.validate();
+    return copyWith(textComponents: {...textComponents, id: value});
+  }
+
+  @override
   DefaultAppearance resetLayouts() => copyWith(
     layouts: const {},
     scaffoldPages: const {},
     nativeComponents: const {},
+    textComponents: const {},
   );
 
   @override
@@ -74,6 +83,7 @@ class DefaultAppearance extends Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
+    Map<String, SuperTextConfig>? textComponents,
     ThemeMode? mode,
     Color? accent,
     double? backgroundOpacity,
@@ -93,6 +103,7 @@ class DefaultAppearance extends Appearance {
     layouts: layouts ?? this.layouts,
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
+    textComponents: textComponents ?? this.textComponents,
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
     backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,

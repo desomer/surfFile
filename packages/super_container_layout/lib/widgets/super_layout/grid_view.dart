@@ -421,7 +421,13 @@ class _GridSurfaceState extends State<_GridSurface> {
                                           _tapSlot = null;
                                           _tapStart = null;
                                         },
-                                        child: slot,
+                                        child: SlotStack(
+                                            slots: [slot],
+                                            focusKeys: widget.owner._gridSlotSizeKeys,
+                                            preferredSizes: widget.owner.config.slotPreferredSizes,
+                                            sizeConstraints: widget.owner.config.slotSizeConstraints,
+                                            layoutSize: Size(width, constraints.maxHeight),
+                                        ),
                                       ),
                                       if (widget.editing)
                                         Positioned.fill(

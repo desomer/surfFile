@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'native_component_config.dart';
+import 'super_text_config.dart';
+import '../widgets/super_text.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
@@ -54,6 +56,8 @@ class Registry {
   bool _syncing = false;
   final Map<String, SuperLayoutConfig> _layoutDefaults = {};
   final Map<String, ContainerStyle> _styleDefaults = {};
+  final Map<String, ValueNotifier<SuperTextConfig>> textConfigById = {};
+  final Map<String, SuperTextConfig> _textDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
   final Map<String, NativeComponentConfig? Function(Appearance)>
   _nativeMigrations = {};
@@ -75,6 +79,9 @@ class Registry {
     }
     for (final entry in nativeComponentConfigById.entries.toList()) {
       nativeComponentController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in textConfigById.entries.toList()) {
+      textController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -187,6 +194,11 @@ class Registry {
       for (final entry in nativeComponentConfigById.entries) {
         entry.value.value = _nativeValue(appearance, entry.key);
       }
+      for (final entry in textConfigById.entries) {
+        entry.value.value = appearance.textComponent(
+          entry.key, fallback: _textDefaults[entry.key]!,
+        );
+      }
     } finally {
       _syncing = false;
     }
@@ -197,6 +209,33 @@ class Registry {
       tags: tags,
       dynamicBuilder: (xuiCtx) => widget,
     );
+  }
+
+  ValueNotifier<SuperTextConfig> textController(
+    String id, {
+    SuperTextConfig fallback = const SuperTextConfig(),
+  }) {
+    fallback.validate();
+    _textDefaults.putIfAbsent(id, () => fallback);
+    final notifier = textConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.textComponent(id, fallback: fallback) ?? fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withTextComponent(
+            id, notifier.value,
+          );
+        }
+      }
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
   }
 
   ValueNotifier<NativeComponentConfig> nativeComponentController(
@@ -249,7 +288,14 @@ class Registry {
     return result;
   }
 
-  void bootstrap() {
+  void bootstrap({List<String> availableFontFamilies = const []}) {
+    registry['SuperText'] = ComponentBuilderDynamic(
+      tags: const {'text', 'input'},
+      dynamicBuilder: (ctx) => SuperText(
+        id: ctx.id,
+        availableFontFamilies: availableFontFamilies,
+      ),
+    );
     registry['SuperAppBar'] = ComponentBuilderDynamic(
       tags: const {'appBar'},
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),

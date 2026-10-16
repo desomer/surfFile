@@ -1,0 +1,992 @@
+import 'dart:convert';
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/super_text_editor.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    for (final channel in [
+      const MethodChannel('com.alexmercerind/flutter_acrylic'),
+      WindowTransparency.channel,
+    ]) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => null);
+    }
+  });
+  tearDown(() {
+    for (final channel in [
+      const MethodChannel('com.alexmercerind/flutter_acrylic'),
+      WindowTransparency.channel,
+    ]) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    }
+  });
+
+  const initial = SuperTextConfig(initialText: 'Initial');
+  const input = SuperTextConfig(
+    mode: SuperTextMode.input,
+    initialText: 'Initial',
+  );
+
+  Widget host(Widget child) => MaterialApp(
+    home: Scaffold(
+      body: Center(child: SizedBox(width: 320, child: child)),
+    ),
+  );
+
+  Future<void> mount(
+    WidgetTester tester,
+    Registry registry,
+    Widget page,
+  ) async {
+    final router = GoRouter(
+      routes: [GoRoute(path: '/', builder: (_, _) => page)],
+    );
+    addTearDown(router.dispose);
+    await tester.pumpWidget(SuperApp(router: router, registry: registry));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'SuperApp edits persist atomically and undo resets without saving runtime input',
+    (tester) async {
+      final registry = Registry()..bootstrap(availableFontFamilies: ['Roboto']);
+      await mount(
+        tester,
+        registry,
+        const SuperPage(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 80),
+              child: SizedBox(
+                width: 320,
+                child: SuperText(id: 'persisted', config: input),
+              ),
+            ),
+          ),
+        ),
+      );
+      StyleEditScope.controllerOf(tester.element(find.byType(SuperText)))!
+              .value =
+          true;
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(SuperText));
+      final history = EditorHistoryScope.controllerOf(context)!;
+      final appearance = AppearanceScope.controllerOf(context)!;
+      final design = registry.textController('persisted');
+      final before = const AppearanceCodec().encode(appearance.value);
+      await tester.enterText(find.byType(TextField), 'Never persisted');
+      await tester.pumpAndSettle();
+      expect(const AppearanceCodec().encode(appearance.value), before);
+      expect(history.canUndo, isFalse);
+      await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Texte'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('super-text-settings')), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('super-text-setting-initialText')),
+        'Saved design',
+      );
+      expect(history.canUndo, isFalse);
+      expect(design.value, input);
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(design.value.initialText, 'Saved design');
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Saved design',
+      );
+      expect(history.canUndo, isTrue);
+      final store = AppearanceStore();
+      await store.save(appearance.value);
+      expect((await store.load()).textComponents['persisted'], design.value);
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(design.value, input);
+      expect(history.canUndo, isFalse);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Initial',
+      );
+      history.redo();
+      await tester.pumpAndSettle();
+      expect(design.value.initialText, 'Saved design');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'catalog instances compose inside native bars and grid without sharing state',
+    (tester) async {
+      final registry = Registry()..bootstrap(availableFontFamilies: ['Roboto']);
+      registry.textController('bar-text', fallback: input);
+      registry.textController('bottom-text', fallback: initial);
+      registry.textController(
+        'grid-text',
+        fallback: initial.copyWith(initialText: 'Grid'),
+      );
+      final layout = const SuperLayoutConfig(
+        north: false,
+        south: false,
+        east: false,
+        west: false,
+        placements: {
+          SuperLayoutZone.center: ['grid-text'],
+        },
+        slotTypes: {'grid-text': 'registry:SuperText'},
+      ).withPositioning(SuperLayoutPositioning.grid);
+      await mount(
+        tester,
+        registry,
+        SuperPage(
+          appBar: SuperAppBar(
+            id: 'bar',
+            nativeConfig: NativeComponentConfig(
+              placements: {
+                'title': ['bar-text'],
+              },
+              slotTypes: {'bar-text': 'factory:SuperText'},
+            ),
+          ),
+          bottomNavigationBar: SuperBottomNavigationBar(
+            id: 'bottom',
+            nativeConfig: NativeComponentConfig(
+              placements: {
+                'left': ['bottom-text'],
+              },
+              slotTypes: {'bottom-text': 'factory:SuperText'},
+            ),
+          ),
+          child: SuperLayout(config: layout),
+        ),
+      );
+      expect(find.byType(SuperText), findsNWidgets(3));
+      expect(find.text('Grid'), findsOneWidget);
+      expect(
+        tester
+            .widget<SuperText>(find.byType(SuperText).first)
+            .availableFontFamilies,
+        ['Roboto'],
+      );
+      await tester.enterText(find.byType(TextField), 'Only bar');
+      await tester.pumpAndSettle();
+      expect(find.text('Only bar'), findsOneWidget);
+      expect(find.text('Initial'), findsOneWidget);
+      expect(find.text('Grid'), findsOneWidget);
+      expect(registry.textController('bar-text').value, input);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  test('config round trips all fields and restores inherited typography', () {
+    const config = SuperTextConfig(
+      mode: SuperTextMode.input,
+      initialText: 'Bonjour',
+      label: 'Nom',
+      placeholder: 'Votre nom',
+      enabled: false,
+      readOnly: true,
+      minLines: 2,
+      maxLines: 4,
+      fontFamily: 'Roboto',
+      fontSize: 18,
+      fontWeight: FontWeight.w600,
+      italic: true,
+      color: Color(0xFF123456),
+      textAlign: TextAlign.center,
+      lineHeight: 1.4,
+      letterSpacing: -.5,
+    );
+    final decoded = SuperTextConfig.fromJson(
+      jsonDecode(jsonEncode(config.toJson())),
+    );
+    expect(decoded, config);
+    expect(decoded.hashCode, config.hashCode);
+    final inherited = decoded.copyWith(
+      inheritFontFamily: true,
+      inheritFontSize: true,
+      inheritFontWeight: true,
+      inheritItalic: true,
+      inheritColor: true,
+      inheritLineHeight: true,
+      inheritLetterSpacing: true,
+    );
+    expect(inherited.fontFamily, isNull);
+    expect(inherited.fontSize, isNull);
+    expect(inherited.fontWeight, isNull);
+    expect(inherited.italic, isNull);
+    expect(inherited.color, isNull);
+    expect(inherited.lineHeight, isNull);
+    expect(inherited.letterSpacing, isNull);
+    expect(SuperTextConfig.fromJson(<String, dynamic>{}).italic, isNull);
+    expect(SuperTextConfig.fromJson({'italic': null}).italic, isNull);
+    for (final italic in [false, true]) {
+      final explicit = inherited.copyWith(italic: italic);
+      expect(SuperTextConfig.fromJson(explicit.toJson()).italic, italic);
+    }
+  });
+
+  test(
+    'strict config rejects malformed fields and unsafe password defaults',
+    () {
+      for (final json in <Object?>[
+        null,
+        [],
+        {'unknown': true},
+        {'mode': 'other'},
+        {'enabled': 'yes'},
+        {'italic': 'yes'},
+        {'minLines': 1.5},
+        {'minLines': 0},
+        {'minLines': 3, 'maxLines': 2},
+        {'fontSize': 0},
+        {'lineHeight': -1},
+        {'letterSpacing': double.infinity},
+        {'fontWeight': 450},
+        {'fontFamily': ''},
+        {'color': -1},
+        {'obscureText': true, 'initialText': 'secret'},
+        {'obscureText': true, 'maxLines': 2},
+      ]) {
+        expect(() => SuperTextConfig.fromJson(json), throwsFormatException);
+      }
+      const password = SuperTextConfig(obscureText: true);
+      expect(password.toJson().containsKey('initialText'), isFalse);
+      expect(SuperTextConfig.fromJson(password.toJson()), password);
+      expect(
+        () => const SuperTextConfig(
+          obscureText: true,
+          initialText: 'secret',
+        ).toJson(),
+        throwsArgumentError,
+      );
+    },
+  );
+
+  for (final mode in SuperTextMode.values) {
+    testWidgets('$mode inherits the native SuperAppBar title style', (
+      tester,
+    ) async {
+      const titleStyle = TextStyle(
+        fontSize: 27,
+        fontWeight: FontWeight.w800,
+        fontStyle: FontStyle.italic,
+        color: Colors.purple,
+        height: 1.2,
+        letterSpacing: 1.7,
+      );
+      final registry = Registry()..bootstrap();
+      await mount(
+        tester,
+        registry,
+        Theme(
+          data: ThemeData(
+            appBarTheme: const AppBarTheme(titleTextStyle: titleStyle),
+          ),
+          child: SuperPage(
+            appBar: SuperAppBar(
+              id: 'styled-bar',
+              title: SuperText(
+                id: 'title-style',
+                config: SuperTextConfig(mode: mode, initialText: 'Title'),
+              ),
+            ),
+          ),
+        ),
+      );
+      final style = mode == SuperTextMode.display
+          ? tester
+                .widget<Text>(
+                  find.byKey(const ValueKey('super-text-display-title-style')),
+                )
+                .style!
+          : tester.widget<TextField>(find.byType(TextField)).style!;
+      expect(style.fontSize, titleStyle.fontSize);
+      expect(style.fontWeight, titleStyle.fontWeight);
+      expect(style.fontStyle, titleStyle.fontStyle);
+      expect(style.color, titleStyle.color);
+      expect(style.height, titleStyle.height);
+      expect(style.letterSpacing, titleStyle.letterSpacing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets(
+      '$mode inherits parent typography but respects explicit overrides',
+      (tester) async {
+        const parentStyle = TextStyle(
+          fontFamily: 'ParentFont',
+          fontSize: 26,
+          fontWeight: FontWeight.w800,
+          fontStyle: FontStyle.italic,
+          color: Colors.purple,
+          height: 1.2,
+          letterSpacing: 1.7,
+        );
+        Widget text(SuperTextConfig config) => host(
+          DefaultTextStyle(
+            style: parentStyle,
+            child: SuperText(id: 'inherit', config: config),
+          ),
+        );
+        TextStyle style() => mode == SuperTextMode.display
+            ? tester
+                  .widget<Text>(
+                    find.byKey(const ValueKey('super-text-display-inherit')),
+                  )
+                  .style!
+            : tester.widget<TextField>(find.byType(TextField)).style!;
+        final config = SuperTextConfig(mode: mode, initialText: 'Parent');
+        await tester.pumpWidget(text(config));
+        expect(style(), parentStyle);
+        await tester.pumpWidget(
+          text(
+            config.copyWith(
+              fontSize: 18,
+              fontWeight: FontWeight.w400,
+              italic: false,
+              color: Colors.red,
+            ),
+          ),
+        );
+        expect(style().fontSize, 18);
+        expect(style().fontWeight, FontWeight.w400);
+        expect(style().fontStyle, FontStyle.normal);
+        expect(style().color, Colors.red);
+        expect(style().fontFamily, 'ParentFont');
+        expect(style().height, 1.2);
+        expect(style().letterSpacing, 1.7);
+      },
+    );
+  }
+
+  for (final catalog in [false, true]) {
+    testWidgets(
+      'display title is vertically centered (${catalog ? 'catalog' : 'direct'})',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        registry.textController('centered-title', fallback: initial);
+        await mount(
+          tester,
+          registry,
+          SuperPage(
+            appBar: SuperAppBar(
+              id: 'centered-bar',
+              toolbarHeight: 80,
+              title: catalog
+                  ? null
+                  : const SuperText(id: 'centered-title', config: initial),
+              nativeConfig: catalog
+                  ? NativeComponentConfig(
+                      placements: {
+                        'title': ['centered-title'],
+                      },
+                      slotTypes: {'centered-title': 'factory:SuperText'},
+                    )
+                  : null,
+            ),
+          ),
+        );
+        final title = find.byKey(
+          const ValueKey('super-text-display-centered-title'),
+        );
+        final toolbar = find.byType(NavigationToolbar);
+        expect(
+          tester.getCenter(title).dy,
+          closeTo(tester.getCenter(toolbar).dy, .5),
+        );
+        expect(
+          find.descendant(
+            of: find.byType(SuperText),
+            matching: find.byType(InputDecorator),
+          ),
+          findsNothing,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'display centers within tight slots and retains labels and multiline',
+    (tester) async {
+      for (final config in [
+        initial,
+        initial.copyWith(initialText: '', placeholder: 'Placeholder'),
+        initial.copyWith(
+          initialText: 'First\nSecond',
+          minLines: 2,
+          maxLines: 2,
+        ),
+      ]) {
+        await tester.pumpWidget(
+          host(
+            SizedBox(
+              key: const ValueKey('tight-text-slot'),
+              height: 120,
+              child: SuperText(id: 'tight', config: config),
+            ),
+          ),
+        );
+        final text = find.byKey(const ValueKey('super-text-display-tight'));
+        expect(
+          tester.getCenter(text).dy,
+          closeTo(
+            tester.getCenter(find.byKey(const ValueKey('tight-text-slot'))).dy,
+            .5,
+          ),
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(
+        host(
+          SizedBox(
+            height: 120,
+            child: SuperText(
+              id: 'tight',
+              config: initial.copyWith(label: 'Label'),
+            ),
+          ),
+        ),
+      );
+      expect(find.byType(InputDecorator), findsOneWidget);
+      expect(find.text('Label'), findsOneWidget);
+      expect(find.text('Initial'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('font style editor selects inherited normal and italic', (
+    tester,
+  ) async {
+    for (final choice in ['Normal', 'Italique', 'Style du parent']) {
+      SuperTextConfig? result;
+      await tester.pumpWidget(
+        host(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showSuperTextEditor(
+                context: context,
+                config: initial.copyWith(italic: true),
+                availableFontFamilies: [],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      final dropdown = find.byKey(const ValueKey('super-text-setting-italic'));
+      await tester.ensureVisible(dropdown);
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(choice).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(
+        result!.italic,
+        choice == 'Style du parent' ? null : choice == 'Italique',
+      );
+    }
+  });
+
+  test('appearance codecs transfer reset and subtype preserve text design', () {
+    const codec = DefaultAppearanceCodec();
+    final appearance = DefaultAppearance(cardWidth: 222)
+        .withTextComponent('title', initial);
+    expect(appearance.cardWidth, 222);
+    final decoded = codec.decode(codec.encode(appearance)) as DefaultAppearance;
+    expect(decoded.textComponents, {'title': initial});
+    expect(decoded.cardWidth, 222);
+    expect(decoded.copyWith(spacing: 20).textComponents, {'title': initial});
+    expect(decoded.resetLayouts().textComponents, isEmpty);
+    final legacy = codec.toJson(appearance)..remove('textComponents');
+    expect(codec.fromJson(legacy).textComponents, isEmpty);
+    final exported = AppearanceTransfer.export(appearance, {
+      TransferGroup.layouts,
+    }, codec: codec);
+    final imported = AppearanceTransfer.import(
+      DefaultAppearance(cardWidth: 240),
+      exported,
+      {TransferGroup.layouts},
+      codec: codec,
+    ) as DefaultAppearance;
+    expect(imported.textComponents, {'title': initial});
+    expect(imported.cardWidth, 240);
+    final styles = AppearanceTransfer.export(appearance, {
+      TransferGroup.styles,
+    }, codec: codec);
+    expect(jsonDecode(styles)['data'].containsKey('textComponents'), isFalse);
+    final invalid = codec.toJson(appearance)..['textComponents'] = {'a': 'bad'};
+    expect(() => codec.fromJson(invalid), throwsFormatException);
+  });
+
+  test(
+    'registry synchronizes history defaults rebinds and independent instances',
+    () {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier<Appearance>(Appearance());
+      final edit = ValueNotifier(true);
+      final history = EditorHistoryController(
+        appearance: appearance,
+        editMode: edit,
+      );
+      registry.bindAppearance(appearance);
+      final a = registry.textController('a', fallback: initial);
+      final b = registry.textController('b');
+      a.value = input;
+      expect(appearance.value.textComponents['a'], input);
+      expect(b.value, const SuperTextConfig());
+      history.undo();
+      expect(a.value, initial);
+      history.redo();
+      expect(a.value, input);
+      appearance.value = appearance.value.resetLayouts();
+      expect(a.value, initial);
+      registry.unbindAppearance();
+      a.value = input;
+      expect(appearance.value.textComponents, isEmpty);
+      final second = ValueNotifier<Appearance>(
+        Appearance(textComponents: {'a': initial}),
+      );
+      registry.bindAppearance(second);
+      expect(a.value, initial);
+      expect(registry.registry['SuperText']!.tags, {'text', 'input'});
+      final firstWidget = registry.registry['SuperText']!.getWidget(
+        XuiBuildCtx(id: 'x'),
+      );
+      final secondWidget = registry.registry['SuperText']!.getWidget(
+        XuiBuildCtx(id: 'y'),
+      );
+      expect((firstWidget as SuperText).id, 'x');
+      expect((secondWidget as SuperText).id, 'y');
+      registry.unbindAppearance();
+      history.dispose();
+      appearance.dispose();
+      second.dispose();
+      edit.dispose();
+    },
+  );
+
+  testWidgets(
+    'local input initializes once resets on mode and initial changes only',
+    (tester) async {
+      final events = <String>[];
+      Widget text(SuperTextConfig config) =>
+          host(SuperText(id: 'local', config: config, onChanged: events.add));
+      await tester.pumpWidget(text(input));
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Initial',
+      );
+      expect(events, isEmpty);
+      await tester.enterText(find.byType(TextField), 'Saisi');
+      expect(events, ['Saisi']);
+      await tester.pumpWidget(text(input.copyWith(fontSize: 20)));
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Saisi',
+      );
+      await tester.pumpWidget(text(initial));
+      await tester.pump();
+      expect(find.text('Initial'), findsOneWidget);
+      expect(events, ['Saisi', 'Initial']);
+      await tester.pumpWidget(text(initial.copyWith(initialText: 'Nouveau')));
+      await tester.pump();
+      expect(find.text('Nouveau'), findsOneWidget);
+      expect(events, ['Saisi', 'Initial', 'Nouveau']);
+      await tester.pumpWidget(text(initial.copyWith(initialText: 'Nouveau')));
+      await tester.pump();
+      expect(events.length, 3);
+    },
+  );
+
+  testWidgets(
+    'external controllers keep ownership and receive reset exactly once',
+    (tester) async {
+      final first = TextEditingController(text: 'Application');
+      final second = TextEditingController(text: 'Autre');
+      final events = <String>[];
+      Widget text(TextEditingController controller, SuperTextConfig config) =>
+          host(
+            SuperText(
+              id: 'bound',
+              controller: controller,
+              config: config,
+              onChanged: events.add,
+            ),
+          );
+      await tester.pumpWidget(text(first, initial));
+      expect(find.text('Application'), findsOneWidget);
+      expect(events, isEmpty);
+      first.text = 'Mise à jour';
+      await tester.pump();
+      expect(find.text('Mise à jour'), findsOneWidget);
+      await tester.pumpWidget(text(second, initial));
+      expect(find.text('Autre'), findsOneWidget);
+      await tester.pumpWidget(text(second, input));
+      await tester.pump();
+      expect(second.text, 'Initial');
+      expect(second.selection, const TextSelection.collapsed(offset: 7));
+      expect(second.value.composing, TextRange.empty);
+      expect(events, ['Initial']);
+      expect(first.text, 'Mise à jour');
+      await tester.pumpWidget(const SizedBox());
+      first.text = 'Still owned';
+      second.text = 'Still owned';
+      first.dispose();
+      second.dispose();
+    },
+  );
+
+  testWidgets(
+    'value binding is controlled and resets notify parent without overriding value',
+    (tester) async {
+      final events = <String>[];
+      var config = input;
+      var value = 'Parent';
+      late StateSetter update;
+      await tester.pumpWidget(
+        host(
+          StatefulBuilder(
+            builder: (_, setState) {
+              update = setState;
+              return SuperText(
+                id: 'controlled',
+                config: config,
+                value: value,
+                onChanged: (next) {
+                  events.add(next);
+                  update(() => value = next);
+                },
+              );
+            },
+          ),
+        ),
+      );
+      expect(events, isEmpty);
+      await tester.enterText(find.byType(TextField), 'Nouveau');
+      await tester.pump();
+      expect(value, 'Nouveau');
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Nouveau',
+      );
+      update(() => config = initial);
+      await tester.pumpAndSettle();
+      expect(value, 'Initial');
+      expect(events, ['Nouveau', 'Initial']);
+    },
+  );
+
+  testWidgets(
+    'password masks display and semantics and clears text when enabled',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = TextEditingController(text: 'Secret');
+      final events = <String>[];
+      await tester.pumpWidget(
+        host(
+          SuperText(
+            id: 'password',
+            config: const SuperTextConfig(obscureText: true),
+            controller: controller,
+            onChanged: events.add,
+          ),
+        ),
+      );
+      expect(find.text('Secret'), findsNothing);
+      expect(find.text('\u2022' * 6), findsOneWidget);
+      expect(
+        tester
+            .getSemantics(
+              find.byKey(const ValueKey('super-text-display-password')),
+            )
+            .getSemanticsData()
+            .label,
+        isNot(contains('Secret')),
+      );
+      expect(events, isEmpty);
+      await tester.pumpWidget(
+        host(
+          SuperText(
+            id: 'password',
+            config: const SuperTextConfig(
+              mode: SuperTextMode.input,
+              obscureText: true,
+            ),
+            controller: controller,
+            onChanged: events.add,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '');
+      expect(events, ['']);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).obscureText,
+        isTrue,
+      );
+      await tester.pumpWidget(
+        host(
+          SuperText(
+            id: 'password',
+            config: const SuperTextConfig(mode: SuperTextMode.input),
+            controller: controller,
+          ),
+        ),
+      );
+      controller.text = 'New secret';
+      await tester.pumpWidget(
+        host(
+          SuperText(
+            id: 'password',
+            config: const SuperTextConfig(
+              mode: SuperTextMode.input,
+              obscureText: true,
+            ),
+            controller: controller,
+            onChanged: events.add,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(controller.text, '');
+      expect(events, ['', '']);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+      semantics.dispose();
+    },
+  );
+
+  testWidgets('controlled parent may reject edits and reset notifications', (
+    tester,
+  ) async {
+    final events = <String>[];
+    Widget text(SuperTextConfig config) => host(
+      SuperText(
+        id: 'fixed',
+        config: config,
+        value: 'Fixed',
+        onChanged: events.add,
+      ),
+    );
+    await tester.pumpWidget(text(input));
+    await tester.enterText(find.byType(TextField), 'Rejected');
+    await tester.pump();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'Fixed',
+    );
+    await tester.pumpWidget(text(initial));
+    await tester.pump();
+    expect(find.text('Fixed'), findsOneWidget);
+    expect(events, ['Rejected', 'Initial']);
+  });
+
+  testWidgets('input keeps native text menu when visual editing is disabled', (
+    tester,
+  ) async {
+    final edit = ValueNotifier(false);
+    await tester.pumpWidget(
+      host(
+        StyleEditScope(
+          controller: edit,
+          child: const SuperText(id: 'runtime', config: input),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('style-menu-Texte')), findsNothing);
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    edit.dispose();
+  });
+
+  testWidgets('display and input compose in unbounded-width bar actions', (
+    tester,
+  ) async {
+    for (final config in [initial, input]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            appBar: AppBar(
+              actions: [SuperText(id: 'action', config: config)],
+            ),
+            bottomNavigationBar: SizedBox(
+              height: 56,
+              child: Row(
+                children: [SuperText(id: 'bottom', config: config)],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+  });
+
+  testWidgets(
+    'typography multiline readOnly disabled and missing fonts render',
+    (tester) async {
+      final edit = ValueNotifier(true);
+      await tester.pumpWidget(
+        host(
+          StyleEditScope(
+            controller: edit,
+            child: SuperText(
+              id: 'style',
+              config: input.copyWith(
+                label: 'Nom',
+                placeholder: 'Votre nom',
+                minLines: 2,
+                maxLines: 4,
+                enabled: false,
+                readOnly: true,
+                fontFamily: 'Unavailable',
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                italic: true,
+                color: Colors.red,
+                textAlign: TextAlign.end,
+                lineHeight: 1.5,
+                letterSpacing: 2,
+              ),
+            ),
+          ),
+        ),
+      );
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.enabled, isFalse);
+      expect(field.readOnly, isTrue);
+      expect(field.minLines, 2);
+      expect(field.maxLines, 4);
+      expect(field.style!.fontSize, 21);
+      expect(field.style!.fontWeight, FontWeight.w700);
+      expect(field.style!.fontStyle, FontStyle.italic);
+      expect(field.style!.color, Colors.red);
+      expect(field.style!.height, 1.5);
+      expect(field.style!.letterSpacing, 2);
+      expect(field.textAlign, TextAlign.end);
+      expect(
+        find.byKey(const ValueKey('super-text-font-warning-style')),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox());
+      edit.dispose();
+    },
+  );
+
+  testWidgets(
+    'dialog cancel never resets text and apply publishes one config',
+    (tester) async {
+      final controller = TextEditingController(text: 'Runtime');
+      final configs = <SuperTextConfig>[];
+      final events = <String>[];
+      await tester.pumpWidget(
+        host(
+          SuperText(
+            id: 'editor',
+            config: initial,
+            controller: controller,
+            onConfigChanged: configs.add,
+            onChanged: events.add,
+          ),
+        ),
+      );
+      Future<void> open() async {
+        await tester.tap(
+          find.byKey(const ValueKey('super-text-display-editor')),
+          buttons: kSecondaryMouseButton,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('style-menu-Texte')));
+        await tester.pumpAndSettle();
+      }
+
+      await open();
+      await tester.enterText(
+        find.byKey(const ValueKey('super-text-setting-initialText')),
+        'Draft',
+      );
+      expect(controller.text, 'Runtime');
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(controller.text, 'Runtime');
+      expect(configs, isEmpty);
+      await open();
+      await tester.enterText(
+        find.byKey(const ValueKey('super-text-setting-initialText')),
+        'Applied',
+      );
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(configs.single.initialText, 'Applied');
+      expect(controller.text, 'Applied');
+      expect(events, ['Applied']);
+      await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'dialog password clears defaults and validates numeric typography',
+    (tester) async {
+      SuperTextConfig? result;
+      await tester.pumpWidget(
+        host(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showSuperTextEditor(
+                context: context,
+                config: initial.copyWith(minLines: 2, maxLines: 3),
+                availableFontFamilies: ['Roboto'],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('super-text-setting-obscureText')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-text-setting-initialText')),
+        findsNothing,
+      );
+      final size = find.byKey(const ValueKey('super-text-setting-fontSize'));
+      await tester.ensureVisible(size);
+      await tester.enterText(size, '-4');
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(result, isNull);
+      expect(find.text('Valeur numérique valide requise.'), findsOneWidget);
+      await tester.enterText(size, '18');
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(result!.obscureText, isTrue);
+      expect(result!.initialText, '');
+      expect(result!.minLines, 1);
+      expect(result!.maxLines, 1);
+      expect(result!.fontSize, 18);
+      expect(result!.toJson().containsKey('initialText'), isFalse);
+    },
+  );
+}

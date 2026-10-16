@@ -174,6 +174,7 @@ class SuperLayoutState extends State<SuperLayout> {
   final _selectedSlot = ValueNotifier<String?>(null);
   final _zoneFocusKeys = <SuperLayoutZone, GlobalKey>{};
   final _slotFocusKeys = <String, GlobalKey>{};
+  final _gridSlotSizeKeys = <String, GlobalKey>{};
   SuperLayoutConfig? _reportedConfig;
 
   void _select(SuperLayoutZone zone) {

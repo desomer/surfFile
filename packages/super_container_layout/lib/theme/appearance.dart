@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
+import '../models/super_text_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
 import 'neon_style.dart';
@@ -21,6 +22,7 @@ class Appearance {
     Map<String, SuperLayoutConfig> layouts = const {},
     Map<String, ScaffoldPageConfig> scaffoldPages = const {},
     Map<String, NativeComponentConfig> nativeComponents = const {},
+    Map<String, SuperTextConfig> textComponents = const {},
   }) : styles = Map.unmodifiable(styles),
        layouts = Map.unmodifiable({
          for (final entry in layouts.entries)
@@ -48,7 +50,8 @@ class Appearance {
            ),
        }),
        scaffoldPages = Map.unmodifiable(scaffoldPages),
-       nativeComponents = Map.unmodifiable(nativeComponents);
+       nativeComponents = Map.unmodifiable(nativeComponents),
+       textComponents = Map.unmodifiable(textComponents);
 
   final ThemeMode mode;
   final Color accent;
@@ -59,6 +62,16 @@ class Appearance {
   final Map<String, SuperLayoutConfig> layouts;
   final Map<String, ScaffoldPageConfig> scaffoldPages;
   final Map<String, NativeComponentConfig> nativeComponents;
+  final Map<String, SuperTextConfig> textComponents;
+
+  SuperTextConfig textComponent(String id, {
+    SuperTextConfig fallback = const SuperTextConfig(),
+  }) => textComponents[id] ?? fallback;
+
+  Appearance withTextComponent(String id, SuperTextConfig value) {
+    value.validate();
+    return copyWith(textComponents: {...textComponents, id: value});
+  }
 
   NativeComponentConfig nativeComponent(String id, {NativeComponentConfig? fallback}) =>
       nativeComponents[id] ?? fallback ?? NativeComponentConfig();
@@ -118,6 +131,7 @@ class Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
+    Map<String, SuperTextConfig>? textComponents,
   }) => Appearance(
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
@@ -130,6 +144,7 @@ class Appearance {
     layouts: layouts ?? this.layouts,
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
+    textComponents: textComponents ?? this.textComponents,
   );
 
   Appearance withStyle(String id, ContainerStyle? value) {
@@ -152,7 +167,7 @@ class Appearance {
         scaffoldPages: {...scaffoldPages}..remove(id),
       );
   Appearance resetLayouts() =>
-      copyWith(layouts: const {}, scaffoldPages: const {}, nativeComponents: const {});
+      copyWith(layouts: const {}, scaffoldPages: const {}, nativeComponents: const {}, textComponents: const {});
 
   ThemeData theme(Brightness brightness) {
     final surface =

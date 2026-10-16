@@ -20,6 +20,7 @@ extension _GridSlotEditor on SuperLayoutState {
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
     var confirmed = false;
+    var editDimensions = false;
     try {
       confirmed = await showEditorDialog<bool>(
         context: context,
@@ -47,6 +48,16 @@ extension _GridSlotEditor on SuperLayoutState {
             content: SizedBox(width: 320, child: SingleChildScrollView(
               child: Form(key: form, child: Column(mainAxisSize: MainAxisSize.min,
                 children: [
+                  TextButton(
+                    key: const ValueKey('grid-slot-size-constraints'),
+                    onPressed: () {
+                      if (!form.currentState!.validate()) return;
+                      preview();
+                      editDimensions = true;
+                      Navigator.of(dialogContext).pop(true);
+                    },
+                    child: const Text('Tailles min / préférée / max (px ou %)'),
+                  ),
                   for (final entry in fields.entries)
                     TextFormField(
                       key: ValueKey('grid-slot-${entry.key}'),
@@ -101,5 +112,6 @@ extension _GridSlotEditor on SuperLayoutState {
         }
       });
     }
+    if (editDimensions && mounted) await _editSlotPreferredSize(slot);
   }
 }

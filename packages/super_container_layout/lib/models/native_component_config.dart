@@ -150,6 +150,17 @@ class NativeComponentConfig {
     slotSizeConstraints: {...slotSizeConstraints}..remove(id),
   );
 
+  NativeComponentConfig withSlotSizeConstraints(
+    String id,
+    SlotSizeConstraints constraints,
+  ) => NativeComponentConfig(
+    placements: placements,
+    slotTypes: slotTypes,
+    regions: regions,
+    slotPreferredSizes: {...slotPreferredSizes}..remove(id),
+    slotSizeConstraints: {...slotSizeConstraints, id: constraints},
+  );
+
   Map<String, Object> toJson() => {
     'regions': regions,
     'placements': {

@@ -19,6 +19,7 @@ import '../editing/editor_dialog_header.dart';
 import '../editing/editor_overlay.dart';
 import '../editing/editor_resize_handle.dart';
 import '../editing/editor_zoom.dart';
+import '../editing/slot_size_editor.dart';
 
 import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';
