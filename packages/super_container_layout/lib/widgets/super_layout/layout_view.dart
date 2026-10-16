@@ -207,8 +207,9 @@ extension _SuperLayoutView on SuperLayoutState {
                         zone: zone,
                         overlay: true,
                         dropTarget: true,
-                        child: _SlotZoneTarget(
+                        child: SlotZoneTarget(
                           owner: this,
+                          canMove: (id) => _canMoveSlot(id, zone),
                           zoneLabel: widget.zoneLabel(zone),
                           ids: [
                             for (final slot in _slotsOf(
@@ -235,7 +236,7 @@ extension _SuperLayoutView on SuperLayoutState {
                         canSwap: (zone) =>
                             widget.editable &&
                             zones.contains(zone) &&
-                            config.canSwap(zone),
+                            _canSwapZone(zone),
                         onSwap: (zone) => _update(config.withSwap(zone)),
                       ),
                     ),
@@ -264,7 +265,7 @@ extension _SuperLayoutView on SuperLayoutState {
                               onSelect: () => _select(zone),
                               onAdd: widget.editable ? () => _addSlot(zone) : null,
                               swapTarget:
-                                  widget.editable && config.canSwap(zone)
+                                  widget.editable && _canSwapZone(zone)
                                   ? zone.opposite
                                   : null,
                               moves: !zones.contains(zone.opposite),

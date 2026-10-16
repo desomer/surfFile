@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
+import '../../models/component_tag_filter.dart';
 import '../../super_app.dart';
 import 'slot_implementation.dart';
 import 'super_layout.dart';
@@ -13,6 +14,7 @@ class RegisteredSuperLayout extends StatelessWidget {
     required this.label,
     this.slots = const [],
     this.zoneLabels = const {},
+    this.zoneTagFilters = const {},
     this.onSlotAdded = SuperLayout.defaultSlotAddition,
     super.key,
   });
@@ -22,6 +24,7 @@ class RegisteredSuperLayout extends StatelessWidget {
   final String label;
   final List<SlotImplementation> slots;
   final Map<SuperLayoutZone, String> zoneLabels;
+  final Map<SuperLayoutZone, ComponentTagFilter> zoneTagFilters;
   final SlotAddedCallback onSlotAdded;
 
   @override
@@ -34,6 +37,7 @@ class RegisteredSuperLayout extends StatelessWidget {
       slots: slots,
       label: label,
       zoneLabels: zoneLabels,
+      zoneTagFilters: zoneTagFilters,
       onChanged: onChanged,
       onSlotAdded: onSlotAdded,
     );

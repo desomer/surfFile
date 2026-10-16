@@ -48,7 +48,7 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       )),
     ) == true;
     } finally {
-    if (!confirmed && mounted) _update(initial);
+    if (!confirmed && mounted) _update(initial, validateTags: false);
     if (!confirmed && mounted && initialInstance != null) {
       initialInstance.onRestore();
     }
@@ -64,7 +64,10 @@ extension _SuperLayoutDialogs on SuperLayoutState {
     if (_config.value.positioning == SuperLayoutPositioning.grid) {
       zone = SuperLayoutZone.center;
     }
-    final slots = _availableSlots(context, includeRegistry: true);
+    final slots = _availableSlots(context, includeRegistry: true)
+        .where((slot) =>
+            widget.zoneTagFilters[zone]?.accepts(slot.tags) ?? true)
+        .toList();
     final id = await showEditorDialog<String>(
       context: context,
       target: _zoneFocusKeys[zone]?.currentContext ?? context,

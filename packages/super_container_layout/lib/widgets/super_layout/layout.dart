@@ -44,6 +44,7 @@ class SuperLayout extends StatefulWidget {
     this.editable = true,
     this.showZoneNames = true,
     this.zoneLabels = const {},
+    this.zoneTagFilters = const {},
     super.key,
   });
 
@@ -145,6 +146,7 @@ class SuperLayout extends StatefulWidget {
   /// disposition imbriquée qui ne s'édite pas.
   final bool showZoneNames;
   final Map<SuperLayoutZone, String> zoneLabels;
+  final Map<SuperLayoutZone, ComponentTagFilter> zoneTagFilters;
 
   String zoneLabel(SuperLayoutZone zone) => zoneLabels[zone] ?? zone.label;
 
@@ -324,8 +326,54 @@ class SuperLayoutState extends State<SuperLayout> {
     super.dispose();
   }
 
-  void _update(SuperLayoutConfig value) {
+  SuperLayoutZone? _displayZoneOf(SuperLayoutConfig value, String id) {
+    for (final entry in value.placements.entries) {
+      if (entry.value.contains(id)) {
+        return value.positioning == SuperLayoutPositioning.grid
+            ? SuperLayoutZone.center
+            : value.contentZone(entry.key);
+      }
+    }
+    return null;
+  }
+
+  String? _tagRejection(SuperLayoutConfig value) {
+    for (final id in value.placedSlotIds) {
+      final zone = _displayZoneOf(value, id)!;
+      final unchanged =
+          _displayZoneOf(_config.value, id) == zone &&
+          _config.value.slotTypeOf(id) == value.slotTypeOf(id);
+      if (!unchanged &&
+          !(widget.zoneTagFilters[zone]?.accepts(
+                _searchSlot(id, configuration: value)?.tags ?? const {},
+              ) ??
+              true)) {
+        return 'Composant incompatible avec la zone ${widget.zoneLabel(zone)}.';
+      }
+    }
+    return null;
+  }
+
+  bool _canMoveSlot(String id, SuperLayoutZone zone) =>
+      _tagRejection(
+        _config.value.withSlotMoved(id, _config.value.contentZone(zone)),
+      ) ==
+      null;
+
+  bool _canSwapZone(SuperLayoutZone zone) =>
+      _config.value.canSwap(zone) &&
+      _tagRejection(_config.value.withSwap(zone)) == null;
+
+  void _update(SuperLayoutConfig value, {bool validateTags = true}) {
     if (value == _config.value) return;
+    final rejection = validateTags ? _tagRejection(value) : null;
+    if (rejection != null) {
+      debugPrint(rejection);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(rejection)),
+      );
+      return;
+    }
     if (value.label != _config.value.label ||
         value.positioning != _config.value.positioning) {
       setState(() => _config.value = value);

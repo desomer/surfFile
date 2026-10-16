@@ -48,6 +48,147 @@ void main() {
   }
 
   test(
+    'native moves preserve instance metadata, ordering and enabled source',
+    () {
+      final initial = NativeComponentConfig(
+        placements: {
+          'left': ['a', 'b'],
+          'right': ['c'],
+        },
+        slotTypes: {'a': 'factory:A'},
+        slotPreferredSizes: {'a': const Size(70, 30)},
+        slotSizeConstraints: {
+          'a': const SlotSizeConstraints(
+            minWidth: SlotDimension(20, SlotSizeUnit.pixels),
+          ),
+        },
+      );
+      final reordered = initial.withSlotMoved('a', 'left', afterId: 'b');
+      expect(reordered.slotsOf('left'), ['b', 'a']);
+      expect(reordered.withSlotMoved('a', 'left'), same(reordered));
+      final moved = reordered.withSlotMoved('a', 'right', beforeId: 'c');
+      expect(moved.slotsOf('left'), ['b']);
+      expect(moved.slotsOf('right'), ['a', 'c']);
+      expect(moved.slotTypes, initial.slotTypes);
+      expect(moved.slotPreferredSizes, initial.slotPreferredSizes);
+      expect(moved.slotSizeConstraints, initial.slotSizeConstraints);
+      final emptySource = moved.withSlotMoved('b', 'right');
+      expect(emptySource.slotsOf('left'), isEmpty);
+      expect(emptySource.isEnabled('left'), isTrue);
+      expect(NativeComponentConfig.fromJson(emptySource.toJson()).toJson(),
+          emptySource.toJson());
+      expect(() => initial.withSlotMoved('unknown', 'left'), throwsArgumentError);
+    },
+  );
+
+  for (final appBar in [true, false]) {
+    testWidgets(
+      '${appBar ? 'AppBar' : 'bottom bar'} moves A by dragging between native regions',
+      (tester) async {
+        final registry = Registry()
+          ..registerFactory('A', const SuperContainer(
+            label: 'AB', child: Center(child: Text('A')),
+          ));
+        final initial = NativeComponentConfig(
+          regions: appBar
+              ? {'title': true, 'actions': true}
+              : {'left': true, 'center': true, 'right': true},
+          placements: {
+            appBar ? 'title' : 'left': ['a'],
+          },
+          slotTypes: {'a': 'factory:A'},
+          slotPreferredSizes: {'a': const Size(48, 32)},
+        );
+        await mount(
+          appBar
+              ? SuperPage(appBar: SuperAppBar(
+                  id: 'drag-bar', nativeConfig: initial,
+                ))
+              : SuperPage(bottomNavigationBar: SuperBottomNavigationBar(
+                  id: 'drag-bar', nativeConfig: initial,
+                )),
+          tester, registry,
+        );
+        final context = tester.element(find.byType(
+            appBar ? SuperAppBar : SuperBottomNavigationBar));
+        final history = EditorHistoryScope.controllerOf(context)!;
+        final appearance = AppearanceScope.controllerOf(context)!
+            as PersistentAppearanceController;
+        StyleEditScope.controllerOf(context)!.value = true;
+        await tester.pumpAndSettle();
+        await tester.drag(
+          find.byKey(const ValueKey('style-edit-banner-drag')),
+          const Offset(0, 200),
+        );
+        await tester.pumpAndSettle();
+        final prefix = appBar ? 'super-app-bar' : 'super-bottom-navigation-bar';
+        final sourceRegion = appBar ? 'title' : 'left';
+        final targetRegion = appBar ? 'actions' : 'right';
+        final editor = tester.state<NativeComponentEditorState>(
+          find.descendant(
+            of: find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+            matching: find.byType(NativeComponentEditor),
+          ),
+        );
+        editor.select(sourceRegion);
+        await tester.pumpAndSettle();
+        final label = find.byKey(const ValueKey('slot-label-select-a'));
+        expect(find.descendant(of: label,
+            matching: find.byType(Draggable<SlotDragData>)), findsOneWidget);
+        final source = tester.getCenter(label);
+        final target = tester.getRect(
+            find.byKey(ValueKey('$prefix-slot-drop-$targetRegion')));
+        final gesture = await tester.startGesture(source);
+        await gesture.moveBy(const Offset(12, 0));
+        await tester.pump();
+        await gesture.moveTo(Offset(target.center.dx, target.bottom - 8));
+        await tester.pump();
+        expect(find.textContaining('→'), findsOneWidget);
+        await gesture.up();
+        await tester.pumpAndSettle();
+        final controller = registry.nativeComponentController('drag-bar');
+        expect(controller.value.slotsOf(sourceRegion), isEmpty);
+        expect(controller.value.slotsOf(targetRegion), ['a']);
+        expect(controller.value.isEnabled(sourceRegion), isTrue);
+        expect(controller.value.slotTypeOf('a'), 'factory:A');
+        expect(controller.value.slotPreferredSizes['a'], const Size(48, 32));
+        history.undo();
+        await tester.pumpAndSettle();
+        expect(controller.value.slotsOf(sourceRegion), ['a']);
+        expect(controller.value.slotsOf(targetRegion), isEmpty);
+        history.redo();
+        await tester.pumpAndSettle();
+        expect(controller.value.slotsOf(targetRegion), ['a']);
+        await appearance.saved;
+        expect((await AppearanceStore().load())
+            .nativeComponent('drag-bar').slotsOf(targetRegion), ['a']);
+        controller.value = controller.value
+            .withSlotAdded('b', targetRegion, type: 'factory:A')
+            .withSlotSize('b', const Size(48, 32));
+        await tester.pumpAndSettle();
+        tester.state<NativeComponentEditorState>(
+          find.descendant(
+            of: find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+            matching: find.byType(NativeComponentEditor),
+          ),
+        ).select(targetRegion);
+        await tester.pumpAndSettle();
+        final reorder = await tester.startGesture(tester.getCenter(
+            find.byKey(const ValueKey('slot-label-select-a'))));
+        await reorder.moveBy(const Offset(12, 0));
+        await tester.pump();
+        final other = tester.getRect(find.byKey(const ValueKey('slot-b')));
+        await reorder.moveTo(Offset(other.right - 5, other.bottom - 5));
+        await tester.pump();
+        await reorder.up();
+        await tester.pumpAndSettle();
+        expect(controller.value.slotsOf(targetRegion), ['b', 'a']);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  test(
     'generic placements are immutable, validated and losslessly serialized',
     () {
       final ids = ['first'];

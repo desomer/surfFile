@@ -396,8 +396,9 @@ class _GridSurfaceState extends State<_GridSurface> {
                                         onPointerDown: (event) =>
                                             _pointerDown(slot.id, event),
                                         onPointerUp: (event) {
-                                          if (event.pointer != _tapPointer)
+                                          if (event.pointer != _tapPointer) {
                                             return;
+                                          }
                                           if (_tapWasSelected &&
                                               identical(
                                                 _LayoutEditSelection

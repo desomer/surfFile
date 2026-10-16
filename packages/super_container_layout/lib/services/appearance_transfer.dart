@@ -24,8 +24,9 @@ class AppearanceTransfer {
     Set<TransferGroup> groups, {
     AppearanceCodec codec = const AppearanceCodec(),
   }) {
-    if (groups.isEmpty)
+    if (groups.isEmpty) {
       throw ArgumentError.value(groups, 'groups', 'No groups selected.');
+    }
     final data = codec.toJson(appearance)..remove('version');
     return const JsonEncoder.withIndent('  ').convert({
       'format': codec.format,
@@ -51,8 +52,9 @@ class AppearanceTransfer {
     } on FormatException {
       throw const FormatException('Le texte n’est pas un JSON valide.');
     }
-    if (json is! Map<String, dynamic>)
+    if (json is! Map<String, dynamic>) {
       throw const FormatException('Invalid appearance export.');
+    }
     final version = json['version'];
     if (version is! int) throw const FormatException('Invalid export version.');
     if (json.containsKey('format')) {
@@ -92,8 +94,9 @@ class AppearanceTransfer {
       for (final key in data.keys)
         if (known.contains(key)) _groupOf(key),
     };
-    if (groups.isEmpty)
+    if (groups.isEmpty) {
       throw const FormatException('No styles or layouts found.');
+    }
     return groups;
   }
 
@@ -104,8 +107,9 @@ class AppearanceTransfer {
     AppearanceCodec codec = const AppearanceCodec(),
   }) {
     final selected = groups.intersection(groupsIn(text, codec: codec));
-    if (selected.isEmpty)
+    if (selected.isEmpty) {
       throw const FormatException('No selected groups to import.');
+    }
     final merged = codec.toJson(current);
     final document = _document(text, codec);
     for (final entry in document.data.entries) {

@@ -24,6 +24,7 @@ import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../models/super_layout_config.dart';
+import '../../models/component_tag_filter.dart';
 import '../../super_app.dart';
 import 'layout_selection.dart';
 import 'slot_implementation.dart';

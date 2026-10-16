@@ -298,54 +298,6 @@ class _CenterSwapTarget extends StatelessWidget {
   }
 }
 
-/// Cible de dépôt d'une zone entière pour les slots de son propriétaire.
-class _SlotZoneTarget extends StatelessWidget {
-  const _SlotZoneTarget({
-    required this.owner,
-    required this.zoneLabel,
-    required this.ids,
-    required this.onMove,
-  });
-
-  final Object owner;
-  final String zoneLabel;
-
-  /// Slots visibles de la zone, dans l'ordre.
-  final List<String> ids;
-  final ValueChanged<String> onMove;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return DragTarget<SlotDragData>(
-      onWillAcceptWithDetails: (details) {
-        final accepts = identical(details.data.owner, owner);
-        if (accepts) {
-          details.data.hint.value = SlotDropHint.at(
-            zoneLabel: zoneLabel,
-            ids: ids,
-            movedId: details.data.id,
-          );
-        }
-        return accepts;
-      },
-      onLeave: (data) => data?.hint.value = null,
-      onAcceptWithDetails: (details) => onMove(details.data.id),
-      builder: (context, candidates, _) => EditorOverlay(child: IgnorePointer(
-        child: candidates.isEmpty
-            ? const SizedBox.expand()
-            : DecoratedBox(
-                decoration: BoxDecoration(
-                  color: colors.tertiary.withValues(alpha: .15),
-                  border: Border.all(color: colors.tertiary, width: 2),
-                ),
-              ),
-      )),
-    );
-  }
-}
-
-
 class _ZonePlaceholder extends StatelessWidget {
   const _ZonePlaceholder({
     required this.zone,

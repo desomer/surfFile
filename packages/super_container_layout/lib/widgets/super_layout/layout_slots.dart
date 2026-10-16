@@ -33,6 +33,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
   ) => BuilderSlot(
     id: id,
     label: key,
+    tags: component.tags,
     builder: (_) => component.getWidget(XuiBuildCtx(id: id)),
   );
 
@@ -46,8 +47,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
 
   /// Resout uniquement le slot demande, sans construire les autres slots.
   /// Retourne aussi les slots masques ; un identifiant inconnu renvoie null.
-  SlotImplementation? _searchSlot(String id) {
-    final type = config.slotTypeOf(id);
+  SlotImplementation? _searchSlot(String id, {SuperLayoutConfig? configuration}) {
+    final type = (configuration ?? config).slotTypeOf(id);
     final registry = SuperApp.maybeOf(context)?.registry;
     final ids = <String>{};
     SlotImplementation? supplied;
@@ -153,6 +154,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       mover: editMode && widget.editable
           ? SlotMover(
               owner: this,
+              canMove: (id) => _canMoveSlot(id, zone),
               onMove: (id, {beforeId, afterId}) => _update(
                 _config.value.withSlotMoved(
                   id,

@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../models/native_component_config.dart';
+import '../models/component_tag_filter.dart';
 import '../models/registry.dart';
 import 'editing/editor_dialog.dart';
 import 'super_layout/layout_selection.dart';
@@ -24,6 +25,7 @@ class NativeWidgetSlot extends SlotImplementation
     required super.label,
     required this.child,
     super.sizing = SlotSizing.intrinsic,
+    super.tags,
     super.key,
   });
 
@@ -59,6 +61,7 @@ class NativeRegion {
     this.stretch = true,
     this.emptySize = const Size(double.infinity, kToolbarHeight),
     this.fillSize,
+    this.tagFilter = const ComponentTagFilter(),
   });
 
   final String id;
@@ -70,6 +73,7 @@ class NativeRegion {
   final bool stretch;
   final Size emptySize;
   final Size? fillSize;
+  final ComponentTagFilter tagFilter;
 }
 
 /// Shared selection, menus, switches and slot catalog for native adapters.
@@ -208,9 +212,32 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   }
 
   void _update(NativeComponentConfig config) {
+    if (identical(config, _config.value)) return;
     _validate(config);
+    for (final region in widget.regions) {
+      for (final id in config.slotsOf(region.id)) {
+        final type = config.slotTypeOf(id);
+        final unchanged =
+            _config.value.slotsOf(region.id).contains(id) &&
+            _config.value.slotTypeOf(id) == type;
+        if (!unchanged &&
+            !region.tagFilter.accepts(_tagsForType(type, id: id))) {
+          _reportTagRejection(region.id);
+          return;
+        }
+      }
+    }
     _config.value = config;
     widget.onChanged(config);
+  }
+
+  void _reportTagRejection(String region) {
+    final message =
+        'Composant incompatible avec la zone ${definition(region).label}.';
+    debugPrint(message);
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   void _validate(NativeComponentConfig config) {
@@ -289,6 +316,27 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   String _componentType(String key, RegisteredComponent component) =>
       'component:${component.slotId ?? key}';
 
+  Set<String> _tagsForType(String type, {String? id}) {
+    final provided = _provided();
+    final supplied = provided[id] ?? provided[type];
+    if (supplied != null) return supplied.tags;
+    final registry = widget.registry;
+    if (registry == null) return const {};
+    for (final entry in registry.components.entries) {
+      if (type == _componentType(entry.key, entry.value) ||
+          type == entry.value.slotId ||
+          type == 'registry:${Uri.encodeComponent(entry.key)}') {
+        return entry.value.tags;
+      }
+    }
+    final key = type.startsWith('factory:')
+        ? type.substring('factory:'.length)
+        : type.startsWith('registry:')
+        ? Uri.decodeComponent(type.substring('registry:'.length))
+        : null;
+    return registry.registry[key]?.tags ?? const {};
+  }
+
   List<SlotImplementation> slotsFor(String region) {
     final provided = _provided();
     final result = <SlotImplementation>[];
@@ -305,6 +353,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               slot = BuilderSlot(
                 id: id,
                 label: entry.value.label,
+                tags: entry.value.tags,
                 visible: false,
                 builder: (_) => const SizedBox.shrink(),
               );
@@ -323,8 +372,18 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           if (factory != null) {
             final child = factory.getWidget(XuiBuildCtx(id: id));
             slot = child is NativePreferredSizeWidget
-                ? NativeWidgetSlot(id: id, label: factoryKey, child: child)
-                : BuilderSlot(id: id, label: factoryKey, builder: (_) => child);
+                ? NativeWidgetSlot(
+                    id: id,
+                    label: factoryKey,
+                    tags: factory.tags,
+                    child: child,
+                  )
+                : BuilderSlot(
+                    id: id,
+                    label: factoryKey,
+                    tags: factory.tags,
+                    builder: (_) => child,
+                  );
           }
         }
       }
@@ -339,7 +398,12 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           result.add(source);
         } else if (source case NativePreferredSizeWidget native) {
           result.add(
-            NativeWidgetSlot(id: id, label: source.label, child: native),
+            NativeWidgetSlot(
+              id: id,
+              label: source.label,
+              tags: source.tags,
+              child: native,
+            ),
           );
         } else {
           result.add(
@@ -350,6 +414,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               preferredSize: source.preferredSize,
               showLabel: source.showLabel,
               labelAlignment: source.labelAlignment,
+              tags: source.tags,
               builder: (_) => source,
             ),
           );
@@ -372,7 +437,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         for (final entry in registry.registry.entries)
           'factory:${entry.key}': entry.key,
       },
-    };
+    }..removeWhere(
+        (type, _) => !definition(region).tagFilter.accepts(_tagsForType(type)),
+      );
     final selected = await showEditorDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
@@ -397,6 +464,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       ),
     );
     if (selected == null || !mounted) return;
+    if (!definition(region).tagFilter.accepts(_tagsForType(selected))) {
+      _reportTagRejection(region);
+      return;
+    }
     final isProvided = provided.containsKey(selected);
     var id = selected;
     final used = {
@@ -426,6 +497,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         BuilderSlot(
           id: id,
           label: candidates[selected]!,
+          tags: _tagsForType(selected),
           builder: (_) => registry!.getWidget(
             selected.substring('factory:'.length),
             XuiBuildCtx(id: id),
@@ -532,6 +604,49 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         (_selected == null || _selected == id);
   }
 
+  bool _canMoveSlot(String slotId, String region) {
+    if (!editing || !enabled(region)) return false;
+    final config = _config.value;
+    if (!config.placements.values.any((ids) => ids.contains(slotId))) {
+      return false;
+    }
+    final current = config.slotsOf(region);
+    if (definition(region).single && current.any((id) => id != slotId)) {
+      return false;
+    }
+    return current.contains(slotId) ||
+        definition(region).tagFilter.accepts(
+          _tagsForType(config.slotTypeOf(slotId), id: slotId),
+        );
+  }
+
+  void _moveSlot(
+    String slotId,
+    String region, {
+    String? beforeId,
+    String? afterId,
+  }) {
+    if (!_canMoveSlot(slotId, region)) {
+      final message =
+          'Déplacement impossible vers ${definition(region).label} : '
+          'zone indisponible, occupée ou composant incompatible.';
+      debugPrint(message);
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      return;
+    }
+    final next = _config.value.withSlotMoved(
+      slotId,
+      region,
+      beforeId: beforeId,
+      afterId: afterId,
+    );
+    if (identical(next, _config.value)) return;
+    _update(next);
+    if (mounted && identical(_config.value, next)) select(region);
+  }
+
   /// Decorates a native property without changing the adapter's composition.
   Widget region(
     String id, {
@@ -567,6 +682,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           layoutSize: _layoutSize,
           showLabels: overlay,
           zoneLabel: spec.label,
+          mover: editing
+              ? SlotMover(
+                  owner: this,
+                  canMove: (slotId) => _canMoveSlot(slotId, id),
+                  onMove: (slotId, {beforeId, afterId}) => _moveSlot(
+                    slotId, id, beforeId: beforeId, afterId: afterId,
+                  ),
+                )
+              : null,
           onRemoveSlot: editing
               ? (slot) async => _update(_config.value.withoutSlot(slot.id))
               : null,
@@ -597,71 +721,83 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             onEdit: configure,
             onAdd: () => add(id),
             onContextMenu: (_) => select(id, regionContext),
-            child: Stack(
-              children: [
-                if (slots.isEmpty && editing)
-                  SizedBox(
-                    width: spec.emptySize.width,
-                    height: spec.expand
-                        ? double.infinity
-                        : spec.emptySize.height,
-                  )
-                else
-                  content,
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      key: selected && overlay
-                          ? ValueKey('${widget.keyPrefix}-selected-$id')
-                          : null,
-                      decoration: BoxDecoration(
-                        border: overlay
-                            ? Border.all(
-                                color: selected
-                                    ? colors.primary
-                                    : colors.outlineVariant,
-                                width: selected ? 3 : 1,
-                              )
-                            : null,
-                      ),
-                    ),
-                  ),
-                ),
-                if (overlay && showBadge)
+            child: SlotZoneTarget(
+              key: ValueKey(
+                '${widget.keyPrefix}-slot-drop-$id${item == null ? '' : ':${item.id}'}',
+              ),
+              owner: this,
+              zoneLabel: spec.label,
+              ids: _config.value.slotsOf(id),
+              canMove: (slotId) => _canMoveSlot(slotId, id),
+              onMove: (slotId) => _moveSlot(slotId, id),
+              child: Stack(
+                children: [
+                  if (slots.isEmpty && editing)
+                    SizedBox(
+                      width: spec.emptySize.width,
+                      height: spec.expand
+                          ? double.infinity
+                          : spec.emptySize.height,
+                    )
+                  else
+                    content,
                   Positioned.fill(
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Material(
-                          color: colors.primaryContainer,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              TextButton(
-                                key: ValueKey('${widget.keyPrefix}-select-$id'),
-                                onPressed: () =>
-                                    select(selected ? null : id, regionContext),
-                                child: Text(spec.label),
-                              ),
-                              IconButton(
-                                key: ValueKey('${widget.keyPrefix}-add-$id'),
-                                tooltip: 'Ajouter dans ${spec.label}',
-                                visualDensity: VisualDensity.compact,
-                                icon: const Icon(Icons.add),
-                                onPressed: () {
-                                  select(id, regionContext);
-                                  add(id);
-                                },
-                              ),
-                              ...?widget.regionActions?.call(id),
-                            ],
-                          ),
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: selected && overlay
+                            ? ValueKey('${widget.keyPrefix}-selected-$id')
+                            : null,
+                        decoration: BoxDecoration(
+                          border: overlay
+                              ? Border.all(
+                                  color: selected
+                                      ? colors.primary
+                                      : colors.outlineVariant,
+                                  width: selected ? 3 : 1,
+                                )
+                              : null,
                         ),
                       ),
                     ),
                   ),
-              ],
+                  if (overlay && showBadge)
+                    Positioned.fill(
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Material(
+                            color: colors.primaryContainer,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                TextButton(
+                                  key: ValueKey('${widget.keyPrefix}-select-$id'),
+                                  onPressed: () => select(
+                                    selected ? null : id,
+                                    regionContext,
+                                  ),
+                                  child: Text(spec.label),
+                                ),
+                                IconButton(
+                                  key: ValueKey('${widget.keyPrefix}-add-$id'),
+                                  tooltip: 'Ajouter dans ${spec.label}',
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.add),
+                                  onPressed: () {
+                                    select(id, regionContext);
+                                    add(id);
+                                  },
+                                ),
+                                ...?widget.regionActions?.call(id),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

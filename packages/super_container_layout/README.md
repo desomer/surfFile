@@ -51,6 +51,102 @@ La lecture, les migrations et les imports utilisent le même codec.
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
+## Tags des composants et restrictions des zones
+
+Les composants du registre et les slots fournis directement peuvent déclarer
+plusieurs `tags`. Les tags décrivent le type de composant, pas ses instances :
+
+```dart
+registry.registerComponent(
+  'page-title',
+  RegisteredComponent(
+    label: 'Titre',
+    tags: const {'appBar', 'text'},
+    builder: (_) => const Text('Titre de la page'),
+  ),
+);
+registry.registerFactory(
+  'custom-navigation',
+  const MyNavigation(),
+  tags: const {'bottomNavigationBar', 'navigation'},
+);
+```
+
+Les factories dynamiques acceptent aussi `tags` sur `ComponentBuilderDynamic`.
+`Registry.bootstrap()` attribue `appBar` à `SuperAppBar`,
+`bottomNavigationBar` à `SuperBottomNavigationBar`, `container` à
+`NewContainer` et `layout` à `NewLayout`.
+
+Un `ComponentTagFilter` définit les catégories acceptées par une zone :
+
+```dart
+const NativeRegion(
+  'title',
+  'Titre',
+  tagFilter: ComponentTagFilter(
+    include: {'text', 'navigation'},
+    exclude: {'internal'},
+  ),
+);
+
+SuperLayout(
+  zoneTagFilters: const {
+    SuperLayoutZone.north: ComponentTagFilter(include: {'appBar'}),
+    SuperLayoutZone.center: ComponentTagFilter(exclude: {'internal'}),
+  },
+  slots: [
+    BuilderSlot(
+      id: 'header',
+      label: 'En-tête',
+      tags: const {'appBar'},
+      builder: (_) => const Text('En-tête'),
+    ),
+  ],
+);
+```
+
+`RegisteredSuperLayout` expose également `zoneTagFilters`. Les filtres des
+zones sont attachés à leur destination affichée, même après un échange de
+contenus ; le mode grille utilise le filtre de `SuperLayoutZone.center`.
+
+Une liste `include` vide autorise tout sauf les tags exclus. Sinon, au moins
+un tag inclus doit correspondre. Un tag exclu est toujours prioritaire.
+Un composant sans tag est refusé si `include` n'est pas vide. Sans filtre,
+une zone reste libre.
+
+Par défaut, les régions `appBar` et `bottomNavigationBar` de `SuperPage`
+acceptent respectivement les catégories `appBar` et `bottomNavigationBar`.
+Les widgets fournis directement par ces propriétés restent compatibles avec
+leur région. Les autres régions n'ont aucune restriction par défaut.
+L'autorisation porte sur le tag, pas sur le nom de classe : un composant
+personnalisé tagué `appBar` est donc également accepté.
+
+Les catalogues de l'éditeur sont filtrés et les nouvelles insertions,
+changements de type et déplacements incompatibles sont refusés, y compris
+après les callbacks d'ajout. Un échange est refusé en entier si l'une des
+destinations est incompatible.
+
+En mode édition, faites glisser l'étiquette d'un slot pour le déplacer entre
+les régions d'un même composant natif : par exemple `Titre` et `Actions` de
+`SuperAppBar`, ou `Gauche`, `Centre` et `Droite` de
+`SuperBottomNavigationBar`. Un dépôt sur un autre slot permet de l'insérer
+avant ou après celui-ci ; sur l'espace libre, il est ajouté en dernier.
+Les régions vides doivent être activées pour recevoir un dépôt. Une région
+limitée à un seul slot et déjà occupée refuse le déplacement sans remplacer
+son contenu. L'identifiant, le type et les dimensions suivent le slot ; les
+déplacements sont sauvegardés et peuvent être annulés/rétablis.
+Le glisser-déposer reste limité aux régions du même propriétaire, pas entre
+deux barres ou entre une barre et un `SuperLayout`.
+
+Les documents existants restent lisibles : un ancien placement incompatible
+reste affiché, redimensionnable, réordonnable dans la même zone et supprimable.
+Il peut être déplacé vers une zone compatible. Les restaurations et
+undo/redo ne suppriment pas ces anciens placements.
+Tags et filtres restent des métadonnées du code ; ils ne sont pas édités dans
+l'interface ni enregistrés dans le JSON. Les configurations manipulées
+directement par le code ne valident pas le catalogue ; les contrôles
+s'appliquent aux mutations de l'éditeur.
+
 ## Pages et routage
 
 `SuperApp` exige toujours un `GoRouter` et utilise exclusivement

@@ -20,13 +20,17 @@ class XuiBuildCtx {
 }
 
 class ComponentBuilder {
+  ComponentBuilder({this.tags = const {}});
+
+  final Set<String> tags;
+
   Widget getWidget(XuiBuildCtx ctx) {
     return SizedBox.shrink();
   }
 }
 
 class RegisteredComponentImpl extends ComponentBuilder {
-  RegisteredComponentImpl({required this.widget});
+  RegisteredComponentImpl({required this.widget, super.tags});
 
   final Widget widget;
 
@@ -188,8 +192,11 @@ class Registry {
     }
   }
 
-  void registerFactory(String key, Widget widget) {
-    registry[key] = ComponentBuilderDynamic(dynamicBuilder: (xuiCtx) => widget);
+  void registerFactory(String key, Widget widget, {Set<String> tags = const {}}) {
+    registry[key] = ComponentBuilderDynamic(
+      tags: tags,
+      dynamicBuilder: (xuiCtx) => widget,
+    );
   }
 
   ValueNotifier<NativeComponentConfig> nativeComponentController(
@@ -244,13 +251,16 @@ class Registry {
 
   void bootstrap() {
     registry['SuperAppBar'] = ComponentBuilderDynamic(
+      tags: const {'appBar'},
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
     );
     registry['SuperBottomNavigationBar'] = ComponentBuilderDynamic(
+      tags: const {'bottomNavigationBar'},
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
     registry['NewContainer'] = ComponentBuilderDynamic(
+      tags: const {'container'},
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (context) {
           final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
@@ -267,6 +277,7 @@ class Registry {
       ),
     );
     registry['NewLayout'] = ComponentBuilderDynamic(
+      tags: const {'layout'},
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (ctx) {
           final id = xuiCtx.id;
@@ -298,7 +309,7 @@ class Registry {
 class ComponentBuilderDynamic extends ComponentBuilder {
   final Widget Function(XuiBuildCtx) dynamicBuilder;
 
-  ComponentBuilderDynamic({required this.dynamicBuilder});
+  ComponentBuilderDynamic({required this.dynamicBuilder, super.tags});
 
   @override
   Widget getWidget(XuiBuildCtx ctx) => dynamicBuilder(ctx);
@@ -312,6 +323,7 @@ class RegisteredComponent {
     this.sizing = SlotSizing.fill,
     this.preferredSize,
     this.isAvailable,
+    this.tags = const {},
   });
 
   final String label;
@@ -322,6 +334,7 @@ class RegisteredComponent {
   final SlotSizing sizing;
   final Size? preferredSize;
   final bool Function(BuildContext)? isAvailable;
+  final Set<String> tags;
 
   BuilderSlot createSlot(String id, {bool visible = true}) => BuilderSlot(
     id: id,
@@ -330,5 +343,6 @@ class RegisteredComponent {
     preferredSize: preferredSize,
     visible: visible,
     builder: builder,
+    tags: tags,
   );
 }

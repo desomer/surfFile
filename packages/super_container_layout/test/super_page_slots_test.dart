@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +60,130 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  for (final (region, factory) in [
+    (ScaffoldPageRegion.appBar, 'SuperAppBar'),
+    (ScaffoldPageRegion.bottomNavigationBar, 'SuperBottomNavigationBar'),
+  ]) {
+    testWidgets('${region.name} catalog accepts only its category',
+        (tester) async {
+      final registry = Registry()..bootstrap();
+      await pumpPage(tester, SuperPage(
+        appBar: AppBar(title: const Text('Provided header')),
+        bottomNavigationBar: const SizedBox(height: 40),
+      ), registry: registry);
+      final editor = tester.state<NativeComponentEditorState>(
+          find.byType(NativeComponentEditor));
+      unawaited(editor.add(region.name));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('scaffold-page-add-slot-factory:$factory')),
+          findsOneWidget);
+      expect(find.byKey(ValueKey(
+          'scaffold-page-add-slot-scaffold:${region.name}')), findsOneWidget);
+      expect(find.byKey(const ValueKey('scaffold-page-add-slot-scaffold:body')),
+          findsNothing);
+      expect(find.byKey(const ValueKey('scaffold-page-add-slot-factory:NewLayout')),
+          findsNothing);
+      final other = region == ScaffoldPageRegion.appBar
+          ? 'SuperBottomNavigationBar' : 'SuperAppBar';
+      expect(find.byKey(ValueKey('scaffold-page-add-slot-factory:$other')),
+          findsNothing);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('layout registry catalog and instances retain their tags',
+      (tester) async {
+    final registry = Registry()..bootstrap();
+    registry.registerComponent('tagged', const RegisteredComponent(
+      label: 'Tagged',
+      slotId: 'legacy-tagged',
+      tags: {'appBar', 'text'},
+      builder: _title,
+    ));
+    await pumpPage(tester, const SuperPage(
+      child: SuperLayout(
+        config: SuperLayoutConfig(
+          slotTypes: {
+            'factory-instance': 'registry:SuperAppBar',
+            'registered-instance': 'legacy-tagged',
+          },
+        ),
+        zoneTagFilters: {
+          SuperLayoutZone.center: ComponentTagFilter(include: {'appBar'}),
+        },
+      ),
+    ), registry: registry);
+    final layout = tester.state<SuperLayoutState>(find.byType(SuperLayout));
+    expect(layout.searchSlot('factory-instance')!.tags, {'appBar'});
+    expect(layout.searchSlot('registered-instance')!.tags, {'appBar', 'text'});
+    final surface = tester.widget<SuperContainer>(find.descendant(
+      of: find.byType(SuperLayout),
+      matching: find.byType(SuperContainer),
+    ).first);
+    unawaited(surface.onAdd!());
+    await tester.pumpAndSettle();
+    expect(find.byKey(
+        const ValueKey('super-layout-add-slot-registry:SuperAppBar')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('super-layout-add-slot-legacy-tagged')),
+        findsOneWidget);
+    expect(find.byKey(
+        const ValueKey('super-layout-add-slot-registry:NewContainer')),
+        findsNothing);
+    await tester.tap(find.byKey(
+        const ValueKey('super-layout-add-slot-legacy-tagged')));
+    await tester.pumpAndSettle();
+    final id = layout.config.placedSlotIds.single;
+    expect(id, isNot('legacy-tagged'));
+    expect(layout.config.slotTypeOf(id), 'legacy-tagged');
+    expect(layout.searchSlot(id)!.tags, {'appBar', 'text'});
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('history preserves legacy incompatible native placements',
+      (tester) async {
+    final registry = Registry()..bootstrap();
+    registry.registerFactory('compatible', const SizedBox(height: 24),
+        tags: {'appBar'});
+    registry.registerComponent('legacy', const RegisteredComponent(
+      label: 'Legacy title', builder: _title,
+    ));
+    await pumpPage(tester, SuperPage(
+      pageConfig: ScaffoldPageConfig(
+        placements: {
+          ScaffoldPageRegion.appBar: ['old'],
+          ScaffoldPageRegion.body: ['scaffold:body'],
+        },
+        slotTypes: {'old': 'component:legacy'},
+      ),
+    ), registry: registry);
+    expect(find.text('Registered title'), findsOneWidget);
+    final context = tester.element(find.byType(SuperPage));
+    StyleEditScope.controllerOf(context)!.value = true;
+    await tester.pumpAndSettle();
+    final history = EditorHistoryScope.controllerOf(context)!;
+    final editor = tester.state<NativeComponentEditorState>(
+        find.byType(NativeComponentEditor));
+    unawaited(editor.add('appBar'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(
+        const ValueKey('scaffold-page-add-slot-factory:compatible')));
+    await tester.pumpAndSettle();
+    final controller = registry.scaffoldPageController('root');
+    expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), hasLength(2));
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), ['old']);
+    expect(find.text('Registered title'), findsOneWidget);
+    history.redo();
+    await tester.pumpAndSettle();
+    expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), hasLength(2));
+    expect(find.text('Registered title'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   test('region switches round trip and keep disabled placements', () {
     final config =
         ScaffoldPageConfig(
@@ -101,7 +227,11 @@ void main() {
       final registry = Registry()
         ..registerComponent(
           'test-title',
-          const RegisteredComponent(label: 'Test title', builder: _title),
+          const RegisteredComponent(
+            label: 'Test title',
+            tags: {'bottomNavigationBar'},
+            builder: _title,
+          ),
         );
       await pumpPage(tester, const SuperPage(), registry: registry);
       final context = tester.element(find.byType(SuperPage));
@@ -758,7 +888,11 @@ void main() {
     final registry = Registry();
     registry.registerComponent(
       'test-title',
-      const RegisteredComponent(label: 'Test title', builder: _title),
+      const RegisteredComponent(
+        label: 'Test title',
+        tags: {'appBar'},
+        builder: _title,
+      ),
     );
     await pumpPage(
       tester,

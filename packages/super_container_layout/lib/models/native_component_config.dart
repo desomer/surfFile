@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show listEquals;
+
 import 'super_layout_config.dart' show SlotSizeConstraints;
 
 /// Immutable placements shared by adapters for native Flutter components.
@@ -91,6 +93,54 @@ class NativeComponentConfig {
     slotPreferredSizes: {...slotPreferredSizes}..remove(id),
     slotSizeConstraints: {...slotSizeConstraints}..remove(id),
   );
+
+  NativeComponentConfig withSlotMoved(
+    String id,
+    String region, {
+    String? beforeId,
+    String? afterId,
+  }) {
+    if (!placements.values.any((ids) => ids.contains(id))) {
+      throw ArgumentError.value(id, 'id', 'Unknown native slot.');
+    }
+    if (region.trim().isEmpty ||
+        (beforeId != null && afterId != null) ||
+        (beforeId != null && !slotsOf(region).contains(beforeId)) ||
+        (afterId != null && !slotsOf(region).contains(afterId))) {
+      throw ArgumentError('Invalid native slot destination or insertion point.');
+    }
+    if (beforeId == id || afterId == id) return this;
+    final next = {
+      for (final entry in placements.entries)
+        entry.key: entry.value.where((value) => value != id).toList(),
+    };
+    final destination = next.putIfAbsent(region, () => []);
+    final index = beforeId != null
+        ? destination.indexOf(beforeId)
+        : afterId != null
+        ? destination.indexOf(afterId) + 1
+        : destination.length;
+    destination.insert(index, id);
+    if (isEnabled(region) &&
+        next.length == placements.length &&
+        next.entries.every(
+          (entry) => listEquals(entry.value, placements[entry.key]),
+        )) {
+      return this;
+    }
+    return NativeComponentConfig(
+      placements: next,
+      slotTypes: slotTypes,
+      regions: {
+        ...regions,
+        for (final entry in placements.entries)
+          if (entry.value.contains(id) && isEnabled(entry.key)) entry.key: true,
+        region: true,
+      },
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+    );
+  }
 
   NativeComponentConfig withSlotSize(String id, Size? size) => NativeComponentConfig(
     placements: placements,

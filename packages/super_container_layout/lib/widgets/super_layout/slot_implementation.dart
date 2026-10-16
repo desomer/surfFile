@@ -36,12 +36,14 @@ abstract class SlotImplementation extends StatelessWidget {
     this.visible = true,
     this.showLabel = true,
     this.labelAlignment = Alignment.topLeft,
+    this.tags = const {},
     super.key,
   });
 
   /// Identifiant stable, utilisé par `SuperLayoutConfig.placements`.
   final String id;
   final String label;
+  final Set<String> tags;
   final SlotSizing sizing;
 
   /// Dimensions demandees, limitees par l'espace disponible dans la zone.
@@ -77,6 +79,7 @@ class BuilderSlot extends SlotImplementation {
     super.visible,
     super.showLabel,
     super.labelAlignment,
+    super.tags,
     super.key,
   });
 
@@ -101,6 +104,7 @@ class InstanceSlot extends SlotImplementation {
          visible: component.visible,
          showLabel: component.showLabel,
          labelAlignment: component.labelAlignment,
+         tags: component.tags,
        );
 
   final SlotImplementation component;
@@ -557,7 +561,7 @@ class SlotDragData {
 
   final String id;
 
-  /// Récepteur des slots (un `SuperLayout`) : seul lui accepte le dépôt.
+  /// Récepteur des slots : seul le même propriétaire accepte le dépôt.
   final Object owner;
 
   /// Où le slot atterrirait s'il était lâché ici ; la cible survolée le met à
@@ -674,12 +678,80 @@ class EmphasizedLabel extends StatelessWidget {
 
 /// Déplacement des slots d'une zone vers un autre rang.
 class SlotMover {
-  const SlotMover({required this.owner, required this.onMove});
+  const SlotMover({
+    required this.owner,
+    required this.onMove,
+    this.canMove,
+  });
 
   final Object owner;
+  final bool Function(String id)? canMove;
 
   /// Range [id] juste avant [beforeId] ou juste après [afterId].
   final void Function(String id, {String? beforeId, String? afterId}) onMove;
+}
+
+/// Receives a slot on a region's free space, after its existing slots.
+class SlotZoneTarget extends StatelessWidget {
+  const SlotZoneTarget({
+    required this.owner,
+    required this.zoneLabel,
+    required this.ids,
+    required this.onMove,
+    required this.canMove,
+    this.child,
+    super.key,
+  });
+
+  final Object owner;
+  final bool Function(String id) canMove;
+  final String zoneLabel;
+  final List<String> ids;
+  final ValueChanged<String> onMove;
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DragTarget<SlotDragData>(
+      onWillAcceptWithDetails: (details) {
+        final accepts =
+            identical(details.data.owner, owner) &&
+            canMove(details.data.id);
+        if (accepts) {
+          details.data.hint.value = SlotDropHint.at(
+            zoneLabel: zoneLabel,
+            ids: ids,
+            movedId: details.data.id,
+          );
+        }
+        return accepts;
+      },
+      onLeave: (data) => data?.hint.value = null,
+      onAcceptWithDetails: (details) => onMove(details.data.id),
+      builder: (context, candidates, _) {
+        final highlight = EditorOverlay(
+          child: IgnorePointer(
+            child: candidates.isEmpty
+                ? const SizedBox.expand()
+                : DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.tertiary.withValues(alpha: .15),
+                      border: Border.all(color: colors.tertiary, width: 2),
+                    ),
+                  ),
+          ),
+        );
+        if (child == null) return highlight;
+        return Stack(
+          children: [
+            child!,
+            Positioned.fill(child: highlight),
+          ],
+        );
+      },
+    );
+  }
 }
 
 /// Un slot, son étiquette d'édition et sa cible de dépôt. Le slot reste le
@@ -923,7 +995,9 @@ class _LabeledSlotState extends State<_LabeledSlot> {
           afterId: _after ? widget.slot.id : null,
         );
   bool _accepts(SlotDragData data) =>
-      widget.mover != null && identical(data.owner, widget.mover!.owner);
+      widget.mover != null &&
+      identical(data.owner, widget.mover!.owner) &&
+      (widget.mover!.canMove?.call(data.id) ?? true);
 
   void _track(Offset pointer) {
     final box = context.findRenderObject();
@@ -1055,6 +1129,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
             return accepts;
           },
           onMove: (details) {
+            if (!_accepts(details.data)) return;
             _track(details.offset);
             details.data.hint.value = _hintFor(details.data);
           },

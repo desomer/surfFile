@@ -1,6 +1,7 @@
   import 'package:material_ui/material_ui.dart';
 
 import '../models/scaffold_page_config.dart';
+import '../models/component_tag_filter.dart';
 import '../super_app.dart';
 import 'native_component_editor.dart';
 import 'super_layout/slot_implementation.dart';
@@ -43,13 +44,18 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
   late final _localConfig = ValueNotifier(widget.config);
 
   static const _regions = [
-    NativeRegion('appBar', 'AppBar'),
+    NativeRegion(
+      'appBar',
+      'AppBar',
+      tagFilter: ComponentTagFilter(include: {'appBar'}),
+    ),
     NativeRegion('body', 'Corps', required: true),
     NativeRegion('drawer', 'Drawer gauche'),
     NativeRegion('endDrawer', 'Drawer droit'),
     NativeRegion(
       'bottomNavigationBar',
       'Barre basse',
+      tagFilter: ComponentTagFilter(include: {'bottomNavigationBar'}),
       expand: false,
       fillSize: Size.fromHeight(kBottomNavigationBarHeight),
     ),
@@ -72,10 +78,16 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
   List<SlotImplementation> _providedSlots() => [
     if (widget.appBar case final bar?)
       if (bar is NativePreferredSizeWidget)
-        NativeWidgetSlot(id: 'scaffold:appBar', label: 'AppBar', child: bar)
+        NativeWidgetSlot(
+          id: 'scaffold:appBar',
+          label: 'AppBar',
+          tags: const {'appBar'},
+          child: bar,
+        )
       else BuilderSlot(
         id: 'scaffold:appBar',
         label: 'AppBar',
+        tags: const {'appBar'},
         sizing: SlotSizing.intrinsic,
         preferredSize: bar.preferredSize,
         builder: (_) => bar,
@@ -103,6 +115,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
       BuilderSlot(
         id: 'scaffold:bottomNavigationBar',
         label: 'Bottom navigation bar',
+        tags: const {'bottomNavigationBar'},
         sizing: SlotSizing.intrinsic,
         builder: (_) => bar,
       ),
