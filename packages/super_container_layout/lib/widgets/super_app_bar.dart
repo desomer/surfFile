@@ -36,6 +36,7 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   final String label;
   final Widget? title;
   final Widget? leading;
+
   /// Compatibility shorthand for the first entry in [actions].
   final Widget? action;
   final List<Widget> actions;
@@ -51,19 +52,38 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   final NativeSlotAddedCallback? onNativeSlotAdded;
 
   @override
-  Size get preferredSize => Size.fromHeight(toolbarHeight + _bottomHeight(nativeConfig ?? _fromLegacy(config)));
+  Size get preferredSize => Size.fromHeight(
+    toolbarHeight + _bottomHeight(nativeConfig ?? _fromLegacy(config)),
+  );
 
-  double _bottomHeight(NativeComponentConfig config, {bool editing = false, Registry? registry}) {
+  double _bottomHeight(
+    NativeComponentConfig config, {
+    bool editing = false,
+    Registry? registry,
+  }) {
     final ids = config.slotsOf('bottom');
     if (!config.isEnabled('bottom') || (ids.isEmpty && !editing)) return 0;
-    if (ids.length > 1) throw StateError('AppBar.bottom accepts a single slot.');
+    if (ids.length > 1) {
+      throw StateError('AppBar.bottom accepts a single slot.');
+    }
     if (ids.isEmpty) return kToolbarHeight;
     final id = ids.single;
     final type = config.slotTypeOf(id);
-    final supplied = slots.where((slot) => slot.id == id || slot.id == type).firstOrNull;
-    final component = registry?.components.entries.where((entry) => type == 'component:${entry.value.slotId ?? entry.key}').firstOrNull?.value;
-    final preferred = config.slotPreferredSizes[id] ??
-        (type == 'bottom' ? bottom?.preferredSize : supplied?.preferredSize ?? component?.createSlot(id).preferredSize);
+    final supplied = slots
+        .where((slot) => slot.id == id || slot.id == type)
+        .firstOrNull;
+    final component = registry?.components.entries
+        .where(
+          (entry) => type == 'component:${entry.value.slotId ?? entry.key}',
+        )
+        .firstOrNull
+        ?.value;
+    final preferred =
+        config.slotPreferredSizes[id] ??
+        (type == 'bottom'
+            ? bottom?.preferredSize
+            : supplied?.preferredSize ??
+                  component?.createSlot(id).preferredSize);
     final height = preferred?.height;
     return height != null && height.isFinite ? height : kToolbarHeight;
   }
@@ -85,33 +105,54 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   }
 
   @override
-  Listenable? sizeListenable(BuildContext context) =>
-      _controller(context);
+  Listenable? sizeListenable(BuildContext context) => _controller(context);
 
   @override
   Size preferredSizeIn(BuildContext context) {
-    final config = _controller(context)?.value ??
-        AppearanceScope.of(context).nativeComponent(id, fallback: _fallback(context));
+    final config =
+        _controller(context)?.value ??
+        AppearanceScope.of(context)
+            .nativeComponent(id, fallback: _fallback(context));
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
-    return Size.fromHeight(toolbarHeight + _bottomHeight(config, editing: editing, registry: SuperApp.maybeOf(context)?.registry));
+    return Size.fromHeight(
+      toolbarHeight +
+          _bottomHeight(
+            config,
+            editing: editing,
+            registry: SuperApp.maybeOf(context)?.registry,
+          ),
+    );
   }
 
-  NativeComponentConfig _fromLegacy(SuperLayoutConfig? legacy, [Registry? registry]) {
+  NativeComponentConfig _fromLegacy(
+    SuperLayoutConfig? legacy, [
+    Registry? registry,
+  ]) {
     if (legacy == null) {
-      return NativeComponentConfig(placements: {
-        if (leading != null) 'leading': ['leading'],
-        if (title != null) 'title': ['title'],
-        if (action != null || actions.isNotEmpty)
-          'actions': [if (action != null) 'action', for (var i = 0; i < actions.length; i++) 'action:$i'],
-        if (bottom != null) 'bottom': ['bottom'],
-        if (flexibleSpace != null) 'flexibleSpace': ['flexibleSpace'],
-      });
+      return NativeComponentConfig(
+        placements: {
+          if (leading != null) 'leading': ['leading'],
+          if (title != null) 'title': ['title'],
+          if (action != null || actions.isNotEmpty)
+            'actions': [
+              if (action != null) 'action',
+              for (var i = 0; i < actions.length; i++) 'action:$i',
+            ],
+          if (bottom != null) 'bottom': ['bottom'],
+          if (flexibleSpace != null) 'flexibleSpace': ['flexibleSpace'],
+        },
+      );
     }
     final unsupported = legacy.placements.entries.where(
-      (entry) => entry.value.isNotEmpty && entry.key != SuperLayoutZone.center && entry.key != SuperLayoutZone.east,
+      (entry) =>
+          entry.value.isNotEmpty &&
+          entry.key != SuperLayoutZone.center &&
+          entry.key != SuperLayoutZone.east,
     );
     if (unsupported.isNotEmpty) {
-      throw StateError('Cannot migrate AppBar layout "$id": unsupported regions ${unsupported.map((entry) => entry.key.name).join(', ')}.');
+      throw StateError(
+        'Cannot migrate AppBar layout "$id": unsupported regions ${unsupported.map((entry) => entry.key.name).join(', ')}.',
+      );
     }
     return NativeComponentConfig(
       placements: {
@@ -136,7 +177,9 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   String _legacyType(String value, Registry? registry) {
     final key = Uri.decodeComponent(value.substring('registry:'.length));
     final component = registry?.components[key];
-    return component == null ? 'factory:$key' : 'component:${component.slotId ?? key}';
+    return component == null
+        ? 'factory:$key'
+        : 'component:${component.slotId ?? key}';
   }
 
   @override
@@ -144,31 +187,58 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
 }
 
 class _SuperAppBarState extends State<SuperAppBar> {
-  late final _localConfig = ValueNotifier(widget.nativeConfig ?? widget._fromLegacy(widget.config));
+  late final _localConfig = ValueNotifier(
+    widget.nativeConfig ?? widget._fromLegacy(widget.config),
+  );
 
-  NativeComponentConfig _added(NativeComponentConfig config, String region, String id, SlotImplementation slot, List<SlotImplementation> siblings) {
-    if (widget.onNativeSlotAdded != null) return widget.onNativeSlotAdded!(config, region, id, slot, siblings);
+  bool _usesDefaultNavigation(NativeComponentConfig config) =>
+      config.useDefaultNavigation ??
+      (widget.automaticallyImplyLeading &&
+          config.regions['leading'] != false &&
+          config.slotsOf('leading').isEmpty);
+
+  NativeComponentConfig _added(
+    NativeComponentConfig config,
+    String region,
+    String id,
+    SlotImplementation slot,
+    List<SlotImplementation> siblings,
+  ) {
+    if (widget.onNativeSlotAdded != null) {
+      return widget.onNativeSlotAdded!(config, region, id, slot, siblings);
+    }
     final callback = widget.onSlotAdded;
-    if (callback == null || (region != 'title' && region != 'actions')) return config;
-    final zone = region == 'title' ? SuperLayoutZone.center : SuperLayoutZone.east;
-    final legacy = callback(SlotAddition(
-      slotId: id,
-      component: slot,
-      zone: zone,
-      contentZone: zone,
-      config: SuperLayoutConfig(
-        placements: {
-          SuperLayoutZone.center: config.slotsOf('title'),
-          SuperLayoutZone.east: config.slotsOf('actions'),
-        },
-        slotTypes: config.slotTypes,
-        slotPreferredSizes: config.slotPreferredSizes,
-        slotSizeConstraints: config.slotSizeConstraints,
+    if (callback == null || (region != 'title' && region != 'actions')) {
+      return config;
+    }
+    final zone = region == 'title'
+        ? SuperLayoutZone.center
+        : SuperLayoutZone.east;
+    final legacy = callback(
+      SlotAddition(
+        slotId: id,
+        component: slot,
+        zone: zone,
+        contentZone: zone,
+        config: SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: config.slotsOf('title'),
+            SuperLayoutZone.east: config.slotsOf('actions'),
+          },
+          slotTypes: config.slotTypes,
+          slotPreferredSizes: config.slotPreferredSizes,
+          slotSizeConstraints: config.slotSizeConstraints,
+        ),
+        existingSlots: siblings,
       ),
-      existingSlots: siblings,
-    ));
+    );
     return NativeComponentConfig(
-      placements: {...config.placements, 'title': legacy.placementsOf(SuperLayoutZone.center), 'actions': legacy.placementsOf(SuperLayoutZone.east)},
+      useDefaultNavigation: config.useDefaultNavigation,
+      placements: {
+        ...config.placements,
+        'title': legacy.placementsOf(SuperLayoutZone.center),
+        'actions': legacy.placementsOf(SuperLayoutZone.east),
+      },
       slotTypes: legacy.slotTypes,
       regions: config.regions,
       slotPreferredSizes: legacy.slotPreferredSizes,
@@ -177,9 +247,28 @@ class _SuperAppBarState extends State<SuperAppBar> {
   }
 
   List<NativeRegion> get _regions => [
-    const NativeRegion('leading', 'Navigation', single: true, emptySize: Size.square(56)),
-    NativeRegion('title', 'Titre', axis: Axis.horizontal, stretch: false, emptySize: Size(double.infinity, widget.toolbarHeight)),
-    const NativeRegion('actions', 'Actions', axis: Axis.horizontal, expand: false, stretch: false, emptySize: Size(96, kToolbarHeight), fillSize: Size.square(48)),
+    const NativeRegion(
+      'leading',
+      'Navigation',
+      single: true,
+      emptySize: Size.square(56),
+    ),
+    NativeRegion(
+      'title',
+      'Titre',
+      axis: Axis.horizontal,
+      stretch: false,
+      emptySize: Size(double.infinity, widget.toolbarHeight),
+    ),
+    const NativeRegion(
+      'actions',
+      'Actions',
+      axis: Axis.horizontal,
+      expand: false,
+      stretch: false,
+      emptySize: Size(96, kToolbarHeight),
+      fillSize: Size.square(48),
+    ),
     const NativeRegion('bottom', 'Bas', single: true),
     const NativeRegion('flexibleSpace', 'Espace flexible', single: true),
   ];
@@ -188,15 +277,39 @@ class _SuperAppBarState extends State<SuperAppBar> {
     if (widget.leading case final child?)
       BuilderSlot(id: 'leading', label: 'leading', builder: (_) => child),
     if (widget.title case final child?)
-      BuilderSlot(id: 'title', label: 'title', builder: (_) => Align(alignment: AlignmentDirectional.centerStart, child: child)),
+      BuilderSlot(
+        id: 'title',
+        label: 'title',
+        builder: (_) =>
+            Align(alignment: AlignmentDirectional.centerStart, child: child),
+      ),
     if (widget.action case final child?)
-      BuilderSlot(id: 'action', label: 'action', sizing: SlotSizing.intrinsic, builder: (_) => child),
+      BuilderSlot(
+        id: 'action',
+        label: 'action',
+        sizing: SlotSizing.intrinsic,
+        builder: (_) => child,
+      ),
     for (final (index, child) in widget.actions.indexed)
-      BuilderSlot(id: 'action:$index', label: 'action ${index + 1}', sizing: SlotSizing.intrinsic, builder: (_) => child),
+      BuilderSlot(
+        id: 'action:$index',
+        label: 'action ${index + 1}',
+        sizing: SlotSizing.intrinsic,
+        builder: (_) => child,
+      ),
     if (widget.bottom case final child?)
-      BuilderSlot(id: 'bottom', label: 'bottom', preferredSize: child.preferredSize, builder: (_) => child),
+      BuilderSlot(
+        id: 'bottom',
+        label: 'bottom',
+        preferredSize: child.preferredSize,
+        builder: (_) => child,
+      ),
     if (widget.flexibleSpace case final child?)
-      BuilderSlot(id: 'flexibleSpace', label: 'flexibleSpace', builder: (_) => child),
+      BuilderSlot(
+        id: 'flexibleSpace',
+        label: 'flexibleSpace',
+        builder: (_) => child,
+      ),
     ...widget.slots,
   ];
 
@@ -216,33 +329,73 @@ class _SuperAppBarState extends State<SuperAppBar> {
         regions: _regions,
         slots: _slots(),
         registry: registry,
+        isRegionAvailable: (config, region) =>
+            region != 'leading' || !_usesDefaultNavigation(config),
+        settingsControls: (config, onChanged) => [
+          SwitchListTile(
+            key: const ValueKey('super-app-bar-default-navigation'),
+            title: const Text('Bouton de navigation par défaut'),
+            subtitle: const Text(
+              'Menu du drawer ou bouton Retour natif. Remplace la zone Navigation.',
+            ),
+            value: _usesDefaultNavigation(config),
+            onChanged: (value) =>
+                onChanged(config.withDefaultNavigation(value)),
+          ),
+        ],
         onSlotAdded: _added,
         builder: (context, editor) {
-          final bottomHeight = widget._bottomHeight(config, editing: editor.editing, registry: registry);
+          final bottomHeight = widget._bottomHeight(
+            config,
+            editing: editor.editing,
+            registry: registry,
+          );
           final actions = editor.slotsFor('actions');
-          Widget toolbarRegion(String id, {SlotImplementation? item, bool showBadge = true}) => SizedBox(
+          Widget toolbarRegion(
+            String id, {
+            SlotImplementation? item,
+            bool showBadge = true,
+          }) => SizedBox(
             height: widget.toolbarHeight,
             child: editor.region(id, item: item, showBadge: showBadge),
           );
           return AppBar(
             toolbarHeight: widget.toolbarHeight,
             titleSpacing: 0,
-            automaticallyImplyLeading: widget.automaticallyImplyLeading && config.regions['leading'] != false && !editor.visible('leading'),
-            automaticallyImplyActions: widget.automaticallyImplyActions && config.regions['actions'] != false,
-            leading: editor.visible('leading') ? toolbarRegion('leading') : null,
+            automaticallyImplyLeading: _usesDefaultNavigation(config),
+            automaticallyImplyActions:
+                widget.automaticallyImplyActions &&
+                config.regions['actions'] != false,
+            leading:
+                !_usesDefaultNavigation(config) && editor.visible('leading')
+                ? toolbarRegion('leading')
+                : null,
             title: editor.visible('title') ? toolbarRegion('title') : null,
-            actions: !editor.visible('actions') ? (config.regions['actions'] == false ? const [] : null) : [
-              if (actions.isEmpty)
-                SizedBox(width: 96, child: toolbarRegion('actions'))
-              else
-                for (final (index, slot) in actions.indexed)
-                  toolbarRegion('actions', item: slot, showBadge: index == 0),
-            ],
-            bottom: editor.visible('bottom') ? PreferredSize(
-              preferredSize: Size.fromHeight(bottomHeight),
-              child: SizedBox(height: bottomHeight, child: editor.region('bottom')),
-            ) : null,
-            flexibleSpace: editor.visible('flexibleSpace') ? editor.region('flexibleSpace') : null,
+            actions: !editor.visible('actions')
+                ? (config.regions['actions'] == false ? const [] : null)
+                : [
+                    if (actions.isEmpty)
+                      SizedBox(width: 96, child: toolbarRegion('actions'))
+                    else
+                      for (final (index, slot) in actions.indexed)
+                        toolbarRegion(
+                          'actions',
+                          item: slot,
+                          showBadge: index == 0,
+                        ),
+                  ],
+            bottom: editor.visible('bottom')
+                ? PreferredSize(
+                    preferredSize: Size.fromHeight(bottomHeight),
+                    child: SizedBox(
+                      height: bottomHeight,
+                      child: editor.region('bottom'),
+                    ),
+                  )
+                : null,
+            flexibleSpace: editor.visible('flexibleSpace')
+                ? editor.region('flexibleSpace')
+                : null,
           );
         },
       ),

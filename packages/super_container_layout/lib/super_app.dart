@@ -273,6 +273,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       routerConfig: router,
       title: widget.title,
       debugShowCheckedModeBanner: false,
+      showSemanticsDebugger: false,
       scaffoldMessengerKey: _messenger,
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       themeMode: value.mode,

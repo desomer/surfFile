@@ -94,6 +94,8 @@ class NativeComponentEditor extends StatefulWidget {
     this.regionActions,
     this.onSlotAdded,
     this.editSurface = false,
+    this.settingsControls,
+    this.isRegionAvailable,
     super.key,
   });
 
@@ -110,6 +112,13 @@ class NativeComponentEditor extends StatefulWidget {
   final List<Widget> Function(String region)? regionActions;
   final NativeSlotAddedCallback? onSlotAdded;
   final bool editSurface;
+  final List<Widget> Function(
+    NativeComponentConfig config,
+    ValueChanged<NativeComponentConfig> onChanged,
+  )?
+  settingsControls;
+  final bool Function(NativeComponentConfig config, String region)?
+  isRegionAvailable;
 
   @override
   State<NativeComponentEditor> createState() => NativeComponentEditorState();
@@ -130,7 +139,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   NativeRegion definition(String id) =>
       widget.regions.firstWhere((region) => region.id == id);
   bool enabled(String id) =>
-      definition(id).required || widget.config.isEnabled(id);
+      (widget.isRegionAvailable?.call(widget.config, id) ?? true) &&
+      (definition(id).required || widget.config.isEnabled(id));
   bool visible(String id) =>
       enabled(id) && (editing || slotsFor(id).isNotEmpty);
 
@@ -251,9 +261,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     final message =
         'Composant incompatible avec la zone ${definition(region).label}.';
     debugPrint(message);
-    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.maybeOf(context)
+        ?.showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _validate(NativeComponentConfig config) {
@@ -287,8 +296,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               builder: (context, config, _) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  ...?widget.settingsControls?.call(config, _update),
                   for (final region in widget.regions)
-                    if (!region.required)
+                    if (!region.required &&
+                        (widget.isRegionAvailable?.call(config, region.id) ??
+                            true))
                       SwitchListTile(
                         key: ValueKey(
                           '${widget.keyPrefix}-switch-${region.id}',
@@ -441,21 +453,30 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   }
 
   Future<void> add(String region) async {
+    if (!(widget.isRegionAvailable?.call(widget.config, region) ?? true)) {
+      final message = 'Zone ${definition(region).label} indisponible.';
+      debugPrint(message);
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
     final provided = _provided();
     final registry = widget.registry;
-    final candidates = <String, String>{
-      for (final slot in provided.values)
-        if (slot.visible) slot.id: slot.label,
-      if (registry != null) ...{
-        for (final entry in registry.components.entries)
-          if (entry.value.isAvailable?.call(context) ?? true)
-            _componentType(entry.key, entry.value): entry.value.label,
-        for (final entry in registry.registry.entries)
-          'factory:${entry.key}': entry.key,
-      },
-    }..removeWhere(
-        (type, _) => !definition(region).tagFilter.accepts(_tagsForType(type)),
-      );
+    final candidates =
+        <String, String>{
+          for (final slot in provided.values)
+            if (slot.visible) slot.id: slot.label,
+          if (registry != null) ...{
+            for (final entry in registry.components.entries)
+              if (entry.value.isAvailable?.call(context) ?? true)
+                _componentType(entry.key, entry.value): entry.value.label,
+            for (final entry in registry.registry.entries)
+              'factory:${entry.key}': entry.key,
+          },
+        }..removeWhere(
+          (type, _) =>
+              !definition(region).tagFilter.accepts(_tagsForType(type)),
+        );
     final selected = await showEditorDialog<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
@@ -538,18 +559,29 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         final layout = context.findRenderObject();
         final slotBox = _slotKeys[slot.id]?.currentContext?.findRenderObject();
         final region = initial.placements.entries
-            .where((entry) => entry.value.contains(slot.id)).firstOrNull?.key;
+            .where((entry) => entry.value.contains(slot.id))
+            .firstOrNull
+            ?.key;
         final zoneBox = (_keys['$region:${slot.id}'] ?? _keys[region])
-            ?.currentContext?.findRenderObject();
-        if (layout is! RenderBox || !layout.hasSize ||
-            slotBox is! RenderBox || !slotBox.hasSize ||
-            zoneBox is! RenderBox || !zoneBox.hasSize) {
+            ?.currentContext
+            ?.findRenderObject();
+        if (layout is! RenderBox ||
+            !layout.hasSize ||
+            slotBox is! RenderBox ||
+            !slotBox.hasSize ||
+            zoneBox is! RenderBox ||
+            !zoneBox.hasSize) {
           return null;
         }
         Rect bounds(RenderBox box) => MatrixUtils.transformRect(
-          box.getTransformTo(layout), Offset.zero & box.size,
+          box.getTransformTo(layout),
+          Offset.zero & box.size,
         );
-        return (layout: layout.size, zone: bounds(zoneBox), slot: bounds(slotBox));
+        return (
+          layout: layout.size,
+          zone: bounds(zoneBox),
+          slot: bounds(slotBox),
+        );
       },
       onApply: (dimensions, useLegacyPixels) {
         if (useLegacyPixels &&
@@ -559,31 +591,38 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             dimensions.maxHeight == null &&
             dimensions.preferredWidth?.unit == SlotSizeUnit.pixels &&
             dimensions.preferredHeight?.unit == SlotSizeUnit.pixels) {
-          _update(_config.value.withSlotSize(
-            slot.id,
-            Size(dimensions.preferredWidth!.value,
-                dimensions.preferredHeight!.value),
-          ));
+          _update(
+            _config.value.withSlotSize(
+              slot.id,
+              Size(
+                dimensions.preferredWidth!.value,
+                dimensions.preferredHeight!.value,
+              ),
+            ),
+          );
         } else {
           _update(_config.value.withSlotSizeConstraints(slot.id, dimensions));
         }
       },
       onRestore: () {
         final current = _config.value;
-        _update(NativeComponentConfig(
-          placements: current.placements,
-          slotTypes: current.slotTypes,
-          regions: current.regions,
-          slotPreferredSizes: {...current.slotPreferredSizes}
-            ..remove(slot.id)
-            ..addAll({
-              if (initial.slotPreferredSizes.containsKey(slot.id))
-                slot.id: initial.slotPreferredSizes[slot.id],
-            }),
-          slotSizeConstraints: {...current.slotSizeConstraints}
-            ..remove(slot.id)
-            ..addAll({slot.id: ?initial.slotSizeConstraints[slot.id]}),
-        ));
+        _update(
+          NativeComponentConfig(
+            useDefaultNavigation: current.useDefaultNavigation,
+            placements: current.placements,
+            slotTypes: current.slotTypes,
+            regions: current.regions,
+            slotPreferredSizes: {...current.slotPreferredSizes}
+              ..remove(slot.id)
+              ..addAll({
+                if (initial.slotPreferredSizes.containsKey(slot.id))
+                  slot.id: initial.slotPreferredSizes[slot.id],
+              }),
+            slotSizeConstraints: {...current.slotSizeConstraints}
+              ..remove(slot.id)
+              ..addAll({slot.id: ?initial.slotSizeConstraints[slot.id]}),
+          ),
+        );
       },
     );
   }
@@ -612,9 +651,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       return false;
     }
     return current.contains(slotId) ||
-        definition(region).tagFilter.accepts(
-          _tagsForType(config.slotTypeOf(slotId), id: slotId),
-        );
+        definition(region).tagFilter
+            .accepts(_tagsForType(config.slotTypeOf(slotId), id: slotId));
   }
 
   void _moveSlot(
@@ -628,9 +666,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           'Déplacement impossible vers ${definition(region).label} : '
           'zone indisponible, occupée ou composant incompatible.';
       debugPrint(message);
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(message)));
       return;
     }
     final next = _config.value.withSlotMoved(
@@ -694,7 +731,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   owner: this,
                   canMove: (slotId) => _canMoveSlot(slotId, id),
                   onMove: (slotId, {beforeId, afterId}) => _moveSlot(
-                    slotId, id, beforeId: beforeId, afterId: afterId,
+                    slotId,
+                    id,
+                    beforeId: beforeId,
+                    afterId: afterId,
                   ),
                 )
               : null,
@@ -779,7 +819,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 TextButton(
-                                  key: ValueKey('${widget.keyPrefix}-select-$id'),
+                                  key: ValueKey(
+                                    '${widget.keyPrefix}-select-$id',
+                                  ),
                                   onPressed: () => select(
                                     selected ? null : id,
                                     regionContext,

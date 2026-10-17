@@ -87,6 +87,11 @@ En mode édition, clic droit puis **Texte** ouvre la configuration :
 affichage/saisie, texte initial, label, placeholder, activé, lecture seule,
 mot de passe, lignes min/max et typographie (famille, taille, graisse, italique,
 couleur AARRGGBB, alignement, interligne et espacement des lettres).
+L'éditeur réutilise le panneau du SuperContainer : navigation par sections,
+cartes de réglages, mode dense et aperçu local du brouillon. Sur écran étroit,
+la navigation devient une rangée de puces. La couleur propose la même palette,
+roue et opacité, ainsi qu'un retour à la couleur du parent.
+L'aperçu utilise le texte initial, jamais la saisie courante de l'application.
 Les options typographiques vides héritent du style du parent (par exemple le
 style du titre dans une AppBar). Le style de police peut être hérité, normal
 ou italique ; les anciennes valeurs explicites sont conservées. Les familles disponibles
@@ -199,6 +204,19 @@ son contenu. L'identifiant, le type et les dimensions suivent le slot ; les
 déplacements sont sauvegardés et peuvent être annulés/rétablis.
 Le glisser-déposer reste limité aux régions du même propriétaire, pas entre
 deux barres ou entre une barre et un `SuperLayout`.
+
+Dans **Configurer la barre**, le switch **Bouton de navigation par défaut**
+laisse Flutter afficher le bouton du drawer ou, sans drawer, le bouton Retour
+si la route le permet. Il reste visible en mode édition. Lorsque ce switch est
+activé, la zone **Navigation** n'est ni proposée dans les réglages, ni affichée,
+ni disponible pour un dépôt. Ses slots restent sauvegardés et réapparaissent
+en désactivant le switch si la zone est active.
+Sans préférence sauvegardée, le comportement natif est utilisé quand
+`automaticallyImplyLeading` l'autorise et qu'aucun slot Navigation n'est placé
+ou explicitement désactivé ; les anciennes navigations personnalisées restent
+donc inchangées. Le choix est persisté dans
+`NativeComponentConfig.useDefaultNavigation`, transféré avec les dispositions
+et compatible avec l'annulation/rétablissement.
 
 Dans les barres natives, cliquez sur l'étiquette d'un slot en mode édition
 pour afficher ses poignées de redimensionnement. Les dimensions sont limitées

@@ -7,6 +7,7 @@ import 'super_layout_config.dart' show SlotSizeConstraints;
 /// Immutable placements shared by adapters for native Flutter components.
 class NativeComponentConfig {
   NativeComponentConfig({
+    this.useDefaultNavigation,
     Map<String, List<String>> placements = const {},
     Map<String, String> slotTypes = const {},
     Map<String, bool> regions = const {},
@@ -29,13 +30,22 @@ class NativeComponentConfig {
         slotTypes.values.any((type) => type.trim().isEmpty) ||
         slotPreferredSizes.keys.any((id) => id.trim().isEmpty) ||
         slotSizeConstraints.keys.any((id) => id.trim().isEmpty) ||
-        slotPreferredSizes.values.any((size) => size != null &&
-          (size.width.isNaN || size.height.isNaN || size.width < 0 || size.height < 0))) {
+        slotPreferredSizes.values.any(
+          (size) =>
+              size != null &&
+              (size.width.isNaN ||
+                  size.height.isNaN ||
+                  size.width < 0 ||
+                  size.height < 0),
+        )) {
       throw ArgumentError('Region and slot IDs must be unique and non-empty.');
     }
   }
 
   final Map<String, List<String>> placements;
+
+  /// Null preserves the adapter's automatic navigation policy.
+  final bool? useDefaultNavigation;
   final Map<String, String> slotTypes;
   final Map<String, bool> regions;
   final Map<String, Size?> slotPreferredSizes;
@@ -46,8 +56,19 @@ class NativeComponentConfig {
   List<String> slotsOf(String region) => placements[region] ?? const [];
   String slotTypeOf(String id) => slotTypes[id] ?? id;
 
+  NativeComponentConfig withDefaultNavigation(bool enabled) =>
+      NativeComponentConfig(
+        useDefaultNavigation: enabled,
+        placements: placements,
+        slotTypes: slotTypes,
+        regions: regions,
+        slotPreferredSizes: slotPreferredSizes,
+        slotSizeConstraints: slotSizeConstraints,
+      );
+
   NativeComponentConfig withRegionEnabled(String region, bool enabled) =>
       NativeComponentConfig(
+        useDefaultNavigation: useDefaultNavigation,
         placements: placements,
         slotTypes: slotTypes,
         regions: {...regions, region: enabled},
@@ -71,15 +92,19 @@ class NativeComponentConfig {
       ..removeWhere((key, _) => key == id || replaced.contains(key));
     if (type != null && type != id) types[id] = type;
     return NativeComponentConfig(
+      useDefaultNavigation: useDefaultNavigation,
       placements: next,
       slotTypes: types,
       regions: {...regions, region: true},
-      slotPreferredSizes: {...slotPreferredSizes}..removeWhere((key, _) => replaced.contains(key)),
-      slotSizeConstraints: {...slotSizeConstraints}..removeWhere((key, _) => replaced.contains(key)),
+      slotPreferredSizes: {...slotPreferredSizes}
+        ..removeWhere((key, _) => replaced.contains(key)),
+      slotSizeConstraints: {...slotSizeConstraints}
+        ..removeWhere((key, _) => replaced.contains(key)),
     );
   }
 
   NativeComponentConfig withoutSlot(String id) => NativeComponentConfig(
+    useDefaultNavigation: useDefaultNavigation,
     placements: {
       for (final entry in placements.entries)
         entry.key: entry.value.where((value) => value != id).toList(),
@@ -107,7 +132,9 @@ class NativeComponentConfig {
         (beforeId != null && afterId != null) ||
         (beforeId != null && !slotsOf(region).contains(beforeId)) ||
         (afterId != null && !slotsOf(region).contains(afterId))) {
-      throw ArgumentError('Invalid native slot destination or insertion point.');
+      throw ArgumentError(
+        'Invalid native slot destination or insertion point.',
+      );
     }
     if (beforeId == id || afterId == id) return this;
     final next = {
@@ -129,6 +156,7 @@ class NativeComponentConfig {
       return this;
     }
     return NativeComponentConfig(
+      useDefaultNavigation: useDefaultNavigation,
       placements: next,
       slotTypes: slotTypes,
       regions: {
@@ -142,18 +170,21 @@ class NativeComponentConfig {
     );
   }
 
-  NativeComponentConfig withSlotSize(String id, Size? size) => NativeComponentConfig(
-    placements: placements,
-    slotTypes: slotTypes,
-    regions: regions,
-    slotPreferredSizes: {...slotPreferredSizes, id: size},
-    slotSizeConstraints: {...slotSizeConstraints}..remove(id),
-  );
+  NativeComponentConfig withSlotSize(String id, Size? size) =>
+      NativeComponentConfig(
+        useDefaultNavigation: useDefaultNavigation,
+        placements: placements,
+        slotTypes: slotTypes,
+        regions: regions,
+        slotPreferredSizes: {...slotPreferredSizes, id: size},
+        slotSizeConstraints: {...slotSizeConstraints}..remove(id),
+      );
 
   NativeComponentConfig withSlotSizeConstraints(
     String id,
     SlotSizeConstraints constraints,
   ) => NativeComponentConfig(
+    useDefaultNavigation: useDefaultNavigation,
     placements: placements,
     slotTypes: slotTypes,
     regions: regions,
@@ -162,6 +193,7 @@ class NativeComponentConfig {
   );
 
   Map<String, Object> toJson() => {
+    'useDefaultNavigation': ?useDefaultNavigation,
     'regions': regions,
     'placements': {
       for (final entry in placements.entries)
@@ -172,11 +204,17 @@ class NativeComponentConfig {
     if (slotPreferredSizes.isNotEmpty)
       'slotPreferredSizes': {
         for (final entry in slotPreferredSizes.entries)
-          entry.key: entry.value == null ? null : [entry.value!.width.isFinite ? entry.value!.width : null, entry.value!.height.isFinite ? entry.value!.height : null],
+          entry.key: entry.value == null
+              ? null
+              : [
+                  entry.value!.width.isFinite ? entry.value!.width : null,
+                  entry.value!.height.isFinite ? entry.value!.height : null,
+                ],
       },
     if (slotSizeConstraints.isNotEmpty)
       'slotSizeConstraints': {
-        for (final entry in slotSizeConstraints.entries) entry.key: entry.value.toJson(),
+        for (final entry in slotSizeConstraints.entries)
+          entry.key: entry.value.toJson(),
       },
   };
 
@@ -185,6 +223,10 @@ class NativeComponentConfig {
       throw const FormatException('Invalid native component configuration.');
     }
     final rawRegions = value['regions'] ?? const {};
+    final navigation = value['useDefaultNavigation'];
+    if (navigation != null && navigation is! bool) {
+      throw const FormatException('Invalid default navigation preference.');
+    }
     if (rawRegions is! Map ||
         rawRegions.entries.any(
           (entry) => entry.key is! String || entry.value is! bool,
@@ -221,16 +263,27 @@ class NativeComponentConfig {
       for (final entry in rawSizes.entries) {
         final size = entry.value;
         if (entry.key is! String ||
-            (size != null && (size is! List || size.length != 2 ||
-              size.any((dimension) => dimension != null && (dimension is! num || !dimension.isFinite || dimension < 0))))) {
+            (size != null &&
+                (size is! List ||
+                    size.length != 2 ||
+                    size.any(
+                      (dimension) =>
+                          dimension != null &&
+                          (dimension is! num ||
+                              !dimension.isFinite ||
+                              dimension < 0),
+                    )))) {
           throw const FormatException('Invalid native slot size.');
         }
-        sizes[entry.key as String] = size == null ? null : Size(
-          (size[0] as num?)?.toDouble() ?? double.infinity,
-          (size[1] as num?)?.toDouble() ?? double.infinity,
-        );
+        sizes[entry.key as String] = size == null
+            ? null
+            : Size(
+                (size[0] as num?)?.toDouble() ?? double.infinity,
+                (size[1] as num?)?.toDouble() ?? double.infinity,
+              );
       }
       return NativeComponentConfig(
+        useDefaultNavigation: navigation as bool?,
         placements: placements,
         slotTypes: types,
         regions: Map<String, bool>.from(rawRegions),

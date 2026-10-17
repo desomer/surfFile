@@ -77,9 +77,14 @@ void main() {
       final emptySource = moved.withSlotMoved('b', 'right');
       expect(emptySource.slotsOf('left'), isEmpty);
       expect(emptySource.isEnabled('left'), isTrue);
-      expect(NativeComponentConfig.fromJson(emptySource.toJson()).toJson(),
-          emptySource.toJson());
-      expect(() => initial.withSlotMoved('unknown', 'left'), throwsArgumentError);
+      expect(
+        NativeComponentConfig.fromJson(emptySource.toJson()).toJson(),
+        emptySource.toJson(),
+      );
+      expect(
+        () => initial.withSlotMoved('unknown', 'left'),
+        throwsArgumentError,
+      );
     },
   );
 
@@ -91,32 +96,43 @@ void main() {
           ..registerFactory('A', const SizedBox.expand());
         final region = appBar ? 'title' : 'left';
         final initial = NativeComponentConfig(
-          placements: {region: ['a']},
+          placements: {
+            region: ['a'],
+          },
           slotTypes: {'a': 'factory:A'},
           slotPreferredSizes: {'a': const Size(100, 32)},
         );
         await mount(
           appBar
-              ? SuperPage(appBar: SuperAppBar(
-                  id: 'size-bar', nativeConfig: initial,
-                ))
-              : SuperPage(bottomNavigationBar: SuperBottomNavigationBar(
-                  id: 'size-bar', nativeConfig: initial,
-                )),
-          tester, registry,
+              ? SuperPage(
+                  appBar: SuperAppBar(id: 'size-bar', nativeConfig: initial),
+                )
+              : SuperPage(
+                  bottomNavigationBar: SuperBottomNavigationBar(
+                    id: 'size-bar',
+                    nativeConfig: initial,
+                  ),
+                ),
+          tester,
+          registry,
         );
-        final context = tester.element(find.byType(
-            appBar ? SuperAppBar : SuperBottomNavigationBar));
+        final context = tester.element(
+          find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+        );
         StyleEditScope.controllerOf(context)!.value = true;
         final history = EditorHistoryScope.controllerOf(context)!;
         await tester.pumpAndSettle();
         history.clear();
         Future<void> open() async {
-          final stack = tester.widgetList<SlotStack>(find.byType(SlotStack))
-              .singleWhere((stack) => stack.slots.any((slot) => slot.id == 'a'));
+          final stack = tester
+              .widgetList<SlotStack>(find.byType(SlotStack))
+              .singleWhere(
+                (stack) => stack.slots.any((slot) => slot.id == 'a'),
+              );
           unawaited(stack.onEditPreferredSize!(stack.slots.single));
           await tester.pumpAndSettle();
         }
+
         Future<void> enter(String field, String text) async {
           final finder = find.byKey(ValueKey('slot-$field'));
           await tester.ensureVisible(finder);
@@ -124,13 +140,16 @@ void main() {
           await tester.enterText(finder, text);
           await tester.pumpAndSettle();
         }
+
         await open();
         expect(find.byType(TextFormField), findsNWidgets(6));
         expect(find.byKey(const ValueKey('slot-preview-zone')), findsOneWidget);
         await enter('min-width', '200');
         await enter('max-width', '100');
-        expect(find.text('La largeur minimale dépasse la largeur maximale.'),
-            findsOneWidget);
+        expect(
+          find.text('La largeur minimale dépasse la largeur maximale.'),
+          findsOneWidget,
+        );
         await tester.tap(find.text('Appliquer'));
         await tester.pumpAndSettle();
         expect(find.byType(AlertDialog), findsOneWidget);
@@ -153,10 +172,15 @@ void main() {
         await tester.pumpAndSettle();
         final saved = controller.value.slotSizeConstraints['a']!;
         expect(saved.minWidth, const SlotDimension(40, SlotSizeUnit.pixels));
-        expect(saved.preferredWidth, const SlotDimension(50, SlotSizeUnit.percent));
+        expect(
+          saved.preferredWidth,
+          const SlotDimension(50, SlotSizeUnit.percent),
+        );
         expect(saved.maxWidth, const SlotDimension(180, SlotSizeUnit.pixels));
-        expect(tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
-            lessThanOrEqualTo(180));
+        expect(
+          tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
+          lessThanOrEqualTo(180),
+        );
         history.undo();
         await tester.pumpAndSettle();
         expect(controller.value.toJson(), initial.toJson());
@@ -164,12 +188,21 @@ void main() {
         await tester.pumpAndSettle();
         expect(controller.value.slotSizeConstraints['a'], saved);
         await open();
-        expect(tester.widget<TextFormField>(
-            find.byKey(const ValueKey('slot-max-width'))).controller!.text, '180.0');
+        expect(
+          tester
+              .widget<TextFormField>(
+                find.byKey(const ValueKey('slot-max-width')),
+              )
+              .controller!
+              .text,
+          '180.0',
+        );
         await tester.tap(find.text('Taille automatique'));
         await tester.pumpAndSettle();
-        expect(controller.value.slotSizeConstraints['a'],
-            const SlotSizeConstraints());
+        expect(
+          controller.value.slotSizeConstraints['a'],
+          const SlotSizeConstraints(),
+        );
         expect(controller.value.slotPreferredSizes.containsKey('a'), isFalse);
         expect(tester.takeException(), isNull);
       },
@@ -179,31 +212,43 @@ void main() {
       '${appBar ? 'AppBar' : 'bottom bar'} resizes selected slots using handles',
       (tester) async {
         final registry = Registry()
-          ..registerFactory('A', const SuperContainer(
-            label: 'AB', child: Center(child: Text('A')),
-          ));
+          ..registerFactory(
+            'A',
+            const SuperContainer(
+              label: 'AB',
+              child: Center(child: Text('A')),
+            ),
+          );
         final region = appBar ? 'title' : 'left';
         final initial = NativeComponentConfig(
-          placements: {region: ['a']},
+          placements: {
+            region: ['a'],
+          },
           slotTypes: {'a': 'factory:A'},
           slotPreferredSizes: {'a': const Size(100, 32)},
         );
         await mount(
           appBar
-              ? SuperPage(appBar: SuperAppBar(
-                  id: 'resize-bar', nativeConfig: initial,
-                ))
-              : SuperPage(bottomNavigationBar: SuperBottomNavigationBar(
-                  id: 'resize-bar', nativeConfig: initial,
-                )),
-          tester, registry,
+              ? SuperPage(
+                  appBar: SuperAppBar(id: 'resize-bar', nativeConfig: initial),
+                )
+              : SuperPage(
+                  bottomNavigationBar: SuperBottomNavigationBar(
+                    id: 'resize-bar',
+                    nativeConfig: initial,
+                  ),
+                ),
+          tester,
+          registry,
         );
-        final context = tester.element(find.byType(
-            appBar ? SuperAppBar : SuperBottomNavigationBar));
+        final context = tester.element(
+          find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+        );
         final mode = StyleEditScope.controllerOf(context)!;
         final history = EditorHistoryScope.controllerOf(context)!;
-        final appearance = AppearanceScope.controllerOf(context)!
-            as PersistentAppearanceController;
+        final appearance =
+            AppearanceScope.controllerOf(context)!
+                as PersistentAppearanceController;
         mode.value = true;
         await tester.pumpAndSettle();
         await tester.drag(
@@ -230,7 +275,10 @@ void main() {
         await tester.pump();
         await gesture.moveBy(const Offset(20, 0));
         await tester.pump();
-        expect(find.byKey(const ValueKey('slot-resize-size-a')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('slot-resize-size-a')),
+          findsOneWidget,
+        );
         await gesture.up();
         await tester.pumpAndSettle();
         final controller = registry.nativeComponentController('resize-bar');
@@ -238,8 +286,10 @@ void main() {
         expect(dimensions.preferredWidth!.value, closeTo(before.width + 40, 1));
         expect(dimensions.preferredHeight!.value, 32);
         expect(controller.value.slotPreferredSizes.containsKey('a'), isFalse);
-        expect(tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
-            closeTo(before.width + 40, 1));
+        expect(
+          tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
+          closeTo(before.width + 40, 1),
+        );
         history.undo();
         await tester.pumpAndSettle();
         expect(controller.value.slotSizeConstraints, isEmpty);
@@ -248,25 +298,38 @@ void main() {
         await tester.pumpAndSettle();
         expect(controller.value.slotSizeConstraints['a'], dimensions);
         await appearance.saved;
-        expect((await AppearanceStore().load())
-            .nativeComponent('resize-bar').slotSizeConstraints['a'], dimensions);
+        expect(
+          (await AppearanceStore().load())
+              .nativeComponent('resize-bar')
+              .slotSizeConstraints['a'],
+          dimensions,
+        );
         final heightHandle = find.byKey(const ValueKey('slot-resize-a-s'));
         expect(heightHandle, findsOneWidget);
-        final vertical = await tester.startGesture(tester.getCenter(heightHandle));
+        final vertical = await tester.startGesture(
+          tester.getCenter(heightHandle),
+        );
         await vertical.moveBy(const Offset(0, 100));
         await tester.pump();
         await vertical.moveBy(const Offset(0, 100));
         await tester.pump();
         await vertical.up();
         await tester.pumpAndSettle();
-        final height = controller.value.slotSizeConstraints['a']!
-            .preferredHeight!.value;
+        final height =
+            controller.value.slotSizeConstraints['a']!.preferredHeight!.value;
         expect(height, greaterThanOrEqualTo(32));
-        expect(height, lessThanOrEqualTo(
-            appBar ? kToolbarHeight : kBottomNavigationBarHeight));
-        expect(tester.getSize(find.byKey(const ValueKey('slot-a'))).height,
-            lessThanOrEqualTo(
-                appBar ? kToolbarHeight : kBottomNavigationBarHeight));
+        expect(
+          height,
+          lessThanOrEqualTo(
+            appBar ? kToolbarHeight : kBottomNavigationBarHeight,
+          ),
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('slot-a'))).height,
+          lessThanOrEqualTo(
+            appBar ? kToolbarHeight : kBottomNavigationBarHeight,
+          ),
+        );
         mode.value = false;
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('slot-resize-a-e')), findsNothing);
@@ -278,9 +341,13 @@ void main() {
       '${appBar ? 'AppBar' : 'bottom bar'} moves A by dragging between native regions',
       (tester) async {
         final registry = Registry()
-          ..registerFactory('A', const SuperContainer(
-            label: 'AB', child: Center(child: Text('A')),
-          ));
+          ..registerFactory(
+            'A',
+            const SuperContainer(
+              label: 'AB',
+              child: Center(child: Text('A')),
+            ),
+          );
         final initial = NativeComponentConfig(
           regions: appBar
               ? {'title': true, 'actions': true}
@@ -293,19 +360,25 @@ void main() {
         );
         await mount(
           appBar
-              ? SuperPage(appBar: SuperAppBar(
-                  id: 'drag-bar', nativeConfig: initial,
-                ))
-              : SuperPage(bottomNavigationBar: SuperBottomNavigationBar(
-                  id: 'drag-bar', nativeConfig: initial,
-                )),
-          tester, registry,
+              ? SuperPage(
+                  appBar: SuperAppBar(id: 'drag-bar', nativeConfig: initial),
+                )
+              : SuperPage(
+                  bottomNavigationBar: SuperBottomNavigationBar(
+                    id: 'drag-bar',
+                    nativeConfig: initial,
+                  ),
+                ),
+          tester,
+          registry,
         );
-        final context = tester.element(find.byType(
-            appBar ? SuperAppBar : SuperBottomNavigationBar));
+        final context = tester.element(
+          find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+        );
         final history = EditorHistoryScope.controllerOf(context)!;
-        final appearance = AppearanceScope.controllerOf(context)!
-            as PersistentAppearanceController;
+        final appearance =
+            AppearanceScope.controllerOf(context)!
+                as PersistentAppearanceController;
         StyleEditScope.controllerOf(context)!.value = true;
         await tester.pumpAndSettle();
         await tester.drag(
@@ -325,11 +398,17 @@ void main() {
         editor.select(sourceRegion);
         await tester.pumpAndSettle();
         final label = find.byKey(const ValueKey('slot-label-select-a'));
-        expect(find.descendant(of: label,
-            matching: find.byType(Draggable<SlotDragData>)), findsOneWidget);
+        expect(
+          find.descendant(
+            of: label,
+            matching: find.byType(Draggable<SlotDragData>),
+          ),
+          findsOneWidget,
+        );
         final source = tester.getCenter(label);
         final target = tester.getRect(
-            find.byKey(ValueKey('$prefix-slot-drop-$targetRegion')));
+          find.byKey(ValueKey('$prefix-slot-drop-$targetRegion')),
+        );
         final gesture = await tester.startGesture(source);
         await gesture.moveBy(const Offset(12, 0));
         await tester.pump();
@@ -352,21 +431,30 @@ void main() {
         await tester.pumpAndSettle();
         expect(controller.value.slotsOf(targetRegion), ['a']);
         await appearance.saved;
-        expect((await AppearanceStore().load())
-            .nativeComponent('drag-bar').slotsOf(targetRegion), ['a']);
+        expect(
+          (await AppearanceStore().load())
+              .nativeComponent('drag-bar')
+              .slotsOf(targetRegion),
+          ['a'],
+        );
         controller.value = controller.value
             .withSlotAdded('b', targetRegion, type: 'factory:A')
             .withSlotSize('b', const Size(48, 32));
         await tester.pumpAndSettle();
-        tester.state<NativeComponentEditorState>(
-          find.descendant(
-            of: find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
-            matching: find.byType(NativeComponentEditor),
-          ),
-        ).select(targetRegion);
+        tester
+            .state<NativeComponentEditorState>(
+              find.descendant(
+                of: find.byType(
+                  appBar ? SuperAppBar : SuperBottomNavigationBar,
+                ),
+                matching: find.byType(NativeComponentEditor),
+              ),
+            )
+            .select(targetRegion);
         await tester.pumpAndSettle();
-        final reorder = await tester.startGesture(tester.getCenter(
-            find.byKey(const ValueKey('slot-label-select-a'))));
+        final reorder = await tester.startGesture(
+          tester.getCenter(find.byKey(const ValueKey('slot-label-select-a'))),
+        );
         await reorder.moveBy(const Offset(12, 0));
         await tester.pump();
         final other = tester.getRect(find.byKey(const ValueKey('slot-b')));
@@ -791,6 +879,191 @@ void main() {
     },
   );
 
+  test(
+    'navigation preference survives native mutations JSON transfer and reset',
+    () {
+      final config = NativeComponentConfig(
+        useDefaultNavigation: true,
+        placements: {
+          'leading': ['a'],
+        },
+        slotTypes: {'a': 'factory:A'},
+      );
+      final mutations = [
+        config.withRegionEnabled('title', true),
+        config.withSlotAdded('b', 'title'),
+        config.withSlotMoved('a', 'title'),
+        config.withoutSlot('a'),
+        config.withSlotSize('a', const Size(30, 30)),
+        config.withSlotSizeConstraints('a', const SlotSizeConstraints()),
+      ];
+      for (final value in mutations) {
+        expect(value.useDefaultNavigation, isTrue);
+        expect(
+          NativeComponentConfig.fromJson(value.toJson()).useDefaultNavigation,
+          isTrue,
+        );
+      }
+      expect(config.withDefaultNavigation(false).useDefaultNavigation, isFalse);
+      expect(
+        NativeComponentConfig.fromJson({'placements': {}}).useDefaultNavigation,
+        isNull,
+      );
+      expect(
+        () => NativeComponentConfig.fromJson({
+          'placements': {},
+          'useDefaultNavigation': 'yes',
+        }),
+        throwsFormatException,
+      );
+      final appearance = Appearance(nativeComponents: {'bar': config});
+      final restored = AppearanceStore.decode(
+        AppearanceStore.encode(appearance),
+      );
+      expect(restored.nativeComponents['bar']!.useDefaultNavigation, isTrue);
+      final exported = AppearanceTransfer.export(appearance, {
+        TransferGroup.layouts,
+      });
+      final imported = AppearanceTransfer.import(Appearance(), exported, {
+        TransferGroup.layouts,
+      });
+      expect(imported.nativeComponents['bar']!.useDefaultNavigation, isTrue);
+      expect(imported.resetLayouts().nativeComponents, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'default navigation keeps drawer button in editing and hides navigation zone',
+    (tester) async {
+      final registry = Registry();
+      await mount(
+        const SuperPage(
+          appBar: SuperAppBar(title: Text('Heading')),
+          drawer: Drawer(child: Text('Drawer contents')),
+        ),
+        tester,
+        registry,
+      );
+      final context = tester.element(find.byType(SuperAppBar));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      final editor = tester.state<NativeComponentEditorState>(
+        find.descendant(
+          of: find.byType(SuperAppBar),
+          matching: find.byType(NativeComponentEditor),
+        ),
+      );
+      expect(editor.enabled('leading'), isFalse);
+      expect(find.byType(DrawerButton), findsOneWidget);
+      await tester.tap(find.byType(DrawerButton));
+      await tester.pumpAndSettle();
+      expect(
+        Scaffold.of(tester.element(find.byType(AppBar))).isDrawerOpen,
+        isTrue,
+      );
+      Scaffold.of(tester.element(find.byType(AppBar))).closeDrawer();
+      await tester.pumpAndSettle();
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.clear();
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SwitchListTile>(
+              find.byKey(const ValueKey('super-app-bar-default-navigation')),
+            )
+            .value,
+        isTrue,
+      );
+      expect(
+        find.byKey(const ValueKey('super-app-bar-switch-leading')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('super-app-bar-default-navigation')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-app-bar-switch-leading')),
+        findsOneWidget,
+      );
+      expect(find.byType(DrawerButton), findsNothing);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('super-app-bar-switch-leading')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('super-app-bar-switch-leading')),
+      );
+      await tester.pumpAndSettle();
+      expect(editor.enabled('leading'), isTrue);
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+      history.undo();
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawerButton), findsOneWidget);
+      expect(editor.enabled('leading'), isFalse);
+      history.redo();
+      await tester.pumpAndSettle();
+      expect(find.byType(DrawerButton), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'native navigation hides custom slots without losing their configuration',
+    (tester) async {
+      final registry = Registry();
+      await mount(
+        const SuperPage(
+          appBar: SuperAppBar(leading: Text('Custom navigation')),
+          drawer: Drawer(),
+        ),
+        tester,
+        registry,
+      );
+      expect(find.text('Custom navigation'), findsOneWidget);
+      final config = registry.nativeComponentController('root-appBar');
+      config.value = config.value.withDefaultNavigation(true);
+      await tester.pumpAndSettle();
+      expect(find.text('Custom navigation'), findsNothing);
+      expect(find.byType(DrawerButton), findsOneWidget);
+      expect(config.value.slotsOf('leading'), ['leading']);
+      config.value = config.value.withDefaultNavigation(false);
+      await tester.pumpAndSettle();
+      expect(find.text('Custom navigation'), findsOneWidget);
+      expect(find.byType(DrawerButton), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'default navigation retains Flutter back behavior without a drawer',
+    (tester) async {
+      final registry = Registry();
+      await mount(const SuperPage(child: Text('Home')), tester, registry);
+      final navigator = Navigator.of(tester.element(find.text('Home')));
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(
+            builder: (_) => const SuperPage(
+              id: 'details',
+              appBar: SuperAppBar(title: Text('Details')),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(SuperAppBar));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      expect(find.byType(BackButton), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await tester.pumpAndSettle();
+      expect(find.text('Home'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'editing another native region preserves child state and percentage sizes',
     (tester) async {
@@ -905,14 +1178,32 @@ void main() {
         find.byKey(const ValueKey('style-menu-size-Taille préférée : title')),
       );
       await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const ValueKey('slot-preferred-width')), '-1');
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-width')),
+        '-1',
+      );
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
-      expect(find.text('Saisissez une dimension positive en pixels ou en %.'), findsOneWidget);
-      await tester.enterText(find.byKey(const ValueKey('slot-preferred-width')), '120');
-      await tester.enterText(find.byKey(const ValueKey('slot-preferred-height')), '40');
-      await tester.enterText(find.byKey(const ValueKey('slot-min-width')), '80');
-      await tester.enterText(find.byKey(const ValueKey('slot-max-width')), '200');
+      expect(
+        find.text('Saisissez une dimension positive en pixels ou en %.'),
+        findsOneWidget,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-width')),
+        '120',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-height')),
+        '40',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-min-width')),
+        '80',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-max-width')),
+        '200',
+      );
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(

@@ -12,6 +12,7 @@ import 'package:super_container_layout/widgets/editing/super_text_editor.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
+    StyleEditorPanel.preferredDense = false;
     SharedPreferences.setMockInitialValues({});
     for (final channel in [
       const MethodChannel('com.alexmercerind/flutter_acrylic'),
@@ -502,6 +503,122 @@ void main() {
     }
   });
 
+  for (final screen in [const Size(1440, 900), const Size(400, 700)]) {
+    testWidgets(
+      'text panel adapts to $screen with local preview and dense mode',
+      (tester) async {
+        await tester.binding.setSurfaceSize(screen);
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        SuperTextConfig? result;
+        await tester.pumpWidget(
+          host(
+            Builder(
+              builder: (context) => TextButton(
+                onPressed: () async => result = await showSuperTextEditor(
+                  context: context,
+                  config: initial,
+                  availableFontFamilies: ['Roboto'],
+                ),
+                child: const Text('Open'),
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+        expect(find.byType(StyleEditorPanel), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('super-text-preview')),
+          findsOneWidget,
+        );
+        for (final id in [
+          'text-content',
+          'text-behavior',
+          'text-typography',
+          'text-color',
+          'text-spacing',
+        ]) {
+          expect(find.byKey(ValueKey('style-card-$id')), findsOneWidget);
+        }
+        final field = find.byKey(
+          const ValueKey('super-text-setting-initialText'),
+        );
+        await tester.ensureVisible(field);
+        await tester.enterText(field, 'Preview draft');
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('super-text-preview')),
+            matching: find.text('Preview draft'),
+          ),
+          findsOneWidget,
+        );
+        expect(result, isNull);
+        await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('super-text-preview')), findsNothing);
+        expect(
+          tester.widget<TextFormField>(field).controller!.text,
+          'Preview draft',
+        );
+        await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('super-text-preview')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Annuler'));
+        await tester.pumpAndSettle();
+        expect(result, isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'text palette and inherited color update only the draft preview',
+    (tester) async {
+      SuperTextConfig? result;
+      await tester.pumpWidget(
+        host(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showSuperTextEditor(
+                context: context,
+                config: initial.copyWith(color: Colors.red),
+                availableFontFamilies: [],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      final color = find.byKey(const ValueKey('super-text-setting-color'));
+      await tester.ensureVisible(color);
+      await tester.enterText(color, 'ff0000ff');
+      await tester.pumpAndSettle();
+      final preview = find.descendant(
+        of: find.byKey(const ValueKey('super-text-preview')),
+        matching: find.text('Initial'),
+      );
+      expect(
+        tester.widget<Text>(preview).style!.color,
+        const Color(0xFF0000FF),
+      );
+      final reset = find.byKey(const ValueKey('super-text-inherit-color'));
+      await tester.ensureVisible(reset);
+      await tester.tap(reset);
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextFormField>(color).controller!.text, '');
+      expect(result, isNull);
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(result!.color, isNull);
+    },
+  );
+
   test('appearance codecs transfer reset and subtype preserve text design', () {
     const codec = DefaultAppearanceCodec();
     final appearance = DefaultAppearance(cardWidth: 222)
@@ -963,6 +1080,9 @@ void main() {
       );
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('super-text-setting-obscureText')),
+      );
       await tester.tap(
         find.byKey(const ValueKey('super-text-setting-obscureText')),
       );
