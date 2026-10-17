@@ -84,26 +84,30 @@ class AppearanceSettings extends StatelessWidget {
         id: 'accent',
         label: 'Couleur d’accent',
         icon: Icons.palette_outlined,
-        builder: (context) => ColorPicker(
-          key: const ValueKey('picker-Couleur d’accent'),
-          color: AppearanceScope.of(context).accent,
-          onColorChanged: (color) =>
-              controller.value = controller.value.copyWith(accent: color),
-          enableOpacity: true,
-          showColorCode: true,
-          showEditIconButton: true,
-          opacitySubheading: const Text('Opacité'),
-          pickersEnabled: const {
-            ColorPickerType.both: true,
-            ColorPickerType.primary: false,
-            ColorPickerType.accent: false,
-            ColorPickerType.wheel: true,
-          },
-          pickerTypeLabels: const {
-            ColorPickerType.both: 'Palette',
-            ColorPickerType.wheel: 'Roue',
-          },
-        ),
+        builder: (context) => _controls([
+          ColorPicker(
+            key: const ValueKey('picker-Couleur d’accent'),
+            color: AppearanceScope.of(context).accent,
+            onColorChanged: (color) =>
+                controller.value = controller.value.copyWith(accent: color),
+            enableOpacity: true,
+            showColorCode: true,
+            showEditIconButton: true,
+            opacitySubheading: const Text('Opacité'),
+            pickersEnabled: const {
+              ColorPickerType.both: true,
+              ColorPickerType.primary: false,
+              ColorPickerType.accent: false,
+              ColorPickerType.wheel: true,
+            },
+            pickerTypeLabels: const {
+              ColorPickerType.both: 'Palette',
+              ColorPickerType.wheel: 'Roue',
+            },
+          ),
+          const SizedBox(height: 16),
+          _window(context),
+        ]),
       ),
       if (a is DefaultAppearance) ...[
         AppearanceSettingsSection(
@@ -127,12 +131,6 @@ class AppearanceSettings extends StatelessWidget {
           icon: Icons.gradient_rounded,
           builder: _scrollFade,
         ),
-      AppearanceSettingsSection(
-        id: 'window',
-        label: 'Transparence de la fenêtre',
-        icon: Icons.window_outlined,
-        builder: _window,
-      ),
     ];
     return AlertDialog(
       title: const EditorDialogHeader(label: 'Apparence'),

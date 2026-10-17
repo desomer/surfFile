@@ -256,7 +256,9 @@ l'alpha des couleurs d'accent, des cartes et du fond, de transparent a opaque.
 La transparence est conservee dans les preferences.
 Le panneau principal reste compact : des boutons ouvrent des popups dedies
 a l'accent, au style des cartes, au fond, aux dimensions, au texte et aux
-icones, a la selection et a la transparence de la fenetre. Aucun popup ne
+icones et a la selection. Le popup **Couleur d'accent** regroupe le choix de
+la couleur et la transparence de la fenetre, avec deux opacites independantes.
+Aucun popup ne
 grise l'arriere-plan. Les modifications sont appliquees et sauvegardees en direct.
 Les couleurs des cartes et du fond se reglent uniquement dans leur editeur
 de style ; arrondi, bordure, elevation generale et ombre ne sont plus dupliques.

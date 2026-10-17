@@ -86,11 +86,30 @@ void main() {
     expect(find.text('Dimensions et espacement'), findsNothing);
     expect(find.text('Texte et icônes'), findsNothing);
     expect(find.text('Fondu des fichiers'), findsNothing);
-    await _section(tester, 'Transparence de la fenêtre');
-    tester.widget<Slider>(find.byKey(
-      const ValueKey('Opacité de la fenêtre'))).onChanged!(.6);
+    expect(find.text('Transparence de la fenêtre'), findsNothing);
+    expect(find.byKey(const ValueKey('appearance-section-window')), findsNothing);
+    expect(find.text('Couleur d’accent'), findsOneWidget);
+    await _section(tester, 'Couleur d’accent');
+    expect(find.byType(ColorPicker), findsOneWidget);
+    final accent = controller.value.accent;
+    final windowOpacity = find.byWidgetPredicate((widget) =>
+      widget is Slider && widget.key == const ValueKey('Opacité de la fenêtre'));
+    tester.widget<Slider>(windowOpacity).onChanged!(.6);
     await tester.pumpAndSettle();
     expect(controller.value.windowOpacity, .6);
+    expect(controller.value.accent, accent);
+    expect(tester.widget<Slider>(windowOpacity).value, .6);
+    tester.widget<ColorPicker>(find.byType(ColorPicker))
+        .onColorChanged(const Color(0x80E91E63));
+    await tester.pumpAndSettle();
+    expect(controller.value.accent, const Color(0x80E91E63));
+    expect(controller.value.windowOpacity, .6);
+    await tester.tap(find.text('Retour'));
+    await tester.pumpAndSettle();
+    await _section(tester, 'Couleur d’accent');
+    expect(tester.widget<ColorPicker>(find.byType(ColorPicker)).color,
+      const Color(0x80E91E63));
+    expect(tester.widget<Slider>(windowOpacity).value, .6);
     expect(tester.takeException(), isNull);
   });
 

@@ -187,6 +187,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ColorPicker), findsNothing);
     expect(find.byType(Slider), findsNothing);
+    expect(find.text('Transparence de la fenêtre'), findsNothing);
     await tester.ensureVisible(find.text('Style des cartes'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Style des cartes'));
@@ -227,6 +228,14 @@ void main() {
       tester.widget<ColorPicker>(find.byType(ColorPicker)).color,
       const Color(0x8000796B),
     );
+    tester
+        .widget<Slider>(find.byWidgetPredicate((widget) =>
+            widget is Slider &&
+            widget.key == const ValueKey('Opacité de la fenêtre')))
+        .onChanged!(.6);
+    await tester.pumpAndSettle();
+    expect(controller.value.windowOpacity, .6);
+    expect(controller.value.accent, const Color(0x8000796B));
     await tester.tap(find.text('Retour'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Fond de l’application'));
@@ -242,7 +251,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.value.style('background').color, const Color(0x40E2E8F0));
     tester
-        .widget<Slider>(find.byKey(const ValueKey('Opacité du fond')))
+        .widget<Slider>(find.byWidgetPredicate((widget) =>
+            widget is Slider &&
+            widget.key == const ValueKey('Opacité du fond')))
         .onChanged!(.5);
     await tester.pumpAndSettle();
     expect(controller.value.backgroundOpacity, .5);
@@ -285,7 +296,6 @@ void main() {
       'Style de la sélection du panneau gauche': 5,
       'Dimensions et espacement': 4,
       'Texte et icônes': 2,
-      'Transparence de la fenêtre': 1,
     }.entries) {
       await tester.ensureVisible(find.text(section.key));
       await tester.pumpAndSettle();

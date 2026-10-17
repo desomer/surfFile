@@ -1068,6 +1068,8 @@ migree. Les erreurs sont signalees par `SuperApp` et par le controleur, sans
 effacer le document original. Les ecritures sont serialisees et validees.
 
 `AppearanceSettings` fournit thème, accent et transparence de fenêtre.
+Le menu **Couleur d'accent** regroupe le sélecteur de couleur et l'opacité
+de la fenêtre ; l'alpha de la couleur et l'opacité globale restent indépendants.
 Avec `DefaultAppearance`, il fournit aussi dimensions, espacement, texte,
 icônes et fondu de défilement (ces sections sont absentes avec `Appearance`).
 Injecter `slots: List<AppearanceSlot>`, `additionalSections` (des
