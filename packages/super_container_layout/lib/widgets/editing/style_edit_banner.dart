@@ -5,18 +5,18 @@ import 'package:super_container_layout/widgets/editing/editor_history.dart';
 import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
-
 /// Pastille deplacable, initialement en haut au centre du mode edition.
 ///
 /// Peut être placée au-dessus du [Navigator] (ex. `MaterialApp.builder`) :
 /// elle fournit alors son propre [Overlay] pour l'info-bulle du bouton.
 /// Sa frontière sémantique sépare cet overlay de celui du navigateur.
 class StyleEditBanner extends StatefulWidget {
-  const StyleEditBanner({this.navigatorKey, super.key});
+  const StyleEditBanner({this.navigatorKey, this.onManagePages, super.key});
 
   /// Navigateur de l'application, où s'ouvre la boîte d'import / export : la
   /// bannière est au-dessus de lui. Sans lui, celui du contexte est utilisé.
   final GlobalKey<NavigatorState>? navigatorKey;
+  final Future<void> Function()? onManagePages;
 
   @override
   State<StyleEditBanner> createState() => _StyleEditBannerState();
@@ -138,6 +138,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                         ),
                       ],
                     ),
+                  ),
+                if (widget.onManagePages != null)
+                  IconButton(
+                    key: const ValueKey('style-edit-banner-pages'),
+                    tooltip: 'Gérer les pages',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: scheme.onPrimary,
+                    icon: const Icon(Icons.web_stories_outlined),
+                    onPressed: widget.onManagePages,
                   ),
                 if (AppearanceScope.controllerOf(context)
                     case final appearance?)

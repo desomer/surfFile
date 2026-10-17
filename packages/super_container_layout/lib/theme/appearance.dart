@@ -5,6 +5,7 @@ import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_text_config.dart';
+import '../models/editor_page_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
 import 'neon_style.dart';
@@ -23,6 +24,7 @@ class Appearance {
     Map<String, ScaffoldPageConfig> scaffoldPages = const {},
     Map<String, NativeComponentConfig> nativeComponents = const {},
     Map<String, SuperTextConfig> textComponents = const {},
+    this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
        layouts = Map.unmodifiable({
          for (final entry in layouts.entries)
@@ -63,8 +65,10 @@ class Appearance {
   final Map<String, ScaffoldPageConfig> scaffoldPages;
   final Map<String, NativeComponentConfig> nativeComponents;
   final Map<String, SuperTextConfig> textComponents;
+  final EditorPageCatalog pageCatalog;
 
-  SuperTextConfig textComponent(String id, {
+  SuperTextConfig textComponent(
+    String id, {
     SuperTextConfig fallback = const SuperTextConfig(),
   }) => textComponents[id] ?? fallback;
 
@@ -73,8 +77,10 @@ class Appearance {
     return copyWith(textComponents: {...textComponents, id: value});
   }
 
-  NativeComponentConfig nativeComponent(String id, {NativeComponentConfig? fallback}) =>
-      nativeComponents[id] ?? fallback ?? NativeComponentConfig();
+  NativeComponentConfig nativeComponent(
+    String id, {
+    NativeComponentConfig? fallback,
+  }) => nativeComponents[id] ?? fallback ?? NativeComponentConfig();
 
   ContainerStyle style(
     String id, {
@@ -84,10 +90,8 @@ class Appearance {
     String id, {
     SuperLayoutConfig fallback = const SuperLayoutConfig(),
   }) => layouts[id] ?? fallback;
-  ScaffoldPageConfig scaffoldPage(
-    String id, {
-    ScaffoldPageConfig? fallback,
-  }) => nativeComponents.containsKey(id)
+  ScaffoldPageConfig scaffoldPage(String id, {ScaffoldPageConfig? fallback}) =>
+      nativeComponents.containsKey(id)
       ? ScaffoldPageConfig.fromNative(nativeComponents[id]!)
       : scaffoldPages[id] ?? fallback ?? ScaffoldPageConfig();
   ContainerStyle get backgroundStyle => style('background');
@@ -132,6 +136,7 @@ class Appearance {
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
     Map<String, SuperTextConfig>? textComponents,
+    EditorPageCatalog? pageCatalog,
   }) => Appearance(
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
@@ -145,6 +150,7 @@ class Appearance {
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
     textComponents: textComponents ?? this.textComponents,
+    pageCatalog: pageCatalog ?? this.pageCatalog,
   );
 
   Appearance withStyle(String id, ContainerStyle? value) {
@@ -159,6 +165,8 @@ class Appearance {
 
   Appearance withLayout(String id, SuperLayoutConfig value) =>
       copyWith(layouts: {...layouts, id: value});
+  Appearance withPageCatalog(EditorPageCatalog value) =>
+      copyWith(pageCatalog: value);
   Appearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
       withNativeComponent(id, value.native);
   Appearance withNativeComponent(String id, NativeComponentConfig value) =>
@@ -166,8 +174,13 @@ class Appearance {
         nativeComponents: {...nativeComponents, id: value},
         scaffoldPages: {...scaffoldPages}..remove(id),
       );
-  Appearance resetLayouts() =>
-      copyWith(layouts: const {}, scaffoldPages: const {}, nativeComponents: const {}, textComponents: const {});
+  Appearance resetLayouts() => copyWith(
+    layouts: const {},
+    scaffoldPages: const {},
+    nativeComponents: const {},
+    textComponents: const {},
+    pageCatalog: const EditorPageCatalog.empty(),
+  );
 
   ThemeData theme(Brightness brightness) {
     final surface =

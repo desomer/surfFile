@@ -1,5 +1,6 @@
 export 'models/registry.dart';
 export 'models/super_text_config.dart';
+export 'models/editor_page_config.dart';
 export 'widgets/super_text.dart';
 export 'models/component_tag_filter.dart';
 export 'models/native_component_config.dart';
@@ -8,6 +9,8 @@ export 'models/scaffold_page_config.dart';
 export 'models/super_layout_config.dart';
 export 'services/appearance_store.dart';
 export 'services/default_appearance_codec.dart';
+export 'services/editor_page_router.dart';
+export 'services/editor_page_graph.dart';
 export 'services/appearance_transfer.dart';
 export 'services/window_transparency.dart';
 export 'super_app.dart';

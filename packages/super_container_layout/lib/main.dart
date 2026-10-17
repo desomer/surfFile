@@ -4,6 +4,7 @@ import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/super_page.dart';
+import 'package:super_container_layout/services/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
@@ -25,34 +26,41 @@ class TestApp extends StatefulWidget {
 
 class _TestAppState extends State<TestApp> {
   final _registry = Registry()..bootstrap();
-  late final GoRouter _router;
+  late final EditorPageRouter _pageRouting;
+  GoRouter get _router => _pageRouting.router;
 
   @override
   void initState() {
     super.initState();
     _registry.registerFactory(
       'A',
-      const SuperContainer(label: "AB", child: Center(child: Text('A'))),
+      const SuperContainer(
+        label: "AB",
+        child: Center(child: Text('A')),
+      ),
     );
-    _router = GoRouter(
-      routes: [
-        GoRoute(
-          path: '/',
-          builder: (context, state) => getRootWidget(_registry),
-        ),
-      ],
+    _pageRouting = EditorPageRouter(
+      baseConfig: RoutingConfig(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => getRootWidget(_registry),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   void dispose() {
-    _router.dispose();
+    _pageRouting.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => SuperApp(
     router: _router,
+    pageRouting: _pageRouting,
     title: 'Super Container Layout demo',
     registry: _registry,
   );
@@ -91,17 +99,17 @@ class _TestAppState extends State<TestApp> {
                 ),
               ),
               Positioned(
-                  top: 56,
-                  right: 16,
-                  bottom: 16,
-                  child: Align(
-                    alignment: Alignment.topRight,
-                    child: Material(
-                      type: MaterialType.transparency,
-                      child: SingleChildScrollView(child: overlyRight(context)),
-                    ),
+                top: 56,
+                right: 16,
+                bottom: 16,
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: SingleChildScrollView(child: overlyRight(context)),
                   ),
                 ),
+              ),
             ],
           ),
         );

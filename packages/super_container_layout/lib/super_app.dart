@@ -9,11 +9,13 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'models/registry.dart';
 
 import 'services/appearance_store.dart';
+import 'services/editor_page_router.dart';
 import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
 import 'widgets/editing/editor_history.dart';
+import 'widgets/editing/editor_page_manager.dart';
 import 'widgets/super_layout/layout_reset_shortcut.dart';
 import 'widgets/surfaces/neon_surface.dart';
 import 'widgets/editing/style_edit_banner.dart';
@@ -29,12 +31,16 @@ class SuperApp extends StatefulWidget {
     this.title = '',
     super.key,
     this.registry,
+    this.pageRouting,
   });
 
   final GoRouter router;
   final AppearanceStore? appearanceStore;
   final String title;
   final Registry? registry;
+
+  /// Optional editable routing. Its router must be [router]; owned by the caller.
+  final EditorPageRouter? pageRouting;
 
   /// Returns the nearest application and subscribes to its configuration.
   static SuperApp? maybeOf(BuildContext context) =>
@@ -81,6 +87,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   final _styleEditMode = ValueNotifier(false);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   bool _loading = true;
+  bool _pagesScheduled = false;
   String? _loadError;
   Future<void> _windowUpdates = Future.value();
   (double, WindowEffect, bool)? _appliedWindow;
@@ -89,27 +96,57 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _appearance = PersistentAppearanceController(
-      widget.appearanceStore ?? AppearanceStore(),
-      _saveFailed,
-    )..addListener(_updateWindow);
+    _checkPageRouting();
+    _appearance = _createAppearanceController();
     _editorHistory = _createEditorHistory();
     widget.registry?.bindAppearance(_appearance);
     _restore();
   }
 
+  void _checkPageRouting() {
+    if (widget.pageRouting != null &&
+        !identical(widget.pageRouting!.router, widget.router)) {
+      throw ArgumentError('SuperApp.router must be pageRouting.router.');
+    }
+  }
+
+  PersistentAppearanceController _createAppearanceController() =>
+      PersistentAppearanceController(
+          widget.appearanceStore ?? AppearanceStore(),
+          _saveFailed,
+          validateAppearance: (value) =>
+              widget.pageRouting?.validate(value.pageCatalog),
+        )
+        ..addListener(_updateWindow)
+        ..addListener(_pagesChanged);
+
+  void _pagesChanged() {
+    if (_pagesScheduled || widget.pageRouting == null || _loading) return;
+    _pagesScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _pagesScheduled = false;
+      if (!mounted || _loading || widget.pageRouting == null) return;
+      final notice = widget.pageRouting!.synchronize(
+        _appearance.value.pageCatalog,
+      );
+      if (notice != null) {
+        _messenger.currentState?.showSnackBar(SnackBar(content: Text(notice)));
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
   @override
   void didUpdateWidget(SuperApp oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _checkPageRouting();
     if (oldWidget.appearanceStore != widget.appearanceStore) {
       oldWidget.registry?.unbindAppearance();
       _editorHistory.dispose();
       _appearance.removeListener(_updateWindow);
+      _appearance.removeListener(_pagesChanged);
       _appearance.dispose();
-      _appearance = PersistentAppearanceController(
-        widget.appearanceStore ?? AppearanceStore(),
-        _saveFailed,
-      )..addListener(_updateWindow);
+      _appearance = _createAppearanceController();
       _editorHistory = _createEditorHistory();
       widget.registry?.bindAppearance(_appearance);
       _restore();
@@ -117,6 +154,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       oldWidget.registry?.unbindAppearance();
       widget.registry?.bindAppearance(_appearance);
     }
+    if (oldWidget.pageRouting != widget.pageRouting) _pagesChanged();
   }
 
   EditorHistoryController _createEditorHistory() => EditorHistoryController(
@@ -202,6 +240,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     });
     try {
       await _appearance.restore();
+      if (!mounted) return;
+      widget.pageRouting?.synchronize(_appearance.value.pageCatalog);
       _editorHistory.clear();
       _updateWindow();
       if (mounted) setState(() => _loading = false);
@@ -234,6 +274,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     _editorHistory.dispose();
     _appearance
       ..removeListener(_updateWindow)
+      ..removeListener(_pagesChanged)
       ..dispose();
     _styleEditMode.dispose();
     super.dispose();
@@ -327,7 +368,23 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         ),
       ),
       if (!_loading && _loadError == null)
-        Positioned.fill(child: StyleEditBanner(navigatorKey: navigatorKey)),
+        Positioned.fill(
+          child: StyleEditBanner(
+            navigatorKey: navigatorKey,
+            onManagePages: widget.pageRouting == null || widget.registry == null
+                ? null
+                : () async {
+                    final target = navigatorKey.currentContext;
+                    if (target == null) return;
+                    await showEditorPageManager(
+                      context: target,
+                      appearance: _appearance,
+                      routing: widget.pageRouting!,
+                      registry: widget.registry!,
+                    );
+                  },
+          ),
+        ),
     ],
   );
 

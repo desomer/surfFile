@@ -1,11 +1,14 @@
 import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_text_config.dart';
+import '../models/editor_page_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
 
@@ -24,16 +27,25 @@ class AppearanceCodec {
   String encode(Appearance appearance) => jsonEncode(toJson(appearance));
   Appearance decode(String text) {
     final json = jsonDecode(text);
-    if (json is! Map<String, dynamic>) throw const FormatException('Invalid appearance document.');
+    if (json is! Map<String, dynamic>) {
+      throw const FormatException('Invalid appearance document.');
+    }
     return fromJson(json);
   }
+
   Map<String, Object?> toJson(Appearance a) => {
     'version': schemaVersion,
-    'mode': a.mode.name, 'accent': a.accent.toARGB32(),
-    'backgroundOpacity': a.backgroundOpacity, 'windowOpacity': a.windowOpacity,
+    'mode': a.mode.name,
+    'accent': a.accent.toARGB32(),
+    'backgroundOpacity': a.backgroundOpacity,
+    'windowOpacity': a.windowOpacity,
     'windowEffect': a.windowEffect.name,
-    'styles': {for (final entry in a.styles.entries) entry.key: entry.value.toJson()},
-    'layouts': {for (final entry in a.layouts.entries) entry.key: entry.value.toJson()},
+    'styles': {
+      for (final entry in a.styles.entries) entry.key: entry.value.toJson(),
+    },
+    'layouts': {
+      for (final entry in a.layouts.entries) entry.key: entry.value.toJson(),
+    },
     'scaffoldPages': {
       for (final entry in a.scaffoldPages.entries)
         entry.key: entry.value.toJson(),
@@ -46,38 +58,77 @@ class AppearanceCodec {
       for (final entry in a.textComponents.entries)
         entry.key: entry.value.toJson(),
     },
+    'pageCatalog': a.pageCatalog.toJson(),
   };
   Appearance fromJson(Map<String, dynamic> json) {
-    if (json['version'] != schemaVersion) throw const FormatException('Unsupported appearance version.');
-    final known = {'version', 'mode', 'accent', 'backgroundOpacity', 'windowOpacity', 'windowEffect', 'styles', 'layouts', 'scaffoldPages', 'nativeComponents', 'textComponents', ...additionalKeys};
-    if (json.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown appearance preference.');
+    if (json['version'] != schemaVersion) {
+      throw const FormatException('Unsupported appearance version.');
+    }
+    final known = {
+      'version',
+      'mode',
+      'accent',
+      'backgroundOpacity',
+      'windowOpacity',
+      'windowEffect',
+      'styles',
+      'layouts',
+      'scaffoldPages',
+      'nativeComponents',
+      'textComponents',
+      'pageCatalog',
+      ...additionalKeys,
+    };
+    if (json.keys.any((key) => !known.contains(key))) {
+      throw const FormatException('Unknown appearance preference.');
+    }
     double number(String key, double fallback, double min, double max) {
       final value = json[key] ?? fallback;
-      if (value is! num || !value.isFinite || value < min || value > max) throw FormatException('Invalid "$key".');
+      if (value is! num || !value.isFinite || value < min || value > max) {
+        throw FormatException('Invalid "$key".');
+      }
       return value.toDouble();
     }
-    final mode = ThemeMode.values.where((v) => v.name == json['mode']).firstOrNull;
-    final effect = WindowEffect.values.where((v) => v.name == (json['windowEffect'] ?? 'transparent')).firstOrNull;
+
+    final mode = ThemeMode.values
+        .where((v) => v.name == json['mode'])
+        .firstOrNull;
+    final effect = WindowEffect.values
+        .where((v) => v.name == (json['windowEffect'] ?? 'transparent'))
+        .firstOrNull;
     final accent = json['accent'] ?? 0xFF5268D9;
-    if (mode == null || effect == null || accent is! int || accent < 0 || accent > 0xFFFFFFFF) {
+    if (mode == null ||
+        effect == null ||
+        accent is! int ||
+        accent < 0 ||
+        accent > 0xFFFFFFFF) {
       throw const FormatException('Invalid theme or window preferences.');
     }
     Map<String, dynamic> entries(String key, {bool optional = false}) {
       final value = json[key];
       if (value == null && optional) return {};
-      if (value is! Map<String, dynamic> || value.keys.any((id) => id.trim().isEmpty) ||
+      if (value is! Map<String, dynamic> ||
+          value.keys.any((id) => id.trim().isEmpty) ||
           value.values.any((v) => v is! Map<String, dynamic>)) {
         throw FormatException('Invalid "$key" map.');
       }
       return value;
     }
+
     return Appearance(
-      mode: mode, accent: Color(accent),
+      mode: mode,
+      accent: Color(accent),
       windowEffect: effect,
       backgroundOpacity: number('backgroundOpacity', 1, 0, 1),
       windowOpacity: number('windowOpacity', 1, .2, 1),
-      styles: {for (final entry in entries('styles').entries) entry.key: ContainerStyle.fromJson(entry.value)},
-      layouts: {for (final entry in entries('layouts').entries) entry.key: SuperLayoutConfig.fromJson(entry.value)},
+      styles: {
+        for (final entry in entries('styles').entries)
+          entry.key: ContainerStyle.fromJson(entry.value),
+      },
+      layouts: {
+        for (final entry in entries('layouts').entries)
+          entry.key: SuperLayoutConfig.fromJson(entry.value),
+      },
       scaffoldPages: {
         for (final entry in entries('scaffoldPages', optional: true).entries)
           entry.key: ScaffoldPageConfig.fromJson(entry.value),
@@ -90,23 +141,44 @@ class AppearanceCodec {
         for (final entry in entries('textComponents', optional: true).entries)
           entry.key: SuperTextConfig.fromJson(entry.value),
       },
+      pageCatalog: json.containsKey('pageCatalog')
+          ? EditorPageCatalog.fromJson(json['pageCatalog'])
+          : const EditorPageCatalog.empty(),
     );
   }
-  Map<String, Object?> normalizeTransfer(Map<String, dynamic> data, int version) {
-    if (version != schemaVersion) throw const FormatException('Unsupported export version.');
+
+  Map<String, Object?> normalizeTransfer(
+    Map<String, dynamic> data,
+    int version,
+  ) {
+    if (version != schemaVersion) {
+      throw const FormatException('Unsupported export version.');
+    }
     final known = toJson(defaults).keys.toSet()..remove('version');
-    if (data.keys.any((key) => !known.contains(key))) throw const FormatException('Unknown export preference.');
+    if (data.keys.any((key) => !known.contains(key))) {
+      throw const FormatException('Unknown export preference.');
+    }
     return Map<String, Object?>.from(data);
   }
-  Object? mergeTransferValue(String key, Object? current, Object? imported, int sourceVersion) => imported;
+
+  Object? mergeTransferValue(
+    String key,
+    Object? current,
+    Object? imported,
+    int sourceVersion,
+  ) => imported;
 }
 
 class AppearanceStore {
-  AppearanceStore({this.key = 'super_container_layout.appearance', this.codec = const AppearanceCodec()});
+  AppearanceStore({
+    this.key = 'super_container_layout.appearance',
+    this.codec = const AppearanceCodec(),
+  });
   final String key;
   final AppearanceCodec codec;
   static const version = 1;
-  static String encode(Appearance appearance) => const AppearanceCodec().encode(appearance);
+  static String encode(Appearance appearance) =>
+      const AppearanceCodec().encode(appearance);
   static Appearance decode(String text) => const AppearanceCodec().decode(text);
   Future<Appearance> load() async {
     final preferences = await SharedPreferences.getInstance();
@@ -115,7 +187,9 @@ class AppearanceStore {
       codec.resetAdditional();
       return codec.defaults;
     }
-    if (stored is! String) throw const FormatException('Invalid stored appearance.');
+    if (stored is! String) {
+      throw const FormatException('Invalid stored appearance.');
+    }
     final result = codec.decode(stored);
     codec.restoreAdditional(stored);
     if (codec.needsMigration(stored)) await save(result);
@@ -130,52 +204,85 @@ class AppearanceStore {
   Future<void> saveEncoded(String encoded) async {
     codec.decode(encoded);
     final preferences = await SharedPreferences.getInstance();
-    if (!await preferences.setString(key, encoded)) throw StateError('Appearance save failed.');
+    if (!await preferences.setString(key, encoded)) {
+      throw StateError('Appearance save failed.');
+    }
   }
 }
 
 class AppearanceServicesScope extends InheritedWidget {
-  const AppearanceServicesScope({required this.codec, required super.child, super.key});
+  const AppearanceServicesScope({
+    required this.codec,
+    required super.child,
+    super.key,
+  });
   final AppearanceCodec codec;
   static AppearanceCodec codecOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AppearanceServicesScope>()?.codec ?? const AppearanceCodec();
+      context
+          .dependOnInheritedWidgetOfExactType<AppearanceServicesScope>()
+          ?.codec ??
+      const AppearanceCodec();
   @override
-  bool updateShouldNotify(AppearanceServicesScope oldWidget) => codec != oldWidget.codec;
+  bool updateShouldNotify(AppearanceServicesScope oldWidget) =>
+      codec != oldWidget.codec;
 }
 
 class PersistentAppearanceController extends ValueNotifier<Appearance> {
-  PersistentAppearanceController(this.store, this.onSaveError) : super(store.codec.defaults) {
+  PersistentAppearanceController(
+    this.store,
+    this.onSaveError, {
+    this.validateAppearance,
+  }) : super(store.codec.defaults) {
     store.codec.additionalPreferences?.addListener(persist);
   }
   final AppearanceStore store;
   final void Function(Object error) onSaveError;
+  final void Function(Appearance appearance)? validateAppearance;
   Future<void> _pending = Future.value();
   Future<void> get saved => _pending;
   bool _restoring = false;
   Future<void> restore() async {
     _restoring = true;
-    try { super.value = await store.load(); }
-    finally { _restoring = false; }
+    try {
+      final next = await store.load();
+      validateAppearance?.call(next);
+      super.value = next;
+    } finally {
+      _restoring = false;
+    }
   }
+
   @override
   set value(Appearance appearance) {
-    super.value = store.codec.prepare(appearance);
+    final next = store.codec.prepare(appearance);
+    validateAppearance?.call(next);
+    super.value = next;
     persist();
   }
+
   void reset() {
     store.codec.resetAdditional();
     value = store.codec.defaults;
   }
+
   void persist() {
     if (_restoring) return;
     final String encoded;
-    try { encoded = store.codec.encode(value); }
-    catch (error) { onSaveError(error); return; }
+    try {
+      encoded = store.codec.encode(value);
+    } catch (error) {
+      onSaveError(error);
+      return;
+    }
     _pending = _pending.then((_) async {
-      try { await store.saveEncoded(encoded); }
-      catch (error) { onSaveError(error); }
+      try {
+        await store.saveEncoded(encoded);
+      } catch (error) {
+        onSaveError(error);
+      }
     });
   }
+
   @override
   void dispose() {
     store.codec.additionalPreferences?.removeListener(persist);

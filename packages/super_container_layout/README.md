@@ -247,6 +247,91 @@ l'interface ni enregistrés dans le JSON. Les configurations manipulées
 directement par le code ne valident pas le catalogue ; les contrôles
 s'appliquent aux mutations de l'éditeur.
 
+## Gestion des pages depuis l'editeur (optionnelle)
+
+Le bouton **Gerer les pages** du bandeau d'edition est active uniquement si
+`SuperApp` recoit un registre et un `EditorPageRouter`. L'application reste
+proprietaire du routeur et le libere a sa fermeture :
+
+```dart
+final pageRouting = EditorPageRouter(
+  baseConfig: RoutingConfig(routes: [
+    GoRoute(path: '/', builder: (_, _) => const SuperPage()),
+  ]),
+);
+
+SuperApp(
+  router: pageRouting.router,
+  pageRouting: pageRouting,
+  registry: Registry()..bootstrap(),
+);
+
+// A la fermeture de l'application : pageRouting.dispose();
+```
+
+Sans cette integration, `SuperApp(router: router)` garde son comportement
+habituel. Elle est activee dans la demo du package, pas dans SurfFile.
+Les routes codees sont listees en lecture seule pour etre ouvertes depuis le
+gestionnaire ; leurs chemins et leur configuration restent modifiables uniquement
+dans le code de l'application.
+
+Le dialogue permet d'ajouter des `SuperPage` vides et configurables, modifier
+leur nom et leur chemin URL, les dupliquer, supprimer, ordonner, choisir
+l'accueil et les ouvrir. Les changements restent locaux jusqu'a **Appliquer**,
+qui constitue une seule etape d'annulation/retablissement. **Annuler** abandonne
+le brouillon. **Ouvrir** demande d'abord de valider un brouillon modifie.
+Une modification externe des dispositions est signalee : rechargez alors le
+brouillon plutot que d'ecraser les changements.
+
+Les chemins utilisent la syntaxe du GoRouter installe, notamment
+`/clients/:id` et `/clients/:id(\d+)`. L'ouverture demande des valeurs concretes
+et verifie les contraintes. Toutes les valeurs d'un meme chemin partagent le
+meme design. Pour une page d'accueil parametree, les valeurs par defaut valides
+sont enregistrees. L'accueil remplace seulement `/` au demarrage ; une URL
+profonde explicite reste prioritaire. Renommer le chemin de la page courante
+conserve ses parametres si possible ; sinon, ou apres sa suppression, une
+notification explique le retour a l'accueil.
+
+Les collisions avec les routes codees et les autres pages sont refusees.
+Pour les expressions regulieres, la validation est volontairement prudente :
+si l'absence de chevauchement ne peut pas etre prouvee par les prefixes
+litteraux, le chemin est refuse meme si les expressions semblent disjointes.
+Utilisez des prefixes distincts, par exemple `/clients/:id` et `/help/:topic`.
+Le chemin `/` reste reserve a la route racine codee.
+
+`Appearance.pageCatalog` est sauvegarde avec les dispositions, inclus dans les
+imports/exports et supprime par la remise a zero des dispositions. Les anciens
+documents restent compatibles. Une duplication copie les configurations et
+styles persistants du graphe de composants, avec de nouveaux identifiants ;
+elle ne copie ni controllers, ni saisies courantes, ni donnees metier.
+Les composants personnalises doivent declarer explicitement leur contrat de
+duplication dans le registre ; sinon l'operation est refusee sans copie partielle.
+
+Par exemple, un composant sans configuration persistante peut autoriser la
+copie de son placement :
+
+```dart
+registry.registerComponent(
+  'badge',
+  RegisteredComponent(
+    label: 'Badge',
+    builder: (_) => const Text('Badge'),
+    duplication: const ComponentDuplicationContract.stateless(),
+  ),
+);
+```
+
+Pour un composant qui possede des configurations derivees de son identifiant,
+utilisez `ComponentDuplicationContract(ownedConfigs: (id) => [
+EditorConfigRef.text('$id.title'), EditorConfigRef.style('$id.surface')])`.
+Ces references doivent correspondre exactement aux identifiants utilises par
+son builder, dans le meme ordre pour chaque instance. Le contrat peut fournir
+`copyConfig: (source, value, remap) => ...` pour remapper des references internes
+personnalisees ; la copie structurelle standard suffit aux configurations
+integrees. Une suppression conserve les configurations encore partagees par
+d'autres pages et signale les donnees personnalisees dont la propriete n'est
+pas declaree.
+
 ## Pages et routage
 
 `SuperApp` exige toujours un `GoRouter` et utilise exclusivement

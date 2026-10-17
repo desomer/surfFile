@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/services/appearance_transfer.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
@@ -16,9 +17,8 @@ void main() {
       'explorer': SurfFileAppearanceDefaults.defaultExplorerLayout.withSwap(
         SuperLayoutZone.west,
       ),
-      'explorerMain': SurfFileAppearanceDefaults.defaultExplorerMainLayout.withSwap(
-        SuperLayoutZone.north,
-      ),
+      'explorerMain': SurfFileAppearanceDefaults.defaultExplorerMainLayout
+          .withSwap(SuperLayoutZone.north),
     },
   );
   const both = {TransferGroup.styles, TransferGroup.layouts};
@@ -33,7 +33,10 @@ void main() {
       expect(json['format'], AppearanceTransfer.format);
       expect(json['version'], AppearanceStore.version);
       expect(json['groups'], ['styles', 'layouts']);
-      expect(dataOf(text).keys, containsAll(['accent', 'layouts', 'application', 'styles']));
+      expect(
+        dataOf(text).keys,
+        containsAll(['accent', 'layouts', 'application', 'styles']),
+      );
       expect(dataOf(text).containsKey('version'), isFalse);
     });
 
@@ -58,13 +61,34 @@ void main() {
   });
 
   group('import', () {
+    test('layout import forwards page catalog without replacing application preferences', () {
+      final catalog = EditorPageCatalog(
+        pages: [EditorPageConfig(id: 'p', name: 'P', path: '/p')],
+        homePageId: 'p',
+      );
+      final source = custom.copyWith(pageCatalog: catalog);
+      final target = Appearance(cardWidth: 251);
+      final text = AppearanceTransfer.export(source, {TransferGroup.layouts});
+      expect(dataOf(text).keys, contains('pageCatalog'));
+      final restored = AppearanceTransfer.import(target, text, {
+        TransferGroup.layouts,
+      });
+      expect(restored, isA<DefaultAppearance>());
+      expect(restored.pageCatalog.toJson(), catalog.toJson());
+      expect(restored.cardWidth, 251);
+      final styles = AppearanceTransfer.export(source, {TransferGroup.styles});
+      expect(dataOf(styles).keys, isNot(contains('pageCatalog')));
+      expect(
+        AppearanceTransfer.import(source, styles, {
+          TransferGroup.styles,
+        }).pageCatalog.toJson(),
+        catalog.toJson(),
+      );
+    });
+
     test('a full export restores the whole appearance', () {
       final text = AppearanceTransfer.export(custom, both);
-      final restored = AppearanceTransfer.import(
-        Appearance(),
-        text,
-        both,
-      );
+      final restored = AppearanceTransfer.import(Appearance(), text, both);
       expect(AppearanceStore.encode(restored), AppearanceStore.encode(custom));
     });
 
@@ -75,8 +99,14 @@ void main() {
       });
       expect(restored.accent, custom.accent);
       expect(restored.fontSize, 15);
-      expect(restored.layout('explorer'), SurfFileAppearanceDefaults.defaultExplorerLayout);
-      expect(restored.layout('explorerMain'), SurfFileAppearanceDefaults.defaultExplorerMainLayout);
+      expect(
+        restored.layout('explorer'),
+        SurfFileAppearanceDefaults.defaultExplorerLayout,
+      );
+      expect(
+        restored.layout('explorerMain'),
+        SurfFileAppearanceDefaults.defaultExplorerMainLayout,
+      );
     });
 
     test('layouts only keep the current styles', () {
@@ -94,11 +124,7 @@ void main() {
       final text = AppearanceTransfer.export(custom, {TransferGroup.layouts});
       expect(AppearanceTransfer.groupsIn(text), {TransferGroup.layouts});
       // Les styles demandés mais absents n'ont rien à apporter.
-      final restored = AppearanceTransfer.import(
-        Appearance(),
-        text,
-        both,
-      );
+      final restored = AppearanceTransfer.import(Appearance(), text, both);
       expect(restored.layout('explorer'), custom.layout('explorer'));
       expect(restored.accent, Appearance().accent);
       expect(

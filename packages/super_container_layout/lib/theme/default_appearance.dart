@@ -5,6 +5,7 @@ import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_text_config.dart';
+import '../models/editor_page_config.dart';
 import 'appearance.dart';
 import 'container_style.dart';
 
@@ -29,6 +30,7 @@ class DefaultAppearance extends Appearance {
     super.scaffoldPages,
     super.nativeComponents,
     super.textComponents,
+    super.pageCatalog,
     this.cardHeight = 142,
     this.cardWidth = 180,
     this.rowHeight = 48,
@@ -70,11 +72,16 @@ class DefaultAppearance extends Appearance {
   }
 
   @override
+  DefaultAppearance withPageCatalog(EditorPageCatalog value) =>
+      copyWith(pageCatalog: value);
+
+  @override
   DefaultAppearance resetLayouts() => copyWith(
     layouts: const {},
     scaffoldPages: const {},
     nativeComponents: const {},
     textComponents: const {},
+    pageCatalog: const EditorPageCatalog.empty(),
   );
 
   @override
@@ -84,6 +91,7 @@ class DefaultAppearance extends Appearance {
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
     Map<String, SuperTextConfig>? textComponents,
+    EditorPageCatalog? pageCatalog,
     ThemeMode? mode,
     Color? accent,
     double? backgroundOpacity,
@@ -104,6 +112,7 @@ class DefaultAppearance extends Appearance {
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
     textComponents: textComponents ?? this.textComponents,
+    pageCatalog: pageCatalog ?? this.pageCatalog,
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,
     backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,

@@ -379,6 +379,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
       styles: generic.styles,
       layouts: generic.layouts,
       textComponents: generic.textComponents,
+      pageCatalog: generic.pageCatalog,
     )));
   }
 

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_text_config.dart';
+import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/folder_transition.dart';
@@ -34,6 +35,34 @@ class _DelayedStore extends AppearanceStore {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('SurfFile codec forwards page catalog through prepare and persistence', () async {
+    final catalog = EditorPageCatalog(
+      pages: [
+        EditorPageConfig(id: 'p', name: 'P', path: '/p'),
+        EditorPageConfig(
+          id: 'details',
+          name: 'Details',
+          path: '/details/:item',
+          defaultParameters: {'item': 'one'},
+        ),
+      ],
+      homePageId: 'details',
+    );
+    final appearance = defaultSurfFileAppearance().copyWith(pageCatalog: catalog);
+    final codec = SurfFileAppearanceCodec();
+    expect(codec.prepare(appearance).pageCatalog, same(catalog));
+    final store = AppearanceStore(codec: codec);
+    await store.save(appearance);
+    final decoded = await store.load();
+    expect(decoded, isA<DefaultAppearance>());
+    expect(decoded.pageCatalog.toJson(), catalog.toJson());
+    expect(decoded.copyWith(spacing: 24).pageCatalog.toJson(), catalog.toJson());
+    expect(decoded.withPageCatalog(catalog).pageCatalog, same(catalog));
+    expect(decoded.resetLayouts().pageCatalog.pages, isEmpty);
+    final oldDocument = codec.toJson(appearance)..remove('pageCatalog');
+    expect(codec.fromJson(oldDocument).pageCatalog.pages, isEmpty);
+  });
 
   test('SurfFile codec preserves SuperText design and application preferences', () {
     final appearance = defaultSurfFileAppearance().copyWith(
