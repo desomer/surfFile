@@ -12,6 +12,36 @@ import '../editing/editor_dialog_header.dart';
 import '../editing/editor_resize_handle.dart';
 import '../surfaces/super_container.dart';
 
+/// Shared component label for zone and grid editing.
+class ComponentDragLabel extends StatelessWidget {
+  const ComponentDragLabel({required this.child, this.opacity = 0.5, super.key});
+
+  final Widget child;
+  final double opacity;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Theme.of(context).colorScheme.tertiaryContainer
+        .withValues(alpha: opacity),
+    borderRadius: BorderRadius.circular(6),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Flexible(child: Icon(Icons.drag_indicator, size: 16)),
+          Flexible(
+            child: DefaultTextStyle.merge(
+              overflow: TextOverflow.ellipsis,
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// Taille qu'un slot demande à la zone qui le reçoit.
 enum SlotSizing {
   /// Le slot remplit l'espace restant de sa zone.
@@ -92,7 +122,8 @@ class BuilderSlot extends SlotImplementation {
 /// Preserves a component's state while exposing its instance name to editors.
 class InstanceSlot extends SlotImplementation {
   InstanceSlot(
-    this.component, {super.key, 
+    this.component, {
+    super.key,
     required super.label,
     required this.onRename,
     required this.onRestore,
@@ -678,11 +709,7 @@ class EmphasizedLabel extends StatelessWidget {
 
 /// Déplacement des slots d'une zone vers un autre rang.
 class SlotMover {
-  const SlotMover({
-    required this.owner,
-    required this.onMove,
-    this.canMove,
-  });
+  const SlotMover({required this.owner, required this.onMove, this.canMove});
 
   final Object owner;
   final bool Function(String id)? canMove;
@@ -716,8 +743,7 @@ class SlotZoneTarget extends StatelessWidget {
     return DragTarget<SlotDragData>(
       onWillAcceptWithDetails: (details) {
         final accepts =
-            identical(details.data.owner, owner) &&
-            canMove(details.data.id);
+            identical(details.data.owner, owner) && canMove(details.data.id);
         if (accepts) {
           details.data.hint.value = SlotDropHint.at(
             zoneLabel: zoneLabel,
@@ -1011,29 +1037,21 @@ class _LabeledSlotState extends State<_LabeledSlot> {
 
   Widget _chip(
     ColorScheme colors, {
-    double opacity = .85,
+    double opacity = 0.5,
     bool dragged = false,
-  }) => Material(
+  }) => ComponentDragLabel(
     key: ValueKey('slot-label-${widget.slot.id}'),
-    color: colors.tertiary.withValues(alpha: opacity),
-    borderRadius: BorderRadius.circular(10),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      child: dragged
-          ? ValueListenableBuilder<SlotDropHint?>(
-              valueListenable: _hint,
-              builder: (context, hint, _) => Text(
-                hint == null
-                    ? widget.caption
-                    : '${widget.slot.label} → ${hint.caption}',
-                style: TextStyle(fontSize: 11, color: colors.onTertiary),
-              ),
-            )
-          : Text(
-              widget.caption,
-              style: TextStyle(fontSize: 11, color: colors.onTertiary),
+    opacity: opacity,
+    child: dragged
+        ? ValueListenableBuilder<SlotDropHint?>(
+            valueListenable: _hint,
+            builder: (context, hint, _) => Text(
+              hint == null
+                  ? widget.caption
+                  : '${widget.slot.label} → ${hint.caption}',
             ),
-    ),
+          )
+        : Text(widget.caption),
   );
 
   @override

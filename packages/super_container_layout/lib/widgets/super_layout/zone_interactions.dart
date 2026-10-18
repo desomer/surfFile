@@ -120,6 +120,13 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (target != null)
+                Icon(
+                  Icons.drag_indicator,
+                  key: ValueKey('super-layout-zone-drag-${widget.zone.name}'),
+                  size: 16,
+                  color: colors.onSurface,
+                ),
               label,
               if (widget.onAdd case final onAdd?)
                 IconButton(

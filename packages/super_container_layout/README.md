@@ -51,6 +51,14 @@ La lecture, les migrations et les imports utilisent le même codec.
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
+En édition, les labels des composants de `SuperLayout` partagent le même
+badge en modes **Zones** et **Grille** : icône `drag_indicator`, fond
+`tertiaryContainer` et angles arrondis. Le glisser-déposer conserve les règles
+propres à chaque mode.
+Les labels des zones affichent aussi `drag_indicator`, uniquement lorsque
+leur déplacement/échange est autorisé ; le centre et les zones non déplaçables
+n'affichent pas cette icône.
+
 ## SuperText : affichage ou saisie
 
 `Registry.bootstrap(availableFontFamilies: ['Segoe UI', 'Roboto'])` ajoute

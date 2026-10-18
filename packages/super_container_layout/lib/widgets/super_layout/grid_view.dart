@@ -233,30 +233,7 @@ class _GridSurfaceState extends State<_GridSurface> {
                       : SystemMouseCursors.click,
                   child: Tooltip(
                     message: 'Glisser pour déplacer ${slot.label}',
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: colors.tertiaryContainer,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Flexible(
-                            child: Icon(Icons.drag_indicator, size: 16),
-                          ),
-                          Flexible(
-                            child: Text(
-                              slot.label,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    child: ComponentDragLabel(child: Text(slot.label)),
                   ),
                 ),
               ),
@@ -422,11 +399,21 @@ class _GridSurfaceState extends State<_GridSurface> {
                                           _tapStart = null;
                                         },
                                         child: SlotStack(
-                                            slots: [slot],
-                                            focusKeys: widget.owner._gridSlotSizeKeys,
-                                            preferredSizes: widget.owner.config.slotPreferredSizes,
-                                            sizeConstraints: widget.owner.config.slotSizeConstraints,
-                                            layoutSize: Size(width, constraints.maxHeight),
+                                          slots: [slot],
+                                          focusKeys:
+                                              widget.owner._gridSlotSizeKeys,
+                                          preferredSizes: widget
+                                              .owner
+                                              .config
+                                              .slotPreferredSizes,
+                                          sizeConstraints: widget
+                                              .owner
+                                              .config
+                                              .slotSizeConstraints,
+                                          layoutSize: Size(
+                                            width,
+                                            constraints.maxHeight,
+                                          ),
                                         ),
                                       ),
                                       if (widget.editing)
