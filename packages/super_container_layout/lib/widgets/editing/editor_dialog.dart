@@ -16,7 +16,7 @@ Future<T?> showEditorDialog<T>({
   bool barrierDismissible = true,
   Color? barrierColor,
 }) async {
-  EditorChrome.openDialogs.value++;
+  EditorOverlayVisibility.openDialogs.value++;
   try {
     return await _showEditorDialog<T>(
       context: context,
@@ -27,7 +27,7 @@ Future<T?> showEditorDialog<T>({
       barrierColor: barrierColor,
     );
   } finally {
-    EditorChrome.openDialogs.value--;
+    EditorOverlayVisibility.openDialogs.value--;
   }
 }
 

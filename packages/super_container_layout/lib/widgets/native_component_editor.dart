@@ -790,7 +790,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   else
                     content,
                   Positioned.fill(
-                    child: EditorChrome(
+                    child: EditorOverlayVisibility(
                       child: IgnorePointer(
                         child: DecoratedBox(
                           key: selected && overlay
@@ -812,7 +812,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   ),
                   if (overlay && showBadge)
                     Positioned.fill(
-                      child: EditorChrome(
+                      child: EditorOverlayVisibility(
                         child: Center(
                           child: FittedBox(
                             fit: BoxFit.scaleDown,

@@ -914,7 +914,7 @@ class SuperContainerState extends State<SuperContainer> {
         child: ValueListenableBuilder<SuperContainerState?>(
           valueListenable: _hoveredTarget,
           builder: (context, target, child) => ValueListenableBuilder<int>(
-            valueListenable: EditorChrome.openDialogs,
+            valueListenable: EditorOverlayVisibility.openDialogs,
             builder: (context, count, child) => CustomPaint(
               foregroundPainter: count == 0 && identical(target, this)
                   ? painter

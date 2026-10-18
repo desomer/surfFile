@@ -315,7 +315,7 @@ class _ZonePlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final editMode = StyleEditScope.controllerOf(context)?.value ?? false;
-    return EditorChrome(
+    return EditorOverlayVisibility(
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: editMode ? Border.all(color: colors.outlineVariant) : null,

@@ -8,7 +8,7 @@ import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 void main() {
   for (final zoomed in [false, true]) {
     testWidgets(
-      'editor hides chrome and restores it after nested dialogs (zoom=$zoomed)',
+      'editor hides editing controls and restores them after nested dialogs (zoom=$zoomed)',
       (tester) async {
         final target = GlobalKey();
         final label = GlobalKey();
@@ -75,21 +75,21 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(EditorChrome.openDialogs.value, 1);
+        expect(EditorOverlayVisibility.openDialogs.value, 1);
         expect(visibility().visible, isFalse);
         expect(tester.getSize(find.byKey(target)), before);
         await tester.tap(find.text('Open nested'));
         await tester.pumpAndSettle();
-        expect(EditorChrome.openDialogs.value, 2);
+        expect(EditorOverlayVisibility.openDialogs.value, 2);
         expect(visibility().visible, isFalse);
         await tester.tap(find.text('Close nested'));
         await tester.pumpAndSettle();
-        expect(EditorChrome.openDialogs.value, 1);
+        expect(EditorOverlayVisibility.openDialogs.value, 1);
         expect(visibility().visible, isFalse);
         await tester.tap(find.text('Close parent'));
         await tester.pumpAndSettle();
         await editor;
-        expect(EditorChrome.openDialogs.value, 0);
+        expect(EditorOverlayVisibility.openDialogs.value, 0);
         expect(visibility().visible, isTrue);
         expect(tester.getSize(find.byKey(target)), before);
         expect(tester.takeException(), isNull);

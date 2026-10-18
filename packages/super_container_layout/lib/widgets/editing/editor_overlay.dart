@@ -3,9 +3,9 @@ import 'package:material_ui/material_ui.dart';
 import 'editor_zoom.dart';
 import '../surfaces/super_container.dart';
 
-/// Suppresses editing chrome without changing content geometry or selection.
-class EditorChrome extends StatelessWidget {
-  const EditorChrome({required this.child, super.key});
+/// Hides editing controls without changing content geometry or selection.
+class EditorOverlayVisibility extends StatelessWidget {
+  const EditorOverlayVisibility({required this.child, super.key});
 
   static final ValueNotifier<int> openDialogs = ValueNotifier(0);
   final Widget child;
@@ -61,7 +61,7 @@ class _EditorOverlayState extends State<EditorOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_enabled) return EditorChrome(child: widget.child);
+    if (!_enabled) return EditorOverlayVisibility(child: widget.child);
     return OverlayPortal.overlayChildLayoutBuilder(
       controller: _controller,
       overlayChildBuilder: (context, info) {
@@ -84,7 +84,7 @@ class _EditorOverlayState extends State<EditorOverlay> {
                         actions: ContainerMenuAction.of(this.context),
                       )
                 : null,
-            child: EditorChrome(child: widget.child),
+            child: EditorOverlayVisibility(child: widget.child),
           ),
         );
         final viewport = widget.clipKey?.currentContext?.findRenderObject();
