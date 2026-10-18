@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/editing/editor_history.dart';
+import 'package:super_container_layout/widgets/editing/json_repository_manager.dart';
 import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
@@ -149,6 +150,19 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     icon: const Icon(Icons.web_stories_outlined),
                     onPressed: widget.onManagePages,
                   ),
+                IconButton(
+                  key: const ValueKey('style-edit-banner-repository'),
+                  tooltip: 'Repository',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: scheme.onPrimary,
+                  icon: const Icon(Icons.storage_outlined),
+                  onPressed: () {
+                    final target =
+                        widget.navigatorKey?.currentContext ?? context;
+                    JsonRepositoryManager.show(target);
+                  },
+                ),
                 if (AppearanceScope.controllerOf(context)
                     case final appearance?)
                   IconButton(

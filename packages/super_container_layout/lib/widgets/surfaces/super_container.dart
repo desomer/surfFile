@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/native_component_config.dart';
+import '../../super_app.dart';
 import '../../services/window_transparency.dart';
 import '../../theme/appearance.dart';
 import '../../theme/appearance_slot.dart';
@@ -17,6 +19,8 @@ import '../super_layout/layout_selection.dart';
 import '../editing/style_editor_panel.dart';
 import 'styled_surface.dart';
 import '../super_layout/zone_axis_button.dart';
+import '../native_component_editor.dart';
+import '../super_layout/slot_implementation.dart';
 
 /// Active ou non l'édition des styles par clic droit sur les [SuperContainer].
 class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {
@@ -105,7 +109,8 @@ class ContainerContextMenuEntry extends InheritedWidget {
 /// Sous un [StyleEditScope], le clic droit n'est actif qu'en mode édition.
 class SuperContainer extends StatefulWidget {
   const SuperContainer({
-    required this.child,
+    this.child,
+    this.id,
     this.slot,
     this.style = const ContainerStyle(),
     this.onStyleChanged,
@@ -124,13 +129,18 @@ class SuperContainer extends StatefulWidget {
     this.axisAction,
     this.onContextMenu,
     super.key,
-  });
+  }) : assert(id == null || id != '');
 
-  final Widget child;
+  final Widget? child;
+
+  /// Stable identity enabling a single catalog child, persisted by SuperApp.
+  /// Without an ID, the supplied child remains entirely application-owned.
+  final String? id;
   final AppearanceSlot? slot;
   final ContainerStyle style;
   final ValueChanged<ContainerStyle>? onStyleChanged;
   final String? label;
+
   /// Optional owner name displayed in bold before the container label.
   final String? menuTitle;
 
@@ -165,8 +175,13 @@ class SuperContainer extends StatefulWidget {
 }
 
 class SuperContainerState extends State<SuperContainer> {
+  final _childKey = GlobalKey<_SuperContainerChildState>();
   late final ValueNotifier<ContainerStyle> _local = ValueNotifier(widget.style);
   String? _localLabel;
+
+  Future<void> Function()? get _onAdd =>
+      widget.onAdd ??
+      (widget.id == null ? null : () async => _childKey.currentState?.add());
 
   ValueNotifier<Appearance>? get _appearance =>
       widget.slot == null ? null : AppearanceScope.controllerOf(context);
@@ -797,13 +812,32 @@ class SuperContainerState extends State<SuperContainer> {
                         if ((StyleEditScope.controllerOf(state.context)
                                     ?.value ??
                                 false) &&
-                            state.widget.onAdd != null)
+                            state.widget.id != null &&
+                            (state._childKey.currentState?.hasChild ?? false))
+                          IconButton(
+                            key: ValueKey(
+                              'style-menu-remove-child-${state._label}',
+                            ),
+                            tooltip: 'Supprimer le composant enfant',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () =>
+                                Navigator.of(context)
+                                    .pop<Future<void> Function()>(() async {
+                                      state._childKey.currentState?.remove();
+                                    }),
+                          ),
+                        if ((StyleEditScope.controllerOf(state.context)
+                                    ?.value ??
+                                false) &&
+                            state._onAdd != null)
                           IconButton(
                             key: ValueKey('style-menu-add-${state._label}'),
-                            tooltip: 'Ajouter un slot',
+                            tooltip: state.widget.id == null
+                                ? 'Ajouter un slot'
+                                : 'Ajouter / remplacer le composant enfant',
                             icon: const Icon(Icons.add),
                             onPressed: () =>
-                                Navigator.of(context).pop(state.widget.onAdd),
+                                Navigator.of(context).pop(state._onAdd),
                           ),
                       ],
                     ),
@@ -826,11 +860,24 @@ class SuperContainerState extends State<SuperContainer> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.id case final id?) {
+      return _SuperContainerChild(
+        key: _childKey,
+        id: id,
+        label: _label,
+        builder: _buildSurface,
+        child: widget.child,
+      );
+    }
+    return _buildSurface(context, widget.child ?? const SizedBox.expand());
+  }
+
+  Widget _buildSurface(BuildContext context, Widget child) {
     final editMode = StyleEditScope.controllerOf(context);
     final canEdit = _canEdit;
     Widget content = widget.padding == null
-        ? widget.child
-        : Padding(padding: widget.padding!, child: widget.child);
+        ? child
+        : Padding(padding: widget.padding!, child: child);
     if (widget.applyPadding ?? widget.decorate) {
       content = ListenableBuilder(
         listenable: _appearance ?? _local,
@@ -891,6 +938,124 @@ class SuperContainerState extends State<SuperContainer> {
           Padding(padding: style.outerMargin, child: child),
       child: content,
     );
+  }
+}
+
+class _SuperContainerChild extends StatefulWidget {
+  const _SuperContainerChild({
+    required this.id,
+    required this.label,
+    required this.child,
+    required this.builder,
+    super.key,
+  });
+
+  final String id, label;
+  final Widget? child;
+  final Widget Function(BuildContext, Widget) builder;
+
+  @override
+  State<_SuperContainerChild> createState() => _SuperContainerChildState();
+}
+
+class _SuperContainerChildState extends State<_SuperContainerChild> {
+  final _editor = GlobalKey<NativeComponentEditorState>();
+  late final _local = ValueNotifier(_initial);
+  static const _providedId = '__provided-child';
+
+  NativeComponentConfig get _initial => NativeComponentConfig(
+    placements: {
+      if (widget.child != null) 'child': [_providedId],
+    },
+  );
+
+  ValueNotifier<NativeComponentConfig> get _config =>
+      SuperApp.maybeOf(context)?.registry
+          ?.nativeComponentController(widget.id, fallback: _initial) ??
+      _local;
+
+  bool get hasChild => _config.value.slotsOf('child').isNotEmpty;
+
+  void remove() {
+    final current = _config.value;
+    if (hasChild) {
+      _config.value = current.withoutSlot(current.slotsOf('child').single);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_SuperContainerChild oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.id != widget.id) _local.value = _initial;
+  }
+
+  Future<void> add() async {
+    if (hasChild) {
+      final confirmed = await showEditorDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Remplacer le composant enfant ?'),
+          content: const Text(
+            'Le conteneur ne peut contenir qu’un seul composant. '
+            'Le nouveau composant remplacera le contenu actuel.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Remplacer'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+    await _editor.currentState?.add('child');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final controller = _config;
+    return ValueListenableBuilder<NativeComponentConfig>(
+      valueListenable: controller,
+      builder: (context, config, _) => NativeComponentEditor(
+        key: _editor,
+        label: widget.label,
+        keyPrefix: 'super-container-${widget.id}',
+        settingsTitle: 'Configurer le contenu',
+        config: config,
+        onChanged: (value) => controller.value = value,
+        registry: registry,
+        regions: const [
+          NativeRegion('child', 'Enfant', required: true, single: true),
+        ],
+        slots: [
+          if (widget.child case final child?)
+            BuilderSlot(
+              id: _providedId,
+              label: 'Contenu initial',
+              builder: (_) => child,
+            ),
+        ],
+        builder: (context, editor) {
+          final children = editor.slotsFor('child');
+          final child = children.isEmpty
+              ? const SizedBox.expand()
+              : children.single;
+          return widget.builder(context, child);
+        },
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _local.dispose();
+    super.dispose();
   }
 }
 

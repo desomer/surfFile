@@ -2,12 +2,17 @@ import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/super_text_config.dart';
+import '../models/json_text_binding.dart';
+import '../services/json_repository_scope.dart';
+import '../services/json_repository_store.dart';
+import '../services/json_text_controller_binding.dart';
 import '../super_app.dart';
 import 'editing/editor_history.dart';
 import 'editing/super_text_editor.dart';
+import 'super_text_field.dart';
 import 'surfaces/super_container.dart';
 
-/// Display or edit application text without persisting runtime input.
+/// Display or edit text; runtime input persists only with a repository binding.
 class SuperText extends StatefulWidget {
   const SuperText({
     required this.id,
@@ -41,6 +46,12 @@ class _SuperTextState extends State<SuperText> {
   late final ValueNotifier<SuperTextConfig> _local;
   SuperTextConfig? _previousConfig;
   int _resetGeneration = 0;
+  JsonTextControllerBinding? _binding;
+  JsonTextBinding? _requestedBinding;
+  JsonRepositoryStore? _requestedStore;
+  bool? _requestedExternal;
+  int _bindingGeneration = 0;
+  String? _bindingError;
 
   TextEditingController get _text => widget.controller ?? _internal;
 
@@ -65,6 +76,7 @@ class _SuperTextState extends State<SuperText> {
     if (oldWidget.id != widget.id) {
       _previousConfig = null;
       _resetGeneration++;
+      _requestedExternal = null;
     }
     if (widget.controller == null) {
       if (widget.value != null && widget.value != _internal.text) {
@@ -86,6 +98,10 @@ class _SuperTextState extends State<SuperText> {
     config.validate();
     final previous = _previousConfig;
     _previousConfig = config;
+    if (config.binding != null) {
+      _resetGeneration++;
+      return;
+    }
     if (previous == null) {
       if (widget.controller == null && widget.value == null) {
         _setText(_internal, config.initialText);
@@ -94,6 +110,7 @@ class _SuperTextState extends State<SuperText> {
     }
     if (previous.mode == config.mode &&
         previous.initialText == config.initialText &&
+        previous.binding == null &&
         (!config.obscureText || previous.obscureText)) {
       return;
     }
@@ -106,8 +123,51 @@ class _SuperTextState extends State<SuperText> {
     });
   }
 
+  void _observeBinding(SuperTextConfig config, JsonRepositoryStore? store) {
+    final external = widget.controller != null || widget.value != null;
+    if (_requestedBinding == config.binding &&
+        _requestedStore == store &&
+        _requestedExternal == external) {
+      return;
+    }
+    _requestedBinding = config.binding;
+    _requestedStore = store;
+    _requestedExternal = external;
+    final generation = ++_bindingGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || generation != _bindingGeneration) return;
+      _binding?.removeListener(_bindingChanged);
+      _binding?.dispose();
+      _binding = null;
+      _bindingError = null;
+      if (config.binding != null) {
+        if (external) {
+          _bindingError =
+              'La liaison nécessite le contrôleur interne de SuperText.';
+        } else if (store == null) {
+          _bindingError = 'Service de repositories indisponible.';
+        } else {
+          _binding = JsonTextControllerBinding(
+            store: store,
+            binding: config.binding!,
+            controller: _internal,
+            onChanged: (text) => widget.onChanged?.call(text),
+          )..addListener(_bindingChanged);
+        }
+      }
+      setState(() {});
+    });
+  }
+
+  void _bindingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _bindingGeneration++;
+    _binding?.removeListener(_bindingChanged);
+    _binding?.dispose();
     _resetGeneration++;
     _internal.dispose();
     _local.dispose();
@@ -117,6 +177,7 @@ class _SuperTextState extends State<SuperText> {
   @override
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
+    final repositories = JsonRepositoryScope.maybeOf(context);
     final configuration =
         registry?.textController(widget.id, fallback: widget.config) ?? _local;
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
@@ -125,6 +186,7 @@ class _SuperTextState extends State<SuperText> {
     return ValueListenableBuilder<SuperTextConfig>(
       valueListenable: configuration,
       builder: (context, config, _) {
+        _observeBinding(config, repositories);
         _observeConfig(config);
         final missingFont =
             config.fontFamily != null &&
@@ -152,6 +214,7 @@ class _SuperTextState extends State<SuperText> {
               context: context,
               config: configuration.value,
               availableFontFamilies: widget.availableFontFamilies,
+              allowBinding: widget.controller == null && widget.value == null,
             );
             if (result == null ||
                 !context.mounted ||
@@ -192,25 +255,17 @@ class _SuperTextState extends State<SuperText> {
                           _surface.currentState?.openMenu(event.position);
                         }
                       },
-                      child: TextField(
-                        key: ValueKey('super-text-input-${widget.id}'),
+                      child: SuperTextField(
+                        key: ValueKey('super-text-field-${widget.id}'),
+                        inputKey: ValueKey('super-text-input-${widget.id}'),
+                        config: config,
                         controller: _text,
                         style: style,
-                        textAlign: config.textAlign,
-                        enabled: config.enabled,
-                        readOnly: config.readOnly,
-                        obscureText: config.obscureText,
-                        enableSuggestions: !config.obscureText,
-                        autocorrect: !config.obscureText,
-                        minLines: config.minLines,
-                        maxLines: config.maxLines,
-                        decoration: InputDecoration(
-                          labelText: config.label.isEmpty ? null : config.label,
-                          hintText: config.placeholder.isEmpty
-                              ? null
-                              : config.placeholder,
-                          isDense: true,
-                        ),
+                        enabled:
+                            config.enabled &&
+                            !(config.binding != null &&
+                                _binding?.loading == true),
+                        bindingError: _bindingError ?? _binding?.error,
                         onChanged: (text) {
                           widget.onChanged?.call(text);
                           if (widget.value != null) {
@@ -251,6 +306,52 @@ class _SuperTextState extends State<SuperText> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Flexible(child: content),
+                      if (config.mode == SuperTextMode.display &&
+                          (_bindingError != null || _binding?.error != null))
+                        Text(
+                          _bindingError ?? _binding!.error!,
+                          key: ValueKey(
+                            'super-text-binding-error-${widget.id}',
+                          ),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      // if (_binding != null &&
+                      //     (_binding!.loading || _binding!.saving))
+                      //   Text(
+                      //     _binding!.loading ? 'Chargement…' : 'Enregistrement…',
+                      //   ),
+                      if (_binding?.error != null)
+                        TextButton(
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Recharger la liaison ?'),
+                                content: const Text(
+                                  'La saisie non enregistrée sera abandonnée.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('Annuler'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text('Recharger'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed == true && mounted) {
+                              await _binding?.discardAndReload();
+                            }
+                          },
+                          child: const Text('Recharger la liaison'),
+                        ),
                       if (missingFont && editing)
                         Text(
                           'Police indisponible : ${config.fontFamily}. Choisissez une police disponible.',

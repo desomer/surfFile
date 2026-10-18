@@ -505,7 +505,7 @@ Object _copy(Object value, String Function(String) remap) {
       grid: grid?.copyWith(items: _remapKeys(grid.items, remap)),
     );
   }
-  // ContainerStyle and SuperTextConfig are immutable values without IDs.
+  // Immutable values; a SuperText repository ID is external, not a component ID.
   return value;
 }
 

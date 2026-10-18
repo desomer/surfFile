@@ -99,11 +99,16 @@ void main() {
         find.byKey(const ValueKey('super-text-setting-initialText')),
         'Saved design',
       );
+      final radius = find.byKey(const ValueKey('text-field-setting-radius'));
+      await tester.ensureVisible(radius);
+      await tester.enterText(radius, '17');
+      await tester.pumpAndSettle();
       expect(history.canUndo, isFalse);
       expect(design.value, input);
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(design.value.initialText, 'Saved design');
+      expect(design.value.field.radius, 17);
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         'Saved design',
@@ -123,6 +128,7 @@ void main() {
       history.redo();
       await tester.pumpAndSettle();
       expect(design.value.initialText, 'Saved design');
+      expect(design.value.field.radius, 17);
       expect(tester.takeException(), isNull);
     },
   );
@@ -621,13 +627,22 @@ void main() {
 
   test('appearance codecs transfer reset and subtype preserve text design', () {
     const codec = DefaultAppearanceCodec();
+    const styled = SuperTextConfig(
+      initialText: 'Initial',
+      field: SuperTextFieldConfig(
+        variant: TextFieldVariant.filled,
+        radius: 12,
+        maxLength: 40,
+        suffix: TextFieldSuffix.clear,
+      ),
+    );
     final appearance = DefaultAppearance(cardWidth: 222)
-        .withTextComponent('title', initial);
+        .withTextComponent('title', styled);
     expect(appearance.cardWidth, 222);
     final decoded = codec.decode(codec.encode(appearance)) as DefaultAppearance;
-    expect(decoded.textComponents, {'title': initial});
+    expect(decoded.textComponents, {'title': styled});
     expect(decoded.cardWidth, 222);
-    expect(decoded.copyWith(spacing: 20).textComponents, {'title': initial});
+    expect(decoded.copyWith(spacing: 20).textComponents, {'title': styled});
     expect(decoded.resetLayouts().textComponents, isEmpty);
     final legacy = codec.toJson(appearance)..remove('textComponents');
     expect(codec.fromJson(legacy).textComponents, isEmpty);
@@ -640,7 +655,7 @@ void main() {
       {TransferGroup.layouts},
       codec: codec,
     ) as DefaultAppearance;
-    expect(imported.textComponents, {'title': initial});
+    expect(imported.textComponents, {'title': styled});
     expect(imported.cardWidth, 240);
     final styles = AppearanceTransfer.export(appearance, {
       TransferGroup.styles,

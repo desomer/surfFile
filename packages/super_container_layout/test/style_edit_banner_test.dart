@@ -36,6 +36,29 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('repository action is immediately beside page management', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: mode,
+        child: MaterialApp(
+          home: Scaffold(body: StyleEditBanner(onManagePages: () async {})),
+        ),
+      ),
+    );
+    final pages = find.byKey(const ValueKey('style-edit-banner-pages'));
+    final repository = find.byKey(
+      const ValueKey('style-edit-banner-repository'),
+    );
+    expect(repository, findsOneWidget);
+    expect(find.byTooltip('Repository'), findsOneWidget);
+    expect(tester.getRect(repository).left, tester.getRect(pages).right);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('banner moves and retains its position when editing is toggled', (
     tester,
   ) async {

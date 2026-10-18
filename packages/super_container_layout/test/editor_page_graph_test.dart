@@ -5,6 +5,8 @@ import 'package:super_container_layout/models/native_component_config.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_text_config.dart';
+import 'package:super_container_layout/models/super_text_field_config.dart';
+import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/services/editor_page_graph.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -104,6 +106,87 @@ Appearance _sample() => Appearance(
 );
 
 void main() {
+  test(
+    'container children are copied with new IDs and removed with their page',
+    () {
+      final source = _sample()
+          .withNativeComponent(
+            'cont1',
+            NativeComponentConfig(
+              placements: {
+                'child': ['inside'],
+              },
+              slotTypes: {'inside': 'factory:SuperText'},
+            ),
+          )
+          .withTextComponent(
+            'inside',
+            const SuperTextConfig(initialText: 'Nested'),
+          );
+      final copy = EditorPageGraph.duplicate(
+        appearance: source,
+        registry: _registry(),
+        sourcePageId: 'p1',
+        targetPageId: 'p2',
+        generateId: _ids(),
+      );
+      final layout = copy.nativeComponents['p2']!.slotsOf('body').single;
+      final container = copy.layouts[layout]!
+          .placementsOf(SuperLayoutZone.center)
+          .first;
+      final child = copy.nativeComponents[container]!.slotsOf('child').single;
+      expect(child, isNot('inside'));
+      expect(
+        copy.nativeComponents[container]!.slotTypeOf(child),
+        'factory:SuperText',
+      );
+      expect(copy.textComponents[child]!.initialText, 'Nested');
+      expect(copy.styles[container], source.styles['cont1']);
+      expect(copy.nativeComponents['cont1'], source.nativeComponents['cont1']);
+      final removed = EditorPageGraph.remove(
+        appearance: source,
+        registry: _registry(),
+        pageId: 'p1',
+      );
+      expect(removed.nativeComponents.containsKey('cont1'), isFalse);
+      expect(removed.textComponents.containsKey('inside'), isFalse);
+    },
+  );
+
+  test(
+    'page duplication preserves external repository IDs and binding paths',
+    () {
+      const binding = JsonTextBinding(
+        repositoryId: '0123456789abcdef0123456789abcdef',
+        path: 'client.name',
+      );
+      final source = _sample().withTextComponent(
+        'txt1',
+        const SuperTextConfig(
+          binding: binding,
+          field: SuperTextFieldConfig(
+            variant: TextFieldVariant.outlined,
+            maxLength: 30,
+          ),
+        ),
+      );
+      final result = EditorPageGraph.duplicate(
+        appearance: source,
+        registry: _registry(),
+        sourcePageId: 'p1',
+        targetPageId: 'p2',
+        generateId: _ids(),
+      );
+      final copies = result.textComponents.entries.where(
+        (entry) => entry.key != 'txt1' && entry.value.binding != null,
+      );
+      expect(copies, hasLength(1));
+      expect(copies.single.value.binding, binding);
+      expect(copies.single.value.field, source.textComponents['txt1']!.field);
+      expect(source.textComponents['txt1']!.binding, binding);
+    },
+  );
+
   test('duplicates an independent deep copy with new IDs', () {
     final source = _sample();
     final originals = {

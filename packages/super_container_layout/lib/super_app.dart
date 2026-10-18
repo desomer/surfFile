@@ -10,6 +10,8 @@ import 'models/registry.dart';
 
 import 'services/appearance_store.dart';
 import 'services/editor_page_router.dart';
+import 'services/json_repository_store.dart';
+import 'services/json_repository_scope.dart';
 import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/container_style.dart';
@@ -32,12 +34,14 @@ class SuperApp extends StatefulWidget {
     super.key,
     this.registry,
     this.pageRouting,
+    this.repositoryStore,
   });
 
   final GoRouter router;
   final AppearanceStore? appearanceStore;
   final String title;
   final Registry? registry;
+  final JsonRepositoryStore? repositoryStore;
 
   /// Optional editable routing. Its router must be [router]; owned by the caller.
   final EditorPageRouter? pageRouting;
@@ -84,6 +88,7 @@ class SuperApp extends StatefulWidget {
 class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   late PersistentAppearanceController _appearance;
   late EditorHistoryController _editorHistory;
+  late JsonRepositoryStore _repositories;
   final _styleEditMode = ValueNotifier(false);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   bool _loading = true;
@@ -97,6 +102,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _checkPageRouting();
+    _repositories =
+        widget.repositoryStore ?? JsonRepositoryStore.defaultStore();
+    _repositories.errors.addListener(_repositoryFailed);
     _appearance = _createAppearanceController();
     _editorHistory = _createEditorHistory();
     widget.registry?.bindAppearance(_appearance);
@@ -108,6 +116,16 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         !identical(widget.pageRouting!.router, widget.router)) {
       throw ArgumentError('SuperApp.router must be pageRouting.router.');
     }
+  }
+
+  void _repositoryFailed() {
+    final error = _repositories.errors.value;
+    if (error == null || !mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _messenger.currentState?.showSnackBar(SnackBar(content: Text(error)));
+      }
+    });
   }
 
   PersistentAppearanceController _createAppearanceController() =>
@@ -140,6 +158,13 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   void didUpdateWidget(SuperApp oldWidget) {
     super.didUpdateWidget(oldWidget);
     _checkPageRouting();
+    if (oldWidget.repositoryStore != widget.repositoryStore) {
+      _repositories.errors.removeListener(_repositoryFailed);
+      if (oldWidget.repositoryStore == null) _repositories.dispose();
+      _repositories =
+          widget.repositoryStore ?? JsonRepositoryStore.defaultStore();
+      _repositories.errors.addListener(_repositoryFailed);
+    }
     if (oldWidget.appearanceStore != widget.appearanceStore) {
       oldWidget.registry?.unbindAppearance();
       _editorHistory.dispose();
@@ -277,28 +302,33 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       ..removeListener(_pagesChanged)
       ..dispose();
     _styleEditMode.dispose();
+    _repositories.errors.removeListener(_repositoryFailed);
+    if (widget.repositoryStore == null) _repositories.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => _SuperAppScope(
     app: widget,
-    child: AppearanceServicesScope(
-      codec: _appearance.store.codec,
-      child: AppearanceScope(
-        controller: _appearance,
-        child: LayoutResetShortcut(
-          onReset: _resetLayouts,
-          child: EditorHistoryShortcut(
-            editMode: _styleEditMode,
-            history: _editorHistory,
-            child: EditorHistoryScope(
-              controller: _editorHistory,
-              child: StyleEditScope(
-                controller: _styleEditMode,
-                child: ValueListenableBuilder<Appearance>(
-                  valueListenable: _appearance,
-                  builder: (context, value, _) => _buildApp(value),
+    child: JsonRepositoryScope(
+      store: _repositories,
+      child: AppearanceServicesScope(
+        codec: _appearance.store.codec,
+        child: AppearanceScope(
+          controller: _appearance,
+          child: LayoutResetShortcut(
+            onReset: _resetLayouts,
+            child: EditorHistoryShortcut(
+              editMode: _styleEditMode,
+              history: _editorHistory,
+              child: EditorHistoryScope(
+                controller: _editorHistory,
+                child: StyleEditScope(
+                  controller: _styleEditMode,
+                  child: ValueListenableBuilder<Appearance>(
+                    valueListenable: _appearance,
+                    builder: (context, value, _) => _buildApp(value),
+                  ),
                 ),
               ),
             ),

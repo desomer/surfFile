@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'json_text_binding.dart';
+import 'super_text_field_config.dart';
+
 enum SuperTextMode { display, input }
 
 @immutable
@@ -22,6 +25,8 @@ class SuperTextConfig {
     this.textAlign = TextAlign.start,
     this.lineHeight,
     this.letterSpacing,
+    this.binding,
+    this.field = const SuperTextFieldConfig(),
   });
 
   final SuperTextMode mode;
@@ -41,8 +46,12 @@ class SuperTextConfig {
   final TextAlign textAlign;
   final double? lineHeight;
   final double? letterSpacing;
+  final JsonTextBinding? binding;
+  final SuperTextFieldConfig field;
 
   void validate() {
+    binding?.validate();
+    field.validateFor(obscureText: obscureText, maxLines: maxLines);
     if (minLines < 1 ||
         maxLines < minLines ||
         (obscureText &&
@@ -80,6 +89,9 @@ class SuperTextConfig {
     bool inheritColor = false,
     bool inheritLineHeight = false,
     bool inheritLetterSpacing = false,
+    JsonTextBinding? binding,
+    bool clearBinding = false,
+    SuperTextFieldConfig? field,
   }) => SuperTextConfig(
     mode: mode ?? this.mode,
     initialText: initialText ?? this.initialText,
@@ -100,6 +112,8 @@ class SuperTextConfig {
     letterSpacing: inheritLetterSpacing
         ? null
         : letterSpacing ?? this.letterSpacing,
+    binding: clearBinding ? null : binding ?? this.binding,
+    field: field ?? this.field,
   );
 
   Map<String, Object?> toJson() {
@@ -122,6 +136,8 @@ class SuperTextConfig {
       'textAlign': textAlign.name,
       'lineHeight': lineHeight,
       'letterSpacing': letterSpacing,
+      if (binding != null) 'binding': binding!.toJson(),
+      if (field != const SuperTextFieldConfig()) 'field': field.toJson(),
     };
   }
 
@@ -147,6 +163,8 @@ class SuperTextConfig {
       'textAlign',
       'lineHeight',
       'letterSpacing',
+      'binding',
+      'field',
     };
     if (value.keys.any((key) => !keys.contains(key))) {
       throw const FormatException('Unknown SuperText preference.');
@@ -204,6 +222,12 @@ class SuperTextConfig {
       color: color == null ? null : Color(color as int),
       lineHeight: number('lineHeight'),
       letterSpacing: number('letterSpacing'),
+      binding: value['binding'] == null
+          ? null
+          : JsonTextBinding.fromJson(value['binding']),
+      field: value.containsKey('field')
+          ? SuperTextFieldConfig.fromJson(value['field'])
+          : const SuperTextFieldConfig(),
     );
     try {
       result.validate();
@@ -232,7 +256,9 @@ class SuperTextConfig {
       color == other.color &&
       textAlign == other.textAlign &&
       lineHeight == other.lineHeight &&
-      letterSpacing == other.letterSpacing;
+      letterSpacing == other.letterSpacing &&
+      binding == other.binding &&
+      field == other.field;
 
   @override
   int get hashCode => Object.hashAll([
@@ -253,5 +279,7 @@ class SuperTextConfig {
     textAlign,
     lineHeight,
     letterSpacing,
+    binding,
+    field,
   ]);
 }

@@ -93,7 +93,10 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _layout(String id) => [
     EditorConfigRef.layout(id),
   ];
-  static List<EditorConfigRef> _style(String id) => [EditorConfigRef.style(id)];
+  static List<EditorConfigRef> _container(String id) => [
+    EditorConfigRef.style(id),
+    EditorConfigRef.nativeComponent(id),
+  ];
   static List<EditorConfigRef> _text(String id) => [EditorConfigRef.text(id)];
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
@@ -113,7 +116,7 @@ class ComponentDuplicationContract {
     ownedConfigs: _native,
   );
   static const newContainer = ComponentDuplicationContract(
-    ownedConfigs: _style,
+    ownedConfigs: _container,
   );
   static const newLayout = ComponentDuplicationContract(ownedConfigs: _layout);
 }
@@ -428,10 +431,10 @@ class Registry {
           return ValueListenableBuilder<ContainerStyle>(
             valueListenable: style,
             builder: (context, value, _) => SuperContainer(
+              id: xuiCtx.id,
               label: 'New Container',
               style: value,
               onStyleChanged: (value) => style.value = value,
-              child: const SizedBox.expand(),
             ),
           );
         },

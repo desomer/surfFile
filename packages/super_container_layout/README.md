@@ -102,7 +102,7 @@ En affichage sans label, le texte est rendu sans décoration de champ ni marge
 de saisie. Le contenu est centré verticalement dans la hauteur du slot, notamment
 dans le titre d'une SuperAppBar.
 
-**Attention :** changer le mode ou le texte initial réinitialise la valeur
+**Attention :** sans liaison repository, changer le mode ou le texte initial réinitialise la valeur
 courante au texte initial. La réinitialisation met à jour le controller fourni
 et appelle `onChanged` une seule fois ; avec `value`, le parent doit accepter
 la nouvelle valeur. L'activation du mot de passe efface aussi la valeur.
@@ -117,6 +117,127 @@ L'annulation des changements de mode/texte initial applique également la règle
 de réinitialisation ; elle ne restaure pas les anciennes saisies.
 Les réglages texte font partie du groupe **Dispositions** à l'import/export
 et sont supprimés par la remise à zéro des dispositions.
+
+### Styles et options du champ de saisie
+
+L'éditeur présente d'abord la carte **Repository**, puis le contenu, le
+comportement et la typographie. Les options de saisie sont réparties dans les
+cartes **Style du champ**, **Couleurs du champ**, **Préfixes et suffixes**,
+**Messages et compteur**, **Limites et filtres** et **Clavier et saisie**,
+accessibles directement depuis la navigation.
+
+La carte **Style du champ** propose les styles **Thème** (par défaut), **Filled**,
+**Outlined**, **Underline** et **Sans bordure**. Ces réglages ne modifient pas
+le mode Affichage. Le thème reste utilisé pour les propriétés non personnalisées.
+
+```dart
+const SuperTextConfig(
+  mode: SuperTextMode.input,
+  label: 'Nom',
+  field: SuperTextFieldConfig(
+    variant: TextFieldVariant.outlined,
+    radius: 12,
+    prefixIcon: TextFieldIcon.person,
+    suffix: TextFieldSuffix.clear,
+    helperText: 'Votre nom complet',
+    maxLength: 80,
+    showCounter: true,
+    capitalization: TextCapitalization.words,
+    action: TextFieldAction.next,
+  ),
+)
+```
+
+Les options comprennent :
+
+- Couleurs du fond et des bordures aux états normal, focus, désactivé et erreur
+  (y compris l'erreur avec focus), arrondi, épaisseur, marges internes et densité.
+- Textes et icônes de préfixe/suffixe, aide, erreur manuelle et label flottant.
+  Une erreur de liaison JSON est prioritaire sur l'erreur manuelle.
+- Suffixe décoratif, bouton **Effacer** ou bouton de visibilité du mot de passe.
+  **Effacer** respecte les états désactivé/lecture seule et publie une seule
+  modification, y compris vers un repository. La visibilité reste locale,
+  n'est pas sauvegardée et ne réactive ni suggestions ni correction du mot de passe.
+- Longueur maximale et compteur facultatifs. Le comptage utilise les graphèmes
+  (un emoji composé compte pour un caractère) ; le compteur peut aussi être
+  affiché sans limite.
+- Filtres : aucun, chiffres, décimal signé avec point, lettres Unicode
+  (accents, espaces, apostrophes et tiret), ou expression régulière de caractères
+  autorisés, par exemple `[A-Z]`. Le filtre regex n'est pas une validation du texte
+  complet. Le filtre décimal accepte les états intermédiaires comme `-` ou `-.`.
+- Clavier, action de saisie, capitalisation, alignement vertical, correction
+  automatique et suggestions.
+
+Les filtres et limites s'appliquent uniquement aux saisies/collages, après la
+composition IME. Ils ne tronquent ni les valeurs du controller ni les données
+chargées depuis un repository. Changer les options ne réécrit pas ces données.
+L'aperçu utilise le même rendu que le composant, sans accéder au repository.
+Les brouillons invalides bloquent **Appliquer** ; **Annuler** ne publie rien.
+Ces options suivent la sauvegarde, l'import/export et l'annulation des autres
+réglages de SuperText.
+
+### Liaison SuperText / repository JSON
+
+La section **Repository** de l'editeur permet de choisir un document du dossier
+par defaut puis un chemin d'attribut, par exemple `client.nom` ou
+`clients[0].nom`. **Sans liaison** retire cette association. Le nom facilite
+le choix, mais seul l'ID technique est sauvegarde : renommer le repository
+ne casse pas les textes lies. Un repository absent ou un ID duplique/corrompu
+produit une erreur explicite, sans recherche approximative par ancien nom.
+
+```dart
+SuperText(
+  id: 'client-name',
+  config: SuperTextConfig(
+    mode: SuperTextMode.input,
+    binding: JsonTextBinding(
+      repositoryId: repositoryId,
+      path: 'client.nom',
+    ),
+  ),
+)
+```
+
+La liaison utilise uniquement le controleur interne de SuperText ; `controller`
+et `value` fournis par l'application sont incompatibles avec une liaison.
+Le JSON fournit la valeur initiale, en affichage comme en saisie ; changer le
+mode ou le texte initial ne remplace plus cette valeur. Les changements de texte
+du controleur interne sont enregistres apres une pause de 350 ms, et la derniere
+saisie est envoyee a l'ancien attribut lors d'une deliaison ou d'un demontage.
+Les changements de selection seuls ne produisent aucune ecriture.
+
+Les chaines, nombres et booleens existants conservent leur type. Les booleens
+acceptent `true`/`false` et les nombres la syntaxe JSON ; une saisie intermediaire
+invalide reste visible sans ecraser le fichier. Un attribut absent ou `null`
+est affiche vide et devient une chaine lors de la saisie ; les objets parents
+manquants sont crees a ce moment seulement. Les tableaux ne sont jamais etendus,
+leurs indices doivent exister. Les objets/tableaux comme valeurs terminales,
+les structures incompatibles et les chemins invalides sont refuses. Les cles
+contenant des points ou des crochets et les expressions JSONPath ne sont pas
+prises en charge.
+
+`SuperApp` fournit un `JsonRepositoryStore` partage. Une sauvegarde depuis le
+gestionnaire actualise les SuperText, et inversement. Les ecritures sont
+serialisees ; un changement d'un autre attribut est preserve, tandis qu'un
+conflit sur l'attribut lie conserve la saisie locale et affiche une erreur.
+**Recharger la liaison** demande confirmation avant d'abandonner cette saisie.
+Il n'y a pas de surveillance des fichiers externes : ils sont relus lors de
+la prochaine connexion/reouverture, ainsi qu'avant une ecriture pour controler
+les conflits.
+
+Pour une integration autonome, placer `JsonRepositoryScope(store: store, child:
+...)` au-dessus des textes et du navigateur. `SuperApp(repositoryStore: store,
+...)` permet d'injecter le meme service ; l'appelant libere alors ce store.
+Le gestionnaire partage celui du scope pour le dossier par defaut et conserve
+son fonctionnement independant dans un autre dossier.
+
+**Attention aux mots de passe :** une liaison de champ masque est autorisee,
+mais sa valeur est enregistree **en clair dans le fichier JSON**. L'editeur
+affiche cet avertissement et son apercu ne lit pas les donnees du repository.
+Les valeurs courantes ne sont jamais ajoutees a l'apparence : seuls ID et
+chemin y figurent. L'historique annule la configuration de liaison, pas les
+donnees deja ecrites dans les repositories ; une page dupliquee garde la meme
+reference de repository et ne duplique pas ses donnees.
 
 ## Tags des composants et restrictions des zones
 
@@ -762,6 +883,28 @@ de sauvegarder le nom puis de le fournir via `label` ; sans callback, le nom
 reste local a l'instance. `ContainerStyleEditor.onLabelChanged` permet aussi
 d'integrer l'en-tete editable dans un editeur personnalise.
 
+Le bouton **Repository**, a cote de **Gerer les pages** dans la banniere
+d'edition, ouvre un gestionnaire de documents JSON libres, independants des
+pages et des styles. Chaque repository est un fichier `<nom>.json` : il peut
+etre cree, renomme, consulte et modifie. Le dossier initial est
+`%USERPROFILE%\.super_container_layout\repositories` sous Windows
+(`$HOME/.super_container_layout/repositories` ailleurs) ; le champ du dossier
+permet de charger un autre repertoire. Les fichiers sont conserves au
+redemarrage et ne sont pas inclus dans la reinitialisation ou l'historique
+de l'apparence. **Enregistrer** valide le JSON avant toute ecriture ;
+**Formater** l'indente. Un JSON invalide sur disque reste ouvrable pour le
+corriger. Les erreurs de fichier et les conflits avec des modifications
+externes sont affiches, et l'abandon des modifications demande confirmation.
+`JsonRepositoryManager(store: JsonRepositoryStore(Directory(...)))` permet
+d'ouvrir le gestionnaire avec un dossier explicite dans une integration.
+Chaque repository possede aussi un ID technique genere automatiquement,
+affiche en lecture seule et accessible via `JsonRepositoryStore.idOf(name)`.
+Il reste identique apres modification du JSON, renommage et redemarrage.
+Cet ID est conserve dans un fichier compagnon `<nom>.json.id`, hors du JSON
+editable ; deplacer ou sauvegarder un repository doit inclure les deux fichiers.
+Les repositories existants recoivent un ID au premier acces, sans modification
+de leur contenu. Un fichier d'ID corrompu est signale, jamais regenere en silence.
+
 En mode edition dans une `SuperPage`, les dialogues de style, de taille,
 de configuration du layout, d'ajout de slot et d'apparence utilisent un panneau
 a droite. Un bouton permet de le placer a gauche. Le composant edite est cadre
@@ -1029,6 +1172,36 @@ registry.registerComponent(
 
 `component.createSlot(id, visible: condition)` permet de masquer un slot selon
 l'état de l'application ; `visible` vaut `true` par défaut.
+
+### Ajouter un enfant dans un SuperContainer
+
+En mode édition, un clic droit sur **New Container** affiche un bouton **+**
+sur sa ligne dans le menu contextuel. Il ouvre le catalogue des composants
+(fabriques et composants enregistrés disponibles), comme dans les zones natives.
+Le conteneur possède un seul enfant : s'il est déjà rempli, une confirmation
+**Remplacer** est demandée avant le choix. Annuler l'une des deux fenêtres
+conserve le contenu actuel. Le bouton de suppression sur la même ligne vide
+le conteneur.
+
+Pour activer ce comportement sur un conteneur déclaré dans le code, fournissez
+un `id` stable et unique sous `SuperApp` :
+
+```dart
+const SuperContainer(
+  id: 'customer-panel',
+  label: 'Panneau client',
+  // child est facultatif ; s'il est fourni, il devient le contenu initial.
+);
+```
+
+L'enfant choisi et son identifiant d'instance sont sauvegardés dans
+`Appearance.nativeComponents[id]`, région `child`. Ils suivent l'import/export
+des dispositions, la remise à zéro, l'annulation/rétablissement et la duplication
+des pages, y compris les enfants imbriqués. Les conteneurs du catalogue activent
+automatiquement cette fonction. Sans `id`, le `child` reste géré uniquement par
+l'application, sans nouvel ajout interactif ; un `onAdd` explicite garde la
+priorité sur le sélecteur intégré. Hors `SuperApp`, le contenu reste local et
+aucun catalogue partagé n'est disponible.
 
 Une fabrique crée son widget dans le contexte de la zone, sans conserver une
 instance partagée. `isAvailable` filtre les composants selon les ancêtres du
