@@ -660,6 +660,91 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('mode filters cards and keeps field drafts across switches', (
+    tester,
+  ) async {
+    StyleEditorPanel.preferredDense = false;
+    await tester.binding.setSurfaceSize(const Size(1280, 1000));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    SuperTextConfig? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showSuperTextEditor(
+                context: context,
+                config: const SuperTextConfig(),
+                availableFontFamilies: const [],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+
+    void checkMode(bool input) {
+      final panel = tester.widget<StyleEditorPanel>(
+        find.byType(StyleEditorPanel),
+      );
+      expect(panel.sections.first.id, 'text-repository');
+      expect(
+        panel.sections.where((section) => section.id.startsWith('text-field-')),
+        hasLength(input ? 6 : 0),
+      );
+      for (final key in ['readOnly', 'enabled', 'minLines']) {
+        expect(
+          find.byKey(ValueKey('super-text-setting-$key')),
+          input ? findsOneWidget : findsNothing,
+        );
+      }
+      expect(
+        find.byKey(const ValueKey('super-text-setting-maxLines')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-text-setting-obscureText')),
+        findsOneWidget,
+      );
+    }
+
+    Future<void> mode(String label) async {
+      final field = find.byKey(const ValueKey('super-text-setting-mode'));
+      await tester.ensureVisible(field);
+      await tester.pumpAndSettle();
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    checkMode(false);
+    await mode('Saisie');
+    checkMode(true);
+    final radius = find.byKey(const ValueKey('text-field-setting-radius'));
+    await tester.ensureVisible(radius);
+    await tester.enterText(radius, '18');
+    await tester.pumpAndSettle();
+    await mode('Affichage');
+    checkMode(false);
+    await mode('Saisie');
+    checkMode(true);
+    expect(tester.widget<TextFormField>(radius).controller!.text, '18');
+    await tester.ensureVisible(radius);
+    await tester.enterText(radius, '-1');
+    await tester.pumpAndSettle();
+    await mode('Affichage');
+    checkMode(false);
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(result!.mode, SuperTextMode.display);
+    expect(result!.field.radius, 18);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('field settings fit a narrow editor', (tester) async {
     StyleEditorPanel.preferredDense = false;
     await tester.binding.setSurfaceSize(const Size(400, 700));

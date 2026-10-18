@@ -19,6 +19,7 @@ Future<SuperTextConfig?> showSuperTextEditor({
   required SuperTextConfig config,
   required List<String> availableFontFamilies,
   bool allowBinding = true,
+  ValueChanged<SuperTextConfig>? onPreviewChanged,
 }) async {
   final width = ValueNotifier(StyleEditorPanel.preferredDense ? 680.0 : 1080.0);
   final textStyle = DefaultTextStyle.of(context).style;
@@ -35,6 +36,7 @@ Future<SuperTextConfig?> showSuperTextEditor({
         onWidthChanged: (value) => width.value = value,
         repositories: repositories,
         allowBinding: allowBinding,
+        onPreviewChanged: onPreviewChanged,
       ),
     );
   } finally {
@@ -50,6 +52,7 @@ class _SuperTextEditor extends StatefulWidget {
     required this.onWidthChanged,
     required this.repositories,
     required this.allowBinding,
+    required this.onPreviewChanged,
   });
   final SuperTextConfig config;
   final List<String> availableFontFamilies;
@@ -57,6 +60,7 @@ class _SuperTextEditor extends StatefulWidget {
   final ValueChanged<double> onWidthChanged;
   final JsonRepositoryStore? repositories;
   final bool allowBinding;
+  final ValueChanged<SuperTextConfig>? onPreviewChanged;
 
   @override
   State<_SuperTextEditor> createState() => _SuperTextEditorState();
@@ -76,6 +80,97 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
   String? _repositoryError;
   bool _loadingRepositories = false;
   bool _validating = false;
+  SuperTextConfig? _lastPreview;
+  String? _liveError;
+
+  SuperTextConfig _configuration(
+    SuperTextFieldConfig field,
+    JsonTextBinding? binding,
+  ) {
+    double? number(String key) {
+      final text = _fields[key]!.text.trim();
+      if (text.isEmpty) return null;
+      final value = double.tryParse(text.replaceAll(',', '.'));
+      if (value == null) {
+        throw const FormatException('Valeur numérique invalide.');
+      }
+      return value;
+    }
+
+    final min = _draft.mode == SuperTextMode.display
+        ? _draft.minLines
+        : int.tryParse(_fields['minLines']!.text);
+    final max = int.tryParse(_fields['maxLines']!.text);
+    if (!_draft.obscureText && (min == null || max == null)) {
+      throw const FormatException('Nombre de lignes invalide.');
+    }
+    final color = _fields['color']!.text.trim();
+    if (color.isNotEmpty && !RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(color)) {
+      throw const FormatException('Couleur AARRGGBB à 8 chiffres requise.');
+    }
+    if (_draft.fontFamily != null &&
+        !widget.availableFontFamilies.contains(_draft.fontFamily)) {
+      throw const FormatException('Choisissez une police disponible.');
+    }
+    final result = _draft.copyWith(
+      field: field,
+      binding: binding,
+      clearBinding: binding == null,
+      initialText: _draft.obscureText ? '' : _fields['initialText']!.text,
+      label: _fields['label']!.text,
+      placeholder: _fields['placeholder']!.text,
+      minLines: _draft.obscureText
+          ? 1
+          : _draft.mode == SuperTextMode.display && max != null
+          ? math.min(min!, max)
+          : min,
+      maxLines: _draft.obscureText ? 1 : max,
+      fontSize: number('fontSize'),
+      inheritFontSize: number('fontSize') == null,
+      lineHeight: number('lineHeight'),
+      inheritLineHeight: number('lineHeight') == null,
+      letterSpacing: number('letterSpacing'),
+      inheritLetterSpacing: number('letterSpacing') == null,
+      color: color.isEmpty ? null : Color(int.parse(color, radix: 16)),
+      inheritColor: color.isEmpty,
+    );
+    result.validate();
+    return result;
+  }
+
+  void _schedulePreview() {
+    if (widget.onPreviewChanged == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+      try {
+        final binding = _repositoryId == null
+            ? null
+            : JsonTextBinding(
+                repositoryId: _repositoryId!,
+                path: _fields['repositoryPath']!.text,
+              );
+        final config = _configuration(
+          _draft.mode == SuperTextMode.input
+              ? _fieldSettings.currentState?.value() ?? _fieldConfig
+              : _fieldConfig,
+          binding,
+        );
+        if (_liveError != null) setState(() => _liveError = null);
+        if (_lastPreview != config) {
+          _lastPreview = config;
+          widget.onPreviewChanged!(config);
+        }
+      } on FormatException catch (error) {
+        if (_liveError != error.message) {
+          setState(() => _liveError = error.message);
+        }
+      } on ArgumentError {
+        const message =
+            'Réglages du texte invalides : vérifiez les lignes et les dimensions.';
+        if (_liveError != message) setState(() => _liveError = message);
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -239,7 +334,10 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
             final number = int.tryParse(value);
             if (number == null || number < 1) return 'Entier positif requis.';
             final min = int.tryParse(_fields['minLines']!.text);
-            if (key == 'maxLines' && min != null && number < min) {
+            if (key == 'maxLines' &&
+                _draft.mode == SuperTextMode.input &&
+                min != null &&
+                number < min) {
               return 'Le maximum doit être supérieur ou égal au minimum.';
             }
           } else if (numeric && value.isNotEmpty) {
@@ -380,6 +478,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
 
   @override
   Widget build(BuildContext context) {
+    _schedulePreview();
     final fonts = widget.availableFontFamilies.toSet().toList();
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
@@ -398,6 +497,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         height: height,
         child: Form(
           key: _form,
+          onChanged: () => setState(() {}),
           child: SuperTextFieldSettings(
             key: _fieldSettings,
             value: _draft.field,
@@ -463,7 +563,9 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                   id: 'text-behavior',
                   title: 'Comportement',
                   icon: Icons.tune,
-                  tag: 'enabled · readOnly',
+                  tag: _draft.mode == SuperTextMode.input
+                      ? 'enabled · readOnly'
+                      : 'obscureText · maxLines',
                   child: _group([
                     SwitchListTile(
                       key: const ValueKey('super-text-setting-obscureText'),
@@ -483,25 +585,28 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                         'Texte masqué dans les deux modes. Une seule ligne, sans texte initial sauvegardé.',
                       )
                     else ...[
-                      _field('minLines', 'Lignes minimales', numeric: true),
+                      if (_draft.mode == SuperTextMode.input)
+                        _field('minLines', 'Lignes minimales', numeric: true),
                       _field('maxLines', 'Lignes maximales', numeric: true),
                     ],
-                    SwitchListTile(
-                      key: const ValueKey('super-text-setting-enabled'),
-                      title: const Text('Activé'),
-                      value: _draft.enabled,
-                      onChanged: (value) => setState(
-                        () => _draft = _draft.copyWith(enabled: value),
+                    if (_draft.mode == SuperTextMode.input)
+                      SwitchListTile(
+                        key: const ValueKey('super-text-setting-enabled'),
+                        title: const Text('Activé'),
+                        value: _draft.enabled,
+                        onChanged: (value) => setState(
+                          () => _draft = _draft.copyWith(enabled: value),
+                        ),
                       ),
-                    ),
-                    SwitchListTile(
-                      key: const ValueKey('super-text-setting-readOnly'),
-                      title: const Text('Lecture seule'),
-                      value: _draft.readOnly,
-                      onChanged: (value) => setState(
-                        () => _draft = _draft.copyWith(readOnly: value),
+                    if (_draft.mode == SuperTextMode.input)
+                      SwitchListTile(
+                        key: const ValueKey('super-text-setting-readOnly'),
+                        title: const Text('Lecture seule'),
+                        value: _draft.readOnly,
+                        onChanged: (value) => setState(
+                          () => _draft = _draft.copyWith(readOnly: value),
+                        ),
                       ),
-                    ),
                   ]),
                 ),
                 StyleEditorSection(
@@ -681,13 +786,19 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     ),
                   ]),
                 ),
-                ...fieldSections,
+                if (_draft.mode == SuperTextMode.input) ...fieldSections,
               ],
             ),
           ),
         ),
       ),
       actions: [
+        if (_liveError != null)
+          Text(
+            _liveError!,
+            key: const ValueKey('super-text-live-error'),
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
         if (_fieldError != null)
           Text(
             _fieldError!,
@@ -702,9 +813,13 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
               ? null
               : () async {
                   if (!_form.currentState!.validate()) return;
-                  if (_fieldSettings.currentState?.validate() == false) return;
-                  final field =
-                      _fieldSettings.currentState?.value() ?? _fieldConfig;
+                  if (_draft.mode == SuperTextMode.input &&
+                      _fieldSettings.currentState?.validate() == false) {
+                    return;
+                  }
+                  final field = _draft.mode == SuperTextMode.input
+                      ? _fieldSettings.currentState?.value() ?? _fieldConfig
+                      : _fieldConfig;
                   try {
                     field.validateFor(
                       obscureText: _draft.obscureText,
@@ -753,38 +868,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     }
                     if (!mounted) return;
                   }
-                  double? number(String key) =>
-                      _fields[key]!.text.trim().isEmpty
-                      ? null
-                      : double.parse(_fields[key]!.text.replaceAll(',', '.'));
-                  final color = _fields['color']!.text.trim();
-                  final result = _draft.copyWith(
-                    field: field,
-                    binding: binding,
-                    clearBinding: binding == null,
-                    initialText: _draft.obscureText
-                        ? ''
-                        : _fields['initialText']!.text,
-                    label: _fields['label']!.text,
-                    placeholder: _fields['placeholder']!.text,
-                    minLines: _draft.obscureText
-                        ? 1
-                        : int.parse(_fields['minLines']!.text),
-                    maxLines: _draft.obscureText
-                        ? 1
-                        : int.parse(_fields['maxLines']!.text),
-                    fontSize: number('fontSize'),
-                    inheritFontSize: number('fontSize') == null,
-                    lineHeight: number('lineHeight'),
-                    inheritLineHeight: number('lineHeight') == null,
-                    letterSpacing: number('letterSpacing'),
-                    inheritLetterSpacing: number('letterSpacing') == null,
-                    color: color.isEmpty
-                        ? null
-                        : Color(int.parse(color, radix: 16)),
-                    inheritColor: color.isEmpty,
-                  );
-                  result.validate();
+                  final result = _configuration(field, binding);
                   if (!context.mounted) return;
                   Navigator.of(context).pop(result);
                 },

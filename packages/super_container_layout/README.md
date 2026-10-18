@@ -110,8 +110,14 @@ Le mot de passe est masqué dans les deux modes, sur une seule ligne, et
 n'autorise aucun texte initial persistant.
 
 Seuls les réglages sont sauvegardés dans `Appearance.textComponents`, jamais
-la saisie courante ni le contenu du controller. Le dialogue ne publie rien
-avant **Appliquer** : **Annuler** ne touche ni les réglages ni la saisie.
+la saisie courante ni le contenu du controller. Pendant l'édition, les réglages
+valides modifient en temps réel le composant dans la page, sans attendre
+**Appliquer**. Les valeurs invalides sont signalées et le dernier rendu valide
+est conservé. Le bouton **Annuler**, à côté d'**Appliquer**, ou la fermeture du
+dialogue restaure le composant et sa saisie d'origine (sélection comprise).
+Le brouillon utilise un controller temporaire : il ne publie pas de `onChanged`,
+ne change pas la liaison active et n'écrit pas dans les repositories.
+Seul **Appliquer** sauvegarde les réglages et active une nouvelle liaison.
 Une application validée constitue une seule étape d'annulation/rétablissement.
 L'annulation des changements de mode/texte initial applique également la règle
 de réinitialisation ; elle ne restaure pas les anciennes saisies.
@@ -125,6 +131,11 @@ comportement et la typographie. Les options de saisie sont réparties dans les
 cartes **Style du champ**, **Couleurs du champ**, **Préfixes et suffixes**,
 **Messages et compteur**, **Limites et filtres** et **Clavier et saisie**,
 accessibles directement depuis la navigation.
+En mode **Affichage**, ces six cartes de saisie sont masquées, ainsi que les
+options lecture seule, activation du champ et lignes minimales. Le repository,
+le contenu, le masquage du texte, les lignes maximales et la typographie restent
+accessibles. Passer d'un mode à l'autre conserve les réglages du champ ; un
+brouillon de saisie invalide masqué ne bloque pas l'application en Affichage.
 
 La carte **Style du champ** propose les styles **Thème** (par défaut), **Filled**,
 **Outlined**, **Underline** et **Sans bordure**. Ces réglages ne modifient pas

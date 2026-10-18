@@ -105,6 +105,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(history.canUndo, isFalse);
       expect(design.value, input);
+      final live = tester.widget<TextField>(
+        find.byKey(const ValueKey('super-text-input-persisted')),
+      );
+      expect(live.controller!.text, 'Saved design');
+      expect(
+        (live.decoration!.border as UnderlineInputBorder).borderRadius,
+        BorderRadius.circular(17),
+      );
+      expect(const AppearanceCodec().encode(appearance.value), before);
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(design.value.initialText, 'Saved design');
@@ -1027,6 +1036,10 @@ void main() {
     'dialog cancel never resets text and apply publishes one config',
     (tester) async {
       final controller = TextEditingController(text: 'Runtime');
+      controller.selection = const TextSelection(
+        baseOffset: 1,
+        extentOffset: 4,
+      );
       final configs = <SuperTextConfig>[];
       final events = <String>[];
       await tester.pumpWidget(
@@ -1055,9 +1068,62 @@ void main() {
         find.byKey(const ValueKey('super-text-setting-initialText')),
         'Draft',
       );
+      await tester.pumpAndSettle();
+      expect(find.text('Draft'), findsWidgets);
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('super-text-display-editor')),
+            )
+            .data,
+        'Draft',
+      );
       expect(controller.text, 'Runtime');
+      expect(events, isEmpty);
+      expect(
+        tester.getCenter(find.text('Annuler')).dx,
+        lessThan(tester.getCenter(find.text('Appliquer')).dx),
+      );
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
+      expect(controller.text, 'Runtime');
+      expect(
+        controller.selection,
+        const TextSelection(baseOffset: 1, extentOffset: 4),
+      );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('super-text-display-editor')),
+            )
+            .data,
+        'Runtime',
+      );
+      expect(configs, isEmpty);
+      expect(events, isEmpty);
+      await open();
+      await tester.enterText(
+        find.byKey(const ValueKey('super-text-setting-label')),
+        'Temporary label',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<InputDecorator>(
+              find
+                  .descendant(
+                    of: find.byType(SuperText),
+                    matching: find.byType(InputDecorator),
+                  )
+                  .first,
+            )
+            .decoration
+            .labelText,
+        'Temporary label',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('super-text-settings')), findsNothing);
       expect(controller.text, 'Runtime');
       expect(configs, isEmpty);
       await open();
@@ -1071,6 +1137,47 @@ void main() {
       expect(controller.text, 'Applied');
       expect(events, ['Applied']);
       await tester.pumpWidget(const SizedBox());
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'live password styling keeps runtime content and cancels safely',
+    (tester) async {
+      final controller = TextEditingController(text: 'secret');
+      final events = <String>[];
+      await tester.pumpWidget(
+        host(
+          SuperText(
+            id: 'live-password',
+            controller: controller,
+            onChanged: events.add,
+            config: const SuperTextConfig(
+              mode: SuperTextMode.input,
+              obscureText: true,
+            ),
+          ),
+        ),
+      );
+      final live = find.byKey(const ValueKey('super-text-input-live-password'));
+      await tester.tap(live, buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-Texte')));
+      await tester.pumpAndSettle();
+      final radius = find.byKey(const ValueKey('text-field-setting-radius'));
+      await tester.ensureVisible(radius);
+      await tester.enterText(radius, '19');
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(live).obscureText, isTrue);
+      expect(tester.widget<TextField>(live).controller!.text, 'secret');
+      expect(controller.text, 'secret');
+      expect(events, isEmpty);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(live).controller, same(controller));
+      expect(controller.text, 'secret');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
       controller.dispose();
     },
   );

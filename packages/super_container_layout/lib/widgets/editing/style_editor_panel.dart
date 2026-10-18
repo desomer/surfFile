@@ -84,7 +84,9 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
   GlobalKey _key(String id) => _keys.putIfAbsent(id, GlobalKey.new);
 
   String get _selected =>
-      _current ?? (widget.sections.isEmpty ? '' : widget.sections.first.id);
+      widget.sections.any((section) => section.id == _current)
+      ? _current!
+      : (widget.sections.isEmpty ? '' : widget.sections.first.id);
 
   void _go(String id) {
     setState(() => _current = id);

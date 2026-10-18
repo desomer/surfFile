@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -65,6 +66,66 @@ void main() {
   Finder input(String id) => find.byKey(ValueKey('super-text-input-$id'));
   String text(WidgetTester tester, String id) =>
       tester.widget<TextField>(input(id)).controller!.text;
+
+  testWidgets(
+    'live editor changes rendering without writing or rebinding repositories',
+    (tester) async {
+      var changes = 0;
+      await mount(
+        tester,
+        SuperText(
+          id: 'live',
+          config: SuperTextConfig(mode: SuperTextMode.input, binding: binding),
+          onChanged: (_) => changes++,
+        ),
+      );
+      final before = await tester.runAsync(() => store.read('People'));
+      final initialChanges = changes;
+      await real(
+        tester,
+        () => tester.tap(input('live'), buttons: kSecondaryMouseButton),
+      );
+      await real(
+        tester,
+        () => tester.tap(find.byKey(const ValueKey('style-menu-Texte'))),
+      );
+      final radius = find.byKey(const ValueKey('text-field-setting-radius'));
+      await tester.ensureVisible(radius);
+      await tester.enterText(radius, '23');
+      await tester.pumpAndSettle();
+      expect(
+        (tester.widget<TextField>(input('live')).decoration!.border
+                as UnderlineInputBorder)
+            .borderRadius,
+        BorderRadius.circular(23),
+      );
+      await tester.enterText(radius, '-1');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-text-live-error')),
+        findsOneWidget,
+      );
+      expect(
+        (tester.widget<TextField>(input('live')).decoration!.border
+                as UnderlineInputBorder)
+            .borderRadius,
+        BorderRadius.circular(23),
+      );
+      final path = find.byKey(const ValueKey('super-text-repository-path'));
+      await tester.ensureVisible(path);
+      await tester.enterText(path, 'client.other');
+      await tester.pumpAndSettle();
+      await real(tester, () async {}, save: true);
+      expect(text(tester, 'live'), 'Alice');
+      expect(changes, initialChanges);
+      expect(await tester.runAsync(() => store.read('People')), before);
+      await real(tester, () => tester.tap(find.text('Annuler')));
+      expect(text(tester, 'live'), 'Alice');
+      expect(changes, initialChanges);
+      expect(await tester.runAsync(() => store.read('People')), before);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'internal controllers load, save and synchronize with the manager',
