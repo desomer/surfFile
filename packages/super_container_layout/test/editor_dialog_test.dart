@@ -1,10 +1,102 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/editing/editor_dialog.dart';
+import 'package:super_container_layout/widgets/editing/editor_overlay.dart';
 import 'package:super_container_layout/widgets/editing/editor_zoom.dart';
 import 'package:super_container_layout/widgets/surfaces/super_container.dart';
 
 void main() {
+  for (final zoomed in [false, true]) {
+    testWidgets(
+      'editor hides chrome and restores it after nested dialogs (zoom=$zoomed)',
+      (tester) async {
+        final target = GlobalKey();
+        final label = GlobalKey();
+        final content = SizedBox(
+          key: target,
+          width: 240,
+          height: 160,
+          child: Stack(
+            children: [
+              const Positioned.fill(child: ColoredBox(color: Colors.blue)),
+              Positioned.fill(
+                child: EditorOverlay(
+                  child: Center(child: Text('Zone label', key: label)),
+                ),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: zoomed ? EditorZoom(child: content) : content,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Visibility visibility() => tester
+            .widgetList<Visibility>(
+              find.ancestor(
+                of: find.byKey(label),
+                matching: find.byType(Visibility),
+              ),
+            )
+            .first;
+        final before = tester.getSize(find.byKey(target));
+        expect(visibility().visible, isTrue);
+        final editor = showEditorDialog<void>(
+          context: target.currentContext!,
+          builder: (context) => AlertDialog(
+            title: const Text('Parent editor'),
+            actions: [
+              TextButton(
+                onPressed: () => showEditorDialog<void>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Nested editor'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Close nested'),
+                      ),
+                    ],
+                  ),
+                ),
+                child: const Text('Open nested'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close parent'),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(EditorChrome.openDialogs.value, 1);
+        expect(visibility().visible, isFalse);
+        expect(tester.getSize(find.byKey(target)), before);
+        await tester.tap(find.text('Open nested'));
+        await tester.pumpAndSettle();
+        expect(EditorChrome.openDialogs.value, 2);
+        expect(visibility().visible, isFalse);
+        await tester.tap(find.text('Close nested'));
+        await tester.pumpAndSettle();
+        expect(EditorChrome.openDialogs.value, 1);
+        expect(visibility().visible, isFalse);
+        await tester.tap(find.text('Close parent'));
+        await tester.pumpAndSettle();
+        await editor;
+        expect(EditorChrome.openDialogs.value, 0);
+        expect(visibility().visible, isTrue);
+        expect(tester.getSize(find.byKey(target)), before);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   Rect screenRect(WidgetTester tester, Finder finder) {
     final box = tester.renderObject<RenderBox>(finder);
     return MatrixUtils.transformRect(

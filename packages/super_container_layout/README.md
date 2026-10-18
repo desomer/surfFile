@@ -88,7 +88,14 @@ affichage/saisie, texte initial, label, placeholder, activé, lecture seule,
 mot de passe, lignes min/max et typographie (famille, taille, graisse, italique,
 couleur AARRGGBB, alignement, interligne et espacement des lettres).
 L'éditeur réutilise le panneau du SuperContainer : navigation par sections,
-cartes de réglages, mode dense et aperçu local du brouillon. Sur écran étroit,
+cartes de réglages, mode dense et aperçu local du brouillon.
+Les éditeurs ouverts via `showEditorDialog` masquent temporairement les
+overlays d'édition de la page (labels des zones et slots, poignées et contours
+de sélection/survol). Le contenu, ses dimensions et la sélection sont conservés.
+Les overlays reviennent après la fermeture du dernier dialogue, y compris
+avec des éditeurs imbriqués et sans zoom.
+
+Sur écran étroit,
 la navigation devient une rangée de puces. La couleur propose la même palette,
 roue et opacité, ainsi qu'un retour à la couleur du parent.
 L'aperçu utilise le texte initial, jamais la saisie courante de l'application.

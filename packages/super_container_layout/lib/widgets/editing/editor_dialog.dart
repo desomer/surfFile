@@ -5,9 +5,33 @@ import 'package:material_ui/material_ui.dart';
 
 import '../super_layout/layout_selection.dart';
 import 'editor_zoom.dart';
+import 'editor_overlay.dart';
 
 /// Opens an editor beside its target when the page supports selection zoom.
 Future<T?> showEditorDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  BuildContext? target,
+  ValueListenable<double>? preferredWidth,
+  bool barrierDismissible = true,
+  Color? barrierColor,
+}) async {
+  EditorChrome.openDialogs.value++;
+  try {
+    return await _showEditorDialog<T>(
+      context: context,
+      builder: builder,
+      target: target,
+      preferredWidth: preferredWidth,
+      barrierDismissible: barrierDismissible,
+      barrierColor: barrierColor,
+    );
+  } finally {
+    EditorChrome.openDialogs.value--;
+  }
+}
+
+Future<T?> _showEditorDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
   BuildContext? target,
@@ -26,7 +50,7 @@ Future<T?> showEditorDialog<T>({
           ? EditorZoomScope.controllerOf(focus)
           : null);
   if (controller == null || !controller.enabled) {
-    return showDialog<T>(
+    return await showDialog<T>(
       context: context,
       builder: builder,
       barrierDismissible: barrierDismissible,

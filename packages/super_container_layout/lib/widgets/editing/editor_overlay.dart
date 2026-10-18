@@ -3,11 +3,33 @@ import 'package:material_ui/material_ui.dart';
 import 'editor_zoom.dart';
 import '../surfaces/super_container.dart';
 
+/// Suppresses editing chrome without changing content geometry or selection.
+class EditorChrome extends StatelessWidget {
+  const EditorChrome({required this.child, super.key});
+
+  static final ValueNotifier<int> openDialogs = ValueNotifier(0);
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+    valueListenable: openDialogs,
+    builder: (context, count, child) => Visibility(
+      visible: count == 0,
+      maintainState: true,
+      maintainAnimation: true,
+      maintainSize: true,
+      child: child!,
+    ),
+    child: child,
+  );
+}
+
 /// Keeps editor controls at screen scale while following their content bounds.
 class EditorOverlay extends StatefulWidget {
   const EditorOverlay({required this.child, this.clipKey, super.key});
 
   final Widget child;
+
   /// Clips portaled controls to a scroll viewport, without scaling them.
   final GlobalKey? clipKey;
 
@@ -39,7 +61,7 @@ class _EditorOverlayState extends State<EditorOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_enabled) return widget.child;
+    if (!_enabled) return EditorChrome(child: widget.child);
     return OverlayPortal.overlayChildLayoutBuilder(
       controller: _controller,
       overlayChildBuilder: (context, info) {
@@ -48,40 +70,47 @@ class _EditorOverlayState extends State<EditorOverlay> {
           Offset.zero & info.childSize,
         );
         final controls = Listener(
-            onPointerSignal: (event) =>
-                EditorZoomScope.controllerOf(this.context)
-                    ?.handlePointerSignal(event),
-            child: GestureDetector(
-              excludeFromSemantics: true,
-              onSecondaryTapUp:
-                  (StyleEditScope.controllerOf(this.context)?.value ?? false)
-                  ? (details) => this.context
-                        .findAncestorStateOfType<SuperContainerState>()
-                        ?.openMenu(
-                          details.globalPosition,
-                          actions: ContainerMenuAction.of(this.context),
-                        )
-                  : null,
-              child: widget.child,
-            ),
+          onPointerSignal: (event) =>
+              EditorZoomScope.controllerOf(this.context)
+                  ?.handlePointerSignal(event),
+          child: GestureDetector(
+            excludeFromSemantics: true,
+            onSecondaryTapUp:
+                (StyleEditScope.controllerOf(this.context)?.value ?? false)
+                ? (details) => this.context
+                      .findAncestorStateOfType<SuperContainerState>()
+                      ?.openMenu(
+                        details.globalPosition,
+                        actions: ContainerMenuAction.of(this.context),
+                      )
+                : null,
+            child: EditorChrome(child: widget.child),
+          ),
         );
         final viewport = widget.clipKey?.currentContext?.findRenderObject();
         final overlay = Overlay.of(this.context).context.findRenderObject();
         if (viewport is RenderBox && viewport.hasSize && overlay is RenderBox) {
           final clip = MatrixUtils.transformRect(
-            viewport.getTransformTo(overlay), Offset.zero & viewport.size,
+            viewport.getTransformTo(overlay),
+            Offset.zero & viewport.size,
           );
           final visible = rect.intersect(clip);
           if (visible.isEmpty) return const SizedBox.shrink();
           return Positioned.fromRect(
             rect: visible,
-            child: ClipRect(child: Stack(children: [
-              Positioned(
-                left: rect.left - visible.left, top: rect.top - visible.top,
-                width: rect.width, height: rect.height,
-                child: controls,
+            child: ClipRect(
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: rect.left - visible.left,
+                    top: rect.top - visible.top,
+                    width: rect.width,
+                    height: rect.height,
+                    child: controls,
+                  ),
+                ],
               ),
-            ])),
+            ),
           );
         }
         return Positioned.fromRect(rect: rect, child: controls);

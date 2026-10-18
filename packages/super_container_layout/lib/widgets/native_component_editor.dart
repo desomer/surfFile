@@ -7,6 +7,7 @@ import '../models/super_layout_config.dart';
 import '../models/component_tag_filter.dart';
 import '../models/registry.dart';
 import 'editing/editor_dialog.dart';
+import 'editing/editor_overlay.dart';
 import 'editing/slot_size_editor.dart';
 import 'super_layout/layout_selection.dart';
 import 'super_layout/slot_implementation.dart';
@@ -789,57 +790,63 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   else
                     content,
                   Positioned.fill(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        key: selected && overlay
-                            ? ValueKey('${widget.keyPrefix}-selected-$id')
-                            : null,
-                        decoration: BoxDecoration(
-                          border: overlay
-                              ? Border.all(
-                                  color: selected
-                                      ? colors.primary
-                                      : colors.outlineVariant,
-                                  width: selected ? 3 : 1,
-                                )
+                    child: EditorChrome(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          key: selected && overlay
+                              ? ValueKey('${widget.keyPrefix}-selected-$id')
                               : null,
+                          decoration: BoxDecoration(
+                            border: overlay
+                                ? Border.all(
+                                    color: selected
+                                        ? colors.primary
+                                        : colors.outlineVariant,
+                                    width: selected ? 3 : 1,
+                                  )
+                                : null,
+                          ),
                         ),
                       ),
                     ),
                   ),
                   if (overlay && showBadge)
                     Positioned.fill(
-                      child: Center(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Material(
-                            color: colors.primaryContainer,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TextButton(
-                                  key: ValueKey(
-                                    '${widget.keyPrefix}-select-$id',
+                      child: EditorChrome(
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Material(
+                              color: colors.primaryContainer,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextButton(
+                                    key: ValueKey(
+                                      '${widget.keyPrefix}-select-$id',
+                                    ),
+                                    onPressed: () => select(
+                                      selected ? null : id,
+                                      regionContext,
+                                    ),
+                                    child: Text(spec.label),
                                   ),
-                                  onPressed: () => select(
-                                    selected ? null : id,
-                                    regionContext,
+                                  IconButton(
+                                    key: ValueKey(
+                                      '${widget.keyPrefix}-add-$id',
+                                    ),
+                                    tooltip: 'Ajouter dans ${spec.label}',
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.add),
+                                    onPressed: () {
+                                      select(id, regionContext);
+                                      add(id);
+                                    },
                                   ),
-                                  child: Text(spec.label),
-                                ),
-                                IconButton(
-                                  key: ValueKey('${widget.keyPrefix}-add-$id'),
-                                  tooltip: 'Ajouter dans ${spec.label}',
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.add),
-                                  onPressed: () {
-                                    select(id, regionContext);
-                                    add(id);
-                                  },
-                                ),
-                                ...?widget.regionActions?.call(id),
-                              ],
+                                  ...?widget.regionActions?.call(id),
+                                ],
+                              ),
                             ),
                           ),
                         ),

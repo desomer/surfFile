@@ -14,6 +14,7 @@ import '../../theme/neon_style.dart';
 import '../editing/container_style_editor.dart';
 import '../editing/editor_history.dart';
 import '../editing/editor_dialog.dart';
+import '../editing/editor_overlay.dart';
 import '../editing/editor_dialog_header.dart';
 import '../super_layout/layout_selection.dart';
 import '../editing/style_editor_panel.dart';
@@ -912,8 +913,14 @@ class SuperContainerState extends State<SuperContainer> {
         onExit: (_) => _setHovered(false),
         child: ValueListenableBuilder<SuperContainerState?>(
           valueListenable: _hoveredTarget,
-          builder: (context, target, child) => CustomPaint(
-            foregroundPainter: identical(target, this) ? painter : null,
+          builder: (context, target, child) => ValueListenableBuilder<int>(
+            valueListenable: EditorChrome.openDialogs,
+            builder: (context, count, child) => CustomPaint(
+              foregroundPainter: count == 0 && identical(target, this)
+                  ? painter
+                  : null,
+              child: child,
+            ),
             child: child,
           ),
           child: content,
