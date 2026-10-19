@@ -214,7 +214,7 @@ void main() {
       );
       await store.create('Copy');
       await File('${directory.path}\\Copy.json.id')
-          .writeAsString(binding.repositoryId);
+          .writeAsString(binding.repositoryId!);
       await expectLater(store.catalog(), throwsFormatException);
       await expectLater(store.readAttribute(binding), throwsFormatException);
     });

@@ -20,7 +20,7 @@ import '../super_layout/layout_selection.dart';
 import '../editing/style_editor_panel.dart';
 import 'styled_surface.dart';
 import '../super_layout/zone_axis_button.dart';
-import '../native_component_editor.dart';
+import '../native/native_component_editor.dart';
 import '../super_layout/slot_implementation.dart';
 
 /// Active ou non l'édition des styles par clic droit sur les [SuperContainer].

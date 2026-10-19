@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/super_text_field.dart';
+import 'package:super_container_layout/widgets/components/super_text_field.dart';
 import 'package:super_container_layout/widgets/editing/super_text_editor.dart';
 
 void main() {

@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../models/json_text_binding.dart';
+import 'json_repository_binding.dart';
 
 typedef JsonRepositoryEntry = ({String name, String id});
 typedef JsonAttributeValue = ({Object? value, String text});
@@ -30,7 +31,16 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   final Directory directory;
   final errors = ValueNotifier<String?>(null);
+
+  final _bindings = <String, JsonRepositoryBinding>{};
+
+  /// Runtime selections and bound components of [repositoryId]'s arrays.
+  JsonRepositoryBinding bindingOf(String repositoryId) => _bindings.putIfAbsent(
+    repositoryId,
+    () => JsonRepositoryBinding(repositoryId),
+  );
   Future<void> _pending = Future.value();
+  final _flushers = <Future<void> Function()>{};
   bool _disposed = false;
 
   Future<T> _exclusive<T>(Future<T> Function() action) {
@@ -49,6 +59,15 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  /// Live bindings register their pending-write flush here, so that a list
+  /// can save drafts before it moves or removes array elements.
+  void addFlusher(Future<void> Function() flush) => _flushers.add(flush);
+
+  void removeFlusher(Future<void> Function() flush) => _flushers.remove(flush);
+
+  Future<void> flushBindings() =>
+      Future.wait([for (final flush in _flushers.toList()) flush()]);
+
   void reportBindingError(String message) {
     if (!_disposed) errors.value = message;
   }
@@ -57,6 +76,9 @@ class JsonRepositoryStore extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     errors.dispose();
+    for (final binding in _bindings.values) {
+      binding.dispose();
+    }
     super.dispose();
   }
 
@@ -157,8 +179,8 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) =>
       _exclusive(() async {
-        binding.validate();
-        final root = _decode(await read(await _nameOf(binding.repositoryId)));
+        binding.validateResolved();
+        final root = _decode(await read(await _nameOf(binding.repositoryId!)));
         final value = JsonAttributePath(binding.path).read(root);
         return (value: value, text: value?.toString() ?? '');
       });
@@ -168,8 +190,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     String text, {
     required Object? expectedValue,
   }) => _exclusive(() async {
-    binding.validate();
-    final name = await _nameOf(binding.repositoryId);
+    binding.validateResolved();
+    final name = await _nameOf(binding.repositoryId!);
     final original = await read(name);
     final root = _decode(original);
     final path = JsonAttributePath(binding.path);
@@ -187,6 +209,108 @@ class JsonRepositoryStore extends ChangeNotifier {
     final value = path.read(updated);
     return (value: value, text: value?.toString() ?? '');
   });
+
+  /// Elements of the array at [path]; a missing attribute is an empty list.
+  Future<List<Object?>> readArray(String repositoryId, String path) =>
+      _exclusive(() async {
+        final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
+          ..validateResolved();
+        final root = _decode(await read(await _nameOf(repositoryId)));
+        return List<Object?>.unmodifiable(
+          _array(JsonAttributePath(binding.path).readNode(root)),
+        );
+      });
+
+  static List<Object?> _array(Object? node) {
+    if (node == null) return const [];
+    if (node is! List) {
+      throw const FormatException(
+        'Le chemin de la liste doit désigner un tableau JSON.',
+      );
+    }
+    return node;
+  }
+
+  /// Appends a blank copy of the last element, or `{}` to an empty array.
+  Future<int> appendArrayItem(
+    String repositoryId,
+    String path, {
+    required int expectedLength,
+  }) => _updateArray(repositoryId, path, (items) {
+    if (items.length != expectedLength) _arrayConflict();
+    return [...items, items.isEmpty ? <String, dynamic>{} : blank(items.last)];
+  });
+
+  Future<int> removeArrayItem(
+    String repositoryId,
+    String path,
+    int index, {
+    required Object? expectedItem,
+  }) => _updateArray(repositoryId, path, (items) {
+    if (index < 0 ||
+        index >= items.length ||
+        !jsonEquals(items[index], expectedItem)) {
+      _arrayConflict();
+    }
+    return [...items]..removeAt(index);
+  });
+
+  static Never _arrayConflict() => throw const FormatException(
+    'La liste a été modifiée. Rechargez-la avant de réessayer.',
+  );
+
+  Future<int> _updateArray(
+    String repositoryId,
+    String path,
+    List<Object?> Function(List<Object?>) change,
+  ) => _exclusive(() async {
+    final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
+      ..validateResolved();
+    final name = await _nameOf(repositoryId);
+    final original = await read(name);
+    final root = _decode(original);
+    final attribute = JsonAttributePath(binding.path);
+    final items = change(_array(attribute.readNode(root)));
+    final updated = attribute.replaceNode(root, items);
+    await _save(
+      name,
+      '${const JsonEncoder.withIndent('  ').convert(updated)}\n',
+      expectedText: original,
+    );
+    return items.length;
+  });
+
+  /// Same structure with empty values: "", 0, false, [] and null.
+  static Object? blank(Object? value) => switch (value) {
+    String() => '',
+    num() => 0,
+    bool() => false,
+    List() => <Object?>[],
+    Map() => <String, dynamic>{
+      for (final entry in value.entries)
+        entry.key as String: blank(entry.value),
+    },
+    _ => null,
+  };
+
+  static bool jsonEquals(Object? a, Object? b) {
+    if (a is Map && b is Map) {
+      return a.length == b.length &&
+          a.entries.every(
+            (entry) =>
+                b.containsKey(entry.key) &&
+                jsonEquals(entry.value, b[entry.key]),
+          );
+    }
+    if (a is List && b is List) {
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (!jsonEquals(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    return a == b;
+  }
 
   Future<void> _checkAvailable(String name) async {
     final normalized = validateName(name).toLowerCase();

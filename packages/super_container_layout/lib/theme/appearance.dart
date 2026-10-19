@@ -5,6 +5,7 @@ import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_text_config.dart';
+import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
@@ -24,6 +25,7 @@ class Appearance {
     Map<String, ScaffoldPageConfig> scaffoldPages = const {},
     Map<String, NativeComponentConfig> nativeComponents = const {},
     Map<String, SuperTextConfig> textComponents = const {},
+    Map<String, SuperListViewConfig> listComponents = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
        layouts = Map.unmodifiable({
@@ -53,7 +55,8 @@ class Appearance {
        }),
        scaffoldPages = Map.unmodifiable(scaffoldPages),
        nativeComponents = Map.unmodifiable(nativeComponents),
-       textComponents = Map.unmodifiable(textComponents);
+       textComponents = Map.unmodifiable(textComponents),
+       listComponents = Map.unmodifiable(listComponents);
 
   final ThemeMode mode;
   final Color accent;
@@ -65,6 +68,7 @@ class Appearance {
   final Map<String, ScaffoldPageConfig> scaffoldPages;
   final Map<String, NativeComponentConfig> nativeComponents;
   final Map<String, SuperTextConfig> textComponents;
+  final Map<String, SuperListViewConfig> listComponents;
   final EditorPageCatalog pageCatalog;
 
   SuperTextConfig textComponent(
@@ -75,6 +79,16 @@ class Appearance {
   Appearance withTextComponent(String id, SuperTextConfig value) {
     value.validate();
     return copyWith(textComponents: {...textComponents, id: value});
+  }
+
+  SuperListViewConfig listComponent(
+    String id, {
+    SuperListViewConfig fallback = const SuperListViewConfig(),
+  }) => listComponents[id] ?? fallback;
+
+  Appearance withListComponent(String id, SuperListViewConfig value) {
+    value.validate();
+    return copyWith(listComponents: {...listComponents, id: value});
   }
 
   NativeComponentConfig nativeComponent(
@@ -136,6 +150,7 @@ class Appearance {
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
     Map<String, SuperTextConfig>? textComponents,
+    Map<String, SuperListViewConfig>? listComponents,
     EditorPageCatalog? pageCatalog,
   }) => Appearance(
     mode: mode ?? this.mode,
@@ -150,6 +165,7 @@ class Appearance {
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
     textComponents: textComponents ?? this.textComponents,
+    listComponents: listComponents ?? this.listComponents,
     pageCatalog: pageCatalog ?? this.pageCatalog,
   );
 
@@ -179,6 +195,7 @@ class Appearance {
     scaffoldPages: const {},
     nativeComponents: const {},
     textComponents: const {},
+    listComponents: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
 

@@ -1,9 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../models/native_component_config.dart';
-import '../super_app.dart';
+import '../../models/native_component_config.dart';
+import '../../super_app.dart';
 import 'native_component_editor.dart';
-import 'super_layout/slot_implementation.dart';
+import '../super_layout/slot_implementation.dart';
 
 /// A native BottomAppBar with three editable, free-widget regions.
 ///

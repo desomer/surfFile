@@ -1,16 +1,19 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
-import '../models/super_text_config.dart';
-import '../models/json_text_binding.dart';
-import '../services/json_repository_scope.dart';
-import '../services/json_repository_store.dart';
-import '../services/json_text_controller_binding.dart';
-import '../super_app.dart';
-import 'editing/editor_history.dart';
-import 'editing/super_text_editor.dart';
+import '../../models/super_text_config.dart';
+import '../../models/json_text_binding.dart';
+import '../../services/json_list_scope.dart';
+import '../../services/json_repository_binding.dart';
+import '../../services/json_repository_scope.dart';
+import '../../services/json_repository_store.dart';
+import '../../services/json_text_controller_binding.dart';
+import '../../super_app.dart';
+import '../editing/editor_history.dart';
+import '../editing/super_text_editor.dart';
 import 'super_text_field.dart';
-import 'surfaces/super_container.dart';
+import '../surfaces/super_container.dart';
 
 /// Display or edit text; runtime input persists only with a repository binding.
 class SuperText extends StatefulWidget {
@@ -50,8 +53,16 @@ class _SuperTextState extends State<SuperText> {
   JsonTextBinding? _requestedBinding;
   JsonRepositoryStore? _requestedStore;
   bool? _requestedExternal;
+  String? _requestedResolveError;
+  bool _requestedPlaceholder = false;
   int _bindingGeneration = 0;
   String? _bindingError;
+
+  /// A `[?]` resolved by a selection has no selected row: empty and read-only.
+  bool _unselected = false;
+
+  /// Selections the binding path depends on.
+  List<JsonArrayBinding> _selections = const [];
   SuperTextConfig? _editorConfig;
   TextEditingController? _editorText;
 
@@ -125,14 +136,81 @@ class _SuperTextState extends State<SuperText> {
     });
   }
 
-  void _observeBinding(SuperTextConfig config, JsonRepositoryStore? store) {
+  /// Concrete binding of this row: inherited repository and `[?]` indices.
+  ///
+  /// `placeholder` is set for a template row and for a `[?]` without selected
+  /// row; both show an empty text.
+  ({
+    JsonTextBinding? binding,
+    String? error,
+    bool placeholder,
+    List<JsonArrayBinding> selections,
+  })
+  _resolve(
+    SuperTextConfig config,
+    JsonListScope? scope,
+    JsonRepositoryStore? store,
+  ) {
+    final binding = config.binding;
+    if (binding == null || (scope?.placeholder ?? false)) {
+      return (
+        binding: null,
+        error: null,
+        placeholder: binding != null,
+        selections: const [],
+      );
+    }
+    try {
+      final resolved = JsonListScope.resolveSelected(binding, scope, store);
+      return (
+        binding: resolved.binding,
+        error: null,
+        placeholder: resolved.binding == null,
+        selections: resolved.arrays,
+      );
+    } on FormatException catch (error) {
+      return (
+        binding: null,
+        error: error.message,
+        placeholder: false,
+        selections: const [],
+      );
+    }
+  }
+
+  void _listenSelections(List<JsonArrayBinding> selections) {
+    if (listEquals(_selections, selections)) return;
+    for (final selection in _selections) {
+      selection.removeListener(_selectionChanged);
+    }
+    _selections = selections;
+    for (final selection in selections) {
+      selection.addListener(_selectionChanged);
+    }
+  }
+
+  void _selectionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _observeBinding(
+    SuperTextConfig config,
+    JsonListScope? scope,
+    JsonRepositoryStore? store,
+  ) {
     final external = widget.controller != null || widget.value != null;
-    if (_requestedBinding == config.binding &&
+    final resolved = _resolve(config, scope, store);
+    _listenSelections(resolved.selections);
+    if (_requestedBinding == resolved.binding &&
+        _requestedResolveError == resolved.error &&
+        _requestedPlaceholder == resolved.placeholder &&
         _requestedStore == store &&
         _requestedExternal == external) {
       return;
     }
-    _requestedBinding = config.binding;
+    _requestedBinding = resolved.binding;
+    _requestedResolveError = resolved.error;
+    _requestedPlaceholder = resolved.placeholder;
     _requestedStore = store;
     _requestedExternal = external;
     final generation = ++_bindingGeneration;
@@ -141,8 +219,10 @@ class _SuperTextState extends State<SuperText> {
       _binding?.removeListener(_bindingChanged);
       _binding?.dispose();
       _binding = null;
-      _bindingError = null;
-      if (config.binding != null) {
+      _bindingError = resolved.error;
+      _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
+      if (resolved.placeholder && !external) _setText(_internal, '');
+      if (resolved.binding != null) {
         if (external) {
           _bindingError =
               'La liaison nécessite le contrôleur interne de SuperText.';
@@ -151,7 +231,7 @@ class _SuperTextState extends State<SuperText> {
         } else {
           _binding = JsonTextControllerBinding(
             store: store,
-            binding: config.binding!,
+            binding: resolved.binding!,
             controller: _internal,
             onChanged: (text) => widget.onChanged?.call(text),
           )..addListener(_bindingChanged);
@@ -168,6 +248,7 @@ class _SuperTextState extends State<SuperText> {
   @override
   void dispose() {
     _bindingGeneration++;
+    _listenSelections(const []);
     _binding?.removeListener(_bindingChanged);
     _binding?.dispose();
     _resetGeneration++;
@@ -181,6 +262,7 @@ class _SuperTextState extends State<SuperText> {
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
     final repositories = JsonRepositoryScope.maybeOf(context);
+    final listScope = JsonListScope.maybeOf(context);
     final configuration =
         registry?.textController(widget.id, fallback: widget.config) ?? _local;
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
@@ -189,7 +271,7 @@ class _SuperTextState extends State<SuperText> {
     return ValueListenableBuilder<SuperTextConfig>(
       valueListenable: configuration,
       builder: (context, savedConfig, _) {
-        _observeBinding(savedConfig, repositories);
+        _observeBinding(savedConfig, listScope, repositories);
         _observeConfig(savedConfig);
         final config = _editorConfig ?? savedConfig;
         final controller = _editorText ?? _text;
@@ -305,6 +387,7 @@ class _SuperTextState extends State<SuperText> {
                             config.enabled &&
                             !(config.binding != null &&
                                 _binding?.loading == true),
+                        readOnly: _unselected ? true : null,
                         bindingError: _bindingError ?? _binding?.error,
                         onChanged: (text) {
                           if (_editorText != null) return;

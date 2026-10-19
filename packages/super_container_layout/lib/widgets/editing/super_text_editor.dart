@@ -5,12 +5,14 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_text_config.dart';
 import '../../models/super_text_field_config.dart';
-import '../super_text_field.dart';
+import '../components/super_text_field.dart';
 import '../../models/json_text_binding.dart';
+import '../../services/json_list_scope.dart';
 import '../../services/json_repository_scope.dart';
 import '../../services/json_repository_store.dart';
 import 'container_style_editor.dart' show styleColorTile;
 import 'editor_dialog.dart';
+import 'super_list_view_editor.dart' show inheritedRepositoryValue;
 import 'style_editor_panel.dart';
 import 'super_text_field_settings.dart';
 
@@ -24,6 +26,7 @@ Future<SuperTextConfig?> showSuperTextEditor({
   final width = ValueNotifier(StyleEditorPanel.preferredDense ? 680.0 : 1080.0);
   final textStyle = DefaultTextStyle.of(context).style;
   final repositories = JsonRepositoryScope.maybeOf(context);
+  final listScope = JsonListScope.maybeOf(context);
   try {
     return await showEditorDialog<SuperTextConfig>(
       context: context,
@@ -35,6 +38,7 @@ Future<SuperTextConfig?> showSuperTextEditor({
         textStyle: textStyle,
         onWidthChanged: (value) => width.value = value,
         repositories: repositories,
+        listScope: listScope,
         allowBinding: allowBinding,
         onPreviewChanged: onPreviewChanged,
       ),
@@ -51,6 +55,7 @@ class _SuperTextEditor extends StatefulWidget {
     required this.textStyle,
     required this.onWidthChanged,
     required this.repositories,
+    required this.listScope,
     required this.allowBinding,
     required this.onPreviewChanged,
   });
@@ -59,6 +64,7 @@ class _SuperTextEditor extends StatefulWidget {
   final TextStyle textStyle;
   final ValueChanged<double> onWidthChanged;
   final JsonRepositoryStore? repositories;
+  final JsonListScope? listScope;
   final bool allowBinding;
   final ValueChanged<SuperTextConfig>? onPreviewChanged;
 
@@ -77,6 +83,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
   final _previewText = TextEditingController();
   List<JsonRepositoryEntry> _repositories = [];
   String? _repositoryId;
+  bool _inheritRepository = false;
   String? _repositoryError;
   bool _loadingRepositories = false;
   bool _validating = false;
@@ -143,12 +150,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
       try {
-        final binding = _repositoryId == null
-            ? null
-            : JsonTextBinding(
-                repositoryId: _repositoryId!,
-                path: _fields['repositoryPath']!.text,
-              );
+        final binding = _binding;
         final config = _configuration(
           _draft.mode == SuperTextMode.input
               ? _fieldSettings.currentState?.value() ?? _fieldConfig
@@ -178,6 +180,8 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     _draft = widget.config;
     _fieldConfig = _draft.field;
     _repositoryId = _draft.binding?.repositoryId;
+    _inheritRepository =
+        _draft.binding != null && _draft.binding!.repositoryId == null;
     _fields = {
       'initialText': TextEditingController(text: _draft.initialText),
       'repositoryPath': TextEditingController(text: _draft.binding?.path ?? ''),
@@ -222,8 +226,20 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     }
   }
 
+  bool get _bound => _repositoryId != null || _inheritRepository;
+
+  JsonTextBinding? get _binding => _bound
+      ? JsonTextBinding(
+          repositoryId: _repositoryId,
+          path: _fields['repositoryPath']!.text,
+        )
+      : null;
+
+  int get _listDepth => widget.listScope?.indices.length ?? 0;
+
   Widget _repositorySettings() {
     final available = widget.allowBinding && widget.repositories != null;
+    final inheritable = widget.listScope != null || _inheritRepository;
     final missing =
         _repositoryId != null &&
         !_repositories.any((entry) => entry.id == _repositoryId);
@@ -234,11 +250,18 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         const Text('Service de repositories indisponible.'),
       DropdownButtonFormField<String>(
         key: ValueKey('super-text-repository-$_repositoryId'),
-        initialValue: _repositoryId ?? '',
+        initialValue: _inheritRepository
+            ? inheritedRepositoryValue
+            : _repositoryId ?? '',
         isExpanded: true,
         decoration: const InputDecoration(labelText: 'Repository'),
         items: [
           const DropdownMenuItem(value: '', child: Text('Sans liaison')),
+          if (inheritable)
+            const DropdownMenuItem(
+              value: inheritedRepositoryValue,
+              child: Text('Hérité de la liste englobante'),
+            ),
           for (final entry in _repositories)
             DropdownMenuItem(
               value: entry.id,
@@ -258,7 +281,10 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
             : (value) {
                 if (!available && value != '') return;
                 setState(() {
-                  _repositoryId = value == '' ? null : value;
+                  _inheritRepository = value == inheritedRepositoryValue;
+                  _repositoryId = value == '' || _inheritRepository
+                      ? null
+                      : value;
                   _repositoryError = null;
                 });
               },
@@ -266,13 +292,19 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       TextFormField(
         key: const ValueKey('super-text-repository-path'),
         controller: _fields['repositoryPath'],
-        enabled: available && _repositoryId != null && !_validating,
-        decoration: const InputDecoration(
+        enabled: available && _bound && !_validating,
+        decoration: InputDecoration(
           labelText: 'Chemin d’attribut',
-          hintText: 'client.nom ou clients[0].nom',
+          hintText: _listDepth == 0
+              ? 'client.nom ou clients[0].nom'
+              : 'clients[?].nom',
+          helperText: _listDepth == 0
+              ? '[?] = ligne sélectionnée du tableau'
+              : 'Chaque [?] reçoit l’indice d’une liste englobante '
+                    '($_listDepth disponible(s)), puis la ligne sélectionnée.',
         ),
         validator: (value) {
-          if (_repositoryId == null) return null;
+          if (!_bound) return null;
           try {
             JsonAttributePath(value ?? '');
             return null;
@@ -286,7 +318,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         'à la saisie ; les indices de tableau doivent déjà exister. '
         'Les modifications sont enregistrées automatiquement dans le JSON.',
       ),
-      if (_draft.obscureText && _repositoryId != null)
+      if (_draft.obscureText && _bound)
         const Text(
           'Attention : le mot de passe sera enregistré en clair sur disque.',
           key: ValueKey('super-text-repository-plaintext-warning'),
@@ -548,7 +580,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                         }
                       },
                     ),
-                    if (!_draft.obscureText && _repositoryId == null)
+                    if (!_draft.obscureText && !_bound)
                       _field('initialText', 'Texte initial'),
                     _field('label', 'Label'),
                     _field('placeholder', 'Placeholder'),
@@ -831,12 +863,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     setState(() => _fieldError = error.message);
                     return;
                   }
-                  final binding = _repositoryId == null
-                      ? null
-                      : JsonTextBinding(
-                          repositoryId: _repositoryId!,
-                          path: _fields['repositoryPath']!.text,
-                        );
+                  final binding = _binding;
                   if (binding != null) {
                     if (!widget.allowBinding || widget.repositories == null) {
                       setState(
@@ -849,7 +876,19 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                       _repositoryError = null;
                     });
                     try {
-                      await widget.repositories!.readAttribute(binding);
+                      final scope = widget.listScope;
+                      // A template row has no element to read yet.
+                      if (!(scope?.placeholder ?? false)) {
+                        final resolved = JsonListScope.resolveSelected(
+                          binding,
+                          scope,
+                          widget.repositories,
+                        ).binding;
+                        // Without selected row, only the path is checked.
+                        if (resolved != null) {
+                          await widget.repositories!.readAttribute(resolved);
+                        }
+                      }
                     } on FormatException catch (error) {
                       if (mounted) {
                         setState(() => _repositoryError = error.message);

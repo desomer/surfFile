@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'models/scaffold_page_config.dart';
 import 'widgets/editing/editor_zoom.dart';
-import 'widgets/scaffold_page_layout.dart';
+import 'widgets/native/scaffold_page_layout.dart';
 import 'widgets/super_layout/slot_implementation.dart';
 
 /// Page whose editable regions map directly to the native [Scaffold] slots.

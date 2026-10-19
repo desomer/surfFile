@@ -1,10 +1,10 @@
   import 'package:material_ui/material_ui.dart';
 
-import '../models/scaffold_page_config.dart';
-import '../models/component_tag_filter.dart';
-import '../super_app.dart';
+import '../../models/scaffold_page_config.dart';
+import '../../models/component_tag_filter.dart';
+import '../../super_app.dart';
 import 'native_component_editor.dart';
-import 'super_layout/slot_implementation.dart';
+import '../super_layout/slot_implementation.dart';
 
 /// Native Scaffold adapter; editing behavior lives in [NativeComponentEditor].
 class ScaffoldPageLayout extends StatefulWidget {

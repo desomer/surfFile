@@ -8,6 +8,7 @@ import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_text_config.dart';
+import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
@@ -58,6 +59,10 @@ class AppearanceCodec {
       for (final entry in a.textComponents.entries)
         entry.key: entry.value.toJson(),
     },
+    'listComponents': {
+      for (final entry in a.listComponents.entries)
+        entry.key: entry.value.toJson(),
+    },
     'pageCatalog': a.pageCatalog.toJson(),
   };
   Appearance fromJson(Map<String, dynamic> json) {
@@ -76,6 +81,7 @@ class AppearanceCodec {
       'scaffoldPages',
       'nativeComponents',
       'textComponents',
+      'listComponents',
       'pageCatalog',
       ...additionalKeys,
     };
@@ -140,6 +146,10 @@ class AppearanceCodec {
       textComponents: {
         for (final entry in entries('textComponents', optional: true).entries)
           entry.key: SuperTextConfig.fromJson(entry.value),
+      },
+      listComponents: {
+        for (final entry in entries('listComponents', optional: true).entries)
+          entry.key: SuperListViewConfig.fromJson(entry.value),
       },
       pageCatalog: json.containsKey('pageCatalog')
           ? EditorPageCatalog.fromJson(json['pageCatalog'])

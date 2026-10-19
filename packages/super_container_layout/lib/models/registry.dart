@@ -1,15 +1,17 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'native_component_config.dart';
+import 'super_list_view_config.dart';
 import 'super_text_config.dart';
-import '../widgets/super_text.dart';
+import '../widgets/components/super_list_view.dart';
+import '../widgets/components/super_text.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/super_app.dart';
-import 'package:super_container_layout/widgets/super_app_bar.dart';
+import 'package:super_container_layout/widgets/native/super_app_bar.dart';
 
-import '../widgets/super_bottom_navigation_bar.dart';
+import '../widgets/native/super_bottom_navigation_bar.dart';
 
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
@@ -24,7 +26,14 @@ class XuiBuildCtx {
 }
 
 /// Persisted configuration maps of an `Appearance` that a design graph uses.
-enum EditorConfigKind { layout, style, nativeComponent, scaffoldPage, text }
+enum EditorConfigKind {
+  layout,
+  style,
+  nativeComponent,
+  scaffoldPage,
+  text,
+  list,
+}
 
 /// Key of one persisted configuration entry, e.g. `layouts[id]`.
 @immutable
@@ -38,6 +47,7 @@ class EditorConfigRef {
   const EditorConfigRef.scaffoldPage(this.id)
     : kind = EditorConfigKind.scaffoldPage;
   const EditorConfigRef.text(this.id) : kind = EditorConfigKind.text;
+  const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
 
   final EditorConfigKind kind;
   final String id;
@@ -56,10 +66,10 @@ class EditorConfigRef {
 /// Copies one persisted configuration of a duplicated instance.
 ///
 /// [value] is the source `SuperLayoutConfig`, `ContainerStyle`,
-/// `NativeComponentConfig`, `ScaffoldPageConfig` or `SuperTextConfig`; the
-/// result must have the same type. [remap] returns the new ID of every
-/// instance/configuration ID owned by the duplicated graph and returns other
-/// IDs unchanged.
+/// `NativeComponentConfig`, `ScaffoldPageConfig`, `SuperTextConfig` or
+/// `SuperListViewConfig`; the result must have the same type. [remap] returns
+/// the new ID of every instance/configuration ID owned by the duplicated graph
+/// and returns other IDs unchanged.
 typedef EditorConfigCopier = Object Function(
   EditorConfigRef source,
   Object value,
@@ -98,6 +108,10 @@ class ComponentDuplicationContract {
     EditorConfigRef.nativeComponent(id),
   ];
   static List<EditorConfigRef> _text(String id) => [EditorConfigRef.text(id)];
+  static List<EditorConfigRef> _list(String id) => [
+    EditorConfigRef.layout(id),
+    EditorConfigRef.list(id),
+  ];
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
   ];
@@ -119,6 +133,9 @@ class ComponentDuplicationContract {
     ownedConfigs: _container,
   );
   static const newLayout = ComponentDuplicationContract(ownedConfigs: _layout);
+  static const superListView = ComponentDuplicationContract(
+    ownedConfigs: _list,
+  );
 }
 
 class ComponentBuilder {
@@ -165,6 +182,8 @@ class Registry {
   final Map<String, ContainerStyle> _styleDefaults = {};
   final Map<String, ValueNotifier<SuperTextConfig>> textConfigById = {};
   final Map<String, SuperTextConfig> _textDefaults = {};
+  final Map<String, ValueNotifier<SuperListViewConfig>> listConfigById = {};
+  final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
   final Map<String, NativeComponentConfig? Function(Appearance)>
   _nativeMigrations = {};
@@ -189,6 +208,9 @@ class Registry {
     }
     for (final entry in textConfigById.entries.toList()) {
       textController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in listConfigById.entries.toList()) {
+      listController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -307,6 +329,12 @@ class Registry {
           fallback: _textDefaults[entry.key]!,
         );
       }
+      for (final entry in listConfigById.entries) {
+        entry.value.value = appearance.listComponent(
+          entry.key,
+          fallback: _listDefaults[entry.key]!,
+        );
+      }
     } finally {
       _syncing = false;
     }
@@ -342,6 +370,35 @@ class Registry {
         notifier.value.validate();
         if (!_syncing) {
           _appearance!.value = _appearance!.value.withTextComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperListViewConfig> listController(
+    String id, {
+    SuperListViewConfig fallback = const SuperListViewConfig(),
+  }) {
+    fallback.validate();
+    _listDefaults.putIfAbsent(id, () => fallback);
+    final notifier = listConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.listComponent(id, fallback: fallback) ?? fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withListComponent(
             id,
             notifier.value,
           );
@@ -438,6 +495,15 @@ class Registry {
             ),
           );
         },
+      ),
+    );
+    registry['SuperListView'] = ComponentBuilderDynamic(
+      duplication: ComponentDuplicationContract.superListView,
+      tags: const {'list', 'layout'},
+      dynamicBuilder: (xuiCtx) => BuilderSlot(
+        id: xuiCtx.id,
+        label: 'Liste',
+        builder: (_) => SuperListView(id: xuiCtx.id),
       ),
     );
     registry['NewLayout'] = ComponentBuilderDynamic(

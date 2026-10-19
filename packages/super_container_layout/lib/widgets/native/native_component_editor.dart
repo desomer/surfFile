@@ -2,16 +2,16 @@ import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
-import '../models/native_component_config.dart';
-import '../models/super_layout_config.dart';
-import '../models/component_tag_filter.dart';
-import '../models/registry.dart';
-import 'editing/editor_dialog.dart';
-import 'editing/editor_overlay.dart';
-import 'editing/slot_size_editor.dart';
-import 'super_layout/layout_selection.dart';
-import 'super_layout/slot_implementation.dart';
-import 'surfaces/super_container.dart';
+import '../../models/native_component_config.dart';
+import '../../models/super_layout_config.dart';
+import '../../models/component_tag_filter.dart';
+import '../../models/registry.dart';
+import '../editing/editor_dialog.dart';
+import '../editing/editor_overlay.dart';
+import '../editing/slot_size_editor.dart';
+import '../super_layout/layout_selection.dart';
+import '../super_layout/slot_implementation.dart';
+import '../surfaces/super_container.dart';
 
 /// Lets a native parent track a child's edited preferred height.
 abstract interface class NativePreferredSizeWidget

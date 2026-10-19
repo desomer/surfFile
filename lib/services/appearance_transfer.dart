@@ -15,6 +15,7 @@ class AppearanceTransfer {
     'scaffoldPages',
     'nativeComponents',
     'textComponents',
+    'listComponents',
     'pageCatalog',
   };
   static String export(
