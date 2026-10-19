@@ -216,6 +216,43 @@ void main() {
     return (mode, appearance, history);
   }
 
+  testWidgets('grid labels share hover colors without changing size', (
+    tester,
+  ) async {
+    await pumpGrid(tester);
+    final labels = find.byType(ComponentDragLabel);
+    expect(labels, findsNWidgets(3));
+    final bounds = [for (var i = 0; i < 3; i++) tester.getRect(labels.at(i))];
+    Color? background(int index) => tester
+        .widget<Material>(
+          find
+              .descendant(of: labels.at(index), matching: find.byType(Material))
+              .first,
+        )
+        .color;
+    final original = [for (var i = 0; i < 3; i++) background(i)];
+    final highlight = Theme.of(tester.element(labels.first))
+        .colorScheme
+        .tertiary;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(790, 590));
+    for (final index in [0, 1]) {
+      await mouse.moveTo(bounds[index].center);
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 3; i++) {
+        expect(background(i), highlight);
+        expect(tester.getRect(labels.at(i)), bounds[i]);
+      }
+    }
+    await mouse.moveTo(const Offset(790, 590));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 3; i++) {
+      expect(background(i), original[i]);
+    }
+    await mouse.removePointer();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'grid renders hidden zones, moves by cells and undoes one gesture',
     (tester) async {

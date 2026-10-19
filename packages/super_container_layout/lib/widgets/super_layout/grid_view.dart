@@ -82,6 +82,7 @@ class _GridSurface extends StatefulWidget {
 class _GridSurfaceState extends State<_GridSurface> {
   final _canvas = GlobalKey();
   final _viewport = GlobalKey();
+  final _hoveredLabels = <String>{};
   String? _dragId;
   Offset? _startPoint;
   SuperLayoutConfig? _initial;
@@ -228,12 +229,17 @@ class _GridSurfaceState extends State<_GridSurface> {
                 onPanEnd: owner.widget.editable ? (_) => _end() : null,
                 onPanCancel: owner.widget.editable ? _end : null,
                 child: MouseRegion(
+                  onEnter: (_) => setState(() => _hoveredLabels.add(slot.id)),
+                  onExit: (_) => setState(() => _hoveredLabels.remove(slot.id)),
                   cursor: owner.widget.editable
                       ? SystemMouseCursors.move
                       : SystemMouseCursors.click,
                   child: Tooltip(
                     message: 'Glisser pour déplacer ${slot.label}',
-                    child: ComponentDragLabel(child: Text(slot.label)),
+                    child: ComponentDragLabel(
+                      highlighted: _hoveredLabels.isNotEmpty || _dragId != null,
+                      child: Text(slot.label),
+                    ),
                   ),
                 ),
               ),

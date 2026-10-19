@@ -55,6 +55,10 @@ En édition, les labels des composants de `SuperLayout` partagent le même
 badge en modes **Zones** et **Grille** : icône `drag_indicator`, fond
 `tertiaryContainer` et angles arrondis. Le glisser-déposer conserve les règles
 propres à chaque mode.
+En mode Zones, le survol d'un label change la couleur des badges des composants
+de sa zone sans les grossir ; le grossissement des labels de zones est conservé.
+En mode Grille, le survol ou le glisser d'un label met en couleur les badges
+de tous les composants de cette grille, sans modifier leur taille.
 Les labels des zones affichent aussi `drag_indicator`, uniquement lorsque
 leur déplacement/échange est autorisé ; le centre et les zones non déplaçables
 n'affichent pas cette icône.

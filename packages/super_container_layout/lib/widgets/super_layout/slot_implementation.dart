@@ -14,22 +14,41 @@ import '../surfaces/super_container.dart';
 
 /// Shared component label for zone and grid editing.
 class ComponentDragLabel extends StatelessWidget {
-  const ComponentDragLabel({required this.child, this.opacity = 0.5, super.key});
+  const ComponentDragLabel({
+    required this.child,
+    this.opacity = 0.5,
+    this.highlighted = false,
+    super.key,
+  });
 
   final Widget child;
   final double opacity;
+  final bool highlighted;
 
   @override
   Widget build(BuildContext context) => Material(
-    color: Theme.of(context).colorScheme.tertiaryContainer
-        .withValues(alpha: opacity),
+    color: highlighted
+        ? Theme.of(context).colorScheme.tertiary
+        : Theme.of(context).colorScheme.tertiaryContainer
+              .withValues(alpha: opacity),
+    textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+      color: highlighted ? Theme.of(context).colorScheme.onTertiary : null,
+    ),
     borderRadius: BorderRadius.circular(6),
     child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Flexible(child: Icon(Icons.drag_indicator, size: 16)),
+          Flexible(
+            child: Icon(
+              Icons.drag_indicator,
+              size: 16,
+              color: highlighted
+                  ? Theme.of(context).colorScheme.onTertiary
+                  : null,
+            ),
+          ),
           Flexible(
             child: DefaultTextStyle.merge(
               overflow: TextOverflow.ellipsis,
@@ -205,7 +224,7 @@ class SlotStack extends StatelessWidget {
   /// propriétaire, elles se rangent avant ou après lui.
   final SlotMover? mover;
 
-  /// Grossissement partagé des étiquettes (zones et slots) de la disposition.
+  /// Mise en avant partagée des étiquettes de la disposition.
   final LabelEmphasis? emphasis;
   final Map<String, Size?> preferredSizes;
   final Map<String, SlotSizeConstraints> sizeConstraints;
@@ -645,7 +664,7 @@ class SlotDropHint {
 
 /// Mise en avant des étiquettes d'une disposition. Une étiquette survolée ou
 /// glissée signale sa zone (la portée) : les étiquettes de slot de cette zone
-/// grossissent, et les noms de toutes les zones.
+/// changent de couleur, et les noms de toutes les zones grossissent.
 class LabelEmphasis {
   const LabelEmphasis({
     required this.scopes,
@@ -1039,20 +1058,30 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     ColorScheme colors, {
     double opacity = 0.5,
     bool dragged = false,
-  }) => ComponentDragLabel(
-    key: ValueKey('slot-label-${widget.slot.id}'),
-    opacity: opacity,
-    child: dragged
-        ? ValueListenableBuilder<SlotDropHint?>(
-            valueListenable: _hint,
-            builder: (context, hint, _) => Text(
-              hint == null
-                  ? widget.caption
-                  : '${widget.slot.label} → ${hint.caption}',
-            ),
-          )
-        : Text(widget.caption),
-  );
+  }) {
+    final emphasis = widget.emphasis;
+    Widget label(bool highlighted) => ComponentDragLabel(
+      key: ValueKey('slot-label-${widget.slot.id}'),
+      opacity: opacity,
+      highlighted: highlighted,
+      child: dragged
+          ? ValueListenableBuilder<SlotDropHint?>(
+              valueListenable: _hint,
+              builder: (context, hint, _) => Text(
+                hint == null
+                    ? widget.caption
+                    : '${widget.slot.label} → ${hint.caption}',
+              ),
+            )
+          : Text(widget.caption),
+    );
+    if (emphasis == null) return label(_hover || _dragging);
+    return ValueListenableBuilder<Set<Object>>(
+      valueListenable: emphasis.scopes,
+      builder: (context, scopes, _) =>
+          label(_hover || _dragging || scopes.contains(emphasis.scope)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1263,48 +1292,42 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                       alignment: slot.labelAlignment,
                       child: Padding(
                         padding: const EdgeInsets.all(4),
-                        child: EmphasizedLabel(
-                          emphasis: widget.emphasis,
-                          alignment: slot.labelAlignment,
-                          child: MouseRegion(
-                            key: _labelKey,
-                            hitTestBehavior: HitTestBehavior.translucent,
-                            onEnter: (_) => _setHover(true),
-                            onExit: (_) => _setHover(false),
-                            child: GestureDetector(
-                              key: ValueKey('slot-label-select-${slot.id}'),
-                              onTap: widget.onSelect,
-                              behavior: HitTestBehavior.translucent,
-                              child: mover == null
-                                  ? IgnorePointer(child: _chip(colors))
-                                  : Draggable<SlotDragData>(
-                                      data: SlotDragData(
-                                        id: slot.id,
-                                        owner: mover.owner,
-                                        hint: _hint,
-                                      ),
-                                      dragAnchorStrategy:
-                                          pointerDragAnchorStrategy,
-                                      hitTestBehavior:
-                                          HitTestBehavior.translucent,
-                                      onDragStarted: () => _setDragging(true),
-                                      onDragEnd: (_) => _setDragging(false),
-                                      feedback: _chip(
-                                        colors,
-                                        opacity: 1,
-                                        dragged: true,
-                                      ),
-                                      childWhenDragging: Opacity(
-                                        opacity: .35,
-                                        child: _chip(colors),
-                                      ),
-                                      // Le contenu sous l'étiquette reste atteignable (clic
-                                      // droit du style) : seul le Draggable écoute le glisser.
-                                      child: IgnorePointer(
-                                        child: _chip(colors),
-                                      ),
+                        child: MouseRegion(
+                          key: _labelKey,
+                          hitTestBehavior: HitTestBehavior.translucent,
+                          onEnter: (_) => _setHover(true),
+                          onExit: (_) => _setHover(false),
+                          child: GestureDetector(
+                            key: ValueKey('slot-label-select-${slot.id}'),
+                            onTap: widget.onSelect,
+                            behavior: HitTestBehavior.translucent,
+                            child: mover == null
+                                ? IgnorePointer(child: _chip(colors))
+                                : Draggable<SlotDragData>(
+                                    data: SlotDragData(
+                                      id: slot.id,
+                                      owner: mover.owner,
+                                      hint: _hint,
                                     ),
-                            ),
+                                    dragAnchorStrategy:
+                                        pointerDragAnchorStrategy,
+                                    hitTestBehavior:
+                                        HitTestBehavior.translucent,
+                                    onDragStarted: () => _setDragging(true),
+                                    onDragEnd: (_) => _setDragging(false),
+                                    feedback: _chip(
+                                      colors,
+                                      opacity: 1,
+                                      dragged: true,
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: .35,
+                                      child: _chip(colors),
+                                    ),
+                                    // Le contenu sous l'étiquette reste atteignable (clic
+                                    // droit du style) : seul le Draggable écoute le glisser.
+                                    child: IgnorePointer(child: _chip(colors)),
+                                  ),
                           ),
                         ),
                       ),

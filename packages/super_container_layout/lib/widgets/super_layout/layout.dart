@@ -276,7 +276,7 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   /// Zones dont une étiquette (nom de zone ou slot) est survolée ou glissée :
-  /// leurs étiquettes de slot et tous les noms de zone grossissent.
+  /// leurs étiquettes de slot changent de couleur, tous les noms de zone grossissent.
   final _emphasis = ValueNotifier<Set<Object>>(const {});
   final _emphasizing = <Object, Set<Object>>{};
 
