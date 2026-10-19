@@ -230,8 +230,133 @@ void main() {
       components.nativeComponentController('box').value.toJson(),
       parent.toJson(),
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('child is renamed from its menu row and the wizard', (
+    tester,
+  ) async {
+    final components = registry();
+    await mount(tester, components);
+    await open(tester);
+    await choose(tester, 'factory:NewContainer');
+    final id = components
+        .nativeComponentController('box')
+        .value
+        .slotsOf('child')
+        .single;
+    final history = EditorHistoryScope.controllerOf(tester.element(target()))!;
+    history.clear();
+    await tester.tap(target(), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('style-menu-rename-Box')), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey('style-menu-rename-New Container')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('style-menu-rename-input')),
+      '  Carte  ',
+    );
+    await tester.tap(find.byKey(const ValueKey('style-menu-rename-save')));
+    await tester.pumpAndSettle();
+    final config = components.nativeComponentController('box').value;
+    expect(config.slotLabels, {id: 'Carte'});
+    expect(NativeComponentConfig.fromJson(config.toJson()).slotLabels, {
+      id: 'Carte',
+    });
+    await tester.tap(target(), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('style-menu-Carte')), findsOneWidget);
+    expect(find.byKey(const ValueKey('style-menu-Box')), findsOneWidget);
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(components.nativeComponentController('box').value.slotLabels, {});
+
+    await tester.tap(target(), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-menu-add-Box')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remplacer'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey('super-container-box-add-card-factory:NewContainer'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('super-container-box-add-next')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('super-container-box-add-label')),
+      'Encart',
+    );
+    await tester.pumpAndSettle();
+    while (find
+        .descendant(
+          of: find.byKey(const ValueKey('super-container-box-add-next')),
+          matching: find.text('Appliquer'),
+        )
+        .evaluate()
+        .isEmpty) {
+      await tester.tap(
+        find.byKey(const ValueKey('super-container-box-add-next')),
+      );
+      await tester.pumpAndSettle();
+    }
+    await tester.tap(
+      find.byKey(const ValueKey('super-container-box-add-next')),
+    );
+    await tester.pumpAndSettle();
+    final added = components.nativeComponentController('box').value;
+    expect(added.slotLabels, {added.slotsOf('child').single: 'Encart'});
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('child removal sits on the child menu row', (tester) async {
+    final components = registry();
+    await mount(tester, components);
+    await open(tester);
+    await choose(tester, 'factory:NewContainer');
+    final history = EditorHistoryScope.controllerOf(tester.element(target()))!;
+    history.clear();
+    await tester.tap(target(), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    final remove = find.byKey(
+      const ValueKey('style-menu-remove-Composant enfant : Box'),
+    );
     expect(
-      components.nativeComponentController(nestedId).value.slotsOf('child'),
+      find.byKey(const ValueKey('style-menu-remove-child-Box')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('style-menu-New Container')),
+        matching: remove,
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('style-menu-Box')),
+        matching: find.byIcon(Icons.delete_outline),
+      ),
+      findsNothing,
+    );
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(
+      components.nativeComponentController('box').value.slotsOf('child'),
+      isEmpty,
+    );
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(
+      components.nativeComponentController('box').value.slotsOf('child'),
       hasLength(1),
     );
     expect(tester.takeException(), isNull);

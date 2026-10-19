@@ -13,6 +13,7 @@ class NativeComponentConfig {
     Map<String, bool> regions = const {},
     Map<String, Size?> slotPreferredSizes = const {},
     Map<String, SlotSizeConstraints> slotSizeConstraints = const {},
+    Map<String, String> slotLabels = const {},
   }) : placements = Map.unmodifiable({
          for (final entry in placements.entries)
            entry.key: List<String>.unmodifiable(entry.value),
@@ -20,7 +21,11 @@ class NativeComponentConfig {
        slotTypes = Map.unmodifiable(slotTypes),
        regions = Map.unmodifiable(regions),
        slotPreferredSizes = Map.unmodifiable(slotPreferredSizes),
-       slotSizeConstraints = Map.unmodifiable(slotSizeConstraints) {
+       slotSizeConstraints = Map.unmodifiable(slotSizeConstraints),
+       slotLabels = Map.unmodifiable({
+         for (final entry in slotLabels.entries)
+           if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
+       }) {
     final ids = placements.values.expand((value) => value).toList();
     if (ids.any((id) => id.trim().isEmpty) ||
         ids.toSet().length != ids.length ||
@@ -30,6 +35,7 @@ class NativeComponentConfig {
         slotTypes.values.any((type) => type.trim().isEmpty) ||
         slotPreferredSizes.keys.any((id) => id.trim().isEmpty) ||
         slotSizeConstraints.keys.any((id) => id.trim().isEmpty) ||
+        slotLabels.keys.any((id) => id.trim().isEmpty) ||
         slotPreferredSizes.values.any(
           (size) =>
               size != null &&
@@ -51,6 +57,9 @@ class NativeComponentConfig {
   final Map<String, Size?> slotPreferredSizes;
   final Map<String, SlotSizeConstraints> slotSizeConstraints;
 
+  /// Display names given to slot instances; a technical ID never changes.
+  final Map<String, String> slotLabels;
+
   bool isEnabled(String region) =>
       regions[region] ?? slotsOf(region).isNotEmpty;
   List<String> slotsOf(String region) => placements[region] ?? const [];
@@ -64,6 +73,7 @@ class NativeComponentConfig {
         regions: regions,
         slotPreferredSizes: slotPreferredSizes,
         slotSizeConstraints: slotSizeConstraints,
+        slotLabels: slotLabels,
       );
 
   NativeComponentConfig withRegionEnabled(String region, bool enabled) =>
@@ -74,6 +84,7 @@ class NativeComponentConfig {
         regions: {...regions, region: enabled},
         slotPreferredSizes: slotPreferredSizes,
         slotSizeConstraints: slotSizeConstraints,
+        slotLabels: slotLabels,
       );
 
   NativeComponentConfig withSlotAdded(
@@ -100,6 +111,8 @@ class NativeComponentConfig {
         ..removeWhere((key, _) => replaced.contains(key)),
       slotSizeConstraints: {...slotSizeConstraints}
         ..removeWhere((key, _) => replaced.contains(key)),
+      slotLabels: {...slotLabels}
+        ..removeWhere((key, _) => replaced.contains(key)),
     );
   }
 
@@ -117,6 +130,7 @@ class NativeComponentConfig {
     },
     slotPreferredSizes: {...slotPreferredSizes}..remove(id),
     slotSizeConstraints: {...slotSizeConstraints}..remove(id),
+    slotLabels: {...slotLabels}..remove(id),
   );
 
   NativeComponentConfig withSlotMoved(
@@ -167,6 +181,7 @@ class NativeComponentConfig {
       },
       slotPreferredSizes: slotPreferredSizes,
       slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
     );
   }
 
@@ -178,6 +193,7 @@ class NativeComponentConfig {
         regions: regions,
         slotPreferredSizes: {...slotPreferredSizes, id: size},
         slotSizeConstraints: {...slotSizeConstraints}..remove(id),
+        slotLabels: slotLabels,
       );
 
   NativeComponentConfig withSlotSizeConstraints(
@@ -190,7 +206,23 @@ class NativeComponentConfig {
     regions: regions,
     slotPreferredSizes: {...slotPreferredSizes}..remove(id),
     slotSizeConstraints: {...slotSizeConstraints, id: constraints},
+    slotLabels: slotLabels,
   );
+
+  /// Names the slot instance [id]; a null or blank [label] restores the
+  /// component's own name.
+  NativeComponentConfig withSlotLabel(String id, String? label) =>
+      NativeComponentConfig(
+        useDefaultNavigation: useDefaultNavigation,
+        placements: placements,
+        slotTypes: slotTypes,
+        regions: regions,
+        slotPreferredSizes: slotPreferredSizes,
+        slotSizeConstraints: slotSizeConstraints,
+        slotLabels: {...slotLabels}
+          ..remove(id)
+          ..addAll({id: ?label}),
+      );
 
   Map<String, Object> toJson() => {
     'useDefaultNavigation': ?useDefaultNavigation,
@@ -216,6 +248,7 @@ class NativeComponentConfig {
         for (final entry in slotSizeConstraints.entries)
           entry.key: entry.value.toJson(),
       },
+    if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
   };
 
   factory NativeComponentConfig.fromJson(Object? value) {
@@ -256,6 +289,13 @@ class NativeComponentConfig {
       if (rawSizes is! Map || rawConstraints is! Map) {
         throw const FormatException('Invalid native slot sizes.');
       }
+      final rawLabels = value['slotLabels'] ?? const {};
+      if (rawLabels is! Map ||
+          rawLabels.entries.any(
+            (entry) => entry.key is! String || entry.value is! String,
+          )) {
+        throw const FormatException('Invalid native slot labels.');
+      }
       if (rawConstraints.keys.any((key) => key is! String)) {
         throw const FormatException('Invalid native slot constraint ID.');
       }
@@ -292,6 +332,7 @@ class NativeComponentConfig {
           for (final entry in rawConstraints.entries)
             entry.key as String: SlotSizeConstraints.fromJson(entry.value),
         },
+        slotLabels: Map<String, String>.from(rawLabels),
       );
     } on ArgumentError {
       throw const FormatException('Invalid native region or slot IDs.');

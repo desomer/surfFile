@@ -13,6 +13,8 @@ import '../../theme/container_style.dart';
 import '../../theme/neon_style.dart';
 import '../editing/container_style_editor.dart';
 import '../editing/editor_history.dart';
+import '../editing/slot_removal.dart';
+import '../../models/registry.dart' show EditorConfigKind;
 import '../editing/editor_dialog.dart';
 import '../editing/editor_overlay.dart';
 import '../editing/editor_dialog_header.dart';
@@ -187,8 +189,29 @@ class SuperContainerState extends State<SuperContainer> {
   ValueNotifier<Appearance>? get _appearance =>
       widget.slot == null ? null : AppearanceScope.controllerOf(context);
 
+  /// Instance name of the component this container is the outermost editable
+  /// surface of; nested containers keep their own label.
+  EditorComponentLabel? get _instance {
+    final element = context
+        .getElementForInheritedWidgetOfExactType<EditorComponentLabel>();
+    if (element == null) return null;
+    var direct = true;
+    context.visitAncestorElements((ancestor) {
+      if (identical(ancestor, element)) return false;
+      if (ancestor is StatefulElement &&
+          ancestor.state is SuperContainerState) {
+        direct = false;
+        return false;
+      }
+      return true;
+    });
+    return direct ? EditorComponentLabel.of(context) : null;
+  }
+
+  bool get _canRename => _instance != null || widget.onLabelChanged != null;
+
   String get _label {
-    final instance = EditorComponentLabel.of(context);
+    final instance = _instance;
     return (instance?.overridden ?? false)
         ? instance!.label
         : _localLabel ??
@@ -198,12 +221,61 @@ class SuperContainerState extends State<SuperContainer> {
   }
 
   void _renameLabel(String label) {
-    final instance = EditorComponentLabel.of(context);
+    final instance = _instance;
     if (instance != null) {
       instance.onChanged(label);
     } else {
       setState(() => _localLabel = label);
       widget.onLabelChanged?.call(label);
+    }
+  }
+
+  Future<void> _promptRename() async {
+    final text = TextEditingController(text: _label);
+    final form = GlobalKey<FormState>();
+    try {
+      final label = await showEditorDialog<String>(
+        context: context,
+        target: context,
+        builder: (dialogContext) {
+          void save() {
+            if (form.currentState!.validate()) {
+              Navigator.of(dialogContext).pop(text.text.trim());
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Renommer le composant'),
+            content: Form(
+              key: form,
+              child: TextFormField(
+                key: const ValueKey('style-menu-rename-input'),
+                controller: text,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Nom'),
+                validator: (value) => (value ?? '').trim().isEmpty
+                    ? 'Le nom ne peut pas être vide.'
+                    : null,
+                onFieldSubmitted: (_) => save(),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                key: const ValueKey('style-menu-rename-save'),
+                onPressed: save,
+                child: const Text('Renommer'),
+              ),
+            ],
+          );
+        },
+      );
+      if (label != null && label != _label && mounted) _renameLabel(label);
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) => text.dispose());
     }
   }
 
@@ -345,7 +417,7 @@ class SuperContainerState extends State<SuperContainer> {
     final initialAppearance = appearance?.value;
     final initialStyle = _local.value;
     final initialLabel = _label;
-    final initialInstance = EditorComponentLabel.of(context);
+    final initialInstance = _instance;
     final accent = AppearanceScope.of(context).accent;
     final shape = widget.slot?.editShape ?? true;
     final extended = widget.slot?.extendedLook ?? true;
@@ -638,6 +710,48 @@ class SuperContainerState extends State<SuperContainer> {
     return chain;
   }
 
+  /// Rattache chaque action inline (taille, suppression du slot) au conteneur
+  /// éditable le plus proche qu'elle englobe ; les actions fournies par un
+  /// descendant restent sur le premier conteneur de la chaîne.
+  Map<SuperContainerState, List<ContainerMenuAction>> _inlineActionsByState(
+    List<SuperContainerState> chain,
+    List<ContainerMenuAction> provided,
+  ) {
+    final result = <SuperContainerState, List<ContainerMenuAction>>{};
+    if (chain.isEmpty) return result;
+    final ancestors = <ContainerMenuAction>{};
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is ContainerMenuAction && widget.inline) ancestors.add(widget);
+      return true;
+    });
+    final below = [
+      for (final action in provided)
+        if (action.inline && !ancestors.contains(action)) action,
+    ];
+    if (below.isNotEmpty) result[chain.first] = below;
+    SuperContainerState? current = chain.contains(this) ? this : null;
+    final claimed = <SuperContainerState>{if (below.isNotEmpty) chain.first};
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (element is StatefulElement) {
+        final state = element.state;
+        if (state is SuperContainerState && chain.contains(state)) {
+          current = state;
+        }
+      } else if (widget is ContainerMenuAction &&
+          widget.enabled &&
+          widget.inline) {
+        final owner = current ?? chain.first;
+        if (claimed.add(owner)) {
+          (result[owner] ??= []).add(widget);
+        }
+      }
+      return true;
+    });
+    return result;
+  }
+
   Future<void> openMenu(
     Offset globalPosition, {
     List<ContainerMenuAction>? actions,
@@ -649,6 +763,7 @@ class SuperContainerState extends State<SuperContainer> {
       }
     }
     final extraActions = actions ?? ContainerMenuAction.of(context);
+    final inlineActions = _inlineActionsByState(chain, extraActions);
     final entries = <(int, Object)>[
       if (chain.contains(this)) (chain.indexOf(this), this),
     ];
@@ -767,31 +882,44 @@ class SuperContainerState extends State<SuperContainer> {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                         ],
-                        if (identical(state, chain.first))
-                          for (final action in extraActions.where(
-                            (action) => action.inline,
-                          )) ...[
-                            if (action.showEdit)
-                              IconButton(
-                                key: ValueKey(
-                                  'style-menu-size-${action.label}',
-                                ),
-                                tooltip: action.label,
-                                icon: const Icon(Icons.straighten),
-                                onPressed: () =>
-                                    Navigator.of(context).pop(action.onEdit),
+                        if ((StyleEditScope.controllerOf(state.context)
+                                    ?.value ??
+                                false) &&
+                            state._canRename)
+                          IconButton(
+                            key: ValueKey('style-menu-rename-${state._label}'),
+                            tooltip: 'Renommer',
+                            icon: const Icon(Icons.drive_file_rename_outline),
+                            onPressed: () =>
+                                Navigator.of(context)
+                                    .pop<Future<void> Function()>(() async {
+                                      if (state.mounted) {
+                                        await state._promptRename();
+                                      }
+                                    }),
+                          ),
+                        for (final action
+                            in inlineActions[state] ??
+                                const <ContainerMenuAction>[]) ...[
+                          if (action.showEdit)
+                            IconButton(
+                              key: ValueKey('style-menu-size-${action.label}'),
+                              tooltip: action.label,
+                              icon: const Icon(Icons.straighten),
+                              onPressed: () =>
+                                  Navigator.of(context).pop(action.onEdit),
+                            ),
+                          if (action.onRemove case final remove?)
+                            IconButton(
+                              key: ValueKey(
+                                'style-menu-remove-${action.label}',
                               ),
-                            if (action.onRemove case final remove?)
-                              IconButton(
-                                key: ValueKey(
-                                  'style-menu-remove-${action.label}',
-                                ),
-                                tooltip: 'Supprimer le slot',
-                                icon: const Icon(Icons.delete_outline),
-                                onPressed: () =>
-                                    Navigator.of(context).pop(remove),
-                              ),
-                          ],
+                              tooltip: 'Supprimer le slot',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () =>
+                                  Navigator.of(context).pop(remove),
+                            ),
+                        ],
                         if ((StyleEditScope.controllerOf(state.context)
                                     ?.value ??
                                 false) &&
@@ -814,7 +942,8 @@ class SuperContainerState extends State<SuperContainer> {
                                     ?.value ??
                                 false) &&
                             state.widget.id != null &&
-                            (state._childKey.currentState?.hasChild ?? false))
+                            (state._childKey.currentState?.hasChild ?? false) &&
+                            !state._childKey.currentState!.childHasMenu)
                           IconButton(
                             key: ValueKey(
                               'style-menu-remove-child-${state._label}',
@@ -983,10 +1112,36 @@ class _SuperContainerChildState extends State<_SuperContainerChild> {
 
   bool get hasChild => _config.value.slotsOf('child').isNotEmpty;
 
+  /// Whether the child has its own editable [SuperContainer], whose menu row
+  /// then carries the child removal instead of this container's row.
+  bool get childHasMenu {
+    var found = false;
+    void visit(Element element) {
+      if (found) return;
+      if (element is StatefulElement &&
+          element.state is SuperContainerState &&
+          (element.state as SuperContainerState)._canEdit) {
+        found = true;
+        return;
+      }
+      element.visitChildren(visit);
+    }
+
+    context.visitChildElements(visit);
+    return found;
+  }
+
   void remove() {
     final current = _config.value;
     if (hasChild) {
-      _config.value = current.withoutSlot(current.slotsOf('child').single);
+      final id = current.slotsOf('child').single;
+      removeSlotInstance(
+        context,
+        id: id,
+        type: current.slotTypeOf(id),
+        containerKind: EditorConfigKind.nativeComponent,
+        unplace: () => _config.value = current.withoutSlot(id),
+      );
     }
   }
 
@@ -1053,7 +1208,18 @@ class _SuperContainerChildState extends State<_SuperContainerChild> {
           final child = children.isEmpty
               ? const SizedBox.expand()
               : children.single;
-          return widget.builder(context, child);
+          return widget.builder(
+            context,
+            ContainerMenuAction(
+              label: 'Composant enfant : ${widget.label}',
+              inline: true,
+              showEdit: false,
+              enabled: children.isNotEmpty,
+              onEdit: () async {},
+              onRemove: children.isEmpty ? null : () async => remove(),
+              child: child,
+            ),
+          );
         },
       ),
     );

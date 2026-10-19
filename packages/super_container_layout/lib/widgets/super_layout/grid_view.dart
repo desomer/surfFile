@@ -341,9 +341,8 @@ class _GridSurfaceState extends State<_GridSurface> {
                                   false),
                           inline: true,
                           onEdit: () => widget.owner._editGridSlot(slot),
-                          onRemove: () async => widget.owner._update(
-                            widget.owner.config.withoutSlot(slot.id),
-                          ),
+                          onRemove: () async =>
+                              widget.owner._removeSlot(slot.id),
                           child: Builder(
                             builder: (context) => _LabelScope(
                               path: [...widget.path, slot.label],

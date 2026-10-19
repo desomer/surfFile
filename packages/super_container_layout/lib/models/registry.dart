@@ -12,6 +12,9 @@ import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/native/super_app_bar.dart';
 
 import '../widgets/native/super_bottom_navigation_bar.dart';
+import '../services/editor_page_graph.dart';
+import '../widgets/editing/component_add_configurators.dart';
+import '../widgets/editing/component_add_wizard.dart';
 
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
@@ -139,12 +142,19 @@ class ComponentDuplicationContract {
 }
 
 class ComponentBuilder {
-  ComponentBuilder({this.tags = const {}, this.duplication});
+  ComponentBuilder({
+    this.tags = const {},
+    this.duplication,
+    this.addConfigurator,
+  });
 
   final Set<String> tags;
 
   /// Null when the component cannot be duplicated in a design graph.
   final ComponentDuplicationContract? duplication;
+
+  /// Settings proposed by the add wizard; null when there are none.
+  final ComponentAddConfigurator<Object>? addConfigurator;
 
   Widget getWidget(XuiBuildCtx ctx) {
     return SizedBox.shrink();
@@ -156,6 +166,7 @@ class RegisteredComponentImpl extends ComponentBuilder {
     required this.widget,
     super.tags,
     super.duplication,
+    super.addConfigurator,
   });
 
   final Widget widget;
@@ -213,6 +224,21 @@ class Registry {
       listController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
+  }
+
+  /// Deletes, from the bound [Appearance], the configurations recursively
+  /// owned by the unplaced slot instance [id] (see
+  /// [EditorPageGraph.removeInstance]).
+  void purgeInstance(String id, String type, EditorConfigKind containerKind) {
+    final appearance = _appearance;
+    if (appearance == null) return;
+    appearance.value = EditorPageGraph.removeInstance(
+      appearance: appearance.value,
+      registry: this,
+      instanceId: id,
+      type: type,
+      containerKind: containerKind,
+    );
   }
 
   void unbindAppearance() {
@@ -345,10 +371,12 @@ class Registry {
     Widget widget, {
     Set<String> tags = const {},
     ComponentDuplicationContract? duplication,
+    ComponentAddConfigurator<Object>? addConfigurator,
   }) {
     registry[key] = ComponentBuilderDynamic(
       tags: tags,
       duplication: duplication,
+      addConfigurator: addConfigurator,
       dynamicBuilder: (xuiCtx) => widget,
     );
   }
@@ -465,6 +493,7 @@ class Registry {
     registry['SuperText'] = ComponentBuilderDynamic(
       duplication: ComponentDuplicationContract.superText,
       tags: const {'text', 'input'},
+      addConfigurator: superTextAddConfigurator(availableFontFamilies),
       dynamicBuilder: (ctx) =>
           SuperText(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
@@ -482,6 +511,7 @@ class Registry {
     registry['NewContainer'] = ComponentBuilderDynamic(
       duplication: ComponentDuplicationContract.newContainer,
       tags: const {'container'},
+      addConfigurator: containerAddConfigurator,
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (context) {
           final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
@@ -500,6 +530,7 @@ class Registry {
     registry['SuperListView'] = ComponentBuilderDynamic(
       duplication: ComponentDuplicationContract.superListView,
       tags: const {'list', 'layout'},
+      addConfigurator: listViewAddConfigurator,
       dynamicBuilder: (xuiCtx) => BuilderSlot(
         id: xuiCtx.id,
         label: 'Liste',
@@ -509,6 +540,7 @@ class Registry {
     registry['NewLayout'] = ComponentBuilderDynamic(
       duplication: ComponentDuplicationContract.newLayout,
       tags: const {'layout'},
+      addConfigurator: layoutAddConfigurator,
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (ctx) {
           final id = xuiCtx.id;
@@ -544,6 +576,7 @@ class ComponentBuilderDynamic extends ComponentBuilder {
     required this.dynamicBuilder,
     super.tags,
     super.duplication,
+    super.addConfigurator,
   });
 
   @override
@@ -560,6 +593,7 @@ class RegisteredComponent {
     this.isAvailable,
     this.tags = const {},
     this.duplication,
+    this.addConfigurator,
   });
 
   final String label;
@@ -574,6 +608,9 @@ class RegisteredComponent {
 
   /// Null when the component cannot be duplicated in a design graph.
   final ComponentDuplicationContract? duplication;
+
+  /// Settings proposed by the add wizard; null when there are none.
+  final ComponentAddConfigurator<Object>? addConfigurator;
 
   BuilderSlot createSlot(String id, {bool visible = true}) => BuilderSlot(
     id: id,

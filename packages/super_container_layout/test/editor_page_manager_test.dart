@@ -149,9 +149,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('scaffold-page-add-body')));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('scaffold-page-add-slot-factory:NewContainer')),
+    final directAdd = find.byKey(
+      const ValueKey('scaffold-page-add-slot-factory:NewContainer'),
     );
+    await tester.ensureVisible(directAdd);
+    await tester.pumpAndSettle();
+    await tester.tap(directAdd);
     await tester.pumpAndSettle();
     final pageId = appearance.value.pageCatalog.pages.single.id;
     expect(

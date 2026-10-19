@@ -119,6 +119,7 @@ class EditorComponentLabel extends InheritedWidget {
 
   @override
   bool updateShouldNotify(EditorComponentLabel oldWidget) =>
-      label != oldWidget.label || overridden != oldWidget.overridden ||
+      label != oldWidget.label ||
+      overridden != oldWidget.overridden ||
       onChanged != oldWidget.onChanged;
 }

@@ -40,6 +40,8 @@ export 'widgets/appearance/appearance_transfer_dialog.dart';
 export 'widgets/appearance/appearance_settings.dart';
 export 'widgets/appearance/appearance_style_section.dart';
 export 'widgets/editing/container_style_editor.dart';
+export 'widgets/editing/component_add_wizard.dart';
+export 'widgets/editing/component_add_configurators.dart';
 export 'widgets/editing/editor_history.dart';
 export 'widgets/editing/json_repository_manager.dart';
 export 'widgets/surfaces/interaction_effect_box.dart';

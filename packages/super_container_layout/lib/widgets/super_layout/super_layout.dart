@@ -14,6 +14,8 @@ import 'package:flutter/gestures.dart'
 import 'package:material_ui/material_ui.dart';
 
 import '../editing/editor_history.dart';
+import '../editing/slot_removal.dart';
+import '../editing/component_add_wizard.dart';
 import '../editing/editor_dialog.dart';
 import '../editing/editor_dialog_header.dart';
 import '../editing/editor_overlay.dart';

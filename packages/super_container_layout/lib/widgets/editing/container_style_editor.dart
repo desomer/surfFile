@@ -127,6 +127,7 @@ class ContainerStyleEditor extends StatelessWidget {
 
   /// Propose les réglages de forme et d'aspect étendus ([StyleExtrasControls]).
   final bool extended;
+
   /// Mode panneau compact ; si absent, reprend le mode mémorisé de la session.
   final bool? dense;
   final ValueChanged<bool>? onDenseChanged;

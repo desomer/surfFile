@@ -9,97 +9,113 @@ extension _SuperLayoutDialogs on SuperLayoutState {
     history?.beginTransaction();
     var confirmed = false;
     try {
-    confirmed = await showEditorDialog<bool>(
-      context: context,
-      target: context,
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(builder: (context, setDialog) => AlertDialog(
-        title: EditorDialogHeader(
-          label: label,
-          onLabelChanged: (value) => setDialog(() {
-            label = value;
-            _rename(value);
-          }),
-        ),
-        content: SizedBox(
-          width: 420,
-          child: SingleChildScrollView(
-            child: ListenableBuilder(
-              listenable: _config,
-              builder: (context, _) => SuperLayoutEditor(
-                config: _config.value,
-                onChanged: _update,
-                zoneLabels: widget.zoneLabels,
+      confirmed =
+          await showEditorDialog<bool>(
+            context: context,
+            target: context,
+            barrierDismissible: true,
+            barrierColor: Colors.transparent,
+            builder: (context) => StatefulBuilder(
+              builder: (context, setDialog) => AlertDialog(
+                title: EditorDialogHeader(
+                  label: label,
+                  onLabelChanged: (value) => setDialog(() {
+                    label = value;
+                    _rename(value);
+                  }),
+                ),
+                content: SizedBox(
+                  width: 420,
+                  child: SingleChildScrollView(
+                    child: ListenableBuilder(
+                      listenable: _config,
+                      builder: (context, _) => SuperLayoutEditor(
+                        config: _config.value,
+                        onChanged: _update,
+                        zoneLabels: widget.zoneLabels,
+                      ),
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Annuler'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: const Text('Appliquer'),
+                  ),
+                ],
               ),
             ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Appliquer'),
-          ),
-        ],
-      )),
-    ) == true;
+          ) ==
+          true;
     } finally {
-    if (!confirmed && mounted) _update(initial, validateTags: false);
-    if (!confirmed && mounted && initialInstance != null) {
-      initialInstance.onRestore();
-    }
-    if (confirmed) {
-      history?.commitTransaction();
-    } else {
-      history?.cancelTransaction();
-    }
+      if (!confirmed && mounted) _update(initial, validateTags: false);
+      if (!confirmed && mounted && initialInstance != null) {
+        initialInstance.onRestore();
+      }
+      if (confirmed) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
     }
   }
 
   Future<void> _addSlot(SuperLayoutZone zone) async {
-    if (_config.value.positioning == SuperLayoutPositioning.grid) {
-      zone = SuperLayoutZone.center;
-    }
+    final grid = _config.value.positioning == SuperLayoutPositioning.grid;
+    if (grid) zone = SuperLayoutZone.center;
     final slots = _availableSlots(context, includeRegistry: true)
-        .where((slot) =>
-            widget.zoneTagFilters[zone]?.accepts(slot.tags) ?? true)
+        .where(
+          (slot) => widget.zoneTagFilters[zone]?.accepts(slot.tags) ?? true,
+        )
         .toList();
-    final id = await showEditorDialog<String>(
+    final initial = _config.value;
+    final zones = grid
+        ? const [SuperLayoutZone.center]
+        : [
+            for (final option in SuperLayoutZone.values)
+              if (option == zone || initial.visibleZones.contains(option))
+                option,
+          ];
+    final request = await showComponentAddWizard(
       context: context,
       target: _zoneFocusKeys[zone]?.currentContext ?? context,
-      builder: (dialogContext) {
-        return SimpleDialog(
-          title: EditorDialogHeader(
-            label: _config.value.positioning == SuperLayoutPositioning.grid
-                ? 'Ajouter un slot dans la grille'
-                : 'Ajouter un slot dans ${widget.zoneLabel(zone)}',
-          ),
-          children: [
-            if (!slots.any((slot) => slot.visible))
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                child: Text('Aucun slot visible disponible.'),
-              ),
-            for (final slot in slots)
-              if (slot.visible)
-                SimpleDialogOption(
-                  key: ValueKey('super-layout-add-slot-${slot.id}'),
-                  onPressed: () => Navigator.of(dialogContext).pop(slot.id),
-                  child: Text(slot.label),
-                ),
-            SimpleDialogOption(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Annuler'),
+      title: grid
+          ? 'Ajouter un slot dans la grille'
+          : 'Ajouter un slot dans ${widget.zoneLabel(zone)}',
+      keyPrefix: 'super-layout',
+      emptyMessage: 'Aucun slot visible disponible.',
+      initialTargetId: zone.name,
+      candidates: [
+        for (final slot in slots)
+          if (slot.visible)
+            ComponentAddCandidate(
+              id: slot.id,
+              label: slot.label,
+              tags: slot.tags,
+              configurator: _addConfiguratorOf(context, slot.id),
             ),
-          ],
-        );
-      },
+      ],
+      targets: [
+        for (final option in zones)
+          ComponentAddTarget(
+            id: option.name,
+            label: grid ? 'Grille' : widget.zoneLabel(option),
+            siblings: [
+              for (final slot in _slotsOf(initial, initial.contentZone(option)))
+                (slot.id, initial.slotLabels[slot.id] ?? slot.label),
+            ],
+            accepts: (tags) =>
+                widget.zoneTagFilters[option]?.accepts(tags) ?? true,
+          ),
+      ],
     );
-    if (id == null || !mounted) return;
+    if (request == null || !mounted) return;
+    zone = SuperLayoutZone.values.byName(request.targetId);
+    final id = request.component.id;
     final config = _config.value;
     final supplied = widget.slots.any((slot) => slot.id == id);
     var instanceId = id;
@@ -115,8 +131,14 @@ extension _SuperLayoutDialogs on SuperLayoutState {
 
     final contentZone = config.contentZone(zone);
     final component = slots.firstWhere((slot) => slot.id == id);
-    _update(
-      widget.onSlotAdded(
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    try {
+      request.applyConfiguration(
+        SuperApp.maybeOf(context)?.registry,
+        instanceId,
+      );
+      var next = widget.onSlotAdded(
         SlotAddition(
           slotId: instanceId,
           component: component,
@@ -131,10 +153,23 @@ extension _SuperLayoutDialogs on SuperLayoutState {
           config: config.withSlotMoved(
             instanceId,
             contentZone,
+            beforeId: request.beforeId,
             type: supplied ? null : id,
           ),
         ),
-      ),
-    );
+      );
+      if (request.size case final size?) {
+        next = next.copyWith(
+          slotPreferredSizes: {...next.slotPreferredSizes}..remove(instanceId),
+          slotSizeConstraints: {...next.slotSizeConstraints, instanceId: size},
+        );
+      }
+      if (request.label case final label?) {
+        next = next.withSlotLabel(instanceId, label);
+      }
+      _update(next);
+    } finally {
+      history?.commitTransaction();
+    }
   }
 }

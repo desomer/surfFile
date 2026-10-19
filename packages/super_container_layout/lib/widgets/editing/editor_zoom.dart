@@ -101,8 +101,8 @@ class _EditorZoomState extends State<EditorZoom>
       final tooLarge =
           dialog == null &&
           _manualScale == null &&
-          (          rect.width >= widget.maxAutoZoomExtent ||
-                        rect.height >= widget.maxAutoZoomExtent);
+          (rect.width >= widget.maxAutoZoomExtent ||
+              rect.height >= widget.maxAutoZoomExtent);
       if (!tooLarge && !rect.isEmpty && rect.isFinite && !_viewport.isEmpty) {
         var available = Offset.zero & _viewport;
         final viewport = _viewportKey.currentContext?.findRenderObject();
@@ -146,7 +146,8 @@ class _EditorZoomState extends State<EditorZoom>
     if (event is! PointerScrollEvent ||
         event.scrollDelta.dy == 0 ||
         !event.scrollDelta.dy.isFinite ||
-        !(_editMode?.value ?? false) || _framingHeld) {
+        !(_editMode?.value ?? false) ||
+        _framingHeld) {
       return;
     }
     final focus =
@@ -159,7 +160,9 @@ class _EditorZoomState extends State<EditorZoom>
       _frameSelection();
       _manualScale =
           (_to.scale *
-                  math.exp(-event.scrollDelta.dy.clamp(-1200.0, 1200.0) * .0025))
+                  math.exp(
+                    -event.scrollDelta.dy.clamp(-1200.0, 1200.0) * .0025,
+                  ))
               .clamp(1.0, 3.0);
       _frameSelection();
     });

@@ -1,20 +1,29 @@
 import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+
 import 'editor_zoom.dart';
 
 const editorResizeDirections = [
-  ('nw', Alignment.topLeft), ('ne', Alignment.topRight),
-  ('sw', Alignment.bottomLeft), ('se', Alignment.bottomRight),
-  ('n', Alignment.topCenter), ('s', Alignment.bottomCenter),
-  ('w', Alignment.centerLeft), ('e', Alignment.centerRight),
+  ('nw', Alignment.topLeft),
+  ('ne', Alignment.topRight),
+  ('sw', Alignment.bottomLeft),
+  ('se', Alignment.bottomRight),
+  ('n', Alignment.topCenter),
+  ('s', Alignment.bottomCenter),
+  ('w', Alignment.centerLeft),
+  ('e', Alignment.centerRight),
 ];
 
 /// Screen-sized grip shared by zone and grid slot editors.
 class EditorResizeHandle extends StatefulWidget {
   const EditorResizeHandle({
-    required this.direction, required this.label,
-    required this.onStart, required this.onUpdate, required this.onEnd,
+    required this.direction,
+    required this.label,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
     super.key,
   });
   final Alignment direction;
@@ -34,13 +43,17 @@ class _EditorResizeHandleState extends State<EditorResizeHandle> {
     final colors = Theme.of(context).colorScheme;
     final d = widget.direction;
     return SizedBox(
-      width: 32, height: 32,
+      width: 32,
+      height: 32,
       child: MouseRegion(
         onEnter: (_) => setState(() => _hover = true),
         onExit: (_) => setState(() => _hover = false),
-        cursor: d.x == 0 ? SystemMouseCursors.resizeUpDown
-            : d.y == 0 ? SystemMouseCursors.resizeLeftRight
-            : d.x == d.y ? SystemMouseCursors.resizeUpLeftDownRight
+        cursor: d.x == 0
+            ? SystemMouseCursors.resizeUpDown
+            : d.y == 0
+            ? SystemMouseCursors.resizeLeftRight
+            : d.x == d.y
+            ? SystemMouseCursors.resizeUpLeftDownRight
             : SystemMouseCursors.resizeUpRightDownLeft,
         child: Listener(
           onPointerSignal: (event) =>
@@ -48,15 +61,20 @@ class _EditorResizeHandleState extends State<EditorResizeHandle> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             dragStartBehavior: DragStartBehavior.down,
-            onPanStart: widget.onStart, onPanUpdate: widget.onUpdate,
-            onPanEnd: (_) => widget.onEnd(), onPanCancel: widget.onEnd,
+            onPanStart: widget.onStart,
+            onPanUpdate: widget.onUpdate,
+            onPanEnd: (_) => widget.onEnd(),
+            onPanCancel: widget.onEnd,
             child: Tooltip(
-              message: d.x == 0 ? 'Modifier la hauteur de ${widget.label}'
-                  : d.y == 0 ? 'Modifier la largeur de ${widget.label}'
+              message: d.x == 0
+                  ? 'Modifier la hauteur de ${widget.label}'
+                  : d.y == 0
+                  ? 'Modifier la largeur de ${widget.label}'
                   : 'Redimensionner ${widget.label}',
               child: Center(
                 child: Container(
-                  width: 24, height: 24,
+                  width: 24,
+                  height: 24,
                   decoration: BoxDecoration(
                     color: _hover ? colors.tertiary : colors.surface,
                     border: Border.all(color: colors.tertiary, width: 2),
@@ -64,9 +82,13 @@ class _EditorResizeHandleState extends State<EditorResizeHandle> {
                   ),
                   child: Transform.rotate(
                     angle: d.x != 0 && d.y != 0
-                        ? (d.x == d.y ? math.pi / 4 : -math.pi / 4) : 0,
-                    child: Icon(d.x == 0 ? Icons.height : Icons.swap_horiz,
-                      size: 16, color: _hover ? colors.onTertiary : colors.tertiary),
+                        ? (d.x == d.y ? math.pi / 4 : -math.pi / 4)
+                        : 0,
+                    child: Icon(
+                      d.x == 0 ? Icons.height : Icons.swap_horiz,
+                      size: 16,
+                      color: _hover ? colors.onTertiary : colors.tertiary,
+                    ),
                   ),
                 ),
               ),

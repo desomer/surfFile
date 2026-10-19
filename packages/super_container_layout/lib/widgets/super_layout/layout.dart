@@ -205,7 +205,9 @@ class SuperLayoutState extends State<SuperLayout> {
       _selectedSlot.value = null;
       for (final id in _config.value.placedSlotIds) {
         final box = _slotFocusKeys[id]?.currentContext?.findRenderObject();
-        if (box is RenderBox && box.attached && box.hasSize &&
+        if (box is RenderBox &&
+            box.attached &&
+            box.hasSize &&
             (Offset.zero & box.size).contains(box.globalToLocal(position))) {
           _selectedSlot.value = id;
           break;
@@ -216,10 +218,12 @@ class SuperLayoutState extends State<SuperLayout> {
     }
     for (final zone in _config.value.visibleZones) {
       final box = _zoneFocusKeys[zone]?.currentContext?.findRenderObject();
-      if (box is! RenderBox || !box.attached || !box.hasSize ||
-         box.size.isEmpty ||
-         !(Offset.zero & box.size).contains(box.globalToLocal(position))) {
-       continue;
+      if (box is! RenderBox ||
+          !box.attached ||
+          !box.hasSize ||
+          box.size.isEmpty ||
+          !(Offset.zero & box.size).contains(box.globalToLocal(position))) {
+        continue;
       }
       _selectedSlot.value = null;
       _selected.value = zone;
@@ -365,14 +369,24 @@ class SuperLayoutState extends State<SuperLayout> {
       _config.value.canSwap(zone) &&
       _tagRejection(_config.value.withSwap(zone)) == null;
 
+  void _removeSlot(String id) {
+    final type = _config.value.slotTypeOf(id);
+    removeSlotInstance(
+      context,
+      id: id,
+      type: type,
+      containerKind: EditorConfigKind.layout,
+      unplace: () => _update(_config.value.withoutSlot(id)),
+    );
+  }
+
   void _update(SuperLayoutConfig value, {bool validateTags = true}) {
     if (value == _config.value) return;
     final rejection = validateTags ? _tagRejection(value) : null;
     if (rejection != null) {
       debugPrint(rejection);
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        SnackBar(content: Text(rejection)),
-      );
+      ScaffoldMessenger.maybeOf(context)
+          ?.showSnackBar(SnackBar(content: Text(rejection)));
       return;
     }
     if (value.label != _config.value.label ||
@@ -392,21 +406,28 @@ class SuperLayoutState extends State<SuperLayout> {
     return InstanceSlot(
       slot,
       label: _config.value.slotLabels[id] ?? slot.label,
-      onRename: (label) => _update(label == slot.label
-          ? _config.value.copyWith(slotLabels: {..._config.value.slotLabels}..remove(id))
-          : _config.value.withSlotLabel(id, label)),
+      onRename: (label) => _update(
+        label == slot.label
+            ? _config.value.copyWith(
+                slotLabels: {..._config.value.slotLabels}..remove(id),
+              )
+            : _config.value.withSlotLabel(id, label),
+      ),
       overridden: previousLabel != null,
-      onRestore: () => _update(_config.value.copyWith(
-        slotLabels: {..._config.value.slotLabels}..remove(id)..addAll({
-          id: ?previousLabel,
-        }),
-      )),
+      onRestore: () => _update(
+        _config.value.copyWith(
+          slotLabels: {..._config.value.slotLabels}
+            ..remove(id)
+            ..addAll({id: ?previousLabel}),
+        ),
+      ),
     );
   }
 
   String get _displayLabel {
     final instance = EditorComponentLabel.of(context);
-    return (instance?.overridden ?? false) ? instance!.label
+    return (instance?.overridden ?? false)
+        ? instance!.label
         : _config.value.label ?? widget.label;
   }
 

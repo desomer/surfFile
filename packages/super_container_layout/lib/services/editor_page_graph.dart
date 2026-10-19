@@ -212,6 +212,73 @@ abstract final class EditorPageGraph {
       for (final page in appearance.pageCatalog.pages)
         if (page.id != pageId) ..._roots(page.id),
     ]).configs;
+    final candidates = _exclusive(
+      appearance,
+      registry,
+      {...graph.configs}..removeAll(protected),
+    );
+    final limitations = [
+      for (final instance in graph.instances.values)
+        if (instance.status == _Status.unsupported ||
+            instance.status == _Status.unknown)
+          'Donnees eventuelles du composant « ${instance.label} » '
+              '(instance « ${instance.id} ») conservees : '
+              'propriete inconnue.',
+    ];
+    return EditorPageRemoval(
+      appearance: _write(appearance, removed: candidates),
+      removed: candidates,
+      preserved: {...graph.configs}..removeAll(candidates),
+      limitations: limitations,
+    );
+  }
+
+  /// Deletes, recursively, the configurations owned by the slot instance
+  /// [instanceId] of [type] once it has been unplaced from its container of
+  /// [containerKind] in [appearance].
+  ///
+  /// Nothing is deleted while the instance is still placed somewhere, nor for
+  /// components without [ComponentDuplicationContract]. Descendant
+  /// configurations shared with remaining containers or reachable from a page
+  /// of the catalog are kept.
+  static Appearance removeInstance({
+    required Appearance appearance,
+    required Registry registry,
+    required String instanceId,
+    required String type,
+    required EditorConfigKind containerKind,
+  }) {
+    final placed = _allRefs(appearance).any(
+      (ref) =>
+          _slots(ref.kind, _read(appearance, ref)!).containsKey(instanceId),
+    );
+    if (placed) return appearance;
+    final contract = _resolve(registry, type, containerKind).contract;
+    if (contract == null) return appearance;
+    final graph = _Graph.build(
+      appearance,
+      registry,
+      contract.ownedConfigs(instanceId),
+    );
+    final protected = _Graph.build(appearance, registry, [
+      for (final page in appearance.pageCatalog.pages) ..._roots(page.id),
+    ]).configs;
+    final candidates = _exclusive(
+      appearance,
+      registry,
+      {...graph.configs}..removeAll(protected),
+    );
+    if (candidates.isEmpty) return appearance;
+    return _write(appearance, removed: candidates);
+  }
+
+  /// Keeps only the [candidates] whose owners are placed exclusively inside
+  /// other candidates.
+  static Set<EditorConfigRef> _exclusive(
+    Appearance appearance,
+    Registry registry,
+    Set<EditorConfigRef> candidates,
+  ) {
     final containers = <String, Set<EditorConfigRef>>{};
     final owners = <EditorConfigRef, Set<String>>{};
     for (final ref in _allRefs(appearance)) {
@@ -227,30 +294,18 @@ abstract final class EditorPageGraph {
         }
       }
     }
-    final candidates = {...graph.configs}..removeAll(protected);
     for (var changed = true; changed;) {
       changed = false;
       for (final ref in candidates.toList()) {
         final shared = (owners[ref] ?? const <String>{}).any(
-          (id) => containers[id]!.any((ref) => !candidates.contains(ref)),
+          (id) => (containers[id] ?? const <EditorConfigRef>{}).any(
+            (ref) => !candidates.contains(ref),
+          ),
         );
         if (shared) changed = candidates.remove(ref);
       }
     }
-    final limitations = [
-      for (final instance in graph.instances.values)
-        if (instance.status == _Status.unsupported ||
-            instance.status == _Status.unknown)
-          'Donnees eventuelles du composant « ${instance.label} » '
-              '(instance « ${instance.id} ») conservees : '
-              'propriete inconnue.',
-    ];
-    return EditorPageRemoval(
-      appearance: _write(appearance, removed: candidates),
-      removed: candidates,
-      preserved: {...graph.configs}..removeAll(candidates),
-      limitations: limitations,
-    );
+    return candidates;
   }
 }
 
@@ -425,6 +480,7 @@ Map<String, String> _slots(EditorConfigKind kind, Object value) {
         ...value.slotTypes.keys,
         ...value.slotPreferredSizes.keys,
         ...value.slotSizeConstraints.keys,
+        ...value.slotLabels.keys,
       })
         id: value.slotTypeOf(id),
     };
@@ -484,6 +540,7 @@ Object _copy(Object value, String Function(String) remap) {
       regions: {...value.regions},
       slotPreferredSizes: _remapKeys(value.slotPreferredSizes, remap),
       slotSizeConstraints: _remapKeys(value.slotSizeConstraints, remap),
+      slotLabels: _remapKeys(value.slotLabels, remap),
     );
   }
   if (value is SuperLayoutConfig) {

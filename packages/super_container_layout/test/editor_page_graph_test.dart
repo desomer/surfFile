@@ -628,4 +628,73 @@ void main() {
     expect(removed.textComponents.length, 5);
     expect(removed.layouts.length, 3);
   });
+
+  group('removeInstance', () {
+    Appearance unplaced(Appearance appearance) => appearance.copyWith(
+      nativeComponents: {
+        ...appearance.nativeComponents,
+        'p1': appearance.nativeComponents['p1']!.withoutSlot('lay1'),
+      },
+    );
+
+    test('recursively deletes the subtree of an unplaced container', () {
+      final registry = _registry();
+      final removed = EditorPageGraph.removeInstance(
+        appearance: unplaced(_sample()),
+        registry: registry,
+        instanceId: 'lay1',
+        type: 'factory:NewLayout',
+        containerKind: EditorConfigKind.nativeComponent,
+      );
+      expect(removed.layouts.keys, unorderedEquals(['contA']));
+      expect(removed.styles.keys, unorderedEquals(['background']));
+      expect(
+        removed.textComponents.keys,
+        unorderedEquals(['txt1', 'txtHidden']),
+      );
+      expect(
+        removed.nativeComponents.keys,
+        containsAll(['root', 'p1', 'bar1']),
+      );
+    });
+
+    test('keeps everything while the instance is still placed', () {
+      final appearance = _sample();
+      expect(
+        EditorPageGraph.removeInstance(
+          appearance: appearance,
+          registry: _registry(),
+          instanceId: 'lay1',
+          type: 'factory:NewLayout',
+          containerKind: EditorConfigKind.nativeComponent,
+        ),
+        same(appearance),
+      );
+    });
+
+    test('keeps descendants shared with a remaining container', () {
+      final sample = unplaced(_sample());
+      final appearance = sample.copyWith(
+        layouts: {
+          ...sample.layouts,
+          'contA': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['nested'],
+            },
+            slotTypes: {'nested': 'registry:NewLayout'},
+          ),
+        },
+      );
+      final removed = EditorPageGraph.removeInstance(
+        appearance: appearance,
+        registry: _registry(),
+        instanceId: 'lay1',
+        type: 'factory:NewLayout',
+        containerKind: EditorConfigKind.nativeComponent,
+      );
+      expect(removed.layouts.keys, unorderedEquals(['contA', 'nested']));
+      expect(removed.textComponents.keys, contains('txt3'));
+      expect(removed.textComponents.keys, isNot(contains('txt2')));
+    });
+  });
 }

@@ -171,6 +171,7 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
       },
       slotPreferredSizes: legacy.slotPreferredSizes,
       slotSizeConstraints: legacy.slotSizeConstraints,
+      slotLabels: legacy.slotLabels,
     );
   }
 
@@ -228,6 +229,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
           slotTypes: config.slotTypes,
           slotPreferredSizes: config.slotPreferredSizes,
           slotSizeConstraints: config.slotSizeConstraints,
+          slotLabels: config.slotLabels,
         ),
         existingSlots: siblings,
       ),
@@ -243,6 +245,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
       regions: config.regions,
       slotPreferredSizes: legacy.slotPreferredSizes,
       slotSizeConstraints: legacy.slotSizeConstraints,
+      slotLabels: legacy.slotLabels,
     );
   }
 

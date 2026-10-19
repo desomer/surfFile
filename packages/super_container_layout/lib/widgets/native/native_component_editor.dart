@@ -7,6 +7,9 @@ import '../../models/super_layout_config.dart';
 import '../../models/component_tag_filter.dart';
 import '../../models/registry.dart';
 import '../editing/editor_dialog.dart';
+import '../editing/component_add_wizard.dart';
+import '../editing/editor_history.dart';
+import '../editing/slot_removal.dart';
 import '../editing/editor_overlay.dart';
 import '../editing/slot_size_editor.dart';
 import '../super_layout/layout_selection.dart';
@@ -42,6 +45,29 @@ class NativeWidgetSlot extends SlotImplementation
       child.sizeListenable(context);
   @override
   Widget buildSlot(BuildContext context) => child;
+}
+
+/// [InstanceSlot] keeping the preferred size contract of a native slot.
+class _NativeInstanceSlot extends InstanceSlot
+    implements NativePreferredSizeWidget {
+  _NativeInstanceSlot(
+    super.component, {
+    required super.label,
+    required super.onRename,
+    required super.onRestore,
+    required super.overridden,
+  });
+
+  NativePreferredSizeWidget get _native =>
+      component as NativePreferredSizeWidget;
+  @override
+  Size get preferredSize => _native.preferredSize;
+  @override
+  Size preferredSizeIn(BuildContext context) =>
+      _native.preferredSizeIn(context);
+  @override
+  Listenable? sizeListenable(BuildContext context) =>
+      _native.sizeListenable(context);
 }
 
 typedef NativeSlotAddedCallback = NativeComponentConfig Function(
@@ -423,34 +449,58 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       }
       if (slot.visible) {
         final source = slot;
+        final SlotImplementation resolved;
         if (source.id == id) {
-          result.add(source);
+          resolved = source;
         } else if (source case NativePreferredSizeWidget native) {
-          result.add(
-            NativeWidgetSlot(
-              id: id,
-              label: source.label,
-              tags: source.tags,
-              child: native,
-            ),
+          resolved = NativeWidgetSlot(
+            id: id,
+            label: source.label,
+            tags: source.tags,
+            child: native,
           );
         } else {
-          result.add(
-            BuilderSlot(
-              id: id,
-              label: source.label,
-              sizing: source.sizing,
-              preferredSize: source.preferredSize,
-              showLabel: source.showLabel,
-              labelAlignment: source.labelAlignment,
-              tags: source.tags,
-              builder: (_) => source,
-            ),
+          resolved = BuilderSlot(
+            id: id,
+            label: source.label,
+            sizing: source.sizing,
+            preferredSize: source.preferredSize,
+            showLabel: source.showLabel,
+            labelAlignment: source.labelAlignment,
+            tags: source.tags,
+            builder: (_) => source,
           );
         }
+        result.add(_named(resolved));
       }
     }
     return result;
+  }
+
+  /// Exposes the instance name of [slot] to its content, renamed through
+  /// [NativeComponentConfig.slotLabels].
+  SlotImplementation _named(SlotImplementation slot) {
+    final id = slot.id;
+    final previous = widget.config.slotLabels[id];
+    void rename(String label) => _update(
+      _config.value.withSlotLabel(id, label == slot.label ? null : label),
+    );
+    void restore() => _update(_config.value.withSlotLabel(id, previous));
+    return slot is NativePreferredSizeWidget
+        ? _NativeInstanceSlot(
+            slot,
+            label: previous ?? slot.label,
+            onRename: rename,
+            onRestore: restore,
+            overridden: previous != null,
+          )
+        : InstanceSlot(
+            slot,
+            label: previous ?? slot.label,
+            onRename: rename,
+            onRestore: restore,
+            overridden: previous != null,
+          );
   }
 
   Future<void> add(String region) async {
@@ -478,36 +528,44 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           (type, _) =>
               !definition(region).tagFilter.accepts(_tagsForType(type)),
         );
-    final selected = await showEditorDialog<String>(
+    final selected = await showComponentAddWizard(
       context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: Text('Ajouter dans ${definition(region).label}'),
-        children: [
-          if (candidates.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              child: Text('Aucun slot disponible.'),
-            ),
-          for (final entry in candidates.entries)
-            SimpleDialogOption(
-              key: ValueKey('${widget.keyPrefix}-add-slot-${entry.key}'),
-              onPressed: () => Navigator.of(dialogContext).pop(entry.key),
-              child: Text(entry.value),
-            ),
-          SimpleDialogOption(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Annuler'),
+      title: 'Ajouter dans ${definition(region).label}',
+      keyPrefix: widget.keyPrefix,
+      emptyMessage: 'Aucun slot disponible.',
+      initialTargetId: region,
+      candidates: [
+        for (final entry in candidates.entries)
+          ComponentAddCandidate(
+            id: entry.key,
+            label: entry.value,
+            tags: _tagsForType(entry.key),
+            configurator: _addConfiguratorOf(entry.key),
           ),
-        ],
-      ),
+      ],
+      targets: [
+        for (final option in widget.regions)
+          if (option.id == region || enabled(option.id))
+            ComponentAddTarget(
+              id: option.id,
+              label: option.label,
+              replaces: option.single,
+              siblings: [
+                for (final slot in slotsFor(option.id)) (slot.id, slot.label),
+              ],
+              accepts: option.tagFilter.accepts,
+            ),
+      ],
     );
     if (selected == null || !mounted) return;
-    if (!definition(region).tagFilter.accepts(_tagsForType(selected))) {
+    region = selected.targetId;
+    final type = selected.component.id;
+    if (!definition(region).tagFilter.accepts(_tagsForType(type))) {
       _reportTagRejection(region);
       return;
     }
-    final isProvided = provided.containsKey(selected);
-    var id = selected;
+    final isProvided = provided.containsKey(type);
+    var id = type;
     final used = {
       ...provided.keys,
       ..._config.value.placements.values.expand((ids) => ids),
@@ -520,31 +578,62 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     var next = _config.value.withSlotAdded(
       id,
       region,
-      type: isProvided ? null : selected,
+      type: isProvided ? null : type,
       replace: definition(region).single,
     );
+    if (selected.beforeId case final beforeId?
+        when next.slotsOf(region).contains(beforeId)) {
+      next = next.withSlotMoved(id, region, beforeId: beforeId);
+    }
     final slot =
-        provided[selected] ??
+        provided[type] ??
         registry?.components.entries
-            .where(
-              (entry) => _componentType(entry.key, entry.value) == selected,
-            )
+            .where((entry) => _componentType(entry.key, entry.value) == type)
             .firstOrNull
             ?.value
             .createSlot(id) ??
         BuilderSlot(
           id: id,
-          label: candidates[selected]!,
-          tags: _tagsForType(selected),
+          label: candidates[type]!,
+          tags: _tagsForType(type),
           builder: (_) => registry!.getWidget(
-            selected.substring('factory:'.length),
+            type.substring('factory:'.length),
             XuiBuildCtx(id: id),
           ),
         );
-    next =
-        widget.onSlotAdded?.call(next, region, id, slot, slotsFor(region)) ??
-        next;
-    _update(next);
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    try {
+      selected.applyConfiguration(registry, id);
+      next =
+          widget.onSlotAdded?.call(next, region, id, slot, slotsFor(region)) ??
+          next;
+      if (selected.size case final size?) {
+        next = next.withSlotSizeConstraints(id, size);
+      }
+      if (selected.label case final label?) {
+        next = next.withSlotLabel(id, label);
+      }
+      _update(next);
+    } finally {
+      history?.commitTransaction();
+    }
+  }
+
+  ComponentAddConfigurator<Object>? _addConfiguratorOf(String type) {
+    final registry = widget.registry;
+    if (registry == null) return null;
+    if (type.startsWith('factory:')) {
+      return registry
+          .registry[type.substring('factory:'.length)]
+          ?.addConfigurator;
+    }
+    for (final entry in registry.components.entries) {
+      if (_componentType(entry.key, entry.value) == type) {
+        return entry.value.addConfigurator;
+      }
+    }
+    return null;
   }
 
   Future<void> _editSize(SlotImplementation slot) async {
@@ -622,6 +711,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             slotSizeConstraints: {...current.slotSizeConstraints}
               ..remove(slot.id)
               ..addAll({slot.id: ?initial.slotSizeConstraints[slot.id]}),
+            slotLabels: current.slotLabels,
           ),
         );
       },
@@ -740,7 +830,13 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 )
               : null,
           onRemoveSlot: editing
-              ? (slot) async => _update(_config.value.withoutSlot(slot.id))
+              ? (slot) async => removeSlotInstance(
+                  context,
+                  id: slot.id,
+                  type: _config.value.slotTypeOf(slot.id),
+                  containerKind: EditorConfigKind.nativeComponent,
+                  unplace: () => _update(_config.value.withoutSlot(slot.id)),
+                )
               : null,
           onEditPreferredSize: editing ? _editSize : null,
         );

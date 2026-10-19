@@ -45,9 +45,34 @@ extension _SuperLayoutSlots on SuperLayoutState {
     return id;
   }
 
+  /// Settings of the add wizard for a slot returned by [_availableSlots].
+  ComponentAddConfigurator<Object>? _addConfiguratorOf(
+    BuildContext context,
+    String slotId,
+  ) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry == null) return null;
+    final ids = {for (final slot in widget.slots) slot.id};
+    if (ids.contains(slotId)) return null;
+    for (final entry in registry.registry.entries) {
+      if (_registrySlotId(entry.key, ids) == slotId) {
+        return entry.value.addConfigurator;
+      }
+    }
+    for (final entry in registry.components.entries) {
+      if ((entry.value.slotId ?? _registrySlotId(entry.key, ids)) == slotId) {
+        return entry.value.addConfigurator;
+      }
+    }
+    return null;
+  }
+
   /// Resout uniquement le slot demande, sans construire les autres slots.
   /// Retourne aussi les slots masques ; un identifiant inconnu renvoie null.
-  SlotImplementation? _searchSlot(String id, {SuperLayoutConfig? configuration}) {
+  SlotImplementation? _searchSlot(
+    String id, {
+    SuperLayoutConfig? configuration,
+  }) {
     final type = (configuration ?? config).slotTypeOf(id);
     final registry = SuperApp.maybeOf(context)?.registry;
     final ids = <String>{};
@@ -145,7 +170,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       onEditPreferredSize: canEditSlots ? _editSlotPreferredSize : null,
       onRemoveSlot: canEditSlots
           ? (slot) async {
-              if (mounted) _update(_config.value.withoutSlot(slot.id));
+              if (mounted) _removeSlot(slot.id);
             }
           : null,
       showLabels: editMode,
