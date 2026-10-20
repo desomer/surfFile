@@ -6,7 +6,8 @@ import 'package:super_container_layout/theme/design_system.dart';
 import 'package:super_container_layout/theme/interaction_effect.dart';
 import 'package:super_container_layout/widgets/surfaces/interaction_effect_box.dart';
 import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 void main() {
   test('interaction effect persists, defaults to ripple, rejects unknowns', () {
@@ -240,7 +241,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: SuperContainer(
+            child: EditableSurface(
               child: SizedBox(width: 120, height: 60, child: Text('Box')),
             ),
           ),
@@ -249,7 +250,7 @@ void main() {
     );
     await tester.tap(find.text('Box'), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuItem<SuperContainerState>).first);
+    await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
     await tester.pumpAndSettle();
     final selector = find.byType(DropdownButtonFormField<InteractionEffect>);
     expect(selector, findsOneWidget);
@@ -261,7 +262,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .state<SuperContainerState>(find.byType(SuperContainer))
+          .state<EditableSurfaceState>(find.byType(EditableSurface))
           .style
           .hoverEffect,
       isTrue,
@@ -274,7 +275,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester
-          .state<SuperContainerState>(find.byType(SuperContainer))
+          .state<EditableSurfaceState>(find.byType(EditableSurface))
           .style
           .interactionEffect,
       InteractionEffect.elevation,
@@ -282,7 +283,7 @@ void main() {
     // Le choix de l'effet au clic laisse l'effet au survol intact.
     expect(
       tester
-          .state<SuperContainerState>(find.byType(SuperContainer))
+          .state<EditableSurfaceState>(find.byType(EditableSurface))
           .style
           .hoverEffect,
       isTrue,

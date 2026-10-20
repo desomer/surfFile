@@ -2,19 +2,19 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/json_text_binding.dart';
-import '../../models/super_layout_config.dart';
-import '../../models/super_list_view_config.dart';
-import '../../models/super_text_config.dart';
-import '../../services/json_list_scope.dart';
-import '../../services/json_repository_scope.dart';
-import '../../services/json_repository_store.dart';
-import '../../theme/container_style.dart';
-import '../super_layout/super_layout.dart';
+import '../../../models/json_text_binding.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../models/super_list_view_config.dart';
+import '../../../models/super_text_config.dart';
+import '../../../services/json_list_scope.dart';
+import '../../../services/json_repository_scope.dart';
+import '../../../services/json_repository_store.dart';
+import '../../../theme/container_style.dart';
+import '../../super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
-import 'container_style_editor.dart' show styleColorTile;
-import 'super_list_view_editor.dart';
-import 'super_text_editor.dart';
+import '../styles/container_style_editor.dart' show styleColorTile;
+import '../components/super_list_view_editor.dart';
+import '../components/super_text_editor.dart';
 
 /// Add wizard settings of a `SuperText`, written to `Registry.textController`.
 ComponentAddConfigurator<SuperTextConfig> superTextAddConfigurator(

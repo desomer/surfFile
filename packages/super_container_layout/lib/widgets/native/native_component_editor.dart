@@ -6,15 +6,15 @@ import '../../models/native_component_config.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/component_tag_filter.dart';
 import '../../models/registry.dart';
-import '../editing/editor_dialog.dart';
-import '../editing/component_add_wizard.dart';
-import '../editing/editor_history.dart';
-import '../editing/slot_removal.dart';
-import '../editing/editor_overlay.dart';
-import '../editing/slot_size_editor.dart';
+import '../editing/dialogs/editor_dialog.dart';
+import '../editing/addition/component_add_wizard.dart';
+import '../editing/history/editor_history.dart';
+import '../editing/slots/slot_removal.dart';
+import '../editing/overlay/editor_overlay.dart';
+import '../editing/slots/slot_size_editor.dart';
 import '../super_layout/layout_selection.dart';
 import '../super_layout/slot_implementation.dart';
-import '../surfaces/super_container.dart';
+import '../editing/slots/editor_slot.dart';
 
 /// Lets a native parent track a child's edited preferred height.
 abstract interface class NativePreferredSizeWidget
@@ -32,6 +32,7 @@ class NativeWidgetSlot extends SlotImplementation
     required this.child,
     super.sizing = SlotSizing.intrinsic,
     super.tags,
+    super.menuIcon,
     super.key,
   });
 
@@ -409,6 +410,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 id: id,
                 label: entry.value.label,
                 tags: entry.value.tags,
+                menuIcon: entry.value.menuIcon,
                 visible: false,
                 builder: (_) => const SizedBox.shrink(),
               );
@@ -431,12 +433,14 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     id: id,
                     label: factoryKey,
                     tags: factory.tags,
+                    menuIcon: factory.menuIcon,
                     child: child,
                   )
                 : BuilderSlot(
                     id: id,
                     label: factoryKey,
                     tags: factory.tags,
+                    menuIcon: factory.menuIcon,
                     builder: (_) => child,
                   );
           }
@@ -457,6 +461,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             id: id,
             label: source.label,
             tags: source.tags,
+            menuIcon: source.menuIcon,
             child: native,
           );
         } else {
@@ -468,6 +473,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             showLabel: source.showLabel,
             labelAlignment: source.labelAlignment,
             tags: source.tags,
+            menuIcon: source.menuIcon,
             builder: (_) => source,
           );
         }
@@ -596,6 +602,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           id: id,
           label: candidates[type]!,
           tags: _tagsForType(type),
+          menuIcon:
+              registry?.registry[type.substring('factory:'.length)]?.menuIcon,
           builder: (_) => registry!.getWidget(
             type.substring('factory:'.length),
             XuiBuildCtx(id: id),
@@ -857,10 +865,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               select(id, regionContext);
             }
           },
-          child: SuperContainer(
+          child: EditorSlot(
             label: spec.label,
             menuTitle: widget.label,
-            decorate: false,
             editable: true,
             onEdit: configure,
             onAdd: () => add(id),
@@ -979,10 +986,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 select(null);
               }
             },
-            child: SuperContainer(
+            child: EditorSlot(
               label: widget.settingsTitle,
               menuTitle: widget.label,
-              decorate: false,
               editable: true,
               onEdit: configure,
               onContextMenu: (_) => select(null),

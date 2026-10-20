@@ -7,7 +7,8 @@ import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/services/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 export 'package:super_container_layout/models/registry.dart';
@@ -34,7 +35,7 @@ class _TestAppState extends State<TestApp> {
     super.initState();
     _registry.registerFactory(
       'A',
-      const SuperContainer(
+      const EditableSurface(
         label: "AB",
         child: Center(child: Text('A')),
       ),
@@ -71,7 +72,7 @@ class _TestAppState extends State<TestApp> {
         final superapp = SuperApp.of(context);
         var superLayoutConfig = superapp.getLayoutConfigById('contA');
 
-        return SuperContainer(
+        return EditableSurface(
           slot: AppearanceSlot(
             'Fond',
             name: 'demo-background',

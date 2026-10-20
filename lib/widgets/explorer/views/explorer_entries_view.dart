@@ -7,7 +7,8 @@ import '../../../theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/widgets/surfaces/interaction_effect_box.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/widgets/surfaces/neon_surface.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 import '../../../models/explorer_entry.dart';
 import '../../interaction/drag_select_region.dart';
@@ -233,7 +234,7 @@ class ExplorerEntriesView extends StatelessWidget {
             selected: selected,
             child: _EntryBounds(
               key: ValueKey(entry.entity.path),
-              builder: (cardKey, iconKey) => SuperContainer(
+              builder: (cardKey, iconKey) => EditableSurface(
                 slot: selected
                     ? SurfFileAppearanceSlots.selectedCard
                     : SurfFileAppearanceSlots.card,
@@ -452,7 +453,7 @@ class _EntryRowState extends State<_EntryRow> {
     return Padding(
       key: cardKey,
       padding: EdgeInsets.only(bottom: appearance.spacing / 6),
-      child: SuperContainer(
+      child: EditableSurface(
         slot: selected
             ? SurfFileAppearanceSlots.selectedCard
             : SurfFileAppearanceSlots.card,

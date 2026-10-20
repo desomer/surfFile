@@ -19,12 +19,12 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/json_text_binding.dart';
-import '../../models/super_list_view_config.dart';
-import '../../services/json_list_scope.dart';
-import '../../services/json_repository_scope.dart';
-import '../../services/json_repository_store.dart';
-import 'editor_dialog.dart';
+import '../../../models/json_text_binding.dart';
+import '../../../models/super_list_view_config.dart';
+import '../../../services/json_list_scope.dart';
+import '../../../services/json_repository_scope.dart';
+import '../../../services/json_repository_store.dart';
+import '../dialogs/editor_dialog.dart';
 
 /// Valeur de la liste déroulante pour « Hérité de la liste englobante ».
 const inheritedRepositoryValue = '*';

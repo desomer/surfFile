@@ -8,7 +8,7 @@ import '../../theme/appearance.dart';
 import 'native_component_editor.dart';
 import '../super_layout/slot_implementation.dart';
 import '../super_layout/super_layout.dart';
-import '../surfaces/super_container.dart';
+import '../editing/slots/editor_slot.dart';
 
 /// AppBar regions map to Flutter properties, never to a SuperLayout.
 class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {

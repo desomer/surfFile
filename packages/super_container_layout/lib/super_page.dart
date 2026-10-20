@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'models/scaffold_page_config.dart';
-import 'widgets/editing/editor_zoom.dart';
+import 'widgets/editing/overlay/editor_zoom.dart';
 import 'widgets/native/scaffold_page_layout.dart';
 import 'widgets/super_layout/slot_implementation.dart';
 

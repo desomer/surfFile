@@ -3,9 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
-import '../super_layout/layout_selection.dart';
-import 'editor_zoom.dart';
-import 'editor_overlay.dart';
+import '../../super_layout/layout_selection.dart';
+import '../overlay/editor_zoom.dart';
+import '../overlay/editor_overlay.dart';
 
 /// Opens an editor beside its target when the page supports selection zoom.
 Future<T?> showEditorDialog<T>({

@@ -2,7 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../../../theme/surffile_appearance_slots.dart';
 import 'package:surf_file/theme/explorer_colors.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 import 'package:super_container_layout/super_app.dart';
 
@@ -40,7 +40,7 @@ class ExplorerSidebar extends StatelessWidget {
         currentPath: currentPath,
       ),
       actions: (onLocationSelected: onLocationSelected),
-      child: SuperContainer(
+      child: EditableSurface(
       key: const ValueKey('sidebar-surface'),
       slot: SurfFileAppearanceSlots.sidebar,
       fallbackColor: explorerColor(
@@ -385,7 +385,7 @@ class _LocationItemState extends State<_LocationItem> {
         : style.foreground ?? appearance.style('sidebar').foreground;
     final item = Padding(
       padding: const EdgeInsets.only(bottom: 3),
-      child: SuperContainer(
+      child: EditableSurface(
         slot: selected ? SurfFileAppearanceSlots.selectedFolder : SurfFileAppearanceSlots.folder,
         borderColor: Theme.of(context).colorScheme.primary,
         fallbackColor: selected

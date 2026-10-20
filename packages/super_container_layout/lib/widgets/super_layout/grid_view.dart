@@ -333,7 +333,7 @@ class _GridSurfaceState extends State<_GridSurface> {
                       Positioned.fromRect(
                         key: ValueKey('grid-position-${slot.id}'),
                         rect: rect(grid.items[slot.id]!),
-                        child: ContainerMenuAction(
+                        child: EditorSlotAction(
                           label: 'Position et taille : ${slot.label}',
                           enabled:
                               widget.owner.widget.editable &&
@@ -361,11 +361,11 @@ class _GridSurfaceState extends State<_GridSurface> {
                                               false)
                                       ? (d) => context
                                             .findAncestorStateOfType<
-                                              SuperContainerState
+                                              EditorSlotState
                                             >()
                                             ?.openMenu(
                                               d.globalPosition,
-                                              actions: ContainerMenuAction.of(
+                                              actions: EditorSlotAction.of(
                                                 context,
                                               ),
                                             )

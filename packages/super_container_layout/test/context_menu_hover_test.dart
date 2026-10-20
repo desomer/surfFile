@@ -16,13 +16,13 @@ void main() {
             controller: editing,
             child: Scaffold(
               body: Center(
-                child: SuperContainer(
+                child: EditableSurface(
                   label: 'Parent style',
                   child: SizedBox(
                     width: 500,
                     height: 300,
                     child: Center(
-                      child: SuperContainer(
+                      child: EditableSurface(
                         label: 'Child style',
                         child: const SizedBox(
                           width: 120,
@@ -40,7 +40,7 @@ void main() {
       );
       bool highlighted(String label) {
         final container = find.byWidgetPredicate(
-          (widget) => widget is SuperContainer && widget.label == label,
+          (widget) => widget is EditableSurface && widget.label == label,
         );
         final paints = tester.widgetList<CustomPaint>(
           find.descendant(of: container, matching: find.byType(CustomPaint)),

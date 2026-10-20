@@ -109,7 +109,7 @@ void main() {
     tester,
   ) async {
     final observed = <SuperApp>[];
-    final home = SuperContainer(
+    final home = EditableSurface(
       child: SuperLayout(
         config: const SuperLayoutConfig(
           placements: {
@@ -398,18 +398,18 @@ void main() {
     );
     await tester.pumpAndSettle();
     final containers = find.byWidgetPredicate(
-      (widget) => widget is SuperContainer && widget.label == 'New Container',
+      (widget) => widget is EditableSurface && widget.label == 'New Container',
     );
     expect(containers, findsNWidgets(2));
     const style = ContainerStyle(radius: 23, padding: 12);
-    tester.widgetList<SuperContainer>(containers).first.onStyleChanged!(style);
+    tester.widgetList<EditableSurface>(containers).first.onStyleChanged!(style);
     await tester.pumpAndSettle();
     expect(registry.styleController('container-first').value, style);
     expect(
       registry.styleController('container-second').value,
       const ContainerStyle(),
     );
-    expect(tester.widgetList<SuperContainer>(containers).first.style, style);
+    expect(tester.widgetList<EditableSurface>(containers).first.style, style);
 
     await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
     await tester.pumpAndSettle();
@@ -431,7 +431,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(containers, findsNWidgets(2));
     expect(
-      tester.widgetList<SuperContainer>(containers).first.style.toJson(),
+      tester.widgetList<EditableSurface>(containers).first.style.toJson(),
       style.toJson(),
     );
     expect(

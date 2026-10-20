@@ -38,7 +38,7 @@ void main() {
         GoRoute(
           path: '/',
           builder: (context, state) => SuperPage(
-            child: SuperContainer(
+            child: EditableSurface(
               child: SuperLayout(
                 config: const SuperLayoutConfig(
                   north: false,
@@ -70,7 +70,7 @@ void main() {
       AppearanceScope.controllerOf(tester.element(find.text('Package API'))),
       isA<PersistentAppearanceController>(),
     );
-    expect(find.byType(SuperContainer), findsWidgets);
+    expect(find.byType(EditableSurface), findsWidgets);
     expect(find.byType(SuperLayout), findsOneWidget);
     expect(find.byType(SuperPage), findsOneWidget);
     expect(find.text('Package API'), findsOneWidget);

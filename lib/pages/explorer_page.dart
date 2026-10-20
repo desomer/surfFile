@@ -12,7 +12,7 @@ import 'package:super_container_layout/widgets/super_layout/slot_implementation.
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../theme/surffile_appearance_slots.dart';
 import 'package:surf_file/theme/folder_transition.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 import '../models/explorer_filter.dart';
@@ -105,7 +105,7 @@ class _ExplorerPageState extends State<ExplorerPage> {
 
   @override
   Widget build(BuildContext context) {
-    return SuperContainer(
+    return EditableSurface(
       slot: SurfFileAppearanceSlots.background,
       decorate: false,
       applyPadding: true,

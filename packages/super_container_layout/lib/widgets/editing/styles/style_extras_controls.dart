@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../theme/container_style.dart';
-import '../../theme/style_extras.dart';
+import '../../../theme/container_style.dart';
+import '../../../theme/style_extras.dart';
 import 'container_style_editor.dart' show styleColorTile;
 import 'style_editor_panel.dart';
 

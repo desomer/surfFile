@@ -37,6 +37,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_toolbar',
     RegisteredComponent(
       label: 'Barre d’outils',
+      menuIcon: Icons.build_outlined,
       slotId: 'toolbar',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_toolbar'),
@@ -62,6 +63,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_breadcrumbs',
     RegisteredComponent(
       label: 'Barre du chemin',
+      menuIcon: Icons.route_outlined,
       slotId: 'breadcrumbs',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_breadcrumbs'),
@@ -79,6 +81,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_sidebar',
     RegisteredComponent(
       label: 'Panneau gauche',
+      menuIcon: Icons.view_sidebar_outlined,
       slotId: 'sidebar',
       isAvailable: (context) => _available(context, 'explorer_sidebar'),
       builder: _sidebar,
@@ -88,6 +91,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_main',
     RegisteredComponent(
       label: 'Explorateur',
+      menuIcon: Icons.folder_open,
       slotId: 'main',
       isAvailable: (context) => _available(context, 'explorer_main'),
       builder: _main,
@@ -97,6 +101,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_split_indicator',
     RegisteredComponent(
       label: 'Indicateur du mode divisé',
+      menuIcon: Icons.vertical_split_outlined,
       slotId: 'split-indicator',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_split_indicator'),
@@ -107,6 +112,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_view_mode_bar',
     RegisteredComponent(
       label: 'Barre des modes d’affichage',
+      menuIcon: Icons.view_module_outlined,
       slotId: 'view-mode-bar',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_view_mode_bar'),
@@ -117,6 +123,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_filter_bar',
     RegisteredComponent(
       label: 'Barre de filtres',
+      menuIcon: Icons.filter_alt_outlined,
       slotId: 'filter-bar',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_filter_bar'),
@@ -127,6 +134,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_sort_header',
     RegisteredComponent(
       label: 'En-tête de tri',
+      menuIcon: Icons.sort,
       slotId: 'sort-header',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_sort_header'),
@@ -137,6 +145,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_content',
     RegisteredComponent(
       label: 'Contenu du dossier',
+      menuIcon: Icons.folder_outlined,
       slotId: 'content',
       isAvailable: (context) => _available(context, 'explorer_content'),
       builder: _content,
@@ -146,6 +155,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_sidebar_places',
     RegisteredComponent(
       label: 'Espace et favoris',
+      menuIcon: Icons.star_outline,
       slotId: 'sidebar-places',
       isAvailable: (context) => _available(context, 'explorer_sidebar_places'),
       builder: (context) => ExplorerSidebarPlaces(
@@ -158,6 +168,7 @@ void registerExplorerComponents(Registry registry) {
     'explorer_sidebar_disks',
     RegisteredComponent(
       label: 'Disques',
+      menuIcon: Icons.storage_outlined,
       slotId: 'sidebar-disks',
       sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_sidebar_disks'),

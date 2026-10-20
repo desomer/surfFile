@@ -69,7 +69,7 @@ void main() {
                           XuiBuildCtx(id: 'box'),
                         ),
                       )
-                    : SuperContainer(
+                    : EditableSurface(
                         key: targetKey,
                         id: identified ? 'box' : null,
                         label: 'Box',
@@ -291,11 +291,6 @@ void main() {
       find.byKey(const ValueKey('super-container-box-add-next')),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byKey(const ValueKey('super-container-box-add-label')),
-      'Encart',
-    );
-    await tester.pumpAndSettle();
     while (find
         .descendant(
           of: find.byKey(const ValueKey('super-container-box-add-next')),
@@ -308,6 +303,11 @@ void main() {
       );
       await tester.pumpAndSettle();
     }
+    await tester.enterText(
+      find.byKey(const ValueKey('super-container-box-add-label')),
+      'Encart',
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('super-container-box-add-next')),
     );

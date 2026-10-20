@@ -13,14 +13,14 @@ import 'package:super_container_layout/widgets/native/super_app_bar.dart';
 
 import '../widgets/native/super_bottom_navigation_bar.dart';
 import '../services/editor_page_graph.dart';
-import '../widgets/editing/component_add_configurators.dart';
-import '../widgets/editing/component_add_wizard.dart';
+import '../widgets/editing/addition/component_add_configurators.dart';
+import '../widgets/editing/addition/component_add_wizard.dart';
 
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 
 class XuiBuildCtx {
   XuiBuildCtx({required this.id});
@@ -144,11 +144,15 @@ class ComponentDuplicationContract {
 class ComponentBuilder {
   ComponentBuilder({
     this.tags = const {},
+    this.menuIcon,
     this.duplication,
     this.addConfigurator,
   });
 
   final Set<String> tags;
+
+  /// Optional icon for this component's editing context-menu entry.
+  final IconData? menuIcon;
 
   /// Null when the component cannot be duplicated in a design graph.
   final ComponentDuplicationContract? duplication;
@@ -165,6 +169,7 @@ class RegisteredComponentImpl extends ComponentBuilder {
   RegisteredComponentImpl({
     required this.widget,
     super.tags,
+    super.menuIcon,
     super.duplication,
     super.addConfigurator,
   });
@@ -370,11 +375,13 @@ class Registry {
     String key,
     Widget widget, {
     Set<String> tags = const {},
+    IconData? menuIcon,
     ComponentDuplicationContract? duplication,
     ComponentAddConfigurator<Object>? addConfigurator,
   }) {
     registry[key] = ComponentBuilderDynamic(
       tags: tags,
+      menuIcon: menuIcon,
       duplication: duplication,
       addConfigurator: addConfigurator,
       dynamicBuilder: (xuiCtx) => widget,
@@ -491,6 +498,7 @@ class Registry {
 
   void bootstrap({List<String> availableFontFamilies = const []}) {
     registry['SuperText'] = ComponentBuilderDynamic(
+      menuIcon: Icons.text_fields,
       duplication: ComponentDuplicationContract.superText,
       tags: const {'text', 'input'},
       addConfigurator: superTextAddConfigurator(availableFontFamilies),
@@ -498,17 +506,20 @@ class Registry {
           SuperText(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
     registry['SuperAppBar'] = ComponentBuilderDynamic(
+      menuIcon: Icons.web_asset,
       duplication: ComponentDuplicationContract.superAppBar,
       tags: const {'appBar'},
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
     );
     registry['SuperBottomNavigationBar'] = ComponentBuilderDynamic(
+      menuIcon: Icons.space_dashboard_outlined,
       duplication: ComponentDuplicationContract.superBottomNavigationBar,
       tags: const {'bottomNavigationBar'},
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
     registry['NewContainer'] = ComponentBuilderDynamic(
+      menuIcon: Icons.crop_square,
       duplication: ComponentDuplicationContract.newContainer,
       tags: const {'container'},
       addConfigurator: containerAddConfigurator,
@@ -517,7 +528,7 @@ class Registry {
           final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
           return ValueListenableBuilder<ContainerStyle>(
             valueListenable: style,
-            builder: (context, value, _) => SuperContainer(
+            builder: (context, value, _) => EditableSurface(
               id: xuiCtx.id,
               label: 'New Container',
               style: value,
@@ -528,6 +539,7 @@ class Registry {
       ),
     );
     registry['SuperListView'] = ComponentBuilderDynamic(
+      menuIcon: Icons.view_list,
       duplication: ComponentDuplicationContract.superListView,
       tags: const {'list', 'layout'},
       addConfigurator: listViewAddConfigurator,
@@ -538,6 +550,7 @@ class Registry {
       ),
     );
     registry['NewLayout'] = ComponentBuilderDynamic(
+      menuIcon: Icons.dashboard_outlined,
       duplication: ComponentDuplicationContract.newLayout,
       tags: const {'layout'},
       addConfigurator: layoutAddConfigurator,
@@ -575,6 +588,7 @@ class ComponentBuilderDynamic extends ComponentBuilder {
   ComponentBuilderDynamic({
     required this.dynamicBuilder,
     super.tags,
+    super.menuIcon,
     super.duplication,
     super.addConfigurator,
   });
@@ -592,6 +606,7 @@ class RegisteredComponent {
     this.preferredSize,
     this.isAvailable,
     this.tags = const {},
+    this.menuIcon,
     this.duplication,
     this.addConfigurator,
   });
@@ -605,6 +620,9 @@ class RegisteredComponent {
   final Size? preferredSize;
   final bool Function(BuildContext)? isAvailable;
   final Set<String> tags;
+
+  /// Optional icon for this component's editing context-menu entry.
+  final IconData? menuIcon;
 
   /// Null when the component cannot be duplicated in a design graph.
   final ComponentDuplicationContract? duplication;
@@ -620,5 +638,6 @@ class RegisteredComponent {
     visible: visible,
     builder: builder,
     tags: tags,
+    menuIcon: menuIcon,
   );
 }

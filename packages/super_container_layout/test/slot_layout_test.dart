@@ -4,10 +4,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
-import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 
 Widget _box(String id, {double? width, double? height}) =>
     SizedBox(key: ValueKey('box-$id'), width: width, height: height);

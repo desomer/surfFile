@@ -5,12 +5,12 @@ import 'package:flutter/gestures.dart'
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
-import '../editing/editor_history.dart';
-import '../editing/editor_overlay.dart';
-import '../editing/editor_zoom.dart';
-import '../editing/editor_dialog_header.dart';
-import '../editing/editor_resize_handle.dart';
-import '../surfaces/super_container.dart';
+import '../editing/history/editor_history.dart';
+import '../editing/overlay/editor_overlay.dart';
+import '../editing/overlay/editor_zoom.dart';
+import '../editing/dialogs/editor_dialog_header.dart';
+import '../editing/overlay/editor_resize_handle.dart';
+import '../editing/slots/editor_slot.dart';
 
 /// Shared component label for zone and grid editing.
 class ComponentDragLabel extends StatelessWidget {
@@ -86,6 +86,7 @@ abstract class SlotImplementation extends StatelessWidget {
     this.showLabel = true,
     this.labelAlignment = Alignment.topLeft,
     this.tags = const {},
+    this.menuIcon,
     super.key,
   });
 
@@ -93,6 +94,7 @@ abstract class SlotImplementation extends StatelessWidget {
   final String id;
   final String label;
   final Set<String> tags;
+  final IconData? menuIcon;
   final SlotSizing sizing;
 
   /// Dimensions demandees, limitees par l'espace disponible dans la zone.
@@ -129,6 +131,7 @@ class BuilderSlot extends SlotImplementation {
     super.showLabel,
     super.labelAlignment,
     super.tags,
+    super.menuIcon,
     super.key,
   });
 
@@ -155,6 +158,7 @@ class InstanceSlot extends SlotImplementation {
          showLabel: component.showLabel,
          labelAlignment: component.labelAlignment,
          tags: component.tags,
+         menuIcon: component.menuIcon,
        );
 
   final SlotImplementation component;
@@ -171,6 +175,7 @@ class InstanceSlot extends SlotImplementation {
     onChanged: onRename,
     onRestore: onRestore,
     overridden: overridden,
+    menuIcon: menuIcon,
     child: component,
   );
 }
@@ -272,7 +277,7 @@ class SlotStack extends StatelessWidget {
     int index,
     int count,
     List<String> ids,
-  ) => ContainerMenuAction(
+  ) => EditorSlotAction(
     key: ValueKey('slot-item-${slot.id}'),
     label: 'Taille préférée : ${slot.label}',
     inline: true,
@@ -1088,7 +1093,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     final colors = Theme.of(context).colorScheme;
     final slot = widget.slot;
     final mover = widget.mover;
-    final canEditSize = ContainerMenuAction.of(context).isNotEmpty;
+    final canEditSize = EditorSlotAction.of(context).isNotEmpty;
     return OverlayPortal.overlayChildLayoutBuilder(
       controller: _resizeOverlay,
       overlayChildBuilder: (context, info) {
@@ -1158,10 +1163,10 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         excludeFromSemantics: true,
         onSecondaryTapUp: canEditSize
             ? (details) => context
-                  .findAncestorStateOfType<SuperContainerState>()
+                  .findAncestorStateOfType<EditorSlotState>()
                   ?.openMenu(
                     details.globalPosition,
-                    actions: ContainerMenuAction.of(context),
+                    actions: EditorSlotAction.of(context),
                   )
             : null,
         child: DragTarget<SlotDragData>(

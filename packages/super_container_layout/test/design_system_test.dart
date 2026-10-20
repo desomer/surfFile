@@ -5,7 +5,8 @@ import 'package:super_container_layout/services/appearance_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/design_system.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 void main() {
   test('design system persists, defaults to Material and rejects unknowns', () {
@@ -53,7 +54,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: SuperContainer(
+            child: EditableSurface(
               child: SizedBox(width: 120, height: 60, child: Text('Box')),
             ),
           ),
@@ -62,11 +63,11 @@ void main() {
     );
     await tester.tap(find.text('Box'), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuItem<SuperContainerState>).first);
+    await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
     await tester.pumpAndSettle();
 
-    SuperContainerState state() =>
-        tester.state<SuperContainerState>(find.byType(SuperContainer));
+    EditableSurfaceState state() =>
+        tester.state<EditableSurfaceState>(find.byType(EditableSurface));
     final selector = find.byType(DropdownButtonFormField<DesignSystem>);
     expect(selector, findsOneWidget);
 

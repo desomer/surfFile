@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'editor_history.dart';
-import 'editor_dialog_header.dart';
+import '../history/editor_history.dart';
+import '../dialogs/editor_dialog_header.dart';
 
 /// Groupe de propriétés d'un éditeur de style : une carte au centre et une
 /// entrée dans la liste de gauche.

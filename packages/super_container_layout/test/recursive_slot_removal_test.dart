@@ -45,7 +45,7 @@ void main() {
               child: SizedBox(
                 width: 600,
                 height: 400,
-                child: SuperContainer(key: targetKey, id: 'box', label: 'Box'),
+                child: EditableSurface(key: targetKey, id: 'box', label: 'Box'),
               ),
             ),
           ),

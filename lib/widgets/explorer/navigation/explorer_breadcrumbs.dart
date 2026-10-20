@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../../../theme/surffile_appearance_slots.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import '../../../services/favorites.dart';
 import 'package:surf_file/theme/explorer_colors.dart';
 
@@ -49,7 +49,7 @@ class ExplorerBreadcrumbs extends StatelessWidget {
           _barHeight +
           style.contentPadding.vertical +
           style.outerMargin.vertical,
-      child: SuperContainer(
+      child: EditableSurface(
         key: const ValueKey('path-bar-surface'),
         slot: SurfFileAppearanceSlots.pathBar,
         horizontalBorder: true,

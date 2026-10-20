@@ -3,8 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../super_layout/layout_selection.dart';
-import '../surfaces/super_container.dart';
+import '../../super_layout/layout_selection.dart';
+import '../slots/editor_slot.dart';
 
 /// Animates the page around the selected layout, zone or slot.
 class EditorZoom extends StatefulWidget {

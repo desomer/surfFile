@@ -1,12 +1,12 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
-import 'package:super_container_layout/widgets/editing/style_editor_panel.dart';
+import 'package:super_container_layout/widgets/editing/styles/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/styles/style_editor_panel.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/services/window_transparency.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
-import '../editing/editor_history.dart';
+import '../editing/history/editor_history.dart';
 import '../../theme/appearance.dart';
 
 /// Edits an injected slot without owning an application catalog.

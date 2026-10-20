@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/editing/editor_zoom.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
 void main() {
   const zones = SuperLayoutConfig(
@@ -324,7 +324,7 @@ void main() {
     (tester) async {
       final (_, appearance, history) = await pumpGrid(tester);
       final state = tester.state<SuperLayoutState>(find.byType(SuperLayout));
-      final action = ContainerMenuAction.of(
+      final action = EditorSlotAction.of(
         tester.element(find.byKey(const ValueKey('grid-content-a'))),
       ).first;
       action.onEdit();
@@ -376,7 +376,7 @@ void main() {
       final (_, appearance, history) = await pumpGrid(tester);
       final before = appearance.value;
       final state = tester.state<SuperLayoutState>(find.byType(SuperLayout));
-      final action = ContainerMenuAction.of(
+      final action = EditorSlotAction.of(
         tester.element(find.byKey(const ValueKey('grid-content-a'))),
       ).first;
       action.onEdit();
@@ -417,10 +417,10 @@ void main() {
       final (_, appearance, history) = await pumpGrid(tester);
       final before = appearance.value;
       final container = find.byWidgetPredicate(
-        (widget) => widget is SuperContainer && widget.label == 'Grid layout',
+        (widget) => widget is EditorSlot && widget.label == 'Grid layout',
       );
       Future<void> open() async {
-        tester.state<SuperContainerState>(container).openEditor();
+        tester.state<EditorSlotState>(container).openEditor();
         await tester.pumpAndSettle();
       }
 
@@ -594,7 +594,7 @@ void main() {
     (tester) async {
       final (_, appearance, history) = await pumpGrid(tester);
       final before = appearance.value;
-      ContainerMenuAction.of(
+      EditorSlotAction.of(
         tester.element(find.byKey(const ValueKey('grid-content-a'))),
       ).first.onEdit();
       await tester.pumpAndSettle();

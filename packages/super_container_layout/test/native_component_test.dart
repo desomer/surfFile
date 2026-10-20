@@ -214,7 +214,7 @@ void main() {
         final registry = Registry()
           ..registerFactory(
             'A',
-            const SuperContainer(
+            const EditableSurface(
               label: 'AB',
               child: Center(child: Text('A')),
             ),
@@ -343,7 +343,7 @@ void main() {
         final registry = Registry()
           ..registerFactory(
             'A',
-            const SuperContainer(
+            const EditableSurface(
               label: 'AB',
               child: Center(child: Text('A')),
             ),

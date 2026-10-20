@@ -148,6 +148,15 @@ ExplorerNavigation navigation(String path, List<String> actions) =>
     );
 
 void main() {
+  test('all registered explorer components define a menu icon', () {
+    final registry = createExplorerRegistry();
+    expect(registry.components.length, 11);
+    for (final entry in registry.components.entries) {
+      expect(entry.value.menuIcon, isNotNull, reason: entry.key);
+      expect(entry.value.createSlot('instance').menuIcon, entry.value.menuIcon);
+    }
+  });
+
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
     SharedPreferences.setMockInitialValues({});

@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/super_text_field_config.dart';
-import 'container_style_editor.dart' show styleColorTile;
-import 'style_editor_panel.dart';
+import '../../../models/super_text_field_config.dart';
+import '../styles/container_style_editor.dart' show styleColorTile;
+import '../styles/style_editor_panel.dart';
 
 /// Keeps incomplete numeric/regex drafts out of the live preview.
 class SuperTextFieldSettings extends StatefulWidget {

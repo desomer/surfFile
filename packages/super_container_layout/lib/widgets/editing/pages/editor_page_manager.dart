@@ -3,13 +3,13 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
-import '../../models/editor_page_config.dart';
-import '../../models/registry.dart';
-import '../../services/editor_page_graph.dart';
-import '../../services/editor_page_router.dart';
-import '../../theme/appearance.dart';
-import 'editor_dialog_header.dart';
-import 'editor_history.dart';
+import '../../../models/editor_page_config.dart';
+import '../../../models/registry.dart';
+import '../../../services/editor_page_graph.dart';
+import '../../../services/editor_page_router.dart';
+import '../../../theme/appearance.dart';
+import '../dialogs/editor_dialog_header.dart';
+import '../history/editor_history.dart';
 
 Future<void> showEditorPageManager({
   required BuildContext context,

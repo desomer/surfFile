@@ -20,7 +20,7 @@ void main() {
         label: id,
         preferredSize: preferredSize,
         builder: (_) => styled
-            ? SuperContainer(
+            ? EditableSurface(
                 label: 'Style du slot',
                 child: SizedBox.expand(key: ValueKey('content-$id')),
               )

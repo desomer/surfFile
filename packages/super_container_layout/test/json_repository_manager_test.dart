@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/services/json_repository_store.dart';
-import 'package:super_container_layout/widgets/editing/json_repository_manager.dart';
+import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 
 void main() {
   late Directory directory;

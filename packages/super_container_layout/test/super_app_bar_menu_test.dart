@@ -59,7 +59,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final container = find.byWidgetPredicate(
-      (widget) => widget is SuperContainer && widget.label == 'New Container',
+      (widget) => widget is EditableSurface && widget.label == 'New Container',
     );
     StyleEditScope.controllerOf(tester.element(container))!.value = true;
     await tester.pumpAndSettle();

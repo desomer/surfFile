@@ -72,11 +72,11 @@ import '../../services/json_repository_binding.dart';
 import '../../services/json_repository_scope.dart';
 import '../../services/json_repository_store.dart';
 import '../../super_app.dart';
-import '../editing/editor_history.dart';
-import '../editing/super_list_view_editor.dart';
+import '../editing/history/editor_history.dart';
+import '../editing/components/super_list_view_editor.dart';
 import '../super_layout/slot_implementation.dart';
 import '../super_layout/super_layout.dart';
-import '../surfaces/super_container.dart';
+import '../editing/slots/editor_slot.dart';
 
 /// Répète une disposition [SuperLayout] pour chaque élément d'un tableau de
 /// repository.
@@ -546,9 +546,8 @@ class _SuperListViewState extends State<SuperListView> {
             _error == null;
         final vertical = config.axis == Axis.vertical;
 
-        return SuperContainer(
+        return EditorSlot(
           label: 'Liste',
-          decorate: false,
           onEdit: () => _edit(configuration),
           child: LayoutBuilder(
             builder: (context, constraints) {

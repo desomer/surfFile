@@ -118,9 +118,9 @@ void main() {
     final layout = tester.state<SuperLayoutState>(find.byType(SuperLayout));
     expect(layout.searchSlot('factory-instance')!.tags, {'appBar'});
     expect(layout.searchSlot('registered-instance')!.tags, {'appBar', 'text'});
-    final surface = tester.widget<SuperContainer>(find.descendant(
+    final surface = tester.widget<EditorSlot>(find.descendant(
       of: find.byType(SuperLayout),
-      matching: find.byType(SuperContainer),
+      matching: find.byType(EditorSlot),
     ).first);
     unawaited(surface.onAdd!());
     await tester.pumpAndSettle();
@@ -474,7 +474,7 @@ void main() {
           true;
       await tester.pumpAndSettle();
       final region = find.byWidgetPredicate(
-        (widget) => widget is SuperContainer && widget.label == entry.value,
+        (widget) => widget is EditorSlot && widget.label == entry.value,
       );
       await tester.tapAt(
         tester.getTopLeft(region) + const Offset(24, 24),

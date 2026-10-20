@@ -1,9 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/editing/editor_dialog.dart';
-import 'package:super_container_layout/widgets/editing/editor_overlay.dart';
-import 'package:super_container_layout/widgets/editing/editor_zoom.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/dialogs/editor_dialog.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_overlay.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 void main() {
   for (final zoomed in [false, true]) {
@@ -330,7 +331,7 @@ void main() {
       addTearDown(tester.view.reset);
       final mode = ValueNotifier(true);
       addTearDown(mode.dispose);
-      final key = GlobalKey<SuperContainerState>();
+      final key = GlobalKey<EditableSurfaceState>();
       await tester.pumpWidget(
         MaterialApp(
           home: StyleEditScope(
@@ -342,7 +343,7 @@ void main() {
                   child: SizedBox(
                     width: 900,
                     height: 600,
-                    child: SuperContainer(
+                    child: EditableSurface(
                       key: key,
                       child: const Text('Style target'),
                     ),

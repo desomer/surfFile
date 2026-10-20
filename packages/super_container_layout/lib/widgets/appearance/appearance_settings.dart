@@ -6,9 +6,9 @@ import '../../theme/appearance.dart';
 import '../../theme/appearance_slot.dart';
 import '../../theme/default_appearance.dart';
 import 'appearance_style_section.dart';
-import '../editing/editor_history.dart';
-import '../editing/editor_dialog.dart';
-import '../editing/editor_dialog_header.dart';
+import '../editing/history/editor_history.dart';
+import '../editing/dialogs/editor_dialog.dart';
+import '../editing/dialogs/editor_dialog_header.dart';
 
 /// Captured by the caller before opening a route, then applied to every dialog.
 typedef AppearanceDialogWrapper = Widget Function(Widget child);

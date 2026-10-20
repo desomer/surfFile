@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../services/json_repository_store.dart';
-import '../../services/json_repository_scope.dart';
-import 'editor_dialog_header.dart';
+import '../../../services/json_repository_store.dart';
+import '../../../services/json_repository_scope.dart';
+import '../dialogs/editor_dialog_header.dart';
 
 class JsonRepositoryManager extends StatefulWidget {
   const JsonRepositoryManager({this.store, super.key});

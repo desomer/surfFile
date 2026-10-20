@@ -276,7 +276,7 @@ apercu. Le fond respecte aussi le curseur d'opacite global. Les cartes en liste
 et en grille partagent le meme degrade ; la selection garde sa surbrillance.
 Les nouveaux styles sont sauvegardes et les anciens reglages restent compatibles.
 Le composant reutilisable `ContainerStyleEditor` dans
-`packages/super_container_layout/lib/widgets/editing/container_style_editor.dart`
+`packages/super_container_layout/lib/widgets/editing/styles/container_style_editor.dart`
 recoit un `ContainerFill` et un
 callback `onChanged`. Ses callbacks optionnels exposent aussi l'arrondi, la
 bordure, l'elevation et l'opacite de l'ombre ; `solidColor` et
@@ -400,7 +400,7 @@ Le test non destructif du vrai Shell Windows se lance avec
 **SuperLayout** (`packages/super_container_layout/lib/widgets/super_layout/super_layout.dart`)
 est une disposition en grille
 3x3 (Nord-Ouest, Nord, Nord-Est, Ouest, Centre, Est, Sud-Ouest, Sud, Sud-Est)
-qui s'edite par clic droit, comme un `SuperContainer`. L'editeur affiche un
+qui s'edite par clic droit via `EditorSlot`, comme une `EditableSurface`. L'editeur affiche un
 apercu et permet de choisir si le Nord, le Sud, l'Est et l'Ouest existent (avec
 leur taille) et, pour chaque coin, de le garder en case propre ou de le fusionner
 avec l'un de ses deux voisins, jamais les deux (ex. Sud-Ouest avec Ouest ou avec
@@ -409,6 +409,8 @@ Sud). Un coin n'existe que si ses deux voisins existent. La structure remonte pa
 
 `SuperContainer`, `SuperLayout`, leurs éditeurs et leurs modèles sont regroupés
 dans le package Flutter autonome [`super_container_layout`](packages/super_container_layout).
+`SuperContainer` est limité au rendu ; `EditorSlot` gère les interactions
+d'édition sans décoration et `EditableSurface` compose les deux.
 Le point d'entrée est `package:super_container_layout/super_container_layout.dart`.
 Le gestionnaire Windows du canal `super_container_layout/window_transparency` est fourni par
 `packages/super_container_layout/windows/window_transparency.cpp`. Les runners

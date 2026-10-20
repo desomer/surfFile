@@ -1,18 +1,18 @@
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'editor_history.dart';
+import '../history/editor_history.dart';
 
-import '../../theme/container_fill.dart';
-import '../../theme/design_system.dart';
-import '../../theme/interaction_effect.dart';
-import '../../theme/neon_style.dart';
-import '../../theme/appearance.dart';
-import '../surfaces/neon_surface.dart';
-import '../../theme/container_style.dart';
+import '../../../theme/container_fill.dart';
+import '../../../theme/design_system.dart';
+import '../../../theme/interaction_effect.dart';
+import '../../../theme/neon_style.dart';
+import '../../../theme/appearance.dart';
+import '../../surfaces/neon_surface.dart';
+import '../../../theme/container_style.dart';
 import 'style_editor_panel.dart';
 import 'style_extras_controls.dart';
-import '../surfaces/styled_surface.dart';
+import '../../surfaces/styled_surface.dart';
 
 class ContainerStyleEditor extends StatelessWidget {
   const ContainerStyleEditor({

@@ -9,8 +9,7 @@ extension _SuperLayoutView on SuperLayoutState {
         _LayoutEditSelection.select(this, event);
       }
     },
-    child: SuperContainer(
-      decorate: false,
+    child: EditorSlot(
       label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,

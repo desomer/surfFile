@@ -24,7 +24,7 @@ class SlotAddition {
 }
 
 /// Disposition en neuf zones (Nord, Sud, Est, Ouest, coins et Centre) dont la
-/// structure s'édite par clic droit, comme un [SuperContainer].
+/// structure s'édite par clic droit via un [EditorSlot].
 ///
 /// Les zones sont les récepteurs de [slots] : chaque [SlotImplementation] est
 /// rangé dans une zone par [SuperLayoutConfig.placements] (ids ordonnés, empilés

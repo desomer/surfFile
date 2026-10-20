@@ -105,6 +105,7 @@ class EditorComponentLabel extends InheritedWidget {
     required this.onChanged,
     required this.onRestore,
     this.overridden = false,
+    this.menuIcon,
     required super.child,
     super.key,
   });
@@ -113,6 +114,7 @@ class EditorComponentLabel extends InheritedWidget {
   final ValueChanged<String> onChanged;
   final VoidCallback onRestore;
   final bool overridden;
+  final IconData? menuIcon;
 
   static EditorComponentLabel? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<EditorComponentLabel>();
@@ -121,5 +123,6 @@ class EditorComponentLabel extends InheritedWidget {
   bool updateShouldNotify(EditorComponentLabel oldWidget) =>
       label != oldWidget.label ||
       overridden != oldWidget.overridden ||
+      menuIcon != oldWidget.menuIcon ||
       onChanged != oldWidget.onChanged;
 }

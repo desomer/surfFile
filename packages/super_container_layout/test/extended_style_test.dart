@@ -5,7 +5,8 @@ import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/style_extras.dart';
 import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/surfaces/surface_painters.dart';
 
 void main() {
@@ -324,7 +325,7 @@ void main() {
           home: Scaffold(
             body: Align(
               alignment: Alignment.topLeft,
-              child: SuperContainer(
+              child: EditableSurface(
                 style: ContainerStyle(
                   paddingInsets: Quad(4, 8, 12, 16),
                   marginInsets: Quad(1, 2, 3, 4),
@@ -365,7 +366,7 @@ void main() {
         const MaterialApp(
           home: Scaffold(
             body: Center(
-              child: SuperContainer(
+              child: EditableSurface(
                 child: SizedBox(width: 120, height: 60, child: Text('Box')),
               ),
             ),
@@ -374,12 +375,12 @@ void main() {
       );
       await tester.tap(find.text('Box'), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.byType(PopupMenuItem<SuperContainerState>).first);
+      await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
       await tester.pumpAndSettle();
     }
 
     ContainerStyle current(WidgetTester tester) =>
-        tester.state<SuperContainerState>(find.byType(SuperContainer)).style;
+        tester.state<EditableSurfaceState>(find.byType(EditableSurface)).style;
 
     Future<void> toggle(WidgetTester tester, String key) async {
       final finder = find.byKey(ValueKey('$key-Super container'));

@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../../theme/surffile_appearance_slots.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 
 import '../../services/disk_space.dart';
 import 'disk_gauge.dart';
@@ -137,7 +137,7 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
         colors.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.only(top: 20),
-      child: SuperContainer(
+      child: EditableSurface(
         key: const ValueKey('disk-panel-surface'),
         slot: SurfFileAppearanceSlots.diskPanel,
         fallbackColor: Colors.transparent,
@@ -275,7 +275,7 @@ class _DiskTile extends StatelessWidget {
       child: Semantics(
         label:
             '${disk.path}${selected ? ', sélectionné' : ''}, ${percentage == null ? description : '$percentage % occupé, $description'}',
-        child: SuperContainer(
+        child: EditableSurface(
           key: ValueKey('disk-tile-${disk.path}'),
           slot: selected
               ? SurfFileAppearanceSlots.selectedDiskTile
@@ -295,7 +295,7 @@ class _DiskTile extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
                   child: Column(
                     children: [
-                      SuperContainer(
+                      EditableSurface(
                         key: ValueKey('disk-gauge-${disk.path}'),
                         decorate: false,
                         label: 'Style de la jauge des disques',

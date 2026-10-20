@@ -34,6 +34,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     id: id,
     label: key,
     tags: component.tags,
+    menuIcon: component.menuIcon,
     builder: (_) => component.getWidget(XuiBuildCtx(id: id)),
   );
 

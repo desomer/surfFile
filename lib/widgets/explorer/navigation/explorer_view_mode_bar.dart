@@ -3,7 +3,7 @@ import 'package:surf_file/theme/surffile_appearance.dart';
 import '../../../theme/surffile_appearance_slots.dart';
 import 'package:surf_file/theme/folder_transition.dart';
 import 'package:surf_file/theme/explorer_colors.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 
 import '../../../models/selection_mode.dart';
 import 'explorer_action_bar.dart';
@@ -73,7 +73,7 @@ class ExplorerViewModeBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final appearance = AppearanceScope.of(context);
     final style = appearance.style('explorerViewModeBar');
-    return SuperContainer(
+    return EditableSurface(
       key: const ValueKey('explorer-view-mode-bar-surface'),
       slot: SurfFileAppearanceSlots.explorerViewModeBar,
       fallbackColor: explorerColor(

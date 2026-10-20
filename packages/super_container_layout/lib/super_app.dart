@@ -16,12 +16,12 @@ import 'services/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/container_style.dart';
 import 'theme/neon_style.dart';
-import 'widgets/editing/editor_history.dart';
-import 'widgets/editing/editor_page_manager.dart';
+import 'widgets/editing/history/editor_history.dart';
+import 'widgets/editing/pages/editor_page_manager.dart';
 import 'widgets/super_layout/layout_reset_shortcut.dart';
 import 'widgets/surfaces/neon_surface.dart';
-import 'widgets/editing/style_edit_banner.dart';
-import 'widgets/surfaces/super_container.dart';
+import 'widgets/editing/overlay/style_edit_banner.dart';
+import 'widgets/editing/slots/editor_slot.dart';
 
 /// Application shell managing appearance persistence, layout reset, window
 /// transparency and GoRouter navigation.

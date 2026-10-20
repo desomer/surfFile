@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/disk_gauge_style.dart';
-import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/styles/container_style_editor.dart';
 import 'disk_gauge.dart';
 
 /// Ouvre l'éditeur des jauges du panneau des disques. Les changements sont

@@ -99,7 +99,7 @@ En mode édition, clic droit puis **Texte** ouvre la configuration :
 affichage/saisie, texte initial, label, placeholder, activé, lecture seule,
 mot de passe, lignes min/max et typographie (famille, taille, graisse, italique,
 couleur AARRGGBB, alignement, interligne et espacement des lettres).
-L'éditeur réutilise le panneau du SuperContainer : navigation par sections,
+L'éditeur réutilise le panneau de style partagé : navigation par sections,
 cartes de réglages, mode dense et aperçu local du brouillon.
 Les éditeurs ouverts via `showEditorDialog` masquent temporairement les
 overlays d'édition de la page (labels des zones et slots, poignées et contours
@@ -294,6 +294,36 @@ Les factories dynamiques acceptent aussi `tags` sur `ComponentBuilderDynamic`.
 `Registry.bootstrap()` attribue `appBar` à `SuperAppBar`,
 `bottomNavigationBar` à `SuperBottomNavigationBar`, `container` à
 `NewContainer` et `layout` à `NewLayout`.
+
+### Icone dans le menu d'edition
+
+Le parametre optionnel `menuIcon` (`IconData`) de `RegisteredComponent`,
+`Registry.registerFactory` et `ComponentBuilderDynamic` definit l'icone de
+l'entree du composant dans le menu contextuel d'edition :
+
+```dart
+registry.registerComponent(
+  'page-title',
+  RegisteredComponent(
+    label: 'Titre',
+    menuIcon: Icons.title,
+    builder: (_) => const SuperText(id: 'page-title'),
+  ),
+);
+registry.registerFactory(
+  'custom-navigation',
+  const MyNavigation(),
+  menuIcon: Icons.navigation_outlined,
+);
+```
+
+Les slots fournis directement acceptent aussi `menuIcon` sur `BuilderSlot`.
+L'icone est propre au composant et n'est pas transmise aux cibles d'edition
+imbriquees. Sans `menuIcon`, le menu conserve ses icones par defaut
+(`Icons.brush_outlined` pour la premiere entree, `Icons.subdirectory_arrow_left`
+pour les ancetres). Cela s'applique aux dispositions et aux zones natives.
+`Registry.bootstrap()` renseigne une icone pour chacun des composants standards :
+texte, barre d'application, navigation inferieure, conteneur, liste et disposition.
 
 Un `ComponentTagFilter` définit les catégories acceptées par une zone :
 
@@ -770,8 +800,47 @@ import 'package:super_container_layout/super_container_layout.dart';
 ```
 
 `SuperLayout` organise des `SlotImplementation` dans les neuf zones de
-`SuperLayoutConfig`. `SuperContainer` fournit l’édition contextuelle des styles
-et peut partager les styles via `AppearanceScope` et `AppearanceSlot`.
+`SuperLayoutConfig`. `SuperContainer` assure uniquement le rendu des styles,
+éventuellement partagés via `AppearanceScope` et `AppearanceSlot`.
+`EditorSlot` porte les interactions d'édition et `EditableSurface` compose les
+deux pour proposer une surface décorée et éditable.
+
+### Décoration et édition indépendantes
+
+```dart
+// Rendu seul : aucun menu ni enfant catalogue, même en mode édition.
+const SuperContainer(
+  style: ContainerStyle(radius: 12),
+  child: Text('Décoration seule'),
+);
+
+// Édition seule : aucune surface décorative n'est ajoutée.
+EditorSlot(
+  label: 'Mon composant',
+  onEdit: openComponentSettings,
+  child: const Text('Contenu'),
+);
+
+// Composition : style local ou AppearanceSlot, aperçu et annulation.
+EditableSurface(
+  label: 'Mon panneau',
+  slot: customSlot,
+  child: const Text('Surface éditable'),
+);
+```
+
+`StyleEditScope`, `EditorSlot` et les contrats `EditorSlotAction` et
+`EditorContextMenuEntry` se trouvent dans `widgets/editing/slots/`. Le menu remonte
+la chaîne des `EditorSlot` éditables et conserve les actions de taille et de
+suppression sur la cible concernée. La sélection métier des zones reste dans
+les layouts et l'éditeur natif ; le survol et les commandes sont communs.
+
+Migration : remplacer les anciens `SuperContainer` éditables par
+`EditableSurface`, et les enveloppes `decorate: false` servant uniquement au
+menu par `EditorSlot`. Les accès programmatiques au menu passent désormais par
+`EditorSlotState`, et l'édition du style par `EditableSurfaceState`.
+Les imports directs d'édition ne proviennent plus de
+`widgets/surfaces/super_container.dart`.
 
 Les widgets sont classes par role sous `lib/widgets/` :
 
@@ -779,6 +848,24 @@ Les widgets sont classes par role sous `lib/widgets/` :
 - `editing/` : editeurs de styles, controles, banniere et historique d'edition.
 - `surfaces/` : conteneurs, rendu des surfaces, effets d'interaction et painters.
 - `super_layout/` : disposition, slots, selection, axes et raccourci de reinitialisation.
+
+Le dossier `editing/` est organise par responsabilite :
+
+| Sous-dossier | Contenu |
+| --- | --- |
+| `addition/` | Wizard d'ajout et configurateurs des composants |
+| `components/` | Editeurs Texte, Liste et reglages du champ texte |
+| `dialogs/` | Ouverture des dialogues et en-tete partage |
+| `history/` | Historique, transactions et controles d'annulation |
+| `overlay/` | Overlays, zoom, poignees et banniere du mode edition |
+| `pages/` | Gestionnaire des pages |
+| `repositories/` | Gestionnaire des repositories JSON |
+| `slots/` | Cibles d'edition, menu, surfaces editables, enfants, taille et suppression |
+| `styles/` | Dialogue et panneau de style, controles et editeur de decoration |
+
+Les imports directs utilisent ces sous-dossiers. Les exports du point d'entree
+`super_container_layout.dart` restent disponibles sans changement d'import
+pour les utilisateurs de cette facade.
 
 Le point d'entree public `super_container_layout.dart` reste inchange.
 Les imports directs de widgets utilisent desormais ces sous-dossiers.
@@ -908,7 +995,7 @@ Annuler le dialogue restaure le nom initial. Les menus, labels et chemins de
 selection utilisent le nom personnalise. Les titres fonctionnels des dialogues
 d'apparence, d'ajout et de transfert restent non editables ; l'editeur d'un
 style partage ne renomme pas les instances.
-Hors d'un slot de layout, `SuperContainer.onLabelChanged` permet au proprietaire
+Hors d'un slot de layout, `EditableSurface.onLabelChanged` permet au proprietaire
 de sauvegarder le nom puis de le fournir via `label` ; sans callback, le nom
 reste local a l'instance. `ContainerStyleEditor.onLabelChanged` permet aussi
 d'integrer l'en-tete editable dans un editeur personnalise.
@@ -1113,7 +1200,7 @@ final customSlot = AppearanceSlot(
   write: (appearance, style) => appearance.withStyle('custom-surface', style),
   reset: (appearance) => appearance.withStyle('custom-surface', null),
 );
-SuperContainer(slot: customSlot, child: const Text('Mon panneau'));
+EditableSurface(slot: customSlot, child: const Text('Mon panneau'));
 ```
 
 Cet exemple cree une entree de style persistante sous l'identifiant stable
@@ -1185,7 +1272,7 @@ SuperApp(registry: registry, home: const SuperLayout());
 Le registre accepte aussi des fabriques avec `registerComponent` :
 
 `Registry()..bootstrap()` enregistre les fabriques `New Layout` et
-`New Container`. Cette derniere cree un `SuperContainer` vide et editable,
+`New Container`. Cette derniere cree une `EditableSurface` vide et editable,
 dont le style est sauvegarde sous l'ID persistant du placement. Plusieurs
 instances conservent ainsi des styles independants.
 
@@ -1203,21 +1290,21 @@ registry.registerComponent(
 `component.createSlot(id, visible: condition)` permet de masquer un slot selon
 l'état de l'application ; `visible` vaut `true` par défaut.
 
-### Ajouter un enfant dans un SuperContainer
+### Ajouter un enfant dans une EditableSurface
 
 En mode édition, un clic droit sur **New Container** affiche un bouton **+**
 sur sa ligne dans le menu contextuel. Il ouvre le catalogue des composants
 (fabriques et composants enregistrés disponibles), comme dans les zones natives.
 Le conteneur possède un seul enfant : s'il est déjà rempli, une confirmation
 **Remplacer** est demandée avant le choix. Annuler l'une des deux fenêtres
-conserve le contenu actuel. Le bouton de suppression sur la même ligne vide
-le conteneur.
+conserve le contenu actuel. La suppression de l'enfant apparaît sur sa propre
+ligne de menu ; elle reste sur le parent si l'enfant n'a pas de cible d'édition.
 
 Pour activer ce comportement sur un conteneur déclaré dans le code, fournissez
 un `id` stable et unique sous `SuperApp` :
 
 ```dart
-const SuperContainer(
+const EditableSurface(
   id: 'customer-panel',
   label: 'Panneau client',
   // child est facultatif ; s'il est fourni, il devient le contenu initial.

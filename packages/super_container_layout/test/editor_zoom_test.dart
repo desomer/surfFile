@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/editing/editor_zoom.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

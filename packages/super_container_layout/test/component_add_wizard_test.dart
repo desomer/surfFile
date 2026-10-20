@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/widgets/editing/component_add_wizard.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/addition/component_add_wizard.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
@@ -35,8 +35,9 @@ const _targets = [
 
 void main() {
   Future<ValueNotifier<ComponentAddRequest?>> pumpLauncher(
-    WidgetTester tester,
-  ) async {
+    WidgetTester tester, {
+    bool editableLabel = true,
+  }) async {
     final result = ValueNotifier<ComponentAddRequest?>(null);
     addTearDown(result.dispose);
     await tester.pumpWidget(
@@ -52,6 +53,7 @@ void main() {
                   candidates: _candidates,
                   targets: _targets,
                   initialTargetId: 'a',
+                  editableLabel: editableLabel,
                 );
               },
               child: const Text('Ouvrir'),
@@ -76,12 +78,18 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('wizard walks through choice, settings and summary', (
+  testWidgets('wizard separates settings, placement and editable summary', (
     tester,
   ) async {
     final result = await pumpLauncher(tester);
     expect(find.byKey(const ValueKey('test-add-stepper')), findsOneWidget);
-    for (final stage in ['component', 'settings', 'binding', 'summary']) {
+    for (final stage in [
+      'component',
+      'settings',
+      'placement',
+      'binding',
+      'summary',
+    ]) {
       expect(find.byKey(ValueKey('test-add-step-$stage')), findsOneWidget);
     }
     expect(nextButton(tester).onPressed, isNull);
@@ -103,17 +111,25 @@ void main() {
     expect(
       tester
           .widget<Stepper>(find.byKey(const ValueKey('test-add-stepper')))
-          .steps[2]
+          .steps[3]
           .state,
       StepState.disabled,
     );
     await tapKey(tester, 'test-add-next');
 
-    expect(find.byKey(const ValueKey('test-add-label')), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const ValueKey('test-add-label')),
-      'Titre',
-    );
+    expect(find.byKey(const ValueKey('test-add-label')), findsNothing);
+    expect(find.byKey(const ValueKey('test-add-target')), findsNothing);
+    final config = find.byKey(const ValueKey('test-config-text'));
+    await tester.enterText(config, ' ');
+    await tester.pumpAndSettle();
+    expect(find.text('Texte requis.'), findsOneWidget);
+    expect(nextButton(tester).onPressed, isNull);
+    await tester.enterText(config, 'Salut');
+    await tester.pumpAndSettle();
+    await tapKey(tester, 'test-add-next');
+
+    expect(find.byKey(const ValueKey('test-add-placement')), findsOneWidget);
+    expect(find.byKey(const ValueKey('test-config-text')), findsNothing);
     await tapKey(tester, 'test-add-position-a');
     await tester.tap(find.text('Avant Existant').last);
     await tester.pumpAndSettle();
@@ -128,20 +144,16 @@ void main() {
     await tester.enterText(width, '120');
     await tester.pumpAndSettle();
 
-    final config = find.byKey(const ValueKey('test-config-text'));
-    await tester.ensureVisible(config);
-    await tester.enterText(config, ' ');
-    await tester.pumpAndSettle();
-    expect(find.text('Texte requis.'), findsOneWidget);
-    expect(nextButton(tester).onPressed, isNull);
-    await tester.enterText(config, 'Salut');
-    await tester.pumpAndSettle();
     await tapKey(tester, 'test-add-next');
 
     final summary = find.byKey(const ValueKey('test-add-summary'));
     expect(summary, findsOneWidget);
-    for (final text in [
+    await tester.enterText(
+      find.byKey(const ValueKey('test-add-label')),
       'Titre',
+    );
+    await tester.pumpAndSettle();
+    for (final text in [
       'Zone A',
       'Avant Existant',
       'Largeur préférée 120 px',
@@ -155,8 +167,20 @@ void main() {
     expect(find.text('Appliquer'), findsOneWidget);
 
     await tapKey(tester, 'test-add-back');
-    expect(find.byKey(const ValueKey('test-add-label')), findsOneWidget);
+    expect(find.byKey(const ValueKey('test-add-placement')), findsOneWidget);
+    expect(find.byKey(const ValueKey('test-add-label')), findsNothing);
     await tapKey(tester, 'test-add-next');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('test-add-label')))
+          .controller!
+          .text,
+      'Titre',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('test-add-label')),
+      'Titre final',
+    );
     await tapKey(tester, 'test-add-next');
 
     final request = result.value!;
@@ -164,7 +188,7 @@ void main() {
     expect(request.component.id, 'text');
     expect(request.targetId, 'a');
     expect(request.beforeId, 'x');
-    expect(request.label, 'Titre');
+    expect(request.label, 'Titre final');
     expect(request.size!.preferredWidth!.value, 120);
     expect(request.size!.preferredWidth!.unit, SlotSizeUnit.pixels);
     expect(request.draft, 'Salut');
@@ -176,6 +200,7 @@ void main() {
     await tapKey(tester, 'test-add-card-block');
     await tapKey(tester, 'test-add-next');
     expect(find.text('Aucun paramètre spécifique.'), findsOneWidget);
+    await tapKey(tester, 'test-add-next');
     await tapKey(tester, 'test-add-target');
     await tester.tap(find.text('Zone B').last);
     await tester.pumpAndSettle();
@@ -201,6 +226,19 @@ void main() {
     await tapKey(tester, 'test-add-cancel');
     expect(find.byKey(const ValueKey('test-add-wizard')), findsNothing);
     expect(result.value, isNull);
+  });
+
+  testWidgets('summary respects disabled renaming', (tester) async {
+    final result = await pumpLauncher(tester, editableLabel: false);
+    await tapKey(tester, 'test-add-card-block');
+    await tapKey(tester, 'test-add-next');
+    await tapKey(tester, 'test-add-next');
+    await tapKey(tester, 'test-add-next');
+    expect(find.byKey(const ValueKey('test-add-summary')), findsOneWidget);
+    expect(find.byKey(const ValueKey('test-add-label')), findsNothing);
+    await tapKey(tester, 'test-add-next');
+    expect(result.value!.label, isNull);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('direct add button skips settings and summary', (tester) async {
@@ -273,10 +311,7 @@ void main() {
 
     await tapKey(tester, 'super-layout-add-card-available');
     await tapKey(tester, 'super-layout-add-next');
-    await tester.enterText(
-      find.byKey(const ValueKey('super-layout-add-label')),
-      'Mon slot',
-    );
+    await tapKey(tester, 'super-layout-add-next');
     await tapKey(tester, 'super-layout-add-position-center');
     await tester.tap(find.text('Avant Slot placé').last);
     await tester.pumpAndSettle();
@@ -288,6 +323,10 @@ void main() {
     await tester.enterText(width, '150');
     await tester.pumpAndSettle();
     await tapKey(tester, 'super-layout-add-next');
+    await tester.enterText(
+      find.byKey(const ValueKey('super-layout-add-label')),
+      'Mon slot',
+    );
     await tapKey(tester, 'super-layout-add-next');
 
     final config = changes.single;

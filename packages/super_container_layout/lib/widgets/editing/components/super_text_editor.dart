@@ -3,17 +3,17 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/super_text_config.dart';
-import '../../models/super_text_field_config.dart';
-import '../components/super_text_field.dart';
-import '../../models/json_text_binding.dart';
-import '../../services/json_list_scope.dart';
-import '../../services/json_repository_scope.dart';
-import '../../services/json_repository_store.dart';
-import 'container_style_editor.dart' show styleColorTile;
-import 'editor_dialog.dart';
+import '../../../models/super_text_config.dart';
+import '../../../models/super_text_field_config.dart';
+import '../../components/super_text_field.dart';
+import '../../../models/json_text_binding.dart';
+import '../../../services/json_list_scope.dart';
+import '../../../services/json_repository_scope.dart';
+import '../../../services/json_repository_store.dart';
+import '../styles/container_style_editor.dart' show styleColorTile;
+import '../dialogs/editor_dialog.dart';
 import 'super_list_view_editor.dart' show inheritedRepositoryValue;
-import 'style_editor_panel.dart';
+import '../styles/style_editor_panel.dart';
 import 'super_text_field_settings.dart';
 
 Future<SuperTextConfig?> showSuperTextEditor({

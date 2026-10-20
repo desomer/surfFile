@@ -9,12 +9,13 @@ import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:super_container_layout/widgets/editing/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/styles/container_style_editor.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
 import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
-import 'package:super_container_layout/widgets/editing/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 
 void main() {
   Future<List<ContainerStyle>> pump(WidgetTester tester) async {
@@ -23,7 +24,7 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: Center(
-            child: SuperContainer(
+            child: EditableSurface(
               style: const ContainerStyle(radius: 4),
               onStyleChanged: changes.add,
               child: const SizedBox(width: 120, height: 60, child: Text('Box')),
@@ -36,7 +37,7 @@ void main() {
   }
 
   ContainerStyle current(WidgetTester tester) =>
-      tester.state<SuperContainerState>(find.byType(SuperContainer)).style;
+      tester.state<EditableSurfaceState>(find.byType(EditableSurface)).style;
 
   Future<void> setRadius(WidgetTester tester, double value) async {
     final slider = tester.widget<Slider>(
@@ -58,7 +59,7 @@ void main() {
 
   Future<void> edit(WidgetTester tester, Finder finder) async {
     await rightClick(tester, finder);
-    await tester.tap(find.byType(PopupMenuItem<SuperContainerState>).first);
+    await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
     await tester.pumpAndSettle();
   }
 
@@ -90,7 +91,7 @@ void main() {
         child: const MaterialApp(
           home: Scaffold(
             body: Center(
-              child: SuperContainer(
+              child: EditableSurface(
                 key: ValueKey('hovered-container'),
                 child: SizedBox(width: 120, height: 60, child: Text('Box')),
               ),
@@ -155,7 +156,7 @@ void main() {
                       onSearchChanged: (_) {},
                       onCreateFolder: () {},
                     ),
-                    SuperContainer(
+                    EditableSurface(
                       slot: SurfFileAppearanceSlots.sidebar,
                       child: const SizedBox(
                         width: 120,
@@ -178,7 +179,7 @@ void main() {
     ) async {
       final (_, editMode) = await pumpSlot(tester);
       await rightClick(tester, find.text('Box'));
-      expect(find.byType(PopupMenuItem<SuperContainerState>), findsNothing);
+      expect(find.byType(PopupMenuItem<EditorSlotState>), findsNothing);
       expect(find.byType(ContainerStyleEditor), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
@@ -246,12 +247,12 @@ void main() {
           child: StyleEditScope(
             controller: editMode,
             child: MaterialApp(
-              home: SuperContainer(
+              home: EditableSurface(
                 slot: SurfFileAppearanceSlots.background,
                 decorate: false,
                 child: Scaffold(
                   body: Center(
-                    child: SuperContainer(
+                    child: EditableSurface(
                       slot: SurfFileAppearanceSlots.card,
                       decorate: false,
                       child: const SizedBox(
@@ -270,7 +271,7 @@ void main() {
       Iterable<bool> outlined() => tester
           .widgetList<CustomPaint>(
             find.descendant(
-              of: find.byType(SuperContainer),
+              of: find.byType(EditableSurface),
               matching: find.byType(CustomPaint),
             ),
           )
@@ -299,7 +300,7 @@ void main() {
       expect(outlined(), isEmpty);
 
       await rightClick(tester, find.text('Box'));
-      final items = find.byType(PopupMenuItem<SuperContainerState>);
+      final items = find.byType(PopupMenuItem<EditorSlotState>);
       expect(items, findsNWidgets(2));
       expect(
         tester.getTopLeft(find.text('Style des cartes')).dy,
@@ -339,7 +340,7 @@ void main() {
       AppearanceScope(
         controller: controller,
         child: MaterialApp(
-          home: SuperContainer(
+          home: EditableSurface(
             slot: SurfFileAppearanceSlots.background,
             decorate: false,
             child: const Scaffold(body: SizedBox.expand(child: Text('Fond'))),
@@ -405,7 +406,7 @@ void main() {
     await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();
     final surfaceRect = tester.getRect(surface);
-    final outer = tester.getRect(find.byType(SuperContainer));
+    final outer = tester.getRect(find.byType(EditableSurface));
     expect(surfaceRect.left - outer.left, 6);
     expect(tester.getRect(box).left - surfaceRect.left, 10);
   });
@@ -472,7 +473,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: SuperContainer(
+            child: EditableSurface(
               editable: false,
               child: SizedBox(width: 120, height: 60, child: Text('Box')),
             ),

@@ -6,8 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../services/appearance_transfer.dart';
 import '../../services/appearance_store.dart';
 import '../../theme/appearance.dart';
-import '../editing/editor_dialog.dart';
-import '../editing/editor_dialog_header.dart';
+import '../editing/dialogs/editor_dialog.dart';
+import '../editing/dialogs/editor_dialog_header.dart';
 
 /// Boîte d'export et d'import du style et de la disposition.
 ///

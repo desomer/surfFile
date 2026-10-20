@@ -10,10 +10,10 @@ import '../../services/json_repository_scope.dart';
 import '../../services/json_repository_store.dart';
 import '../../services/json_text_controller_binding.dart';
 import '../../super_app.dart';
-import '../editing/editor_history.dart';
-import '../editing/super_text_editor.dart';
+import '../editing/history/editor_history.dart';
+import '../editing/components/super_text_editor.dart';
 import 'super_text_field.dart';
-import '../surfaces/super_container.dart';
+import '../editing/slots/editor_slot.dart';
 
 /// Display or edit text; runtime input persists only with a repository binding.
 class SuperText extends StatefulWidget {
@@ -44,7 +44,7 @@ class SuperText extends StatefulWidget {
 }
 
 class _SuperTextState extends State<SuperText> {
-  final _surface = GlobalKey<SuperContainerState>();
+  final _surface = GlobalKey<EditorSlotState>();
   late final TextEditingController _internal;
   late final ValueNotifier<SuperTextConfig> _local;
   SuperTextConfig? _previousConfig;
@@ -292,10 +292,9 @@ class _SuperTextState extends State<SuperText> {
           height: config.lineHeight,
           letterSpacing: config.letterSpacing,
         );
-        return SuperContainer(
+        return EditorSlot(
           key: _surface,
           label: 'Texte',
-          decorate: false,
           onEdit: () async {
             if (_editorText != null) return;
             final initial = configuration.value;
@@ -371,7 +370,7 @@ class _SuperTextState extends State<SuperText> {
               final content = config.mode == SuperTextMode.input
                   ? Listener(
                       onPointerDown: (event) {
-                        // TextField consumes secondary taps before SuperContainer.
+                        // TextField consumes secondary taps before EditorSlot.
                         if (canConfigure &&
                             event.buttons == kSecondaryMouseButton) {
                           _surface.currentState?.openMenu(event.position);

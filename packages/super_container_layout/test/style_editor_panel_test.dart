@@ -1,8 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
-import 'package:super_container_layout/widgets/editing/style_editor_panel.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
+import 'package:super_container_layout/widgets/editing/styles/style_editor_panel.dart';
 
 void main() {
   setUp(() => StyleEditorPanel.preferredDense = false);
@@ -16,7 +17,7 @@ void main() {
       const MaterialApp(
         home: Scaffold(
           body: Center(
-            child: SuperContainer(
+            child: EditableSurface(
               child: SizedBox(width: 120, height: 60, child: Text('Box')),
             ),
           ),
@@ -25,7 +26,7 @@ void main() {
     );
     await tester.tap(find.text('Box'), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuItem<SuperContainerState>).first);
+    await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
     await tester.pumpAndSettle();
   }
 
@@ -152,7 +153,7 @@ void main() {
     Future<void> reopen() async {
       Navigator.of(tester.element(find.byType(StyleEditorPanel))).pop();
       await tester.pumpAndSettle();
-      tester.state<SuperContainerState>(find.byType(SuperContainer)).openEditor();
+      tester.state<EditableSurfaceState>(find.byType(EditableSurface)).openEditor();
       await tester.pumpAndSettle();
     }
     double contentWidth() => tester.getSize(

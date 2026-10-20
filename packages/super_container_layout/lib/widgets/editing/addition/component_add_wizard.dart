@@ -1,13 +1,13 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/json_text_binding.dart';
-import '../../models/registry.dart';
-import '../../models/super_layout_config.dart';
-import '../../services/json_list_scope.dart';
-import '../../services/json_repository_scope.dart';
+import '../../../models/json_text_binding.dart';
+import '../../../models/registry.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../services/json_list_scope.dart';
+import '../../../services/json_repository_scope.dart';
 import 'component_add_configurators.dart' show RepositoryBindingFields;
-import 'editor_dialog.dart';
-import 'editor_dialog_header.dart';
+import '../dialogs/editor_dialog.dart';
+import '../dialogs/editor_dialog_header.dart';
 
 /// Component-specific settings edited by the add wizard before insertion.
 ///
@@ -144,8 +144,9 @@ class ComponentAddRequest {
   }
 }
 
-/// Opens the add wizard: component, settings, repository binding (only for
-/// components whose configurator supports it) and summary.
+/// Opens the add wizard: component, settings, placement, repository binding
+/// (only for components whose configurator supports it) and summary, where the
+/// instance name can be edited.
 ///
 /// [candidates] are those accepted by the initial target. The returned request
 /// is null when the wizard is cancelled. Each card keeps the historical
@@ -309,10 +310,6 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   }
 
   String? get _settingsError {
-    if (_customSize) {
-      final error = _size.error;
-      if (error != null) return error;
-    }
     final candidate = _selected;
     final draft = candidate == null ? null : _draftOf(candidate);
     if (candidate != null && draft != null) {
@@ -364,6 +361,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   bool get _canContinue => switch (_stage) {
     _WizardStage.component => _selected != null,
     _WizardStage.settings => _settingsError == null,
+    _WizardStage.placement => !_customSize || _size.error == null,
     _WizardStage.binding => _bindingError == null,
     _WizardStage.summary => true,
   };
@@ -501,6 +499,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
                 _WizardStage.component => _buildChoice(context),
                 _ when _selected == null => const SizedBox.shrink(),
                 _WizardStage.settings => _buildSettings(context, _selected!),
+                _WizardStage.placement => _buildPlacement(context, _selected!),
                 _WizardStage.binding => _buildBinding(context, _selected!),
                 _WizardStage.summary => _buildSummary(context, _selected!),
               },
@@ -561,10 +560,42 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   Widget _buildSettings(BuildContext context, ComponentAddCandidate candidate) {
     final theme = Theme.of(context);
-    final targets = _targetsFor(candidate);
-    final target = _target;
     final draft = _draftOf(candidate);
     final error = _settingsError;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Paramètres de ${candidate.label}',
+          style: theme.textTheme.titleSmall,
+        ),
+        const SizedBox(height: 6),
+        if (candidate.configurator case final configurator? when draft != null)
+          configurator.buildDraft(
+            context,
+            draft,
+            (value) => setState(() => _drafts[candidate.id] = value),
+          )
+        else
+          Text('Aucun paramètre spécifique.', style: theme.textTheme.bodySmall),
+        if (error != null)
+          Text(
+            error,
+            key: ValueKey('${widget.keyPrefix}-add-error'),
+            style: TextStyle(color: theme.colorScheme.error),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildPlacement(
+    BuildContext context,
+    ComponentAddCandidate candidate,
+  ) {
+    final theme = Theme.of(context);
+    final targets = _targetsFor(candidate);
+    final target = _target;
+    final error = _customSize ? _size.error : null;
     Widget section(String title, List<Widget> children) => Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -577,21 +608,9 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
       ),
     );
     return Column(
+      key: ValueKey('${widget.keyPrefix}-add-placement'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.editableLabel)
-          section('Nom', [
-            TextField(
-              key: ValueKey('${widget.keyPrefix}-add-label'),
-              controller: _label,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: candidate.label,
-                helperText: 'Vide : nom du composant',
-              ),
-              onChanged: (_) => setState(() {}),
-            ),
-          ]),
         section('Emplacement', [
           Row(
             children: [
@@ -673,20 +692,6 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
               onChanged: () => setState(() {}),
             ),
         ]),
-        section('Paramètres de ${candidate.label}', [
-          if (candidate.configurator case final configurator?
-              when draft != null)
-            configurator.buildDraft(
-              context,
-              draft,
-              (value) => setState(() => _drafts[candidate.id] = value),
-            )
-          else
-            Text(
-              'Aucun paramètre spécifique.',
-              style: theme.textTheme.bodySmall,
-            ),
-        ]),
         if (error != null)
           Text(
             error,
@@ -761,7 +766,6 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     final lines = <(String, String)>[
       ('Composant', candidate.label),
       if (candidate.tags.isNotEmpty) ('Tags', candidate.tags.join(', ')),
-      if (widget.editableLabel) ('Nom', _labelValue ?? candidate.label),
       ('Zone', target.label),
       ('Position', position),
       ('Taille', _customSize ? _size.describe() : 'Par défaut'),
@@ -773,6 +777,21 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
       key: ValueKey('${widget.keyPrefix}-add-summary'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (widget.editableLabel)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: TextField(
+              key: ValueKey('${widget.keyPrefix}-add-label'),
+              controller: _label,
+              decoration: InputDecoration(
+                isDense: true,
+                labelText: 'Nom du composant',
+                hintText: candidate.label,
+                helperText: 'Vide : nom du composant',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
         for (final (name, value) in lines)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
@@ -795,6 +814,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 enum _WizardStage {
   component('Composant'),
   settings('Paramètres'),
+  placement('Emplacement'),
   binding('Liaison'),
   summary('Résumé');
 

@@ -2,7 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/editing/editor_dialog_header.dart';
+import 'package:super_container_layout/widgets/editing/dialogs/editor_dialog_header.dart';
 
 void main() {
   const initial = SuperLayoutConfig(
@@ -39,7 +39,7 @@ void main() {
                       BuilderSlot(
                         id: id,
                         label: 'Component $id',
-                        builder: (_) => SuperContainer(
+                        builder: (_) => EditableSurface(
                           label: 'Style $id',
                           child: IgnorePointer(
                             child: TextField(key: ValueKey('content-$id')),
@@ -156,10 +156,10 @@ void main() {
         final container = find
             .ancestor(
               of: find.byKey(const ValueKey('content-a')),
-              matching: find.byType(SuperContainer),
+              matching: find.byType(EditableSurface),
             )
             .first;
-        tester.state<SuperContainerState>(container).openEditor();
+        tester.state<EditableSurfaceState>(container).openEditor();
         await tester.pumpAndSettle();
       }
 
@@ -195,9 +195,10 @@ void main() {
     final layout = tester.state<SuperLayoutState>(find.byType(SuperLayout));
     Future<void> open() async {
       final container = find.byWidgetPredicate(
-        (w) => w is SuperContainer && w.onEdit != null,
+        (w) => w is EditorSlot &&
+            (w.label == 'Layout original' || w.label == 'New layout'),
       );
-      tester.state<SuperContainerState>(container).openEditor();
+      tester.state<EditorSlotState>(container).openEditor();
       await tester.pumpAndSettle();
     }
 
@@ -214,7 +215,7 @@ void main() {
     expect(layout.config.label, 'New layout');
     expect(
       find.byWidgetPredicate(
-        (w) => w is SuperContainer && w.label == 'New layout',
+        (w) => w is EditorSlot && w.label == 'New layout',
       ),
       findsOneWidget,
     );
@@ -268,7 +269,7 @@ void main() {
                       BuilderSlot(
                         id: 'a',
                         label: 'Component a',
-                        builder: (_) => const SuperContainer(
+                        builder: (_) => const EditableSurface(
                           label: 'Style a',
                           child: SizedBox.expand(key: ValueKey('content-a')),
                         ),

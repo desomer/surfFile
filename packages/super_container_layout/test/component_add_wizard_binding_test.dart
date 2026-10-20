@@ -86,14 +86,16 @@ void main() {
     expect(
       tester
           .widget<Stepper>(find.byKey(const ValueKey('w-add-stepper')))
-          .steps[2]
+          .steps[3]
           .state,
       StepState.indexed,
     );
     await tapKey(tester, 'w-add-next');
     // Settings step: the binding has its own step.
-    expect(find.byKey(const ValueKey('w-add-label')), findsOneWidget);
+    expect(find.byKey(const ValueKey('w-add-label')), findsNothing);
     expect(find.byKey(ValueKey('$fields-repository')), findsNothing);
+    await tapKey(tester, 'w-add-next');
+    expect(find.byKey(const ValueKey('w-add-placement')), findsOneWidget);
     await tapKey(tester, 'w-add-next');
     expect(find.byKey(const ValueKey('w-add-binding')), findsOneWidget);
     await settle(tester);

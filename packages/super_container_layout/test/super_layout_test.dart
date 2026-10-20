@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
-import 'package:super_container_layout/widgets/surfaces/super_container.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 /// Un slot par zone, pour tester le placement sans écrire les ids à la main.
@@ -159,7 +159,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.tap(find.text('Contenu'), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuItem<SuperContainerState>).first);
+    await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
     await tester.pumpAndSettle();
   }
 

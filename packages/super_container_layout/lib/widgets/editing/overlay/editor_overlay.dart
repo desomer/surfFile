@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'editor_zoom.dart';
-import '../surfaces/super_container.dart';
+import '../slots/editor_slot.dart';
 
 /// Hides editing controls without changing content geometry or selection.
 class EditorOverlayVisibility extends StatelessWidget {
@@ -78,10 +78,10 @@ class _EditorOverlayState extends State<EditorOverlay> {
             onSecondaryTapUp:
                 (StyleEditScope.controllerOf(this.context)?.value ?? false)
                 ? (details) => this.context
-                      .findAncestorStateOfType<SuperContainerState>()
+                      .findAncestorStateOfType<EditorSlotState>()
                       ?.openMenu(
                         details.globalPosition,
-                        actions: ContainerMenuAction.of(this.context),
+                        actions: EditorSlotAction.of(this.context),
                       )
                 : null,
             child: EditorOverlayVisibility(child: widget.child),

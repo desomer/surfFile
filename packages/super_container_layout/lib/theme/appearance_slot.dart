@@ -3,7 +3,7 @@ import 'container_style.dart';
 
 enum AppearanceSurfaceRole { standard, applicationBackground }
 
-/// Describes how an application-owned style is edited by a SuperContainer.
+/// Describes how an application-owned style is edited by a EditableSurface.
 class AppearanceSlot {
   const AppearanceSlot(
     this.label, {
