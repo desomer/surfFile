@@ -429,6 +429,7 @@ class _SuperListViewState extends State<SuperListView> {
       valueListenable: layout,
       builder: (context, value, _) => SuperLayout(
         label: 'Ligne',
+        menuIcon: Icons.view_stream_rounded,
         slots: widget.slots,
         config: value,
         onChanged: (next) => layout.value = next,

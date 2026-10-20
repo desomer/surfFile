@@ -195,7 +195,8 @@ void main() {
     final layout = tester.state<SuperLayoutState>(find.byType(SuperLayout));
     Future<void> open() async {
       final container = find.byWidgetPredicate(
-        (w) => w is EditorSlot &&
+        (w) =>
+            w is EditorSlot &&
             (w.label == 'Layout original' || w.label == 'New layout'),
       );
       tester.state<EditorSlotState>(container).openEditor();
@@ -214,10 +215,72 @@ void main() {
     await tester.pumpAndSettle();
     expect(layout.config.label, 'New layout');
     expect(
-      find.byWidgetPredicate(
-        (w) => w is EditorSlot && w.label == 'New layout',
-      ),
+      find.byWidgetPredicate((w) => w is EditorSlot && w.label == 'New layout'),
       findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('nested layout does not rename its containing component', (
+    tester,
+  ) async {
+    final layout = ValueNotifier(initial);
+    final mode = ValueNotifier(true);
+    addTearDown(layout.dispose);
+    addTearDown(mode.dispose);
+    String? outerRename;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StyleEditScope(
+          controller: mode,
+          child: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: EditorComponentLabel(
+                label: 'Liste renommée',
+                overridden: true,
+                onChanged: (value) => outerRename = value,
+                onRestore: () {},
+                child: EditorSlot(
+                  label: 'Liste',
+                  child: ValueListenableBuilder<SuperLayoutConfig>(
+                    valueListenable: layout,
+                    builder: (context, value, _) => SuperLayout(
+                      label: 'Ligne',
+                      config: value,
+                      onChanged: (value) => layout.value = value,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final row = tester.state<EditorSlotState>(
+      find.byWidgetPredicate(
+        (widget) => widget is EditorSlot && widget.label == 'Ligne',
+      ),
+    );
+    expect(row.label, 'Ligne');
+    row.openEditor();
+    await tester.pumpAndSettle();
+    await rename(tester, 'Ligne renommée');
+
+    expect(layout.value.label, 'Ligne renommée');
+    expect(outerRename, isNull);
+    expect(
+      tester
+          .state<EditorSlotState>(
+            find.byWidgetPredicate(
+              (widget) => widget is EditorSlot && widget.label == 'Liste',
+            ),
+          )
+          .label,
+      'Liste renommée',
     );
     expect(tester.takeException(), isNull);
   });

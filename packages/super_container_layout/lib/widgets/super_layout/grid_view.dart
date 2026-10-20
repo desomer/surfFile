@@ -8,7 +8,7 @@ extension _SuperLayoutGrid on SuperLayoutState {
     final parentPath = _LabelScope.pathOf(context);
     final name =
         _config.value.label != null ||
-            (EditorComponentLabel.of(context)?.overridden ?? false)
+            (editorComponentLabelOf(context)?.overridden ?? false)
         ? _displayLabel
         : widget.name ?? widget.label;
     final slots = [

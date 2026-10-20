@@ -1,4 +1,4 @@
-  import 'package:material_ui/material_ui.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../models/scaffold_page_config.dart';
 import '../../models/component_tag_filter.dart';
@@ -11,6 +11,7 @@ class ScaffoldPageLayout extends StatefulWidget {
   const ScaffoldPageLayout({
     required this.id,
     this.label = 'Page',
+    this.menuIcon,
     required this.config,
     required this.slots,
     required this.appBar,
@@ -25,6 +26,7 @@ class ScaffoldPageLayout extends StatefulWidget {
 
   final String id;
   final String label;
+  final IconData? menuIcon;
   final ScaffoldPageConfig config;
   final List<SlotImplementation> slots;
   final PreferredSizeWidget? appBar;
@@ -85,13 +87,13 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           child: bar,
         )
       else BuilderSlot(
-        id: 'scaffold:appBar',
-        label: 'AppBar',
-        tags: const {'appBar'},
-        sizing: SlotSizing.intrinsic,
-        preferredSize: bar.preferredSize,
-        builder: (_) => bar,
-      ),
+          id: 'scaffold:appBar',
+          label: 'AppBar',
+          tags: const {'appBar'},
+          sizing: SlotSizing.intrinsic,
+          preferredSize: bar.preferredSize,
+          builder: (_) => bar,
+        ),
     BuilderSlot(
       id: 'scaffold:body',
       label: 'Body',
@@ -200,6 +202,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
         final config = controller.value;
         return NativeComponentEditor(
           label: widget.label,
+          menuIcon: widget.menuIcon,
           keyPrefix: 'scaffold-page',
           settingsTitle: 'Configurer la page',
           config: config.native,
@@ -239,21 +242,21 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
                 if (slot case NativePreferredSizeWidget native) native.sizeListenable(context),
             ]),
             builder: (context, _) => Scaffold(
-            key: _scaffoldKey,
-            appBar: _appBar(editor),
-            body: SizedBox.expand(child: editor.region('body')),
-            drawer: _drawer('drawer', editor, widget.drawer),
-            endDrawer: _drawer('endDrawer', editor, widget.endDrawer),
-            bottomNavigationBar: editor.visible('bottomNavigationBar')
-                ? editor.region('bottomNavigationBar')
-                : null,
-            floatingActionButton: editor.visible('floatingActionButton')
-                ? editor.region('floatingActionButton')
-                : null,
-            bottomSheet: editor.visible('bottomSheet')
-                ? editor.region('bottomSheet')
-                : null,
-          ),
+              key: _scaffoldKey,
+              appBar: _appBar(editor),
+              body: SizedBox.expand(child: editor.region('body')),
+              drawer: _drawer('drawer', editor, widget.drawer),
+              endDrawer: _drawer('endDrawer', editor, widget.endDrawer),
+              bottomNavigationBar: editor.visible('bottomNavigationBar')
+                  ? editor.region('bottomNavigationBar')
+                  : null,
+              floatingActionButton: editor.visible('floatingActionButton')
+                  ? editor.region('floatingActionButton')
+                  : null,
+              bottomSheet: editor.visible('bottomSheet')
+                  ? editor.region('bottomSheet')
+                  : null,
+            ),
           ),
         );
       },

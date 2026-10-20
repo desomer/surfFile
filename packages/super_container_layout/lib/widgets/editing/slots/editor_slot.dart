@@ -10,8 +10,7 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_overlay.dart';
 
-export 'editor_context_menu.dart'
-    show EditorContextMenuEntry, EditorSlotAction;
+export 'editor_context_menu.dart' show EditorContextMenuEntry, EditorSlotAction;
 
 /// Enables/disables editor gestures below this scope.
 ///
@@ -28,6 +27,24 @@ class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {
       context.dependOnInheritedWidgetOfExactType<StyleEditScope>()?.notifier;
 }
 
+EditorComponentLabel? editorComponentLabelOf(BuildContext context) {
+  final inherited = context
+      .getElementForInheritedWidgetOfExactType<EditorComponentLabel>()
+      ?.widget;
+  if (inherited is! EditorComponentLabel) return null;
+
+  var direct = true;
+  context.visitAncestorElements((ancestor) {
+    if (identical(ancestor.widget, inherited)) return false;
+    if (ancestor is StatefulElement && ancestor.state is EditorSlotState) {
+      direct = false;
+      return false;
+    }
+    return true;
+  });
+  return direct ? EditorComponentLabel.of(context) : null;
+}
+
 /// An editor interaction target that can wrap any widget.
 class EditorSlot extends StatefulWidget {
   const EditorSlot({
@@ -40,6 +57,7 @@ class EditorSlot extends StatefulWidget {
     this.onAdd,
     this.axisAction,
     this.onContextMenu,
+    this.menuIcon,
     this.identity,
     this.outlineRadius = 0,
     this.onRemoveChild,
@@ -55,6 +73,7 @@ class EditorSlot extends StatefulWidget {
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
   final ValueChanged<Offset>? onContextMenu;
+  final IconData? menuIcon;
 
   /// Optional semantic identity used to deduplicate equivalent nested slots.
   final Object? identity;
@@ -72,23 +91,7 @@ class EditorSlot extends StatefulWidget {
 class EditorSlotState extends State<EditorSlot> {
   String? _localLabel;
 
-  EditorComponentLabel? get _instance {
-    final instance = context
-        .getElementForInheritedWidgetOfExactType<EditorComponentLabel>()
-        ?.widget as EditorComponentLabel?;
-    if (instance == null) return null;
-    var direct = true;
-    context.visitAncestorElements((ancestor) {
-      if (ancestor.widget == instance) return false;
-      if (ancestor is StatefulElement &&
-          ancestor.state is EditorSlotState) {
-        direct = false;
-        return false;
-      }
-      return true;
-    });
-    return direct ? EditorComponentLabel.of(context) : null;
-  }
+  EditorComponentLabel? get _instance => editorComponentLabelOf(context);
 
   bool get _canRename => _instance != null || widget.onLabelChanged != null;
 
@@ -116,7 +119,6 @@ class EditorSlotState extends State<EditorSlot> {
       setState(() => _localLabel = value);
       widget.onLabelChanged?.call(value);
     }
-
   }
 
   /// Restores a label after cancelling the editor without changing its owner.
@@ -172,8 +174,9 @@ class EditorSlotState extends State<EditorSlot> {
   }
 
   static final Set<EditorSlotState> _hovered = {};
-  static final ValueNotifier<EditorSlotState?> _hoveredTarget =
-      ValueNotifier(null);
+  static final ValueNotifier<EditorSlotState?> _hoveredTarget = ValueNotifier(
+    null,
+  );
   static bool _hoveredTargetUpdateScheduled = false;
   static EditorSlotState? _menuHoveredTarget;
 
@@ -285,8 +288,7 @@ class EditorSlotState extends State<EditorSlot> {
     EditorSlotState? state = this;
     while (state != null) {
       final identity = state.widget.identity;
-      if (state.canEdit &&
-          (identity == null || identities.add(identity))) {
+      if (state.canEdit && (identity == null || identities.add(identity))) {
         chain.add(state);
       }
       state = state.context.findAncestorStateOfType<EditorSlotState>();
@@ -433,7 +435,8 @@ class EditorSlotState extends State<EditorSlot> {
                       mainAxisSize: MainAxisSize.max,
                       children: [
                         Icon(
-                          state.componentLabel?.menuIcon ??
+                          state.widget.menuIcon ??
+                              state.componentLabel?.menuIcon ??
                               (index == 0
                                   ? Icons.brush_outlined
                                   : Icons.subdirectory_arrow_left),
@@ -474,13 +477,12 @@ class EditorSlotState extends State<EditorSlot> {
                               zoneLabel: state.widget.axisAction!().zoneLabel,
                               axis: state.widget.axisAction!().axis,
                               onToggle: () =>
-                                  Navigator.of(context).pop<
-                                    Future<void> Function()
-                                  >(() async {
-                                    if (state.mounted) {
-                                      state.widget.axisAction!().onToggle();
-                                    }
-                                  }),
+                                  Navigator.of(context)
+                                      .pop<Future<void> Function()>(() async {
+                                        if (state.mounted) {
+                                          state.widget.axisAction!().onToggle();
+                                        }
+                                      }),
                             ),
                           ),
                         if ((StyleEditScope.controllerOf(state.context)
@@ -492,13 +494,12 @@ class EditorSlotState extends State<EditorSlot> {
                             tooltip: 'Renommer',
                             icon: const Icon(Icons.drive_file_rename_outline),
                             onPressed: () =>
-                                Navigator.of(context).pop<
-                                  Future<void> Function()
-                                >(() async {
-                                  if (state.mounted) {
-                                    await state._promptRename();
-                                  }
-                                }),
+                                Navigator.of(context)
+                                    .pop<Future<void> Function()>(() async {
+                                      if (state.mounted) {
+                                        await state._promptRename();
+                                      }
+                                    }),
                           ),
                         for (final action
                             in inlineActions[state] ??
@@ -533,9 +534,10 @@ class EditorSlotState extends State<EditorSlot> {
                             ),
                             tooltip: 'Supprimer le composant enfant',
                             icon: const Icon(Icons.delete_outline),
-                            onPressed: () => Navigator.of(context).pop<
-                              Future<void> Function()
-                            >(state.widget.onRemoveChild),
+                            onPressed: () => Navigator.of(context)
+                                .pop<Future<void> Function()>(
+                                  state.widget.onRemoveChild,
+                                ),
                           ),
                         if ((StyleEditScope.controllerOf(state.context)
                                     ?.value ??

@@ -34,6 +34,7 @@ class EditableSurface extends StatefulWidget {
     this.onAdd,
     this.axisAction,
     this.onContextMenu,
+    this.menuIcon,
     super.key,
   }) : assert(id == null || id != '');
 
@@ -60,6 +61,7 @@ class EditableSurface extends StatefulWidget {
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
   final ValueChanged<Offset>? onContextMenu;
+  final IconData? menuIcon;
 
   @override
   EditableSurfaceState createState() => EditableSurfaceState();
@@ -212,6 +214,7 @@ class EditableSurfaceState extends State<EditableSurface> {
             onAdd: widget.onAdd != null || widget.id != null ? _addChild : null,
             axisAction: widget.axisAction,
             onContextMenu: widget.onContextMenu,
+            menuIcon: widget.menuIcon,
             identity: widget.slot?.standard,
             outlineRadius: radius,
             onRemoveChild: onRemoveChild,

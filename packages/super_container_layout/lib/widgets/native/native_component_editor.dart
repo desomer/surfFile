@@ -122,6 +122,7 @@ class NativeComponentEditor extends StatefulWidget {
     this.regionActions,
     this.onSlotAdded,
     this.editSurface = false,
+    this.menuIcon,
     this.settingsControls,
     this.isRegionAvailable,
     super.key,
@@ -140,6 +141,7 @@ class NativeComponentEditor extends StatefulWidget {
   final List<Widget> Function(String region)? regionActions;
   final NativeSlotAddedCallback? onSlotAdded;
   final bool editSurface;
+  final IconData? menuIcon;
   final List<Widget> Function(
     NativeComponentConfig config,
     ValueChanged<NativeComponentConfig> onChanged,
@@ -868,6 +870,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           child: EditorSlot(
             label: spec.label,
             menuTitle: widget.label,
+            menuIcon: widget.menuIcon,
             editable: true,
             onEdit: configure,
             onAdd: () => add(id),
@@ -989,6 +992,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             child: EditorSlot(
               label: widget.settingsTitle,
               menuTitle: widget.label,
+              menuIcon: widget.menuIcon,
               editable: true,
               onEdit: configure,
               onContextMenu: (_) => select(null),

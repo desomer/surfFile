@@ -3,7 +3,7 @@ part of 'super_layout.dart';
 extension _SuperLayoutDialogs on SuperLayoutState {
   Future<void> _openEditor() async {
     final initial = _config.value;
-    final initialInstance = EditorComponentLabel.of(context);
+    final initialInstance = editorComponentLabelOf(context);
     var label = _displayLabel;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();

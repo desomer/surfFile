@@ -83,17 +83,20 @@ class _TestAppState extends State<TestApp> {
             write: (a, style) => a.withStyle('background', style),
             reset: (a) => a.withStyle('background', null),
           ),
+          menuIcon: Icons.wallpaper_outlined,
           decorate: false,
           applyPadding: true,
           child: Stack(
             children: [
               Positioned.fill(
                 child: SuperPage(
+                  menuIcon: Icons.article_outlined,
                   child: ValueListenableBuilder<SuperLayoutConfig>(
                     valueListenable: superLayoutConfig,
                     builder: (context, config, _) => SuperLayout(
                       config: config,
                       onChanged: (value) => superLayoutConfig.value = value,
+                      menuIcon: Icons.dashboard_outlined,
                       slots: const [],
                     ),
                   ),

@@ -43,6 +43,7 @@ class SuperLayout extends StatefulWidget {
     this.name,
     this.editable = true,
     this.showZoneNames = true,
+    this.menuIcon,
     this.zoneLabels = const {},
     this.zoneTagFilters = const {},
     super.key,
@@ -145,6 +146,7 @@ class SuperLayout extends StatefulWidget {
   /// Affiche le nom des zones pendant le mode édition ; à désactiver pour une
   /// disposition imbriquée qui ne s'édite pas.
   final bool showZoneNames;
+  final IconData? menuIcon;
   final Map<SuperLayoutZone, String> zoneLabels;
   final Map<SuperLayoutZone, ComponentTagFilter> zoneTagFilters;
 
@@ -425,14 +427,14 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   String get _displayLabel {
-    final instance = EditorComponentLabel.of(context);
+    final instance = editorComponentLabelOf(context);
     return (instance?.overridden ?? false)
         ? instance!.label
         : _config.value.label ?? widget.label;
   }
 
   void _rename(String label) {
-    final instance = EditorComponentLabel.of(context);
+    final instance = editorComponentLabelOf(context);
     if (instance != null) {
       instance.onChanged(label);
     } else {

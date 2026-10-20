@@ -14,8 +14,10 @@ extension _SuperLayoutView on SuperLayoutState {
       editable: widget.editable,
       onEdit: _openEditor,
       onAdd: () => _addSlot(_actionZone),
+      menuIcon: widget.menuIcon,
       axisAction: _config.value.positioning == SuperLayoutPositioning.grid
-          ? null : () => _axisAction(_actionZone),
+          ? null
+          : () => _axisAction(_actionZone),
       onContextMenu: _selectContextZone,
       child: ListenableBuilder(
         listenable: Listenable.merge([
@@ -45,7 +47,7 @@ extension _SuperLayoutView on SuperLayoutState {
                 ).where((slot) => slot.id == _selectedSlot.value).firstOrNull;
           final name =
               _config.value.label != null ||
-                  (EditorComponentLabel.of(context)?.overridden ?? false)
+                  (editorComponentLabelOf(context)?.overridden ?? false)
               ? _displayLabel
               : widget.name ?? widget.label;
           LayoutSelection.register(
@@ -61,7 +63,8 @@ extension _SuperLayoutView on SuperLayoutState {
                         .firstOrNull;
               _LayoutEditSelection.activate(this);
             },
-            parent: this.context.findAncestorStateOfType<SuperLayoutState>() ??
+            parent:
+                this.context.findAncestorStateOfType<SuperLayoutState>() ??
                 LayoutSelectionScope.of(context)?.owner,
             selectSlot: (label) {
               final zone = _selected.value;
@@ -240,38 +243,38 @@ extension _SuperLayoutView on SuperLayoutState {
                       ),
                     ),
                     for (final zone in zones)
-                        _ZoneEntry(
-                          key: ValueKey(
-                            _hasContent(config, config.contentZone(zone))
-                                ? 'super-layout-name-${zone.name}'
-                                : 'super-layout-add-overlay-${zone.name}',
-                          ),
-                          zone: zone,
-                          overlay: true,
-                          child: EditorOverlay(
-                            child: _ZoneNameBadge(
-                              zone: zone,
-                              label: widget.zoneLabel(zone),
-                              zoneLabel: widget.zoneLabel,
-                              axisAction: widget.editable
-                                  ? _axisAction(zone)
-                                  : null,
-                              overCenter: _overCenter,
-                              onCenterHint: (active) =>
-                                  _hintCenter(zone, active),
-                              emphasis: _emphasisFor(zone),
-                              selected: selected == zone,
-                              onSelect: () => _select(zone),
-                              onAdd: widget.editable ? () => _addSlot(zone) : null,
-                              swapTarget:
-                                  widget.editable && _canSwapZone(zone)
-                                  ? zone.opposite
-                                  : null,
-                              moves: !zones.contains(zone.opposite),
-                              onSwap: () => _update(config.withSwap(zone)),
-                            ),
+                      _ZoneEntry(
+                        key: ValueKey(
+                          _hasContent(config, config.contentZone(zone))
+                              ? 'super-layout-name-${zone.name}'
+                              : 'super-layout-add-overlay-${zone.name}',
+                        ),
+                        zone: zone,
+                        overlay: true,
+                        child: EditorOverlay(
+                          child: _ZoneNameBadge(
+                            zone: zone,
+                            label: widget.zoneLabel(zone),
+                            zoneLabel: widget.zoneLabel,
+                            axisAction: widget.editable
+                                ? _axisAction(zone)
+                                : null,
+                            overCenter: _overCenter,
+                            onCenterHint: (active) => _hintCenter(zone, active),
+                            emphasis: _emphasisFor(zone),
+                            selected: selected == zone,
+                            onSelect: () => _select(zone),
+                            onAdd: widget.editable
+                                ? () => _addSlot(zone)
+                                : null,
+                            swapTarget: widget.editable && _canSwapZone(zone)
+                                ? zone.opposite
+                                : null,
+                            moves: !zones.contains(zone.opposite),
+                            onSwap: () => _update(config.withSwap(zone)),
                           ),
                         ),
+                      ),
                   ],
                   if (widget.editable)
                     for (final side in SuperLayoutZone.values)

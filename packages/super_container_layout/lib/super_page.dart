@@ -10,6 +10,7 @@ class SuperPage extends StatelessWidget {
   const SuperPage({
     this.id = 'root',
     this.label = 'Page',
+    this.menuIcon,
     this.child = const SizedBox.shrink(),
     this.appBar,
     this.drawer,
@@ -30,6 +31,7 @@ class SuperPage extends StatelessWidget {
   /// Stable persistence key. Use a different ID for each page.
   final String id;
   final String label;
+  final IconData? menuIcon;
   final Widget child;
   final PreferredSizeWidget? appBar;
   final Widget? drawer;
@@ -51,31 +53,32 @@ class SuperPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final resolvedConfig = pageConfig ?? ScaffoldPageConfig(
-      placements: {
-        if (appBar != null)
-          ScaffoldPageRegion.appBar: const ['scaffold:appBar'],
-        ScaffoldPageRegion.body: const ['scaffold:body'],
-        if (drawer != null)
-          ScaffoldPageRegion.drawer: const ['scaffold:drawer'],
-        if (endDrawer != null)
-          ScaffoldPageRegion.endDrawer: const ['scaffold:endDrawer'],
-        if (bottomNavigationBar != null || bottomBar != null)
-          ScaffoldPageRegion.bottomNavigationBar: const [
-            'scaffold:bottomNavigationBar',
-          ],
-        if (floatingActionButton != null)
-          ScaffoldPageRegion.floatingActionButton: const [
-            'scaffold:floatingActionButton',
-          ],
-        if (bottomSheet != null)
-          ScaffoldPageRegion.bottomSheet: const ['scaffold:bottomSheet'],
-      },
-    );
+          placements: {
+            if (appBar != null)
+              ScaffoldPageRegion.appBar: const ['scaffold:appBar'],
+            ScaffoldPageRegion.body: const ['scaffold:body'],
+            if (drawer != null)
+              ScaffoldPageRegion.drawer: const ['scaffold:drawer'],
+            if (endDrawer != null)
+              ScaffoldPageRegion.endDrawer: const ['scaffold:endDrawer'],
+            if (bottomNavigationBar != null || bottomBar != null)
+              ScaffoldPageRegion.bottomNavigationBar: const [
+                'scaffold:bottomNavigationBar',
+              ],
+            if (floatingActionButton != null)
+              ScaffoldPageRegion.floatingActionButton: const [
+                'scaffold:floatingActionButton',
+              ],
+            if (bottomSheet != null)
+              ScaffoldPageRegion.bottomSheet: const ['scaffold:bottomSheet'],
+          },
+        );
     return EditorZoom(
       maxAutoZoomExtent: maxAutoZoomExtent,
       child: ScaffoldPageLayout(
         id: id,
         label: label,
+        menuIcon: menuIcon,
         config: resolvedConfig,
         slots: slots,
         appBar: appBar,
