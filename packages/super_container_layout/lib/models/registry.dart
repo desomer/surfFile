@@ -5,6 +5,7 @@ import 'super_list_view_config.dart';
 import 'super_text_config.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_text.dart';
+import '../widgets/super_layout/iterable_content.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
@@ -113,7 +114,12 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _text(String id) => [EditorConfigRef.text(id)];
   static List<EditorConfigRef> _list(String id) => [
     EditorConfigRef.layout(id),
+    EditorConfigRef.style(id),
     EditorConfigRef.list(id),
+  ];
+  static List<EditorConfigRef> _iterableContent(String id) => [
+    EditorConfigRef.layout(id),
+    EditorConfigRef.style(id),
   ];
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
@@ -136,6 +142,9 @@ class ComponentDuplicationContract {
     ownedConfigs: _container,
   );
   static const newLayout = ComponentDuplicationContract(ownedConfigs: _layout);
+  static const iterableContent = ComponentDuplicationContract(
+    ownedConfigs: _iterableContent,
+  );
   static const superListView = ComponentDuplicationContract(
     ownedConfigs: _list,
   );
@@ -538,6 +547,13 @@ class Registry {
           );
         },
       ),
+    );
+    registry['IterableContent'] = ComponentBuilderDynamic(
+      menuIcon: Icons.article_outlined,
+      duplication: ComponentDuplicationContract.iterableContent,
+      tags: const {'container', 'layout'},
+      addConfigurator: containerAddConfigurator,
+      dynamicBuilder: (ctx) => IterableContent(id: ctx.id),
     );
     registry['ListView'] = ComponentBuilderDynamic(
       menuIcon: Icons.view_list,

@@ -220,7 +220,7 @@ void main() {
 
   for (final owner in ['layout', 'grid', 'native', 'surface']) {
     for (final provided in [true, false]) {
-      for (final wrapper in ['Card', 'Layout']) {
+      for (final wrapper in ['Card', 'Layout', 'IterableContent']) {
         testWidgets(
           '$owner wraps ${provided ? 'provided' : 'catalog'} in $wrapper',
           (tester) async {
@@ -249,7 +249,7 @@ void main() {
               inLayout
                   ? after.layouts['root']!.slotTypeOf(id)
                   : after.nativeComponents['root']!.slotTypeOf(id),
-              wrapper == 'Card' ? 'registry:Card' : 'registry:Layout',
+              'registry:$wrapper',
             );
             expect(
               inLayout
@@ -388,7 +388,7 @@ void main() {
     });
   }
 
-  for (final wrapperType in ['Card', 'Layout']) {
+  for (final wrapperType in ['Card', 'Layout', 'IterableContent']) {
     testWidgets(
       '$wrapperType preserves catalog configurations during duplication',
       (tester) async {
@@ -474,6 +474,7 @@ void main() {
       await tester.tap(find.text('Envelopper dans…'));
       await tester.pumpAndSettle();
       expect(find.text('Card'), findsOneWidget);
+      expect(find.text('IterableContent'), findsOneWidget);
       expect(find.text('Layout'), findsNothing);
       expect(tester.takeException(), isNull);
     });

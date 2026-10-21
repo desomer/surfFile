@@ -324,10 +324,10 @@ registry.registerFactory(
 Les factories dynamiques acceptent aussi `tags` sur `ComponentBuilderDynamic`.
 `Registry.bootstrap()` attribue `appBar` à `AppBar`,
 `bottomNavigationBar` à `BottomNavigationBar`, `container` à
-`Card` et `layout` à `Layout`.
+`Card`, `layout` à `Layout`, et les deux tags `container` et `layout` à `IterableContent`.
 
 Les noms du catalogue, des menus et des types sauvegardes sont `Card`, `Layout`,
-`Text`, `ListView`, `AppBar` et `BottomNavigationBar` ; le type d'edition d'une
+`IterableContent`, `Text`, `ListView`, `AppBar` et `BottomNavigationBar` ; le type d'edition d'une
 page est `Page`. Les classes et les fichiers Dart conservent leur nom avec
 prefixe `Super` (par exemple `SuperContainer`, `SuperLayout`, `SuperText`).
 Les anciennes cles de catalogue et de persistance (`NewContainer`, `NewLayout`,
@@ -367,8 +367,8 @@ texte, barre d'application, navigation inferieure, conteneur, liste et dispositi
 ### Envelopper un composant
 
 En mode edition, les trois points verticaux en fin de ligne du menu contextuel
-ouvrent **Envelopper dans…**, avec **Card** et **Layout**.
-Ces choix utilisent les factories `Card` et `Layout` installees par
+ouvrent **Envelopper dans…**, avec **Card**, **Layout** et **IterableContent**.
+Ces choix utilisent les factories de meme nom installees par
 `Registry.bootstrap()` ; seuls les parents compatibles avec les tags de la zone
 sont proposes.
 
@@ -379,6 +379,43 @@ L'operation est sauvegardee et constitue une seule etape d'annulation/retablisse
 Elle fonctionne aussi avec les slots et les champs `child` fournis par le code :
 leur definition doit rester presente dans le widget d'origine pour les retrouver
 au chargement. Les enveloppements successifs sont possibles.
+
+### IterableContent : surface stylable et disposition
+
+`IterableContent` (nom de catalogue **IterableContent**) compose une surface editable comme
+Card et un `SuperLayout` structurel. Deux entrees du menu contextuel separent le
+style **IterableContent** de la disposition **Layout**. Le Layout interne n'est pas un
+enfant optionnel : on peut y ajouter, deplacer et retirer des slots, mais pas le
+supprimer comme le champ enfant d'une Card.
+
+Sans style explicite, IterableContent est transparent, sans marge, padding, bordure ou
+ombre. Il prend en charge les memes reglages de `ContainerStyle` que Card :
+fond, arrondis, bordures, ombres, effets et espacements. Par exemple :
+
+```dart
+IterableContent(
+  id: 'article',
+  style: const ContainerStyle(radius: 12, padding: 8),
+  config: const SuperLayoutConfig(north: false, south: false),
+)
+```
+
+Avec un registre, le style et la disposition sont sauvegardes sous le meme ID,
+respectivement dans `styles[id]` et `layouts[id]`. Sans registre, le composant
+conserve des valeurs locales et expose `onStyleChanged` et `onChanged`.
+L'ajout au catalogue propose les reglages de style ; le Layout reste editable
+apres insertion. Envelopper dans IterableContent place le composant existant au centre
+de son Layout et conserve son identifiant et ses reglages.
+
+Les lignes de `SuperListView` utilisent IterableContent. `template` definit leur
+disposition et `templateStyle` leur style initial. Toutes les lignes d'une liste,
+y compris le gabarit vide, partagent ces reglages ; modifier une ligne met a jour
+les autres, meme sans registre. Avec un registre, `styles[listId]` et
+`layouts[listId]` appartiennent au gabarit de la liste, sans ID par index.
+La copie et la suppression d'une ListView incluent ce style de gabarit.
+Les indices JSON, la selection maitre/detail et les controles de retrait restent
+propres a chaque ligne. `itemExtent` et `spacing` ne changent pas : les marges et
+le padding de IterableContent utilisent l'espace deja attribue a la ligne.
 
 Un `ComponentTagFilter` définit les catégories acceptées par une zone :
 

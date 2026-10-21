@@ -57,5 +57,6 @@ export 'widgets/editing/slots/editor_slot.dart';
 export 'widgets/editing/slots/editor_context_menu.dart';
 export 'widgets/editing/slots/editable_surface.dart';
 export 'widgets/super_layout/super_layout.dart';
+export 'widgets/super_layout/iterable_content.dart';
 export 'widgets/super_layout/registered_super_layout.dart';
 export 'widgets/surfaces/surface_painters.dart';

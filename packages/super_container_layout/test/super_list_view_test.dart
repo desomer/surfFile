@@ -12,8 +12,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
@@ -74,23 +77,55 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> mount(WidgetTester tester, Widget child) async {
+  Future<void> mount(
+    WidgetTester tester,
+    Widget child, {
+    Registry? registry,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1200, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await real(
-      tester,
-      () => tester.pumpWidget(
-        JsonRepositoryScope(
-          store: store,
-          child: MaterialApp(
-            home: Scaffold(
+    Widget app = MaterialApp(
+      home: Scaffold(
+        body: Center(child: SizedBox(width: 500, height: 900, child: child)),
+      ),
+    );
+    if (registry != null) {
+      SharedPreferences.setMockInitialValues({});
+      for (final channel in [
+        const MethodChannel('com.alexmercerind/flutter_acrylic'),
+        WindowTransparency.channel,
+      ]) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (_) async => null);
+        addTearDown(
+          () => TestDefaultBinaryMessengerBinding
+              .instance
+              .defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null),
+        );
+      }
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(
               body: Center(
                 child: SizedBox(width: 500, height: 900, child: child),
               ),
             ),
           ),
-        ),
-      ),
+        ],
+      );
+      addTearDown(router.dispose);
+      app = SuperApp(
+        router: router,
+        registry: registry,
+        repositoryStore: store,
+      );
+    }
+    await real(
+      tester,
+      () => tester.pumpWidget(JsonRepositoryScope(store: store, child: app)),
     );
   }
 
@@ -120,6 +155,106 @@ void main() {
 
   Finder row(String list, Object index) =>
       find.byKey(ValueKey('super-list-row-$list-$index'));
+
+  testWidgets(
+    'rows share IterableContent style and layout without a registry',
+    (tester) async {
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            itemExtent: 150,
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+      expect(find.byType(IterableContent), findsNWidgets(2));
+      final first = tester.widget<IterableContent>(
+        find.descendant(
+          of: row('clients', 0),
+          matching: find.byType(IterableContent),
+        ),
+      );
+      const style = ContainerStyle(color: Colors.blue, padding: 7, radius: 9);
+      first.onStyleChanged!(style);
+      first.onChanged!(
+        first.config.withAxis(SuperLayoutZone.center, Axis.horizontal),
+      );
+      await tester.pumpAndSettle();
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style, same(style));
+        expect(content.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      }
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'registry row style changes propagate to all rows and undo together',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            itemExtent: 150,
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+        registry: registry,
+      );
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+      final context = tester.element(find.byType(SuperListView));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      final appearance = AppearanceScope.controllerOf(context)!;
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.clear();
+      final before = appearance.value;
+      tester
+          .widget<IterableContent>(find.byType(IterableContent).first)
+          .onStyleChanged!(
+        const ContainerStyle(color: Colors.orange, radius: 10),
+      );
+      await tester.pumpAndSettle();
+      expect(appearance.value.styles['clients']!.radius, 10);
+      expect(find.byType(IterableContent), findsNWidgets(2));
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style.radius, 10);
+      }
+      await real(tester, () async => history.undo());
+      expect(appearance.value, same(before));
+      expect(history.canUndo, isFalse);
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style.radius, 0);
+      }
+      await real(tester, () async => history.redo());
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style.radius, 10);
+      }
+      expect(await document(tester), containsPair('clients', hasLength(2)));
+      expect(tester.takeException(), isNull);
+      await real(tester, store.flushBindings);
+      await real(tester, () => tester.pumpWidget(const SizedBox()));
+    },
+  );
 
   testWidgets('rows and nested rows resolve [?] with inherited repository', (
     tester,
@@ -166,6 +301,41 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets(
+    'horizontal rows retain their extent and spacing with IterableContent',
+    (tester) async {
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            axis: Axis.horizontal,
+            spacing: 12,
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            itemExtent: 180,
+          ),
+          templateStyle: const ContainerStyle(
+            padding: 5,
+            margin: 3,
+            color: Colors.blue,
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+      expect(find.byType(IterableContent), findsNWidgets(2));
+      expect(tester.getSize(row('clients', 0)).width, 192);
+      expect(
+        tester.getTopLeft(row('clients', 1)).dx -
+            tester.getTopLeft(row('clients', 0)).dx,
+        192,
+      );
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('a text field in a row writes its own element', (tester) async {
     await mount(

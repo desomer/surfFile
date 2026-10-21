@@ -10,7 +10,8 @@ import 'editor_context_menu.dart';
 
 enum EditorSlotWrapper {
   container('Card', 'Card', Icons.crop_square),
-  layout('Layout', 'Layout', Icons.dashboard_outlined);
+  layout('Layout', 'Layout', Icons.dashboard_outlined),
+  iterableContent('IterableContent', 'IterableContent', Icons.article_outlined);
 
   const EditorSlotWrapper(this.label, this.factory, this.icon);
 
@@ -92,6 +93,7 @@ void wrapSlotInstance(
           slotLabels: {id: label},
         );
       case EditorSlotWrapper.layout:
+      case EditorSlotWrapper.iterableContent:
         registry.layoutController(wrapperId).value = SuperLayoutConfig(
           north: false,
           south: false,
