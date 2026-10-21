@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/foundation.dart' show mapEquals;
+import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 
 import 'json_text_binding.dart';
 import 'super_text_field_config.dart';
+
+part 'super_text_states.dart';
 
 enum SuperTextMode { display, input }
 
@@ -40,6 +42,7 @@ class SuperTextConfig {
     this.binding,
     this.propertyBindings = const {},
     this.field = const SuperTextFieldConfig(),
+    this.states,
   });
 
   final SuperTextMode mode;
@@ -62,8 +65,14 @@ class SuperTextConfig {
   final JsonTextBinding? binding;
   final Map<SuperTextProperty, JsonTextBinding> propertyBindings;
   final SuperTextFieldConfig field;
+  final TextConfigStates? states;
 
   void validate() {
+    _validateLeaf();
+    states?._validateAgainst(this);
+  }
+
+  void _validateLeaf() {
     binding?.validate();
     for (final binding in propertyBindings.values) {
       binding.validate();
@@ -110,6 +119,8 @@ class SuperTextConfig {
     bool clearBinding = false,
     Map<SuperTextProperty, JsonTextBinding>? propertyBindings,
     SuperTextFieldConfig? field,
+    TextConfigStates? states,
+    bool clearStates = false,
   }) => SuperTextConfig(
     mode: mode ?? this.mode,
     initialText: initialText ?? this.initialText,
@@ -133,6 +144,7 @@ class SuperTextConfig {
     binding: clearBinding ? null : binding ?? this.binding,
     propertyBindings: propertyBindings ?? this.propertyBindings,
     field: field ?? this.field,
+    states: clearStates ? null : states ?? this.states,
   );
 
   Map<String, Object?> toJson() {
@@ -162,6 +174,7 @@ class SuperTextConfig {
             entry.key.name: entry.value.toJson(),
         },
       if (field != const SuperTextFieldConfig()) 'field': field.toJson(),
+      if (states != null) 'states': states!.toJson(),
     };
   }
 
@@ -190,6 +203,7 @@ class SuperTextConfig {
       'binding',
       'propertyBindings',
       'field',
+      'states',
     };
     if (value.keys.any((key) => !keys.contains(key))) {
       throw const FormatException('Unknown Text preference.');
@@ -271,6 +285,9 @@ class SuperTextConfig {
       field: value.containsKey('field')
           ? SuperTextFieldConfig.fromJson(value['field'])
           : const SuperTextFieldConfig(),
+      states: value['states'] == null
+          ? null
+          : TextConfigStates.fromJson(value['states']),
     );
     try {
       result.validate();
@@ -302,7 +319,8 @@ class SuperTextConfig {
       letterSpacing == other.letterSpacing &&
       binding == other.binding &&
       mapEquals(propertyBindings, other.propertyBindings) &&
-      field == other.field;
+      field == other.field &&
+      states == other.states;
 
   @override
   int get hashCode => Object.hashAll([
@@ -330,5 +348,6 @@ class SuperTextConfig {
       ),
     ),
     field,
+    states,
   ]);
 }

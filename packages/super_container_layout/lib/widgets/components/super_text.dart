@@ -13,6 +13,7 @@ import '../../services/json_repository_binding.dart';
 import '../../services/json_repository_scope.dart';
 import '../../services/json_repository_store.dart';
 import '../../services/json_text_controller_binding.dart';
+import '../../services/surface_state_binding.dart';
 import '../../super_app.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/components/super_text_editor.dart';
@@ -173,6 +174,63 @@ class _SuperTextState extends State<SuperText> {
   List<JsonArrayBinding> _selections = const [];
   SuperTextConfig? _editorConfig;
   TextEditingController? _editorText;
+  SurfaceStateBinding? _stateReader;
+  bool _hovered = false;
+  List<String>? _activeStates;
+  String? _stateError;
+  SuperTextConfig? _effectiveConfig;
+
+  void _stateChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  SuperTextConfig _resolveStates(
+    SuperTextConfig saved,
+    JsonListScope? scope,
+    JsonRepositoryStore? store,
+  ) {
+    final binding = saved.states?.binding;
+    if (binding == null) {
+      _stateReader?.removeListener(_stateChanged);
+      _stateReader?.dispose();
+      _stateReader = null;
+    } else if (_stateReader == null) {
+      _stateReader = SurfaceStateBinding(
+        store: store,
+        binding: binding,
+        scope: scope,
+        placeholder: scope?.placeholder ?? false,
+      )..addListener(_stateChanged);
+    } else {
+      _stateReader!.reconfigure(
+        store: store,
+        binding: binding,
+        scope: scope,
+        placeholder: scope?.placeholder ?? false,
+      );
+    }
+    _stateError = _stateReader?.error;
+    try {
+      final config =
+          saved.states?.resolve(
+            saved,
+            name: _stateReader?.stateName,
+            isHovered: _hovered,
+            isSelected: scope?.selected ?? false,
+          ) ??
+          saved;
+      config.validate();
+      return config;
+    } on FormatException catch (error) {
+      _stateError = error.message;
+    } on ArgumentError {
+      _stateError = 'Combinaison d’états du texte invalide.';
+    }
+    return saved.copyWith(clearStates: true);
+  }
 
   TextEditingController get _text => widget.controller ?? _internal;
 
@@ -304,12 +362,15 @@ class _SuperTextState extends State<SuperText> {
   void _observeBinding(
     SuperTextConfig config,
     JsonListScope? scope,
-    JsonRepositoryStore? store,
-  ) {
+    JsonRepositoryStore? store, {
+    bool resetText = false,
+    bool stateful = false,
+  }) {
     final external = widget.controller != null || widget.value != null;
     final resolved = _resolve(config, scope, store);
     _listenSelections(resolved.selections);
-    if (_requestedBinding == resolved.binding &&
+    if (!resetText &&
+        _requestedBinding == resolved.binding &&
         _requestedResolveError == resolved.error &&
         _requestedPlaceholder == resolved.placeholder &&
         _requestedStore == store &&
@@ -322,18 +383,24 @@ class _SuperTextState extends State<SuperText> {
     _requestedStore = store;
     _requestedExternal = external;
     final generation = ++_bindingGeneration;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _bindingGeneration) return;
-      _binding?.removeListener(_bindingChanged);
-      _binding?.dispose();
+      final oldBinding = _binding;
+      oldBinding?.removeListener(_bindingChanged);
+      final flushed = oldBinding?.flush();
+      oldBinding?.dispose();
       _binding = null;
+      if (flushed != null) await flushed;
+      if (!mounted || generation != _bindingGeneration) return;
       _bindingError = resolved.error;
       _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
+      if (resetText && !external) {
+        _setText(_internal, config.obscureText ? '' : config.initialText);
+      }
       if (resolved.placeholder && !external) _setText(_internal, '');
       if (resolved.binding != null) {
         if (external) {
-          _bindingError =
-              'La liaison nécessite le contrôleur interne de Text.';
+          _bindingError = 'La liaison nécessite le contrôleur interne de Text.';
         } else if (store == null) {
           _bindingError = 'Service de repositories indisponible.';
         } else {
@@ -341,7 +408,7 @@ class _SuperTextState extends State<SuperText> {
             store: store,
             binding: resolved.binding!,
             controller: _internal,
-            onChanged: (text) => widget.onChanged?.call(text),
+            onChanged: stateful ? null : (text) => widget.onChanged?.call(text),
           )..addListener(_bindingChanged);
         }
       }
@@ -510,6 +577,8 @@ class _SuperTextState extends State<SuperText> {
 
   @override
   void dispose() {
+    _stateReader?.removeListener(_stateChanged);
+    _stateReader?.dispose();
     _bindingGeneration++;
     _listenSelections(const []);
     _propertyBindingGeneration++;
@@ -535,243 +604,302 @@ class _SuperTextState extends State<SuperText> {
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     final canConfigure = StyleEditScope.controllerOf(context)?.value ?? true;
 
-    return ValueListenableBuilder<SuperTextConfig>(
-      valueListenable: configuration,
-      builder: (context, savedConfig, _) {
-        _observeBinding(savedConfig, listScope, repositories);
-        _observeConfig(savedConfig);
-        _observePropertyBindings(savedConfig, listScope, repositories);
-        final config = _editorConfig ?? _withBoundProperties(savedConfig);
-        final controller = _editorText ?? _text;
-        final missingFont =
-            config.fontFamily != null &&
-            !widget.availableFontFamilies.contains(config.fontFamily);
-        final base = DefaultTextStyle.of(context).style;
-        final style = base.copyWith(
-          fontFamily: missingFont ? null : config.fontFamily,
-          fontSize: config.fontSize,
-          fontWeight: config.fontWeight,
-          fontStyle: config.italic == null
-              ? null
-              : config.italic!
-              ? FontStyle.italic
-              : FontStyle.normal,
-          color: config.color,
-          height: config.lineHeight,
-          letterSpacing: config.letterSpacing,
-        );
-        return EditorSlot(
-          key: _surface,
-          label: 'Texte',
-          menuType: 'Text',
-          onEdit: () async {
-            if (_editorText != null) return;
-            final initial = configuration.value;
-            final originalText = _text.text;
-            _editorText = TextEditingController.fromValue(_text.value);
-            SuperTextConfig? result;
-            try {
-              result = await showSuperTextEditor(
-                context: context,
-                config: initial,
-                availableFontFamilies: widget.availableFontFamilies,
-                allowBinding: widget.controller == null && widget.value == null,
-                onPreviewChanged: (draft) {
-                  if (!mounted || _editorText == null) return;
-                  final text =
-                      draft.binding == null &&
-                          draft.obscureText &&
-                          !initial.obscureText
-                      ? ''
-                      : draft.binding == null &&
-                            (draft.initialText != initial.initialText ||
-                                draft.mode != initial.mode)
-                      ? draft.initialText
-                      : originalText;
-                  if (_editorText!.text != text) _setText(_editorText!, text);
-                  setState(() => _editorConfig = draft);
-                },
-              );
-            } finally {
-              final previewText = _editorText;
-              if (mounted) {
-                setState(() {
-                  _editorConfig = null;
-                  _editorText = null;
-                });
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => previewText?.dispose(),
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) {
+        if (!_hovered) setState(() => _hovered = true);
+      },
+      onExit: (_) {
+        if (_hovered) setState(() => _hovered = false);
+      },
+      child: ValueListenableBuilder<SuperTextConfig>(
+        valueListenable: configuration,
+        builder: (context, savedConfig, _) {
+          final effective = _resolveStates(
+            savedConfig,
+            listScope,
+            repositories,
+          );
+          final states = savedConfig.states;
+          final active = states == null
+              ? <String>[]
+              : [
+                  for (final key in states.order)
+                    if (key == TextConfigStates.hoverKey
+                        ? _hovered
+                        : key == TextConfigStates.selectedKey
+                        ? listScope?.selected == true
+                        : key == _stateReader?.stateName)
+                      key,
+                ];
+          final transition =
+              states != null && !listEquals(_activeStates, active);
+          final contentChanged =
+              states != null &&
+              _effectiveConfig != null &&
+              (_effectiveConfig!.initialText != effective.initialText ||
+                  _effectiveConfig!.mode != effective.mode ||
+                  _effectiveConfig!.obscureText != effective.obscureText);
+          _effectiveConfig = effective;
+          _activeStates = active;
+          _observeBinding(
+            effective,
+            listScope,
+            repositories,
+            resetText: transition || contentChanged,
+            stateful: states != null,
+          );
+          if (states == null) _observeConfig(effective);
+          _observePropertyBindings(effective, listScope, repositories);
+          final config = _editorConfig ?? _withBoundProperties(effective);
+          final controller = _editorText ?? _text;
+          final missingFont =
+              config.fontFamily != null &&
+              !widget.availableFontFamilies.contains(config.fontFamily);
+          final base = DefaultTextStyle.of(context).style;
+          final style = base.copyWith(
+            fontFamily: missingFont ? null : config.fontFamily,
+            fontSize: config.fontSize,
+            fontWeight: config.fontWeight,
+            fontStyle: config.italic == null
+                ? null
+                : config.italic!
+                ? FontStyle.italic
+                : FontStyle.normal,
+            color: config.color,
+            height: config.lineHeight,
+            letterSpacing: config.letterSpacing,
+          );
+          return EditorSlot(
+            key: _surface,
+            label: 'Texte',
+            menuType: 'Text',
+            onEdit: () async {
+              if (_editorText != null) return;
+              final initial = configuration.value;
+              final originalText = _text.text;
+              _editorText = TextEditingController.fromValue(_text.value);
+              SuperTextConfig? result;
+              try {
+                result = await showSuperTextEditor(
+                  context: context,
+                  config: initial,
+                  availableFontFamilies: widget.availableFontFamilies,
+                  allowBinding:
+                      widget.controller == null && widget.value == null,
+                  activeState: _stateReader?.stateName,
+                  stateError: _stateError,
+                  isHovered: _hovered,
+                  isSelected: listScope?.selected ?? false,
+                  onPreviewChanged: (draft) {
+                    if (!mounted || _editorText == null) return;
+                    final text =
+                        draft.binding == null &&
+                            draft.obscureText &&
+                            !initial.obscureText
+                        ? ''
+                        : draft.binding == null &&
+                              (draft.initialText != initial.initialText ||
+                                  draft.mode != initial.mode)
+                        ? draft.initialText
+                        : originalText;
+                    if (_editorText!.text != text) _setText(_editorText!, text);
+                    setState(() => _editorConfig = draft);
+                  },
                 );
+              } finally {
+                final previewText = _editorText;
+                if (mounted) {
+                  setState(() {
+                    _editorConfig = null;
+                    _editorText = null;
+                  });
+                  WidgetsBinding.instance.addPostFrameCallback(
+                    (_) => previewText?.dispose(),
+                  );
+                }
               }
-            }
-            if (result == null ||
-                !context.mounted ||
-                result == configuration.value) {
-              return;
-            }
-            final history = EditorHistoryScope.controllerOf(context);
-            history?.beginTransaction();
-            try {
-              configuration.value = result;
-            } finally {
-              history?.commitTransaction();
-            }
-            widget.onConfigChanged?.call(result);
-          },
-          child: ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (context, value, _) {
-              final text = _editorText == null
-                  ? widget.value ?? value.text
-                  : value.text;
-              final display = Text(
-                text.isEmpty
-                    ? config.placeholder
-                    : config.obscureText
-                    ? List.filled(text.runes.length, '\u2022').join()
-                    : text,
-                key: ValueKey('super-text-display-${widget.id}'),
-                style: style,
-                textAlign: config.textAlign,
-                maxLines: config.maxLines,
-                overflow: TextOverflow.ellipsis,
-              );
-              final content = config.mode == SuperTextMode.input
-                  ? Listener(
-                      onPointerDown: (event) {
-                        // TextField consumes secondary taps before EditorSlot.
-                        if (canConfigure &&
-                            event.buttons == kSecondaryMouseButton) {
-                          _surface.currentState?.openMenu(event.position);
-                        }
-                      },
-                      child: SuperTextField(
-                        key: ValueKey('super-text-field-${widget.id}'),
-                        inputKey: ValueKey('super-text-input-${widget.id}'),
-                        config: config,
-                        controller: controller,
-                        style: style,
-                        enabled:
-                            config.enabled &&
-                            !(config.binding != null &&
-                                _binding?.loading == true),
-                        readOnly: _unselected ? true : null,
-                        enableContextMenu: !canConfigure,
-                        bindingError: _bindingError ?? _binding?.error,
-                        onChanged: (text) {
-                          if (_editorText != null) return;
-                          widget.onChanged?.call(text);
-                          if (widget.value != null) {
-                            WidgetsBinding.instance.addPostFrameCallback((_) {
-                              if (mounted &&
-                                  widget.controller == null &&
-                                  widget.value != null &&
-                                  _internal.text != widget.value) {
-                                _setText(_internal, widget.value!);
-                              }
-                            });
+              if (result == null ||
+                  !context.mounted ||
+                  result == configuration.value) {
+                return;
+              }
+              final history = EditorHistoryScope.controllerOf(context);
+              history?.beginTransaction();
+              try {
+                configuration.value = result;
+              } finally {
+                history?.commitTransaction();
+              }
+              widget.onConfigChanged?.call(result);
+            },
+            child: ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder: (context, value, _) {
+                final text = _editorText == null
+                    ? widget.value ?? value.text
+                    : value.text;
+                final display = Text(
+                  text.isEmpty
+                      ? config.placeholder
+                      : config.obscureText
+                      ? List.filled(text.runes.length, '\u2022').join()
+                      : text,
+                  key: ValueKey('super-text-display-${widget.id}'),
+                  style: style,
+                  textAlign: config.textAlign,
+                  maxLines: config.maxLines,
+                  overflow: TextOverflow.ellipsis,
+                );
+                final content = config.mode == SuperTextMode.input
+                    ? Listener(
+                        onPointerDown: (event) {
+                          // TextField consumes secondary taps before EditorSlot.
+                          if (canConfigure &&
+                              event.buttons == kSecondaryMouseButton) {
+                            _surface.currentState?.openMenu(event.position);
                           }
                         },
-                      ),
-                    )
-                  : config.label.isEmpty
-                  ? display
-                  : InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: config.label.isEmpty ? null : config.label,
-                        enabled: config.enabled,
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                      isEmpty: false,
-                      child: display,
-                    );
-
-              return LayoutBuilder(
-                builder: (context, constraints) => SizedBox(
-                  width: constraints.hasBoundedWidth ? null : 240,
-                  height: constraints.hasBoundedHeight
-                      ? constraints.maxHeight
-                      : null,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Flexible(child: content),
-                      if (config.mode == SuperTextMode.display &&
-                          (_bindingError != null || _binding?.error != null))
-                        Text(
-                          _bindingError ?? _binding!.error!,
-                          key: ValueKey(
-                            'super-text-binding-error-${widget.id}',
-                          ),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                      for (final entry in _propertyBindingErrors.entries)
-                        Text(
-                          'Liaison ${entry.key.name} : ${entry.value}',
-                          key: ValueKey(
-                            'super-text-property-binding-error-'
-                            '${entry.key.name}-${widget.id}',
-                          ),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                        ),
-                      // if (_binding != null &&
-                      //     (_binding!.loading || _binding!.saving))
-                      //   Text(
-                      //     _binding!.loading ? 'Chargement…' : 'Enregistrement…',
-                      //   ),
-                      if (_binding?.error != null)
-                        TextButton(
-                          onPressed: () async {
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Recharger la liaison ?'),
-                                content: const Text(
-                                  'La saisie non enregistrée sera abandonnée.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, false),
-                                    child: const Text('Annuler'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () =>
-                                        Navigator.pop(context, true),
-                                    child: const Text('Recharger'),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirmed == true && mounted) {
-                              await _binding?.discardAndReload();
+                        child: SuperTextField(
+                          key: ValueKey('super-text-field-${widget.id}'),
+                          inputKey: ValueKey('super-text-input-${widget.id}'),
+                          config: config,
+                          controller: controller,
+                          style: style,
+                          enabled:
+                              config.enabled &&
+                              !(config.binding != null &&
+                                  _binding?.loading == true),
+                          readOnly: _unselected ? true : null,
+                          enableContextMenu: !canConfigure,
+                          bindingError: _bindingError ?? _binding?.error,
+                          onChanged: (text) {
+                            if (_editorText != null) return;
+                            widget.onChanged?.call(text);
+                            if (widget.value != null) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted &&
+                                    widget.controller == null &&
+                                    widget.value != null &&
+                                    _internal.text != widget.value) {
+                                  _setText(_internal, widget.value!);
+                                }
+                              });
                             }
                           },
-                          child: const Text('Recharger la liaison'),
                         ),
-                      if (missingFont && editing)
-                        Text(
-                          'Police indisponible : ${config.fontFamily}. Choisissez une police disponible.',
-                          key: ValueKey('super-text-font-warning-${widget.id}'),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+                      )
+                    : config.label.isEmpty
+                    ? display
+                    : InputDecorator(
+                        decoration: InputDecoration(
+                          labelText: config.label.isEmpty ? null : config.label,
+                          enabled: config.enabled,
+                          border: InputBorder.none,
+                          isDense: true,
+                        ),
+                        isEmpty: false,
+                        child: display,
+                      );
+
+                return LayoutBuilder(
+                  builder: (context, constraints) => SizedBox(
+                    width: constraints.hasBoundedWidth ? null : 240,
+                    height: constraints.hasBoundedHeight
+                        ? constraints.maxHeight
+                        : null,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Flexible(child: content),
+                        if (config.mode == SuperTextMode.display &&
+                            (_bindingError != null || _binding?.error != null))
+                          Text(
+                            _bindingError ?? _binding!.error!,
+                            key: ValueKey(
+                              'super-text-binding-error-${widget.id}',
+                            ),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                           ),
-                        ),
-                    ],
+                        for (final entry in _propertyBindingErrors.entries)
+                          Text(
+                            'Liaison ${entry.key.name} : ${entry.value}',
+                            key: ValueKey(
+                              'super-text-property-binding-error-'
+                              '${entry.key.name}-${widget.id}',
+                            ),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        // if (_binding != null &&
+                        //     (_binding!.loading || _binding!.saving))
+                        //   Text(
+                        //     _binding!.loading ? 'Chargement…' : 'Enregistrement…',
+                        //   ),
+                        if (_binding?.error != null)
+                          TextButton(
+                            onPressed: () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Recharger la liaison ?'),
+                                  content: const Text(
+                                    'La saisie non enregistrée sera abandonnée.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('Annuler'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text('Recharger'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true && mounted) {
+                                await _binding?.discardAndReload();
+                              }
+                            },
+                            child: const Text('Recharger la liaison'),
+                          ),
+                        if (_stateError != null && editing)
+                          Text(
+                            _stateError!,
+                            key: ValueKey(
+                              'super-text-state-error-${widget.id}',
+                            ),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        if (missingFont && editing)
+                          Text(
+                            'Police indisponible : ${config.fontFamily}. Choisissez une police disponible.',
+                            key: ValueKey(
+                              'super-text-font-warning-${widget.id}',
+                            ),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              );
-            },
-          ),
-        );
-      },
+                );
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 }

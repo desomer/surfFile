@@ -10,10 +10,12 @@ import '../../../models/json_text_binding.dart';
 import '../../../services/json_list_scope.dart';
 import '../../../services/json_repository_scope.dart';
 import '../../../services/json_repository_store.dart';
+import '../../../services/surface_state_binding.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../dialogs/editor_dialog.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/style_editor_panel.dart';
+import '../states/editor_state_controls.dart';
 import 'super_text_field_settings.dart';
 
 Future<SuperTextConfig?> showSuperTextEditor({
@@ -22,6 +24,10 @@ Future<SuperTextConfig?> showSuperTextEditor({
   required List<String> availableFontFamilies,
   bool allowBinding = true,
   ValueChanged<SuperTextConfig>? onPreviewChanged,
+  String? activeState,
+  String? stateError,
+  bool isHovered = false,
+  bool isSelected = false,
 }) async {
   final width = ValueNotifier(StyleEditorPanel.preferredDense ? 680.0 : 1080.0);
   final textStyle = DefaultTextStyle.of(context).style;
@@ -32,7 +38,12 @@ Future<SuperTextConfig?> showSuperTextEditor({
       context: context,
       target: context,
       preferredWidth: width,
-      builder: (_) => _SuperTextEditor(
+      builder: (_) => _TextStateEditor(
+        ownerContext: context,
+        activeState: activeState,
+        stateError: stateError,
+        isHovered: isHovered,
+        isSelected: isSelected,
         config: config,
         availableFontFamilies: availableFontFamilies,
         textStyle: textStyle,
@@ -48,6 +59,308 @@ Future<SuperTextConfig?> showSuperTextEditor({
   }
 }
 
+class _TextStateEditor extends StatefulWidget {
+  const _TextStateEditor({
+    required this.ownerContext,
+    required this.config,
+    required this.availableFontFamilies,
+    required this.textStyle,
+    required this.onWidthChanged,
+    required this.repositories,
+    required this.listScope,
+    required this.allowBinding,
+    required this.onPreviewChanged,
+    required this.activeState,
+    required this.stateError,
+    required this.isHovered,
+    required this.isSelected,
+  });
+  final BuildContext ownerContext;
+  final SuperTextConfig config;
+  final List<String> availableFontFamilies;
+  final TextStyle textStyle;
+  final ValueChanged<double> onWidthChanged;
+  final JsonRepositoryStore? repositories;
+  final JsonListScope? listScope;
+  final bool allowBinding, isHovered, isSelected;
+  final ValueChanged<SuperTextConfig>? onPreviewChanged;
+  final String? activeState, stateError;
+  @override
+  State<_TextStateEditor> createState() => _TextStateEditorState();
+}
+
+class _TextStateEditorState extends State<_TextStateEditor> {
+  late SuperTextConfig _root = widget.config;
+  String? _state;
+  String? _error;
+  GlobalKey<_SuperTextEditorState> _leafKey = GlobalKey();
+  SurfaceStateBinding? _reader;
+
+  void _stateChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _syncReader() {
+    final binding = _root.states?.binding;
+    if (binding == null) {
+      _reader?.removeListener(_stateChanged);
+      _reader?.dispose();
+      _reader = null;
+    } else if (_reader == null) {
+      _reader = SurfaceStateBinding(
+        store: widget.repositories,
+        binding: binding,
+        scope: widget.listScope,
+        placeholder: widget.listScope?.placeholder ?? false,
+      )..addListener(_stateChanged);
+    } else {
+      _reader!.reconfigure(
+        store: widget.repositories,
+        binding: binding,
+        scope: widget.listScope,
+        placeholder: widget.listScope?.placeholder ?? false,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _reader?.removeListener(_stateChanged);
+    _reader?.dispose();
+    super.dispose();
+  }
+
+  SuperTextConfig get _leaf {
+    final states = _root.states;
+    if (_state == hoverSurfaceStateKey) {
+      return states?.hover?.config ?? _root.copyWith(clearStates: true);
+    }
+    if (_state == selectedSurfaceStateKey) {
+      return states?.selected?.config ?? _root.copyWith(clearStates: true);
+    }
+    return states?.named[_state] ?? _root.copyWith(clearStates: true);
+  }
+
+  SuperTextConfig _withLeaf(SuperTextConfig leaf) {
+    leaf = leaf.copyWith(clearStates: true);
+    final states = _root.states ?? TextConfigStates();
+    if (_state == null) return leaf.copyWith(states: _root.states);
+    final previous = _state == hoverSurfaceStateKey
+        ? states.hover
+        : states.selected;
+    final overlay =
+        (previous ??
+                TextConfigOverride(config: _root.copyWith(clearStates: true)))
+            .edited(leaf);
+    return _root.copyWith(
+      states: _state == hoverSurfaceStateKey
+          ? states.copyWith(hover: overlay)
+          : _state == selectedSurfaceStateKey
+          ? states.copyWith(selected: overlay)
+          : states.copyWith(named: {...states.named, _state!: leaf}),
+    );
+  }
+
+  void _validate(SuperTextConfig root) {
+    root.validate();
+    if (!widget.allowBinding) {
+      final leaves = [
+        root,
+        ...?root.states?.named.values,
+        if (root.states?.hover case final value?) value.config,
+        if (root.states?.selected case final value?) value.config,
+      ];
+      if (leaves.any((leaf) => leaf.binding != null)) {
+        throw const FormatException(
+          'La liaison nécessite le contrôleur interne de Text.',
+        );
+      }
+    }
+  }
+
+  bool _capture() {
+    if (_leafKey.currentState == null) return true;
+    final leaf = _leafKey.currentState?.capture();
+    if (leaf == null) return false;
+    try {
+      final root = _withLeaf(leaf);
+      _validate(root);
+      _root = root;
+      _error = null;
+      return true;
+    } on FormatException catch (e) {
+      setState(() => _error = e.message);
+    } on ArgumentError {
+      setState(() => _error = 'Combinaison de propriétés invalide.');
+    }
+    return false;
+  }
+
+  void _preview(SuperTextConfig root) {
+    final states = root.states;
+    final config = _state == null
+        ? root.copyWith(clearStates: true)
+        : states?.resolve(
+                root,
+                name:
+                    _state == hoverSurfaceStateKey ||
+                        _state == selectedSurfaceStateKey
+                    ? _reader?.stateName ?? widget.activeState
+                    : _state,
+                isHovered: _state == hoverSurfaceStateKey || widget.isHovered,
+                isSelected:
+                    _state == selectedSurfaceStateKey || widget.isSelected,
+              ) ??
+              root.copyWith(clearStates: true);
+    widget.onPreviewChanged?.call(config);
+  }
+
+  void _changeStates(
+    TextConfigStates Function(TextConfigStates states) update,
+  ) {
+    if (!_capture()) return;
+    try {
+      final root = _root.copyWith(
+        states: update(_root.states ?? TextConfigStates()),
+      );
+      _validate(root);
+      setState(() {
+        _root = root;
+        _error = null;
+      });
+      _preview(root);
+    } on FormatException catch (e) {
+      setState(() => _error = e.message);
+    } on ArgumentError {
+      setState(() => _error = 'Combinaison de propriétés invalide.');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _syncReader();
+    final states = _root.states ?? TextConfigStates();
+    final overlay = _state == hoverSurfaceStateKey
+        ? states.hover
+        : states.selected;
+    return _SuperTextEditor(
+      key: _leafKey,
+      config: _leaf,
+      availableFontFamilies: widget.availableFontFamilies,
+      textStyle: widget.textStyle,
+      onWidthChanged: widget.onWidthChanged,
+      repositories: widget.repositories,
+      listScope: widget.listScope,
+      allowBinding: widget.allowBinding,
+      onPreviewChanged: (leaf) {
+        try {
+          final root = _withLeaf(leaf);
+          _validate(root);
+          if (_root != root) {
+            setState(() {
+              _root = root;
+              _error = null;
+            });
+          }
+          _preview(root);
+        } on FormatException catch (e) {
+          if (_error != e.message) setState(() => _error = e.message);
+        } on ArgumentError {
+          const message = 'Combinaison de propriétés invalide.';
+          if (_error != message) setState(() => _error = message);
+        }
+      },
+      onSave: (leaf) {
+        final root = _withLeaf(leaf);
+        _validate(root);
+        return root;
+      },
+      header: EditorStateControls<TextStateProperty>(
+        keyPrefix: 'text-state',
+        names: states.named.keys,
+        order: states.order,
+        binding: states.binding,
+        state: _state,
+        allowSelected: widget.listScope != null,
+        ownerContext: widget.ownerContext,
+        activeState: _reader?.stateName ?? widget.activeState,
+        error: _error ?? _reader?.error ?? widget.stateError,
+        onSelect: (value) {
+          if (value == _state || !_capture()) return;
+          setState(() {
+            _state = value;
+            _leafKey = GlobalKey();
+          });
+          _preview(_root);
+        },
+        validateName: (name) {
+          try {
+            TextConfigStates(named: {name: const SuperTextConfig()});
+            return null;
+          } on FormatException catch (e) {
+            return e.message;
+          }
+        },
+        onAdd: (name) => _changeStates(
+          (s) => s.copyWith(
+            named: {...s.named, name: _root.copyWith(clearStates: true)},
+            order: [name, ...s.order],
+          ),
+        ),
+        onRename: (previous, name) {
+          _changeStates(
+            (s) => s.copyWith(
+              named: {...s.named}
+                ..remove(previous)
+                ..[name] = s.named[previous]!,
+              order: [
+                for (final key in s.order)
+                  if (key == previous) name else key,
+              ],
+            ),
+          );
+          if (_root.states?.named.containsKey(name) == true) {
+            setState(() {
+              _state = name;
+              _leafKey = GlobalKey();
+            });
+          }
+        },
+        onDelete: (name) =>
+            _changeStates((s) => s.copyWith(named: {...s.named}..remove(name))),
+        onReorder: (order) => _changeStates((s) => s.copyWith(order: order)),
+        onBindingChanged: (binding) => _changeStates(
+          (s) => s.copyWith(binding: binding, clearBinding: binding == null),
+        ),
+        properties: {
+          for (final property in TextStateProperty.values)
+            property: property.label,
+        },
+        overrides: overlay?.properties ?? {},
+        onOverride: (property, enabled) => _changeStates((s) {
+          final current = _state == hoverSurfaceStateKey ? s.hover : s.selected;
+          final properties = {...?current?.properties};
+          if (enabled) {
+            properties.add(property);
+          } else {
+            properties.remove(property);
+          }
+          final value = TextConfigOverride(
+            config: current?.config ?? _root.copyWith(clearStates: true),
+            properties: properties,
+          );
+          return _state == hoverSurfaceStateKey
+              ? s.copyWith(hover: value)
+              : s.copyWith(selected: value);
+        }),
+      ),
+    );
+  }
+}
+
 class _SuperTextEditor extends StatefulWidget {
   const _SuperTextEditor({
     required this.config,
@@ -58,6 +371,9 @@ class _SuperTextEditor extends StatefulWidget {
     required this.listScope,
     required this.allowBinding,
     required this.onPreviewChanged,
+    this.header,
+    this.onSave,
+    super.key,
   });
   final SuperTextConfig config;
   final List<String> availableFontFamilies;
@@ -67,6 +383,8 @@ class _SuperTextEditor extends StatefulWidget {
   final JsonListScope? listScope;
   final bool allowBinding;
   final ValueChanged<SuperTextConfig>? onPreviewChanged;
+  final Widget? header;
+  final SuperTextConfig Function(SuperTextConfig config)? onSave;
 
   @override
   State<_SuperTextEditor> createState() => _SuperTextEditorState();
@@ -89,6 +407,27 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
   bool _validating = false;
   SuperTextConfig? _lastPreview;
   String? _liveError;
+
+  SuperTextConfig? capture() {
+    if (!_form.currentState!.validate() ||
+        (_draft.mode == SuperTextMode.input &&
+            _fieldSettings.currentState?.validate() == false)) {
+      return null;
+    }
+    try {
+      return _configuration(
+        _draft.mode == SuperTextMode.input
+            ? _fieldSettings.currentState?.value() ?? _fieldConfig
+            : _fieldConfig,
+        _binding,
+      );
+    } on FormatException catch (e) {
+      setState(() => _liveError = e.message);
+    } on ArgumentError {
+      setState(() => _liveError = 'Réglages du texte invalides.');
+    }
+    return null;
+  }
 
   SuperTextConfig _configuration(
     SuperTextFieldConfig field,
@@ -569,7 +908,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       _dense ? 680.0 : 1080.0,
       math.max(0.0, screen.width - 96),
     );
-    final height = math.min(680.0, math.max(0.0, screen.height - 180));
+    final height = math.min(776.0, math.max(0.0, screen.height - 84));
     return AlertDialog(
       key: const ValueKey('super-text-settings'),
       insetPadding: const EdgeInsets.all(24),
@@ -587,321 +926,374 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
               _fieldConfig = value;
               _fieldError = null;
             }),
-            builder: (fieldSections) => StyleEditorPanel(
-              label: 'Configurer le texte',
-              dense: _dense,
-              onDenseChanged: (value) => setState(() {
-                _dense = value;
-                widget.onWidthChanged(value ? 680 : 1080);
-              }),
-              preview: _preview(unavailable),
-              sections: [
-                StyleEditorSection(
-                  id: 'text-repository',
-                  title: 'Repository',
-                  icon: Icons.storage_outlined,
-                  tag: 'repository · path',
-                  child: _repositorySettings(),
-                ),
-                StyleEditorSection(
-                  id: 'text-content',
-                  title: 'Contenu',
-                  icon: Icons.text_fields,
-                  tag: 'mode · initialText',
-                  child: _group([
-                    DropdownButtonFormField<SuperTextMode>(
-                      isExpanded: true,
-                      key: const ValueKey('super-text-setting-mode'),
-                      initialValue: _draft.mode,
-                      decoration: const InputDecoration(labelText: 'Mode'),
-                      items: const [
-                        DropdownMenuItem(
-                          value: SuperTextMode.display,
-                          child: Text('Affichage'),
-                        ),
-                        DropdownMenuItem(
-                          value: SuperTextMode.input,
-                          child: Text('Saisie'),
-                        ),
-                      ],
-                      onChanged: (mode) {
-                        if (mode != null) {
-                          setState(() => _draft = _draft.copyWith(mode: mode));
-                        }
-                      },
+            builder: (fieldSections) => LayoutBuilder(
+              builder: (context, constraints) => Column(
+                children: [
+                  if (widget.header != null)
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: constraints.maxHeight * .4,
+                      ),
+                      child: SingleChildScrollView(child: widget.header!),
                     ),
-                    if (!_draft.obscureText && !_bound)
-                      _field('initialText', 'Texte initial'),
-                    _withBinding(
-                      SuperTextProperty.label,
-                      'le label',
-                      _field('label', 'Label'),
-                    ),
-                    _withBinding(
-                      SuperTextProperty.placeholder,
-                      'le placeholder',
-                      _field('placeholder', 'Placeholder'),
-                    ),
-                    const Text(
-                      'Sans liaison, changer le mode ou le texte initial '
-                      'réinitialise la valeur dans l’application. '
-                      'Avec une liaison, le repository fournit la valeur.',
-                    ),
-                  ]),
-                ),
-                StyleEditorSection(
-                  id: 'text-behavior',
-                  title: 'Comportement',
-                  icon: Icons.tune,
-                  tag: _draft.mode == SuperTextMode.input
-                      ? 'enabled · readOnly'
-                      : 'obscureText · maxLines',
-                  child: _group([
-                    SwitchListTile(
-                      key: const ValueKey('super-text-setting-obscureText'),
-                      title: const Text('Mot de passe'),
-                      value: _draft.obscureText,
-                      onChanged: (value) => setState(() {
-                        _draft = _draft.copyWith(obscureText: value);
-                        if (value) {
-                          _fields['initialText']!.clear();
-                          _fields['minLines']!.text = '1';
-                          _fields['maxLines']!.text = '1';
-                        }
+                  Expanded(
+                    child: StyleEditorPanel(
+                      label: 'Configurer le texte',
+                      dense: _dense,
+                      onDenseChanged: (value) => setState(() {
+                        _dense = value;
+                        widget.onWidthChanged(value ? 680 : 1080);
                       }),
-                    ),
-                    if (_draft.obscureText)
-                      const Text(
-                        'Texte masqué dans les deux modes. Une seule ligne, sans texte initial sauvegardé.',
-                      )
-                    else ...[
-                      if (_draft.mode == SuperTextMode.input)
-                        _field('minLines', 'Lignes minimales', numeric: true),
-                      _field('maxLines', 'Lignes maximales', numeric: true),
-                    ],
-                    if (_draft.mode == SuperTextMode.input)
-                      SwitchListTile(
-                        key: const ValueKey('super-text-setting-enabled'),
-                        title: const Text('Activé'),
-                        value: _draft.enabled,
-                        onChanged: (value) => setState(
-                          () => _draft = _draft.copyWith(enabled: value),
+                      preview: _preview(unavailable),
+                      sections: [
+                        StyleEditorSection(
+                          id: 'text-repository',
+                          title: 'Repository',
+                          icon: Icons.storage_outlined,
+                          tag: 'repository · path',
+                          child: _repositorySettings(),
                         ),
-                      ),
-                    if (_draft.mode == SuperTextMode.input)
-                      SwitchListTile(
-                        key: const ValueKey('super-text-setting-readOnly'),
-                        title: const Text('Lecture seule'),
-                        value: _draft.readOnly,
-                        onChanged: (value) => setState(
-                          () => _draft = _draft.copyWith(readOnly: value),
-                        ),
-                      ),
-                  ]),
-                ),
-                StyleEditorSection(
-                  id: 'text-typography',
-                  title: 'Typographie',
-                  icon: Icons.font_download_outlined,
-                  tag: 'TextStyle',
-                  child: _group([
-                    if (unavailable)
-                      Text(
-                        'Police indisponible : ${_draft.fontFamily}. Choisissez une police disponible.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
-                      ),
-                    _withBinding(
-                      SuperTextProperty.fontFamily,
-                      'la police',
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        key: ValueKey(
-                          'super-text-setting-fontFamily-${_draft.fontFamily}',
-                        ),
-                        initialValue: unavailable ? null : _draft.fontFamily,
-                        hint: const Text('Police du thème'),
-                        items: [
-                          const DropdownMenuItem(
-                            value: '',
-                            child: Text('Police du thème'),
-                          ),
-                          for (final font in fonts)
-                            DropdownMenuItem(value: font, child: Text(font)),
-                        ],
-                        onChanged: (font) => setState(
-                          () => _draft = _draft.copyWith(
-                            fontFamily: font,
-                            inheritFontFamily: font == null || font.isEmpty,
-                          ),
-                        ),
-                        validator: (_) => unavailable
-                            ? 'Choisissez une police disponible.'
-                            : null,
-                      ),
-                    ),
-                    _withBinding(
-                      SuperTextProperty.fontSize,
-                      'la taille de police',
-                      _field(
-                        'fontSize',
-                        'Taille de police (vide = thème)',
-                        numeric: true,
-                      ),
-                    ),
-                    _withBinding(
-                      SuperTextProperty.fontWeight,
-                      'la graisse',
-                      DropdownButtonFormField<FontWeight>(
-                        isExpanded: true,
-                        initialValue: _draft.fontWeight,
-                        decoration: const InputDecoration(labelText: 'Graisse'),
-                        hint: const Text('Graisse du thème'),
-                        items: [
-                          const DropdownMenuItem<FontWeight>(
-                            value: null,
-                            child: Text('Graisse du thème'),
-                          ),
-                          for (final weight in FontWeight.values)
-                            DropdownMenuItem(
-                              value: weight,
-                              child: Text('${weight.value}'),
-                            ),
-                        ],
-                        onChanged: (weight) => setState(
-                          () => _draft = _draft.copyWith(
-                            fontWeight: weight,
-                            inheritFontWeight: weight == null,
-                          ),
-                        ),
-                      ),
-                    ),
-                    _withBinding(
-                      SuperTextProperty.italic,
-                      'le style italique',
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        key: const ValueKey('super-text-setting-italic'),
-                        initialValue: _draft.italic == null
-                            ? 'inherit'
-                            : _draft.italic!
-                            ? 'italic'
-                            : 'normal',
-                        decoration: const InputDecoration(
-                          labelText: 'Style de police',
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'inherit',
-                            child: Text('Style du parent'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'normal',
-                            child: Text('Normal'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'italic',
-                            child: Text('Italique'),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setState(
-                            () => _draft = _draft.copyWith(
-                              italic: value == 'italic',
-                              inheritItalic: value == 'inherit',
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ]),
-                ),
-                StyleEditorSection(
-                  id: 'text-color',
-                  title: 'Couleur',
-                  icon: Icons.palette_outlined,
-                  tag: 'color',
-                  child: _group([
-                    styleColorTile(
-                      'Couleur du texte',
-                      RegExp(r'^[0-9a-fA-F]{8}$')
-                              .hasMatch(_fields['color']!.text.trim())
-                          ? Color(
-                              int.parse(
-                                _fields['color']!.text.trim(),
-                                radix: 16,
+                        StyleEditorSection(
+                          id: 'text-content',
+                          title: 'Contenu',
+                          icon: Icons.text_fields,
+                          tag: 'mode · initialText',
+                          child: _group([
+                            DropdownButtonFormField<SuperTextMode>(
+                              isExpanded: true,
+                              key: const ValueKey('super-text-setting-mode'),
+                              initialValue: _draft.mode,
+                              decoration: const InputDecoration(
+                                labelText: 'Mode',
                               ),
-                            )
-                          : widget.textStyle.color ??
-                                Theme.of(context).colorScheme.onSurface,
-                      (color) => setState(() {
-                        _fields['color']!.text = color
-                            .toARGB32()
-                            .toRadixString(16)
-                            .padLeft(8, '0');
-                      }),
-                      key: const ValueKey('super-text-color-picker'),
-                    ),
-                    _withBinding(
-                      SuperTextProperty.color,
-                      'la couleur',
-                      _field('color', 'Couleur AARRGGBB (vide = parent)'),
-                    ),
-                    TextButton(
-                      key: const ValueKey('super-text-inherit-color'),
-                      onPressed: () =>
-                          setState(() => _fields['color']!.clear()),
-                      child: const Text('Utiliser la couleur du parent'),
-                    ),
-                  ]),
-                ),
-                StyleEditorSection(
-                  id: 'text-spacing',
-                  title: 'Alignement et espacement',
-                  icon: Icons.format_align_left,
-                  tag: 'textAlign · height',
-                  child: _group([
-                    _withBinding(
-                      SuperTextProperty.textAlign,
-                      'l’alignement',
-                      DropdownButtonFormField<TextAlign>(
-                        isExpanded: true,
-                        initialValue: _draft.textAlign,
-                        decoration: const InputDecoration(
-                          labelText: 'Alignement',
-                        ),
-                        items: [
-                          for (final align in TextAlign.values)
-                            DropdownMenuItem(
-                              value: align,
-                              child: Text(align.name),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: SuperTextMode.display,
+                                  child: Text('Affichage'),
+                                ),
+                                DropdownMenuItem(
+                                  value: SuperTextMode.input,
+                                  child: Text('Saisie'),
+                                ),
+                              ],
+                              onChanged: (mode) {
+                                if (mode != null) {
+                                  setState(
+                                    () => _draft = _draft.copyWith(mode: mode),
+                                  );
+                                }
+                              },
                             ),
-                        ],
-                        onChanged: (align) {
-                          if (align != null) {
-                            setState(
-                              () => _draft = _draft.copyWith(textAlign: align),
-                            );
-                          }
-                        },
-                      ),
+                            if (!_draft.obscureText && !_bound)
+                              _field('initialText', 'Texte initial'),
+                            _withBinding(
+                              SuperTextProperty.label,
+                              'le label',
+                              _field('label', 'Label'),
+                            ),
+                            _withBinding(
+                              SuperTextProperty.placeholder,
+                              'le placeholder',
+                              _field('placeholder', 'Placeholder'),
+                            ),
+                            const Text(
+                              'Sans liaison, changer le mode ou le texte initial '
+                              'réinitialise la valeur dans l’application. '
+                              'Avec une liaison, le repository fournit la valeur.',
+                            ),
+                          ]),
+                        ),
+                        StyleEditorSection(
+                          id: 'text-behavior',
+                          title: 'Comportement',
+                          icon: Icons.tune,
+                          tag: _draft.mode == SuperTextMode.input
+                              ? 'enabled · readOnly'
+                              : 'obscureText · maxLines',
+                          child: _group([
+                            SwitchListTile(
+                              key: const ValueKey(
+                                'super-text-setting-obscureText',
+                              ),
+                              title: const Text('Mot de passe'),
+                              value: _draft.obscureText,
+                              onChanged: (value) => setState(() {
+                                _draft = _draft.copyWith(obscureText: value);
+                                if (value) {
+                                  _fields['initialText']!.clear();
+                                  _fields['minLines']!.text = '1';
+                                  _fields['maxLines']!.text = '1';
+                                }
+                              }),
+                            ),
+                            if (_draft.obscureText)
+                              const Text(
+                                'Texte masqué dans les deux modes. Une seule ligne, sans texte initial sauvegardé.',
+                              )
+                            else ...[
+                              if (_draft.mode == SuperTextMode.input)
+                                _field(
+                                  'minLines',
+                                  'Lignes minimales',
+                                  numeric: true,
+                                ),
+                              _field(
+                                'maxLines',
+                                'Lignes maximales',
+                                numeric: true,
+                              ),
+                            ],
+                            if (_draft.mode == SuperTextMode.input)
+                              SwitchListTile(
+                                key: const ValueKey(
+                                  'super-text-setting-enabled',
+                                ),
+                                title: const Text('Activé'),
+                                value: _draft.enabled,
+                                onChanged: (value) => setState(
+                                  () =>
+                                      _draft = _draft.copyWith(enabled: value),
+                                ),
+                              ),
+                            if (_draft.mode == SuperTextMode.input)
+                              SwitchListTile(
+                                key: const ValueKey(
+                                  'super-text-setting-readOnly',
+                                ),
+                                title: const Text('Lecture seule'),
+                                value: _draft.readOnly,
+                                onChanged: (value) => setState(
+                                  () =>
+                                      _draft = _draft.copyWith(readOnly: value),
+                                ),
+                              ),
+                          ]),
+                        ),
+                        StyleEditorSection(
+                          id: 'text-typography',
+                          title: 'Typographie',
+                          icon: Icons.font_download_outlined,
+                          tag: 'TextStyle',
+                          child: _group([
+                            if (unavailable)
+                              Text(
+                                'Police indisponible : ${_draft.fontFamily}. Choisissez une police disponible.',
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              ),
+                            _withBinding(
+                              SuperTextProperty.fontFamily,
+                              'la police',
+                              DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                key: ValueKey(
+                                  'super-text-setting-fontFamily-${_draft.fontFamily}',
+                                ),
+                                initialValue: unavailable
+                                    ? null
+                                    : _draft.fontFamily,
+                                hint: const Text('Police du thème'),
+                                items: [
+                                  const DropdownMenuItem(
+                                    value: '',
+                                    child: Text('Police du thème'),
+                                  ),
+                                  for (final font in fonts)
+                                    DropdownMenuItem(
+                                      value: font,
+                                      child: Text(font),
+                                    ),
+                                ],
+                                onChanged: (font) => setState(
+                                  () => _draft = _draft.copyWith(
+                                    fontFamily: font,
+                                    inheritFontFamily:
+                                        font == null || font.isEmpty,
+                                  ),
+                                ),
+                                validator: (_) => unavailable
+                                    ? 'Choisissez une police disponible.'
+                                    : null,
+                              ),
+                            ),
+                            _withBinding(
+                              SuperTextProperty.fontSize,
+                              'la taille de police',
+                              _field(
+                                'fontSize',
+                                'Taille de police (vide = thème)',
+                                numeric: true,
+                              ),
+                            ),
+                            _withBinding(
+                              SuperTextProperty.fontWeight,
+                              'la graisse',
+                              DropdownButtonFormField<FontWeight>(
+                                isExpanded: true,
+                                initialValue: _draft.fontWeight,
+                                decoration: const InputDecoration(
+                                  labelText: 'Graisse',
+                                ),
+                                hint: const Text('Graisse du thème'),
+                                items: [
+                                  const DropdownMenuItem<FontWeight>(
+                                    value: null,
+                                    child: Text('Graisse du thème'),
+                                  ),
+                                  for (final weight in FontWeight.values)
+                                    DropdownMenuItem(
+                                      value: weight,
+                                      child: Text('${weight.value}'),
+                                    ),
+                                ],
+                                onChanged: (weight) => setState(
+                                  () => _draft = _draft.copyWith(
+                                    fontWeight: weight,
+                                    inheritFontWeight: weight == null,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _withBinding(
+                              SuperTextProperty.italic,
+                              'le style italique',
+                              DropdownButtonFormField<String>(
+                                isExpanded: true,
+                                key: const ValueKey(
+                                  'super-text-setting-italic',
+                                ),
+                                initialValue: _draft.italic == null
+                                    ? 'inherit'
+                                    : _draft.italic!
+                                    ? 'italic'
+                                    : 'normal',
+                                decoration: const InputDecoration(
+                                  labelText: 'Style de police',
+                                ),
+                                items: const [
+                                  DropdownMenuItem(
+                                    value: 'inherit',
+                                    child: Text('Style du parent'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'normal',
+                                    child: Text('Normal'),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: 'italic',
+                                    child: Text('Italique'),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  if (value == null) return;
+                                  setState(
+                                    () => _draft = _draft.copyWith(
+                                      italic: value == 'italic',
+                                      inheritItalic: value == 'inherit',
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ]),
+                        ),
+                        StyleEditorSection(
+                          id: 'text-color',
+                          title: 'Couleur',
+                          icon: Icons.palette_outlined,
+                          tag: 'color',
+                          child: _group([
+                            styleColorTile(
+                              'Couleur du texte',
+                              RegExp(r'^[0-9a-fA-F]{8}$')
+                                      .hasMatch(_fields['color']!.text.trim())
+                                  ? Color(
+                                      int.parse(
+                                        _fields['color']!.text.trim(),
+                                        radix: 16,
+                                      ),
+                                    )
+                                  : widget.textStyle.color ??
+                                        Theme.of(context).colorScheme.onSurface,
+                              (color) => setState(() {
+                                _fields['color']!.text = color
+                                    .toARGB32()
+                                    .toRadixString(16)
+                                    .padLeft(8, '0');
+                              }),
+                              key: const ValueKey('super-text-color-picker'),
+                            ),
+                            _withBinding(
+                              SuperTextProperty.color,
+                              'la couleur',
+                              _field(
+                                'color',
+                                'Couleur AARRGGBB (vide = parent)',
+                              ),
+                            ),
+                            TextButton(
+                              key: const ValueKey('super-text-inherit-color'),
+                              onPressed: () =>
+                                  setState(() => _fields['color']!.clear()),
+                              child: const Text(
+                                'Utiliser la couleur du parent',
+                              ),
+                            ),
+                          ]),
+                        ),
+                        StyleEditorSection(
+                          id: 'text-spacing',
+                          title: 'Alignement et espacement',
+                          icon: Icons.format_align_left,
+                          tag: 'textAlign · height',
+                          child: _group([
+                            _withBinding(
+                              SuperTextProperty.textAlign,
+                              'l’alignement',
+                              DropdownButtonFormField<TextAlign>(
+                                isExpanded: true,
+                                initialValue: _draft.textAlign,
+                                decoration: const InputDecoration(
+                                  labelText: 'Alignement',
+                                ),
+                                items: [
+                                  for (final align in TextAlign.values)
+                                    DropdownMenuItem(
+                                      value: align,
+                                      child: Text(align.name),
+                                    ),
+                                ],
+                                onChanged: (align) {
+                                  if (align != null) {
+                                    setState(
+                                      () => _draft = _draft.copyWith(
+                                        textAlign: align,
+                                      ),
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                            _field(
+                              'lineHeight',
+                              'Interligne (multiplicateur)',
+                              numeric: true,
+                            ),
+                            _field(
+                              'letterSpacing',
+                              'Espacement des lettres (px)',
+                              numeric: true,
+                            ),
+                          ]),
+                        ),
+                        if (_draft.mode == SuperTextMode.input)
+                          ...fieldSections,
+                      ],
                     ),
-                    _field(
-                      'lineHeight',
-                      'Interligne (multiplicateur)',
-                      numeric: true,
-                    ),
-                    _field(
-                      'letterSpacing',
-                      'Espacement des lettres (px)',
-                      numeric: true,
-                    ),
-                  ]),
-                ),
-                if (_draft.mode == SuperTextMode.input) ...fieldSections,
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -989,7 +1381,19 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     }
                     if (!mounted) return;
                   }
-                  final result = _configuration(field, binding);
+                  SuperTextConfig result;
+                  try {
+                    final leaf = _configuration(field, binding);
+                    result = widget.onSave?.call(leaf) ?? leaf;
+                  } on FormatException catch (e) {
+                    setState(() => _liveError = e.message);
+                    return;
+                  } on ArgumentError {
+                    setState(
+                      () => _liveError = 'Combinaison de propriétés invalide.',
+                    );
+                    return;
+                  }
                   if (!context.mounted) return;
                   Navigator.of(context).pop(result);
                 },
