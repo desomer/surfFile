@@ -82,10 +82,10 @@ Les labels des zones affichent aussi `drag_indicator`, uniquement lorsque
 leur déplacement/échange est autorisé ; le centre et les zones non déplaçables
 n'affichent pas cette icône.
 
-## SuperText : affichage ou saisie
+## Text : affichage ou saisie
 
 `Registry.bootstrap(availableFontFamilies: ['Segoe UI', 'Roboto'])` ajoute
-`SuperText` au catalogue avec les tags `text` et `input`. Chaque ajout possède
+`Text` au catalogue avec les tags `text` et `input`. Chaque ajout possède
 son propre identifiant et sa propre configuration. Le composant est utilisable
 dans les dispositions et les zones internes des barres, mais ne remplace pas
 une barre native complète.
@@ -322,9 +322,17 @@ registry.registerFactory(
 ```
 
 Les factories dynamiques acceptent aussi `tags` sur `ComponentBuilderDynamic`.
-`Registry.bootstrap()` attribue `appBar` à `SuperAppBar`,
-`bottomNavigationBar` à `SuperBottomNavigationBar`, `container` à
-`NewContainer` et `layout` à `NewLayout`.
+`Registry.bootstrap()` attribue `appBar` à `AppBar`,
+`bottomNavigationBar` à `BottomNavigationBar`, `container` à
+`Card` et `layout` à `Layout`.
+
+Les noms du catalogue, des menus et des types sauvegardes sont `Card`, `Layout`,
+`Text`, `ListView`, `AppBar` et `BottomNavigationBar` ; le type d'edition d'une
+page est `Page`. Les classes et les fichiers Dart conservent leur nom avec
+prefixe `Super` (par exemple `SuperContainer`, `SuperLayout`, `SuperText`).
+Les anciennes cles de catalogue et de persistance (`NewContainer`, `NewLayout`,
+`SuperText`, etc.) ne sont pas conservees comme alias : les documents existants
+doivent etre recrees ou leurs types mis a jour.
 
 ### Icone dans le menu d'edition
 
@@ -359,8 +367,8 @@ texte, barre d'application, navigation inferieure, conteneur, liste et dispositi
 ### Envelopper un composant
 
 En mode edition, les trois points verticaux en fin de ligne du menu contextuel
-ouvrent **Envelopper dans…**, avec **SuperContainer** et **SuperLayout**.
-Ces choix utilisent les factories `NewContainer` et `NewLayout` installees par
+ouvrent **Envelopper dans…**, avec **Card** et **Layout**.
+Ces choix utilisent les factories `Card` et `Layout` installees par
 `Registry.bootstrap()` ; seuls les parents compatibles avec les tags de la zone
 sont proposes.
 
@@ -1292,7 +1300,7 @@ Dans le JSON, chaque placement contient le type de fabrique et l'ID d'instance :
 ```json
 "placements": {
   "center": [
-    {"type": "registry:New%20Layout", "id": "t1OTp3MeR9"}
+    {"type": "registry:Layout", "id": "t1OTp3MeR9"}
   ]
 }
 ```

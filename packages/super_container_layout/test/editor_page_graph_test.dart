@@ -44,10 +44,10 @@ Appearance _sample() => Appearance(
         SuperLayoutZone.north: ['hiddenTxt'],
       },
       slotTypes: {
-        'cont1': 'registry:NewContainer',
-        'txt2': 'registry:SuperText',
-        'nested': 'registry:NewLayout',
-        'hiddenTxt': 'registry:SuperText',
+        'cont1': 'registry:Card',
+        'txt2': 'registry:Text',
+        'nested': 'registry:Layout',
+        'hiddenTxt': 'registry:Text',
       },
       slotLabels: {'txt2': 'Titre'},
       slotPreferredSizes: {'cont1': Size(10, 20)},
@@ -68,7 +68,7 @@ Appearance _sample() => Appearance(
       placements: {
         SuperLayoutZone.center: ['txt3'],
       },
-      slotTypes: {'txt3': 'registry:SuperText'},
+      slotTypes: {'txt3': 'registry:Text'},
     ),
   },
   nativeComponents: {
@@ -85,9 +85,9 @@ Appearance _sample() => Appearance(
       },
       regions: {'drawer': false},
       slotTypes: {
-        'bar1': 'factory:SuperAppBar',
-        'lay1': 'factory:NewLayout',
-        'txtHidden': 'factory:SuperText',
+        'bar1': 'factory:AppBar',
+        'lay1': 'factory:Layout',
+        'txtHidden': 'factory:Text',
       },
       slotPreferredSizes: {'lay1': const Size(1, 2)},
     ),
@@ -95,7 +95,7 @@ Appearance _sample() => Appearance(
       placements: {
         'title': ['txt1'],
       },
-      slotTypes: {'txt1': 'factory:SuperText'},
+      slotTypes: {'txt1': 'factory:Text'},
     ),
   },
   textComponents: {
@@ -116,7 +116,7 @@ void main() {
               placements: {
                 'child': ['inside'],
               },
-              slotTypes: {'inside': 'factory:SuperText'},
+              slotTypes: {'inside': 'factory:Text'},
             ),
           )
           .withTextComponent(
@@ -138,7 +138,7 @@ void main() {
       expect(child, isNot('inside'));
       expect(
         copy.nativeComponents[container]!.slotTypeOf(child),
-        'factory:SuperText',
+        'factory:Text',
       );
       expect(copy.textComponents[child]!.initialText, 'Nested');
       expect(copy.styles[container], source.styles['cont1']);
@@ -232,7 +232,7 @@ void main() {
     for (final id in [bar, lay, hidden]) {
       expect(originals, isNot(contains(id)));
     }
-    expect(page.slotTypeOf(bar), 'factory:SuperAppBar');
+    expect(page.slotTypeOf(bar), 'factory:AppBar');
     expect(page.slotPreferredSizes, {lay: const Size(1, 2)});
     expect(result.textComponents[hidden]!.initialText, 'txtHidden');
 
@@ -250,7 +250,7 @@ void main() {
     expect(layout.north, isFalse);
     expect(layout.swaps, {SuperLayoutZone.west});
     expect(layout.positioning, SuperLayoutPositioning.grid);
-    expect(layout.slotTypeOf(nested), 'registry:NewLayout');
+    expect(layout.slotTypeOf(nested), 'registry:Layout');
     expect(layout.slotLabels, {txt: 'Titre'});
     expect(layout.slotPreferredSizes, {cont: const Size(10, 20)});
     expect(layout.slotSizeConstraints.keys, [txt]);
@@ -308,7 +308,7 @@ void main() {
           placements: {
             'body': ['lay'],
           },
-          slotTypes: {'lay': 'factory:NewLayout'},
+          slotTypes: {'lay': 'factory:Layout'},
         ),
       },
       layouts: {
@@ -339,14 +339,14 @@ void main() {
     expect(source.layouts.keys, ['lay']);
 
     final replaced = _registry()
-      ..registerFactory('SuperText', const SizedBox());
+      ..registerFactory('Text', const SizedBox());
     final text = Appearance(
       nativeComponents: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['t'],
           },
-          slotTypes: {'t': 'factory:SuperText'},
+          slotTypes: {'t': 'factory:Text'},
         ),
       },
     );
@@ -376,7 +376,7 @@ void main() {
           placements: {
             SuperLayoutZone.center: ['x'],
           },
-          slotTypes: {'x': 'registry:NewLayout'},
+          slotTypes: {'x': 'registry:Layout'},
         ),
       },
     );
@@ -397,7 +397,7 @@ void main() {
         ),
       );
     }
-    final cyclic = page('factory:NewLayout');
+    final cyclic = page('factory:Layout');
     expect(
       () => EditorPageGraph.duplicate(
         appearance: cyclic,
@@ -479,7 +479,7 @@ void main() {
           placements: {
             SuperLayoutZone.center: ['inner'],
           },
-          slotTypes: {'inner': 'registry:SuperText'},
+          slotTypes: {'inner': 'registry:Text'},
         ),
       },
     );
@@ -509,10 +509,10 @@ void main() {
   test('bootstrap builders carry their contract metadata', () {
     final registry = _registry();
     expect(
-      registry.registry['NewLayout']!.duplication,
+      registry.registry['Layout']!.duplication,
       same(ComponentDuplicationContract.newLayout),
     );
-    expect(registry.registry['SuperAppBar']!.duplication!.ownedConfigs('x'), [
+    expect(registry.registry['AppBar']!.duplication!.ownedConfigs('x'), [
       const EditorConfigRef.nativeComponent('x'),
       const EditorConfigRef.layout('x'),
     ]);
@@ -534,9 +534,9 @@ void main() {
             SuperLayoutZone.center: ['own', 'shared', 'global', 'a1'],
           },
           slotTypes: {
-            'own': 'registry:NewContainer',
-            'shared': 'registry:NewContainer',
-            'global': 'registry:NewContainer',
+            'own': 'registry:Card',
+            'shared': 'registry:Card',
+            'global': 'registry:Card',
             'a1': 'registry:A',
           },
         ),
@@ -544,7 +544,7 @@ void main() {
           placements: {
             SuperLayoutZone.center: ['shared'],
           },
-          slotTypes: {'shared': 'registry:NewContainer'},
+          slotTypes: {'shared': 'registry:Card'},
         ),
         'contA': const SuperLayoutConfig(label: 'global'),
       },
@@ -553,20 +553,20 @@ void main() {
           placements: {
             'body': ['l1'],
           },
-          slotTypes: {'l1': 'factory:NewLayout'},
+          slotTypes: {'l1': 'factory:Layout'},
         ),
         'p2': NativeComponentConfig(
           placements: {
             'body': ['l2'],
           },
-          slotTypes: {'l2': 'factory:NewLayout'},
+          slotTypes: {'l2': 'factory:Layout'},
         ),
         // Code-defined page, absent from the catalog.
         'root': NativeComponentConfig(
           placements: {
             'body': ['global'],
           },
-          slotTypes: {'global': 'factory:NewContainer'},
+          slotTypes: {'global': 'factory:Card'},
         ),
       },
       pageCatalog: _catalog(['p1', 'p2']),
@@ -643,7 +643,7 @@ void main() {
         appearance: unplaced(_sample()),
         registry: registry,
         instanceId: 'lay1',
-        type: 'factory:NewLayout',
+        type: 'factory:Layout',
         containerKind: EditorConfigKind.nativeComponent,
       );
       expect(removed.layouts.keys, unorderedEquals(['contA']));
@@ -665,7 +665,7 @@ void main() {
           appearance: appearance,
           registry: _registry(),
           instanceId: 'lay1',
-          type: 'factory:NewLayout',
+          type: 'factory:Layout',
           containerKind: EditorConfigKind.nativeComponent,
         ),
         same(appearance),
@@ -681,7 +681,7 @@ void main() {
             placements: {
               SuperLayoutZone.center: ['nested'],
             },
-            slotTypes: {'nested': 'registry:NewLayout'},
+            slotTypes: {'nested': 'registry:Layout'},
           ),
         },
       );
@@ -689,7 +689,7 @@ void main() {
         appearance: appearance,
         registry: _registry(),
         instanceId: 'lay1',
-        type: 'factory:NewLayout',
+        type: 'factory:Layout',
         containerKind: EditorConfigKind.nativeComponent,
       );
       expect(removed.layouts.keys, unorderedEquals(['contA', 'nested']));

@@ -261,7 +261,7 @@ void main() {
     expect(result.value!.component.id, 'block');
   });
 
-  testWidgets('SuperLayout applies wizard label, position and size', (
+  testWidgets('Layout applies wizard label, position and size', (
     tester,
   ) async {
     final editMode = ValueNotifier(true);

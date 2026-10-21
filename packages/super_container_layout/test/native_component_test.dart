@@ -1158,7 +1158,7 @@ void main() {
               ScaffoldPageRegion.appBar: ['created-bar'],
               ScaffoldPageRegion.body: ['scaffold:body'],
             },
-            slotTypes: {'created-bar': 'factory:SuperAppBar'},
+            slotTypes: {'created-bar': 'factory:AppBar'},
           ),
           child: const Text('Remaining body'),
         ),
@@ -1168,7 +1168,7 @@ void main() {
       expect(tester.getTopLeft(find.text('Remaining body')).dy, 56);
       final controller = registry.nativeComponentController('created-bar');
       controller.value = controller.value
-          .withSlotAdded('tab-item', 'bottom', type: 'factory:NewContainer')
+          .withSlotAdded('tab-item', 'bottom', type: 'factory:Card')
           .withSlotSize('tab-item', const Size(double.infinity, 40));
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(find.text('Remaining body')).dy, 96);
@@ -1267,7 +1267,7 @@ void main() {
                       ScaffoldPageRegion.appBar: ['empty-bar'],
                       ScaffoldPageRegion.body: ['scaffold:body'],
                     },
-                    slotTypes: {'empty-bar': 'factory:SuperAppBar'},
+                    slotTypes: {'empty-bar': 'factory:AppBar'},
                   ),
                 )
               : const SuperPage(appBar: SuperAppBar()),
@@ -1310,7 +1310,7 @@ void main() {
         );
         expect(configure, findsOneWidget);
         expect(
-          find.descendant(of: configure, matching: find.text('SuperAppBar')),
+          find.descendant(of: configure, matching: find.text('AppBar')),
           findsOneWidget,
         );
         expect(find.byKey(const ValueKey('style-menu-AppBar')), findsOneWidget);
@@ -1340,7 +1340,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(
           find.byKey(
-            const ValueKey('super-app-bar-add-slot-factory:NewContainer'),
+            const ValueKey('super-app-bar-add-slot-factory:Card'),
           ),
         );
         await tester.pumpAndSettle();
@@ -1350,7 +1350,7 @@ void main() {
         expect(controller.value.slotsOf('title'), hasLength(1));
         expect(
           controller.value.slotTypeOf(controller.value.slotsOf('title').single),
-          'factory:NewContainer',
+          'factory:Card',
         );
         expect(tester.takeException(), isNull);
       },
@@ -1424,7 +1424,7 @@ void main() {
               ScaffoldPageRegion.body: ['scaffold:body'],
               ScaffoldPageRegion.bottomNavigationBar: ['free-bar'],
             },
-            slotTypes: {'free-bar': 'factory:SuperBottomNavigationBar'},
+            slotTypes: {'free-bar': 'factory:BottomNavigationBar'},
           ),
         ),
         tester,
@@ -1486,7 +1486,7 @@ void main() {
         await tester.tap(
           find.byKey(
             const ValueKey(
-              'super-bottom-navigation-bar-add-slot-factory:NewContainer',
+              'super-bottom-navigation-bar-add-slot-factory:Card',
             ),
           ),
         );
@@ -1506,7 +1506,7 @@ void main() {
       await tester.tap(
         find.byKey(
           const ValueKey(
-            'style-menu-remove-Taille et marge préférées : NewContainer',
+            'style-menu-remove-Taille et marge préférées : Card',
           ),
         ),
       );
@@ -1548,7 +1548,7 @@ void main() {
               ScaffoldPageRegion.body: ['scaffold:body'],
               ScaffoldPageRegion.bottomNavigationBar: ['safe-bar'],
             },
-            slotTypes: {'safe-bar': 'factory:SuperBottomNavigationBar'},
+            slotTypes: {'safe-bar': 'factory:BottomNavigationBar'},
           ),
           child: const SizedBox.expand(key: ValueKey('safe-body')),
         ),

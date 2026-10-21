@@ -245,7 +245,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         !_repositories.any((entry) => entry.id == _repositoryId);
     return _group([
       if (!widget.allowBinding)
-        const Text('La liaison nécessite le contrôleur interne de SuperText.'),
+        const Text('La liaison nécessite le contrôleur interne de Text.'),
       if (widget.repositories == null)
         const Text('Service de repositories indisponible.'),
       DropdownButtonFormField<String>(

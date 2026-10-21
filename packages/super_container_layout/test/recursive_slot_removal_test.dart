@@ -66,7 +66,7 @@ void main() {
           placements: {
             'child': ['lay'],
           },
-          slotTypes: {'lay': 'factory:NewLayout'},
+          slotTypes: {'lay': 'factory:Layout'},
         ),
       },
       layouts: {
@@ -76,15 +76,15 @@ void main() {
             SuperLayoutZone.center: ['first', 'list1'],
           },
           slotTypes: {
-            'first': 'registry:SuperText',
-            'list1': 'registry:SuperListView',
+            'first': 'registry:Text',
+            'list1': 'registry:ListView',
           },
         ),
         'list1': const SuperLayoutConfig(
           placements: {
             SuperLayoutZone.center: ['t1'],
           },
-          slotTypes: {'t1': 'registry:SuperText'},
+          slotTypes: {'t1': 'registry:Text'},
         ),
       },
       textComponents: {

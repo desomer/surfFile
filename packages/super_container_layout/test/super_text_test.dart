@@ -160,7 +160,7 @@ void main() {
         placements: {
           SuperLayoutZone.center: ['grid-text'],
         },
-        slotTypes: {'grid-text': 'registry:SuperText'},
+        slotTypes: {'grid-text': 'registry:Text'},
       ).withPositioning(SuperLayoutPositioning.grid);
       await mount(
         tester,
@@ -172,7 +172,7 @@ void main() {
               placements: {
                 'title': ['bar-text'],
               },
-              slotTypes: {'bar-text': 'factory:SuperText'},
+              slotTypes: {'bar-text': 'factory:Text'},
             ),
           ),
           bottomNavigationBar: SuperBottomNavigationBar(
@@ -181,7 +181,7 @@ void main() {
               placements: {
                 'left': ['bottom-text'],
               },
-              slotTypes: {'bottom-text': 'factory:SuperText'},
+              slotTypes: {'bottom-text': 'factory:Text'},
             ),
           ),
           child: SuperLayout(config: layout),
@@ -312,7 +312,7 @@ void main() {
   );
 
   for (final mode in SuperTextMode.values) {
-    testWidgets('$mode inherits the native SuperAppBar title style', (
+    testWidgets('$mode inherits the native AppBar title style', (
       tester,
     ) async {
       const titleStyle = TextStyle(
@@ -428,7 +428,7 @@ void main() {
                       placements: {
                         'title': ['centered-title'],
                       },
-                      slotTypes: {'centered-title': 'factory:SuperText'},
+                      slotTypes: {'centered-title': 'factory:Text'},
                     )
                   : null,
             ),
@@ -725,11 +725,11 @@ void main() {
       );
       registry.bindAppearance(second);
       expect(a.value, initial);
-      expect(registry.registry['SuperText']!.tags, {'text', 'input'});
-      final firstWidget = registry.registry['SuperText']!.getWidget(
+      expect(registry.registry['Text']!.tags, {'text', 'input'});
+      final firstWidget = registry.registry['Text']!.getWidget(
         XuiBuildCtx(id: 'x'),
       );
-      final secondWidget = registry.registry['SuperText']!.getWidget(
+      final secondWidget = registry.registry['Text']!.getWidget(
         XuiBuildCtx(id: 'y'),
       );
       expect((firstWidget as SuperText).id, 'x');
@@ -1128,7 +1128,7 @@ void main() {
         expect(
           find.descendant(
             of: find.byKey(const ValueKey('style-menu-Texte')),
-            matching: find.text('SuperText'),
+            matching: find.text('Text'),
           ),
           findsOneWidget,
         );

@@ -333,7 +333,7 @@ class _SuperTextState extends State<SuperText> {
       if (resolved.binding != null) {
         if (external) {
           _bindingError =
-              'La liaison nécessite le contrôleur interne de SuperText.';
+              'La liaison nécessite le contrôleur interne de Text.';
         } else if (store == null) {
           _bindingError = 'Service de repositories indisponible.';
         } else {
@@ -563,7 +563,7 @@ class _SuperTextState extends State<SuperText> {
         return EditorSlot(
           key: _surface,
           label: 'Texte',
-          menuType: 'SuperText',
+          menuType: 'Text',
           onEdit: () async {
             if (_editorText != null) return;
             final initial = configuration.value;

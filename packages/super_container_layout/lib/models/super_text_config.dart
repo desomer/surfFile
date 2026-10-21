@@ -77,7 +77,7 @@ class SuperTextConfig {
         (fontSize != null && (!fontSize!.isFinite || fontSize! <= 0)) ||
         (lineHeight != null && (!lineHeight!.isFinite || lineHeight! <= 0)) ||
         (letterSpacing != null && !letterSpacing!.isFinite)) {
-      throw ArgumentError('Invalid SuperText configuration.');
+      throw ArgumentError('Invalid Text configuration.');
     }
   }
 
@@ -167,7 +167,7 @@ class SuperTextConfig {
 
   factory SuperTextConfig.fromJson(Object? value) {
     if (value is! Map<String, dynamic>) {
-      throw const FormatException('Invalid SuperText configuration.');
+      throw const FormatException('Invalid Text configuration.');
     }
     const keys = {
       'mode',
@@ -192,12 +192,12 @@ class SuperTextConfig {
       'field',
     };
     if (value.keys.any((key) => !keys.contains(key))) {
-      throw const FormatException('Unknown SuperText preference.');
+      throw const FormatException('Unknown Text preference.');
     }
     T field<T>(String key, T fallback) {
       if (!value.containsKey(key)) return fallback;
       final result = value[key];
-      if (result is! T) throw FormatException('Invalid SuperText "$key".');
+      if (result is! T) throw FormatException('Invalid Text "$key".');
       return result;
     }
 
@@ -205,7 +205,7 @@ class SuperTextConfig {
       final result = value[key];
       if (result == null) return null;
       if (result is! num || !result.isFinite) {
-        throw FormatException('Invalid SuperText "$key".');
+        throw FormatException('Invalid Text "$key".');
       }
       return result.toDouble();
     }
@@ -227,22 +227,22 @@ class SuperTextConfig {
         (weight != null && (weight is! int || fontWeight == null)) ||
         (color != null && (color is! int || color < 0 || color > 0xFFFFFFFF)) ||
         (family != null && family is! String)) {
-      throw const FormatException('Invalid SuperText style.');
+      throw const FormatException('Invalid Text style.');
     }
     final rawPropertyBindings = value['propertyBindings'];
     if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
-      throw const FormatException('Invalid SuperText property bindings.');
+      throw const FormatException('Invalid Text property bindings.');
     }
     final propertyBindings = <SuperTextProperty, JsonTextBinding>{};
     for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
       if (entry.key is! String) {
-        throw const FormatException('Invalid SuperText property binding.');
+        throw const FormatException('Invalid Text property binding.');
       }
       final property = SuperTextProperty.values
           .where((candidate) => candidate.name == entry.key)
           .firstOrNull;
       if (property == null || entry.value is! Map<String, dynamic>) {
-        throw const FormatException('Invalid SuperText property binding.');
+        throw const FormatException('Invalid Text property binding.');
       }
       propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
     }
@@ -275,7 +275,7 @@ class SuperTextConfig {
     try {
       result.validate();
     } on ArgumentError {
-      throw const FormatException('Invalid SuperText configuration.');
+      throw const FormatException('Invalid Text configuration.');
     }
     return result;
   }

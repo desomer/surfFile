@@ -147,7 +147,7 @@ void main() {
 
   test('duplicating a list copies its settings and row template', () {
     final registry = Registry()..bootstrap();
-    final contract = registry.registry['SuperListView']!.duplication!;
+    final contract = registry.registry['ListView']!.duplication!;
     expect(contract.ownedConfigs('x'), [
       const EditorConfigRef.layout('x'),
       const EditorConfigRef.list('x'),

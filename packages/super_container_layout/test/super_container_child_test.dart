@@ -65,7 +65,7 @@ void main() {
                     ? KeyedSubtree(
                         key: targetKey,
                         child: registry.getWidget(
-                          'NewContainer',
+                          'Card',
                           XuiBuildCtx(id: 'box'),
                         ),
                       )
@@ -112,12 +112,12 @@ void main() {
       final history = EditorHistoryScope.controllerOf(context)!;
       final appearance = AppearanceScope.controllerOf(context)!;
       history.clear();
-      await open(tester, 'New Container');
-      await choose(tester, 'factory:SuperText');
+      await open(tester, 'Card');
+      await choose(tester, 'factory:Text');
       expect(find.byType(SuperText), findsOneWidget);
       final config = components.nativeComponentController('box').value;
       final id = config.slotsOf('child').single;
-      expect(config.slotTypeOf(id), 'factory:SuperText');
+      expect(config.slotTypeOf(id), 'factory:Text');
       expect(tester.widget<SuperText>(find.byType(SuperText)).id, id);
       expect(history.canUndo, isTrue);
       final store = AppearanceStore();
@@ -215,10 +215,10 @@ void main() {
     final components = registry();
     await mount(tester, components);
     await open(tester);
-    await choose(tester, 'factory:NewContainer');
+    await choose(tester, 'factory:Card');
     final parent = components.nativeComponentController('box').value;
     final nestedId = parent.slotsOf('child').single;
-    await open(tester, 'New Container');
+    await open(tester, 'Card');
     await tester.tap(
       find.byKey(
         ValueKey('super-container-$nestedId-add-slot-component:message'),
@@ -239,7 +239,7 @@ void main() {
     final components = registry();
     await mount(tester, components);
     await open(tester);
-    await choose(tester, 'factory:NewContainer');
+    await choose(tester, 'factory:Card');
     final id = components
         .nativeComponentController('box')
         .value
@@ -251,7 +251,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('style-menu-rename-Box')), findsNothing);
     await tester.tap(
-      find.byKey(const ValueKey('style-menu-rename-New Container')),
+      find.byKey(const ValueKey('style-menu-rename-Card')),
     );
     await tester.pumpAndSettle();
     await tester.enterText(
@@ -283,7 +283,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(
-        const ValueKey('super-container-box-add-card-factory:NewContainer'),
+        const ValueKey('super-container-box-add-card-factory:Card'),
       ),
     );
     await tester.pumpAndSettle();
@@ -321,7 +321,7 @@ void main() {
     final components = registry();
     await mount(tester, components);
     await open(tester);
-    await choose(tester, 'factory:NewContainer');
+    await choose(tester, 'factory:Card');
     final history = EditorHistoryScope.controllerOf(tester.element(target()))!;
     history.clear();
     await tester.tap(target(), buttons: kSecondaryMouseButton);
@@ -335,7 +335,7 @@ void main() {
     );
     expect(
       find.descendant(
-        of: find.byKey(const ValueKey('style-menu-New Container')),
+        of: find.byKey(const ValueKey('style-menu-Card')),
         matching: remove,
       ),
       findsOneWidget,

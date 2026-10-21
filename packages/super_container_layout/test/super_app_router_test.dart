@@ -64,7 +64,7 @@ void main() {
     return router;
   }
 
-  testWidgets('SuperPage provides an empty root page by default', (tester) async {
+  testWidgets('Page provides an empty root page by default', (tester) async {
     final router = GoRouter(
       routes: [
         GoRoute(

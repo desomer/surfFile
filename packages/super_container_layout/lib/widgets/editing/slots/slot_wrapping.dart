@@ -9,8 +9,8 @@ import '../history/editor_history.dart';
 import 'editor_context_menu.dart';
 
 enum EditorSlotWrapper {
-  container('SuperContainer', 'NewContainer', Icons.crop_square),
-  layout('SuperLayout', 'NewLayout', Icons.dashboard_outlined);
+  container('Card', 'Card', Icons.crop_square),
+  layout('Layout', 'Layout', Icons.dashboard_outlined);
 
   const EditorSlotWrapper(this.label, this.factory, this.icon);
 

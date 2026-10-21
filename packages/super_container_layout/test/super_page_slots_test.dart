@@ -61,8 +61,8 @@ void main() {
   }
 
   for (final (region, factory) in [
-    (ScaffoldPageRegion.appBar, 'SuperAppBar'),
-    (ScaffoldPageRegion.bottomNavigationBar, 'SuperBottomNavigationBar'),
+    (ScaffoldPageRegion.appBar, 'AppBar'),
+    (ScaffoldPageRegion.bottomNavigationBar, 'BottomNavigationBar'),
   ]) {
     testWidgets('${region.name} catalog accepts only its category',
         (tester) async {
@@ -81,10 +81,10 @@ void main() {
           'scaffold-page-add-slot-scaffold:${region.name}')), findsOneWidget);
       expect(find.byKey(const ValueKey('scaffold-page-add-slot-scaffold:body')),
           findsNothing);
-      expect(find.byKey(const ValueKey('scaffold-page-add-slot-factory:NewLayout')),
+      expect(find.byKey(const ValueKey('scaffold-page-add-slot-factory:Layout')),
           findsNothing);
       final other = region == ScaffoldPageRegion.appBar
-          ? 'SuperBottomNavigationBar' : 'SuperAppBar';
+          ? 'BottomNavigationBar' : 'AppBar';
       expect(find.byKey(ValueKey('scaffold-page-add-slot-factory:$other')),
           findsNothing);
       await tester.tap(find.text('Annuler'));
@@ -106,7 +106,7 @@ void main() {
       child: SuperLayout(
         config: SuperLayoutConfig(
           slotTypes: {
-            'factory-instance': 'registry:SuperAppBar',
+            'factory-instance': 'registry:AppBar',
             'registered-instance': 'legacy-tagged',
           },
         ),
@@ -125,12 +125,12 @@ void main() {
     unawaited(surface.onAdd!());
     await tester.pumpAndSettle();
     expect(find.byKey(
-        const ValueKey('super-layout-add-slot-registry:SuperAppBar')),
+        const ValueKey('super-layout-add-slot-registry:AppBar')),
         findsOneWidget);
     expect(find.byKey(const ValueKey('super-layout-add-slot-legacy-tagged')),
         findsOneWidget);
     expect(find.byKey(
-        const ValueKey('super-layout-add-slot-registry:NewContainer')),
+        const ValueKey('super-layout-add-slot-registry:Card')),
         findsNothing);
     await tester.tap(find.byKey(
         const ValueKey('super-layout-add-slot-legacy-tagged')));
@@ -649,7 +649,7 @@ void main() {
                 placements: {
                   ScaffoldPageRegion.body: [if (!emptyBody) 'replacement'],
                 },
-                slotTypes: {if (!emptyBody) 'replacement': 'factory:NewLayout'},
+                slotTypes: {if (!emptyBody) 'replacement': 'factory:Layout'},
               ),
             },
           ),

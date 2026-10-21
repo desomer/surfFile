@@ -550,7 +550,9 @@ class EditorSlotState extends State<EditorSlot> {
                                                 (state.widget.menuTitle == null
                                                     ? null
                                                     : state.label)))
-                                  case final subtitle?)
+                                  case final subtitle?
+                                  when subtitle !=
+                                      (state.widget.menuTitle ?? state.label))
                                 Text(
                                   subtitle,
                                   key:

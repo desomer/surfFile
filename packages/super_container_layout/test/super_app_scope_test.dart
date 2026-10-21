@@ -378,12 +378,12 @@ void main() {
         .withSlotMoved(
           'container-first',
           SuperLayoutZone.center,
-          type: 'registry:New%20Container',
+          type: 'registry:Card',
         )
         .withSlotMoved(
           'container-second',
           SuperLayoutZone.center,
-          type: 'registry:New%20Container',
+          type: 'registry:Card',
         );
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
@@ -398,7 +398,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final containers = find.byWidgetPredicate(
-      (widget) => widget is EditableSurface && widget.label == 'New Container',
+      (widget) => widget is EditableSurface && widget.label == 'Card',
     );
     expect(containers, findsNWidgets(2));
     const style = ContainerStyle(radius: 23, padding: 12);
@@ -413,7 +413,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
     await tester.pumpAndSettle();
-    expect(find.text('Registre : New Container'), findsOneWidget);
+    expect(find.text('Registre : Card'), findsOneWidget);
     await tester.tap(find.text('Annuler'));
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
@@ -453,12 +453,12 @@ void main() {
         .withSlotMoved(
           'nested-first',
           SuperLayoutZone.center,
-          type: 'registry:New%20Layout',
+          type: 'registry:Layout',
         )
         .withSlotMoved(
           'nested-second',
           SuperLayoutZone.center,
-          type: 'registry:New%20Layout',
+          type: 'registry:Layout',
         );
     final firstController = registry.layoutController('nested-first');
     firstController.value = const SuperLayoutConfig(

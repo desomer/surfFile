@@ -64,7 +64,7 @@ void main() {
     expect(codec.fromJson(oldDocument).pageCatalog.pages, isEmpty);
   });
 
-  test('SurfFile codec preserves SuperText design and application preferences', () {
+  test('SurfFile codec preserves Text design and application preferences', () {
     final appearance = defaultSurfFileAppearance().copyWith(
       cardWidth: 240,
       textComponents: {

@@ -62,14 +62,14 @@ void main() {
     await openEditor(tester, const Size(1400, 1000));
     expect(find.text('Afficher les espacements'), findsOneWidget);
     final height = tester
-        .getSize(find.byKey(const ValueKey('preview-Super container')))
+        .getSize(find.byKey(const ValueKey('preview-Card')))
         .height;
     await tester.tap(find.byKey(const ValueKey('preview-spacing')));
     await tester.pumpAndSettle();
     expect(find.text('Masquer les espacements'), findsOneWidget);
     expect(
       tester
-          .getSize(find.byKey(const ValueKey('preview-Super container')))
+          .getSize(find.byKey(const ValueKey('preview-Card')))
           .height,
       isNot(height),
     );

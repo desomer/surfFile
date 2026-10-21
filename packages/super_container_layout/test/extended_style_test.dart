@@ -383,7 +383,7 @@ void main() {
         tester.state<EditableSurfaceState>(find.byType(EditableSurface)).style;
 
     Future<void> toggle(WidgetTester tester, String key) async {
-      final finder = find.byKey(ValueKey('$key-Super container'));
+      final finder = find.byKey(ValueKey('$key-Card'));
       await tester.ensureVisible(finder);
       await tester.pumpAndSettle();
       await tester.tap(finder);
@@ -418,7 +418,7 @@ void main() {
       final corner = find.byWidgetPredicate(
         (widget) =>
             widget is Slider &&
-            widget.key == const ValueKey('radii-1-Super container'),
+            widget.key == const ValueKey('radii-1-Card'),
       );
       await tester.ensureVisible(corner);
       tester.widget<Slider>(corner).onChanged!(20);
@@ -435,7 +435,7 @@ void main() {
       final topPadding = find.byWidgetPredicate(
         (widget) =>
             widget is Slider &&
-            widget.key == const ValueKey('padding-side-0-Super container'),
+            widget.key == const ValueKey('padding-side-0-Card'),
       );
       await tester.ensureVisible(topPadding);
       tester.widget<Slider>(topPadding).onChanged!(18);
@@ -452,7 +452,7 @@ void main() {
       await open(tester);
       await toggle(tester, 'shadow-detail-switch');
       expect(current(tester).shadow, isNotNull);
-      final blur = find.byKey(const ValueKey('shadow-blur-Super container'));
+      final blur = find.byKey(const ValueKey('shadow-blur-Card'));
       await tester.ensureVisible(blur);
       tester.widget<Slider>(blur).onChanged!(30);
       await tester.pump();
@@ -463,14 +463,14 @@ void main() {
 
       await toggle(tester, 'transform-switch');
       final rotation = find.byKey(
-        const ValueKey('transform-rotation-Super container'),
+        const ValueKey('transform-rotation-Card'),
       );
       await tester.ensureVisible(rotation);
       tester.widget<Slider>(rotation).onChanged!(45);
       await tester.pump();
       expect(current(tester).transform!.rotation, 45);
 
-      final opacity = find.byKey(const ValueKey('opacity-Super container'));
+      final opacity = find.byKey(const ValueKey('opacity-Card'));
       await tester.ensureVisible(opacity);
       tester.widget<Slider>(opacity).onChanged!(40);
       await tester.pump();
@@ -490,12 +490,12 @@ void main() {
       }
 
       await choose(
-        find.byKey(const ValueKey('border-line-Super container')),
+        find.byKey(const ValueKey('border-line-Card')),
         BorderLine.dotted.label,
       );
       expect(current(tester).borderLine, BorderLine.dotted);
       await choose(
-        find.byKey(const ValueKey('pattern-Super container')),
+        find.byKey(const ValueKey('pattern-Card')),
         SurfacePattern.lines.label,
       );
       expect(current(tester).pattern, SurfacePattern.lines);

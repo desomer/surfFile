@@ -497,7 +497,7 @@ class Registry {
   }
 
   void bootstrap({List<String> availableFontFamilies = const []}) {
-    registry['SuperText'] = ComponentBuilderDynamic(
+    registry['Text'] = ComponentBuilderDynamic(
       menuIcon: Icons.text_fields,
       duplication: ComponentDuplicationContract.superText,
       tags: const {'text', 'input'},
@@ -505,20 +505,20 @@ class Registry {
       dynamicBuilder: (ctx) =>
           SuperText(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
-    registry['SuperAppBar'] = ComponentBuilderDynamic(
+    registry['AppBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.web_asset,
       duplication: ComponentDuplicationContract.superAppBar,
       tags: const {'appBar'},
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
     );
-    registry['SuperBottomNavigationBar'] = ComponentBuilderDynamic(
+    registry['BottomNavigationBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.space_dashboard_outlined,
       duplication: ComponentDuplicationContract.superBottomNavigationBar,
       tags: const {'bottomNavigationBar'},
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
-    registry['NewContainer'] = ComponentBuilderDynamic(
+    registry['Card'] = ComponentBuilderDynamic(
       menuIcon: Icons.crop_square,
       duplication: ComponentDuplicationContract.newContainer,
       tags: const {'container'},
@@ -530,8 +530,8 @@ class Registry {
             valueListenable: style,
             builder: (context, value, _) => EditableSurface(
               id: xuiCtx.id,
-              label: 'New Container',
-              menuType: 'NewContainer',
+              label: 'Card',
+              menuType: 'Card',
               style: value,
               onStyleChanged: (value) => style.value = value,
             ),
@@ -539,7 +539,7 @@ class Registry {
         },
       ),
     );
-    registry['SuperListView'] = ComponentBuilderDynamic(
+    registry['ListView'] = ComponentBuilderDynamic(
       menuIcon: Icons.view_list,
       duplication: ComponentDuplicationContract.superListView,
       tags: const {'list', 'layout'},
@@ -550,7 +550,7 @@ class Registry {
         builder: (_) => SuperListView(id: xuiCtx.id),
       ),
     );
-    registry['NewLayout'] = ComponentBuilderDynamic(
+    registry['Layout'] = ComponentBuilderDynamic(
       menuIcon: Icons.dashboard_outlined,
       duplication: ComponentDuplicationContract.newLayout,
       tags: const {'layout'},
@@ -561,7 +561,7 @@ class Registry {
 
           return BuilderSlot(
             id: id,
-            label: 'New Layout',
+            label: 'Layout',
             builder: (ctx) {
               final superapp = SuperApp.of(ctx);
               final superLayoutConfig = superapp.getLayoutConfigById(id);

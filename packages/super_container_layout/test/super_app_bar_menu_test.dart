@@ -55,11 +55,11 @@ void main() {
     layout.value = layout.value.withSlotMoved(
       'container-instance',
       SuperLayoutZone.center,
-      type: 'registry:NewContainer',
+      type: 'registry:Card',
     );
     await tester.pumpAndSettle();
     final container = find.byWidgetPredicate(
-      (widget) => widget is EditableSurface && widget.label == 'New Container',
+      (widget) => widget is EditableSurface && widget.label == 'Card',
     );
     StyleEditScope.controllerOf(tester.element(container))!.value = true;
     await tester.pumpAndSettle();
@@ -73,7 +73,7 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    final menuRow = find.byKey(const ValueKey('style-menu-New Container'));
+    final menuRow = find.byKey(const ValueKey('style-menu-Card'));
     expect(find.text('Configurer la page…'), findsNothing);
     expect(menuRow, findsOneWidget);
     for (final icon in [Icons.straighten, Icons.delete_outline]) {
@@ -94,7 +94,7 @@ void main() {
             .widget<IconButton>(
               find.byKey(
                 ValueKey(
-                  'style-menu-$action-Taille et marge préférées : NewContainer',
+                  'style-menu-$action-Taille et marge préférées : Card',
                 ),
               ),
             )
@@ -136,14 +136,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
-          const ValueKey('scaffold-page-add-slot-factory:NewContainer'),
+          const ValueKey('scaffold-page-add-slot-factory:Card'),
         ),
       );
       await tester.pumpAndSettle();
       final controller = registry.scaffoldPageController('root');
       final id = controller.value.slotsOf(ScaffoldPageRegion.appBar).single;
-      expect(id, isNot('factory:NewContainer'));
-      expect(controller.value.slotTypeOf(id), 'factory:NewContainer');
+      expect(id, isNot('factory:Card'));
+      expect(controller.value.slotTypeOf(id), 'factory:Card');
       final history = EditorHistoryScope.controllerOf(context)!;
       history.undo();
       await tester.pumpAndSettle();

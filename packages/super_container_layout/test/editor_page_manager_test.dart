@@ -150,7 +150,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('scaffold-page-add-body')));
     await tester.pumpAndSettle();
     final directAdd = find.byKey(
-      const ValueKey('scaffold-page-add-slot-factory:NewContainer'),
+      const ValueKey('scaffold-page-add-slot-factory:Card'),
     );
     await tester.ensureVisible(directAdd);
     await tester.pumpAndSettle();

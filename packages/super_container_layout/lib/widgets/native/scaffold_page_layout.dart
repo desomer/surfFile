@@ -204,7 +204,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
         final config = controller.value;
         return NativeComponentEditor(
           label: widget.label,
-          menuType: 'SuperPage',
+          menuType: 'Page',
           menuIcon: widget.menuIcon,
           keyPrefix: 'scaffold-page',
           settingsTitle: 'Configurer la page',

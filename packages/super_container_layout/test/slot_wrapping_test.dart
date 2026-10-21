@@ -72,7 +72,7 @@ void main() {
             ? aliased
                   ? 'template'
                   : sourceId
-            : 'factory:SuperText');
+            : 'factory:Text');
     final suppliedSlots = [
       if (provided)
         if (aliased)
@@ -220,7 +220,7 @@ void main() {
 
   for (final owner in ['layout', 'grid', 'native', 'surface']) {
     for (final provided in [true, false]) {
-      for (final wrapper in ['SuperContainer', 'SuperLayout']) {
+      for (final wrapper in ['Card', 'Layout']) {
         testWidgets(
           '$owner wraps ${provided ? 'provided' : 'catalog'} in $wrapper',
           (tester) async {
@@ -249,9 +249,7 @@ void main() {
               inLayout
                   ? after.layouts['root']!.slotTypeOf(id)
                   : after.nativeComponents['root']!.slotTypeOf(id),
-              wrapper == 'SuperContainer'
-                  ? 'registry:NewContainer'
-                  : 'registry:NewLayout',
+              wrapper == 'Card' ? 'registry:Card' : 'registry:Layout',
             );
             expect(
               inLayout
@@ -264,7 +262,7 @@ void main() {
                 id: const GridSlotPosition(x: 2, y: 1, width: 5, height: 4),
               });
             }
-            if (wrapper == 'SuperContainer') {
+            if (wrapper == 'Card') {
               expect(after.nativeComponents[id]!.slotsOf('child'), [sourceId]);
               expect(
                 after.nativeComponents[id]!.slotLabels[sourceId],
@@ -318,12 +316,12 @@ void main() {
     ) async {
       final appearance = await mount(tester, owner: owner, provided: true);
       await openMenu(tester, true);
-      await chooseWrapper(tester, 'SuperContainer');
+      await chooseWrapper(tester, 'Card');
       final outer = owner == 'layout'
           ? appearance.value.layouts['root']!.placedSlotIds.single
           : appearance.value.nativeComponents['root']!.slotsOf('child').single;
       await openMenu(tester, true);
-      await chooseWrapper(tester, 'SuperLayout');
+      await chooseWrapper(tester, 'Layout');
       final inner = appearance.value.nativeComponents[outer]!
           .slotsOf('child')
           .single;
@@ -346,7 +344,7 @@ void main() {
         aliased: true,
       );
       await openMenu(tester, true);
-      await chooseWrapper(tester, 'SuperLayout');
+      await chooseWrapper(tester, 'Layout');
       final wrapper = appearance.value.nativeComponents['root']!
           .slotsOf('body')
           .single;
@@ -372,7 +370,7 @@ void main() {
         registeredType: type,
       );
       await openMenu(tester, true);
-      await chooseWrapper(tester, 'SuperLayout');
+      await chooseWrapper(tester, 'Layout');
       expect(find.text('Provided target'), findsOneWidget);
       final registry = SuperApp.of(tester.element(find.byKey(hostKey)))
           .registry!;
@@ -390,7 +388,7 @@ void main() {
     });
   }
 
-  for (final wrapperType in ['SuperContainer', 'SuperLayout']) {
+  for (final wrapperType in ['Card', 'Layout']) {
     testWidgets(
       '$wrapperType preserves catalog configurations during duplication',
       (tester) async {
@@ -410,7 +408,7 @@ void main() {
           targetPageId: 'copy',
         );
         final wrapper = copy.nativeComponents['copy']!.slotsOf('body').single;
-        final source = wrapperType == 'SuperContainer'
+        final source = wrapperType == 'Card'
             ? copy.nativeComponents[wrapper]!.slotsOf('child').single
             : copy.layouts[wrapper]!.placedSlotIds.single;
         expect(source, isNot('source'));
@@ -428,9 +426,7 @@ void main() {
       final before = appearance.value;
       final wrapper = before.layouts['root']!.placedSlotIds.single;
       await openMenu(tester, false);
-      final label = wrapperType == 'SuperContainer'
-          ? 'NewContainer'
-          : 'NewLayout';
+      final label = wrapperType;
       await tester.tap(
         find.byKey(
           ValueKey('style-menu-remove-Taille et marge préférées : $label'),
@@ -477,8 +473,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Envelopper dans…'));
       await tester.pumpAndSettle();
-      expect(find.text('SuperContainer'), findsOneWidget);
-      expect(find.text('SuperLayout'), findsNothing);
+      expect(find.text('Card'), findsOneWidget);
+      expect(find.text('Layout'), findsNothing);
       expect(tester.takeException(), isNull);
     });
   }

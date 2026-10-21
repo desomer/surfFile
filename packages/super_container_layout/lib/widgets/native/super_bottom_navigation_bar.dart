@@ -89,7 +89,7 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
       valueListenable: controller,
       builder: (context, config, _) => NativeComponentEditor(
         label: widget.label,
-        menuType: 'SuperBottomNavigationBar',
+        menuType: 'BottomNavigationBar',
         keyPrefix: 'super-bottom-navigation-bar',
         settingsTitle: 'Configurer la barre basse',
         editSurface: true,

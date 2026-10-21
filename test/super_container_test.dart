@@ -391,12 +391,12 @@ void main() {
 
     await edit(tester, box);
     final padding = tester.widget<Slider>(
-      find.byKey(const ValueKey('padding-Super container')),
+      find.byKey(const ValueKey('padding-Card')),
     );
     padding.onChanged!(10);
     await tester.pump();
     final margin = tester.widget<Slider>(
-      find.byKey(const ValueKey('margin-Super container')),
+      find.byKey(const ValueKey('margin-Card')),
     );
     margin.onChanged!(6);
     await tester.pump();

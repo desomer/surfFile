@@ -12,17 +12,49 @@ void main() {
   test('bootstrap defines menu icons for all standard components', () {
     final registry = Registry()..bootstrap();
     expect(
-      registry.registry.map((key, component) => MapEntry(key, component.menuIcon)),
+      registry.registry.map(
+        (key, component) => MapEntry(key, component.menuIcon),
+      ),
       {
-        'SuperText': Icons.text_fields,
-        'SuperAppBar': Icons.web_asset,
-        'SuperBottomNavigationBar': Icons.space_dashboard_outlined,
-        'NewContainer': Icons.crop_square,
-        'SuperListView': Icons.view_list,
-        'NewLayout': Icons.dashboard_outlined,
+        'Text': Icons.text_fields,
+        'AppBar': Icons.web_asset,
+        'BottomNavigationBar': Icons.space_dashboard_outlined,
+        'Card': Icons.crop_square,
+        'ListView': Icons.view_list,
+        'Layout': Icons.dashboard_outlined,
       },
     );
   });
+
+  test(
+    'bootstrap exposes only the renamed component types without aliases',
+    () {
+      final registry = Registry()..bootstrap();
+      expect(
+        registry.registry.keys,
+        unorderedEquals([
+          'Card',
+          'Layout',
+          'Text',
+          'ListView',
+          'AppBar',
+          'BottomNavigationBar',
+        ]),
+      );
+      for (final oldType in [
+        'SuperContainer',
+        'NewContainer',
+        'SuperLayout',
+        'NewLayout',
+        'SuperText',
+        'SuperListView',
+        'SuperAppBar',
+        'SuperBottomNavigationBar',
+      ]) {
+        expect(registry.registry.containsKey(oldType), isFalse);
+      }
+    },
+  );
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});

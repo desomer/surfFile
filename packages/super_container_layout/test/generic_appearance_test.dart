@@ -20,7 +20,7 @@ void main() {
               .withSlotMoved(
                 'nested-instance',
                 SuperLayoutZone.center,
-                type: 'registry:New%20Layout',
+                type: 'registry:Layout',
               )
               .withSlotPreferredSize('nested-instance', const Size(250, 150))
               .withAxis(SuperLayoutZone.center, Axis.horizontal),
@@ -43,7 +43,7 @@ void main() {
       expect(AppearanceStore.encode(restored), AppearanceStore.encode(value));
       expect(
         restored.layout('workspace').slotTypeOf('nested-instance'),
-        'registry:New%20Layout',
+        'registry:Layout',
       );
       expect(restored.layout('nested-instance').swaps, {SuperLayoutZone.west});
       expect(

@@ -95,7 +95,7 @@ class EditableSurfaceState extends State<EditableSurface> {
       _localLabel ??
       widget.label ??
       widget.slot?.standard.label ??
-      'Super container';
+      'Card';
 
   @override
   void didUpdateWidget(EditableSurface oldWidget) {

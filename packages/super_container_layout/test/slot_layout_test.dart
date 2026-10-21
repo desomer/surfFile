@@ -251,7 +251,7 @@ void main() {
     });
   });
 
-  group('SuperLayout with slots', () {
+  group('Layout with slots', () {
     Future<void> pump(
       WidgetTester tester, {
       required SuperLayoutConfig config,

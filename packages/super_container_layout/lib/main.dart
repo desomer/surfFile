@@ -62,7 +62,7 @@ class _TestAppState extends State<TestApp> {
   Widget build(BuildContext context) => SuperApp(
     router: _router,
     pageRouting: _pageRouting,
-    title: 'Super Container Layout demo',
+    title: 'Card Layout demo',
     registry: _registry,
   );
 

@@ -4,6 +4,45 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
+  testWidgets('a component type matching its menu title is not repeated', (
+    tester,
+  ) async {
+    final editing = ValueNotifier(true);
+    addTearDown(editing.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StyleEditScope(
+          controller: editing,
+          child: Scaffold(
+            body: EditorSlot(
+              label: 'Configurer la carte',
+              menuTitle: 'Card',
+              menuType: 'Card',
+              onEdit: () async {},
+              child: const SizedBox(
+                width: 160,
+                height: 80,
+                child: Text('Cible'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Cible'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('style-menu-Configurer la carte'));
+    expect(
+      find.descendant(of: row, matching: find.text('Card')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: row, matching: find.text('Configurer la carte')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'editor context menu prioritizes component title and compact actions',
     (tester) async {
@@ -20,7 +59,7 @@ void main() {
                   child: EditableSurface(
                     label: 'Titre',
                     menuTitle: 'Composant',
-                    menuType: 'SuperText',
+                    menuType: 'Text',
                     menuSubtitle: () => 'Zone de titre',
                     onLabelChanged: (_) {},
                     onAdd: () async {},
@@ -51,7 +90,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(of: componentRow, matching: find.text('SuperText')),
+        find.descendant(of: componentRow, matching: find.text('Text')),
         findsNothing,
       );
       final componentTitle = tester.widget<Text>(
@@ -100,7 +139,7 @@ void main() {
             body: Center(
               child: EditorSlot(
                 label: 'Contenu',
-                menuType: 'SuperAppBar',
+                menuType: 'AppBar',
                 onEdit: () async {},
                 child: const SizedBox(
                   width: 160,
@@ -123,7 +162,7 @@ void main() {
       findsOneWidget,
     );
     expect(
-      find.descendant(of: row, matching: find.text('SuperAppBar')),
+      find.descendant(of: row, matching: find.text('AppBar')),
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
