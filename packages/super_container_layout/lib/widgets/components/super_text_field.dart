@@ -14,6 +14,7 @@ class SuperTextField extends StatefulWidget {
     this.onChanged,
     this.enabled,
     this.readOnly,
+    this.enableContextMenu = true,
     this.bindingError,
     super.key,
   });
@@ -24,6 +25,7 @@ class SuperTextField extends StatefulWidget {
   final TextStyle? style;
   final ValueChanged<String>? onChanged;
   final bool? enabled, readOnly;
+  final bool enableContextMenu;
   final String? bindingError;
 
   @override
@@ -213,6 +215,9 @@ class _SuperTextFieldState extends State<SuperTextField> {
       textAlignVertical: vertical,
       enabled: enabled,
       readOnly: readOnly,
+      contextMenuBuilder: widget.enableContextMenu
+          ? const TextField().contextMenuBuilder
+          : null,
       obscureText: config.obscureText && !_revealed,
       enableSuggestions: !config.obscureText && field.suggestions,
       autocorrect: !config.obscureText && field.autocorrect,

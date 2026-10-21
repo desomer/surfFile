@@ -1,5 +1,17 @@
 import 'package:flutter/widgets.dart';
 
+class EditorSlotWrapAction {
+  const EditorSlotWrapAction({
+    required this.label,
+    required this.icon,
+    required this.onSelected,
+  });
+
+  final String label;
+  final IconData icon;
+  final Future<void> Function() onSelected;
+}
+
 /// Extra menu action contributed by an editor owner to an `EditorSlot`.
 class EditorSlotAction extends InheritedWidget {
   const EditorSlotAction({
@@ -9,6 +21,7 @@ class EditorSlotAction extends InheritedWidget {
     this.onRemove,
     this.inline = false,
     this.showEdit = true,
+    this.wrapActions = const [],
     required super.child,
     super.key,
   });
@@ -19,6 +32,7 @@ class EditorSlotAction extends InheritedWidget {
   final Future<void> Function()? onRemove;
   final bool inline;
   final bool showEdit;
+  final List<EditorSlotWrapAction> wrapActions;
 
   static List<EditorSlotAction> of(BuildContext context) {
     final actions = <EditorSlotAction>[];
@@ -40,6 +54,7 @@ class EditorSlotAction extends InheritedWidget {
       enabled != oldWidget.enabled ||
       onEdit != oldWidget.onEdit ||
       onRemove != oldWidget.onRemove ||
+      wrapActions != oldWidget.wrapActions ||
       inline != oldWidget.inline ||
       showEdit != oldWidget.showEdit;
 }

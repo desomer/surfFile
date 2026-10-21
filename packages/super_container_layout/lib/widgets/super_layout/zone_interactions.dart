@@ -98,7 +98,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
     final target = widget.swapTarget;
     final label = Text(
       widget.label,
-      style: TextStyle(fontSize: 11, color: colors.onSurface),
+      style: TextStyle(fontSize: 10, color: colors.onSurface),
     );
     final badge = Material(
       color: colors.primary.withValues(alpha: .35),
@@ -110,13 +110,16 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
         ),
       ),
       child: InkWell(
+        mouseCursor: widget.swapTarget == null
+            ? SystemMouseCursors.click
+            : editorDragCursor(dragging: _dragging),
         borderRadius: BorderRadius.circular(12),
         onTap: () {
           setState(() => _open = !_open);
           widget.onSelect();
         },
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(8, 1, 4, 1),
+          padding: const EdgeInsets.fromLTRB(5, 1, 2, 1),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -124,7 +127,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                 Icon(
                   Icons.drag_indicator,
                   key: ValueKey('super-layout-zone-drag-${widget.zone.name}'),
-                  size: 16,
+                  size: 12,
                   color: colors.onSurface,
                 ),
               label,
@@ -133,7 +136,15 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                   key: ValueKey('super-layout-add-${widget.zone.name}'),
                   tooltip: 'Ajouter un slot dans ${widget.label}',
                   visualDensity: VisualDensity.compact,
-                  iconSize: 18,
+                  iconSize: 14,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 24,
+                    height: 24,
+                  ),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   color: colors.onSurface,
                   icon: const Icon(Icons.add),
                   onPressed: onAdd,
@@ -142,6 +153,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                 ZoneAxisButton(
                   key: ValueKey('super-layout-toggle-axis-${widget.zone.name}'),
                   action: action,
+                  compact: true,
                   color: colors.onSurface,
                 ),
               if (_open && target != null)
@@ -151,7 +163,15 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                       ? 'Déplacer vers ${widget.zoneLabel(target)}'
                       : 'Échanger avec ${widget.zoneLabel(target)}',
                   visualDensity: VisualDensity.compact,
-                  iconSize: 16,
+                  iconSize: 14,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 24,
+                    height: 24,
+                  ),
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   color: colors.onSurface,
                   icon: Icon(_icon),
                   onPressed: () {
@@ -160,7 +180,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                   },
                 )
               else
-                const SizedBox(width: 4),
+                const SizedBox(width: 2),
             ],
           ),
         ),
@@ -199,42 +219,54 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
             allScopes: true,
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: MouseRegion(
-                hitTestBehavior: HitTestBehavior.translucent,
-                onEnter: (_) => _setHover(true),
-                onExit: (_) => _setHover(false),
-                // Glisser le nom vers le centre déclenche l'échange.
-                child: target == null
-                    ? GestureDetector(onTap: widget.onSelect, child: badge)
-                    : Draggable<SuperLayoutZone>(
-                        onDragStarted: () => _setDragging(true),
-                        onDragEnd: (_) => _setDragging(false),
-                        data: widget.zone,
-                        feedback: Material(
-                          color: colors.primary.withValues(alpha: .35),
-                          elevation: 4,
-                          borderRadius: BorderRadius.circular(12),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            // Pendant le survol du centre, le nom devient la zone future.
-                            child: ValueListenableBuilder<bool>(
-                              valueListenable: widget.overCenter,
-                              builder: (context, over, _) => Text(
-                                over ? widget.zoneLabel(target) : widget.label,
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: colors.onSurface,
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: EditorSelectionRegion.ignorePointer,
+                child: MouseRegion(
+                  cursor: target == null
+                      ? SystemMouseCursors.click
+                      : editorDragCursor(dragging: _dragging),
+                  hitTestBehavior: HitTestBehavior.translucent,
+                  onEnter: (_) => _setHover(true),
+                  onExit: (_) => _setHover(false),
+                  // Glisser le nom vers le centre déclenche l'échange.
+                  child: target == null
+                      ? GestureDetector(onTap: widget.onSelect, child: badge)
+                      : Draggable<SuperLayoutZone>(
+                          onDragStarted: () => _setDragging(true),
+                          onDragEnd: (_) => _setDragging(false),
+                          data: widget.zone,
+                          feedback: Material(
+                            color: colors.primary.withValues(alpha: .35),
+                            elevation: 4,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
+                              // Pendant le survol du centre, le nom devient la zone future.
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable: widget.overCenter,
+                                builder: (context, over, _) => Text(
+                                  over
+                                      ? widget.zoneLabel(target)
+                                      : widget.label,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: colors.onSurface,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
+                          childWhenDragging: Opacity(
+                            opacity: .35,
+                            child: badge,
+                          ),
+                          child: badge,
                         ),
-                        childWhenDragging: Opacity(opacity: .35, child: badge),
-                        child: badge,
-                      ),
+                ),
               ),
             ),
           ),

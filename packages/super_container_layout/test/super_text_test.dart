@@ -958,6 +958,51 @@ void main() {
     expect(events, ['Rejected', 'Initial']);
   });
 
+  testWidgets(
+    'input gives only the editor menu while editing and restores the native menu',
+    (tester) async {
+      final edit = ValueNotifier(true);
+      addTearDown(edit.dispose);
+      await tester.pumpWidget(
+        host(
+          StyleEditScope(
+            controller: edit,
+            child: const SuperText(id: 'menu-mode', config: input),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-Texte')), findsOneWidget);
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.contextMenuBuilder, isNull);
+      expect(field.enableInteractiveSelection, isTrue);
+      expect(field.readOnly, isFalse);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      edit.value = false;
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-Texte')), findsNothing);
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).contextMenuBuilder,
+        isNotNull,
+      );
+      edit.value = true;
+      await tester.pumpAndSettle();
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-Texte')), findsOneWidget);
+      expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('input keeps native text menu when visual editing is disabled', (
     tester,
   ) async {

@@ -1,9 +1,106 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
+import 'package:flutter/rendering.dart' show RendererBinding;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
 void main() {
+  testWidgets('Windows drag label uses supported native cursors', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    final dragging = ValueNotifier(false);
+    addTearDown(dragging.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: dragging,
+              builder: (_, active, _) => ComponentDragLabel(
+                draggable: true,
+                dragging: active,
+                child: const Text('Windows drag'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Windows drag')));
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.click,
+    );
+    dragging.value = true;
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.move,
+    );
+    await mouse.removePointer();
+    debugDefaultTargetPlatformOverride = null;
+  });
+  testWidgets(
+    'portaled component label exposes grab cursor above nested content',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: mode,
+            child: Scaffold(
+              body: EditorZoom(
+                child: SuperLayout(
+                  name: 'Root',
+                  config: const SuperLayoutConfig(
+                    north: false,
+                    south: false,
+                    east: false,
+                    west: false,
+                    placements: {
+                      SuperLayoutZone.center: ['child'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'child',
+                      label: 'Child',
+                      builder: (_) => const EditableSurface(
+                        label: 'Nested surface',
+                        child: SizedBox.expand(),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tapAt(const Offset(600, 400));
+      await tester.pumpAndSettle();
+      final label = find.byKey(const ValueKey('slot-label-child'));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(label));
+      await tester.pumpAndSettle();
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        SystemMouseCursors.grab,
+      );
+      await mouse.removePointer();
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('hover highlights only component labels in the same zone', (
     tester,
   ) async {
@@ -133,6 +230,22 @@ void main() {
       } else {
         expect(draggables, isEmpty);
       }
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(790, 590));
+      await mouse.moveTo(
+        tester.getCenter(
+          find.descendant(
+            of: find.byKey(const ValueKey('super-layout-add-overlay-north')),
+            matching: find.text('Nord'),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+        editable ? SystemMouseCursors.grab : SystemMouseCursors.click,
+      );
+      await mouse.removePointer();
       expect(tester.takeException(), isNull);
     });
   }
@@ -148,6 +261,10 @@ void main() {
             height: 180,
             child: SlotStack(
               showLabels: true,
+              mover: SlotMover(
+                owner: Object(),
+                onMove: (_, {beforeId, afterId}) {},
+              ),
               slots: [
                 BuilderSlot(
                   id: 'a',
@@ -185,6 +302,10 @@ void main() {
     await mouse.addPointer(location: const Offset(700, 500));
     await mouse.moveTo(bounds.center);
     await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grab,
+    );
     final hovered = tester.widget<Material>(
       find.descendant(of: label, matching: find.byType(Material)).first,
     );
@@ -198,6 +319,85 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.widget<ComponentDragLabel>(label).highlighted, isFalse);
     expect(tester.getRect(label), bounds);
+    await mouse.removePointer();
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final draggable in [true, false]) {
+    testWidgets(
+      'component grip stays visible in narrow labels (draggable=$draggable)',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 80,
+                  child: ComponentDragLabel(
+                    draggable: draggable,
+                    child: const Text('Long component label'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final icon = find.byIcon(Icons.drag_indicator);
+        expect(icon, draggable ? findsOneWidget : findsNothing);
+        if (draggable) expect(tester.getSize(icon), const Size(12, 12));
+        expect(
+          DefaultTextStyle.of(tester.element(find.text('Long component label')))
+              .style
+              .fontSize,
+          10,
+        );
+        expect(find.text('Long component label'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('movable label uses grab and grabbing mouse cursors', (
+    tester,
+  ) async {
+    final dragging = ValueNotifier(false);
+    addTearDown(dragging.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: ValueListenableBuilder<bool>(
+              valueListenable: dragging,
+              builder: (context, active, _) => ComponentDragLabel(
+                draggable: true,
+                dragging: active,
+                child: const Text('Move me'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Move me')));
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grab,
+    );
+    dragging.value = true;
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grabbing,
+    );
+    dragging.value = false;
+    await tester.pumpAndSettle();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.grab,
+    );
     await mouse.removePointer();
     expect(tester.takeException(), isNull);
   });

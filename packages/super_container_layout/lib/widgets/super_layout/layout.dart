@@ -445,5 +445,6 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   @override
-  Widget build(BuildContext context) => _buildLayout(context);
+  Widget build(BuildContext context) =>
+      ProvidedSlotScope(slots: widget.slots, child: _buildLayout(context));
 }

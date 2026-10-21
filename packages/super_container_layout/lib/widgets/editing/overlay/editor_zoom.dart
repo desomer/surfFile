@@ -42,6 +42,7 @@ class _EditorZoomState extends State<EditorZoom>
   final _controller = EditorZoomController();
   final _viewportKey = GlobalKey();
   BuildContext? _zoomTarget;
+  EditorDialogFocus? _zoomDialog;
   double? _manualScale;
   bool _framingHeld = false;
 
@@ -91,9 +92,12 @@ class _EditorZoomState extends State<EditorZoom>
     if (_framingHeld && _controller.enabled) return;
     final dialog = _controller.dialog.value;
     final focus = dialog?.target ?? LayoutSelection.focus.value?.context;
-    if (!_controller.enabled || !identical(focus, _zoomTarget)) {
+    if (!_controller.enabled ||
+        !identical(focus, _zoomTarget) ||
+        !identical(dialog, _zoomDialog)) {
       _manualScale = null;
       _zoomTarget = focus;
+      _zoomDialog = dialog;
     }
     _controller.contentContext = _content.currentContext;
     final rect = _controller.targetBounds(focus);
@@ -122,7 +126,7 @@ class _EditorZoomState extends State<EditorZoom>
         final scale = _manualScale ?? automaticScale;
         destination = (
           scale: scale,
-          offset: _manualScale == null
+          offset: _manualScale == null || dialog != null
               ? available.center - rect.center * scale
               : (available.center - rect.center * 3) * ((scale - 1) / 2),
         );

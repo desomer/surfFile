@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -71,24 +69,14 @@ class _EditorResizeHandleState extends State<EditorResizeHandle> {
                   : d.y == 0
                   ? 'Modifier la largeur de ${widget.label}'
                   : 'Redimensionner ${widget.label}',
-              child: Center(
+              child: Align(
+                alignment: d,
                 child: Container(
-                  width: 24,
-                  height: 24,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     color: _hover ? colors.tertiary : colors.surface,
-                    border: Border.all(color: colors.tertiary, width: 2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Transform.rotate(
-                    angle: d.x != 0 && d.y != 0
-                        ? (d.x == d.y ? math.pi / 4 : -math.pi / 4)
-                        : 0,
-                    child: Icon(
-                      d.x == 0 ? Icons.height : Icons.swap_horiz,
-                      size: 16,
-                      color: _hover ? colors.onTertiary : colors.tertiary,
-                    ),
+                    border: Border.all(color: colors.tertiary),
                   ),
                 ),
               ),

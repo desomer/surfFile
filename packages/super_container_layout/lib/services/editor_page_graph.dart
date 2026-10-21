@@ -394,20 +394,25 @@ _Resolution _resolve(Registry registry, String type, EditorConfigKind kind) {
     while (rest.startsWith(registryPrefix)) {
       rest = rest.substring(registryPrefix.length);
     }
-    final key = rest == type ? null : decode(rest);
+    final key = type.startsWith('factory:')
+        ? type.substring('factory:'.length)
+        : rest == type
+        ? null
+        : decode(rest);
     if (registry.registry[key] case final factory?) {
       return found(key!, factory.duplication);
     }
     for (final entry in registry.components.entries) {
       final component = entry.value;
       if (component.slotId == type ||
-          (component.slotId == null && key == entry.key)) {
+          type == 'component:${component.slotId ?? entry.key}' ||
+          key == entry.key) {
         return found(component.label, component.duplication);
       }
     }
-    return key == null
+    return key == null && !type.startsWith('component:')
         ? (label: type, status: _Status.supplied, contract: null)
-        : (label: key, status: _Status.unknown, contract: null);
+        : (label: key ?? type, status: _Status.unknown, contract: null);
   }
   // Same lookup order as NativeComponentEditor.
   for (final entry in registry.components.entries) {

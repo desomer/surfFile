@@ -656,6 +656,7 @@ class _SuperTextState extends State<SuperText> {
                             !(config.binding != null &&
                                 _binding?.loading == true),
                         readOnly: _unselected ? true : null,
+                        enableContextMenu: !canConfigure,
                         bindingError: _bindingError ?? _binding?.error,
                         onChanged: (text) {
                           if (_editorText != null) return;

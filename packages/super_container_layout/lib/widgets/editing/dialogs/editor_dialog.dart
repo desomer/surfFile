@@ -16,15 +16,45 @@ Future<T?> showEditorDialog<T>({
   bool barrierDismissible = true,
   Color? barrierColor,
 }) async {
+  final nested =
+      EditorOverlayVisibility.openDialogs.value > 0 ||
+      ModalRoute.of(context) is PopupRoute;
   EditorOverlayVisibility.openDialogs.value++;
   try {
     return await _showEditorDialog<T>(
       context: context,
-      builder: builder,
+      builder: nested
+          ? (context) {
+              final theme = Theme.of(context);
+              final shape = theme.dialogTheme.shape;
+              final border = BorderSide(
+                color: theme.colorScheme.outline,
+                width: 1.5,
+              );
+              return Theme(
+                data: theme.copyWith(
+                  dialogTheme: theme.dialogTheme.copyWith(
+                    elevation: 24,
+                    shadowColor: Colors.black.withValues(alpha: .5),
+                    shape: switch (shape) {
+                      OutlinedBorder shape => shape.copyWith(side: border),
+                      null => RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                        side: border,
+                      ),
+                      _ => shape,
+                    },
+                  ),
+                ),
+                child: Builder(builder: builder),
+              );
+            }
+          : builder,
       target: target,
       preferredWidth: preferredWidth,
       barrierDismissible: barrierDismissible,
-      barrierColor: barrierColor,
+      barrierColor:
+          barrierColor ?? (nested ? Colors.black.withValues(alpha: .24) : null),
     );
   } finally {
     EditorOverlayVisibility.openDialogs.value--;
@@ -40,14 +70,15 @@ Future<T?> _showEditorDialog<T>({
   Color? barrierColor,
 }) async {
   final inherited = EditorZoomScope.controllerOf(context);
-  final focus =
+  final requestedFocus =
       target ??
       inherited?.dialog.value?.target ??
-      LayoutSelection.focus.value?.context;
+      LayoutSelection.focus.value?.context ??
+      context;
   final controller =
       inherited ??
-      (focus != null && focus.mounted
-          ? EditorZoomScope.controllerOf(focus)
+      (requestedFocus.mounted
+          ? EditorZoomScope.controllerOf(requestedFocus)
           : null);
   if (controller == null || !controller.enabled) {
     return await showDialog<T>(
@@ -58,6 +89,13 @@ Future<T?> _showEditorDialog<T>({
     );
   }
   final previous = controller.dialog.value;
+  // A nested editor may pass its dialog context, which is outside the canvas.
+  // Keep framing the edited component rather than resetting the whole page.
+  final focus =
+      [target, previous?.target, context, LayoutSelection.focus.value?.context]
+          .whereType<BuildContext>()
+          .where((candidate) => controller.targetBounds(candidate) != null)
+          .firstOrNull;
   final request = EditorDialogFocus(target: focus);
   try {
     return await showDialog<T>(

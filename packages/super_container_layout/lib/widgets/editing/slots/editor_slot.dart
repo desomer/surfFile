@@ -6,11 +6,13 @@ import '../../../theme/appearance.dart';
 import '../../super_layout/layout_selection.dart';
 import '../../super_layout/zone_axis_button.dart';
 import 'editor_context_menu.dart';
+import 'editor_selection_region.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_overlay.dart';
 
-export 'editor_context_menu.dart' show EditorContextMenuEntry, EditorSlotAction;
+export 'editor_context_menu.dart'
+    show EditorContextMenuEntry, EditorSlotAction, EditorSlotWrapAction;
 
 /// Enables/disables editor gestures below this scope.
 ///
@@ -675,6 +677,42 @@ class EditorSlotState extends State<EditorSlot> {
                             onPressed: () =>
                                 Navigator.of(context).pop(state.widget.onAdd),
                           ),
+                        if ([
+                              for (final action
+                                  in inlineActions[state] ??
+                                      const <EditorSlotAction>[])
+                                ...action.wrapActions,
+                            ]
+                            case final wrapActions when wrapActions.isNotEmpty)
+                          MenuAnchor(
+                            consumeOutsideTap: true,
+                            menuChildren: [
+                              SubmenuButton(
+                                leadingIcon: const Icon(Icons.wrap_text),
+                                menuChildren: [
+                                  for (final action in wrapActions)
+                                    MenuItemButton(
+                                      leadingIcon: Icon(action.icon),
+                                      onPressed: () => Navigator.of(context)
+                                          .pop<Future<void> Function()>(
+                                            action.onSelected,
+                                          ),
+                                      child: Text(action.label),
+                                    ),
+                                ],
+                                child: const Text('Envelopper dans…'),
+                              ),
+                            ],
+                            builder: (context, controller, child) => IconButton(
+                              key: ValueKey('style-menu-more-${state.label}'),
+                              tooltip: 'Autres options',
+                              icon: const Icon(Icons.more_vert),
+                              style: _menuIconButtonStyle(context),
+                              onPressed: () => controller.isOpen
+                                  ? controller.close()
+                                  : controller.open(),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -707,7 +745,7 @@ class EditorSlotState extends State<EditorSlot> {
     Widget content = widget.child ?? const SizedBox.expand();
     if (canEdit && editMode != null) {
       _cachedDepth = _depth;
-      final painter = _DashedOutlinePainter(
+      final painter = EditorSelectionOutline(
         color: AppearanceScope.of(context).accent.withValues(alpha: .8),
         radius: widget.outlineRadius,
       );
@@ -716,10 +754,17 @@ class EditorSlotState extends State<EditorSlot> {
         onExit: (_) => _setHovered(false),
         child: ValueListenableBuilder<EditorSlotState?>(
           valueListenable: _hoveredTarget,
-          builder: (context, target, child) => ValueListenableBuilder<int>(
-            valueListenable: EditorOverlayVisibility.openDialogs,
-            builder: (context, count, child) => CustomPaint(
-              foregroundPainter: count == 0 && identical(target, this)
+          builder: (context, target, child) => ListenableBuilder(
+            listenable: Listenable.merge([
+              EditorOverlayVisibility.openDialogs,
+              EditorSelectionRegion.hoverTarget,
+            ]),
+            builder: (context, child) => CustomPaint(
+              foregroundPainter:
+                  EditorOverlayVisibility.openDialogs.value == 0 &&
+                      identical(target, this) &&
+                      (EditorSelectionRegion.hoverTarget.value == null ||
+                          _menuHoveredTarget != null)
                   ? painter
                   : null,
               child: child,
@@ -741,42 +786,4 @@ class EditorSlotState extends State<EditorSlot> {
     );
     return content;
   }
-}
-
-class _DashedOutlinePainter extends CustomPainter {
-  const _DashedOutlinePainter({required this.color, required this.radius});
-
-  static const _strokeWidth = 1.5;
-  static const _dash = 6.0;
-  static const _gap = 5.0;
-
-  final Color color;
-  final double radius;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const inset = _strokeWidth / 2;
-    final rect = (Offset.zero & size).deflate(inset);
-    if (rect.isEmpty) return;
-    final outline = Path()
-      ..addRRect(
-        RRect.fromRectAndRadius(
-          rect,
-          Radius.circular((radius - inset).clamp(0, rect.shortestSide / 2)),
-        ),
-      );
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = _strokeWidth;
-    for (final metric in outline.computeMetrics()) {
-      for (var d = 0.0; d < metric.length; d += _dash + _gap) {
-        canvas.drawPath(metric.extractPath(d, d + _dash), paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_DashedOutlinePainter old) =>
-      old.color != color || old.radius != radius;
 }

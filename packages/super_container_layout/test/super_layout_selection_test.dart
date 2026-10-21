@@ -165,6 +165,10 @@ void main() {
         );
         await tester.tapAt(const Offset(600, 400));
         await tester.pumpAndSettle();
+        LayoutSelection.select([
+          'parent', 'Centre', 'child', 'Centre', 'grandchild',
+        ]);
+        await tester.pumpAndSettle();
         await tester.tap(inside('grandchild', 'slot-label-select-content'));
         await tester.pumpAndSettle();
         expect(LayoutSelection.path.value.last, 'grandchild');
@@ -186,14 +190,14 @@ void main() {
           await tester.tapAt(const Offset(600, 20));
         }
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value, ['parent']);
+        expect(LayoutSelection.path.value,
+            breadcrumb ? ['parent'] : ['parent', 'Nord']);
         await tester.tapAt(const Offset(600, 80));
         await tester.pumpAndSettle();
         expect(inside('child', 'slot-resize-content-se'), findsNothing);
-        await tester.tapAt(
-          tester.getTopLeft(find.byKey(const ValueKey('grandchild'))) +
-              const Offset(600, 10),
-        );
+        LayoutSelection.select([
+          'parent', 'Centre', 'child', 'Centre', 'grandchild',
+        ]);
         await tester.pumpAndSettle();
         expect(LayoutSelection.path.value, [
           'parent',
@@ -251,12 +255,12 @@ void main() {
       expect(inside('first', 'slot-resize-content-se'), findsOneWidget);
       await tester.tapAt(const Offset(700, 350));
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, ['second']);
+      expect(LayoutSelection.path.value, ['second', 'Centre']);
       await tester.tapAt(const Offset(300, 350));
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, ['first']);
+      expect(LayoutSelection.path.value, ['first', 'Centre']);
       expect(inside('first', 'slot-resize-content-se'), findsNothing);
-    expect(inside('first', 'super-layout-zone-selected-center'), findsNothing);
+    expect(inside('first', 'super-layout-zone-selected-center'), findsOneWidget);
 
       LayoutSelection.select(['first', 'Centre']);
       await tester.pumpAndSettle();
@@ -264,8 +268,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(300, 350));
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, ['first']);
-      // A subsequent click in the same layout still selects its slot.
+      expect(LayoutSelection.path.value, ['first', 'Centre']);
+      await tester.pump(const Duration(seconds: 1));
+      // Only a double click enters the zone's direct slot.
+      await tester.tapAt(const Offset(300, 350));
+      await tester.pump(const Duration(milliseconds: 80));
       await tester.tapAt(const Offset(300, 350));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
@@ -350,7 +357,7 @@ void main() {
         tester.getCenter(find.byKey(const ValueKey('select-content-a'))),
       );
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, ['Layout']);
+      expect(LayoutSelection.path.value, ['Layout', 'Centre']);
       expect(changes, isEmpty);
       mode.value = false;
       await tester.pumpAndSettle();
@@ -787,9 +794,16 @@ void main() {
       await tester.tap(finder);
       await tester.pumpAndSettle();
     }
+    Future<void> selectChild() async {
+      LayoutSelection.select(['parent', 'Centre', 'child', 'Nord']);
+      await tester.pumpAndSettle();
+      LayoutSelection.select(['parent', 'Centre', 'child']);
+      await tester.pumpAndSettle();
+    }
 
     await tester.tapAt(const Offset(600, 350));
     await tester.pumpAndSettle();
+    await selectChild();
     expect(inside('child', 'super-layout-name-center'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('super-layout-name-center')),
@@ -803,8 +817,7 @@ void main() {
     );
     expect(inside('parent', 'super-layout-add-north'), findsOneWidget);
 
-    await tester.tapAt(const Offset(600, 350));
-    await tester.pumpAndSettle();
+    await selectChild();
     await clickSegment(1);
     expect(inside('child', 'super-layout-name-center'), findsNothing);
     expect(
@@ -814,8 +827,7 @@ void main() {
     await clickSegment(0);
     expect(inside('parent', 'super-layout-zone-selected-center'), findsNothing);
 
-    await tester.tapAt(const Offset(600, 350));
-    await tester.pumpAndSettle();
+    await selectChild();
     await tester.tap(
       find.descendant(
         of: inside('child', 'super-layout-name-center'),
@@ -831,7 +843,7 @@ void main() {
     expect(inside('child', 'super-layout-name-center'), findsNothing);
     await tester.tapAt(const Offset(600, 350));
     await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['parent', 'Centre', 'child']);
+    expect(LayoutSelection.path.value, ['parent', 'Centre']);
     expect(tester.takeException(), isNull);
   });
 
@@ -929,7 +941,7 @@ void main() {
   });
 
   testWidgets(
-    'nested selection chooses deepest layout without stealing button taps',
+    'nested selection descends progressively without stealing button taps',
     (tester) async {
       final mode = ValueNotifier(true);
       addTearDown(mode.dispose);
@@ -953,6 +965,14 @@ void main() {
       await tester.tap(find.text('Contenu'));
       await tester.pumpAndSettle();
       expect(presses, 1);
+      expect(LayoutSelection.path.value, ['parent', 'Centre']);
+      for (var level = 0; level < 2; level++) {
+        await tester.pump(const Duration(seconds: 1));
+        await tester.tapAt(const Offset(600, 400));
+        await tester.pump(const Duration(milliseconds: 80));
+        await tester.tapAt(const Offset(600, 400));
+        await tester.pumpAndSettle();
+      }
       expect(inside('child', 'super-layout-name-center'), findsOneWidget);
       final names = find.byKey(const ValueKey('super-layout-name-center'));
       expect(names, findsOneWidget);

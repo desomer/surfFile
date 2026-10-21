@@ -142,6 +142,9 @@ class EditableSingleChildState extends State<EditableSingleChild> {
               enabled: children.isNotEmpty,
               onEdit: () async {},
               onRemove: children.isEmpty ? null : () async => remove(),
+              wrapActions: children.isEmpty
+                  ? const []
+                  : editor.wrapActionsForSlot('child', children.single),
               child: child,
             ),
             children.isNotEmpty,

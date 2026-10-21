@@ -4,18 +4,15 @@ import 'package:flutter/rendering.dart';
 
 import 'dart:math' as math;
 
-import 'package:flutter/gestures.dart'
-    show
-        DragStartBehavior,
-        PointerDownEvent,
-        PointerEvent,
-        kPrimaryButton,
-        kTouchSlop;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:material_ui/material_ui.dart';
 
 import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
+import '../editing/slots/editor_selection_region.dart';
 import '../editing/slots/slot_removal.dart';
+import '../editing/slots/slot_wrapping.dart';
+import '../editing/slots/provided_slot_scope.dart';
 import '../editing/addition/component_add_wizard.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/dialogs/editor_dialog_header.dart';

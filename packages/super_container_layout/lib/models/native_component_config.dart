@@ -65,6 +65,41 @@ class NativeComponentConfig {
   List<String> slotsOf(String region) => placements[region] ?? const [];
   String slotTypeOf(String id) => slotTypes[id] ?? id;
 
+  /// Replaces a placement in place, keeping its outer sizing.
+  NativeComponentConfig withSlotReplaced(
+    String id,
+    String replacementId,
+    String type,
+  ) {
+    if (!placements.values.any((ids) => ids.contains(id)) ||
+        replacementId.trim().isEmpty ||
+        placements.values.any((ids) => ids.contains(replacementId))) {
+      throw ArgumentError('Invalid slot replacement.');
+    }
+    return NativeComponentConfig(
+      useDefaultNavigation: useDefaultNavigation,
+      placements: {
+        for (final entry in placements.entries)
+          entry.key: [
+            for (final slot in entry.value) slot == id ? replacementId : slot,
+          ],
+      },
+      slotTypes: {...slotTypes}
+        ..remove(id)
+        ..[replacementId] = type,
+      regions: regions,
+      slotPreferredSizes: {
+        for (final entry in slotPreferredSizes.entries)
+          (entry.key == id ? replacementId : entry.key): entry.value,
+      },
+      slotSizeConstraints: {
+        for (final entry in slotSizeConstraints.entries)
+          (entry.key == id ? replacementId : entry.key): entry.value,
+      },
+      slotLabels: {...slotLabels}..remove(id),
+    );
+  }
+
   NativeComponentConfig withDefaultNavigation(bool enabled) =>
       NativeComponentConfig(
         useDefaultNavigation: enabled,

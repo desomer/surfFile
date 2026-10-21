@@ -796,6 +796,15 @@ void main() {
         tester.getTopLeft(find.text('Original leading')) + const Offset(2, 2),
       );
       await tester.pumpAndSettle();
+      for (var level = 0; level < 2; level++) {
+        await tester.pump(const Duration(seconds: 1));
+        final point = tester.getTopLeft(find.text('Original leading')) +
+            const Offset(2, 2);
+        await tester.tapAt(point);
+        await tester.pump(const Duration(milliseconds: 80));
+        await tester.tapAt(point);
+        await tester.pumpAndSettle();
+      }
       await tester.tap(find.byKey(const ValueKey('super-app-bar-add-leading')));
       await tester.pumpAndSettle();
       await tester.tap(
@@ -1277,6 +1286,15 @@ void main() {
         final bar = find.byType(AppBar);
         await tester.tapAt(tester.getTopLeft(bar) + const Offset(8, 8));
         await tester.pumpAndSettle();
+        expect(LayoutSelection.path.value, ['Page', 'AppBar']);
+        for (var level = 0; level < 2; level++) {
+          await tester.pump(const Duration(seconds: 1));
+          final point = tester.getTopLeft(bar) + const Offset(8, 8);
+          await tester.tapAt(point);
+          await tester.pump(const Duration(milliseconds: 80));
+          await tester.tapAt(point);
+          await tester.pumpAndSettle();
+        }
         expect(LayoutSelection.path.value, ['Page', 'AppBar', 'AppBar']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-appBar')),

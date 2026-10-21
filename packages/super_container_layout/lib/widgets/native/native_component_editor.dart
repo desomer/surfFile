@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
@@ -10,11 +9,14 @@ import '../editing/dialogs/editor_dialog.dart';
 import '../editing/addition/component_add_wizard.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/slot_removal.dart';
+import '../editing/slots/slot_wrapping.dart';
+import '../editing/slots/provided_slot_scope.dart';
 import '../editing/overlay/editor_overlay.dart';
 import '../editing/slots/slot_size_editor.dart';
 import '../super_layout/layout_selection.dart';
 import '../super_layout/slot_implementation.dart';
 import '../editing/slots/editor_slot.dart';
+import '../editing/slots/editor_selection_region.dart';
 
 /// Lets a native parent track a child's edited preferred height.
 abstract interface class NativePreferredSizeWidget
@@ -378,7 +380,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
 
   Set<String> _tagsForType(String type, {String? id}) {
     final provided = _provided();
-    final supplied = provided[id] ?? provided[type];
+    final supplied =
+        provided[id] ??
+        provided[type] ??
+        (id == null ? null : ProvidedSlotScope.find(context, id)) ??
+        ProvidedSlotScope.find(context, type);
     if (supplied != null) return supplied.tags;
     final registry = widget.registry;
     if (registry == null) return const {};
@@ -402,7 +408,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     final result = <SlotImplementation>[];
     for (final id in widget.config.slotsOf(region)) {
       final type = widget.config.slotTypeOf(id);
-      SlotImplementation? slot = provided[id] ?? provided[type];
+      SlotImplementation? slot =
+          provided[id] ??
+          provided[type] ??
+          ProvidedSlotScope.find(context, id) ??
+          ProvidedSlotScope.find(context, type);
       final registry = widget.registry;
       if (slot == null && registry != null) {
         for (final entry in registry.components.entries) {
@@ -785,6 +795,42 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     if (mounted && identical(_config.value, next)) select(region);
   }
 
+  /// Wrapper choices accepted by the receiving native property.
+  List<EditorSlotWrapAction> wrapActionsForSlot(
+    String region,
+    SlotImplementation slot,
+  ) => slotWrapActions(
+    registry: widget.registry,
+    acceptsTags: definition(region).tagFilter.accepts,
+    onWrap: (wrapper) async {
+      if (!mounted || !_config.value.slotsOf(region).contains(slot.id)) return;
+      final current = _config.value;
+      wrapSlotInstance(
+        context,
+        registry: widget.registry!,
+        wrapper: wrapper,
+        id: slot.id,
+        type: current.slotTypeOf(slot.id),
+        label: slot.label,
+        occupiedIds: {
+          for (final ids in current.placements.values) ...ids,
+          ...widget.slots.map((s) => s.id),
+        },
+        replace: (id, type) {
+          var next = current.withSlotReplaced(slot.id, id, type);
+          final preferred = preferredSizeFor(slot);
+          if (!current.slotPreferredSizes.containsKey(slot.id) &&
+              !current.slotSizeConstraints.containsKey(slot.id) &&
+              preferred != null) {
+            next = next.withSlotSize(id, preferred);
+          }
+          _update(next);
+          _selectedSlot = id;
+        },
+      );
+    },
+  );
+
   /// Decorates a native property without changing the adapter's composition.
   Widget region(
     String id, {
@@ -825,6 +871,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           onSelectSlot: editing && widget.editSurface
               ? (slot) => _selectSlot(id, slot)
               : null,
+          onSelectContent: editing ? (slot) => _selectSlot(id, slot) : null,
           onResizeSlot: editing && widget.editSurface
               ? (slot, dimensions) => _update(
                   _config.value.withSlotSizeConstraints(slot.id, dimensions),
@@ -852,6 +899,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 )
               : null,
           onEditPreferredSize: editing ? _editSize : null,
+          wrapActionsForSlot: editing
+              ? (slot) => wrapActionsForSlot(id, slot)
+              : null,
         );
     return LayoutSelectionScope(
       owner: this,
@@ -861,15 +911,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           item == null ? id : '$id:${item.id}',
           GlobalKey.new,
         ),
-        builder: (regionContext) => Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (event) {
-            if (editing &&
-                event.buttons == kPrimaryButton &&
-                LayoutSelection.claimPointer(event)) {
-              select(id, regionContext);
-            }
-          },
+        builder: (regionContext) => EditorSelectionRegion(
+          enabled: editing,
+          isZone: true,
+          selected: selected && _selectedSlot == null,
+          onSelect: () => select(id, regionContext),
           child: EditorSlot(
             label: spec.label,
             menuTitle: widget.label,
@@ -974,37 +1020,37 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   @override
   Widget build(BuildContext context) {
     _validate(widget.config);
-    return ListenableBuilder(
-      listenable: LayoutSelection.path,
-      builder: (context, _) => LayoutBuilder(
-        builder: (context, constraints) {
-          _layoutSize = Size(
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
-            constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
-          );
-          final child = widget.builder(context, this);
-          if (!widget.editSurface) return child;
-          return Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (event) {
-              if (editing &&
-                  event.buttons == kPrimaryButton &&
-                  LayoutSelection.claimPointer(event)) {
-                select(null);
-              }
-            },
-            child: EditorSlot(
-              label: widget.settingsTitle,
-              menuTitle: widget.label,
-              menuType: widget.menuType,
-              menuIcon: widget.menuIcon,
-              editable: true,
-              onEdit: configure,
-              onContextMenu: (_) => select(null),
-              child: child,
-            ),
-          );
-        },
+    return ProvidedSlotScope(
+      slots: widget.slots,
+      child: ListenableBuilder(
+        listenable: LayoutSelection.path,
+        builder: (context, _) => LayoutBuilder(
+          builder: (context, constraints) {
+            _layoutSize = Size(
+              constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
+              constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
+            );
+            final child = widget.builder(context, this);
+            if (!widget.editSurface) return child;
+            return EditorSelectionRegion(
+              enabled: editing,
+              isZone: true,
+              fallback: true,
+              selected: _active && _selected == null,
+              onSelect: () => select(null),
+              child: EditorSlot(
+                label: widget.settingsTitle,
+                menuTitle: widget.label,
+                menuType: widget.menuType,
+                menuIcon: widget.menuIcon,
+                editable: true,
+                onEdit: configure,
+                onContextMenu: (_) => select(null),
+                child: child,
+              ),
+            );
+          },
+        ),
       ),
     );
   }

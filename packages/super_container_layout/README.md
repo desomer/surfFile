@@ -55,6 +55,25 @@ En édition, les labels des composants de `SuperLayout` partagent le même
 badge en modes **Zones** et **Grille** : icône `drag_indicator`, fond
 `tertiaryContainer` et angles arrondis. Le glisser-déposer conserve les règles
 propres à chaque mode.
+L'icône de déplacement apparaît uniquement sur les composants déplaçables.
+Les badges utilisent un texte de 10 px et une icône de déplacement de 12 px,
+même lorsque le label est tronqué. Les actions des zones restent compactes
+(24 px, icônes de 14 px).
+Le curseur affiche une main ouverte au survol des labels déplaçables et une
+main fermée pendant leur déplacement.
+Sur Windows natif, où Flutter ne gère pas ces deux curseurs, une main de
+pointage apparaît au survol et le curseur de déplacement pendant le glisser.
+En mode édition, un clic sur le contenu sélectionne sa zone englobante.
+Un double-clic sélectionne uniquement l'enfant direct sous le pointeur ;
+les doubles-clics suivants descendent progressivement dans les zones et les
+composants imbriqués, sans sauter de niveau. Deux clics isolés ne font pas
+descendre la sélection. En mode Grille, la grille joue le rôle de zone.
+Le survol indique la prochaine cible par un contour plein pour une zone,
+ou pointillé pour un enfant. Les labels conservent leur sélection explicite,
+les boutons restent utilisables et un glisser ne déclenche pas de sélection.
+Les poignées de redimensionnement des composants sont de petits carrés de
+8 px, placés aux coins et au milieu des côtés. Leur zone de saisie reste de
+32 px pour faciliter le glisser, y compris dans les grilles et les zones natives.
 En mode Zones, le survol d'un label change la couleur des badges des composants
 de sa zone sans les grossir ; le grossissement des labels de zones est conservé.
 En mode Grille, le survol ou le glisser d'un label met en couleur les badges
@@ -95,6 +114,11 @@ respectée sans appel de `onChanged`. Sans liaison, le texte initial est utilis�
 localement. Le composant fonctionne aussi sans `SuperApp` ; `onConfigChanged`
 permet alors de récupérer ses réglages locaux.
 
+En mode édition, le menu natif de saisie (coller, tout sélectionner, etc.) est désactivé sur
+le composant afin de laisser la place au menu d'édition. Il reste disponible
+hors édition et dans l'aperçu de configuration ; la saisie et la sélection de
+texte ne sont pas désactivées.
+
 En mode édition, clic droit puis **Texte** ouvre la configuration :
 affichage/saisie, texte initial, label, placeholder, activé, lecture seule,
 mot de passe, lignes min/max et typographie (famille, taille, graisse, italique,
@@ -106,6 +130,13 @@ overlays d'édition de la page (labels des zones et slots, poignées et contours
 de sélection/survol). Le contenu, ses dimensions et la sélection sont conservés.
 Les overlays reviennent après la fermeture du dernier dialogue, y compris
 avec des éditeurs imbriqués et sans zoom.
+Un dialogue d'édition ouvert au-dessus d'un autre se distingue par une
+élévation renforcée, une bordure contrastée et un voile assombrissant
+l'arrière-plan. Le premier dialogue conserve son style habituel.
+À l'ouverture, le cadrage automatique se recalcule sur le composant édité
+dans l'espace libre à côté du dialogue, indépendamment du zoom manuel
+précédent. Les dialogues imbriqués gardent cette cible même si leur contexte
+appartient au dialogue parent ; le zoom manuel reste centré sur le composant.
 
 Sur écran étroit,
 la navigation devient une rangée de puces. La couleur propose la même palette,
@@ -324,6 +355,22 @@ imbriquees. Sans `menuIcon`, le menu conserve ses icones par defaut
 pour les ancetres). Cela s'applique aux dispositions et aux zones natives.
 `Registry.bootstrap()` renseigne une icone pour chacun des composants standards :
 texte, barre d'application, navigation inferieure, conteneur, liste et disposition.
+
+### Envelopper un composant
+
+En mode edition, les trois points verticaux en fin de ligne du menu contextuel
+ouvrent **Envelopper dans…**, avec **SuperContainer** et **SuperLayout**.
+Ces choix utilisent les factories `NewContainer` et `NewLayout` installees par
+`Registry.bootstrap()` ; seuls les parents compatibles avec les tags de la zone
+sont proposes.
+
+Le nouveau parent remplace le composant a la meme position, y compris en grille,
+et reprend ses contraintes de taille et de marge. Le composant devient son
+enfant sans changer d'identifiant, de nom personnalise ni de configuration.
+L'operation est sauvegardee et constitue une seule etape d'annulation/retablissement.
+Elle fonctionne aussi avec les slots et les champs `child` fournis par le code :
+leur definition doit rester presente dans le widget d'origine pour les retrouver
+au chargement. Les enveloppements successifs sont possibles.
 
 Un `ComponentTagFilter` définit les catégories acceptées par une zone :
 

@@ -305,6 +305,45 @@ class SuperLayoutConfig {
     return copyWith(slotLabels: {...slotLabels, id: label.trim()});
   }
 
+  /// Replaces a placement without moving it or changing its outer sizing.
+  SuperLayoutConfig withSlotReplaced(
+    String id,
+    String replacementId,
+    String type,
+  ) {
+    if (!placedSlotIds.contains(id) ||
+        replacementId.trim().isEmpty ||
+        placedSlotIds.contains(replacementId)) {
+      throw ArgumentError('Invalid slot replacement.');
+    }
+    return copyWith(
+      placements: {
+        for (final entry in placements.entries)
+          entry.key: [
+            for (final slot in entry.value) slot == id ? replacementId : slot,
+          ],
+      },
+      slotTypes: {...slotTypes}
+        ..remove(id)
+        ..[replacementId] = type,
+      slotPreferredSizes: {
+        for (final entry in slotPreferredSizes.entries)
+          (entry.key == id ? replacementId : entry.key): entry.value,
+      },
+      slotSizeConstraints: {
+        for (final entry in slotSizeConstraints.entries)
+          (entry.key == id ? replacementId : entry.key): entry.value,
+      },
+      slotLabels: {...slotLabels}..remove(id),
+      grid: grid?.copyWith(
+        items: {
+          for (final entry in grid!.items.entries)
+            (entry.key == id ? replacementId : entry.key): entry.value,
+        },
+      ),
+    );
+  }
+
   final bool north;
   final bool south;
   final bool west;

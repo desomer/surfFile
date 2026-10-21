@@ -82,10 +82,29 @@ extension _SuperLayoutSlots on SuperLayoutState {
       ids.add(slot.id);
       if (slot.id == type) supplied = slot;
     }
+    supplied ??=
+        ProvidedSlotScope.find(context, id) ??
+        ProvidedSlotScope.find(context, type);
+    if (supplied != null && supplied.id != id) {
+      final source = supplied;
+      supplied = BuilderSlot(
+        id: id,
+        label: source.label,
+        sizing: source.sizing,
+        preferredSize: source.preferredSize,
+        visible: source.visible,
+        showLabel: source.showLabel,
+        labelAlignment: source.labelAlignment,
+        tags: source.tags,
+        menuIcon: source.menuIcon,
+        builder: (_) => source,
+      );
+    }
     if (registry == null) return supplied;
 
     for (final entry in registry.registry.entries) {
-      if (_registrySlotId(entry.key, ids) == type) {
+      if (_registrySlotId(entry.key, ids) == type ||
+          'factory:${entry.key}' == type) {
         return _createRegistrySlot(entry.key, entry.value, id);
       }
     }
@@ -95,12 +114,50 @@ extension _SuperLayoutSlots on SuperLayoutState {
     for (final entry in registry.components.entries) {
       final candidate = entry.value;
       if (ids.contains(candidate.slotId)) continue;
-      if ((candidate.slotId ?? _registrySlotId(entry.key, ids)) == type &&
+      if ((candidate.slotId == type ||
+              _registrySlotId(entry.key, ids) == type ||
+              'component:${candidate.slotId ?? entry.key}' == type) &&
           (candidate.isAvailable?.call(context) ?? true)) {
         component = candidate;
       }
     }
     return component?.createSlot(id);
+  }
+
+  List<EditorSlotWrapAction> _wrapActionsForSlot(SlotImplementation slot) {
+    final zone = _displayZoneOf(_config.value, slot.id);
+    return slotWrapActions(
+      registry: SuperApp.maybeOf(context)?.registry,
+      acceptsTags: (tags) =>
+          zone != null && (widget.zoneTagFilters[zone]?.accepts(tags) ?? true),
+      onWrap: (wrapper) async {
+        if (!mounted || !_config.value.placedSlotIds.contains(slot.id)) return;
+        final registry = SuperApp.maybeOf(context)!.registry!;
+        final current = _config.value;
+        wrapSlotInstance(
+          context,
+          registry: registry,
+          wrapper: wrapper,
+          id: slot.id,
+          type: current.slotTypeOf(slot.id),
+          label: slot.label,
+          occupiedIds: {
+            ...current.placedSlotIds,
+            ...widget.slots.map((s) => s.id),
+          },
+          replace: (id, type) {
+            var next = current.withSlotReplaced(slot.id, id, type);
+            if (!current.slotPreferredSizes.containsKey(slot.id) &&
+                !current.slotSizeConstraints.containsKey(slot.id) &&
+                slot.preferredSize != null) {
+              next = next.withSlotPreferredSize(id, slot.preferredSize);
+            }
+            _update(next);
+            _selectedSlot.value = id;
+          },
+        );
+      },
+    );
   }
 
   /// Slots visibles rangés dans la zone de contenu [content], dans l'ordre de
@@ -156,19 +213,15 @@ extension _SuperLayoutSlots on SuperLayoutState {
       selectedSlotId: _selected.value == zone ? _selectedSlot.value : null,
       onResizeSlot: editMode && widget.editable ? _applySlotDimensions : null,
       onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
-      onTapSlot: editMode
-          ? (slot, event) {
-              if (!mounted ||
-                  !_LayoutEditSelection.wasSelected(this, event) ||
-                  !(StyleEditScope.controllerOf(context)?.value ?? false) ||
-                  !identical(_LayoutEditSelection.selected.value, this)) {
-                return;
-              }
+      onSelectContent: canEditSlots
+          ? (slot) {
               _selectedSlot.value = slot.id;
               _selected.value = zone;
+              _LayoutEditSelection.activate(this);
             }
           : null,
       onEditPreferredSize: canEditSlots ? _editSlotPreferredSize : null,
+      wrapActionsForSlot: canEditSlots ? _wrapActionsForSlot : null,
       onRemoveSlot: canEditSlots
           ? (slot) async {
               if (mounted) _removeSlot(slot.id);

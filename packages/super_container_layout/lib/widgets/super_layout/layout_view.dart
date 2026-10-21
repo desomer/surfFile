@@ -3,12 +3,6 @@ part of 'super_layout.dart';
 extension _SuperLayoutView on SuperLayoutState {
   Widget _buildLayout(BuildContext context) => Listener(
     behavior: HitTestBehavior.translucent,
-    onPointerDown: (event) {
-      if ((StyleEditScope.controllerOf(context)?.value ?? false) &&
-          event.buttons == kPrimaryButton) {
-        _LayoutEditSelection.select(this, event);
-      }
-    },
     child: EditorSlot(
       label: _displayLabel,
       editable: widget.editable,
@@ -193,12 +187,25 @@ extension _SuperLayoutView on SuperLayoutState {
                                         ),
                                   _ => false,
                                 },
-                            child: _contentOf(
-                              config,
-                              zone,
-                              autoSides,
-                              editMode,
-                              layoutSize,
+                            child: EditorSelectionRegion(
+                              enabled: styleEditMode,
+                              isZone: true,
+                              selected:
+                                  editMode &&
+                                  selected == zone &&
+                                  selectedSlot == null,
+                              onSelect: () {
+                                _selectedSlot.value = null;
+                                _selected.value = zone;
+                                _LayoutEditSelection.activate(this);
+                              },
+                              child: _contentOf(
+                                config,
+                                zone,
+                                autoSides,
+                                editMode,
+                                layoutSize,
+                              ),
                             ),
                           ),
                         ),

@@ -5,7 +5,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
   testWidgets(
-    'content clicks select slots only in the already selected layout',
+    'content clicks select zones and double clicks select direct slots',
     (tester) async {
       final mode = ValueNotifier(false);
       addTearDown(mode.dispose);
@@ -60,24 +60,33 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(first);
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, ['Content selection']);
+      expect(LayoutSelection.path.value, ['Content selection', 'Centre']);
       expect(handle, findsNothing);
       await tester.tap(find.byKey(const ValueKey('component-button')));
       await tester.pumpAndSettle();
       expect(presses, 3);
+      expect(LayoutSelection.path.value.last, 'Centre');
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.byKey(const ValueKey('component-button')));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tap(find.byKey(const ValueKey('component-button')));
+      await tester.pumpAndSettle();
+      expect(presses, 5);
       expect(LayoutSelection.path.value.last, 'First');
       expect(handle, findsOneWidget);
       await tester.tap(first);
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value.last, 'First');
+      expect(LayoutSelection.path.value.last, 'Centre');
       await tester.drag(second, const Offset(50, 0));
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value.last, 'First');
+      expect(LayoutSelection.path.value.last, 'Centre');
       await tester.tap(second, buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value.last, SuperLayoutZone.center.label);
       await tester.tapAt(const Offset(10, 590));
       await tester.pumpAndSettle();
+      await tester.tap(second);
+      await tester.pump(const Duration(milliseconds: 80));
       await tester.tap(second);
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value.last, 'Second');

@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart'
     show PointerDownEvent, kPrimaryButton, kTouchSlop;
@@ -11,6 +12,15 @@ import '../editing/overlay/editor_zoom.dart';
 import '../editing/dialogs/editor_dialog_header.dart';
 import '../editing/overlay/editor_resize_handle.dart';
 import '../editing/slots/editor_slot.dart';
+import '../editing/slots/editor_selection_region.dart';
+
+MouseCursor editorDragCursor({required bool dragging}) {
+  // Flutter's Windows cursor map does not implement grab or grabbing.
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
+    return dragging ? SystemMouseCursors.move : SystemMouseCursors.click;
+  }
+  return dragging ? SystemMouseCursors.grabbing : SystemMouseCursors.grab;
+}
 
 /// Shared component label for zone and grid editing.
 class ComponentDragLabel extends StatelessWidget {
@@ -18,44 +28,55 @@ class ComponentDragLabel extends StatelessWidget {
     required this.child,
     this.opacity = 0.5,
     this.highlighted = false,
+    this.draggable = false,
+    this.dragging = false,
     super.key,
   });
 
   final Widget child;
   final double opacity;
   final bool highlighted;
+  final bool draggable;
+  final bool dragging;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: highlighted
-        ? Theme.of(context).colorScheme.tertiary
-        : Theme.of(context).colorScheme.tertiaryContainer
-              .withValues(alpha: opacity),
-    textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-      color: highlighted ? Theme.of(context).colorScheme.onTertiary : null,
-    ),
-    borderRadius: BorderRadius.circular(6),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(
-            child: Icon(
-              Icons.drag_indicator,
-              size: 16,
-              color: highlighted
-                  ? Theme.of(context).colorScheme.onTertiary
-                  : null,
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: draggable
+        ? editorDragCursor(dragging: dragging)
+        : MouseCursor.defer,
+    child: Material(
+      color: highlighted
+          ? Theme.of(context).colorScheme.tertiary
+          : Theme.of(context).colorScheme.tertiaryContainer
+                .withValues(alpha: opacity),
+      textStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+        fontSize: 10,
+        color: highlighted ? Theme.of(context).colorScheme.onTertiary : null,
+      ),
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (draggable) ...[
+              Icon(
+                Icons.drag_indicator,
+                size: 12,
+                color: highlighted
+                    ? Theme.of(context).colorScheme.onTertiary
+                    : null,
+              ),
+              const SizedBox(width: 2),
+            ],
+            Flexible(
+              child: DefaultTextStyle.merge(
+                overflow: TextOverflow.ellipsis,
+                child: child,
+              ),
             ),
-          ),
-          Flexible(
-            child: DefaultTextStyle.merge(
-              overflow: TextOverflow.ellipsis,
-              child: child,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -196,8 +217,10 @@ class SlotStack extends StatelessWidget {
     this.layoutSize = Size.zero,
     this.onEditPreferredSize,
     this.onRemoveSlot,
+    this.wrapActionsForSlot,
     this.onSelectSlot,
     this.onTapSlot,
+    this.onSelectContent,
     this.selectedSlotId,
     this.onResizeSlot,
     this.focusKeys,
@@ -236,10 +259,13 @@ class SlotStack extends StatelessWidget {
   final Size layoutSize;
   final Future<void> Function(SlotImplementation)? onEditPreferredSize;
   final Future<void> Function(SlotImplementation)? onRemoveSlot;
+  final List<EditorSlotWrapAction> Function(SlotImplementation)?
+  wrapActionsForSlot;
   final ValueChanged<SlotImplementation>? onSelectSlot;
 
   /// Content clicks, distinct from the label's selection toggle.
   final void Function(SlotImplementation, PointerDownEvent)? onTapSlot;
+  final ValueChanged<SlotImplementation>? onSelectContent;
   final String? selectedSlotId;
   final void Function(SlotImplementation, SlotSizeConstraints)? onResizeSlot;
 
@@ -281,12 +307,16 @@ class SlotStack extends StatelessWidget {
     key: ValueKey('slot-item-${slot.id}'),
     label: 'Taille et marge préférées : ${slot.label}',
     inline: true,
-    enabled: onEditPreferredSize != null || onRemoveSlot != null,
+    enabled:
+        onEditPreferredSize != null ||
+        onRemoveSlot != null ||
+        wrapActionsForSlot != null,
     showEdit: onEditPreferredSize != null,
     onEdit: () async => onEditPreferredSize?.call(slot),
     onRemove: onRemoveSlot != null
         ? () async => onRemoveSlot?.call(slot)
         : null,
+    wrapActions: wrapActionsForSlot?.call(slot) ?? const [],
     child: KeyedSubtree(
       key: focusKeys?.putIfAbsent(slot.id, GlobalKey.new),
       child: _LabeledSlot(
@@ -301,6 +331,9 @@ class SlotStack extends StatelessWidget {
         onTapContent: onTapSlot == null
             ? null
             : (event) => onTapSlot!(slot, event),
+        onSelectContent: onSelectContent == null
+            ? null
+            : () => onSelectContent!(slot),
         selected: selectedSlotId == slot.id,
         onResize: onResizeSlot == null
             ? null
@@ -821,6 +854,7 @@ class _LabeledSlot extends StatefulWidget {
     required this.ids,
     required this.onSelect,
     required this.onTapContent,
+    required this.onSelectContent,
     required this.selected,
     required this.onResize,
     required this.sizeConstraints,
@@ -836,6 +870,7 @@ class _LabeledSlot extends StatefulWidget {
   final String? zoneLabel;
   final VoidCallback? onSelect;
   final ValueChanged<PointerDownEvent>? onTapContent;
+  final VoidCallback? onSelectContent;
   final bool selected;
   final ValueChanged<SlotSizeConstraints>? onResize;
   final SlotSizeConstraints? sizeConstraints;
@@ -1076,6 +1111,8 @@ class _LabeledSlotState extends State<_LabeledSlot> {
       key: ValueKey('slot-label-${widget.slot.id}'),
       opacity: opacity,
       highlighted: highlighted,
+      draggable: widget.mover != null,
+      dragging: _dragging || dragged,
       child: dragged
           ? ValueListenableBuilder<SlotDropHint?>(
               valueListenable: _hint,
@@ -1250,9 +1287,14 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                   _tapAction = null;
                   action?.call();
                 },
-                child: widget.padding == EdgeInsets.zero
-                    ? slot
-                    : Padding(padding: widget.padding, child: slot),
+                child: EditorSelectionRegion(
+                  enabled: widget.onSelectContent != null,
+                  selected: widget.showLabel && widget.selected,
+                  onSelect: () => widget.onSelectContent?.call(),
+                  child: widget.padding == EdgeInsets.zero
+                      ? slot
+                      : Padding(padding: widget.padding, child: slot),
+                ),
               ),
               if (_hover || _dragging || (widget.showLabel && widget.selected))
                 Positioned.fill(
@@ -1307,40 +1349,51 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                         padding: const EdgeInsets.all(4),
                         child: MouseRegion(
                           key: _labelKey,
+                          cursor: mover == null
+                              ? SystemMouseCursors.click
+                              : editorDragCursor(dragging: _dragging),
                           hitTestBehavior: HitTestBehavior.translucent,
                           onEnter: (_) => _setHover(true),
                           onExit: (_) => _setHover(false),
-                          child: GestureDetector(
-                            key: ValueKey('slot-label-select-${slot.id}'),
-                            onTap: widget.onSelect,
+                          child: Listener(
                             behavior: HitTestBehavior.translucent,
-                            child: mover == null
-                                ? IgnorePointer(child: _chip(colors))
-                                : Draggable<SlotDragData>(
-                                    data: SlotDragData(
-                                      id: slot.id,
-                                      owner: mover.owner,
-                                      hint: _hint,
+                            onPointerDown: widget.onSelect == null
+                                ? null
+                                : EditorSelectionRegion.ignorePointer,
+                            child: GestureDetector(
+                              key: ValueKey('slot-label-select-${slot.id}'),
+                              onTap: widget.onSelect,
+                              behavior: HitTestBehavior.translucent,
+                              child: mover == null
+                                  ? IgnorePointer(child: _chip(colors))
+                                  : Draggable<SlotDragData>(
+                                      data: SlotDragData(
+                                        id: slot.id,
+                                        owner: mover.owner,
+                                        hint: _hint,
+                                      ),
+                                      dragAnchorStrategy:
+                                          pointerDragAnchorStrategy,
+                                      hitTestBehavior:
+                                          HitTestBehavior.translucent,
+                                      onDragStarted: () => _setDragging(true),
+                                      onDragEnd: (_) => _setDragging(false),
+                                      feedback: _chip(
+                                        colors,
+                                        opacity: 1,
+                                        dragged: true,
+                                      ),
+                                      childWhenDragging: Opacity(
+                                        opacity: .35,
+                                        child: _chip(colors),
+                                      ),
+                                      // Le contenu sous l'étiquette reste atteignable (clic
+                                      // droit du style) : seul le Draggable écoute le glisser.
+                                      child: IgnorePointer(
+                                        child: _chip(colors),
+                                      ),
                                     ),
-                                    dragAnchorStrategy:
-                                        pointerDragAnchorStrategy,
-                                    hitTestBehavior:
-                                        HitTestBehavior.translucent,
-                                    onDragStarted: () => _setDragging(true),
-                                    onDragEnd: (_) => _setDragging(false),
-                                    feedback: _chip(
-                                      colors,
-                                      opacity: 1,
-                                      dragged: true,
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: .35,
-                                      child: _chip(colors),
-                                    ),
-                                    // Le contenu sous l'étiquette reste atteignable (clic
-                                    // droit du style) : seul le Draggable écoute le glisser.
-                                    child: IgnorePointer(child: _chip(colors)),
-                                  ),
+                            ),
                           ),
                         ),
                       ),

@@ -1,5 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/dialogs/editor_dialog.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_overlay.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
@@ -7,6 +9,63 @@ import 'package:super_container_layout/widgets/editing/slots/editable_surface.da
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 void main() {
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      'nested dialog preserves custom shape and barrier ($brightness)',
+      (tester) async {
+        final key = GlobalKey();
+        const shape = RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(12)),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(
+              brightness: brightness,
+              dialogTheme: const DialogThemeData(shape: shape),
+            ),
+            home: SizedBox(key: key),
+          ),
+        );
+        final parent = showDialog<void>(
+          context: key.currentContext!,
+          builder: (context) => AlertDialog(
+            title: const Text('Standard parent'),
+            actions: [
+              TextButton(
+                onPressed: () => showEditorDialog<void>(
+                  context: context,
+                  barrierColor: Colors.transparent,
+                  builder: (_) => const AlertDialog(title: Text('Child')),
+                ),
+                child: const Text('Open'),
+              ),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Open'));
+        await tester.pumpAndSettle();
+        final context = tester.element(find.text('Child'));
+        final theme = Theme.of(context);
+        final nestedShape = theme.dialogTheme.shape! as RoundedRectangleBorder;
+        expect(nestedShape.borderRadius, shape.borderRadius);
+        expect(nestedShape.side.color, theme.colorScheme.outline);
+        expect(theme.dialogTheme.elevation, 24);
+        expect(
+          (ModalRoute.of(context)! as DialogRoute).barrierColor,
+          Colors.transparent,
+        );
+        Navigator.of(context).pop();
+        await tester.pumpAndSettle();
+        Navigator.of(tester.element(find.text('Standard parent'))).pop();
+        await tester.pumpAndSettle();
+        await parent;
+        expect(EditorOverlayVisibility.openDialogs.value, 0);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final zoomed in [false, true]) {
     testWidgets(
       'editor hides editing controls and restores them after nested dialogs (zoom=$zoomed)',
@@ -77,15 +136,36 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(EditorOverlayVisibility.openDialogs.value, 1);
+        final parentTheme = Theme.of(
+          tester.element(find.text('Parent editor')),
+        );
         expect(visibility().visible, isFalse);
         expect(tester.getSize(find.byKey(target)), before);
         await tester.tap(find.text('Open nested'));
         await tester.pumpAndSettle();
         expect(EditorOverlayVisibility.openDialogs.value, 2);
         expect(visibility().visible, isFalse);
+        final nestedContext = tester.element(find.text('Nested editor'));
+        final nestedTheme = Theme.of(nestedContext);
+        expect(nestedTheme.dialogTheme.elevation, 24);
+        expect(
+          nestedTheme.dialogTheme.shadowColor,
+          Colors.black.withValues(alpha: .5),
+        );
+        final shape = nestedTheme.dialogTheme.shape! as OutlinedBorder;
+        expect(shape.side.width, 1.5);
+        expect(shape.side.color, nestedTheme.colorScheme.outline);
+        expect(
+          (ModalRoute.of(nestedContext)! as DialogRoute).barrierColor,
+          Colors.black.withValues(alpha: .24),
+        );
         await tester.tap(find.text('Close nested'));
         await tester.pumpAndSettle();
         expect(EditorOverlayVisibility.openDialogs.value, 1);
+        expect(
+          Theme.of(tester.element(find.text('Parent editor'))).dialogTheme,
+          parentTheme.dialogTheme,
+        );
         expect(visibility().visible, isFalse);
         await tester.tap(find.text('Close parent'));
         await tester.pumpAndSettle();
@@ -252,8 +332,11 @@ void main() {
           content: const SizedBox(width: 1000, height: 120),
           actions: [
             TextButton(
-              onPressed: () =>
-                  showEditorDialog<void>(context: context, builder: dialog),
+              onPressed: () => showEditorDialog<void>(
+                context: context,
+                target: context,
+                builder: dialog,
+              ),
               child: const Text('Nested'),
             ),
             TextButton(
@@ -320,6 +403,81 @@ void main() {
       screenRect(tester, find.byKey(key)),
       const Rect.fromLTWH(0, 0, 200, 600),
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'opening an editor reframes its component after manual page zoom',
+    (tester) async {
+      final key = await pumpPage(
+        tester,
+        const Size(1200, 800),
+        const Size(160, 100),
+      );
+      final owner = Object();
+      addTearDown(() => LayoutSelection.report(owner, const []));
+      LayoutSelection.report(owner, [
+        'Component',
+      ], focusContext: key.currentContext);
+      await tester.pumpAndSettle();
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(600, 400),
+          scrollDelta: Offset(0, 2000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final target = find.byKey(key);
+      expect(screenRect(tester, target).width, 160);
+      final result = showEditorDialog<void>(
+        context: key.currentContext!,
+        target: key.currentContext,
+        builder: dialog,
+      );
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target).width, 448);
+      expect(screenRect(tester, target).center, const Offset(320, 400));
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(300, 400),
+          scrollDelta: Offset(0, 2000),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target).center, const Offset(320, 400));
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await result;
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('dialog uses its component context instead of a page selection', (
+    tester,
+  ) async {
+    final key = await pumpPage(
+      tester,
+      const Size(1200, 800),
+      const Size(160, 100),
+    );
+    final owner = Object();
+    addTearDown(() => LayoutSelection.report(owner, const []));
+    final pageContext = tester.element(
+      find.byKey(const ValueKey('editor-zoom-transform')),
+    );
+    LayoutSelection.report(owner, ['Page'], focusContext: pageContext);
+    await tester.pumpAndSettle();
+    final result = showEditorDialog<void>(
+      context: key.currentContext!,
+      builder: dialog,
+    );
+    await tester.pumpAndSettle();
+    final target = screenRect(tester, find.byKey(key));
+    expect(target.width, 448);
+    expect(target.center, const Offset(320, 400));
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+    await result;
     expect(tester.takeException(), isNull);
   });
 

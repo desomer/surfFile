@@ -51,12 +51,22 @@ extension _SuperLayoutGrid on SuperLayoutState {
           ? [...parentPath, name, if (selected != null) selected.label]
           : const [],
     );
-    return _GridSurface(
-      owner: this,
-      slots: slots,
-      config: _config.value.effectiveGrid,
-      editing: editing,
-      path: [...parentPath, name],
+    return EditorSelectionRegion(
+      enabled: StyleEditScope.controllerOf(context)?.value ?? false,
+      isZone: true,
+      selected: editing && selected == null,
+      onSelect: () {
+        _selected.value = null;
+        _selectedSlot.value = null;
+        _LayoutEditSelection.activate(this);
+      },
+      child: _GridSurface(
+        owner: this,
+        slots: slots,
+        config: _config.value.effectiveGrid,
+        editing: editing,
+        path: [...parentPath, name],
+      ),
     );
   }
 }
@@ -90,22 +100,6 @@ class _GridSurfaceState extends State<_GridSurface> {
   EditorZoomController? _zoom;
   double _columnStep = 1;
   double _rowStep = 1;
-  int? _tapPointer;
-  String? _tapSlot;
-  Offset? _tapStart;
-  bool _tapWasSelected = false;
-
-  void _pointerDown(String id, PointerDownEvent event) {
-    if (!(StyleEditScope.controllerOf(context)?.value ?? false) ||
-        event.buttons != kPrimaryButton) {
-      return;
-    }
-    _tapPointer = event.pointer;
-    _tapSlot = id;
-    _tapStart = event.position;
-    _tapWasSelected = _LayoutEditSelection.wasSelected(widget.owner, event);
-  }
-
   void _select(String id) {
     widget.owner._selected.value = null;
     widget.owner._selectedSlot.value = id;
@@ -232,11 +226,13 @@ class _GridSurfaceState extends State<_GridSurface> {
                   onEnter: (_) => setState(() => _hoveredLabels.add(slot.id)),
                   onExit: (_) => setState(() => _hoveredLabels.remove(slot.id)),
                   cursor: owner.widget.editable
-                      ? SystemMouseCursors.move
+                      ? editorDragCursor(dragging: _dragId == slot.id)
                       : SystemMouseCursors.click,
                   child: Tooltip(
                     message: 'Glisser pour déplacer ${slot.label}',
                     child: ComponentDragLabel(
+                      draggable: owner.widget.editable,
+                      dragging: _dragId == slot.id,
                       highlighted: _hoveredLabels.isNotEmpty || _dragId != null,
                       child: Text(slot.label),
                     ),
@@ -343,6 +339,7 @@ class _GridSurfaceState extends State<_GridSurface> {
                           onEdit: () => widget.owner._editGridSlot(slot),
                           onRemove: () async =>
                               widget.owner._removeSlot(slot.id),
+                          wrapActions: widget.owner._wrapActionsForSlot(slot),
                           child: Builder(
                             builder: (context) => _LabelScope(
                               path: [...widget.path, slot.label],
@@ -373,36 +370,16 @@ class _GridSurfaceState extends State<_GridSurface> {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      Listener(
-                                        behavior: HitTestBehavior.translucent,
-                                        onPointerDown: (event) =>
-                                            _pointerDown(slot.id, event),
-                                        onPointerUp: (event) {
-                                          if (event.pointer != _tapPointer) {
-                                            return;
-                                          }
-                                          if (_tapWasSelected &&
-                                              identical(
-                                                _LayoutEditSelection
-                                                    .selected
-                                                    .value,
-                                                widget.owner,
-                                              ) &&
-                                              (event.position - _tapStart!)
-                                                      .distance <=
-                                                  kTouchSlop &&
-                                              _tapSlot != null) {
-                                            _select(_tapSlot!);
-                                          }
-                                          _tapPointer = null;
-                                          _tapSlot = null;
-                                          _tapStart = null;
-                                        },
-                                        onPointerCancel: (_) {
-                                          _tapPointer = null;
-                                          _tapSlot = null;
-                                          _tapStart = null;
-                                        },
+                                      EditorSelectionRegion(
+                                        selected:
+                                            widget.editing &&
+                                            widget.owner._selectedSlot.value ==
+                                                slot.id,
+                                        enabled:
+                                            StyleEditScope.controllerOf(context)
+                                                ?.value ??
+                                            false,
+                                        onSelect: () => _select(slot.id),
                                         child: SlotStack(
                                           slots: [slot],
                                           focusKeys:
