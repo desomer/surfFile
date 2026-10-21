@@ -213,6 +213,38 @@ void main() {
       tester.widget<IterableContent>(find.byType(IterableContent)).style.radius,
       16,
     );
+    history.clear();
+    final list = registry.listController('list');
+    final previous = list.value;
+    final wrap = previous.copyWith(
+      wrap: true,
+      wrapSizing: ListWrapSizing.automatic,
+      itemWidth: 180,
+      itemExtent: 90,
+      spacing: 8,
+      itemSize: const SlotSizeConstraints(
+        preferredWidth: SlotDimension(40, SlotSizeUnit.percent),
+        preferredHeight: SlotDimension(80, SlotSizeUnit.pixels),
+        padding: 4,
+      ),
+    );
+    list.value = wrap;
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<IterableContent>(find.byType(IterableContent)).shrinkWrap,
+      isTrue,
+    );
+    const codec = AppearanceCodec();
+    expect(
+      codec.decode(codec.encode(appearance.value)).listComponents['list'],
+      wrap,
+    );
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(registry.listController('list').value, previous);
+    history.redo();
+    await tester.pumpAndSettle();
+    expect(registry.listController('list').value, wrap);
     expect(tester.takeException(), isNull);
   });
 }

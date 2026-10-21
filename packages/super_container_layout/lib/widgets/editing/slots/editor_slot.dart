@@ -375,13 +375,19 @@ class EditorSlotState extends State<EditorSlot> {
     Offset globalPosition, {
     List<EditorSlotAction>? actions,
   }) async {
+    if (!mounted || !(StyleEditScope.controllerOf(context)?.value ?? true)) {
+      return;
+    }
     final chain = editableChain;
     for (final state in chain.reversed) {
       if (StyleEditScope.controllerOf(state.context)?.value ?? false) {
         state.widget.onContextMenu?.call(globalPosition);
       }
     }
-    final extraActions = actions ?? EditorSlotAction.of(context);
+    final extraActions = [
+      for (final action in actions ?? EditorSlotAction.of(context))
+        if (action.enabled) action,
+    ];
     final inlineActions = _inlineActionsByState(chain, extraActions);
     final entries = <(int, Object)>[
       if (chain.contains(this)) (chain.indexOf(this), this),
@@ -398,12 +404,13 @@ class EditorSlotState extends State<EditorSlot> {
       }
       return true;
     });
-    if (entries.isEmpty && extraActions.isEmpty) return;
+    final hasMenuActions = extraActions.any((action) => !action.inline);
+    // Inline actions only render inside an editable entry, never on their own.
+    if (entries.isEmpty && !hasMenuActions) return;
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
     final colors = Theme.of(context).colorScheme;
-    final hasMenuActions = extraActions.any((action) => !action.inline);
     Object? selected;
     try {
       selected = await showMenu<Object>(

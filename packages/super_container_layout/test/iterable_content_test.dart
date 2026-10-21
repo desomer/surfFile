@@ -5,6 +5,80 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_single_child.dart';
 
 void main() {
+  testWidgets('content sizing supports zones, grids and empty templates', (
+    tester,
+  ) async {
+    for (final (config, expected) in [
+      (
+        const SuperLayoutConfig(
+          north: true,
+          west: true,
+          south: false,
+          east: false,
+          autoSides: {SuperLayoutZone.north, SuperLayoutZone.west},
+          placements: {
+            SuperLayoutZone.center: ['center'],
+            SuperLayoutZone.north: ['north'],
+            SuperLayoutZone.west: ['west'],
+          },
+        ),
+        const Size(130, 60),
+      ),
+      (
+        const SuperLayoutConfig(
+          positioning: SuperLayoutPositioning.grid,
+          placements: {
+            SuperLayoutZone.center: ['center'],
+          },
+          grid: GridLayoutConfig(
+            columns: 2,
+            rowHeight: 40,
+            gap: 4,
+            items: {'center': GridSlotPosition(width: 2, height: 2)},
+          ),
+        ),
+        const Size(500, 84),
+      ),
+      (const SuperLayoutConfig(), const Size(16, 16)),
+    ]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 500,
+              child: SingleChildScrollView(
+                child: Wrap(
+                  children: [
+                    IterableContent(
+                      shrinkWrap: true,
+                      config: config,
+                      slots: [
+                        for (final (id, size) in [
+                          ('center', const Size(100, 40)),
+                          ('north', const Size(100, 20)),
+                          ('west', const Size(30, 40)),
+                        ])
+                          BuilderSlot(
+                            id: id,
+                            label: id,
+                            showLabel: false,
+                            builder: (_) => SizedBox.fromSize(size: size),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(IterableContent)), expected);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   Future<void> mount(
     WidgetTester tester, {
     ContainerStyle style = const ContainerStyle(),
@@ -87,11 +161,11 @@ void main() {
       expect(surface.style.elevation, 3);
       await tester.tap(find.text('Target'), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      for (final label in ['IterableContent', 'Layout']) {
+      for (final label in ['Iterable Content', 'Layout']) {
         expect(find.byKey(ValueKey('style-menu-$label')), findsOneWidget);
       }
       expect(
-        find.byKey(const ValueKey('style-menu-add-IterableContent')),
+        find.byKey(const ValueKey('style-menu-add-Iterable Content')),
         findsNothing,
       );
       expect(
@@ -120,7 +194,7 @@ void main() {
       find.byWidgetPredicate(
         (widget) =>
             widget is Slider &&
-            widget.key == const ValueKey('padding-IterableContent'),
+            widget.key == const ValueKey('padding-Iterable Content'),
       ),
     );
     slider.onChanged!(12);

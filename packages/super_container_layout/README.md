@@ -417,6 +417,53 @@ Les indices JSON, la selection maitre/detail et les controles de retrait restent
 propres a chaque ligne. `itemExtent` et `spacing` ne changent pas : les marges et
 le padding de IterableContent utilisent l'espace deja attribue a la ligne.
 
+### Mode Wrap de ListView
+
+Les reglages « Liste JSON » proposent Verticale, Horizontale et Wrap.
+Wrap dispose les elements de gauche a droite, avec retour a la ligne selon
+la largeur disponible et defilement vertical. `spacing` s'applique entre
+les elements et entre les rangees, sans espace ajoute en fin de rangee.
+
+Les dimensions ne sont plus dans les reglages « Liste JSON ». Dans le menu
+contextuel d'une ligne, l'icone regle sur l'entree de **style Iterable Content**
+ouvre **Taille et marge preferees**, la meme fenetre que pour les slots du Layout.
+Ce menu et ses actions sont reserves au mode edition. Hors edition, les menus
+natifs des composants, notamment la selection de texte, restent disponibles.
+Elle definit les largeurs/hauteurs minimales, preferees et maximales en **px**
+ou **%**, ainsi que des marges uniformes ou independantes.
+Ces reglages sont partages par toutes les lignes, en Wrap, Verticale et Horizontale.
+Ils sont enregistres dans `listComponents[listId].itemSize`, sans ID par ligne.
+
+Une dimension preferee vide est automatique selon le contenu (avec les bornes
+min/max), tandis qu'une valeur definit une taille preferee. En liste verticale,
+une largeur automatique remplit l'espace disponible ; en liste horizontale,
+c'est la hauteur automatique. En Wrap, les deux dimensions peuvent etre
+automatiques. Un Layout en grille conserve ses colonnes et mesure sa hauteur
+selon ses lignes.
+
+Les pourcentages utilisent soit l'espace de la liste, soit le Layout englobant
+selon la base choisie. Sans Layout englobant, les deux bases utilisent la liste.
+Si sa hauteur n'est pas bornee, la hauteur du viewport de l'application sert
+de reference aux pourcentages verticaux.
+Les dimensions comprennent les marges ; `spacing` reste ajoute entre les elements.
+Les anciens `itemExtent`, `itemWidth` et `wrapSizing` restent les valeurs initiales
+tant qu'aucun reglage `itemSize` n'a ete defini.
+
+```dart
+const SuperListViewConfig(
+  wrap: true,
+  itemSize: SlotSizeConstraints(
+    preferredWidth: SlotDimension(40, SlotSizeUnit.percent),
+    preferredHeight: SlotDimension(100, SlotSizeUnit.pixels),
+    padding: 8,
+  ),
+  spacing: 12,
+)
+```
+
+Le mode, le choix de taille et les dimensions sont persistants et participent
+a l'annulation/retablissement comme les autres reglages de la liste.
+
 Un `ComponentTagFilter` définit les catégories acceptées par une zone :
 
 ```dart

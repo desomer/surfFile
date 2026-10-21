@@ -142,6 +142,7 @@ extension _SuperLayoutView on SuperLayoutState {
               final layoutSize = constraints.biggest;
               return _ZoneLayout(
                 config: config,
+                shrinkWrap: widget.shrinkWrap,
                 autoSides: autoSides,
                 emptyAutoSides: emptyAutoSides,
                 children: [

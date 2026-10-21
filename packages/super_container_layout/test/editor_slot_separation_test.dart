@@ -4,6 +4,145 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
+  for (final editable in [false, true]) {
+    testWidgets('standalone size action respects editable=$editable', (
+      tester,
+    ) async {
+      var edits = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: IterableContent(
+              editable: editable,
+              onEditSize: () async => edits++,
+              config: const SuperLayoutConfig(
+                placements: {
+                  SuperLayoutZone.center: ['target'],
+                },
+              ),
+              slots: [
+                BuilderSlot(
+                  id: 'target',
+                  label: 'Target',
+                  builder: (_) => const Text('Standalone target'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(
+        find.text('Standalone target'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      final action = find.byKey(
+        const ValueKey(
+          'style-menu-size-Taille et marge préférées : Iterable Content',
+        ),
+      );
+      expect(action, editable ? findsOneWidget : findsNothing);
+      if (editable) {
+        await tester.tap(action);
+        await tester.pumpAndSettle();
+      }
+      expect(edits, editable ? 1 : 0);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('inline-only actions cannot open an empty menu', (tester) async {
+    final target = GlobalKey<EditorSlotState>();
+    final action = EditorSlotAction(
+      label: 'Inline size',
+      inline: true,
+      enabled: true,
+      onEdit: () async {},
+      child: const SizedBox(),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: EditorSlot(
+            key: target,
+            editable: false,
+            child: const Text('Target'),
+          ),
+        ),
+      ),
+    );
+    await target.currentState!.openMenu(Offset.zero, actions: [action]);
+    expect(find.byType(PopupMenuItem<EditorSlotState>), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'inherited size actions do not intercept native secondary taps outside editing',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      var nativeTaps = 0;
+      var edits = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: mode,
+            child: Scaffold(
+              body: IterableContent(
+                onEditSize: () async => edits++,
+                config: const SuperLayoutConfig(
+                  placements: {
+                    SuperLayoutZone.center: ['native'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'native',
+                    label: 'Native',
+                    builder: (_) => GestureDetector(
+                      onSecondaryTapUp: (_) => nativeTaps++,
+                      child: const SizedBox(
+                        width: 180,
+                        height: 80,
+                        child: Text('Native target'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      mode.value = false;
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.text('Native target'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(nativeTaps, 1);
+      expect(edits, 0);
+      expect(find.byType(PopupMenuItem<EditorSlotState>), findsNothing);
+      final target = tester.state<EditorSlotState>(
+        find.byType(EditorSlot).first,
+      );
+      await target.openMenu(
+        Offset.zero,
+        actions: [
+          EditorSlotAction(
+            label: 'Standalone action',
+            enabled: true,
+            onEdit: () async => edits++,
+            child: const SizedBox(),
+          ),
+        ],
+      );
+      expect(find.text('Standalone action'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('decoration alone has no editing behavior in edit mode', (
     tester,
   ) async {

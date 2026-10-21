@@ -187,6 +187,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
     final content = config.contentZone(zone);
     final slots = _slotsOf(config, content);
     if (slots.isEmpty) {
+      if (widget.shrinkWrap) return const SizedBox(width: 16, height: 16);
       return _ZonePlaceholder(
         zone: zone,
         label: widget.zoneLabel(zone),
@@ -244,8 +245,12 @@ extension _SuperLayoutSlots on SuperLayoutState {
               ),
             )
           : null,
-      expand: !(axis == Axis.vertical ? autoHeight : autoWidth),
-      stretch: !(axis == Axis.vertical ? autoWidth : autoHeight),
+      expand:
+          !widget.shrinkWrap &&
+          !(axis == Axis.vertical ? autoHeight : autoWidth),
+      stretch:
+          !widget.shrinkWrap &&
+          !(axis == Axis.vertical ? autoWidth : autoHeight),
     );
   }
 }

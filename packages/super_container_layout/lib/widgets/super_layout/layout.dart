@@ -43,6 +43,7 @@ class SuperLayout extends StatefulWidget {
     this.name,
     this.editable = true,
     this.showZoneNames = true,
+    this.shrinkWrap = false,
     this.menuIcon,
     this.zoneLabels = const {},
     this.zoneTagFilters = const {},
@@ -51,6 +52,9 @@ class SuperLayout extends StatefulWidget {
 
   final List<SlotImplementation> slots;
   final SuperLayoutConfig config;
+
+  /// Measures the layout from its contents instead of filling its parent.
+  final bool shrinkWrap;
   final ValueChanged<SuperLayoutConfig>? onChanged;
 
   /// Customizes an editor addition atomically with placement and persistence.

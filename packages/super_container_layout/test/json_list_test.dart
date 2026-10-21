@@ -93,6 +93,14 @@ void main() {
     const config = SuperListViewConfig(
       binding: JsonTextBinding(path: 'clients[?].orders'),
       axis: Axis.horizontal,
+      wrap: true,
+      wrapSizing: ListWrapSizing.automatic,
+      itemWidth: 180,
+      itemSize: SlotSizeConstraints(
+        preferredWidth: SlotDimension(40, SlotSizeUnit.percent),
+        minHeight: SlotDimension(30, SlotSizeUnit.pixels),
+        padding: 4,
+      ),
       itemExtent: 120,
       spacing: 4,
       allowAdd: true,
@@ -112,6 +120,16 @@ void main() {
       {'itemExtent': 0},
       {'spacing': -1},
       {'axis': 'diagonal'},
+      {'wrap': 'yes'},
+      {'wrapSizing': 'random'},
+      {'itemWidth': 0},
+      {'itemWidth': double.infinity},
+      {'itemSize': 'invalid'},
+      {
+        'itemSize': {
+          'preferredWidth': {'value': -1, 'unit': 'px'},
+        },
+      },
       {'allowAdd': 'yes'},
       {'unknown': true},
     ]) {
@@ -150,6 +168,7 @@ void main() {
     final contract = registry.registry['ListView']!.duplication!;
     expect(contract.ownedConfigs('x'), [
       const EditorConfigRef.layout('x'),
+      const EditorConfigRef.style('x'),
       const EditorConfigRef.list('x'),
     ]);
   });

@@ -1137,7 +1137,9 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     final colors = Theme.of(context).colorScheme;
     final slot = widget.slot;
     final mover = widget.mover;
-    final canEditSize = EditorSlotAction.of(context).isNotEmpty;
+    final canEditSize =
+        (StyleEditScope.controllerOf(context)?.value ?? true) &&
+        EditorSlotAction.of(context).isNotEmpty;
     return OverlayPortal.overlayChildLayoutBuilder(
       controller: _resizeOverlay,
       overlayChildBuilder: (context, info) {

@@ -4,6 +4,7 @@ import '../../models/super_layout_config.dart';
 import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import '../editing/slots/editable_surface.dart';
+import '../editing/slots/editor_slot.dart';
 import 'slot_implementation.dart';
 import 'super_layout.dart';
 
@@ -11,13 +12,15 @@ import 'super_layout.dart';
 class IterableContent extends StatefulWidget {
   const IterableContent({
     this.id,
-    this.label = 'IterableContent',
+    this.label = 'Iterable Content',
     this.config = const SuperLayoutConfig(),
     this.style = const ContainerStyle(),
     this.slots = const [],
     this.onChanged,
     this.onStyleChanged,
     this.editable = true,
+    this.shrinkWrap = false,
+    this.onEditSize,
     super.key,
   });
 
@@ -29,6 +32,8 @@ class IterableContent extends StatefulWidget {
   final ValueChanged<SuperLayoutConfig>? onChanged;
   final ValueChanged<ContainerStyle>? onStyleChanged;
   final bool editable;
+  final bool shrinkWrap;
+  final Future<void> Function()? onEditSize;
 
   @override
   State<IterableContent> createState() => _IterableContentState();
@@ -59,7 +64,7 @@ class _IterableContentState extends State<IterableContent> {
     final style = id == null
         ? _style
         : registry?.styleController(id, fallback: widget.style) ?? _style;
-    return ValueListenableBuilder<ContainerStyle>(
+    final surface = ValueListenableBuilder<ContainerStyle>(
       valueListenable: style,
       builder: (context, value, _) => EditableSurface(
         label: widget.label,
@@ -79,6 +84,7 @@ class _IterableContentState extends State<IterableContent> {
             config: config,
             slots: widget.slots,
             editable: widget.editable,
+            shrinkWrap: widget.shrinkWrap,
             menuIcon: Icons.dashboard_outlined,
             onChanged: (next) {
               layout.value = next;
@@ -88,6 +94,18 @@ class _IterableContentState extends State<IterableContent> {
         ),
       ),
     );
+    final editSize = widget.onEditSize;
+    return editSize == null
+        ? surface
+        : EditorSlotAction(
+            label: 'Taille et marge préférées : ${widget.label}',
+            onEdit: editSize,
+            enabled:
+                widget.editable &&
+                (StyleEditScope.controllerOf(context)?.value ?? true),
+            inline: true,
+            child: surface,
+          );
   }
 
   @override

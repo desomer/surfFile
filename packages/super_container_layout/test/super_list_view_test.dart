@@ -337,6 +337,134 @@ void main() {
     },
   );
 
+  for (final mode in ['vertical', 'horizontal', 'wrap']) {
+    testWidgets('$mode uses shared px/percent bounds and margins', (
+      tester,
+    ) async {
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            wrap: mode == 'wrap',
+            axis: mode == 'horizontal' ? Axis.horizontal : Axis.vertical,
+            spacing: 14,
+            itemSize: const SlotSizeConstraints(
+              preferredWidth: SlotDimension(40, SlotSizeUnit.percent),
+              preferredHeight: SlotDimension(10, SlotSizeUnit.percent),
+              minWidth: SlotDimension(180, SlotSizeUnit.pixels),
+              maxWidth: SlotDimension(220, SlotSizeUnit.pixels),
+              minHeight: SlotDimension(70, SlotSizeUnit.pixels),
+              maxHeight: SlotDimension(100, SlotSizeUnit.pixels),
+              padding: 4,
+            ),
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+      expect(tester.getSize(row('clients', 0)), const Size(192, 82));
+      expect(tester.getSize(row('clients', 1)), const Size(192, 82));
+      expect(
+        tester.getTopLeft(row('clients', 1)) -
+            tester.getTopLeft(row('clients', 0)),
+        mode == 'vertical' ? const Offset(0, 104) : const Offset(214, 0),
+      );
+      expect(find.text('Alice'), findsOneWidget);
+      expect(find.text('Bob'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final basis in SlotPercentBasis.values) {
+    testWidgets('row percentages use the ${basis.name} basis', (tester) async {
+      await mount(
+        tester,
+        SuperLayout(
+          config: center(['list']),
+          slots: [
+            BuilderSlot(
+              id: 'list',
+              label: 'List',
+              showLabel: false,
+              builder: (_) => Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: 250,
+                  height: 300,
+                  child: SuperListView(
+                    id: 'clients',
+                    config: SuperListViewConfig(
+                      binding: JsonTextBinding(
+                        repositoryId: repository,
+                        path: 'clients',
+                      ),
+                      wrap: true,
+                      itemSize: SlotSizeConstraints(
+                        percentBasis: basis,
+                        preferredWidth: const SlotDimension(
+                          40,
+                          SlotSizeUnit.percent,
+                        ),
+                        preferredHeight: const SlotDimension(
+                          10,
+                          SlotSizeUnit.percent,
+                        ),
+                      ),
+                    ),
+                    template: center(['name']),
+                    slots: [text('name', 'clients[?].name')],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+      expect(
+        tester.getSize(row('clients', 0)),
+        basis == SlotPercentBasis.layout
+            ? const Size(200, 90)
+            : const Size(100, 30),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('preferred row dimensions respect resolved minimum and maximum', (
+    tester,
+  ) async {
+    for (final (width, height, expected) in [
+      (10.0, 40.0, const Size(180, 100)),
+      (80.0, 1.0, const Size(220, 70)),
+    ]) {
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            wrap: true,
+            itemSize: SlotSizeConstraints(
+              preferredWidth: SlotDimension(width, SlotSizeUnit.percent),
+              preferredHeight: SlotDimension(height, SlotSizeUnit.percent),
+              minWidth: const SlotDimension(180, SlotSizeUnit.pixels),
+              maxWidth: const SlotDimension(220, SlotSizeUnit.pixels),
+              minHeight: const SlotDimension(70, SlotSizeUnit.pixels),
+              maxHeight: const SlotDimension(100, SlotSizeUnit.pixels),
+            ),
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+      expect(tester.getSize(row('clients', 0)), expected);
+      expect(tester.getSize(row('clients', 1)), expected);
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('a text field in a row writes its own element', (tester) async {
     await mount(
       tester,
@@ -361,45 +489,203 @@ void main() {
     expect(clients[0]['name'], 'Alice');
   });
 
-  testWidgets('rows can be added and removed', (tester) async {
+  testWidgets('fixed Wrap responds to available width and preserves spacing', (
+    tester,
+  ) async {
+    final width = ValueNotifier(500.0);
+    addTearDown(width.dispose);
+    await mount(
+      tester,
+      Align(
+        alignment: Alignment.topLeft,
+        child: ValueListenableBuilder<double>(
+          valueListenable: width,
+          builder: (_, value, _) => SizedBox(
+            width: value,
+            child: SuperListView(
+              id: 'clients',
+              config: SuperListViewConfig(
+                binding: JsonTextBinding(
+                  repositoryId: repository,
+                  path: 'clients',
+                ),
+                wrap: true,
+                itemWidth: 240,
+                itemExtent: 80,
+                spacing: 20,
+              ),
+              template: center(['name']),
+              slots: [text('name', 'clients[?].name')],
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(tester.getSize(row('clients', 0)), const Size(240, 80));
+    expect(
+      tester.getTopLeft(row('clients', 1)) -
+          tester.getTopLeft(row('clients', 0)),
+      const Offset(260, 0),
+    );
+    width.value = 400;
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(row('clients', 1)) -
+          tester.getTopLeft(row('clients', 0)),
+      const Offset(0, 100),
+    );
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Bob'), findsOneWidget);
+    await tester.tap(find.text('Bob'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('super-list-selected-clients-1')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('automatic Wrap measures each row including its surface style', (
+    tester,
+  ) async {
+    final extraWidth = ValueNotifier(0.0);
+    addTearDown(extraWidth.dispose);
     await mount(
       tester,
       SuperListView(
         id: 'clients',
         config: SuperListViewConfig(
           binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
-          itemExtent: 60,
-          allowAdd: true,
-          allowRemove: true,
+          wrap: true,
+          wrapSizing: ListWrapSizing.automatic,
+          spacing: 10,
+        ),
+        template: center(['content']),
+        templateStyle: const ContainerStyle(padding: 5, margin: 3),
+        slots: [
+          BuilderSlot(
+            id: 'content',
+            label: 'Content',
+            showLabel: false,
+            builder: (context) {
+              final index = JsonListScope.maybeOf(context)!.indices.last;
+              return ValueListenableBuilder<double>(
+                valueListenable: extraWidth,
+                builder: (_, value, child) => SizedBox(
+                  width: (index == 0 ? 100 : 180) + value,
+                  height: index == 0 ? 40 : 60,
+                  child: child,
+                ),
+                child: SuperText(
+                  id: 'name',
+                  config: const SuperTextConfig(
+                    binding: JsonTextBinding(path: 'clients[?].name'),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+    expect(tester.getSize(row('clients', 0)), const Size(116, 56));
+    expect(tester.getSize(row('clients', 1)), const Size(196, 76));
+    expect(
+      tester.getTopLeft(row('clients', 1)) -
+          tester.getTopLeft(row('clients', 0)),
+      const Offset(126, 0),
+    );
+    expect(find.text('Alice'), findsOneWidget);
+    expect(find.text('Bob'), findsOneWidget);
+    extraWidth.value = 40;
+    await tester.pumpAndSettle();
+    expect(tester.getSize(row('clients', 0)), const Size(156, 56));
+    expect(tester.getSize(row('clients', 1)), const Size(236, 76));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final wrapSizing in <ListWrapSizing?>[null, ...ListWrapSizing.values]) {
+    testWidgets(
+      'rows can be added and removed (${wrapSizing?.name ?? 'list'})',
+      (tester) async {
+        await mount(
+          tester,
+          SuperListView(
+            id: 'clients',
+            config: SuperListViewConfig(
+              binding: JsonTextBinding(
+                repositoryId: repository,
+                path: 'clients',
+              ),
+              itemExtent: 60,
+              wrap: wrapSizing != null,
+              wrapSizing: wrapSizing ?? ListWrapSizing.fixed,
+              allowAdd: true,
+              allowRemove: true,
+            ),
+            template: center(['name']),
+            slots: [text('name', 'clients[?].name')],
+          ),
+        );
+        await real(
+          tester,
+          () =>
+              tester.tap(find.byKey(const ValueKey('super-list-add-clients'))),
+          save: true,
+        );
+        expect(row('clients', 2), findsOneWidget);
+        var clients = (await document(tester))['clients'] as List;
+        expect(clients, hasLength(3));
+        expect(clients[2], {'name': '', 'orders': []});
+
+        await real(
+          tester,
+          () => tester.tap(
+            find.byKey(const ValueKey('super-list-remove-clients-0')),
+          ),
+        );
+        await real(
+          tester,
+          () => tester.tap(find.widgetWithText(FilledButton, 'Supprimer')),
+          save: true,
+        );
+        clients = (await document(tester))['clients'] as List;
+        expect(clients.map((client) => client['name']), ['Bob', '']);
+        expect(find.text('Alice'), findsNothing);
+        expect(find.text('Bob'), findsOneWidget);
+      },
+    );
+  }
+
+  testWidgets('Wrap scrolls vertically when runs exceed the viewport', (
+    tester,
+  ) async {
+    await mount(
+      tester,
+      SuperListView(
+        id: 'clients',
+        config: SuperListViewConfig(
+          binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+          wrap: true,
+          itemWidth: 300,
+          itemExtent: 600,
+          spacing: 10,
         ),
         template: center(['name']),
         slots: [text('name', 'clients[?].name')],
       ),
     );
-    await real(
-      tester,
-      () => tester.tap(find.byKey(const ValueKey('super-list-add-clients'))),
-      save: true,
+    final first = tester.getTopLeft(row('clients', 0));
+    final second = tester.getTopLeft(row('clients', 1));
+    expect(second.dy - first.dy, 610);
+    await tester.drag(
+      find.byKey(const ValueKey('super-list-clients')),
+      const Offset(0, -400),
     );
-    expect(row('clients', 2), findsOneWidget);
-    var clients = (await document(tester))['clients'] as List;
-    expect(clients, hasLength(3));
-    expect(clients[2], {'name': '', 'orders': []});
-
-    await real(
-      tester,
-      () =>
-          tester.tap(find.byKey(const ValueKey('super-list-remove-clients-0'))),
-    );
-    await real(
-      tester,
-      () => tester.tap(find.widgetWithText(FilledButton, 'Supprimer')),
-      save: true,
-    );
-    clients = (await document(tester))['clients'] as List;
-    expect(clients.map((client) => client['name']), ['Bob', '']);
-    expect(find.text('Alice'), findsNothing);
-    expect(find.text('Bob'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(row('clients', 0)).dy, lessThan(first.dy));
+    expect(find.text('Bob').hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('unbound and empty lists explain their state', (tester) async {
@@ -464,6 +750,129 @@ void main() {
     expect(find.byKey(const ValueKey('super-list-apply')), findsNothing);
     expect(row('clients', 1), findsOneWidget);
     expect(row('clients', 2), findsNothing);
+  });
+
+  testWidgets('IterableContent style menu edits shared size and cancels', (
+    tester,
+  ) async {
+    final editing = ValueNotifier(true);
+    addTearDown(editing.dispose);
+    SuperListViewConfig? applied;
+    await mount(
+      tester,
+      StyleEditScope(
+        controller: editing,
+        child: SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+          onConfigChanged: (value) => applied = value,
+        ),
+      ),
+    );
+    Future<void> open() async {
+      await real(
+        tester,
+        () => tester.tap(row('clients', 0), buttons: kSecondaryMouseButton),
+      );
+      await real(
+        tester,
+        () => tester.tap(find.byKey(const ValueKey('style-menu-Liste'))),
+      );
+    }
+
+    await open();
+    await tester.tap(find.text('Wrap'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('super-list-width')), findsNothing);
+    expect(find.byKey(const ValueKey('super-list-extent')), findsNothing);
+    await real(
+      tester,
+      () => tester.tap(find.byKey(const ValueKey('super-list-apply'))),
+    );
+    expect(applied!.wrap, isTrue);
+
+    Future<void> openSize() async {
+      await real(
+        tester,
+        () => tester.tap(row('clients', 0), buttons: kSecondaryMouseButton),
+      );
+      final size = find.byKey(
+        const ValueKey(
+          'style-menu-size-Taille et marge préférées : Iterable Content',
+        ),
+      );
+      expect(size, findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Iterable Content')),
+          matching: size,
+        ),
+        findsOneWidget,
+      );
+      await real(tester, () => tester.tap(size));
+    }
+
+    await openSize();
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-width')),
+      '220',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-height')),
+      '90',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(row('clients', 0)), const Size(220, 90));
+    expect(tester.getSize(row('clients', 1)), const Size(220, 90));
+    await tester.tap(find.text('Appliquer'));
+    await real(tester, () async {});
+    expect(applied!.itemSize!.preferredWidth!.value, 220);
+    await openSize();
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-width')),
+      '100',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(row('clients', 1)).width, 100);
+    await tester.tap(find.text('Annuler'));
+    await real(tester, () async {});
+    expect(tester.getSize(row('clients', 1)).width, 220);
+    await openSize();
+    tester
+        .widget<DropdownButton<SlotSizeUnit>>(
+          find.byKey(const ValueKey('slot-unit-preferred-width')),
+        )
+        .onChanged!(SlotSizeUnit.percent);
+    await tester.enterText(
+      find.byKey(const ValueKey('slot-preferred-width')),
+      '40',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(row('clients', 1)).width, 200);
+    await tester.tap(find.text('Appliquer'));
+    await real(tester, () async {});
+    expect(applied!.itemSize!.preferredWidth!.unit, SlotSizeUnit.percent);
+    await openSize();
+    await tester.tap(find.text('Taille et marge par défaut'));
+    await real(tester, () async {});
+    expect(applied!.itemSize, const SlotSizeConstraints());
+    expect(tester.getSize(row('clients', 1)).height, lessThan(90));
+    editing.value = false;
+    await real(tester, () async {});
+    await real(
+      tester,
+      () => tester.tap(row('clients', 0), buttons: kSecondaryMouseButton),
+    );
+    expect(
+      find.byKey(const ValueKey('style-menu-Iterable Content')),
+      findsNothing,
+    );
+    expect(applied!.wrap, isTrue);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('edit mode shows a template row for empty arrays', (

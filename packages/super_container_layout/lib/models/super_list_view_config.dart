@@ -19,6 +19,9 @@ import 'package:flutter/painting.dart' show Axis;
 import 'package:flutter/foundation.dart';
 
 import 'json_text_binding.dart';
+import 'super_layout_config.dart';
+
+enum ListWrapSizing { fixed, automatic }
 
 /// Réglages d'une `SuperListView` : tableau lié, orientation, taille des
 /// lignes et actions autorisées. Valeur immuable, comparable par valeur.
@@ -27,6 +30,10 @@ class SuperListViewConfig {
   const SuperListViewConfig({
     this.binding,
     this.axis = Axis.vertical,
+    this.wrap = false,
+    this.wrapSizing = ListWrapSizing.fixed,
+    this.itemWidth = 160,
+    this.itemSize,
     this.itemExtent = 56,
     this.spacing = 0,
     this.allowAdd = false,
@@ -45,10 +52,21 @@ class SuperListViewConfig {
   /// Orientation et sens de défilement.
   final Axis axis;
 
-  /// Hauteur d'une ligne, ou largeur pour une liste horizontale.
+  /// Flow left to right into new runs, with vertical scrolling.
+  final bool wrap;
+  final ListWrapSizing wrapSizing;
+
+  /// Width of a fixed-size Wrap item; [itemExtent] is its height.
+  final double itemWidth;
+
+  /// Shared preferred dimensions and outer spacing of the row template.
+  /// Null retains the original fixed/automatic list sizing.
+  final SlotSizeConstraints? itemSize;
+
+  /// Hauteur d'une ligne ou d'un element Wrap fixe, ou largeur horizontale.
   final double itemExtent;
 
-  /// Espace entre deux lignes.
+  /// Espace entre deux lignes ; en Wrap, entre elements et entre rangees.
   final double spacing;
 
   /// Affiche le bouton *Ajouter*, qui ajoute une copie vide du dernier
@@ -72,6 +90,14 @@ class SuperListViewConfig {
   /// [FormatException] avec un message affichable sinon.
   void validate() {
     binding?.validate();
+    if (itemSize case final dimensions?) {
+      SlotSizeConstraints.fromJson(dimensions.toJson());
+    }
+    if (!itemWidth.isFinite ||
+        itemWidth < minItemExtent ||
+        itemWidth > maxItemExtent) {
+      throw const FormatException('Largeur d’élément de liste invalide.');
+    }
     if (!itemExtent.isFinite ||
         itemExtent < minItemExtent ||
         itemExtent > maxItemExtent) {
@@ -87,6 +113,11 @@ class SuperListViewConfig {
     JsonTextBinding? binding,
     bool clearBinding = false,
     Axis? axis,
+    bool? wrap,
+    ListWrapSizing? wrapSizing,
+    double? itemWidth,
+    SlotSizeConstraints? itemSize,
+    bool clearItemSize = false,
     double? itemExtent,
     double? spacing,
     bool? allowAdd,
@@ -95,6 +126,10 @@ class SuperListViewConfig {
   }) => SuperListViewConfig(
     binding: clearBinding ? null : binding ?? this.binding,
     axis: axis ?? this.axis,
+    wrap: wrap ?? this.wrap,
+    wrapSizing: wrapSizing ?? this.wrapSizing,
+    itemWidth: itemWidth ?? this.itemWidth,
+    itemSize: clearItemSize ? null : itemSize ?? this.itemSize,
     itemExtent: itemExtent ?? this.itemExtent,
     spacing: spacing ?? this.spacing,
     allowAdd: allowAdd ?? this.allowAdd,
@@ -108,6 +143,10 @@ class SuperListViewConfig {
     return {
       if (binding != null) 'binding': binding!.toJson(),
       'axis': axis.name,
+      'wrap': wrap,
+      'wrapSizing': wrapSizing.name,
+      'itemWidth': itemWidth,
+      if (itemSize != null) 'itemSize': itemSize!.toJson(),
       'itemExtent': itemExtent,
       'spacing': spacing,
       'allowAdd': allowAdd,
@@ -119,6 +158,10 @@ class SuperListViewConfig {
   static const _keys = {
     'binding',
     'axis',
+    'wrap',
+    'wrapSizing',
+    'itemWidth',
+    'itemSize',
     'itemExtent',
     'spacing',
     'allowAdd',
@@ -144,6 +187,7 @@ class SuperListViewConfig {
     }
 
     final axis = read<String>('axis', defaults.axis.name);
+    final wrapSizing = read<String>('wrapSizing', defaults.wrapSizing.name);
     final result = SuperListViewConfig(
       binding: value['binding'] == null
           ? null
@@ -153,6 +197,16 @@ class SuperListViewConfig {
         orElse: () =>
             throw const FormatException('Orientation de liste invalide.'),
       ),
+      wrap: read<bool>('wrap', defaults.wrap),
+      wrapSizing: ListWrapSizing.values.firstWhere(
+        (candidate) => candidate.name == wrapSizing,
+        orElse: () =>
+            throw const FormatException('Taille Wrap de liste invalide.'),
+      ),
+      itemWidth: read<num>('itemWidth', defaults.itemWidth).toDouble(),
+      itemSize: value['itemSize'] == null
+          ? null
+          : SlotSizeConstraints.fromJson(value['itemSize']),
       itemExtent: read<num>('itemExtent', defaults.itemExtent).toDouble(),
       spacing: read<num>('spacing', defaults.spacing).toDouble(),
       allowAdd: read<bool>('allowAdd', defaults.allowAdd),
@@ -168,6 +222,10 @@ class SuperListViewConfig {
       other is SuperListViewConfig &&
       binding == other.binding &&
       axis == other.axis &&
+      wrap == other.wrap &&
+      wrapSizing == other.wrapSizing &&
+      itemWidth == other.itemWidth &&
+      itemSize == other.itemSize &&
       itemExtent == other.itemExtent &&
       spacing == other.spacing &&
       allowAdd == other.allowAdd &&
@@ -178,6 +236,10 @@ class SuperListViewConfig {
   int get hashCode => Object.hash(
     binding,
     axis,
+    wrap,
+    wrapSizing,
+    itemWidth,
+    itemSize,
     itemExtent,
     spacing,
     allowAdd,

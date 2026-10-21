@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -8,6 +9,54 @@ import 'package:super_container_layout/widgets/editing/components/super_text_edi
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('native text context menu remains enabled outside editing', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StyleEditScope(
+          controller: mode,
+          child: const Scaffold(
+            body: SizedBox(
+              width: 300,
+              height: 80,
+              child: SuperText(
+                id: 'native-menu',
+                config: SuperTextConfig(
+                  mode: SuperTextMode.input,
+                  initialText: 'Selectable text',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).contextMenuBuilder,
+      isNull,
+    );
+    mode.value = false;
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).contextMenuBuilder,
+      isNotNull,
+    );
+    final editable = tester.state<EditableTextState>(find.byType(EditableText));
+    editable.widget.focusNode.requestFocus();
+    await tester.pumpAndSettle();
+    editable.widget.controller.selection = const TextSelection(
+      baseOffset: 0,
+      extentOffset: 10,
+    );
+    await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   test('all input options round trip with defaults and strict validation', () {
     const field = SuperTextFieldConfig(

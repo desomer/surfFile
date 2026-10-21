@@ -79,6 +79,7 @@ import '../super_layout/slot_implementation.dart';
 import '../super_layout/super_layout.dart';
 import '../super_layout/iterable_content.dart';
 import '../editing/slots/editor_slot.dart';
+import '../editing/slots/slot_size_editor.dart';
 
 /// Répète une disposition [SuperLayout] pour chaque élément d'un tableau de
 /// repository.
@@ -437,31 +438,161 @@ class _SuperListViewState extends State<SuperListView> {
     widget.onConfigChanged?.call(result);
   }
 
+  SlotSizeConstraints _initialItemSize(SuperListViewConfig config) {
+    if (config.itemSize case final dimensions?) return dimensions;
+    final automatic =
+        config.wrap && config.wrapSizing == ListWrapSizing.automatic;
+    return SlotSizeConstraints(
+      preferredWidth:
+          automatic || (!config.wrap && config.axis == Axis.vertical)
+          ? null
+          : SlotDimension(
+              config.wrap ? config.itemWidth : config.itemExtent,
+              SlotSizeUnit.pixels,
+            ),
+      preferredHeight:
+          automatic || (!config.wrap && config.axis == Axis.horizontal)
+          ? null
+          : SlotDimension(config.itemExtent, SlotSizeUnit.pixels),
+    );
+  }
+
+  Size _parentLayoutSize(Size fallback) {
+    final parent = context
+        .findAncestorStateOfType<SuperLayoutState>()
+        ?.context
+        .findRenderObject();
+    if (parent is! RenderBox) return fallback;
+    final bounds = parent.constraints.biggest;
+    return Size(
+      bounds.width.isFinite ? bounds.width : fallback.width,
+      bounds.height.isFinite ? bounds.height : fallback.height,
+    );
+  }
+
+  Future<void> _editItemSize(
+    BuildContext target,
+    ValueNotifier<SuperListViewConfig> configuration,
+    Size viewport,
+  ) async {
+    final initial = configuration.value.itemSize;
+    await showSlotSizeEditor(
+      context: context,
+      target: target,
+      slot: BuilderSlot(
+        id: widget.id,
+        label: 'Iterable Content',
+        builder: (_) => const SizedBox(),
+      ),
+      saved: _initialItemSize(configuration.value),
+      legacy: null,
+      changes: configuration,
+      measure: () {
+        if (!target.mounted) return null;
+        final box = target.findRenderObject();
+        if (box is! RenderBox || !box.hasSize) return null;
+        return (
+          layout: _parentLayoutSize(viewport),
+          zone: Offset.zero & viewport,
+          slot: Offset.zero & box.size,
+        );
+      },
+      onApply: (dimensions, _) {
+        configuration.value = configuration.value.copyWith(
+          itemSize: dimensions,
+        );
+        widget.onConfigChanged?.call(configuration.value);
+      },
+      onRestore: () {
+        configuration.value = configuration.value.copyWith(
+          itemSize: initial,
+          clearItemSize: initial == null,
+        );
+        widget.onConfigChanged?.call(configuration.value);
+      },
+    );
+  }
+
   Widget _row(
     ValueNotifier<SuperLayoutConfig> layout,
     ValueNotifier<ContainerStyle> style,
+    ValueNotifier<SuperListViewConfig> configuration,
     SuperListViewConfig config,
     JsonListScope? scope,
     int? index,
+    Size viewport,
   ) {
-    final row = ValueListenableBuilder<SuperLayoutConfig>(
+    final natural =
+        config.itemSize != null ||
+        (config.wrap && config.wrapSizing == ListWrapSizing.automatic);
+    final content = ValueListenableBuilder<SuperLayoutConfig>(
       valueListenable: layout,
       builder: (context, value, _) => ValueListenableBuilder<ContainerStyle>(
         valueListenable: style,
         builder: (context, rowStyle, _) => IterableContent(
-          label: 'IterableContent',
+          label: 'Iterable Content',
           slots: widget.slots,
           config: value,
           style: rowStyle,
+          shrinkWrap: natural,
+          onEditSize: () => _editItemSize(context, configuration, viewport),
           onChanged: (next) => layout.value = next,
           onStyleChanged: (next) => style.value = next,
         ),
       ),
     );
+    final row = natural && config.allowRemove
+        ? ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: kMinInteractiveDimension,
+              minHeight: kMinInteractiveDimension,
+            ),
+            child: content,
+          )
+        : content;
     final vertical = config.axis == Axis.vertical;
-    return Padding(
+    final dimensions = _initialItemSize(config);
+    final basis = dimensions.percentBasis == SlotPercentBasis.layout
+        ? _parentLayoutSize(viewport)
+        : viewport;
+    double? resolve(SlotDimension? value, double extent) =>
+        value?.resolve(extent);
+    (double, double, double?) bounds(
+      SlotDimension? minimum,
+      SlotDimension? maximum,
+      SlotDimension? preferred,
+      double available,
+      double limit,
+    ) {
+      final min = (resolve(minimum, available) ?? 0).clamp(0.0, limit);
+      final max = (resolve(maximum, available) ?? limit).clamp(min, limit);
+      final size = resolve(preferred, available)?.clamp(min, max);
+      return (min, max, size);
+    }
+
+    final (minWidth, maxWidth, width) = bounds(
+      dimensions.minWidth,
+      dimensions.maxWidth,
+      dimensions.preferredWidth,
+      basis.width,
+      !config.wrap && config.axis == Axis.horizontal
+          ? double.infinity
+          : viewport.width,
+    );
+    final (minHeight, maxHeight, height) = bounds(
+      dimensions.minHeight,
+      dimensions.maxHeight,
+      dimensions.preferredHeight,
+      basis.height,
+      !config.wrap && config.axis == Axis.horizontal
+          ? viewport.height
+          : double.infinity,
+    );
+    final item = Padding(
       key: ValueKey('super-list-row-${widget.id}-${index ?? 'template'}'),
-      padding: vertical
+      padding: config.wrap || config.itemSize != null
+          ? EdgeInsets.zero
+          : vertical
           ? EdgeInsets.only(bottom: config.spacing)
           : EdgeInsets.only(right: config.spacing),
       child: JsonListScope(
@@ -469,6 +600,7 @@ class _SuperListViewState extends State<SuperListView> {
         indices: [...?(_source?.rowBase ?? scope?.indices), index ?? 0],
         placeholder: index == null || (scope?.placeholder ?? false),
         child: Stack(
+          fit: StackFit.passthrough,
           children: [
             if (index != null && _isSelected(index))
               Positioned.fill(
@@ -487,17 +619,15 @@ class _SuperListViewState extends State<SuperListView> {
                   ),
                 ),
               ),
-            Positioned.fill(
-              // Un Listener n'entre pas en concurrence avec le contenu : les
-              // champs et boutons de la ligne restent utilisables.
-              child: index == null || (scope?.placeholder ?? false)
-                  ? row
-                  : Listener(
-                      behavior: HitTestBehavior.opaque,
-                      onPointerDown: (_) => _select(index),
-                      child: row,
-                    ),
-            ),
+            // A Listener leaves the row's fields and buttons interactive.
+            if (index == null || (scope?.placeholder ?? false))
+              row
+            else
+              Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: (_) => _select(index),
+                child: row,
+              ),
             if (index != null && config.allowRemove)
               Positioned(
                 top: 0,
@@ -515,6 +645,55 @@ class _SuperListViewState extends State<SuperListView> {
         ),
       ),
     );
+    final rowHeight =
+        height ??
+        (!config.wrap && config.axis == Axis.horizontal ? maxHeight : null);
+    final sized = ConstrainedBox(
+      constraints: BoxConstraints(
+        minWidth: minWidth,
+        maxWidth: maxWidth.isFinite
+            ? maxWidth
+            : (width ?? viewport.width).clamp(minWidth, double.infinity),
+        minHeight: minHeight,
+        maxHeight: maxHeight,
+      ),
+      child: SizedBox(
+        width:
+            width ??
+            (!config.wrap && config.axis == Axis.vertical ? maxWidth : null),
+        height: rowHeight,
+        child: Padding(
+          padding: dimensions.contentPadding,
+          child: Column(
+            mainAxisSize: rowHeight == null
+                ? MainAxisSize.min
+                : MainAxisSize.max,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Flexible(
+                fit: natural && rowHeight == null
+                    ? FlexFit.loose
+                    : FlexFit.tight,
+                child: item,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    return config.itemSize == null || config.wrap
+        ? sized
+        : Align(
+            alignment: Alignment.topLeft,
+            widthFactor: 1,
+            heightFactor: 1,
+            child: Padding(
+              padding: vertical
+                  ? EdgeInsets.only(bottom: config.spacing)
+                  : EdgeInsets.only(right: config.spacing),
+              child: sized,
+            ),
+          );
   }
 
   Widget _message(String text, {bool error = false}) => Padding(
@@ -571,7 +750,7 @@ class _SuperListViewState extends State<SuperListView> {
             config.allowAdd &&
             _source?.binding != null &&
             _error == null;
-        final vertical = config.axis == Axis.vertical;
+        final vertical = config.wrap || config.axis == Axis.vertical;
 
         return EditorSlot(
           label: 'Liste',
@@ -580,36 +759,76 @@ class _SuperListViewState extends State<SuperListView> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final fill = constraints.hasBoundedHeight;
-              final list = ListView.builder(
-                key: ValueKey('super-list-${widget.id}'),
-                primary: false,
-                shrinkWrap: vertical && !fill,
-                scrollDirection: config.axis,
-                itemExtent: config.itemExtent + config.spacing,
-                itemCount: count + (add ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == count) {
-                    return Align(
-                      alignment: vertical
-                          ? Alignment.centerLeft
-                          : Alignment.center,
-                      child: TextButton.icon(
-                        key: ValueKey('super-list-add-${widget.id}'),
-                        onPressed: _busy ? null : _add,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Ajouter'),
-                      ),
-                    );
-                  }
-                  return _row(
-                    layout,
-                    style,
-                    config,
-                    scope,
-                    template ? null : index,
-                  );
-                },
+              final viewport = Size(
+                constraints.maxWidth,
+                fill
+                    ? constraints.maxHeight
+                    : MediaQuery.sizeOf(context).height,
               );
+              Widget item(BuildContext context, int index) {
+                if (index == count) {
+                  return Align(
+                    widthFactor: config.wrap ? 1 : null,
+                    heightFactor: config.wrap ? 1 : null,
+                    alignment: vertical
+                        ? Alignment.centerLeft
+                        : Alignment.center,
+                    child: TextButton.icon(
+                      key: ValueKey('super-list-add-${widget.id}'),
+                      onPressed: _busy ? null : _add,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Ajouter'),
+                    ),
+                  );
+                }
+                return _row(
+                  layout,
+                  style,
+                  configuration,
+                  config,
+                  scope,
+                  template ? null : index,
+                  viewport,
+                );
+              }
+
+              final Widget list = config.wrap
+                  ? SingleChildScrollView(
+                      key: ValueKey('super-list-${widget.id}'),
+                      primary: false,
+                      child: Wrap(
+                        spacing: config.spacing,
+                        runSpacing: config.spacing,
+                        children: [
+                          for (
+                            var index = 0;
+                            index < count + (add ? 1 : 0);
+                            index++
+                          )
+                            if (index == count &&
+                                config.wrapSizing == ListWrapSizing.fixed &&
+                                config.itemSize == null)
+                              SizedBox(
+                                width: config.itemWidth,
+                                height: config.itemExtent,
+                                child: item(context, index),
+                              )
+                            else
+                              item(context, index),
+                        ],
+                      ),
+                    )
+                  : ListView.builder(
+                      key: ValueKey('super-list-${widget.id}'),
+                      primary: false,
+                      shrinkWrap: vertical && !fill,
+                      scrollDirection: config.axis,
+                      itemExtent: config.itemSize == null
+                          ? config.itemExtent + config.spacing
+                          : null,
+                      itemCount: count + (add ? 1 : 0),
+                      itemBuilder: item,
+                    );
               final error = _error != null || config.binding == null;
               return Column(
                 mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,

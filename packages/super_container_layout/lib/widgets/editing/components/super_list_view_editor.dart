@@ -71,9 +71,6 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
   late final _path = TextEditingController(
     text: widget.config.binding?.path ?? '',
   );
-  late final _extent = TextEditingController(
-    text: _number(widget.config.itemExtent),
-  );
   late final _spacing = TextEditingController(
     text: _number(widget.config.spacing),
   );
@@ -82,6 +79,7 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
       ? ''
       : widget.config.binding!.repositoryId ?? inheritedRepositoryValue;
   late Axis _axis = widget.config.axis;
+  late bool _wrap = widget.config.wrap;
   late bool _allowAdd = widget.config.allowAdd;
   late bool _allowRemove = widget.config.allowRemove;
   List<JsonRepositoryEntry> _repositories = [];
@@ -102,7 +100,6 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
   @override
   void dispose() {
     _path.dispose();
-    _extent.dispose();
     _spacing.dispose();
     _empty.dispose();
     super.dispose();
@@ -146,7 +143,7 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
       binding: binding,
       clearBinding: binding == null,
       axis: _axis,
-      itemExtent: number(_extent),
+      wrap: _wrap,
       spacing: number(_spacing),
       allowAdd: _allowAdd,
       allowRemove: _allowRemove,
@@ -267,31 +264,38 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
                     }
                   },
                 ),
-                SegmentedButton<Axis>(
+                SegmentedButton<String>(
                   segments: const [
                     ButtonSegment(
-                      value: Axis.vertical,
+                      value: 'vertical',
                       label: Text('Verticale'),
                       icon: Icon(Icons.view_agenda_outlined),
                     ),
                     ButtonSegment(
-                      value: Axis.horizontal,
+                      value: 'horizontal',
                       label: Text('Horizontale'),
                       icon: Icon(Icons.view_week_outlined),
                     ),
+                    ButtonSegment(
+                      value: 'wrap',
+                      label: Text('Wrap'),
+                      icon: Icon(Icons.wrap_text),
+                    ),
                   ],
-                  selected: {_axis},
-                  onSelectionChanged: (value) =>
-                      setState(() => _axis = value.single),
+                  selected: {_wrap ? 'wrap' : _axis.name},
+                  onSelectionChanged: (value) => setState(() {
+                    _wrap = value.single == 'wrap';
+                    if (!_wrap) {
+                      _axis = value.single == 'vertical'
+                          ? Axis.vertical
+                          : Axis.horizontal;
+                    }
+                  }),
                 ),
-                TextFormField(
-                  key: const ValueKey('super-list-extent'),
-                  controller: _extent,
-                  decoration: InputDecoration(
-                    labelText: _axis == Axis.vertical
-                        ? 'Hauteur d’un élément'
-                        : 'Largeur d’un élément',
-                  ),
+                const Text(
+                  'Les dimensions se règlent avec « Taille et marge » '
+                  'sur l’entrée de style IterableContent du menu contextuel. '
+                  'Laissez une dimension préférée vide pour une taille automatique.',
                 ),
                 TextFormField(
                   key: const ValueKey('super-list-spacing'),

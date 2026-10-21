@@ -51,7 +51,7 @@ extension _SuperLayoutGrid on SuperLayoutState {
           ? [...parentPath, name, if (selected != null) selected.label]
           : const [],
     );
-    return EditorSelectionRegion(
+    final surface = EditorSelectionRegion(
       enabled: StyleEditScope.controllerOf(context)?.value ?? false,
       isZone: true,
       selected: editing && selected == null,
@@ -67,6 +67,16 @@ extension _SuperLayoutGrid on SuperLayoutState {
         editing: editing,
         path: [...parentPath, name],
       ),
+    );
+    if (!widget.shrinkWrap) return surface;
+    final grid = _config.value.effectiveGrid;
+    final rows = grid.items.values.fold<int>(
+      0,
+      (maximum, item) => math.max(maximum, item.y + item.height),
+    );
+    return SizedBox(
+      height: math.max(16, rows * (grid.rowHeight + grid.gap) - grid.gap),
+      child: surface,
     );
   }
 }
