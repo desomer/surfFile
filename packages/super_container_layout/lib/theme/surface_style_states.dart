@@ -114,21 +114,42 @@ class SurfaceStyleStates {
   SurfaceStyleStates({
     this.binding,
     Map<String, ContainerStyle> named = const {},
+    Map<String, Set<SurfaceStyleProperty>> namedProperties = const {},
     this.selected,
     this.hover,
+    Map<AutomaticState, SelectedSurfaceStyle> automatic = const {},
     List<String>? order,
   }) : named = Map.unmodifiable({
          for (final entry in named.entries)
            _name(entry.key): _leaf(entry.value),
        }),
-       order = List.unmodifiable(_stateOrder(named.keys, order)) {
+       automatic = Map.unmodifiable(automatic),
+       namedProperties = Map.unmodifiable({
+         for (final name in named.keys)
+           name: Set<SurfaceStyleProperty>.unmodifiable(
+             namedProperties[name] ?? {},
+           ),
+       }),
+       order = List.unmodifiable(
+         _stateOrder(named.keys, order, automatic.keys),
+       ) {
     binding?.validate();
+    if (namedProperties.keys.any((name) => !named.containsKey(name))) {
+      throw const FormatException('Surcharge d’état nommé inconnue.');
+    }
+    if (automatic.keys.any((s) => s != AutomaticState.contentHover)) {
+      throw const FormatException(
+        'État automatique non applicable à une surface.',
+      );
+    }
   }
 
   final JsonTextBinding? binding;
   final Map<String, ContainerStyle> named;
+  final Map<String, Set<SurfaceStyleProperty>> namedProperties;
   final SelectedSurfaceStyle? selected;
   final SelectedSurfaceStyle? hover;
+  final Map<AutomaticState, SelectedSurfaceStyle> automatic;
   final List<String> order;
   static const hoverKey = '\u0000hover';
   static const selectedKey = '\u0000selected';
@@ -138,16 +159,25 @@ class SurfaceStyleStates {
     JsonTextBinding? binding,
     bool clearBinding = false,
     Map<String, ContainerStyle>? named,
+    Map<String, Set<SurfaceStyleProperty>>? namedProperties,
     SelectedSurfaceStyle? selected,
     bool clearSelected = false,
     SelectedSurfaceStyle? hover,
     bool clearHover = false,
+    Map<AutomaticState, SelectedSurfaceStyle>? automatic,
     List<String>? order,
   }) => SurfaceStyleStates(
     binding: clearBinding ? null : binding ?? this.binding,
     named: named ?? this.named,
+    namedProperties:
+        namedProperties ??
+        {
+          for (final name in (named ?? this.named).keys)
+            name: this.namedProperties[name] ?? {},
+        },
     selected: clearSelected ? null : selected ?? this.selected,
     hover: clearHover ? null : hover ?? this.hover,
+    automatic: automatic ?? this.automatic,
     order:
         order ??
         this.order
@@ -155,6 +185,7 @@ class SurfaceStyleStates {
               (key) =>
                   key == hoverKey ||
                   key == selectedKey ||
+                  (automatic ?? this.automatic).keys.any((s) => s.key == key) ||
                   (named ?? this.named).containsKey(key),
             )
             .toList(),
@@ -165,6 +196,7 @@ class SurfaceStyleStates {
     String? name,
     bool isSelected = false,
     bool isHovered = false,
+    Set<AutomaticState> activeStates = const {},
   }) {
     var active = base.copyWith(clearStates: true);
     for (final key in order) {
@@ -173,7 +205,14 @@ class SurfaceStyleStates {
       } else if (key == selectedKey) {
         if (isSelected && hasSelected) active = selected!.apply(active);
       } else if (key == name) {
-        active = named[key]!;
+        active = SelectedSurfaceStyle(
+          style: named[key]!,
+          properties: namedProperties[key]!,
+        ).apply(active);
+      } else if (AutomaticState.fromKey(key) case final state?) {
+        if (activeStates.contains(state)) {
+          active = automatic[state]?.apply(active) ?? active;
+        }
       }
     }
     return active;
@@ -182,16 +221,32 @@ class SurfaceStyleStates {
   Map<String, Object?> toJson() => {
     if (binding != null) 'binding': binding!.toJson(),
     'named': {for (final e in named.entries) e.key: e.value.toJson()},
+    'namedProperties': {
+      for (final entry in namedProperties.entries)
+        entry.key: entry.value.map((p) => p.name).toList()..sort(),
+    },
     if (selected != null) 'selected': selected!.toJson(),
     if (hover != null) 'hover': hover!.toJson(),
+    if (automatic.isNotEmpty)
+      'automatic': {
+        for (final entry in automatic.entries)
+          entry.key.name: entry.value.toJson(),
+      },
     'order': order,
   };
 
   factory SurfaceStyleStates.fromJson(Object? value) {
     if (value is! Map ||
         value.keys.any(
-          (key) =>
-              !{'binding', 'named', 'selected', 'hover', 'order'}.contains(key),
+          (key) => !{
+            'binding',
+            'named',
+            'namedProperties',
+            'selected',
+            'hover',
+            'automatic',
+            'order',
+          }.contains(key),
         ) ||
         value['named'] is! Map ||
         (value.containsKey('order') &&
@@ -211,14 +266,50 @@ class SurfaceStyleStates {
           ? null
           : JsonTextBinding.fromJson(value['binding']),
       named: named,
+      namedProperties: _readSurfaceNamedProperties(
+        value['namedProperties'],
+        named,
+      ),
       selected: value['selected'] == null
           ? null
           : SelectedSurfaceStyle.fromJson(value['selected']),
       hover: value['hover'] == null
           ? null
           : SelectedSurfaceStyle.fromJson(value['hover']),
+      automatic: _readSurfaceAutomatic(value['automatic']),
       order: (value['order'] as List?)?.cast<String>(),
     );
+  }
+
+  static Map<AutomaticState, SelectedSurfaceStyle> _readSurfaceAutomatic(
+    Object? value,
+  ) {
+    if (value == null) return {};
+    if (value is! Map ||
+        value.keys.any((key) => key != AutomaticState.contentHover.name)) {
+      throw const FormatException('États automatiques de surface invalides.');
+    }
+    return {
+      for (final entry in value.entries)
+        AutomaticState.contentHover: SelectedSurfaceStyle.fromJson(entry.value),
+    };
+  }
+
+  static Map<String, Set<SurfaceStyleProperty>> _readSurfaceNamedProperties(
+    Object? value,
+    Map<String, ContainerStyle> named,
+  ) {
+    if (value == null) return {};
+    if (value is! Map || value.keys.any((key) => !named.containsKey(key))) {
+      throw const FormatException('Surcharges d’états nommés invalides.');
+    }
+    return {
+      for (final entry in value.entries)
+        entry.key as String: SelectedSurfaceStyle.fromJson({
+          'style': named[entry.key]!.toJson(),
+          'properties': entry.value,
+        }).properties,
+    };
   }
 
   @override
@@ -247,11 +338,16 @@ String _name(String name) {
   return name;
 }
 
-List<String> _stateOrder(Iterable<String> names, List<String>? order) {
+List<String> _stateOrder(
+  Iterable<String> names,
+  List<String>? order,
+  Iterable<AutomaticState> automatic,
+) {
   final defaults = [
     ...names,
     SurfaceStyleStates.hoverKey,
     SurfaceStyleStates.selectedKey,
+    ...automatic.map((s) => s.key),
   ];
   if (order == null) return defaults;
   if (order.toSet().length != order.length ||

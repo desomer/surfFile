@@ -192,9 +192,51 @@ du repository ; une valeur inconnue conserve les réglages par défaut.
 jamais de la sélection de l'éditeur ; une liste imbriquée masque la sélection
 de sa liste parente.
 
+Les surfaces présentent également ces contrôles dans une carte **États**
+du panneau de propriétés, et non dans un bandeau au-dessus du panneau.
+Les indicateurs de propriétés sont toujours visibles : seul **Par défaut**
+est entièrement coché et non modifiable. Pour les états JSON nommés comme
+pour les états automatiques, chaque puce permet d'activer ou de désactiver
+la surcharge correspondante.
+
+Le bouton **+** ouvre un catalogue contextuel, commun aux surfaces et à Text :
+
+- **Survol du composant** et **ListView sélectionné** ajoutent Hover/Sélectionné
+  sur Text : ils ne sont plus présents par défaut et peuvent être supprimés.
+  Les définitions déjà configurées restent disponibles. Sur les surfaces,
+  ces deux boutons restent permanents. Le menu empêche les doublons.
+- **Content survolé** est proposé dans un `IterableContent`. Il suit le survol
+  de tout le Content le plus proche, même au-dessus d'un autre enfant ou d'un
+  espace vide de la ligne. Deux lignes restent indépendantes ; un Content
+  imbriqué masque le contexte de son parent pour ses descendants.
+- **Focus du champ**, **Champ désactivé** et **Champ en lecture seule** sont
+  proposés uniquement pour Text en saisie.
+- **État personnalisé JSON…** conserve la création d'un état nommé.
+
+Un nouvel état automatique est sélectionné et ajouté en fin de priorité avec
+une surcharge vide : il ne change rien tant qu'aucun groupe de propriétés
+n'est activé. Il peut être déplacé, supprimé et ajouté de nouveau.
+Les états non pertinents ne sont pas proposés. Une définition enregistrée
+reste conservée mais inactive lorsqu'elle n'est plus applicable.
+Les nouveaux états sont persistés dans la map optionnelle `automatic` des
+tables d'états, avec des identifiants `AutomaticState` ; les documents
+antérieurs restent lisibles sans modification.
+
+Le focus correspond au vrai focus du champ, pas à un descendant arbitraire
+d'une surface ni au focus du dialogue d'édition. **Désactivé** et **Lecture
+seule** sont évalués à partir du défaut ou de la configuration JSON nommée,
+avant toutes les surcharges automatiques. Une surcharge ne réévalue donc pas
+son propre déclencheur et ne peut pas provoquer d'oscillation. Le verrou
+temporaire de chargement d'une liaison n'est pas un état Désactivé configuré.
+
 `SuperTextConfig.states` contient un `TextConfigStates` : les états nommés
-possèdent une configuration complète, tandis que Hover et Sélectionné utilisent
-des `TextConfigOverride` avec des groupes explicitement activables.
+conservent leurs valeurs dans `named` et leurs groupes activés dans
+`namedProperties`. Comme Hover et Sélectionné, ils appliquent seulement
+les groupes explicitement activés, avec la logique de `TextConfigOverride`.
+Les groupes non cochés héritent des valeurs précédentes dans l'ordre des états.
+Un état nommé nouveau ou enregistré sans `namedProperties` commence sans
+aucune surcharge, toutes les puces décochées. Ses anciennes valeurs sont
+conservées et réutilisables en cochant les propriétés.
 Toutes les propriétés sont concernées, y compris les liaisons JSON.
 Le mode, le contenu initial, le mot de passe, les lignes et toutes les options
 du champ forment un groupe **Contenu** indivisible ; activation et lecture seule
@@ -212,9 +254,14 @@ L'aperçu du brouillon ne change ni la sélection réelle ni les données JSON.
 Avec un tableau d'états, chaque changement réel d'états actifs réinitialise la
 saisie interne : texte initial de la configuration effective, ou relecture de
 sa liaison de contenu. Un simple déplacement à l'intérieur du composant ne
-réinitialise rien. Les écritures en attente sont capturées sur l'ancienne liaison
+réinitialise rien. Cette règle concerne aussi l'entrée/sortie de Focus, sans
+faire perdre le focus au champ pendant la saisie.
+Les écritures en attente sont capturées sur l'ancienne liaison
 avant cette transition ; un survol seul n'écrit jamais dans le repository.
 Les chargements et réinitialisations d'état ne publient pas de `onChanged`.
+Lorsque la liaison de contenu reste identique, sa relecture de transition
+conserve le texte affiché, le focus et l'état activé du champ : aucun passage
+intermédiaire au texte initial ou au style désactivé.
 Un `controller` ou une `value` externe conserve la propriété du texte et n'est
 pas réinitialisé ; dans ce cas, aucune configuration d'état ne peut lier le
 contenu à un repository. Les liaisons des autres propriétés restent disponibles.
@@ -434,8 +481,10 @@ des boutons de sélection côte à côte : **Par défaut**, les états nommés, 
 dans une ligne de ListView, **Sélectionné**. L'état choisi est mis en évidence ;
 les boutons passent à la ligne si nécessaire. Les actions permettent d'ajouter,
 renommer ou supprimer un état.
-Un nouvel état copie le style par défaut, puis devient un style complet indépendant :
-modifier le défaut ne modifie pas les états existants.
+Un nouvel état conserve une copie des valeurs du style par défaut, mais commence
+sans surcharge. Les propriétés non cochées suivent donc les changements du défaut.
+Les anciens états enregistrés sans `namedProperties` commencent également avec
+toutes les puces décochées ; leurs valeurs restent disponibles en les activant.
 
 Le bouton de liaison choisit un repository et un attribut JSON, par exemple
 `clients[?].statut`. Le repository et les indices peuvent être hérités de la ligne.
@@ -447,15 +496,16 @@ Renommer un état ne renomme pas les valeurs dans le repository.
 
 **Hover** s'active lorsque la souris survole la surface, y compris ses enfants.
 Il se configure comme **Sélectionné**, sans modifier la sélection ou le JSON.
-Ces deux états sont des surcouches : seules les familles de propriétés activées
+Tous les états nommés ou automatiques sont des surcouches : seules les familles de propriétés activées
 par leurs puces remplacent le style courant. Modifier une propriété active sa
 famille ; désactiver la puce rétablit l'héritage. Zéro, faux et une couleur
 absente sont des remplacements explicites. L'ordre initial est :
-**défaut → état JSON complet → Hover → Sélectionné**.
+**défaut → surcharges de l'état JSON → Hover → Sélectionné**.
 Glissez les boutons d'état pour changer leur priorité : parmi les états actifs,
 le suivant remplace le précédent. Le défaut reste la base fixe à gauche.
-Un état JSON est toujours un style complet : placé après une surcouche, il
-remplace donc aussi les propriétés de celle-ci. L'ordre est sauvegardé avec le style.
+Un état JSON placé après une autre surcouche remplace seulement les groupes
+qu'il surcharge explicitement. L'ordre est sauvegardé avec le style, ainsi que
+les groupes activés par état dans `namedProperties`.
 Dans les listes imbriquées, seule la sélection de la ligne la plus proche compte.
 La surbrillance habituelle de la ListView reste présente tant que son gabarit
 ne définit aucune propriété de sélection.

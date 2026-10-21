@@ -52,9 +52,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> reload() async {
+  Future<void> reload({bool showLoading = true}) async {
     final generation = ++_generation;
-    loading = true;
+    loading = showLoading;
     if (!dirty) error = null;
     _notify();
     try {

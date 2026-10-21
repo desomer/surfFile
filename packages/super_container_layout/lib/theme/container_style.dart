@@ -8,6 +8,8 @@ import 'interaction_effect.dart';
 import 'neon_style.dart';
 import 'style_extras.dart';
 
+import '../models/automatic_state.dart';
+
 part 'surface_style_states.dart';
 
 const Object _keep = Object();

@@ -10,6 +10,7 @@ void main() {
     SuperTextConfig config, {
     bool inList = false,
     bool allowBinding = true,
+    bool allowContentHover = false,
     ValueChanged<SuperTextConfig?>? onResult,
     ValueChanged<SuperTextConfig>? onPreview,
   }) async {
@@ -17,15 +18,17 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     Widget child = Builder(
       builder: (context) => TextButton(
-        onPressed: () async => onResult?.call(
-          await showSuperTextEditor(
+        onPressed: () async {
+          final result = await showSuperTextEditor(
             context: context,
             config: config,
             availableFontFamilies: [],
             allowBinding: allowBinding,
+            allowContentHover: allowContentHover,
             onPreviewChanged: onPreview,
-          ),
-        ),
+          );
+          onResult?.call(result);
+        },
         child: const Text('Open'),
       ),
     );
@@ -43,6 +46,15 @@ void main() {
 
   Future<void> choose(WidgetTester tester, String key) async {
     final button = find.byKey(ValueKey('text-state-choice-$key'));
+    final state = AutomaticState.fromKey(key);
+    if (button.evaluate().isEmpty && state != null) {
+      final add = find.byKey(const ValueKey('text-state-add'));
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('text-state-add-${state.name}')));
+      await tester.pumpAndSettle();
+    }
     await tester.ensureVisible(button);
     await tester.tap(button);
     await tester.pumpAndSettle();
@@ -54,6 +66,229 @@ void main() {
     await tester.enterText(target, value);
     await tester.pumpAndSettle();
   }
+
+  Future<void> addMenu(WidgetTester tester) async {
+    final add = find.byKey(const ValueKey('text-state-add'));
+    await tester.ensureVisible(add);
+    await tester.tap(add);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets(
+    'Text hover and selected are opt-in, removable and saved only after adding',
+    (tester) async {
+      SuperTextConfig? saved;
+      await open(
+        tester,
+        const SuperTextConfig(),
+        inList: true,
+        onResult: (value) => saved = value,
+      );
+      for (final state in [AutomaticState.hover, AutomaticState.selected]) {
+        final chip = find.byKey(ValueKey('text-state-choice-${state.key}'));
+        expect(chip, findsNothing);
+        await addMenu(tester);
+        final item = find.byKey(ValueKey('text-state-add-${state.name}'));
+        expect(tester.widget<PopupMenuItem<String>>(item).enabled, isTrue);
+        await tester.tap(item);
+        await tester.pumpAndSettle();
+        expect(tester.widget<ChoiceChip>(chip).selected, isTrue);
+        final remove = find.byKey(const ValueKey('text-state-delete'));
+        await tester.ensureVisible(remove);
+        await tester.tap(remove);
+        await tester.pumpAndSettle();
+        expect(chip, findsNothing);
+      }
+      await choose(tester, TextConfigStates.hoverKey);
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      expect(saved!.states!.hover, isNotNull);
+      expect(saved!.states!.selected, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'bound named overrides start empty, toggle and follow rename and save',
+    (tester) async {
+      SuperTextConfig? saved;
+      final previews = <SuperTextConfig>[];
+      await open(
+        tester,
+        SuperTextConfig(
+          fontSize: 16,
+          initialText: 'Default',
+          states: TextConfigStates(
+            binding: const JsonTextBinding(path: 'status'),
+            named: {
+              'ready': const SuperTextConfig(
+                fontSize: 24,
+                initialText: 'Ready',
+              ),
+            },
+          ),
+        ),
+        onResult: (value) => saved = value,
+        onPreview: previews.add,
+      );
+      await choose(tester, 'ready');
+      final toggle = find.byKey(const ValueKey('text-state-override-fontSize'));
+      expect(tester.widget<FilterChip>(toggle).selected, isFalse);
+      expect(tester.widget<FilterChip>(toggle).onSelected, isNotNull);
+      expect(previews.last.fontSize, 16);
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(previews.last.fontSize, 24);
+      expect(previews.last.initialText, 'Default');
+      await enter(tester, 'label', 'Named label');
+      await choose(tester, '');
+      await choose(tester, 'ready');
+      expect(tester.widget<FilterChip>(toggle).selected, isTrue);
+      await tester.ensureVisible(toggle);
+      await tester.tap(toggle);
+      await tester.pumpAndSettle();
+      expect(previews.last.fontSize, 16);
+      final rename = find.byTooltip('Renommer l’état');
+      await tester.ensureVisible(rename);
+      await tester.tap(rename);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('text-state-name')),
+        'done',
+      );
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      expect(saved!.states!.namedProperties, {
+        'done': {TextStateProperty.textLabel},
+      });
+      expect(saved!.states!.resolve(saved!, name: 'done').label, 'Named label');
+      expect(saved!.states!.resolve(saved!, name: 'done').fontSize, 16);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'catalogue filters field and row states, adds once and deletes cleanly',
+    (tester) async {
+      SuperTextConfig? saved;
+      await open(
+        tester,
+        const SuperTextConfig(mode: SuperTextMode.input),
+        inList: true,
+        allowContentHover: true,
+        onResult: (value) => saved = value,
+      );
+      await addMenu(tester);
+      for (final value in AutomaticState.values) {
+        expect(
+          find.byKey(ValueKey('text-state-add-${value.name}')),
+          findsOneWidget,
+        );
+      }
+      expect(
+        tester
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('text-state-add-hover')),
+            )
+            .enabled,
+        isTrue,
+      );
+      await tester.tap(find.byKey(const ValueKey('text-state-add-focused')));
+      await tester.pumpAndSettle();
+      final focused = find.byKey(
+        ValueKey('text-state-choice-${AutomaticState.focused.key}'),
+      );
+      expect(tester.widget<ChoiceChip>(focused).selected, isTrue);
+      await enter(tester, 'fontSize', '28');
+      await addMenu(tester);
+      expect(
+        tester
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('text-state-add-focused')),
+            )
+            .enabled,
+        isFalse,
+      );
+      await tester.tap(find.byKey(const ValueKey('text-state-add-readOnly')));
+      await tester.pumpAndSettle();
+      await choose(tester, AutomaticState.focused.key);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('text-state-delete')),
+      );
+      await tester.tap(find.byKey(const ValueKey('text-state-delete')));
+      await tester.pumpAndSettle();
+      expect(focused, findsNothing);
+      await addMenu(tester);
+      expect(
+        tester
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('text-state-add-focused')),
+            )
+            .enabled,
+        isTrue,
+      );
+      await tester.tap(find.byKey(const ValueKey('text-state-add-focused')));
+      await tester.pumpAndSettle();
+      await enter(tester, 'fontSize', '26');
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      expect(
+        saved!.states!.automatic.keys,
+        containsAll([AutomaticState.focused, AutomaticState.readOnly]),
+      );
+      expect(
+        saved!.states!.automatic[AutomaticState.focused]!.config.fontSize,
+        26,
+      );
+      expect(saved!.states!.order.last, AutomaticState.focused.key);
+      expect(saved!.states!.named, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('display outside Content does not offer field or row states', (
+    tester,
+  ) async {
+    await open(tester, const SuperTextConfig());
+    await addMenu(tester);
+    expect(find.byKey(const ValueKey('text-state-add-hover')), findsOneWidget);
+    for (final value in AutomaticState.values.skip(1)) {
+      expect(
+        find.byKey(ValueKey('text-state-add-${value.name}')),
+        findsNothing,
+      );
+    }
+    expect(find.byKey(const ValueKey('text-state-add-custom')), findsOneWidget);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Annuler').last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('invalid draft blocks adding an automatic state', (tester) async {
+    await open(tester, const SuperTextConfig(mode: SuperTextMode.input));
+    await enter(tester, 'fontSize', '-1');
+    await addMenu(tester);
+    await tester.tap(find.byKey(const ValueKey('text-state-add-focused')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey('text-state-choice-${AutomaticState.focused.key}')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const ValueKey('text-state-choice-')))
+          .selected,
+      isTrue,
+    );
+    await tester.tap(find.text('Annuler').last);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'shared controls edit named and hover properties and return whole table',
@@ -71,7 +306,14 @@ void main() {
         find.byType(EditorStateControls<TextStateProperty>),
         findsOneWidget,
       );
+      final defaultOverride = tester.widget<FilterChip>(
+        find.byKey(const ValueKey('text-state-override-fontSize')),
+      );
+      expect(defaultOverride.selected, isTrue);
+      expect(defaultOverride.onSelected, isNull);
       await tester.tap(find.byKey(const ValueKey('text-state-add')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('text-state-add-custom')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('text-state-name')),
@@ -118,7 +360,7 @@ void main() {
     SuperTextConfig? result = const SuperTextConfig();
     await open(
       tester,
-      const SuperTextConfig(),
+      SuperTextConfig(states: TextConfigStates(hover: TextConfigOverride())),
       onResult: (value) => result = value,
     );
     await enter(tester, 'fontSize', '-1');
@@ -218,6 +460,8 @@ void main() {
     final selected = find.byKey(
       const ValueKey('text-state-choice-$selectedSurfaceStateKey'),
     );
+    await choose(tester, selectedSurfaceStateKey);
+    await choose(tester, hoverSurfaceStateKey);
     await tester.ensureVisible(hover);
     await tester.dragFrom(
       tester.getCenter(hover),

@@ -45,6 +45,30 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('unconfigured hover and row selection do not reset Text input', (
+    tester,
+  ) async {
+    final config = SuperTextConfig(
+      mode: SuperTextMode.input,
+      states: TextConfigStates(),
+    );
+    final field = find.byKey(const ValueKey('super-text-input-state'));
+    await mount(tester, config);
+    await tester.enterText(field, 'Draft');
+    await tester.pumpAndSettle();
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(field));
+    await tester.pumpAndSettle();
+    await mount(tester, config, selected: true);
+    expect(tester.widget<TextField>(field).controller!.text, 'Draft');
+    await mouse.moveTo(Offset.zero);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(field).controller!.text, 'Draft');
+    await mouse.removePointer();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'hover and row selection resolve all Text properties and reset on transitions only',
     (tester) async {

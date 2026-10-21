@@ -10,6 +10,15 @@ import 'package:super_container_layout/super_container_layout.dart';
 class _DelayedStore extends JsonRepositoryStore {
   _DelayedStore(super.directory);
   Completer<void>? nextWrite;
+  Completer<void>? nextRead;
+
+  @override
+  Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) async {
+    final pending = nextRead;
+    nextRead = null;
+    if (pending != null) await pending.future;
+    return super.readAttribute(binding);
+  }
 
   @override
   Future<JsonAttributeValue> writeAttribute(
@@ -96,6 +105,62 @@ void main() {
       tester.widget<TextField>(field).controller!.text;
 
   testWidgets(
+    'empty hover keeps bound text, enabled style and focus stable during each reload',
+    (tester) async {
+      final changes = <String>[];
+      await mount(
+        tester,
+        SuperTextConfig(
+          mode: SuperTextMode.input,
+          binding: binding('a'),
+          states: TextConfigStates(hover: TextConfigOverride()),
+        ),
+        onChanged: changes.add,
+      );
+      await tester.tap(field);
+      await tester.pumpAndSettle();
+      final controller = tester.widget<TextField>(field).controller!;
+      final observed = <String>[];
+      void observe() => observed.add(controller.text);
+      controller.addListener(observe);
+      final before = await tester.runAsync(() => store.read('States'));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      for (final position in [tester.getCenter(field), Offset.zero]) {
+        final blocked = Completer<void>();
+        store.nextRead = blocked;
+        addTearDown(() {
+          if (!blocked.isCompleted) blocked.complete();
+        });
+        await real(tester, () => mouse.moveTo(position));
+        expect(
+          store.nextRead,
+          isNull,
+          reason: 'The state still reloads its content binding',
+        );
+        for (var frame = 0; frame < 4; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          final input = tester.widget<TextField>(field);
+          expect(input.enabled, isTrue);
+          expect(input.focusNode!.hasFocus, isTrue);
+          expect(input.controller, same(controller));
+          expect(input.controller!.text, 'Alice');
+        }
+        await real(tester, () async {
+          blocked.complete();
+        });
+        expect(observed, isEmpty);
+        expect(changes, isEmpty);
+      }
+      controller.removeListener(observe);
+      expect(await tester.runAsync(() => store.read('States')), before);
+      await mouse.removePointer();
+      await close(tester);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'JSON states change content binding and property bindings reactively',
     (tester) async {
       await mount(
@@ -111,6 +176,9 @@ void main() {
                 binding: binding('b'),
                 propertyBindings: {SuperTextProperty.fontSize: binding('size')},
               ),
+            },
+            namedProperties: {
+              'second': {TextStateProperty.binding, TextStateProperty.fontSize},
             },
           ),
         ),
@@ -293,15 +361,21 @@ void main() {
       });
       for (final key in ['second', TextConfigStates.hoverKey, '']) {
         final chip = find.byKey(ValueKey('text-state-choice-$key'));
+        if (key == TextConfigStates.hoverKey) {
+          final add = find.byKey(const ValueKey('text-state-add'));
+          await tester.ensureVisible(add);
+          await tester.tap(add);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('text-state-add-hover')));
+          await tester.pumpAndSettle();
+        }
         await tester.ensureVisible(chip);
         await tester.tap(chip);
         await real(tester, () async {
           await tester.pump();
         });
       }
-      final label = find.byKey(
-        const ValueKey('super-text-setting-label'),
-      );
+      final label = find.byKey(const ValueKey('super-text-setting-label'));
       await tester.ensureVisible(label);
       await tester.enterText(label, 'Only a draft');
       await real(tester, () async {
@@ -315,6 +389,68 @@ void main() {
       });
       expect(text(tester), 'Alice');
       expect(await tester.runAsync(() => store.read('States')), before);
+      await close(tester);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'focus transitions reload content without writes and JSON controls disabled trigger',
+    (tester) async {
+      final changes = <String>[];
+      await mount(
+        tester,
+        SuperTextConfig(
+          mode: SuperTextMode.input,
+          binding: binding('a'),
+          states: TextConfigStates(
+            binding: binding('status'),
+            named: {
+              'locked': SuperTextConfig(
+                mode: SuperTextMode.input,
+                enabled: false,
+                binding: binding('a'),
+              ),
+            },
+            namedProperties: {
+              'locked': {TextStateProperty.enabled},
+            },
+            automatic: {
+              AutomaticState.focused: TextConfigOverride(
+                config: const SuperTextConfig(fontSize: 25),
+                properties: {TextStateProperty.fontSize},
+              ),
+              AutomaticState.disabled: TextConfigOverride(
+                config: const SuperTextConfig(color: Colors.red),
+                properties: {TextStateProperty.color},
+              ),
+            },
+          ),
+        ),
+        onChanged: changes.add,
+      );
+      final before = await tester.runAsync(() => store.read('States'));
+      await real(tester, () => tester.tap(field));
+      expect(text(tester), 'Alice');
+      expect(tester.widget<TextField>(field).style!.fontSize, 25);
+      await real(tester, () async {
+        tester.widget<TextField>(field).focusNode!.unfocus();
+      });
+      expect(text(tester), 'Alice');
+      expect(changes, isEmpty);
+      expect(await tester.runAsync(() => store.read('States')), before);
+      await real(tester, () async {
+        await store.writeAttribute(
+          binding('status'),
+          'locked',
+          expectedValue: 'default',
+        );
+      });
+      expect(tester.widget<TextField>(field).enabled, isFalse);
+      expect(
+        tester.widget<TextField>(field).style!.color!.toARGB32(),
+        Colors.red.toARGB32(),
+      );
       await close(tester);
       expect(tester.takeException(), isNull);
     },

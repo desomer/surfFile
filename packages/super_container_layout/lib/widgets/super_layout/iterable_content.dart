@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
+import '../../services/content_hover_scope.dart';
 import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import '../editing/slots/editable_surface.dart';
@@ -40,6 +41,7 @@ class IterableContent extends StatefulWidget {
 }
 
 class _IterableContentState extends State<IterableContent> {
+  final _hovered = ValueNotifier(false);
   late final _layout = ValueNotifier(widget.config);
   late final _style = ValueNotifier(widget.style);
 
@@ -95,7 +97,7 @@ class _IterableContentState extends State<IterableContent> {
       ),
     );
     final editSize = widget.onEditSize;
-    return editSize == null
+    final content = editSize == null
         ? surface
         : EditorSlotAction(
             label: 'Taille et marge préférées : ${widget.label}',
@@ -106,12 +108,22 @@ class _IterableContentState extends State<IterableContent> {
             inline: true,
             child: surface,
           );
+    return ContentHoverScope(
+      hovered: _hovered,
+      child: MouseRegion(
+        opaque: false,
+        onEnter: (_) => _hovered.value = true,
+        onExit: (_) => _hovered.value = false,
+        child: content,
+      ),
+    );
   }
 
   @override
   void dispose() {
     _layout.dispose();
     _style.dispose();
+    _hovered.dispose();
     super.dispose();
   }
 }

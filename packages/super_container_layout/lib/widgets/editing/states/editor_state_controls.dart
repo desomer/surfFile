@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
+import '../../../models/automatic_state.dart';
 import '../dialogs/editor_dialog.dart';
 import '../repositories/repository_binding_fields.dart';
 
@@ -28,6 +29,10 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
     this.overrides = const {},
     this.onOverride,
     this.keyPrefix = 'surface-state',
+    this.availableStates = const {},
+    this.onAddAutomatic,
+    this.onDeleteAutomatic,
+    this.permanentInteractionStates = true,
     super.key,
   });
 
@@ -47,6 +52,9 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
   final Set<P> overrides;
   final void Function(P property, bool enabled)? onOverride;
   final String keyPrefix;
+  final Set<AutomaticState> availableStates;
+  final ValueChanged<AutomaticState>? onAddAutomatic, onDeleteAutomatic;
+  final bool permanentInteractionStates;
 
   Future<void> _name(BuildContext context, {String? previous}) async {
     final text = TextEditingController(text: previous ?? '');
@@ -105,17 +113,15 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final namedState = names.contains(state);
+    final automatic = AutomaticState.fromKey(state);
     final current =
         state == hoverSurfaceStateKey ||
             (state == selectedSurfaceStateKey && allowSelected) ||
-            namedState
+            namedState ||
+            (automatic != null && order.contains(state))
         ? state
         : null;
-    String label(String key) => key == hoverSurfaceStateKey
-        ? 'Hover'
-        : key == selectedSurfaceStateKey
-        ? 'Sélectionné'
-        : key;
+    String label(String key) => AutomaticState.fromKey(key)?.label ?? key;
     Widget choice(String? key) => ChoiceChip(
       key: ValueKey('$keyPrefix-choice-${key ?? ''}'),
       label: Text(
@@ -179,11 +185,37 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
                         ),
                       ),
                 ),
-            IconButton(
+            PopupMenuButton<String>(
               key: ValueKey('$keyPrefix-add'),
               tooltip: 'Ajouter un état',
               icon: const Icon(Icons.add),
-              onPressed: () => _name(context),
+              itemBuilder: (context) => [
+                for (final value in AutomaticState.values)
+                  if (availableStates.contains(value))
+                    PopupMenuItem(
+                      key: ValueKey('$keyPrefix-add-${value.name}'),
+                      value: value.key,
+                      enabled:
+                          availableStates.contains(value) &&
+                          !order.contains(value.key),
+                      child: Text(
+                        '${value.description}${order.contains(value.key) ? ' (déjà présent)' : ''}',
+                      ),
+                    ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                  key: ValueKey('$keyPrefix-add-custom'),
+                  value: 'custom',
+                  child: const Text('État personnalisé JSON…'),
+                ),
+              ],
+              onSelected: (key) {
+                if (key == 'custom') {
+                  _name(context);
+                } else {
+                  onAddAutomatic?.call(AutomaticState.fromKey(key)!);
+                }
+              },
             ),
             if (namedState) ...[
               IconButton(
@@ -201,6 +233,16 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
                 },
               ),
             ],
+            if (automatic != null &&
+                (!permanentInteractionStates ||
+                    (automatic != AutomaticState.hover &&
+                        automatic != AutomaticState.selected)))
+              IconButton(
+                key: ValueKey('$keyPrefix-delete'),
+                tooltip: 'Supprimer l’état',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () => onDeleteAutomatic?.call(automatic),
+              ),
             IconButton(
               key: ValueKey('$keyPrefix-binding'),
               tooltip: 'Attribut JSON de l’état',
@@ -232,21 +274,20 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
             key: ValueKey('$keyPrefix-error'),
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
-        if (state == selectedSurfaceStateKey || state == hoverSurfaceStateKey)
-          Wrap(
-            spacing: 6,
-            children: [
-              for (final entry in properties.entries)
-                FilterChip(
-                  key: ValueKey('$keyPrefix-override-${entry.key.name}'),
-                  label: Text(entry.value),
-                  selected: overrides.contains(entry.key),
-                  onSelected: onOverride == null
-                      ? null
-                      : (enabled) => onOverride!(entry.key, enabled),
-                ),
-            ],
-          ),
+        Wrap(
+          spacing: 6,
+          children: [
+            for (final entry in properties.entries)
+              FilterChip(
+                key: ValueKey('$keyPrefix-override-${entry.key.name}'),
+                label: Text(entry.value),
+                selected: state == null || overrides.contains(entry.key),
+                onSelected: state == null || onOverride == null
+                    ? null
+                    : (enabled) => onOverride!(entry.key, enabled),
+              ),
+          ],
+        ),
       ],
     );
   }

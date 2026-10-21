@@ -13,14 +13,24 @@ void main() {
           path: 'status',
         ),
         named: {'ready': const SuperTextConfig(initialText: 'Ready')},
+        namedProperties: {
+          'ready': {TextStateProperty.content},
+        },
         hover: TextConfigOverride(
           config: const SuperTextConfig(fontSize: 24),
           properties: {TextStateProperty.fontSize},
         ),
+        automatic: {
+          AutomaticState.contentHover: TextConfigOverride(
+            config: const SuperTextConfig(fontSize: 28),
+            properties: {TextStateProperty.fontSize},
+          ),
+        },
         order: [
           TextConfigStates.selectedKey,
           'ready',
           TextConfigStates.hoverKey,
+          AutomaticState.contentHover.key,
         ],
       ),
     );
@@ -32,6 +42,10 @@ void main() {
       appearance: appearance,
       editMode: editMode,
     );
+    final registry = Registry()..bootstrap();
+    registry.bindAppearance(appearance);
+    addTearDown(registry.unbindAppearance);
+    final text = registry.textController('text', fallback: original);
     addTearDown(appearance.dispose);
     addTearDown(editMode.dispose);
     addTearDown(history.dispose);
@@ -45,9 +59,11 @@ void main() {
     );
     history.undo();
     expect(appearance.value.textComponents['text'], original);
+    expect(text.value, original);
     expect(history.canUndo, isFalse);
     history.redo();
     expect(appearance.value.textComponents['text'], configured);
+    expect(text.value, configured);
   });
 
   test('undo and redo restore snapshots and discard a stale redo branch', () {

@@ -7,6 +7,8 @@ import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_text_config.dart';
+import '../../models/automatic_state.dart';
+import '../../services/content_hover_scope.dart';
 import '../../models/json_text_binding.dart';
 import '../../services/json_list_scope.dart';
 import '../../services/json_repository_binding.dart';
@@ -180,6 +182,8 @@ class _SuperTextState extends State<SuperText> {
   String? _stateError;
   SuperTextConfig? _effectiveConfig;
   bool _hadStates = false;
+  final _focusNode = FocusNode();
+  Set<AutomaticState> _automaticActive = {};
   Future<void>? _pendingBindingFlush;
 
   void _stateChanged() {
@@ -193,6 +197,7 @@ class _SuperTextState extends State<SuperText> {
     SuperTextConfig saved,
     JsonListScope? scope,
     JsonRepositoryStore? store,
+    bool contentHovered,
   ) {
     final binding = saved.states?.binding;
     if (binding == null) {
@@ -216,12 +221,23 @@ class _SuperTextState extends State<SuperText> {
     }
     _stateError = _stateReader?.error;
     try {
+      final source =
+          saved.states?.resolve(saved, name: _stateReader?.stateName) ??
+          saved.copyWith(clearStates: true);
+      final input = source.mode == SuperTextMode.input;
+      _automaticActive = {
+        if (contentHovered) AutomaticState.contentHover,
+        if (input && _focusNode.hasFocus) AutomaticState.focused,
+        if (input && !source.enabled) AutomaticState.disabled,
+        if (input && source.readOnly) AutomaticState.readOnly,
+      };
       final config =
           saved.states?.resolve(
             saved,
             name: _stateReader?.stateName,
             isHovered: _hovered,
             isSelected: scope?.selected ?? false,
+            activeStates: _automaticActive,
           ) ??
           saved;
       config.validate();
@@ -244,6 +260,7 @@ class _SuperTextState extends State<SuperText> {
       text: widget.value ?? widget.config.initialText,
     );
     _local = ValueNotifier(widget.config);
+    _focusNode.addListener(_stateChanged);
   }
 
   @override
@@ -390,6 +407,18 @@ class _SuperTextState extends State<SuperText> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _bindingGeneration) return;
       final oldBinding = _binding;
+      if (resetText &&
+          !external &&
+          resolved.error == null &&
+          !resolved.placeholder &&
+          oldBinding != null &&
+          oldBinding.binding == resolved.binding &&
+          identical(oldBinding.store, store)) {
+        await oldBinding.flush();
+        if (!mounted || generation != _bindingGeneration) return;
+        await oldBinding.reload(showLoading: false);
+        return;
+      }
       oldBinding?.removeListener(_bindingChanged);
       if (oldBinding != null) {
         _pendingBindingFlush = oldBinding.flush();
@@ -401,7 +430,7 @@ class _SuperTextState extends State<SuperText> {
       if (!mounted || generation != _bindingGeneration) return;
       _bindingError = resolved.error;
       _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
-      if (resetText && !external) {
+      if (resetText && !external && resolved.binding == null) {
         _setText(_internal, config.obscureText ? '' : config.initialText);
       }
       if (resolved.placeholder && !external) _setText(_internal, '');
@@ -584,6 +613,8 @@ class _SuperTextState extends State<SuperText> {
 
   @override
   void dispose() {
+    _focusNode.removeListener(_stateChanged);
+    _focusNode.dispose();
     _stateReader?.removeListener(_stateChanged);
     _stateReader?.dispose();
     _bindingGeneration++;
@@ -626,6 +657,7 @@ class _SuperTextState extends State<SuperText> {
             savedConfig,
             listScope,
             repositories,
+            ContentHoverScope.maybeOf(context)?.hovered == true,
           );
           final states = savedConfig.states;
           final active = states == null
@@ -633,9 +665,11 @@ class _SuperTextState extends State<SuperText> {
               : [
                   for (final key in states.order)
                     if (key == TextConfigStates.hoverKey
-                        ? _hovered
+                        ? _hovered && states.hover != null
                         : key == TextConfigStates.selectedKey
-                        ? listScope?.selected == true
+                        ? listScope?.selected == true && states.selected != null
+                        : AutomaticState.fromKey(key) != null
+                        ? _automaticActive.any((value) => value.key == key)
                         : key == _stateReader?.stateName)
                       key,
                 ];
@@ -704,6 +738,8 @@ class _SuperTextState extends State<SuperText> {
                   stateError: _stateError,
                   isHovered: _hovered,
                   isSelected: listScope?.selected ?? false,
+                  allowContentHover: ContentHoverScope.maybeOf(context) != null,
+                  activeAutomatic: _automaticActive,
                   onPreviewChanged: (draft) {
                     if (!mounted || _editorText == null) return;
                     final text =
@@ -777,6 +813,7 @@ class _SuperTextState extends State<SuperText> {
                           key: ValueKey('super-text-field-${widget.id}'),
                           inputKey: ValueKey('super-text-input-${widget.id}'),
                           config: config,
+                          focusNode: _focusNode,
                           controller: controller,
                           style: style,
                           enabled:

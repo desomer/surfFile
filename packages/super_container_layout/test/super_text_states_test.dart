@@ -7,6 +7,61 @@ import 'package:super_container_layout/models/super_text_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
 
 void main() {
+  test(
+    'legacy named Text states start empty and explicit masks persist immutably',
+    () {
+      final states = TextConfigStates(
+        named: {
+          'ready': const SuperTextConfig(initialText: 'Ready', fontSize: 24),
+        },
+      );
+      const base = SuperTextConfig(initialText: 'Default', fontSize: 16);
+      expect(states.resolve(base, name: 'ready'), base);
+      final legacy = states.toJson()..remove('namedProperties');
+      final migrated = TextConfigStates.fromJson(legacy);
+      expect(migrated.namedProperties['ready'], isEmpty);
+      expect(migrated.resolve(base, name: 'ready'), base);
+      final properties = <TextStateProperty>{TextStateProperty.fontSize};
+      final configured = states.copyWith(
+        namedProperties: {'ready': properties},
+      );
+      properties.clear();
+      expect(configured.resolve(base, name: 'ready').fontSize, 24);
+      expect(configured.resolve(base, name: 'ready').initialText, 'Default');
+      final decoded = TextConfigStates.fromJson(
+        jsonDecode(jsonEncode(configured.toJson())),
+      );
+      expect(decoded, configured);
+      expect(decoded.hashCode, configured.hashCode);
+      expect(
+        () => decoded.namedProperties['ready']!.clear(),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => TextConfigStates.fromJson({
+          ...legacy,
+          'namedProperties': {
+            'ready': ['unknown'],
+          },
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => TextConfigStates.fromJson({
+          ...legacy,
+          'namedProperties': {'missing': []},
+        }),
+        throwsFormatException,
+      );
+      expect(configured.copyWith(named: {}).namedProperties, isEmpty);
+      final cleared = configured.copyWith(namedProperties: {'ready': {}});
+      expect(
+        cleared.resolve(base.copyWith(fontSize: 18), name: 'ready').fontSize,
+        18,
+      );
+    },
+  );
+
   const base = SuperTextConfig(
     initialText: 'base',
     label: 'Base',
@@ -26,62 +81,84 @@ void main() {
     expect(() => legacy.validate(), returnsNormally);
   });
 
-  test('named states fully replace base; sparse overlays follow order', () {
-    final states = TextConfigStates(
-      binding: binding,
-      named: {
-        'ready': const SuperTextConfig(label: 'Ready', color: Colors.green),
-      },
-      hover: TextConfigOverride(
-        config: const SuperTextConfig(color: Colors.red, letterSpacing: 0),
-        properties: {TextStateProperty.color, TextStateProperty.letterSpacing},
-      ),
-      selected: TextConfigOverride(
-        config: const SuperTextConfig(color: Colors.blue),
-        properties: {TextStateProperty.color},
-      ),
-    );
-    final configured = base.copyWith(states: states);
-    expect(states.order, [
-      'ready',
-      TextConfigStates.hoverKey,
-      TextConfigStates.selectedKey,
-    ]);
-    expect(states.resolve(configured).states, isNull);
-    expect(states.resolve(configured, name: 'missing'), base);
-    final named = states.resolve(configured, name: 'ready');
-    expect(named.fontSize, isNull);
-    expect(named.initialText, '');
-    expect(named.label, 'Ready');
-    expect(named.states, isNull);
-    final active = states.resolve(
-      configured,
-      name: 'ready',
-      isHovered: true,
-      isSelected: true,
-    );
-    expect(active.color, Colors.blue);
-    expect(active.letterSpacing, 0);
-    expect(active.label, 'Ready');
-    final hoverLast = states.copyWith(
-      order: ['ready', TextConfigStates.selectedKey, TextConfigStates.hoverKey],
-    );
-    expect(
-      hoverLast
-          .resolve(base, name: 'ready', isHovered: true, isSelected: true)
-          .color,
-      Colors.red,
-    );
-    final namedLast = states.copyWith(
-      order: [TextConfigStates.hoverKey, TextConfigStates.selectedKey, 'ready'],
-    );
-    expect(
-      namedLast.resolve(base, name: 'ready', isHovered: true, isSelected: true),
-      named,
-    );
-    expect(configured.copyWith(label: 'new').states, same(states));
-    expect(configured.copyWith(clearStates: true), base);
-  });
+  test(
+    'named states inherit unchecked properties and follow persisted order',
+    () {
+      final states = TextConfigStates(
+        binding: binding,
+        named: {
+          'ready': const SuperTextConfig(label: 'Ready', color: Colors.green),
+        },
+        namedProperties: {
+          'ready': {TextStateProperty.textLabel, TextStateProperty.color},
+        },
+        hover: TextConfigOverride(
+          config: const SuperTextConfig(color: Colors.red, letterSpacing: 0),
+          properties: {
+            TextStateProperty.color,
+            TextStateProperty.letterSpacing,
+          },
+        ),
+        selected: TextConfigOverride(
+          config: const SuperTextConfig(color: Colors.blue),
+          properties: {TextStateProperty.color},
+        ),
+      );
+      final configured = base.copyWith(states: states);
+      expect(states.order, [
+        'ready',
+        TextConfigStates.hoverKey,
+        TextConfigStates.selectedKey,
+      ]);
+      expect(states.resolve(configured).states, isNull);
+      expect(states.resolve(configured, name: 'missing'), base);
+      final named = states.resolve(configured, name: 'ready');
+      expect(named.fontSize, 16);
+      expect(named.initialText, 'base');
+      expect(named.label, 'Ready');
+      expect(named.states, isNull);
+      final active = states.resolve(
+        configured,
+        name: 'ready',
+        isHovered: true,
+        isSelected: true,
+      );
+      expect(active.color, Colors.blue);
+      expect(active.letterSpacing, 0);
+      expect(active.label, 'Ready');
+      final hoverLast = states.copyWith(
+        order: [
+          'ready',
+          TextConfigStates.selectedKey,
+          TextConfigStates.hoverKey,
+        ],
+      );
+      expect(
+        hoverLast
+            .resolve(base, name: 'ready', isHovered: true, isSelected: true)
+            .color,
+        Colors.red,
+      );
+      final namedLast = states.copyWith(
+        order: [
+          TextConfigStates.hoverKey,
+          TextConfigStates.selectedKey,
+          'ready',
+        ],
+      );
+      expect(
+        namedLast.resolve(
+          base,
+          name: 'ready',
+          isHovered: true,
+          isSelected: true,
+        ),
+        named.copyWith(letterSpacing: 0),
+      );
+      expect(configured.copyWith(label: 'new').states, same(states));
+      expect(configured.copyWith(clearStates: true), base);
+    },
+  );
 
   test('all nullable styles, false and zero are explicit resets', () {
     final source = base.copyWith(

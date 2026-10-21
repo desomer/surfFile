@@ -14,6 +14,7 @@ import '../dialogs/editor_dialog.dart';
 import '../history/editor_history.dart';
 import 'style_editor_panel.dart';
 import 'surface_state_controls.dart';
+import '../../../models/automatic_state.dart';
 
 /// The shared style editor dialog used by [EditableSurface].
 class ContainerStyleDialog {
@@ -33,10 +34,12 @@ class ContainerStyleDialog {
     required void Function(AppearanceSlot? slot) onReset,
     required ValueChanged<String> onLabelChanged,
     bool allowSelected = false,
+    bool allowContentHover = false,
     String? Function()? activeState,
     String? Function()? stateError,
     bool Function()? isSelected,
     bool Function()? isHovered,
+    bool Function()? isContentHovered,
     ValueChanged<ContainerStyle?>? onPreview,
     Listenable? stateChanges,
   }) async {
@@ -54,6 +57,11 @@ class ContainerStyleDialog {
         : currentStyle();
     ContainerStyle editedStyle() {
       final root = rootStyle();
+      final automatic = AutomaticState.fromKey(editState);
+      if (automatic == AutomaticState.contentHover) {
+        return root.states?.automatic[automatic]?.style ??
+            root.copyWith(clearStates: true);
+      }
       if (editState == hoverSurfaceStateKey) {
         return root.states?.hover?.style ?? root.copyWith(clearStates: true);
       }
@@ -65,8 +73,7 @@ class ContainerStyleDialog {
 
     void preview() {
       final root = rootStyle();
-      if (editState == selectedSurfaceStateKey ||
-          editState == hoverSurfaceStateKey) {
+      if (AutomaticState.fromKey(editState) != null) {
         onPreview?.call(
           root.states?.resolve(
                 root,
@@ -77,9 +84,16 @@ class ContainerStyleDialog {
                 isHovered:
                     editState == hoverSurfaceStateKey ||
                     isHovered?.call() == true,
+                activeStates: {
+                  if (editState == AutomaticState.contentHover.key ||
+                      isContentHovered?.call() == true)
+                    AutomaticState.contentHover,
+                },
               ) ??
               root.copyWith(clearStates: true),
         );
+      } else if (editState != null) {
+        onPreview?.call(root.states!.resolve(root, name: editState));
       } else {
         onPreview?.call(editedStyle());
       }
@@ -98,7 +112,19 @@ class ContainerStyleDialog {
         final states = root.states ?? SurfaceStyleStates();
         updateRoot(
           root.copyWith(
-            states: editState == hoverSurfaceStateKey
+            states: editState == AutomaticState.contentHover.key
+                ? states.copyWith(
+                    automatic: {
+                      ...states.automatic,
+                      AutomaticState.contentHover:
+                          (states.automatic[AutomaticState.contentHover] ??
+                                  SelectedSurfaceStyle(
+                                    style: root.copyWith(clearStates: true),
+                                  ))
+                              .edited(value),
+                    },
+                  )
+                : editState == hoverSurfaceStateKey
                 ? states.copyWith(
                     hover:
                         (states.hover ??
@@ -121,6 +147,13 @@ class ContainerStyleDialog {
                       ...states.named,
                       editState!: value.copyWith(clearStates: true),
                     },
+                    namedProperties: {
+                      ...states.namedProperties,
+                      editState!: SelectedSurfaceStyle(
+                        style: states.named[editState]!,
+                        properties: states.namedProperties[editState]!,
+                      ).edited(value).properties,
+                    },
                   ),
           ),
         );
@@ -142,13 +175,9 @@ class ContainerStyleDialog {
           builder: (context, setDialog) {
             final screen = MediaQuery.sizeOf(context);
             final width = math.min(dense ? 680.0 : 1080.0, screen.width - 96);
-            const stateHeaderHeight = 96.0;
             final height = math.max(
               320.0,
-              math.min(
-                680.0 + stateHeaderHeight,
-                screen.height - 260 + stateHeaderHeight,
-              ),
+              math.min(680.0, screen.height - 260),
             );
             return AlertDialog(
               insetPadding: const EdgeInsets.all(24),
@@ -160,44 +189,6 @@ class ContainerStyleDialog {
                   builder: (context, setTab) => Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      ConstrainedBox(
-                        constraints: BoxConstraints(maxHeight: height * .45),
-                        child: SingleChildScrollView(
-                          child: ListenableBuilder(
-                            listenable: Listenable.merge([
-                              appearance ?? localStyle,
-                              ?stateChanges,
-                            ]),
-                            builder: (context, _) => SurfaceStateControls(
-                              ownerContext: ownerContext,
-                              style: rootStyle(),
-                              state: editState,
-                              allowSelected: allowSelected,
-                              activeState: [
-                                activeState?.call() ?? 'Par défaut',
-                                for (final key
-                                    in (rootStyle().states ??
-                                            SurfaceStyleStates())
-                                        .order)
-                                  if (key == hoverSurfaceStateKey &&
-                                      isHovered?.call() == true)
-                                    'Hover'
-                                  else if (key == selectedSurfaceStateKey &&
-                                      isSelected?.call() == true)
-                                    'Sélectionné',
-                              ].join(' + '),
-                              error: stateError?.call(),
-                              onSelect: (value) {
-                                setTab(() => editState = value);
-                                preview();
-                              },
-                              onChanged: (states) => updateRoot(
-                                rootStyle().copyWith(states: states),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
                       if (tabbed) ...[
                         DefaultTabController(
                           length: 2,
@@ -324,6 +315,25 @@ class ContainerStyleDialog {
                                     rootStyle().copyWith(states: states),
                                   );
                                 } else if (editState ==
+                                    AutomaticState.contentHover.key) {
+                                  final root = rootStyle();
+                                  final states = root.states!;
+                                  updateRoot(
+                                    root.copyWith(
+                                      states: states.copyWith(
+                                        automatic: {
+                                          ...states.automatic,
+                                          AutomaticState.contentHover:
+                                              SelectedSurfaceStyle(
+                                                style: root.copyWith(
+                                                  clearStates: true,
+                                                ),
+                                              ),
+                                        },
+                                      ),
+                                    ),
+                                  );
+                                } else if (editState ==
                                         selectedSurfaceStateKey ||
                                     editState == hoverSurfaceStateKey) {
                                   final root = rootStyle();
@@ -342,12 +352,60 @@ class ContainerStyleDialog {
                                     ),
                                   );
                                 } else {
-                                  updateStyle(
-                                    rootStyle().copyWith(clearStates: true),
+                                  final root = rootStyle();
+                                  final states = root.states!;
+                                  updateRoot(
+                                    root.copyWith(
+                                      states: states.copyWith(
+                                        namedProperties: {
+                                          ...states.namedProperties,
+                                          editState!: {},
+                                        },
+                                      ),
+                                    ),
                                   );
                                 }
                               },
                               extraSections: [
+                                StyleEditorSection(
+                                  id: 'surface-states',
+                                  title: 'États',
+                                  icon: Icons.layers_outlined,
+                                  child: ListenableBuilder(
+                                    listenable: Listenable.merge([
+                                      appearance ?? localStyle,
+                                      ?stateChanges,
+                                    ]),
+                                    builder: (context, _) =>
+                                        SurfaceStateControls(
+                                          ownerContext: ownerContext,
+                                          style: rootStyle(),
+                                          state: editState,
+                                          allowSelected: allowSelected,
+                                          allowContentHover: allowContentHover,
+                                          activeState: [
+                                            activeState?.call() ?? 'Par défaut',
+                                            if (isHovered?.call() == true)
+                                              'Hover',
+                                            if (isSelected?.call() == true)
+                                              'Sélectionné',
+                                            if (isContentHovered?.call() ==
+                                                true)
+                                              AutomaticState.contentHover.label,
+                                          ].join(' + '),
+                                          error: stateError?.call(),
+                                          onSelect: (value) {
+                                            setTab(() => editState = value);
+                                            preview();
+                                          },
+                                          onChanged: (states) => updateRoot(
+                                            rootStyle().copyWith(
+                                              states: states,
+                                            ),
+                                          ),
+                                        ),
+                                  ),
+                                ),
                                 if (slot?.role ==
                                     AppearanceSurfaceRole.applicationBackground)
                                   StyleEditorSection(

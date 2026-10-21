@@ -7,6 +7,7 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_text_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
+import 'package:super_container_layout/models/automatic_state.dart';
 import 'package:super_container_layout/services/editor_page_graph.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -170,14 +171,24 @@ void main() {
               path: 'client.status',
             ),
             named: {'ready': const SuperTextConfig(binding: binding)},
+            namedProperties: {
+              'ready': {TextStateProperty.binding},
+            },
             hover: TextConfigOverride(
               config: const SuperTextConfig(fontSize: 20),
               properties: {TextStateProperty.fontSize},
             ),
+            automatic: {
+              AutomaticState.contentHover: TextConfigOverride(
+                config: const SuperTextConfig(binding: binding),
+                properties: {TextStateProperty.binding},
+              ),
+            },
             order: [
               TextConfigStates.hoverKey,
               'ready',
               TextConfigStates.selectedKey,
+              AutomaticState.contentHover.key,
             ],
           ),
           field: const SuperTextFieldConfig(

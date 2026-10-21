@@ -6,10 +6,63 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
   test(
+    'legacy named surfaces start empty and inherit until explicitly overridden',
+    () {
+      final states = SurfaceStyleStates(
+        named: {'ready': const ContainerStyle(color: Colors.red, padding: 12)},
+      );
+      const base = ContainerStyle(color: Colors.blue, padding: 4);
+      final legacy = states.toJson()..remove('namedProperties');
+      final migrated = SurfaceStyleStates.fromJson(legacy);
+      expect(migrated.namedProperties['ready'], isEmpty);
+      expect(migrated.resolve(base, name: 'ready').padding, 4);
+      final properties = <SurfaceStyleProperty>{SurfaceStyleProperty.padding};
+      final configured = migrated.copyWith(
+        namedProperties: {'ready': properties},
+      );
+      properties.clear();
+      final result = configured.resolve(base, name: 'ready');
+      expect(result.padding, 12);
+      expect(result.color!.toARGB32(), Colors.blue.toARGB32());
+      final decoded = SurfaceStyleStates.fromJson(
+        jsonDecode(jsonEncode(configured.toJson())),
+      );
+      expect(decoded, configured);
+      expect(
+        () => decoded.namedProperties['ready']!.clear(),
+        throwsUnsupportedError,
+      );
+      expect(configured.copyWith(named: {}).namedProperties, isEmpty);
+      expect(
+        () => SurfaceStyleStates.fromJson({
+          ...legacy,
+          'namedProperties': {
+            'ready': ['unknown'],
+          },
+        }),
+        throwsFormatException,
+      );
+      expect(
+        () => SurfaceStyleStates.fromJson({
+          ...legacy,
+          'namedProperties': {'missing': []},
+        }),
+        throwsFormatException,
+      );
+    },
+  );
+
+  test(
     'hover and selected follow persisted priority including JSON states',
     () {
       final states = SurfaceStyleStates(
         named: {'ready': const ContainerStyle(color: Colors.green, padding: 4)},
+        namedProperties: {
+          'ready': {
+            SurfaceStyleProperty.background,
+            SurfaceStyleProperty.padding,
+          },
+        },
         hover: SelectedSurfaceStyle(
           style: const ContainerStyle(color: Colors.red, padding: 0),
           properties: {
@@ -73,7 +126,7 @@ void main() {
             )
             .resolve(base, name: 'ready', isHovered: true)
             .color,
-        Colors.green,
+        const Color(0xFF4CAF50),
       );
       for (final order in [
         ['missing'],
@@ -87,7 +140,7 @@ void main() {
     },
   );
 
-  test('JSON styles are complete and selected properties layer explicitly', () {
+  test('JSON styles inherit unspecified groups and selected properties layer explicitly', () {
     final selected = SelectedSurfaceStyle(
       style: const ContainerStyle(
         color: null,
@@ -113,6 +166,15 @@ void main() {
         ),
       },
       selected: selected,
+      namedProperties: {
+        'late': {
+          SurfaceStyleProperty.background,
+          SurfaceStyleProperty.corners,
+          SurfaceStyleProperty.padding,
+          SurfaceStyleProperty.border,
+          SurfaceStyleProperty.hover,
+        },
+      },
     );
     final base = ContainerStyle(
       color: Colors.blue,
@@ -132,7 +194,7 @@ void main() {
     expect(base.copyWith(padding: 24).states, same(states));
     expect(
       states.resolve(base.copyWith(color: Colors.green), name: 'late').color,
-      Colors.red,
+      const Color(0xFFF44336),
     );
   });
 

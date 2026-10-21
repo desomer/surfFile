@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 
 import 'json_text_binding.dart';
+import 'automatic_state.dart';
 import 'super_text_field_config.dart';
 
 part 'super_text_states.dart';

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/automatic_state.dart';
+
 import '../../../models/super_text_config.dart';
 import '../../../models/super_text_field_config.dart';
 import '../../components/super_text_field.dart';
@@ -28,6 +30,8 @@ Future<SuperTextConfig?> showSuperTextEditor({
   String? stateError,
   bool isHovered = false,
   bool isSelected = false,
+  bool allowContentHover = false,
+  Set<AutomaticState> activeAutomatic = const {},
 }) async {
   final width = ValueNotifier(StyleEditorPanel.preferredDense ? 680.0 : 1080.0);
   final textStyle = DefaultTextStyle.of(context).style;
@@ -44,6 +48,8 @@ Future<SuperTextConfig?> showSuperTextEditor({
         stateError: stateError,
         isHovered: isHovered,
         isSelected: isSelected,
+        allowContentHover: allowContentHover,
+        activeAutomatic: activeAutomatic,
         config: config,
         availableFontFamilies: availableFontFamilies,
         textStyle: textStyle,
@@ -74,6 +80,8 @@ class _TextStateEditor extends StatefulWidget {
     required this.stateError,
     required this.isHovered,
     required this.isSelected,
+    required this.allowContentHover,
+    required this.activeAutomatic,
   });
   final BuildContext ownerContext;
   final SuperTextConfig config;
@@ -83,6 +91,8 @@ class _TextStateEditor extends StatefulWidget {
   final JsonRepositoryStore? repositories;
   final JsonListScope? listScope;
   final bool allowBinding, isHovered, isSelected;
+  final bool allowContentHover;
+  final Set<AutomaticState> activeAutomatic;
   final ValueChanged<SuperTextConfig>? onPreviewChanged;
   final String? activeState, stateError;
   @override
@@ -135,6 +145,13 @@ class _TextStateEditorState extends State<_TextStateEditor> {
 
   SuperTextConfig get _leaf {
     final states = _root.states;
+    final automatic = AutomaticState.fromKey(_state);
+    if (automatic != null &&
+        automatic != AutomaticState.hover &&
+        automatic != AutomaticState.selected) {
+      return states?.automatic[automatic]?.config ??
+          _root.copyWith(clearStates: true);
+    }
     if (_state == hoverSurfaceStateKey) {
       return states?.hover?.config ?? _root.copyWith(clearStates: true);
     }
@@ -148,6 +165,19 @@ class _TextStateEditorState extends State<_TextStateEditor> {
     leaf = leaf.copyWith(clearStates: true);
     final states = _root.states ?? TextConfigStates();
     if (_state == null) return leaf.copyWith(states: _root.states);
+    final automatic = AutomaticState.fromKey(_state);
+    if (automatic != null &&
+        automatic != AutomaticState.hover &&
+        automatic != AutomaticState.selected) {
+      final previous =
+          states.automatic[automatic] ??
+          TextConfigOverride(config: _root.copyWith(clearStates: true));
+      return _root.copyWith(
+        states: states.copyWith(
+          automatic: {...states.automatic, automatic: previous.edited(leaf)},
+        ),
+      );
+    }
     final previous = _state == hoverSurfaceStateKey
         ? states.hover
         : states.selected;
@@ -160,7 +190,16 @@ class _TextStateEditorState extends State<_TextStateEditor> {
           ? states.copyWith(hover: overlay)
           : _state == selectedSurfaceStateKey
           ? states.copyWith(selected: overlay)
-          : states.copyWith(named: {...states.named, _state!: leaf}),
+          : states.copyWith(
+              named: {...states.named, _state!: leaf},
+              namedProperties: {
+                ...states.namedProperties,
+                _state!: TextConfigOverride(
+                  config: states.named[_state]!,
+                  properties: states.namedProperties[_state]!,
+                ).edited(leaf).properties,
+              },
+            ),
     );
   }
 
@@ -172,6 +211,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         ...?root.states?.named.values,
         if (root.states?.hover case final value?) value.config,
         if (root.states?.selected case final value?) value.config,
+        ...?root.states?.automatic.values.map((value) => value.config),
       ];
       if (leaves.any((leaf) => leaf.binding != null)) {
         throw const FormatException(
@@ -205,14 +245,16 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         ? root.copyWith(clearStates: true)
         : states?.resolve(
                 root,
-                name:
-                    _state == hoverSurfaceStateKey ||
-                        _state == selectedSurfaceStateKey
+                name: AutomaticState.fromKey(_state) != null
                     ? _reader?.stateName ?? widget.activeState
                     : _state,
                 isHovered: _state == hoverSurfaceStateKey || widget.isHovered,
                 isSelected:
                     _state == selectedSurfaceStateKey || widget.isSelected,
+                activeStates: {
+                  ...widget.activeAutomatic,
+                  ?AutomaticState.fromKey(_state),
+                },
               ) ??
               root.copyWith(clearStates: true);
     widget.onPreviewChanged?.call(config);
@@ -243,7 +285,17 @@ class _TextStateEditorState extends State<_TextStateEditor> {
   Widget build(BuildContext context) {
     _syncReader();
     final states = _root.states ?? TextConfigStates();
-    final overlay = _state == hoverSurfaceStateKey
+    final automatic = AutomaticState.fromKey(_state);
+    final overlay = states.named.containsKey(_state)
+        ? TextConfigOverride(
+            config: states.named[_state]!,
+            properties: states.namedProperties[_state]!,
+          )
+        : automatic != null &&
+              automatic != AutomaticState.hover &&
+              automatic != AutomaticState.selected
+        ? states.automatic[automatic]
+        : _state == hoverSurfaceStateKey
         ? states.hover
         : states.selected;
     return _SuperTextEditor(
@@ -281,7 +333,15 @@ class _TextStateEditorState extends State<_TextStateEditor> {
       header: EditorStateControls<TextStateProperty>(
         keyPrefix: 'text-state',
         names: states.named.keys,
-        order: states.order,
+        order: states.order
+            .where(
+              (key) =>
+                  (key != TextConfigStates.hoverKey || states.hover != null) &&
+                  (key != TextConfigStates.selectedKey ||
+                      states.selected != null),
+            )
+            .toList(),
+        permanentInteractionStates: false,
         binding: states.binding,
         state: _state,
         allowSelected: widget.listScope != null,
@@ -292,6 +352,62 @@ class _TextStateEditorState extends State<_TextStateEditor> {
           if (value == _state || !_capture()) return;
           setState(() {
             _state = value;
+            _leafKey = GlobalKey();
+          });
+          _preview(_root);
+        },
+        availableStates: {
+          AutomaticState.hover,
+          if (widget.listScope != null) AutomaticState.selected,
+          if (widget.allowContentHover) AutomaticState.contentHover,
+          if (_leaf.mode == SuperTextMode.input) ...{
+            AutomaticState.focused,
+            AutomaticState.disabled,
+            AutomaticState.readOnly,
+          },
+        },
+        onAddAutomatic: (value) {
+          _changeStates((s) {
+            final override = TextConfigOverride(
+              config: _leaf.copyWith(clearStates: true),
+            );
+            final order = [
+              ...s.order.where((key) => key != value.key),
+              value.key,
+            ];
+            if (value == AutomaticState.hover) {
+              return s.copyWith(hover: override, order: order);
+            }
+            if (value == AutomaticState.selected) {
+              return s.copyWith(selected: override, order: order);
+            }
+            return s.copyWith(
+              automatic: {...s.automatic, value: override},
+              order: order,
+            );
+          });
+          if ((value == AutomaticState.hover && _root.states?.hover != null) ||
+              (value == AutomaticState.selected &&
+                  _root.states?.selected != null) ||
+              _root.states?.automatic.containsKey(value) == true) {
+            setState(() {
+              _state = value.key;
+              _leafKey = GlobalKey();
+            });
+            _preview(_root);
+          }
+        },
+        onDeleteAutomatic: (value) {
+          if (!_capture()) return;
+          setState(() {
+            _root = _root.copyWith(
+              states: _root.states!.copyWith(
+                clearHover: value == AutomaticState.hover,
+                clearSelected: value == AutomaticState.selected,
+                automatic: {..._root.states!.automatic}..remove(value),
+              ),
+            );
+            _state = null;
             _leafKey = GlobalKey();
           });
           _preview(_root);
@@ -316,6 +432,9 @@ class _TextStateEditorState extends State<_TextStateEditor> {
               named: {...s.named}
                 ..remove(previous)
                 ..[name] = s.named[previous]!,
+              namedProperties: {...s.namedProperties}
+                ..remove(previous)
+                ..[name] = s.namedProperties[previous]!,
               order: [
                 for (final key in s.order)
                   if (key == previous) name else key,
@@ -341,7 +460,18 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         },
         overrides: overlay?.properties ?? {},
         onOverride: (property, enabled) => _changeStates((s) {
-          final current = _state == hoverSurfaceStateKey ? s.hover : s.selected;
+          final current = s.named.containsKey(_state)
+              ? TextConfigOverride(
+                  config: s.named[_state]!,
+                  properties: s.namedProperties[_state]!,
+                )
+              : automatic != null &&
+                    automatic != AutomaticState.hover &&
+                    automatic != AutomaticState.selected
+              ? s.automatic[automatic]
+              : _state == hoverSurfaceStateKey
+              ? s.hover
+              : s.selected;
           final properties = {...?current?.properties};
           if (enabled) {
             properties.add(property);
@@ -352,7 +482,15 @@ class _TextStateEditorState extends State<_TextStateEditor> {
             config: current?.config ?? _root.copyWith(clearStates: true),
             properties: properties,
           );
-          return _state == hoverSurfaceStateKey
+          return s.named.containsKey(_state)
+              ? s.copyWith(
+                  namedProperties: {...s.namedProperties, _state!: properties},
+                )
+              : automatic != null &&
+                    automatic != AutomaticState.hover &&
+                    automatic != AutomaticState.selected
+              ? s.copyWith(automatic: {...s.automatic, automatic: value})
+              : _state == hoverSurfaceStateKey
               ? s.copyWith(hover: value)
               : s.copyWith(selected: value);
         }),

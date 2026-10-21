@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/automatic_state.dart';
+import '../../../services/content_hover_scope.dart';
+
 import '../../../theme/appearance.dart';
 import '../../../theme/appearance_slot.dart';
 import '../../../theme/container_style.dart';
@@ -86,6 +89,7 @@ class EditableSurfaceState extends State<EditableSurface> {
   final _runtimeRevision = ValueNotifier(0);
   SurfaceStateBinding? _stateBinding;
   bool _rowSelected = false;
+  bool _contentHovered = false;
   final _hovered = ValueNotifier(false);
 
   void _setHovered(bool value) {
@@ -216,6 +220,9 @@ class EditableSurfaceState extends State<EditableSurface> {
             onReset: (slot) => _reset(slot: slot),
             onLabelChanged: (value) => editor.restoreLabel(value),
             allowSelected: JsonListScope.maybeOf(context) != null,
+            allowContentHover: ContentHoverScope.maybeOf(context) != null,
+            isContentHovered: () =>
+                ContentHoverScope.maybeOf(context)?.hovered == true,
             activeState: () => _stateBinding?.stateName,
             isSelected: () => _rowSelected,
             isHovered: () => _hovered.value,
@@ -271,6 +278,11 @@ class EditableSurfaceState extends State<EditableSurface> {
       listenable: listenable,
       builder: (context, _) {
         final scope = JsonListScope.maybeOf(context);
+        final content = ContentHoverScope.maybeOf(context);
+        if (_contentHovered != (content?.hovered ?? false)) {
+          _contentHovered = content?.hovered ?? false;
+          _runtimeChanged();
+        }
         _syncBinding(style, scope);
         return ListenableBuilder(
           listenable: Listenable.merge([_preview, _hovered, ?_stateBinding]),
@@ -283,6 +295,9 @@ class EditableSurfaceState extends State<EditableSurface> {
                   name: _stateBinding?.stateName,
                   isSelected: scope?.selected ?? false,
                   isHovered: _hovered.value,
+                  activeStates: {
+                    if (content?.hovered == true) AutomaticState.contentHover,
+                  },
                 ) ??
                 base;
             final renderStyle = surfaceStyle.copyWith(

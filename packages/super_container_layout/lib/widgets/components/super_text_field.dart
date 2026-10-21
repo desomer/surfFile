@@ -16,6 +16,7 @@ class SuperTextField extends StatefulWidget {
     this.readOnly,
     this.enableContextMenu = true,
     this.bindingError,
+    this.focusNode,
     super.key,
   });
 
@@ -27,6 +28,7 @@ class SuperTextField extends StatefulWidget {
   final bool? enabled, readOnly;
   final bool enableContextMenu;
   final String? bindingError;
+  final FocusNode? focusNode;
 
   @override
   State<SuperTextField> createState() => _SuperTextFieldState();
@@ -208,6 +210,7 @@ class _SuperTextFieldState extends State<SuperTextField> {
     }
     final padding = theme.contentPadding;
     return TextField(
+      focusNode: widget.focusNode,
       key: widget.inputKey,
       controller: widget.controller,
       style: widget.style,

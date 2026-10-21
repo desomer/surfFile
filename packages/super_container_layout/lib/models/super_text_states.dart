@@ -106,7 +106,9 @@ class TextConfigOverride {
       fontFamily: has(TextStateProperty.fontFamily)
           ? config.fontFamily
           : base.fontFamily,
-      fontSize: has(TextStateProperty.fontSize) ? config.fontSize : base.fontSize,
+      fontSize: has(TextStateProperty.fontSize)
+          ? config.fontSize
+          : base.fontSize,
       fontWeight: has(TextStateProperty.fontWeight)
           ? config.fontWeight
           : base.fontWeight,
@@ -161,8 +163,7 @@ class TextConfigOverride {
       setEquals(properties, other.properties);
 
   @override
-  int get hashCode =>
-      Object.hash(config, Object.hashAllUnordered(properties));
+  int get hashCode => Object.hash(config, Object.hashAllUnordered(properties));
 }
 
 @immutable
@@ -170,15 +171,34 @@ class TextConfigStates {
   TextConfigStates({
     this.binding,
     Map<String, SuperTextConfig> named = const {},
+    Map<String, Set<TextStateProperty>> namedProperties = const {},
     this.hover,
     this.selected,
+    Map<AutomaticState, TextConfigOverride> automatic = const {},
     List<String>? order,
   }) : named = Map.unmodifiable({
          for (final entry in named.entries)
            _textStateName(entry.key): _textStateLeaf(entry.value),
        }),
-       order = List.unmodifiable(_textStateOrder(named.keys, order)) {
+       automatic = Map.unmodifiable(automatic),
+       namedProperties = Map.unmodifiable({
+         for (final name in named.keys)
+           name: Set<TextStateProperty>.unmodifiable(
+             namedProperties[name] ?? {},
+           ),
+       }),
+       order = List.unmodifiable(
+         _textStateOrder(named.keys, order, automatic.keys),
+       ) {
     binding?.validate();
+    if (namedProperties.keys.any((name) => !named.containsKey(name))) {
+      throw const FormatException('Unknown named Text override.');
+    }
+    if (automatic.keys.any(
+      (s) => s == AutomaticState.hover || s == AutomaticState.selected,
+    )) {
+      throw const FormatException('Duplicate automatic Text state.');
+    }
   }
 
   static const hoverKey = '\u0000hover';
@@ -186,35 +206,55 @@ class TextConfigStates {
 
   final JsonTextBinding? binding;
   final Map<String, SuperTextConfig> named;
+  final Map<String, Set<TextStateProperty>> namedProperties;
   final TextConfigOverride? hover;
   final TextConfigOverride? selected;
+  final Map<AutomaticState, TextConfigOverride> automatic;
   final List<String> order;
 
   TextConfigStates copyWith({
     JsonTextBinding? binding,
     bool clearBinding = false,
     Map<String, SuperTextConfig>? named,
+    Map<String, Set<TextStateProperty>>? namedProperties,
     bool clearNamed = false,
     TextConfigOverride? hover,
     bool clearHover = false,
     TextConfigOverride? selected,
     bool clearSelected = false,
+    Map<AutomaticState, TextConfigOverride>? automatic,
     List<String>? order,
     bool clearOrder = false,
   }) {
-    final nextNamed = clearNamed ? <String, SuperTextConfig>{} : named ?? this.named;
+    final nextNamed = clearNamed
+        ? <String, SuperTextConfig>{}
+        : named ?? this.named;
     return TextConfigStates(
       binding: clearBinding ? null : binding ?? this.binding,
       named: nextNamed,
+      namedProperties:
+          namedProperties ??
+          {
+            for (final name in nextNamed.keys)
+              name: this.namedProperties[name] ?? {},
+          },
       hover: clearHover ? null : hover ?? this.hover,
       selected: clearSelected ? null : selected ?? this.selected,
+      automatic: automatic ?? this.automatic,
       order: clearOrder
           ? null
           : order ??
-                this.order.where((key) =>
-                    key == hoverKey ||
-                    key == selectedKey ||
-                    nextNamed.containsKey(key)).toList(),
+                this.order
+                    .where(
+                      (key) =>
+                          key == hoverKey ||
+                          key == selectedKey ||
+                          (automatic ?? this.automatic).keys.any(
+                            (s) => s.key == key,
+                          ) ||
+                          nextNamed.containsKey(key),
+                    )
+                    .toList(),
     );
   }
 
@@ -223,6 +263,7 @@ class TextConfigStates {
     String? name,
     bool isHovered = false,
     bool isSelected = false,
+    Set<AutomaticState> activeStates = const {},
   }) {
     var result = base.copyWith(clearStates: true);
     for (final key in order) {
@@ -231,7 +272,14 @@ class TextConfigStates {
       } else if (key == selectedKey) {
         if (isSelected && selected != null) result = selected!.apply(result);
       } else if (key == name) {
-        result = named[key]!;
+        result = TextConfigOverride(
+          config: named[key]!,
+          properties: namedProperties[key]!,
+        ).apply(result);
+      } else if (AutomaticState.fromKey(key) case final state?) {
+        if (activeStates.contains(state)) {
+          result = automatic[state]?.apply(result) ?? result;
+        }
       }
     }
     return result;
@@ -244,15 +292,24 @@ class TextConfigStates {
     }
     hover?.config._validateLeaf();
     selected?.config._validateLeaf();
+    for (final value in automatic.values) {
+      value.config._validateLeaf();
+    }
     for (final name in <String?>[null, ...named.keys]) {
       for (final isHovered in [false, true]) {
         for (final isSelected in [false, true]) {
-          resolve(
-            base,
-            name: name,
-            isHovered: isHovered,
-            isSelected: isSelected,
-          )._validateLeaf();
+          for (var mask = 0; mask < (1 << automatic.length); mask++) {
+            resolve(
+              base,
+              name: name,
+              isHovered: isHovered,
+              isSelected: isSelected,
+              activeStates: {
+                for (var i = 0; i < automatic.length; i++)
+                  if (mask & (1 << i) != 0) automatic.keys.elementAt(i),
+              },
+            )._validateLeaf();
+          }
         }
       }
     }
@@ -260,16 +317,36 @@ class TextConfigStates {
 
   Map<String, Object?> toJson() => {
     if (binding != null) 'binding': binding!.toJson(),
-    'named': {for (final entry in named.entries) entry.key: entry.value.toJson()},
+    'named': {
+      for (final entry in named.entries) entry.key: entry.value.toJson(),
+    },
+    'namedProperties': {
+      for (final entry in namedProperties.entries)
+        entry.key: entry.value.map((p) => p.name).toList()..sort(),
+    },
     if (hover != null) 'hover': hover!.toJson(),
     if (selected != null) 'selected': selected!.toJson(),
+    if (automatic.isNotEmpty)
+      'automatic': {
+        for (final entry in automatic.entries)
+          entry.key.name: entry.value.toJson(),
+      },
     'order': order,
   };
 
   factory TextConfigStates.fromJson(Object? value) {
     if (value is! Map ||
-        value.keys.any((key) =>
-            !{'binding', 'named', 'hover', 'selected', 'order'}.contains(key)) ||
+        value.keys.any(
+          (key) => !{
+            'binding',
+            'named',
+            'namedProperties',
+            'hover',
+            'selected',
+            'automatic',
+            'order',
+          }.contains(key),
+        ) ||
         value['named'] is! Map ||
         (value.containsKey('order') &&
             (value['order'] is! List ||
@@ -281,7 +358,9 @@ class TextConfigStates {
       if (entry.key is! String) {
         throw const FormatException('Invalid Text state name.');
       }
-      named[_textStateName(entry.key as String)] = _readTextStateLeaf(entry.value);
+      named[_textStateName(entry.key as String)] = _readTextStateLeaf(
+        entry.value,
+      );
     }
     try {
       return TextConfigStates(
@@ -289,12 +368,17 @@ class TextConfigStates {
             ? null
             : JsonTextBinding.fromJson(value['binding']),
         named: named,
+        namedProperties: _readTextNamedProperties(
+          value['namedProperties'],
+          named,
+        ),
         hover: value.containsKey('hover')
             ? TextConfigOverride.fromJson(value['hover'])
             : null,
         selected: value.containsKey('selected')
             ? TextConfigOverride.fromJson(value['selected'])
             : null,
+        automatic: _readTextAutomatic(value['automatic']),
         order: (value['order'] as List?)?.cast<String>(),
       );
     } on ArgumentError {
@@ -307,18 +391,70 @@ class TextConfigStates {
       other is TextConfigStates &&
       binding == other.binding &&
       mapEquals(named, other.named) &&
+      namedProperties.length == other.namedProperties.length &&
+      namedProperties.entries.every(
+        (e) => setEquals(e.value, other.namedProperties[e.key]),
+      ) &&
       hover == other.hover &&
       selected == other.selected &&
+      mapEquals(automatic, other.automatic) &&
       listEquals(order, other.order);
 
   @override
   int get hashCode => Object.hash(
     binding,
-    Object.hashAllUnordered(named.entries.map((e) => Object.hash(e.key, e.value))),
+    Object.hashAllUnordered(
+      named.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    Object.hashAllUnordered(
+      namedProperties.entries.map(
+        (e) => Object.hash(e.key, Object.hashAllUnordered(e.value)),
+      ),
+    ),
     hover,
     selected,
+    Object.hashAllUnordered(
+      automatic.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
     Object.hashAll(order),
   );
+}
+
+Map<String, Set<TextStateProperty>> _readTextNamedProperties(
+  Object? value,
+  Map<String, SuperTextConfig> named,
+) {
+  if (value == null) return {};
+  if (value is! Map || value.keys.any((key) => !named.containsKey(key))) {
+    throw const FormatException('Invalid named Text overrides.');
+  }
+  return {
+    for (final entry in value.entries)
+      entry.key as String: TextConfigOverride.fromJson({
+        'config': named[entry.key]!.toJson(),
+        'properties': entry.value,
+      }).properties,
+  };
+}
+
+Map<AutomaticState, TextConfigOverride> _readTextAutomatic(Object? value) {
+  if (value == null) return {};
+  if (value is! Map) {
+    throw const FormatException('Invalid automatic Text states.');
+  }
+  return {
+    for (final entry in value.entries)
+      (AutomaticState.values
+                  .where(
+                    (s) =>
+                        s.name == entry.key &&
+                        s != AutomaticState.hover &&
+                        s != AutomaticState.selected,
+                  )
+                  .firstOrNull ??
+              (throw const FormatException('Unknown automatic Text state.'))):
+          TextConfigOverride.fromJson(entry.value),
+  };
 }
 
 SuperTextConfig _textStateLeaf(SuperTextConfig config) {
@@ -357,11 +493,16 @@ String _textStateName(String name) {
   return name;
 }
 
-List<String> _textStateOrder(Iterable<String> names, List<String>? order) {
+List<String> _textStateOrder(
+  Iterable<String> names,
+  List<String>? order,
+  Iterable<AutomaticState> automatic,
+) {
   final defaults = [
     ...names,
     TextConfigStates.hoverKey,
     TextConfigStates.selectedKey,
+    ...automatic.map((s) => s.key),
   ];
   if (order == null) return defaults;
   if (order.toSet().length != order.length ||
@@ -374,12 +515,14 @@ List<String> _textStateOrder(Iterable<String> names, List<String>? order) {
 bool _sameTextStateValue(Object? a, Object? b) {
   if (a is Map && b is Map) {
     return a.length == b.length &&
-        a.keys.every((key) =>
-            b.containsKey(key) && _sameTextStateValue(a[key], b[key]));
+        a.keys.every(
+          (key) => b.containsKey(key) && _sameTextStateValue(a[key], b[key]),
+        );
   }
   if (a is List && b is List) {
     return a.length == b.length &&
-        Iterable.generate(a.length).every((i) => _sameTextStateValue(a[i], b[i]));
+        Iterable.generate(a.length)
+            .every((i) => _sameTextStateValue(a[i], b[i]));
   }
   return a == b;
 }

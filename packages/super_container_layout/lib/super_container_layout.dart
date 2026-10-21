@@ -61,3 +61,5 @@ export 'widgets/super_layout/super_layout.dart';
 export 'widgets/super_layout/iterable_content.dart';
 export 'widgets/super_layout/registered_super_layout.dart';
 export 'widgets/surfaces/surface_painters.dart';
+export 'models/automatic_state.dart';
+export 'services/content_hover_scope.dart';

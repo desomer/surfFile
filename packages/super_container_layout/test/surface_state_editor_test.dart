@@ -5,6 +5,11 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/styles/surface_state_controls.dart';
 
 void main() {
+  Future<void> tapVisible(WidgetTester tester, Finder finder) async {
+    await tester.ensureVisible(finder);
+    await tester.tap(finder);
+  }
+
   testWidgets('state buttons wrap and keep exactly one state selected', (
     tester,
   ) async {
@@ -47,6 +52,13 @@ void main() {
       matching: find.byType(ChoiceChip),
     );
     expect(choices, findsNWidgets(6));
+    for (final property in SurfaceStyleProperty.values) {
+      final chip = tester.widget<FilterChip>(
+        find.byKey(ValueKey('surface-state-override-${property.name}')),
+      );
+      expect(chip.selected, isTrue);
+      expect(chip.onSelected, isNull);
+    }
     final ready = find.byKey(const ValueKey('surface-state-choice-ready'));
     final defaultState = find.byKey(const ValueKey('surface-state-choice-'));
     expect(
@@ -57,6 +69,16 @@ void main() {
       await tester.tap(find.byKey(ValueKey('surface-state-choice-$key')));
       await tester.pumpAndSettle();
       expect(selected, key.isEmpty ? null : key);
+      if (key == 'ready') {
+        expect(
+          tester
+              .widget<FilterChip>(
+                find.byKey(const ValueKey('surface-state-override-border')),
+              )
+              .selected,
+          isFalse,
+        );
+      }
       expect(
         tester.widgetList<ChoiceChip>(choices).where((chip) => chip.selected),
         hasLength(1),
@@ -72,6 +94,7 @@ void main() {
     bool selected = false,
     bool? outerSelected,
     ValueChanged<ContainerStyle>? onChanged,
+    ValueNotifier<bool>? contentHovered,
   }) async {
     Widget surface = EditableSurface(
       label: 'Target',
@@ -95,6 +118,9 @@ void main() {
         child: surface,
       );
     }
+    if (contentHovered != null) {
+      surface = ContentHoverScope(hovered: contentHovered, child: surface);
+    }
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(body: Center(child: surface)),
@@ -105,6 +131,125 @@ void main() {
 
   ContainerStyle rendered(WidgetTester tester) =>
       tester.widget<SuperContainer>(find.byType(SuperContainer)).style;
+
+  testWidgets(
+    'bound surface state toggles inheritance and persists its property mask',
+    (tester) async {
+      await mount(
+        tester,
+        style: ContainerStyle(
+          padding: 4,
+          states: SurfaceStyleStates(
+            binding: const JsonTextBinding(path: 'status'),
+            named: {'ready': const ContainerStyle(padding: 12)},
+          ),
+        ),
+      );
+      final state = tester.state<EditableSurfaceState>(
+        find.byType(EditableSurface),
+      );
+      final dialog = state.openEditor();
+      await tester.pumpAndSettle();
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('surface-state-choice-ready')),
+      );
+      await tester.pumpAndSettle();
+      final toggle = find.byKey(
+        const ValueKey('surface-state-override-padding'),
+      );
+      expect(tester.widget<FilterChip>(toggle).selected, isFalse);
+      expect(rendered(tester).padding, 4);
+      await tapVisible(tester, toggle);
+      await tester.pumpAndSettle();
+      expect(rendered(tester).padding, 12);
+      await tapVisible(tester, toggle);
+      await tester.pumpAndSettle();
+      expect(rendered(tester).padding, 4);
+      final slider = find.byWidgetPredicate(
+        (w) => w is Slider && w.key == const ValueKey('padding-Target'),
+      );
+      tester.widget<Slider>(slider).onChanged!(18);
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilterChip>(toggle).selected, isTrue);
+      await tapVisible(tester, find.byTooltip('Renommer l’état'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('surface-state-name')),
+        'done',
+      );
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      await dialog;
+      expect(state.style.states!.namedProperties, {
+        'done': {SurfaceStyleProperty.padding},
+      });
+      expect(
+        state.style.states!.resolve(state.style, name: 'done').padding,
+        18,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'surface menu adds Content hover with isolated preview and cancellation',
+    (tester) async {
+      final hovered = ValueNotifier(false);
+      addTearDown(hovered.dispose);
+      await mount(tester, contentHovered: hovered);
+      final state = tester.state<EditableSurfaceState>(
+        find.byType(EditableSurface),
+      );
+      final dialog = state.openEditor();
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-card-surface-states')),
+          matching: find.byType(SurfaceStateControls),
+        ),
+        findsOneWidget,
+      );
+      await tapVisible(tester, find.byKey(const ValueKey('surface-state-add')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('surface-state-add-focused')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('surface-state-add-selected')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('surface-state-add-contentHover')),
+      );
+      await tester.pumpAndSettle();
+      final choice = find.byKey(
+        ValueKey('surface-state-choice-${AutomaticState.contentHover.key}'),
+      );
+      expect(tester.widget<ChoiceChip>(choice).selected, isTrue);
+      final slider = find.byWidgetPredicate(
+        (widget) =>
+            widget is Slider && widget.key == const ValueKey('padding-Target'),
+      );
+      await tester.ensureVisible(slider);
+      tester.widget<Slider>(slider).onChanged!(12);
+      await tester.pumpAndSettle();
+      expect(
+        state.style.states!.automatic[AutomaticState.contentHover]!.properties,
+        {SurfaceStyleProperty.padding},
+      );
+      expect(rendered(tester).padding, 12);
+      expect(hovered.value, isFalse);
+      await tester.tap(find.text('Annuler').last);
+      await tester.pumpAndSettle();
+      await dialog;
+      expect(state.style.states, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'pointer hover applies overrides and restores on exit without writes',
@@ -174,7 +319,7 @@ void main() {
         tester.getTopLeft(hover).dx,
         lessThan(tester.getTopLeft(selected).dx),
       );
-      await tester.tap(hover);
+      await tapVisible(tester, hover);
       await tester.pumpAndSettle();
       tester
           .widget<Slider>(
@@ -188,6 +333,7 @@ void main() {
         SurfaceStyleProperty.padding,
       });
       expect(rendered(tester).padding, 8);
+      await tester.ensureVisible(hover);
       await tester.dragFrom(
         tester.getCenter(hover),
         tester.getCenter(selected) - tester.getCenter(hover),
@@ -268,7 +414,9 @@ void main() {
             .selected,
         isTrue,
       );
-      await tester.tap(find.byKey(const ValueKey('surface-state-add')));
+      await tapVisible(tester, find.byKey(const ValueKey('surface-state-add')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('surface-state-add-custom')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('surface-state-name')),
@@ -295,7 +443,7 @@ void main() {
       expect(changes.last.padding, 0);
       expect(changes.last.states!.named['ready']!.padding, 12);
       expect(rendered(tester).padding, 12);
-      await tester.tap(find.byTooltip('Renommer l’état'));
+      await tapVisible(tester, find.byTooltip('Renommer l’état'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('surface-state-name')),
@@ -305,7 +453,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(changes.last.states!.named.keys, ['done']);
       expect(changes.last.states!.named['done']!.padding, 12);
-      await tester.tap(find.byKey(const ValueKey('surface-state-add')));
+      await tapVisible(tester, find.byKey(const ValueKey('surface-state-add')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('surface-state-add-custom')));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byKey(const ValueKey('surface-state-name')),
@@ -316,7 +466,10 @@ void main() {
       expect(find.text('Ce nom existe déjà.'), findsOneWidget);
       await tester.tap(find.text('Annuler').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('surface-state-delete')));
+      await tapVisible(
+        tester,
+        find.byKey(const ValueKey('surface-state-delete')),
+      );
       await tester.pumpAndSettle();
       expect(changes.last.states!.named, isEmpty);
       expect(rendered(tester).padding, 0);
@@ -333,6 +486,9 @@ void main() {
     final style = ContainerStyle(
       states: SurfaceStyleStates(
         named: {'ready': const ContainerStyle(padding: 12)},
+        namedProperties: {
+          'ready': {SurfaceStyleProperty.padding},
+        },
       ),
     );
     await tester.pumpWidget(
@@ -359,7 +515,10 @@ void main() {
         .state<EditableSurfaceState>(find.byType(EditableSurface).first)
         .openEditor();
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('surface-state-choice-ready')));
+    await tapVisible(
+      tester,
+      find.byKey(const ValueKey('surface-state-choice-ready')),
+    );
     await tester.pumpAndSettle();
     expect(
       tester
@@ -418,7 +577,8 @@ void main() {
           .state<EditableSurfaceState>(find.byType(EditableSurface))
           .openEditor();
       await tester.pumpAndSettle();
-      await tester.tap(
+      await tapVisible(
+        tester,
         find.byKey(const ValueKey('surface-state-choice-ready')),
       );
       await tester.pumpAndSettle();
@@ -476,20 +636,23 @@ void main() {
       );
       final dialog = state.openEditor();
       await tester.pumpAndSettle();
-      await tester.tap(
+      await tapVisible(
+        tester,
         find.byKey(
           const ValueKey('surface-state-choice-$selectedSurfaceStateKey'),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(
+      await tapVisible(
+        tester,
         find.byKey(const ValueKey('surface-state-override-border')),
       );
       await tester.pumpAndSettle();
       expect(saved!.states!.selected!.properties, {
         SurfaceStyleProperty.border,
       });
-      await tester.tap(
+      await tapVisible(
+        tester,
         find.byKey(const ValueKey('surface-state-override-border')),
       );
       await tester.pumpAndSettle();
