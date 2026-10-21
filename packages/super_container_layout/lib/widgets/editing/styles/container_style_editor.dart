@@ -536,9 +536,7 @@ class ContainerStyleEditor extends StatelessWidget {
           count: 1,
           half: true,
           child: _stack(
-            extras == null
-                ? _marginControls()
-                : extras.spacing(_marginControls(), padding: false),
+            extras == null ? _marginControls() : extras.spacing(padding: false),
           ),
         ),
       if (onPaddingChanged != null)
@@ -550,9 +548,7 @@ class ContainerStyleEditor extends StatelessWidget {
           count: 1,
           half: true,
           child: _stack(
-            extras == null
-                ? _paddingControls()
-                : extras.spacing(_paddingControls(), padding: true),
+            extras == null ? _paddingControls() : extras.spacing(padding: true),
           ),
         ),
       if (extras != null) ...[

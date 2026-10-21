@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-import 'package:flutter/painting.dart' show Axis;
+import 'package:flutter/painting.dart' show Axis, EdgeInsets;
 
 import 'grid_layout_config.dart';
 export 'grid_layout_config.dart';
@@ -108,6 +108,8 @@ class SlotDimension {
 }
 
 class SlotSizeConstraints {
+  static const maxPadding = 200.0;
+
   const SlotSizeConstraints({
     this.minWidth,
     this.minHeight,
@@ -115,8 +117,10 @@ class SlotSizeConstraints {
     this.maxHeight,
     this.preferredWidth,
     this.preferredHeight,
+    this.padding = 0,
+    this.paddingInsets,
     this.percentBasis = SlotPercentBasis.zone,
-  });
+  }) : assert(padding >= 0 && padding <= maxPadding);
 
   final SlotDimension? minWidth;
   final SlotDimension? minHeight;
@@ -124,10 +128,31 @@ class SlotSizeConstraints {
   final SlotDimension? maxHeight;
   final SlotDimension? preferredWidth;
   final SlotDimension? preferredHeight;
+  final double padding;
+  final EdgeInsets? paddingInsets;
   final SlotPercentBasis percentBasis;
+
+  EdgeInsets get contentPadding => paddingInsets ?? EdgeInsets.all(padding);
+  bool get hasPadding => padding != 0 || paddingInsets != null;
+
+  bool get hasSizeConstraints =>
+      minWidth != null ||
+      minHeight != null ||
+      maxWidth != null ||
+      maxHeight != null ||
+      preferredWidth != null ||
+      preferredHeight != null;
 
   Map<String, Object?> toJson() => {
     'percentBasis': percentBasis.name,
+    if (padding != 0) 'padding': padding,
+    if (paddingInsets != null)
+      'paddingInsets': [
+        paddingInsets!.top,
+        paddingInsets!.right,
+        paddingInsets!.bottom,
+        paddingInsets!.left,
+      ],
     for (final (key, dimension) in [
       ('minWidth', minWidth),
       ('minHeight', minHeight),
@@ -150,6 +175,17 @@ class SlotSizeConstraints {
       'layout' => SlotPercentBasis.layout,
       _ => throw const FormatException('Base de pourcentage invalide.'),
     };
+    final padding = value['padding'] ?? 0;
+    if (padding is! num ||
+        !padding.isFinite ||
+        padding < 0 ||
+        padding > maxPadding) {
+      throw const FormatException('Marge de slot invalide.');
+    }
+    final rawPaddingInsets = value['paddingInsets'];
+    final paddingInsets = rawPaddingInsets == null
+        ? null
+        : _readPaddingInsets(rawPaddingInsets);
     return SlotSizeConstraints(
       minWidth: dimension('minWidth'),
       minHeight: dimension('minHeight'),
@@ -157,8 +193,24 @@ class SlotSizeConstraints {
       maxHeight: dimension('maxHeight'),
       preferredWidth: dimension('preferredWidth'),
       preferredHeight: dimension('preferredHeight'),
+      padding: padding.toDouble(),
+      paddingInsets: paddingInsets,
       percentBasis: basis,
     );
+  }
+
+  static EdgeInsets _readPaddingInsets(Object? value) {
+    if (value is! List || value.length != 4) {
+      throw const FormatException('Marge de slot invalide.');
+    }
+    final sides = <double>[];
+    for (final side in value) {
+      if (side is! num || !side.isFinite || side < 0 || side > maxPadding) {
+        throw const FormatException('Marge de slot invalide.');
+      }
+      sides.add(side.toDouble());
+    }
+    return EdgeInsets.fromLTRB(sides[3], sides[0], sides[1], sides[2]);
   }
 
   @override
@@ -170,6 +222,8 @@ class SlotSizeConstraints {
       other.maxHeight == maxHeight &&
       other.preferredWidth == preferredWidth &&
       other.preferredHeight == preferredHeight &&
+      other.padding == padding &&
+      other.paddingInsets == paddingInsets &&
       other.percentBasis == percentBasis;
 
   @override
@@ -180,6 +234,8 @@ class SlotSizeConstraints {
     maxHeight,
     preferredWidth,
     preferredHeight,
+    padding,
+    paddingInsets,
     percentBasis,
   );
 }

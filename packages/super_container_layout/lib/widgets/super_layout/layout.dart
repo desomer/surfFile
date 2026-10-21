@@ -76,7 +76,7 @@ class SuperLayout extends StatefulWidget {
     var basis = SlotPercentBasis.zone;
     for (final slot in addition.existingSlots) {
       final constraints = config.slotSizeConstraints[slot.id];
-      if (constraints != null) {
+      if (constraints != null && constraints.hasSizeConstraints) {
         dimension = width
             ? constraints.preferredWidth
             : constraints.preferredHeight;
@@ -128,6 +128,8 @@ class SuperLayout extends StatefulWidget {
           maxHeight: saved?.maxHeight,
           preferredWidth: width ? dimension : preferredWidth,
           preferredHeight: width ? preferredHeight : dimension,
+          padding: saved?.padding ?? 0,
+          paddingInsets: saved?.paddingInsets,
           percentBasis: dimension.unit == SlotSizeUnit.percent
               ? basis
               : saved?.percentBasis ?? SlotPercentBasis.zone,

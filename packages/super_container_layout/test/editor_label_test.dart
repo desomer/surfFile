@@ -78,7 +78,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(ValueKey('style-menu-size-Taille préférée : $label')),
+      find.byKey(
+        ValueKey('style-menu-size-Taille et marge préférées : $label'),
+      ),
     );
     await tester.pumpAndSettle();
   }
@@ -130,7 +132,7 @@ void main() {
       await openSize(tester, 'Component a');
       await rename(tester, 'Renamed');
       expect(config.value.slotLabels, {'a': 'Renamed'});
-      expect(find.text('Tailles du slot : Renamed'), findsOneWidget);
+      expect(find.text('Taille et marge préférées : Renamed'), findsOneWidget);
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(find.text('kept'), findsOneWidget);

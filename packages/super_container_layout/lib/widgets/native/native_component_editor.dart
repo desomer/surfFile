@@ -691,6 +691,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             dimensions.minHeight == null &&
             dimensions.maxWidth == null &&
             dimensions.maxHeight == null &&
+            !dimensions.hasPadding &&
             dimensions.preferredWidth?.unit == SlotSizeUnit.pixels &&
             dimensions.preferredHeight?.unit == SlotSizeUnit.pixels) {
           _update(

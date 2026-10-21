@@ -256,7 +256,7 @@ class SlotStack extends StatelessWidget {
       stretch: stretch,
       preferredSizes: [
         for (final slot in visible)
-          sizeConstraints.containsKey(slot.id)
+          (sizeConstraints[slot.id]?.hasSizeConstraints ?? false)
               ? null
               : preferredSizes.containsKey(slot.id)
               ? preferredSizes[slot.id]
@@ -279,7 +279,7 @@ class SlotStack extends StatelessWidget {
     List<String> ids,
   ) => EditorSlotAction(
     key: ValueKey('slot-item-${slot.id}'),
-    label: 'Taille préférée : ${slot.label}',
+    label: 'Taille et marge préférées : ${slot.label}',
     inline: true,
     enabled: onEditPreferredSize != null || onRemoveSlot != null,
     showEdit: onEditPreferredSize != null,
@@ -306,6 +306,7 @@ class SlotStack extends StatelessWidget {
             ? null
             : (dimensions) => onResizeSlot!(slot, dimensions),
         sizeConstraints: sizeConstraints[slot.id],
+        padding: sizeConstraints[slot.id]?.contentPadding ?? EdgeInsets.zero,
         caption: zoneLabel == null
             ? slot.label
             : '${slot.label} · $zoneLabel ${index + 1}/$count',
@@ -415,7 +416,9 @@ class _RenderSlotFlex extends RenderBox
     final bounds = <(double, double, double?, double, double, double?)>[];
     for (final (index, _) in children.indexed) {
       final legacy = preferences[index];
-      final configured = sizeConstraints[index];
+      final configured = sizeConstraints[index]?.hasSizeConstraints ?? false
+          ? sizeConstraints[index]
+          : null;
       double? value(
         SlotDimension? dimension,
         double available,
@@ -821,6 +824,7 @@ class _LabeledSlot extends StatefulWidget {
     required this.selected,
     required this.onResize,
     required this.sizeConstraints,
+    required this.padding,
   });
 
   final SlotImplementation slot;
@@ -835,6 +839,7 @@ class _LabeledSlot extends StatefulWidget {
   final bool selected;
   final ValueChanged<SlotSizeConstraints>? onResize;
   final SlotSizeConstraints? sizeConstraints;
+  final EdgeInsets padding;
 
   /// Slots visibles de la zone, dans l'ordre.
   final List<String> ids;
@@ -978,6 +983,8 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                       ? SlotDimension(legacySize.height, SlotSizeUnit.pixels)
                       : null)
             : dimension(height, saved?.preferredHeight, basis.height),
+        padding: saved?.padding ?? 0,
+        paddingInsets: saved?.paddingInsets,
         percentBasis: saved?.percentBasis ?? SlotPercentBasis.zone,
       ),
     );
@@ -1162,9 +1169,8 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         behavior: HitTestBehavior.translucent,
         excludeFromSemantics: true,
         onSecondaryTapUp: canEditSize
-            ? (details) => context
-                  .findAncestorStateOfType<EditorSlotState>()
-                  ?.openMenu(
+            ? (details) =>
+                  context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
                     details.globalPosition,
                     actions: EditorSlotAction.of(context),
                   )
@@ -1244,7 +1250,9 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                   _tapAction = null;
                   action?.call();
                 },
-                child: slot,
+                child: widget.padding == EdgeInsets.zero
+                    ? slot
+                    : Padding(padding: widget.padding, child: slot),
               ),
               if (_hover || _dragging || (widget.showLabel && widget.selected))
                 Positioned.fill(

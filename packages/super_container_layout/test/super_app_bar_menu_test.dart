@@ -83,7 +83,9 @@ void main() {
       );
     }
     expect(
-      find.byKey(const ValueKey('style-menu-size-Taille préférée : body')),
+      find.byKey(
+        const ValueKey('style-menu-size-Taille et marge préférées : body'),
+      ),
       findsNothing,
     );
     for (final action in ['size', 'remove']) {
@@ -91,7 +93,9 @@ void main() {
         tester
             .widget<IconButton>(
               find.byKey(
-                ValueKey('style-menu-$action-Taille préférée : NewContainer'),
+                ValueKey(
+                  'style-menu-$action-Taille et marge préférées : NewContainer',
+                ),
               ),
             )
             .onPressed,
@@ -184,7 +188,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final removeAction = find.byKey(
-      const ValueKey('style-menu-remove-Taille préférée : Removable'),
+      const ValueKey('style-menu-remove-Taille et marge préférées : Removable'),
     );
     expect(removeAction, findsOneWidget);
     await tester.tap(removeAction);
@@ -246,11 +250,15 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(
-          find.byKey(ValueKey('style-menu-size-Taille préférée : $slot')),
+          find.byKey(
+            ValueKey('style-menu-size-Taille et marge préférées : $slot'),
+          ),
           findsOneWidget,
         );
         await tester.tap(
-          find.byKey(ValueKey('style-menu-remove-Taille préférée : $slot')),
+          find.byKey(
+            ValueKey('style-menu-remove-Taille et marge préférées : $slot'),
+          ),
         );
         await tester.pumpAndSettle();
         expect(content, findsNothing);

@@ -366,7 +366,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final button = find.byKey(
-      const ValueKey('style-menu-size-Taille préférée : Target'),
+      const ValueKey('style-menu-size-Taille et marge préférées : Target'),
     );
     expect(
       button,
@@ -383,7 +383,7 @@ void main() {
     final bannerBefore = screenRect(tester, banner);
     await tester.tap(button);
     await tester.pumpAndSettle();
-    expect(find.text('Tailles du slot : Target'), findsOneWidget);
+    expect(find.text('Taille et marge préférées : Target'), findsOneWidget);
     expect(
       screenRect(tester, target).overlaps(
         screenRect(tester, find.byKey(const ValueKey('editor-dialog-panel'))),
@@ -431,7 +431,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('style-menu-size-Taille préférée : Target')),
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : Target'),
+        ),
         findsOneWidget,
       );
       await tester.tapAt(const Offset(790, 590));

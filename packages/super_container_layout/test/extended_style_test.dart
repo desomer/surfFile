@@ -415,7 +415,11 @@ void main() {
       await open(tester);
       await toggle(tester, 'radii-switch');
       expect(current(tester).radii, isNotNull);
-      final corner = find.byKey(const ValueKey('radii-1-Super container'));
+      final corner = find.byWidgetPredicate(
+        (widget) =>
+            widget is Slider &&
+            widget.key == const ValueKey('radii-1-Super container'),
+      );
       await tester.ensureVisible(corner);
       tester.widget<Slider>(corner).onChanged!(20);
       await tester.pump();
@@ -428,6 +432,15 @@ void main() {
       expect(current(tester).borderWidths, isNotNull);
       await toggle(tester, 'padding-sides-switch');
       expect(current(tester).paddingInsets, isNotNull);
+      final topPadding = find.byWidgetPredicate(
+        (widget) =>
+            widget is Slider &&
+            widget.key == const ValueKey('padding-side-0-Super container'),
+      );
+      await tester.ensureVisible(topPadding);
+      tester.widget<Slider>(topPadding).onChanged!(18);
+      await tester.pump();
+      expect(current(tester).paddingInsets!.top, 18);
       await toggle(tester, 'margin-sides-switch');
       expect(current(tester).marginInsets, isNotNull);
       expect(tester.takeException(), isNull);

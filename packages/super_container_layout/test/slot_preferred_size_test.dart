@@ -69,10 +69,16 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+      find.byKey(
+        const ValueKey('style-menu-size-Taille et marge préférées : first'),
+      ),
     );
     await tester.pumpAndSettle();
   }
+
+  Finder slider(String key) => find.byWidgetPredicate(
+    (widget) => widget is Slider && widget.key == ValueKey(key),
+  );
 
   testWidgets('corner handles belong only to the selected editable slot', (
     tester,
@@ -107,6 +113,86 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('slot-label-select-first')));
     await tester.pumpAndSettle();
     expect(handle('first', 'se'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot padding is saved and applied around its content', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      editMode: mode,
+      config: base.copyWith(
+        slotPreferredSizes: const {'first': Size(300, 200)},
+        slotSizeConstraints: const {'first': SlotSizeConstraints(padding: 12)},
+      ),
+      onChanged: (value) => changed = value,
+    );
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(276, 176),
+    );
+
+    await openEditor(tester);
+    expect(find.byKey(const ValueKey('slot-padding-card')), findsOneWidget);
+    tester.widget<Slider>(slider('slot-padding')).onChanged!(24);
+    await tester.pump();
+    expect(changed!.slotSizeConstraints['first']!.padding, 24);
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(
+      SlotSizeConstraints.fromJson(
+        changed!.slotSizeConstraints['first']!.toJson(),
+      ),
+      changed!.slotSizeConstraints['first'],
+    );
+    expect(SuperLayoutConfig.fromJson(changed!.toJson()), changed);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(252, 152),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('slot padding can be configured independently by side', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    SuperLayoutConfig? changed;
+    await pump(
+      tester,
+      editMode: mode,
+      config: base.copyWith(
+        slotPreferredSizes: const {'first': Size(300, 200)},
+      ),
+      onChanged: (value) => changed = value,
+    );
+    await openEditor(tester);
+    final independent = find
+        .byKey(const ValueKey('slot-padding-independent'))
+        .first;
+    await tester.ensureVisible(independent);
+    await tester.tap(independent);
+    await tester.pumpAndSettle();
+    final top = slider('slot-padding-side-0');
+    await tester.ensureVisible(top);
+    tester.widget<Slider>(top).onChanged!(32);
+    await tester.pump();
+    expect(
+      changed!.slotSizeConstraints['first']!.paddingInsets,
+      const EdgeInsets.only(top: 32),
+    );
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(SuperLayoutConfig.fromJson(changed!.toJson()), changed);
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(300, 168),
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -605,7 +691,7 @@ void main() {
         onChanged: (value) => changed = value,
       );
       await openEditor(tester);
-      expect(find.byType(Slider), findsNWidgets(2));
+      expect(find.byType(Slider), findsNWidgets(3));
       final slider = find.byKey(const ValueKey('slot-slider-preferred-height'));
       await tester.ensureVisible(slider);
       await tester.pumpAndSettle();
@@ -693,6 +779,7 @@ void main() {
           maxHeight: SlotDimension(75, SlotSizeUnit.percent),
           preferredWidth: SlotDimension(240, SlotSizeUnit.pixels),
           preferredHeight: SlotDimension(50, SlotSizeUnit.percent),
+          padding: 16,
           percentBasis: SlotPercentBasis.layout,
         ),
       },
@@ -708,6 +795,10 @@ void main() {
           },
         },
       }),
+      throwsFormatException,
+    );
+    expect(
+      () => SlotSizeConstraints.fromJson({'padding': 201}),
       throwsFormatException,
     );
   });
@@ -846,9 +937,11 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    expect(find.text('Taille préférée : first'), findsNothing);
+    expect(find.text('Taille et marge préférées : first'), findsNothing);
     expect(
-      find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+      find.byKey(
+        const ValueKey('style-menu-size-Taille et marge préférées : first'),
+      ),
       findsOneWidget,
     );
     expect(
@@ -860,19 +953,21 @@ void main() {
         find.descendant(
           of: find.byKey(const ValueKey('style-menu-Style du slot')),
           matching: find.byKey(
-            ValueKey('style-menu-$action-Taille préférée : first'),
+            ValueKey('style-menu-$action-Taille et marge préférées : first'),
           ),
         ),
         findsOneWidget,
       );
     }
     await tester.tap(
-      find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
+      find.byKey(
+        const ValueKey('style-menu-remove-Taille et marge préférées : first'),
+      ),
     );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('content-first')), findsNothing);
     expect(find.byKey(const ValueKey('content-second')), findsOneWidget);
-    expect(find.text('Taille préférée : first'), findsNothing);
+    expect(find.text('Taille et marge préférées : first'), findsNothing);
     expect(find.text('Largeur (px)'), findsNothing);
     expect(changes.single.placementsOf(SuperLayoutZone.center), ['second']);
     expect(changes.single.slotPreferredSizes.containsKey('first'), isFalse);
@@ -1378,7 +1473,9 @@ void main() {
       expect(find.text('Style du slot'), findsOneWidget);
       expect(find.text('Super layout'), findsOneWidget);
       await tester.tap(
-        find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : first'),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -1422,7 +1519,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(changed!.slotPreferredSizes['first'], const Size(240.5, 90));
       await openEditor(tester);
-      await tester.tap(find.text('Taille automatique'));
+      await tester.tap(find.text('Taille et marge par défaut'));
       await tester.pumpAndSettle();
       expect(changed!.slotPreferredSizes, {'first': null});
       expect(
@@ -1736,13 +1833,17 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Taille préférée : first'), findsNothing);
+      expect(find.text('Taille et marge préférées : first'), findsNothing);
       expect(
-        find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : first'),
+        ),
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
+        find.byKey(
+          const ValueKey('style-menu-remove-Taille et marge préférées : first'),
+        ),
         findsNothing,
       );
       editMode.value = true;
@@ -1752,13 +1853,17 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      expect(find.text('Taille préférée : first'), findsNothing);
+      expect(find.text('Taille et marge préférées : first'), findsNothing);
       expect(
-        find.byKey(const ValueKey('style-menu-size-Taille préférée : first')),
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : first'),
+        ),
         findsNothing,
       );
       expect(
-        find.byKey(const ValueKey('style-menu-remove-Taille préférée : first')),
+        find.byKey(
+          const ValueKey('style-menu-remove-Taille et marge préférées : first'),
+        ),
         findsNothing,
       );
     },

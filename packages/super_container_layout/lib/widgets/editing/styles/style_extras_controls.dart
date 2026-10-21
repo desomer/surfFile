@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../theme/container_style.dart';
 import '../../../theme/style_extras.dart';
 import 'container_style_editor.dart' show styleColorTile;
+import 'independent_spacing_editor.dart';
 import 'style_editor_panel.dart';
 
 /// Réglages de forme et d'aspect ajoutés au style de base : coins et côtés
@@ -237,37 +238,50 @@ class StyleExtrasControls {
     ];
   }
 
-  /// Marge ou padding uniforme ([uniform]) ou par côté.
-  List<Widget> spacing(List<Widget> uniform, {required bool padding}) {
-    final value = padding ? style.paddingInsets : style.marginInsets;
+  /// Marge ou padding uniforme ou par côté, avec le même éditeur partagé.
+  List<Widget> spacing({required bool padding}) {
+    final sideValues = padding ? style.paddingInsets : style.marginInsets;
     final scalar = padding ? style.padding : style.margin;
+    final value = sideValues?.insets;
     return [
-      if (value == null) ...uniform,
-      StyleSwitchField(
-        key: ValueKey('${padding ? 'padding' : 'margin'}-sides-switch-$label'),
-        title: 'Côtés indépendants',
-        value: value != null,
-        onChanged: (on) {
-          final next = on ? Quad.all(scalar) : null;
-          onStyle(
-            padding
-                ? style.copyWith(paddingInsets: next)
-                : style.copyWith(marginInsets: next),
-          );
-        },
-      ),
-      if (value != null)
-        ..._quad(
-          id: padding ? 'padding-side' : 'margin-side',
-          names: _sides,
-          value: value,
-          max: ContainerStyle.maxSpacing,
-          onChanged: (v) => onStyle(
-            padding
-                ? style.copyWith(paddingInsets: v)
-                : style.copyWith(marginInsets: v),
-          ),
+      IndependentSpacingEditor(
+        label: padding ? 'Marge intérieure (padding)' : 'Marge extérieure',
+        value: scalar,
+        sides: value,
+        max: ContainerStyle.maxSpacing,
+        keyPrefix: '${padding ? 'padding' : 'margin'}-$label',
+        sliderKey: ValueKey('${padding ? 'padding' : 'margin'}-$label'),
+        independentKey: ValueKey(
+          '${padding ? 'padding' : 'margin'}-sides-switch-$label',
         ),
+        sideKeyPrefix: padding ? 'padding' : 'margin',
+        sideKeySuffix: '-$label',
+        onChanged: (nextScalar, nextSides) => onStyle(
+          padding
+              ? style.copyWith(
+                  padding: nextScalar,
+                  paddingInsets: nextSides == null
+                      ? null
+                      : Quad(
+                          nextSides.top,
+                          nextSides.right,
+                          nextSides.bottom,
+                          nextSides.left,
+                        ),
+                )
+              : style.copyWith(
+                  margin: nextScalar,
+                  marginInsets: nextSides == null
+                      ? null
+                      : Quad(
+                          nextSides.top,
+                          nextSides.right,
+                          nextSides.bottom,
+                          nextSides.left,
+                        ),
+                ),
+        ),
+      ),
     ];
   }
 

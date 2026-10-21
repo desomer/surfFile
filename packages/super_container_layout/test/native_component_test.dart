@@ -85,6 +85,14 @@ void main() {
         () => initial.withSlotMoved('unknown', 'left'),
         throwsArgumentError,
       );
+      final padded = initial.withSlotSizeConstraints(
+        'a',
+        const SlotSizeConstraints(padding: 12),
+      );
+      expect(
+        NativeComponentConfig.fromJson(padded.toJson()).slotSizeConstraints,
+        padded.slotSizeConstraints,
+      );
     },
   );
 
@@ -161,11 +169,10 @@ void main() {
         await open();
         await enter('min-width', '40');
         await enter('preferred-width', '50');
-        final unit = find.byKey(const ValueKey('slot-unit-preferred-width'));
-        await tester.ensureVisible(unit);
-        await tester.tap(unit);
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('%').last);
+        final unit = tester.widget<DropdownButton<SlotSizeUnit>>(
+          find.byKey(const ValueKey('slot-unit-preferred-width')),
+        );
+        unit.onChanged!(SlotSizeUnit.percent);
         await tester.pumpAndSettle();
         await enter('max-width', '180');
         await tester.tap(find.text('Appliquer'));
@@ -197,7 +204,18 @@ void main() {
               .text,
           '180.0',
         );
-        await tester.tap(find.text('Taille automatique'));
+        tester
+            .widget<Slider>(
+              find.byWidgetPredicate(
+                (widget) =>
+                    widget is Slider &&
+                    widget.key == const ValueKey('slot-padding'),
+              ),
+            )
+            .onChanged!(18);
+        await tester.pumpAndSettle();
+        expect(controller.value.slotSizeConstraints['a']!.padding, 18);
+        await tester.tap(find.text('Taille et marge par défaut'));
         await tester.pumpAndSettle();
         expect(
           controller.value.slotSizeConstraints['a'],
@@ -833,7 +851,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey('style-menu-remove-Taille préférée : title')),
+      find.byKey(
+        const ValueKey('style-menu-remove-Taille et marge préférées : title'),
+      ),
     );
     await tester.pumpAndSettle();
     expect(
@@ -1175,7 +1195,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey('style-menu-size-Taille préférée : title')),
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : title'),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.enterText(
@@ -1465,7 +1487,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
-          const ValueKey('style-menu-remove-Taille préférée : NewContainer'),
+          const ValueKey(
+            'style-menu-remove-Taille et marge préférées : NewContainer',
+          ),
         ),
       );
       await tester.pumpAndSettle();

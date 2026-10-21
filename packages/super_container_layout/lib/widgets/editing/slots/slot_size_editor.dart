@@ -5,6 +5,7 @@ import '../../super_layout/slot_implementation.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../history/editor_history.dart';
+import '../styles/independent_spacing_editor.dart';
 
 typedef SlotSizeGeometry = ({Size layout, Rect zone, Rect slot});
 
@@ -31,7 +32,7 @@ Future<void> showSlotSizeEditor({
     'min-height': (saved?.minHeight, 'Hauteur minimale'),
     'preferred-width': (
       saved?.preferredWidth ??
-          (saved == null && legacy != null
+          ((saved == null || !saved.hasSizeConstraints) && legacy != null
               ? legacy.width.isFinite
                     ? SlotDimension(legacy.width, SlotSizeUnit.pixels)
                     : null
@@ -40,7 +41,7 @@ Future<void> showSlotSizeEditor({
     ),
     'preferred-height': (
       saved?.preferredHeight ??
-          (saved == null && legacy != null
+          ((saved == null || !saved.hasSizeConstraints) && legacy != null
               ? legacy.height.isFinite
                     ? SlotDimension(legacy.height, SlotSizeUnit.pixels)
                     : null
@@ -64,6 +65,8 @@ Future<void> showSlotSizeEditor({
     saved?.percentBasis ?? SlotPercentBasis.layout,
   );
   final sliderGroup = ValueNotifier('preferred');
+  final padding = ValueNotifier(saved?.padding ?? 0.0);
+  final paddingInsets = ValueNotifier(saved?.paddingInsets);
   var percentBasisChanged = false;
   final form = GlobalKey<FormState>();
   String? validate(String? text) {
@@ -91,6 +94,8 @@ Future<void> showSlotSizeEditor({
       preferredHeight: dimension('preferred-height'),
       maxWidth: dimension('max-width'),
       maxHeight: dimension('max-height'),
+      padding: padding.value,
+      paddingInsets: paddingInsets.value,
       percentBasis: percentBasis.value,
     );
   }
@@ -141,6 +146,8 @@ Future<void> showSlotSizeEditor({
   for (final unit in units.values) {
     unit.addListener(preview);
   }
+  padding.addListener(preview);
+  paddingInsets.addListener(preview);
   percentBasis.addListener(preview);
   final layoutSize = context.size ?? Size.zero;
 
@@ -153,7 +160,7 @@ Future<void> showSlotSizeEditor({
         title: ValueListenableBuilder<String>(
           valueListenable: label,
           builder: (context, value, _) => EditorDialogHeader(
-            label: 'Tailles du slot : $value',
+            label: 'Taille et marge préférées : $value',
             editableLabel: onLabelChanged == null ? null : value,
             onLabelChanged: onLabelChanged == null
                 ? null
@@ -172,6 +179,8 @@ Future<void> showSlotSizeEditor({
                 listenable: Listenable.merge([
                   ...controllers.values,
                   ...units.values,
+                  padding,
+                  paddingInsets,
                   percentBasis,
                   sliderGroup,
                   changes,
@@ -333,6 +342,24 @@ Future<void> showSlotSizeEditor({
                         ],
                       ),
                     ],
+                    const SizedBox(height: 16),
+                    _SlotPaddingCard(
+                      child: IndependentSpacingEditor(
+                        label: 'Marge uniforme',
+                        value: padding.value,
+                        sides: paddingInsets.value,
+                        max: SlotSizeConstraints.maxPadding,
+                        keyPrefix: 'slot-padding',
+                        sliderKey: const ValueKey('slot-padding'),
+                        independentKey: const ValueKey(
+                          'slot-padding-independent',
+                        ),
+                        onChanged: (value, sides) {
+                          padding.value = value;
+                          paddingInsets.value = sides;
+                        },
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -343,7 +370,7 @@ Future<void> showSlotSizeEditor({
           TextButton(
             onPressed: () =>
                 Navigator.of(context).pop(const SlotSizeConstraints()),
-            child: const Text('Taille automatique'),
+            child: const Text('Taille et marge par défaut'),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -380,6 +407,8 @@ Future<void> showSlotSizeEditor({
       unit.removeListener(preview);
     }
     percentBasis.removeListener(preview);
+    padding.removeListener(preview);
+    paddingInsets.removeListener(preview);
     // Le dialogue peut encore terminer son animation de fermeture.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final controller in controllers.values) {
@@ -389,9 +418,52 @@ Future<void> showSlotSizeEditor({
         unit.dispose();
       }
       percentBasis.dispose();
+      padding.dispose();
+      paddingInsets.dispose();
       sliderGroup.dispose();
       label.dispose();
     });
+  }
+}
+
+class _SlotPaddingCard extends StatelessWidget {
+  const _SlotPaddingCard({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      key: const ValueKey('slot-padding-card'),
+      color: scheme.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.padding, size: 18, color: scheme.primary),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Marge autour du contenu',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            child,
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -575,6 +647,10 @@ class _SlotSizePreviewState extends State<_SlotSizePreview> {
           'Effective : ${measured.slot.width.toStringAsFixed(1)}'
           ' × ${measured.slot.height.toStringAsFixed(1)} px',
           key: const ValueKey('slot-preview-effective'),
+        ),
+        Text(
+          'Marge autour du contenu : '
+          '${widget.dimensions.contentPadding}',
         ),
         if (widget.dimensions.minWidth != null ||
             widget.dimensions.minHeight != null ||
