@@ -68,9 +68,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Masquer les espacements'), findsOneWidget);
     expect(
-      tester
-          .getSize(find.byKey(const ValueKey('preview-Card')))
-          .height,
+      tester.getSize(find.byKey(const ValueKey('preview-Card'))).height,
       isNot(height),
     );
     expect(tester.takeException(), isNull);
@@ -111,7 +109,13 @@ void main() {
       expect(find.byKey(const ValueKey('style-preview')), findsNothing);
       expect(find.text('PROPRIÉTÉS'), findsNothing);
       expect(find.text('Du visuel au code'), findsNothing);
-      expect(find.byType(ChoiceChip), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(StyleEditorPanel),
+          matching: find.byType(ChoiceChip),
+        ),
+        findsNothing,
+      );
       final navigation = find.byKey(const ValueKey('style-nav-fill'));
       expect(
         tester.widget<IconButton>(navigation).tooltip,
@@ -153,12 +157,19 @@ void main() {
     Future<void> reopen() async {
       Navigator.of(tester.element(find.byType(StyleEditorPanel))).pop();
       await tester.pumpAndSettle();
-      tester.state<EditableSurfaceState>(find.byType(EditableSurface)).openEditor();
+      tester
+          .state<EditableSurfaceState>(find.byType(EditableSurface))
+          .openEditor();
       await tester.pumpAndSettle();
     }
-    double contentWidth() => tester.getSize(
-      find.byWidget(tester.widget<AlertDialog>(find.byType(AlertDialog)).content!),
-    ).width;
+
+    double contentWidth() => tester
+        .getSize(
+          find.byWidget(
+            tester.widget<AlertDialog>(find.byType(AlertDialog)).content!,
+          ),
+        )
+        .width;
     final completeWidth = contentWidth();
     final toggle = find.byKey(const ValueKey('style-dense-toggle'));
     await tester.tap(toggle);

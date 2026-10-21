@@ -12,7 +12,11 @@ import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_overlay.dart';
 
 export 'editor_context_menu.dart'
-    show EditorContextMenuEntry, EditorSlotAction, EditorSlotWrapAction;
+    show
+        EditorContextMenuEntry,
+        EditorSlotAction,
+        EditorSlotWrapAction,
+        EditorMenuDestination;
 
 /// Enables/disables editor gestures below this scope.
 ///
@@ -64,6 +68,7 @@ class EditorSlot extends StatefulWidget {
     this.menuSubtitle,
     this.onContextMenu,
     this.menuIcon,
+    this.menuDestination = EditorMenuDestination.configuration,
     this.identity,
     this.outlineRadius = 0,
     this.onRemoveChild,
@@ -82,6 +87,7 @@ class EditorSlot extends StatefulWidget {
   final String? Function()? menuSubtitle;
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
+  final EditorMenuDestination menuDestination;
 
   /// Optional semantic identity used to deduplicate equivalent nested slots.
   final Object? identity;
@@ -256,6 +262,38 @@ class EditorSlotState extends State<EditorSlot> {
     ),
     alignment: Alignment.center,
     child: Icon(icon, size: 19, color: foreground),
+  );
+
+  Widget _menuTitle(
+    String label, {
+    required EditorMenuDestination? destination,
+    TextStyle? style,
+  }) => Row(
+    children: [
+      if (destination != null) ...[
+        Tooltip(
+          message: destination == EditorMenuDestination.style
+              ? 'Ouvre le style'
+              : 'Ouvre les paramètres',
+          child: Icon(
+            destination == EditorMenuDestination.style
+                ? Icons.palette_outlined
+                : Icons.settings_outlined,
+            size: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(width: 4),
+      ],
+      Expanded(
+        child: Text(
+          label,
+          style: style ?? Theme.of(context).textTheme.titleSmall,
+          overflow: TextOverflow.ellipsis,
+          maxLines: 1,
+        ),
+      ),
+    ],
   );
 
   ButtonStyle _menuIconButtonStyle(
@@ -452,10 +490,9 @@ class EditorSlotState extends State<EditorSlot> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(
+                      child: _menuTitle(
                         action.label,
-                        style: Theme.of(context).textTheme.titleSmall,
-                        overflow: TextOverflow.ellipsis,
+                        destination: action.destination,
                       ),
                     ),
                     if (action.onRemove case final remove?)
@@ -499,10 +536,9 @@ class EditorSlotState extends State<EditorSlot> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text(
+                          child: _menuTitle(
                             entry.label,
-                            style: Theme.of(context).textTheme.titleSmall,
-                            overflow: TextOverflow.ellipsis,
+                            destination: entry.destination,
                           ),
                         ),
                       ],
@@ -539,12 +575,13 @@ class EditorSlotState extends State<EditorSlot> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
+                              _menuTitle(
                                 state.widget.menuTitle ?? state.label,
+                                destination: state.widget.onEdit == null
+                                    ? null
+                                    : state.widget.menuDestination,
                                 style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.w600),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
                               ),
                               if ((state.widget.menuSubtitle?.call() ??
                                       ((StyleEditScope.controllerOf(

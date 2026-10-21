@@ -1,10 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../models/json_text_binding.dart';
+
 import 'container_fill.dart';
 import 'design_system.dart';
 import 'interaction_effect.dart';
 import 'neon_style.dart';
 import 'style_extras.dart';
+
+part 'surface_style_states.dart';
 
 const Object _keep = Object();
 
@@ -38,6 +42,7 @@ class ContainerStyle {
     this.pattern = SurfacePattern.none,
     this.patternOpacity = .1,
     this.transform,
+    this.states,
   });
 
   static const maxSpacing = 48.0;
@@ -93,6 +98,7 @@ class ContainerStyle {
   final SurfacePattern pattern;
   final double patternOpacity;
   final TransformSpec? transform;
+  final SurfaceStyleStates? states;
 
   static const maxBlur = 40.0;
 
@@ -122,6 +128,7 @@ class ContainerStyle {
   /// Reprend de [other] les réglages de forme et d'aspect ajoutés au style de
   /// base (coins, côtés, ombres, motif, transformation…).
   ContainerStyle withLookOf(ContainerStyle other) => ContainerStyle(
+    states: states,
     color: color,
     fill: fill,
     radius: radius,
@@ -188,7 +195,10 @@ class ContainerStyle {
     SurfacePattern? pattern,
     double? patternOpacity,
     Object? transform = _keep,
+    SurfaceStyleStates? states,
+    bool clearStates = false,
   }) => ContainerStyle(
+    states: clearStates ? null : states ?? this.states,
     color: resetColor ? null : color ?? this.color,
     fill: fill ?? this.fill,
     radius: radius ?? this.radius,
@@ -273,6 +283,7 @@ class ContainerStyle {
     if (pattern != SurfacePattern.none) 'pattern': pattern.name,
     if (patternOpacity != .1) 'patternOpacity': patternOpacity,
     if (transform != null) 'transform': transform!.toJson(),
+    if (states != null) 'states': states!.toJson(),
   };
 
   static ContainerStyle fromJson(
@@ -340,6 +351,9 @@ class ContainerStyle {
       throw const FormatException('Motif de conteneur invalide.');
     }
     return ContainerStyle(
+      states: value['states'] == null
+          ? null
+          : SurfaceStyleStates.fromJson(value['states']),
       color: color == null ? null : Color(color as int),
       fill: ContainerFill.fromJson(value['fill']),
       radius: number('radius', 0, 36),

@@ -61,6 +61,13 @@ même lorsque le label est tronqué. Les actions des zones restent compactes
 (24 px, icônes de 14 px).
 Le curseur affiche une main ouverte au survol des labels déplaçables et une
 main fermée pendant leur déplacement.
+Dans le menu contextuel d'édition, une icône de 12 px avant le titre indique
+ce qu'ouvre le clic sur le libellé : palette pour le style, engrenage pour les
+paramètres. Elle ne constitue pas un bouton supplémentaire et conserve le
+badge du composant et les actions existantes. Les entrées désactivées
+n'affichent pas cet indicateur. `EditorMenuDestination` permet de déclarer
+la destination d'un éditeur personnalisé via `menuDestination` sur
+`EditorSlot`/`EditableSurface`, ou `destination` sur une action/entrée de menu.
 Sur Windows natif, où Flutter ne gère pas ces deux curseurs, une main de
 pointage apparaît au survol et le curseur de déplacement pendant le glisser.
 En mode édition, un clic sur le contenu sélectionne sa zone englobante.
@@ -379,6 +386,46 @@ L'operation est sauvegardee et constitue une seule etape d'annulation/retablisse
 Elle fonctionne aussi avec les slots et les champs `child` fournis par le code :
 leur definition doit rester presente dans le widget d'origine pour les retrouver
 au chargement. Les enveloppements successifs sont possibles.
+
+### Styles de surface par état
+
+Toutes les surfaces `EditableSurface` (dont Card et IterableContent) proposent
+des boutons de sélection côte à côte : **Par défaut**, les états nommés, **Hover** et,
+dans une ligne de ListView, **Sélectionné**. L'état choisi est mis en évidence ;
+les boutons passent à la ligne si nécessaire. Les actions permettent d'ajouter,
+renommer ou supprimer un état.
+Un nouvel état copie le style par défaut, puis devient un style complet indépendant :
+modifier le défaut ne modifie pas les états existants.
+
+Le bouton de liaison choisit un repository et un attribut JSON, par exemple
+`clients[?].statut`. Le repository et les indices peuvent être hérités de la ligne.
+La valeur doit être une chaîne correspondant exactement au nom de l'état,
+casse comprise. Une valeur absente, nulle ou inconnue utilise le défaut.
+Les erreurs de liaison ou de type apparaissent dans l'éditeur, pas dans la page.
+Les lectures sont réactives et ne modifient ni le JSON ni l'historique d'apparence.
+Renommer un état ne renomme pas les valeurs dans le repository.
+
+**Hover** s'active lorsque la souris survole la surface, y compris ses enfants.
+Il se configure comme **Sélectionné**, sans modifier la sélection ou le JSON.
+Ces deux états sont des surcouches : seules les familles de propriétés activées
+par leurs puces remplacent le style courant. Modifier une propriété active sa
+famille ; désactiver la puce rétablit l'héritage. Zéro, faux et une couleur
+absente sont des remplacements explicites. L'ordre initial est :
+**défaut → état JSON complet → Hover → Sélectionné**.
+Glissez les boutons d'état pour changer leur priorité : parmi les états actifs,
+le suivant remplace le précédent. Le défaut reste la base fixe à gauche.
+Un état JSON est toujours un style complet : placé après une surcouche, il
+remplace donc aussi les propriétés de celle-ci. L'ordre est sauvegardé avec le style.
+Dans les listes imbriquées, seule la sélection de la ligne la plus proche compte.
+La surbrillance habituelle de la ListView reste présente tant que son gabarit
+ne définit aucune propriété de sélection.
+
+Le sélecteur fournit un aperçu local sans changer la sélection réelle ni le JSON.
+**Appliquer** conserve les définitions ; **Annuler** les restaure. L'aperçu disparaît
+à la fermeture. Le tableau est sauvegardé avec le style et suit sa duplication
+et son historique. Les variantes Standard/Sélectionné des `AppearanceSlot`
+restent distinctes de ces états. `SuperContainer` seul reste un moteur de rendu :
+la résolution des états est assurée par `EditableSurface`.
 
 ### IterableContent : surface stylable et disposition
 

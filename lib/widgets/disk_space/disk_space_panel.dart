@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../../theme/surffile_appearance_slots.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_context_menu.dart'
+    show EditorMenuDestination;
 
 import '../../services/disk_space.dart';
 import 'disk_gauge.dart';
@@ -299,6 +301,7 @@ class _DiskTile extends StatelessWidget {
                         key: ValueKey('disk-gauge-${disk.path}'),
                         decorate: false,
                         label: 'Style de la jauge des disques',
+                        menuDestination: EditorMenuDestination.style,
                         onEdit: () => showDiskGaugeStyleEditor(context),
                         child: DiskGauge(
                           value: used,

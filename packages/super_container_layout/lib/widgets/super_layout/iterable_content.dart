@@ -69,7 +69,7 @@ class _IterableContentState extends State<IterableContent> {
       builder: (context, value, _) => EditableSurface(
         label: widget.label,
         menuType: 'IterableContent',
-        menuIcon: Icons.article_outlined,
+        menuIcon: Icons.loop,
         editable: widget.editable,
         fallbackColor: Colors.transparent,
         style: value,

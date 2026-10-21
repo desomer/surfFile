@@ -65,6 +65,7 @@ class JsonListScope extends InheritedWidget {
   const JsonListScope({
     required this.repositoryId,
     required this.indices,
+    this.selected = false,
     this.placeholder = false,
     required super.child,
     super.key,
@@ -75,6 +76,9 @@ class JsonListScope extends InheritedWidget {
 
   /// Indices des lignes englobantes, liste externe d'abord.
   final List<int> indices;
+
+  /// Whether the nearest row is selected in its list.
+  final bool selected;
 
   /// Ligne de gabarit affichée sans donnée (tableau vide ou illisible, en
   /// mode édition) : les composants ne doivent ni lire ni écrire.
@@ -160,6 +164,7 @@ class JsonListScope extends InheritedWidget {
   @override
   bool updateShouldNotify(JsonListScope oldWidget) =>
       repositoryId != oldWidget.repositoryId ||
+      selected != oldWidget.selected ||
       placeholder != oldWidget.placeholder ||
       !listEquals(indices, oldWidget.indices);
 }

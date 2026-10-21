@@ -489,6 +489,77 @@ void main() {
     expect(clients[0]['name'], 'Alice');
   });
 
+  testWidgets(
+    'row states follow JSON and selection without overwriting shared style',
+    (tester) async {
+      final templateStyle = ContainerStyle(
+        color: Colors.grey,
+        states: SurfaceStyleStates(
+          binding: const JsonTextBinding(path: 'clients[?].name'),
+          named: {
+            'Alice': const ContainerStyle(color: Colors.blue, padding: 2),
+            'Bob': const ContainerStyle(color: Colors.green, padding: 4),
+          },
+          selected: SelectedSurfaceStyle(
+            style: const ContainerStyle(borderWidth: 2),
+            properties: {SurfaceStyleProperty.border},
+          ),
+        ),
+      );
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            itemExtent: 100,
+          ),
+          templateStyle: templateStyle,
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+      ContainerStyle surface(int index) => tester
+          .widget<SuperContainer>(
+            find
+                .descendant(
+                  of: row('clients', index),
+                  matching: find.byType(SuperContainer),
+                )
+                .first,
+          )
+          .style;
+      expect(surface(0).color, Colors.blue);
+      expect(surface(1).color, Colors.green);
+      await tester.tap(find.text('Bob'));
+      await tester.pumpAndSettle();
+      expect(surface(1).borderWidth, 2);
+      expect(surface(1).color, const Color(0xFF4CAF50));
+      expect(surface(0).borderWidth, 0);
+      expect(
+        find.byKey(const ValueKey('super-list-selected-clients-1')),
+        findsNothing,
+      );
+      await real(tester, () async {
+        final original = await store.read('Shop');
+        final json = jsonDecode(original) as Map<String, dynamic>;
+        (json['clients'] as List)[1]['name'] = 'unknown';
+        await store.save('Shop', jsonEncode(json), expectedText: original);
+      });
+      expect(surface(1).color, const Color(0xFF9E9E9E));
+      expect(surface(1).borderWidth, 2);
+      expect(
+        tester
+            .widgetList<IterableContent>(find.byType(IterableContent))
+            .every((content) => identical(content.style, templateStyle)),
+        isTrue,
+      );
+      await real(tester, store.flushBindings);
+      await real(tester, () => tester.pumpWidget(const SizedBox()));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('fixed Wrap responds to available width and preserves spacing', (
     tester,
   ) async {
@@ -544,6 +615,89 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'state binding editor inherits the row repository and exposes type errors',
+    (tester) async {
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: SuperListViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            itemExtent: 100,
+          ),
+          templateStyle: ContainerStyle(
+            states: SurfaceStyleStates(
+              binding: const JsonTextBinding(path: 'clients[?].name'),
+              named: {'Alice': const ContainerStyle(padding: 8)},
+            ),
+          ),
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+      final surface = find
+          .descendant(
+            of: row('clients', 0),
+            matching: find.byType(EditableSurface),
+          )
+          .first;
+      final state = tester.state<EditableSurfaceState>(surface);
+      final dialog = state.openEditor();
+      await tester.pumpAndSettle();
+      await real(
+        tester,
+        () => tester.tap(find.byKey(const ValueKey('surface-state-binding'))),
+      );
+      expect(
+        tester
+            .widget<DropdownButton<String>>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('surface-state-binding-repository'),
+                ),
+                matching: find.byType(DropdownButton<String>),
+              ),
+            )
+            .value,
+        '*',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('surface-state-binding-repository-path')),
+        'clients[?].orders',
+      );
+      await real(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey('surface-state-binding-apply')),
+        ),
+      );
+      expect(find.byKey(const ValueKey('surface-state-error')), findsOneWidget);
+      await tester.tap(find.text('Annuler').last);
+      await real(tester, () async {
+        await dialog;
+      });
+      expect(state.style.states!.binding!.path, 'clients[?].name');
+      expect(
+        tester
+            .widget<SuperContainer>(
+              find
+                  .descendant(
+                    of: row('clients', 0),
+                    matching: find.byType(SuperContainer),
+                  )
+                  .first,
+            )
+            .style
+            .padding,
+        8,
+      );
+      await real(tester, store.flushBindings);
+      await real(tester, () => tester.pumpWidget(const SizedBox()));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('automatic Wrap measures each row including its surface style', (
     tester,

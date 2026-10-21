@@ -29,7 +29,23 @@ void main() {
     test('$type owns and duplicates its shared style and layout', () {
       final registry = Registry()..bootstrap();
       final original = Appearance(
-        styles: {'item': const ContainerStyle(color: Colors.blue, radius: 14)},
+        styles: {
+          'item': ContainerStyle(
+            color: Colors.blue,
+            radius: 14,
+            states: SurfaceStyleStates(
+              binding: const JsonTextBinding(
+                repositoryId: '0123456789abcdef0123456789abcdef',
+                path: 'items[?].status',
+              ),
+              named: {'ready': const ContainerStyle(color: Colors.green)},
+              selected: SelectedSurfaceStyle(
+                style: const ContainerStyle(radius: 0),
+                properties: {SurfaceStyleProperty.corners},
+              ),
+            ),
+          ),
+        },
         layouts: {
           'item': const SuperLayoutConfig(
             placements: {
@@ -61,6 +77,11 @@ void main() {
       expect(id, isNot('item'));
       expect(copy.styles[id]!.radius, 14);
       expect(copy.styles[id]!.color, Colors.blue);
+      expect(copy.styles[id]!.states, original.styles['item']!.states);
+      expect(
+        copy.styles[id]!.states!.binding!.repositoryId,
+        '0123456789abcdef0123456789abcdef',
+      );
       final child = copy.layouts[id]!.placedSlotIds.single;
       expect(child, isNot('text'));
       expect(copy.textComponents[child]!.initialText, 'Saved');

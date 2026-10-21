@@ -3,9 +3,13 @@ import 'package:material_ui/material_ui.dart';
 import '../../../theme/appearance.dart';
 import '../../../theme/appearance_slot.dart';
 import '../../../theme/container_style.dart';
+import '../../../services/json_list_scope.dart';
+import '../../../services/json_repository_scope.dart';
+import '../../../services/surface_state_binding.dart';
 import '../../surfaces/super_container.dart';
 import '../../super_layout/layout_selection.dart';
 import '../styles/container_style_dialog.dart';
+import '../history/editor_history.dart';
 import 'editor_slot.dart';
 import 'editable_single_child.dart';
 
@@ -37,6 +41,7 @@ class EditableSurface extends StatefulWidget {
     this.menuType,
     this.onContextMenu,
     this.menuIcon,
+    this.menuDestination,
     super.key,
   }) : assert(id == null || id != '');
 
@@ -66,6 +71,7 @@ class EditableSurface extends StatefulWidget {
   final String? menuType;
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
+  final EditorMenuDestination? menuDestination;
 
   @override
   EditableSurfaceState createState() => EditableSurfaceState();
@@ -76,6 +82,55 @@ class EditableSurfaceState extends State<EditableSurface> {
   final _singleChildKey = GlobalKey<EditableSingleChildState>();
   late final ValueNotifier<ContainerStyle> _local = ValueNotifier(widget.style);
   String? _localLabel;
+  final _preview = ValueNotifier<ContainerStyle?>(null);
+  final _runtimeRevision = ValueNotifier(0);
+  SurfaceStateBinding? _stateBinding;
+  bool _rowSelected = false;
+  final _hovered = ValueNotifier(false);
+
+  void _setHovered(bool value) {
+    if (_hovered.value == value) return;
+    _hovered.value = value;
+    _runtimeChanged();
+  }
+
+  void _runtimeChanged() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _runtimeRevision.value++;
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _syncBinding(ContainerStyle style, JsonListScope? scope) {
+    final selected = scope?.selected ?? false;
+    if (_rowSelected != selected) {
+      _rowSelected = selected;
+      _runtimeChanged();
+    }
+    final binding = style.states?.binding;
+    if (binding == null) {
+      _stateBinding?.removeListener(_runtimeChanged);
+      _stateBinding?.dispose();
+      _stateBinding = null;
+      return;
+    }
+    final store = JsonRepositoryScope.maybeOf(context);
+    if (_stateBinding == null) {
+      _stateBinding = SurfaceStateBinding(
+        store: store,
+        binding: binding,
+        scope: scope,
+        placeholder: scope?.placeholder ?? false,
+      )..addListener(_runtimeChanged);
+    } else {
+      _stateBinding!.reconfigure(
+        store: store,
+        binding: binding,
+        scope: scope,
+        placeholder: scope?.placeholder ?? false,
+      );
+    }
+  }
 
   /// Current local or AppearanceSlot-backed style.
   ContainerStyle get style {
@@ -92,10 +147,7 @@ class EditableSurfaceState extends State<EditableSurface> {
       widget.slot == null ? null : AppearanceScope.controllerOf(context);
 
   String get _label =>
-      _localLabel ??
-      widget.label ??
-      widget.slot?.standard.label ??
-      'Card';
+      _localLabel ?? widget.label ?? widget.slot?.standard.label ?? 'Card';
 
   @override
   void didUpdateWidget(EditableSurface oldWidget) {
@@ -146,33 +198,56 @@ class EditableSurfaceState extends State<EditableSurface> {
     final initialStyle = _local.value;
     final initialLabel = editor.label;
     final initialInstance = editor.componentLabel;
-    final confirmed = await ContainerStyleDialog.show(
-      context: context,
-      label: initialLabel,
-      slot: widget.slot,
-      fallbackColor: _fallback(context),
-      borderColor: _border(context),
-      appearance: appearance,
-      localStyle: _local,
-      currentStyle: () => style,
-      onStyleChanged: (value, slot) => _update(value, slot: slot),
-      onReset: (slot) => _reset(slot: slot),
-      onLabelChanged: (value) => editor.restoreLabel(value),
-    );
-    if (confirmed == true || !mounted) return;
-    if (appearance != null) {
-      if (appearance.value != initialAppearance) {
-        appearance.value = initialAppearance!;
-        widget.onStyleChanged?.call(style);
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    var confirmed = false;
+    try {
+      confirmed =
+          await ContainerStyleDialog.show(
+            context: context,
+            label: initialLabel,
+            slot: widget.slot,
+            fallbackColor: _fallback(context),
+            borderColor: _border(context),
+            appearance: appearance,
+            localStyle: _local,
+            currentStyle: () => style,
+            onStyleChanged: (value, slot) => _update(value, slot: slot),
+            onReset: (slot) => _reset(slot: slot),
+            onLabelChanged: (value) => editor.restoreLabel(value),
+            allowSelected: JsonListScope.maybeOf(context) != null,
+            activeState: () => _stateBinding?.stateName,
+            isSelected: () => _rowSelected,
+            isHovered: () => _hovered.value,
+            stateError: () => _stateBinding?.error,
+            stateChanges: _runtimeRevision,
+            onPreview: (value) {
+              if (mounted) _preview.value = value;
+            },
+          ) ==
+          true;
+      if (confirmed || !mounted) return;
+      if (appearance != null) {
+        if (appearance.value != initialAppearance) {
+          appearance.value = initialAppearance!;
+          widget.onStyleChanged?.call(style);
+        }
+      } else if (_local.value != initialStyle) {
+        _update(initialStyle);
       }
-    } else if (_local.value != initialStyle) {
-      _update(initialStyle);
-    }
-    if (editor.label != initialLabel) {
-      if (initialInstance != null) {
-        initialInstance.onRestore();
+      if (editor.label != initialLabel) {
+        if (initialInstance != null) {
+          initialInstance.onRestore();
+        } else {
+          editor.restoreLabel(initialLabel);
+        }
+      }
+    } finally {
+      if (mounted) _preview.value = null;
+      if (confirmed) {
+        history?.commitTransaction();
       } else {
-        editor.restoreLabel(initialLabel);
+        history?.cancelTransaction();
       }
     }
   }
@@ -195,45 +270,76 @@ class EditableSurfaceState extends State<EditableSurface> {
     return ListenableBuilder(
       listenable: listenable,
       builder: (context, _) {
-        final surfaceStyle = style;
-        final renderStyle = surfaceStyle.copyWith(
-          margin: 0,
-          marginInsets: null,
-        );
-        final radius =
-            widget.slot?.role == AppearanceSurfaceRole.applicationBackground
-            ? 0.0
-            : surfaceStyle.maxRadius;
-        return Padding(
-          padding: surfaceStyle.outerMargin,
-          child: EditorSlot(
-            key: _editorKey,
-            label: _label,
-            menuTitle: widget.menuTitle,
-            onLabelChanged: widget.onLabelChanged == null ? null : _renameLabel,
-            editable:
-                widget.editable && (widget.slot == null || appearance != null),
-            onEdit: openEditor,
-            onAdd: widget.onAdd != null || widget.id != null ? _addChild : null,
-            axisAction: widget.axisAction,
-            menuSubtitle: widget.menuSubtitle,
-            menuType: widget.menuType,
-            onContextMenu: widget.onContextMenu,
-            menuIcon: widget.menuIcon,
-            identity: widget.slot?.standard,
-            outlineRadius: radius,
-            onRemoveChild: onRemoveChild,
-            child: SuperContainer(
-              style: renderStyle,
-              fallbackColor: widget.fallbackColor,
-              borderColor: widget.borderColor,
-              padding: widget.padding,
-              horizontalBorder: widget.horizontalBorder,
-              decorate: widget.decorate,
-              applyPadding: widget.applyPadding,
-              child: child,
-            ),
-          ),
+        final scope = JsonListScope.maybeOf(context);
+        _syncBinding(style, scope);
+        return ListenableBuilder(
+          listenable: Listenable.merge([_preview, _hovered, ?_stateBinding]),
+          builder: (context, _) {
+            final base = style;
+            final surfaceStyle =
+                _preview.value ??
+                base.states?.resolve(
+                  base,
+                  name: _stateBinding?.stateName,
+                  isSelected: scope?.selected ?? false,
+                  isHovered: _hovered.value,
+                ) ??
+                base;
+            final renderStyle = surfaceStyle.copyWith(
+              margin: 0,
+              marginInsets: null,
+            );
+            final radius =
+                widget.slot?.role == AppearanceSurfaceRole.applicationBackground
+                ? 0.0
+                : surfaceStyle.maxRadius;
+            return Padding(
+              padding: surfaceStyle.outerMargin,
+              child: MouseRegion(
+                opaque: false,
+                onEnter: (_) => _setHovered(true),
+                onExit: (_) => _setHovered(false),
+                child: EditorSlot(
+                  key: _editorKey,
+                  label: _label,
+                  menuTitle: widget.menuTitle,
+                  onLabelChanged: widget.onLabelChanged == null
+                      ? null
+                      : _renameLabel,
+                  editable:
+                      widget.editable &&
+                      (widget.slot == null || appearance != null),
+                  onEdit: openEditor,
+                  onAdd: widget.onAdd != null || widget.id != null
+                      ? _addChild
+                      : null,
+                  axisAction: widget.axisAction,
+                  menuSubtitle: widget.menuSubtitle,
+                  menuType: widget.menuType,
+                  onContextMenu: widget.onContextMenu,
+                  menuIcon: widget.menuIcon,
+                  menuDestination:
+                      widget.menuDestination ??
+                      (widget.onEdit == null
+                          ? EditorMenuDestination.style
+                          : EditorMenuDestination.configuration),
+                  identity: widget.slot?.standard,
+                  outlineRadius: radius,
+                  onRemoveChild: onRemoveChild,
+                  child: SuperContainer(
+                    style: renderStyle,
+                    fallbackColor: widget.fallbackColor,
+                    borderColor: widget.borderColor,
+                    padding: widget.padding,
+                    horizontalBorder: widget.horizontalBorder,
+                    decorate: widget.decorate,
+                    applyPadding: widget.applyPadding,
+                    child: child,
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -259,6 +365,11 @@ class EditableSurfaceState extends State<EditableSurface> {
 
   @override
   void dispose() {
+    _stateBinding?.removeListener(_runtimeChanged);
+    _stateBinding?.dispose();
+    _preview.dispose();
+    _hovered.dispose();
+    _runtimeRevision.dispose();
     _local.dispose();
     super.dispose();
   }

@@ -596,13 +596,16 @@ class _SuperListViewState extends State<SuperListView> {
           ? EdgeInsets.only(bottom: config.spacing)
           : EdgeInsets.only(right: config.spacing),
       child: JsonListScope(
+        selected: index != null && _isSelected(index),
         repositoryId: _source?.binding?.repositoryId ?? scope?.repositoryId,
         indices: [...?(_source?.rowBase ?? scope?.indices), index ?? 0],
         placeholder: index == null || (scope?.placeholder ?? false),
         child: Stack(
           fit: StackFit.passthrough,
           children: [
-            if (index != null && _isSelected(index))
+            if (index != null &&
+                _isSelected(index) &&
+                style.value.states?.hasSelected != true)
               Positioned.fill(
                 key: ValueKey('super-list-selected-${widget.id}-$index'),
                 child: IgnorePointer(

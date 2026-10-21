@@ -13,6 +13,7 @@ import 'container_style_editor.dart';
 import '../dialogs/editor_dialog.dart';
 import '../history/editor_history.dart';
 import 'style_editor_panel.dart';
+import 'surface_state_controls.dart';
 
 /// The shared style editor dialog used by [EditableSurface].
 class ContainerStyleDialog {
@@ -31,7 +32,15 @@ class ContainerStyleDialog {
     onStyleChanged,
     required void Function(AppearanceSlot? slot) onReset,
     required ValueChanged<String> onLabelChanged,
+    bool allowSelected = false,
+    String? Function()? activeState,
+    String? Function()? stateError,
+    bool Function()? isSelected,
+    bool Function()? isHovered,
+    ValueChanged<ContainerStyle?>? onPreview,
+    Listenable? stateChanges,
   }) async {
+    final ownerContext = context;
     final accent = AppearanceScope.of(context).accent;
     final shape = slot?.editShape ?? true;
     final extended = slot?.extendedLook ?? true;
@@ -39,6 +48,85 @@ class ContainerStyleDialog {
     final selectedSlot = standardSlot?.selectedVariant;
     final colors = Theme.of(context).colorScheme;
     var editSlot = slot;
+    String? editState;
+    ContainerStyle rootStyle() => editSlot != null && appearance != null
+        ? editSlot!.read(appearance.value)
+        : currentStyle();
+    ContainerStyle editedStyle() {
+      final root = rootStyle();
+      if (editState == hoverSurfaceStateKey) {
+        return root.states?.hover?.style ?? root.copyWith(clearStates: true);
+      }
+      if (editState == selectedSurfaceStateKey) {
+        return root.states?.selected?.style ?? root.copyWith(clearStates: true);
+      }
+      return root.states?.named[editState] ?? root.copyWith(clearStates: true);
+    }
+
+    void preview() {
+      final root = rootStyle();
+      if (editState == selectedSurfaceStateKey ||
+          editState == hoverSurfaceStateKey) {
+        onPreview?.call(
+          root.states?.resolve(
+                root,
+                name: activeState?.call(),
+                isSelected:
+                    editState == selectedSurfaceStateKey ||
+                    isSelected?.call() == true,
+                isHovered:
+                    editState == hoverSurfaceStateKey ||
+                    isHovered?.call() == true,
+              ) ??
+              root.copyWith(clearStates: true),
+        );
+      } else {
+        onPreview?.call(editedStyle());
+      }
+    }
+
+    void updateRoot(ContainerStyle value) {
+      onStyleChanged(value, editSlot);
+      preview();
+    }
+
+    void updateStyle(ContainerStyle value) {
+      final root = rootStyle();
+      if (editState == null) {
+        updateRoot(value.copyWith(states: root.states));
+      } else {
+        final states = root.states ?? SurfaceStyleStates();
+        updateRoot(
+          root.copyWith(
+            states: editState == hoverSurfaceStateKey
+                ? states.copyWith(
+                    hover:
+                        (states.hover ??
+                                SelectedSurfaceStyle(
+                                  style: root.copyWith(clearStates: true),
+                                ))
+                            .edited(value),
+                  )
+                : editState == selectedSurfaceStateKey
+                ? states.copyWith(
+                    selected:
+                        (states.selected ??
+                                SelectedSurfaceStyle(
+                                  style: root.copyWith(clearStates: true),
+                                ))
+                            .edited(value),
+                  )
+                : states.copyWith(
+                    named: {
+                      ...states.named,
+                      editState!: value.copyWith(clearStates: true),
+                    },
+                  ),
+          ),
+        );
+      }
+    }
+
     final tabbed = selectedSlot != null;
     var dense = StyleEditorPanel.preferredDense;
     final dockWidth = ValueNotifier(dense ? 680.0 : 1080.0);
@@ -54,9 +142,13 @@ class ContainerStyleDialog {
           builder: (context, setDialog) {
             final screen = MediaQuery.sizeOf(context);
             final width = math.min(dense ? 680.0 : 1080.0, screen.width - 96);
+            const stateHeaderHeight = 96.0;
             final height = math.max(
               320.0,
-              math.min(680.0, screen.height - 260),
+              math.min(
+                680.0 + stateHeaderHeight,
+                screen.height - 260 + stateHeaderHeight,
+              ),
             );
             return AlertDialog(
               insetPadding: const EdgeInsets.all(24),
@@ -68,17 +160,59 @@ class ContainerStyleDialog {
                   builder: (context, setTab) => Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxHeight: height * .45),
+                        child: SingleChildScrollView(
+                          child: ListenableBuilder(
+                            listenable: Listenable.merge([
+                              appearance ?? localStyle,
+                              ?stateChanges,
+                            ]),
+                            builder: (context, _) => SurfaceStateControls(
+                              ownerContext: ownerContext,
+                              style: rootStyle(),
+                              state: editState,
+                              allowSelected: allowSelected,
+                              activeState: [
+                                activeState?.call() ?? 'Par défaut',
+                                for (final key
+                                    in (rootStyle().states ??
+                                            SurfaceStyleStates())
+                                        .order)
+                                  if (key == hoverSurfaceStateKey &&
+                                      isHovered?.call() == true)
+                                    'Hover'
+                                  else if (key == selectedSurfaceStateKey &&
+                                      isSelected?.call() == true)
+                                    'Sélectionné',
+                              ].join(' + '),
+                              error: stateError?.call(),
+                              onSelect: (value) {
+                                setTab(() => editState = value);
+                                preview();
+                              },
+                              onChanged: (states) => updateRoot(
+                                rootStyle().copyWith(states: states),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       if (tabbed) ...[
                         DefaultTabController(
                           length: 2,
                           initialIndex: editSlot == selectedSlot ? 1 : 0,
                           child: TabBar(
                             key: const ValueKey('style-editor-tabs'),
-                            onTap: (index) => setTab(
-                              () => editSlot = index == 1
-                                  ? selectedSlot
-                                  : standardSlot,
-                            ),
+                            onTap: (index) {
+                              setTab(() {
+                                editState = null;
+                                editSlot = index == 1
+                                    ? selectedSlot
+                                    : standardSlot;
+                              });
+                              preview();
+                            },
                             tabs: const [
                               Tab(text: 'Standard'),
                               Tab(text: 'Sélectionné'),
@@ -93,10 +227,7 @@ class ContainerStyleDialog {
                           listenable: appearance ?? localStyle,
                           builder: (context, _) {
                             final targetSlot = editSlot;
-                            final style =
-                                targetSlot != null && appearance != null
-                                ? targetSlot.read(appearance.value)
-                                : currentStyle();
+                            final style = editedStyle();
                             final fallback = targetSlot == slot
                                 ? fallbackColor
                                 : targetSlot!.isSelectedVariant
@@ -106,7 +237,7 @@ class ContainerStyleDialog {
                                 ? borderColor
                                 : colors.primary;
                             void update(ContainerStyle value) =>
-                                onStyleChanged(value, targetSlot);
+                                updateStyle(value);
                             return ContainerStyleEditor(
                               label: label,
                               onLabelChanged: onLabelChanged,
@@ -142,9 +273,8 @@ class ContainerStyleDialog {
                                   ? (value) =>
                                         update(style.copyWith(radius: value))
                                   : null,
-                              onBorderWidthChanged: (value) => update(
-                                style.copyWith(borderWidth: value),
-                              ),
+                              onBorderWidthChanged: (value) =>
+                                  update(style.copyWith(borderWidth: value)),
                               onBorderColorChanged: (value) =>
                                   update(style.copyWith(borderColor: value)),
                               onResetBorderColor: () => update(
@@ -168,14 +298,12 @@ class ContainerStyleDialog {
                               onNeonChanged: (value) =>
                                   update(style.copyWith(neon: value)),
                               hoverEffect: style.hoverEffect,
-                              onHoverEffectChanged: (value) => update(
-                                style.copyWith(hoverEffect: value),
-                              ),
+                              onHoverEffectChanged: (value) =>
+                                  update(style.copyWith(hoverEffect: value)),
                               hoverTint: style.hoverTint,
                               hoverColor: style.hoverColor,
-                              onHoverTintChanged: (value) => update(
-                                style.copyWith(hoverTint: value),
-                              ),
+                              onHoverTintChanged: (value) =>
+                                  update(style.copyWith(hoverTint: value)),
                               onHoverColorChanged: (value) =>
                                   update(style.copyWith(hoverColor: value)),
                               interactionEffect: style.interactionEffect,
@@ -188,7 +316,37 @@ class ContainerStyleDialog {
                                   : null,
                               onResetColor: () =>
                                   update(style.copyWith(resetColor: true)),
-                              onReset: () => onReset(targetSlot),
+                              onReset: () {
+                                if (editState == null) {
+                                  final states = rootStyle().states;
+                                  onReset(targetSlot);
+                                  updateRoot(
+                                    rootStyle().copyWith(states: states),
+                                  );
+                                } else if (editState ==
+                                        selectedSurfaceStateKey ||
+                                    editState == hoverSurfaceStateKey) {
+                                  final root = rootStyle();
+                                  updateRoot(
+                                    root.copyWith(
+                                      states:
+                                          (root.states ?? SurfaceStyleStates())
+                                              .copyWith(
+                                                clearSelected:
+                                                    editState ==
+                                                    selectedSurfaceStateKey,
+                                                clearHover:
+                                                    editState ==
+                                                    hoverSurfaceStateKey,
+                                              ),
+                                    ),
+                                  );
+                                } else {
+                                  updateStyle(
+                                    rootStyle().copyWith(clearStates: true),
+                                  );
+                                }
+                              },
                               extraSections: [
                                 if (slot?.role ==
                                     AppearanceSurfaceRole.applicationBackground)
@@ -228,8 +386,7 @@ class ContainerStyleDialog {
                                           isExpanded: true,
                                           decoration: const InputDecoration(
                                             labelText: 'Effet de la fenêtre',
-                                            helperText:
-                                                'Visible à travers le fond : baissez son opacité.',
+                                            helperText: 'Visible à travers le fond : baissez son opacité.',
                                           ),
                                           items: [
                                             for (final effect
@@ -293,6 +450,7 @@ class ContainerStyleDialog {
         ),
       );
     } finally {
+      onPreview?.call(null);
       dockWidth.dispose();
     }
     return confirmed;

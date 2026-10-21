@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+enum EditorMenuDestination { style, configuration }
+
 class EditorSlotWrapAction {
   const EditorSlotWrapAction({
     required this.label,
@@ -22,6 +24,7 @@ class EditorSlotAction extends InheritedWidget {
     this.inline = false,
     this.showEdit = true,
     this.wrapActions = const [],
+    this.destination = EditorMenuDestination.configuration,
     required super.child,
     super.key,
   });
@@ -33,6 +36,7 @@ class EditorSlotAction extends InheritedWidget {
   final bool inline;
   final bool showEdit;
   final List<EditorSlotWrapAction> wrapActions;
+  final EditorMenuDestination destination;
 
   static List<EditorSlotAction> of(BuildContext context) {
     final actions = <EditorSlotAction>[];
@@ -56,7 +60,8 @@ class EditorSlotAction extends InheritedWidget {
       onRemove != oldWidget.onRemove ||
       wrapActions != oldWidget.wrapActions ||
       inline != oldWidget.inline ||
-      showEdit != oldWidget.showEdit;
+      showEdit != oldWidget.showEdit ||
+      destination != oldWidget.destination;
 }
 
 /// Inserts a command at its ancestor position among editor menu entries.
@@ -65,6 +70,7 @@ class EditorContextMenuEntry extends InheritedWidget {
     required this.label,
     required this.onSelected,
     required this.enabled,
+    this.destination = EditorMenuDestination.configuration,
     required super.child,
     super.key,
   });
@@ -72,10 +78,12 @@ class EditorContextMenuEntry extends InheritedWidget {
   final String label;
   final Future<void> Function() onSelected;
   final bool enabled;
+  final EditorMenuDestination destination;
 
   @override
   bool updateShouldNotify(EditorContextMenuEntry oldWidget) =>
       label != oldWidget.label ||
       onSelected != oldWidget.onSelected ||
-      enabled != oldWidget.enabled;
+      enabled != oldWidget.enabled ||
+      destination != oldWidget.destination;
 }

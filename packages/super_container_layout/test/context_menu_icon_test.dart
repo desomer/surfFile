@@ -20,7 +20,7 @@ void main() {
         'AppBar': Icons.web_asset,
         'BottomNavigationBar': Icons.space_dashboard_outlined,
         'Card': Icons.crop_square,
-        'IterableContent': Icons.article_outlined,
+        'IterableContent': Icons.loop,
         'ListView': Icons.view_list,
         'Layout': Icons.dashboard_outlined,
       },

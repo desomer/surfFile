@@ -4,6 +4,235 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
+  for (final (name, component, menuLabel) in <(String, Widget, String)>[
+    ('Text', const SuperText(id: 'text'), 'Texte'),
+    ('ListView', const SuperListView(id: 'list'), 'Liste'),
+    ('Layout', const SuperLayout(), 'Layout'),
+  ]) {
+    testWidgets('$name advertises its configuration destination', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(width: 500, height: 400, child: component),
+          ),
+        ),
+      );
+      final target = find
+          .byWidgetPredicate(
+            (widget) => widget is EditorSlot && widget.label == menuLabel,
+          )
+          .first;
+      final state = tester.state<EditorSlotState>(target);
+      final menu = state.openMenu(tester.getCenter(target));
+      await tester.pumpAndSettle();
+      final row = find.byKey(ValueKey('style-menu-$menuLabel'));
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byIcon(Icons.settings_outlined),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: row, matching: find.byIcon(Icons.palette_outlined)),
+        findsNothing,
+      );
+      await tester.tapAt(const Offset(790, 590));
+      await tester.pumpAndSettle();
+      await menu;
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'style and configuration indicators precede titles without changing actions',
+    (tester) async {
+      var configured = 0;
+      var added = 0;
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              body: Center(
+                child: EditableSurface(
+                  label: 'Style',
+                  menuIcon: Icons.article_outlined,
+                  child: EditorSlot(
+                    label: 'Configuration',
+                    menuTitle: 'Composant',
+                    menuSubtitle: () => 'Zone',
+                    onEdit: () async {
+                      configured++;
+                    },
+                    onAdd: () async {
+                      added++;
+                    },
+                    child: const SizedBox(
+                      width: 160,
+                      height: 80,
+                      child: Text('Target'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<void> open() async {
+        await tester.tap(find.text('Target'), buttons: kSecondaryMouseButton);
+        await tester.pumpAndSettle();
+      }
+
+      await open();
+      for (final (label, icon, title, tooltip) in [
+        ('Style', Icons.palette_outlined, 'Style', 'Ouvre le style'),
+        (
+          'Configuration',
+          Icons.settings_outlined,
+          'Composant',
+          'Ouvre les paramètres',
+        ),
+      ]) {
+        final row = find.byKey(ValueKey('style-menu-$label'));
+        final indicator = find.descendant(of: row, matching: find.byIcon(icon));
+        expect(indicator, findsOneWidget);
+        expect(tester.widget<Icon>(indicator).size, 12);
+        expect(
+          tester.getTopLeft(indicator).dx,
+          lessThan(
+            tester
+                .getTopLeft(
+                  find.descendant(of: row, matching: find.text(title)),
+                )
+                .dx,
+          ),
+        );
+        expect(
+          find.descendant(of: row, matching: find.byTooltip(tooltip)),
+          findsOneWidget,
+        );
+        expect(
+          find.ancestor(of: indicator, matching: find.byType(IconButton)),
+          findsNothing,
+        );
+        expect(tester.getSize(row).height, lessThanOrEqualTo(48));
+      }
+      expect(find.byIcon(Icons.article_outlined), findsOneWidget);
+      await tester.tap(find.text('Composant'));
+      await tester.pumpAndSettle();
+      expect(configured, 1);
+      await open();
+      await tester.tap(
+        find.byKey(const ValueKey('style-menu-add-Configuration')),
+      );
+      await tester.pumpAndSettle();
+      expect(added, 1);
+      expect(configured, 1);
+      await open();
+      await tester.tap(find.byKey(const ValueKey('style-menu-Style')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('surface-state-selector')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Annuler').last);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'custom surface editors and contributed entries declare destinations',
+    (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: EditorContextMenuEntry(
+              label: 'Contributed style',
+              enabled: true,
+              destination: EditorMenuDestination.style,
+              onSelected: () async {
+                calls++;
+              },
+              child: EditorSlotAction(
+                label: 'Action',
+                enabled: true,
+                onEdit: () async {
+                  calls++;
+                },
+                child: EditableSurface(
+                  label: 'Custom',
+                  onEdit: () async {
+                    calls++;
+                  },
+                  child: const SizedBox(
+                    width: 160,
+                    height: 80,
+                    child: Text('Target'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      Future<void> open() async {
+        await tester.tap(find.text('Target'), buttons: kSecondaryMouseButton);
+        await tester.pumpAndSettle();
+      }
+
+      for (final (key, icon) in [
+        ('style-menu-Custom', Icons.settings_outlined),
+        ('style-menu-entry-Contributed style', Icons.palette_outlined),
+      ]) {
+        await open();
+        final row = find.byKey(ValueKey(key));
+        expect(
+          find.descendant(of: row, matching: find.byIcon(icon)),
+          findsOneWidget,
+        );
+        expect(find.byIcon(Icons.settings_outlined), findsNWidgets(2));
+        await tester.tap(row);
+        await tester.pumpAndSettle();
+      }
+      expect(calls, 2);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('disabled entry has no destination indicator', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: EditorSlot(
+            label: 'Disabled',
+            child: SizedBox(width: 160, height: 80, child: Text('Target')),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Target'), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    final row = find.byKey(const ValueKey('style-menu-Disabled'));
+    expect(row, findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.byIcon(Icons.settings_outlined)),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: row, matching: find.byIcon(Icons.palette_outlined)),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('a component type matching its menu title is not repeated', (
     tester,
   ) async {
