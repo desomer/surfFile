@@ -50,6 +50,7 @@ export 'widgets/super_layout/layout_selection.dart';
 export 'widgets/surfaces/neon_surface.dart';
 export 'widgets/super_layout/slot_implementation.dart';
 export 'widgets/editing/styles/style_editor_panel.dart';
+export 'widgets/editing/states/editor_state_controls.dart';
 export 'widgets/editing/styles/style_extras_controls.dart';
 export 'widgets/surfaces/styled_surface.dart';
 export 'widgets/surfaces/super_container.dart';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,15 +7,32 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
+class _DelayedStore extends JsonRepositoryStore {
+  _DelayedStore(super.directory);
+  Completer<void>? nextWrite;
+
+  @override
+  Future<JsonAttributeValue> writeAttribute(
+    JsonTextBinding binding,
+    String text, {
+    required Object? expectedValue,
+  }) async {
+    final pending = nextWrite;
+    nextWrite = null;
+    if (pending != null) await pending.future;
+    return super.writeAttribute(binding, text, expectedValue: expectedValue);
+  }
+}
+
 void main() {
   late Directory directory;
-  late JsonRepositoryStore store;
+  late _DelayedStore store;
   late String repository;
   JsonTextBinding binding(String path) =>
       JsonTextBinding(repositoryId: repository, path: path);
   setUp(() async {
     directory = await Directory.systemTemp.createTemp('text-states-');
-    store = JsonRepositoryStore(directory);
+    store = _DelayedStore(directory);
     await store.create('States');
     repository = await store.idOf('States');
     await store.save(
@@ -193,6 +211,110 @@ void main() {
       expect(tester.widget<TextField>(field).style!.fontSize, 24);
       expect(await tester.runAsync(() => store.read('States')), before);
       await mouse.removePointer();
+      await close(tester);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'rapid transitions wait for a previously detached pending write',
+    (tester) async {
+      await mount(
+        tester,
+        SuperTextConfig(
+          mode: SuperTextMode.input,
+          binding: binding('a'),
+          states: TextConfigStates(
+            hover: TextConfigOverride(
+              config: SuperTextConfig(binding: binding('b')),
+              properties: {TextStateProperty.binding},
+            ),
+          ),
+        ),
+      );
+      final blocked = Completer<void>();
+      store.nextWrite = blocked;
+      addTearDown(() {
+        if (!blocked.isCompleted) blocked.complete();
+      });
+      await tester.enterText(field, 'Pending Alice');
+      await tester.pump();
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await real(tester, () => mouse.moveTo(tester.getCenter(field)));
+      await real(tester, () => mouse.moveTo(Offset.zero));
+      expect(text(tester), 'Pending Alice');
+      await real(tester, () async {
+        blocked.complete();
+      });
+      expect(text(tester), 'Pending Alice');
+      expect(
+        (await tester.runAsync(() => store.readAttribute(binding('a'))))!.text,
+        'Pending Alice',
+      );
+      expect(
+        (await tester.runAsync(() => store.readAttribute(binding('b'))))!.text,
+        'Bob',
+      );
+      await mouse.removePointer();
+      await close(tester);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'live editor state preview stays detached from writable bindings',
+    (tester) async {
+      final changes = <String>[];
+      await mount(
+        tester,
+        SuperTextConfig(
+          mode: SuperTextMode.input,
+          binding: binding('a'),
+          states: TextConfigStates(
+            binding: binding('status'),
+            named: {
+              'second': SuperTextConfig(
+                mode: SuperTextMode.input,
+                initialText: 'Second preview',
+                binding: binding('b'),
+              ),
+            },
+          ),
+        ),
+        onChanged: changes.add,
+      );
+      final before = await tester.runAsync(() => store.read('States'));
+      final editing = tester
+          .widget<EditorSlot>(find.byType(EditorSlot))
+          .onEdit!();
+      await real(tester, () async {
+        await tester.pump();
+      });
+      for (final key in ['second', TextConfigStates.hoverKey, '']) {
+        final chip = find.byKey(ValueKey('text-state-choice-$key'));
+        await tester.ensureVisible(chip);
+        await tester.tap(chip);
+        await real(tester, () async {
+          await tester.pump();
+        });
+      }
+      final label = find.byKey(
+        const ValueKey('super-text-setting-label'),
+      );
+      await tester.ensureVisible(label);
+      await tester.enterText(label, 'Only a draft');
+      await real(tester, () async {
+        await tester.pump();
+      });
+      expect(await tester.runAsync(() => store.read('States')), before);
+      expect(changes, isEmpty);
+      await tester.tap(find.text('Annuler').last);
+      await real(tester, () async {
+        await editing;
+      });
+      expect(text(tester), 'Alice');
+      expect(await tester.runAsync(() => store.read('States')), before);
       await close(tester);
       expect(tester.takeException(), isNull);
     },

@@ -599,8 +599,9 @@ void main() {
       final panel = tester.widget<StyleEditorPanel>(
         find.byType(StyleEditorPanel),
       );
-      expect(panel.sections.first.id, 'text-repository');
+      expect(panel.sections.first.id, 'text-states');
       expect(panel.sections.map((section) => section.id), [
+        'text-states',
         'text-repository',
         'text-content',
         'text-behavior',
@@ -739,7 +740,7 @@ void main() {
       final panel = tester.widget<StyleEditorPanel>(
         find.byType(StyleEditorPanel),
       );
-      expect(panel.sections.first.id, 'text-repository');
+      expect(panel.sections.first.id, 'text-states');
       expect(
         panel.sections.where((section) => section.id.startsWith('text-field-')),
         hasLength(input ? 6 : 0),
@@ -829,7 +830,7 @@ void main() {
     final panel = tester.widget<StyleEditorPanel>(
       find.byType(StyleEditorPanel),
     );
-    expect(panel.sections.first.id, 'text-repository');
+    expect(panel.sections.first.id, 'text-states');
     for (final section in panel.sections) {
       await tester.ensureVisible(
         find.byKey(ValueKey('style-card-${section.id}')),

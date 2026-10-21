@@ -179,6 +179,8 @@ class _SuperTextState extends State<SuperText> {
   List<String>? _activeStates;
   String? _stateError;
   SuperTextConfig? _effectiveConfig;
+  bool _hadStates = false;
+  Future<void>? _pendingBindingFlush;
 
   void _stateChanged() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -237,7 +239,7 @@ class _SuperTextState extends State<SuperText> {
   @override
   void initState() {
     super.initState();
-    widget.config.validate();
+    widget.config.copyWith(clearStates: true).validate();
     _internal = TextEditingController(
       text: widget.value ?? widget.config.initialText,
     );
@@ -250,12 +252,14 @@ class _SuperTextState extends State<SuperText> {
     if (widget.controller != null && widget.value != null) {
       throw ArgumentError('Use either controller or value, not both.');
     }
-    widget.config.validate();
+    widget.config.copyWith(clearStates: true).validate();
     if (oldWidget.config != widget.config) _local.value = widget.config;
     if (oldWidget.id != widget.id) {
       _previousConfig = null;
       _resetGeneration++;
       _requestedExternal = null;
+      _activeStates = null;
+      _effectiveConfig = null;
     }
     if (widget.controller == null) {
       if (widget.value != null && widget.value != _internal.text) {
@@ -387,9 +391,12 @@ class _SuperTextState extends State<SuperText> {
       if (!mounted || generation != _bindingGeneration) return;
       final oldBinding = _binding;
       oldBinding?.removeListener(_bindingChanged);
-      final flushed = oldBinding?.flush();
+      if (oldBinding != null) {
+        _pendingBindingFlush = oldBinding.flush();
+      }
       oldBinding?.dispose();
       _binding = null;
+      final flushed = _pendingBindingFlush;
       if (flushed != null) await flushed;
       if (!mounted || generation != _bindingGeneration) return;
       _bindingError = resolved.error;
@@ -634,6 +641,7 @@ class _SuperTextState extends State<SuperText> {
                 ];
           final transition =
               states != null && !listEquals(_activeStates, active);
+          final removedStates = states == null && _hadStates;
           final contentChanged =
               states != null &&
               _effectiveConfig != null &&
@@ -641,15 +649,20 @@ class _SuperTextState extends State<SuperText> {
                   _effectiveConfig!.mode != effective.mode ||
                   _effectiveConfig!.obscureText != effective.obscureText);
           _effectiveConfig = effective;
+          _hadStates = states != null;
           _activeStates = active;
           _observeBinding(
             effective,
             listScope,
             repositories,
-            resetText: transition || contentChanged,
-            stateful: states != null,
+            resetText: transition || contentChanged || removedStates,
+            stateful: states != null || removedStates,
           );
-          if (states == null) _observeConfig(effective);
+          if (removedStates) {
+            _previousConfig = effective;
+          } else if (states == null) {
+            _observeConfig(effective);
+          }
           _observePropertyBindings(effective, listScope, repositories);
           final config = _editorConfig ?? _withBoundProperties(effective);
           final controller = _editorText ?? _text;
@@ -871,7 +884,7 @@ class _SuperTextState extends State<SuperText> {
                             },
                             child: const Text('Recharger la liaison'),
                           ),
-                        if (_stateError != null && editing)
+                        if (_stateError != null)
                           Text(
                             _stateError!,
                             key: ValueKey(

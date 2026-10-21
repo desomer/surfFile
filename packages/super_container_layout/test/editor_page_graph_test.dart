@@ -162,9 +162,25 @@ void main() {
       );
       final source = _sample().withTextComponent(
         'txt1',
-        const SuperTextConfig(
+        SuperTextConfig(
           binding: binding,
-          field: SuperTextFieldConfig(
+          states: TextConfigStates(
+            binding: const JsonTextBinding(
+              repositoryId: '0123456789abcdef0123456789abcdef',
+              path: 'client.status',
+            ),
+            named: {'ready': const SuperTextConfig(binding: binding)},
+            hover: TextConfigOverride(
+              config: const SuperTextConfig(fontSize: 20),
+              properties: {TextStateProperty.fontSize},
+            ),
+            order: [
+              TextConfigStates.hoverKey,
+              'ready',
+              TextConfigStates.selectedKey,
+            ],
+          ),
+          field: const SuperTextFieldConfig(
             variant: TextFieldVariant.outlined,
             maxLength: 30,
           ),
@@ -184,6 +200,14 @@ void main() {
       expect(copies.single.value.binding, binding);
       expect(copies.single.value.field, source.textComponents['txt1']!.field);
       expect(source.textComponents['txt1']!.binding, binding);
+      expect(copies.single.value.states, source.textComponents['txt1']!.states);
+      final removed = EditorPageGraph.remove(
+        appearance: result,
+        registry: _registry(),
+        pageId: 'p2',
+      );
+      expect(removed.textComponents.containsKey(copies.single.key), isFalse);
+      expect(removed.textComponents['txt1'], source.textComponents['txt1']);
     },
   );
 
@@ -338,8 +362,7 @@ void main() {
     expect(source.nativeComponents.keys, ['p1']);
     expect(source.layouts.keys, ['lay']);
 
-    final replaced = _registry()
-      ..registerFactory('Text', const SizedBox());
+    final replaced = _registry()..registerFactory('Text', const SizedBox());
     final text = Appearance(
       nativeComponents: {
         'p1': NativeComponentConfig(

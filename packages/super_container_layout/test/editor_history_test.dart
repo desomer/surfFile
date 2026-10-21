@@ -4,6 +4,52 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 
 void main() {
+  test('Text state tables survive appearance codec and atomic undo redo', () {
+    final original = const SuperTextConfig(initialText: 'Default');
+    final configured = original.copyWith(
+      states: TextConfigStates(
+        binding: const JsonTextBinding(
+          repositoryId: '0123456789abcdef0123456789abcdef',
+          path: 'status',
+        ),
+        named: {'ready': const SuperTextConfig(initialText: 'Ready')},
+        hover: TextConfigOverride(
+          config: const SuperTextConfig(fontSize: 24),
+          properties: {TextStateProperty.fontSize},
+        ),
+        order: [
+          TextConfigStates.selectedKey,
+          'ready',
+          TextConfigStates.hoverKey,
+        ],
+      ),
+    );
+    final appearance = ValueNotifier<Appearance>(
+      DefaultAppearance().withTextComponent('text', original),
+    );
+    final editMode = ValueNotifier(true);
+    final history = EditorHistoryController(
+      appearance: appearance,
+      editMode: editMode,
+    );
+    addTearDown(appearance.dispose);
+    addTearDown(editMode.dispose);
+    addTearDown(history.dispose);
+    history.beginTransaction();
+    appearance.value = appearance.value.withTextComponent('text', configured);
+    history.commitTransaction();
+    const codec = DefaultAppearanceCodec();
+    expect(
+      codec.decode(codec.encode(appearance.value)).textComponents['text'],
+      configured,
+    );
+    history.undo();
+    expect(appearance.value.textComponents['text'], original);
+    expect(history.canUndo, isFalse);
+    history.redo();
+    expect(appearance.value.textComponents['text'], configured);
+  });
+
   test('undo and redo restore snapshots and discard a stale redo branch', () {
     final appearance = ValueNotifier<Appearance>(Appearance());
     final editMode = ValueNotifier(true);

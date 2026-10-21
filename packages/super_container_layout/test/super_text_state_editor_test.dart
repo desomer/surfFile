@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/components/super_text_editor.dart';
-import 'package:super_container_layout/widgets/editing/states/editor_state_controls.dart';
 
 void main() {
   setUp(() => StyleEditorPanel.preferredDense = false);
@@ -30,12 +29,13 @@ void main() {
         child: const Text('Open'),
       ),
     );
-    if (inList)
+    if (inList) {
       child = JsonListScope(
         repositoryId: null,
         indices: const [0],
         child: child,
       );
+    }
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: child)));
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
@@ -182,6 +182,89 @@ void main() {
       await tester.tap(find.text('Appliquer').last);
       await tester.pumpAndSettle();
       expect(saved!.states!.named, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('explicit overrides can be disabled and drag priority persists', (
+    tester,
+  ) async {
+    SuperTextConfig? saved;
+    final previews = <SuperTextConfig>[];
+    await open(
+      tester,
+      SuperTextConfig(
+        fontSize: 16,
+        states: TextConfigStates(
+          hover: TextConfigOverride(
+            config: const SuperTextConfig(fontSize: 24),
+            properties: {TextStateProperty.fontSize},
+          ),
+        ),
+      ),
+      inList: true,
+      onResult: (value) => saved = value,
+      onPreview: previews.add,
+    );
+    await choose(tester, hoverSurfaceStateKey);
+    final toggle = find.byKey(const ValueKey('text-state-override-fontSize'));
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(previews.last.fontSize, 16);
+    final hover = find.byKey(
+      const ValueKey('text-state-choice-$hoverSurfaceStateKey'),
+    );
+    final selected = find.byKey(
+      const ValueKey('text-state-choice-$selectedSurfaceStateKey'),
+    );
+    await tester.ensureVisible(hover);
+    await tester.dragFrom(
+      tester.getCenter(hover),
+      tester.getCenter(selected) - tester.getCenter(hover),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Appliquer').last);
+    await tester.pumpAndSettle();
+    expect(saved!.states!.hover!.properties, isEmpty);
+    expect(saved!.states!.order, [
+      selectedSurfaceStateKey,
+      hoverSurfaceStateKey,
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'external ownership rejects content bindings in inactive states',
+    (tester) async {
+      SuperTextConfig? saved;
+      await open(
+        tester,
+        SuperTextConfig(
+          states: TextConfigStates(
+            named: {
+              'hidden': const SuperTextConfig(
+                binding: JsonTextBinding(
+                  repositoryId: '0123456789abcdef0123456789abcdef',
+                  path: 'name',
+                ),
+              ),
+            },
+          ),
+        ),
+        allowBinding: false,
+        onResult: (value) => saved = value,
+      );
+      await tester.tap(find.text('Appliquer').last);
+      await tester.pumpAndSettle();
+      expect(saved, isNull);
+      expect(
+        find.text('La liaison nécessite le contrôleur interne de Text.'),
+        findsWidgets,
+      );
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.text('Annuler').last);
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );

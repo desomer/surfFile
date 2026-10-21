@@ -8,7 +8,9 @@ void main() {
     WidgetTester tester,
     SuperTextConfig config, {
     bool selected = false,
+    bool outerSelected = false,
     TextEditingController? controller,
+    String? value,
     ValueChanged<String>? onChanged,
   }) async {
     await tester.pumpWidget(
@@ -20,13 +22,19 @@ void main() {
               height: 100,
               child: JsonListScope(
                 repositoryId: null,
-                indices: const [0],
-                selected: selected,
-                child: SuperText(
-                  id: 'state',
-                  config: config,
-                  controller: controller,
-                  onChanged: onChanged,
+                indices: const [],
+                selected: outerSelected,
+                child: JsonListScope(
+                  repositoryId: null,
+                  indices: const [0],
+                  selected: selected,
+                  child: SuperText(
+                    id: 'state',
+                    config: config,
+                    controller: controller,
+                    value: value,
+                    onChanged: onChanged,
+                  ),
                 ),
               ),
             ),
@@ -107,4 +115,121 @@ void main() {
     await mouse.removePointer();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'nearest row shadows selection and persisted priority changes the winner',
+    (tester) async {
+      final config = SuperTextConfig(
+        initialText: 'Text',
+        states: TextConfigStates(
+          hover: TextConfigOverride(
+            config: const SuperTextConfig(color: Colors.blue),
+            properties: {TextStateProperty.color},
+          ),
+          selected: TextConfigOverride(
+            config: const SuperTextConfig(color: Colors.red),
+            properties: {TextStateProperty.color},
+          ),
+        ),
+      );
+      final display = find.byKey(const ValueKey('super-text-display-state'));
+      await mount(tester, config, outerSelected: true);
+      expect(
+        tester.widget<Text>(display).style!.color!.toARGB32(),
+        isNot(Colors.red.toARGB32()),
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(display));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<Text>(display).style!.color!.toARGB32(),
+        Colors.blue.toARGB32(),
+      );
+      await mount(tester, config, selected: true);
+      expect(
+        tester.widget<Text>(display).style!.color!.toARGB32(),
+        Colors.red.toARGB32(),
+      );
+      await mount(
+        tester,
+        config.copyWith(
+          states: config.states!.copyWith(
+            order: [TextConfigStates.selectedKey, TextConfigStates.hoverKey],
+          ),
+        ),
+        selected: true,
+      );
+      expect(
+        tester.widget<Text>(display).style!.color!.toARGB32(),
+        Colors.blue.toARGB32(),
+      );
+      await mouse.removePointer();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'effective content edits and removing states reset without artificial changes',
+    (tester) async {
+      final changes = <String>[];
+      final config = SuperTextConfig(
+        mode: SuperTextMode.input,
+        initialText: 'First',
+        states: TextConfigStates(),
+      );
+      final field = find.byKey(const ValueKey('super-text-input-state'));
+      await mount(tester, config, onChanged: changes.add);
+      await tester.enterText(field, 'Draft');
+      await tester.pumpAndSettle();
+      final count = changes.length;
+      await mount(
+        tester,
+        config.copyWith(initialText: 'Second'),
+        onChanged: changes.add,
+      );
+      expect(tester.widget<TextField>(field).controller!.text, 'Second');
+      expect(changes, hasLength(count));
+      await tester.enterText(field, 'Other draft');
+      await tester.pumpAndSettle();
+      final nextCount = changes.length;
+      await mount(
+        tester,
+        config.copyWith(clearStates: true),
+        onChanged: changes.add,
+      );
+      expect(tester.widget<TextField>(field).controller!.text, 'First');
+      expect(changes, hasLength(nextCount));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'controlled value is not reset on hover or selection transitions',
+    (tester) async {
+      final changes = <String>[];
+      final config = SuperTextConfig(
+        mode: SuperTextMode.input,
+        states: TextConfigStates(
+          hover: TextConfigOverride(
+            config: const SuperTextConfig(
+              mode: SuperTextMode.input,
+              initialText: 'Hovered',
+            ),
+            properties: {TextStateProperty.content},
+          ),
+        ),
+      );
+      await mount(tester, config, value: 'Owned', onChanged: changes.add);
+      final field = find.byKey(const ValueKey('super-text-input-state'));
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(field));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).controller!.text, 'Owned');
+      expect(changes, isEmpty);
+      await mouse.removePointer();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

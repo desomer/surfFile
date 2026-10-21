@@ -159,7 +159,7 @@ En affichage sans label, le texte est rendu sans décoration de champ ni marge
 de saisie. Le contenu est centré verticalement dans la hauteur du slot, notamment
 dans le titre d'une SuperAppBar.
 
-**Attention :** sans liaison repository, changer le mode ou le texte initial réinitialise la valeur
+**Attention :** sans tableau d'états ni liaison repository, changer le mode ou le texte initial réinitialise la valeur
 courante au texte initial. La réinitialisation met à jour le controller fourni
 et appelle `onChanged` une seule fois ; avec `value`, le parent doit accepter
 la nouvelle valeur. L'activation du mot de passe efface aussi la valeur.
@@ -181,9 +181,49 @@ de réinitialisation ; elle ne restaure pas les anciennes saisies.
 Les réglages texte font partie du groupe **Dispositions** à l'import/export
 et sont supprimés par la remise à zéro des dispositions.
 
+### Propriétés du texte par état
+
+La carte **États** utilise `EditorStateControls`, le même sélecteur que les
+surfaces éditables : boutons **Par défaut**, **Hover** et **Sélectionné**
+(dans une ListView), ajout/renommage/suppression d'états nommés et liaison
+en lecture seule à un attribut JSON. Le nom correspond exactement à une chaîne
+du repository ; une valeur inconnue conserve les réglages par défaut.
+**Sélectionné** dépend uniquement de la ligne de ListView la plus proche,
+jamais de la sélection de l'éditeur ; une liste imbriquée masque la sélection
+de sa liste parente.
+
+`SuperTextConfig.states` contient un `TextConfigStates` : les états nommés
+possèdent une configuration complète, tandis que Hover et Sélectionné utilisent
+des `TextConfigOverride` avec des groupes explicitement activables.
+Toutes les propriétés sont concernées, y compris les liaisons JSON.
+Le mode, le contenu initial, le mot de passe, les lignes et toutes les options
+du champ forment un groupe **Contenu** indivisible ; activation et lecture seule
+forment un autre groupe. Chaque liaison de propriété suit le groupe correspondant.
+Modifier une propriété active automatiquement son groupe ; désactiver sa puce
+rétablit l'héritage. Les combinaisons invalides bloquent la validation.
+
+Les boutons se déplacent par glisser-déposer pour enregistrer la priorité :
+le dernier état actif gagne. Par défaut, les états nommés précèdent Hover,
+puis Sélectionné. Par défaut reste toujours la base.
+L'aperçu du brouillon ne change ni la sélection réelle ni les données JSON.
+**Appliquer** enregistre toute la table en une seule étape d'historique ;
+**Annuler** l'abandonne.
+
+Avec un tableau d'états, chaque changement réel d'états actifs réinitialise la
+saisie interne : texte initial de la configuration effective, ou relecture de
+sa liaison de contenu. Un simple déplacement à l'intérieur du composant ne
+réinitialise rien. Les écritures en attente sont capturées sur l'ancienne liaison
+avant cette transition ; un survol seul n'écrit jamais dans le repository.
+Les chargements et réinitialisations d'état ne publient pas de `onChanged`.
+Un `controller` ou une `value` externe conserve la propriété du texte et n'est
+pas réinitialisé ; dans ce cas, aucune configuration d'état ne peut lier le
+contenu à un repository. Les liaisons des autres propriétés restent disponibles.
+Une configuration effective invalide fournie de l'extérieur affiche une erreur
+et revient aux propriétés par défaut.
+
 ### Styles et options du champ de saisie
 
-L'éditeur présente d'abord la carte **Repository**, puis le contenu, le
+L'éditeur présente la carte **États**, puis **Repository**, le contenu, le
 comportement et la typographie. Les options de saisie sont réparties dans les
 cartes **Style du champ**, **Couleurs du champ**, **Préfixes et suffixes**,
 **Messages et compteur**, **Limites et filtres** et **Clavier et saisie**,
