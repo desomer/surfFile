@@ -531,6 +531,7 @@ class Registry {
             builder: (context, value, _) => EditableSurface(
               id: xuiCtx.id,
               label: 'New Container',
+              menuType: 'NewContainer',
               style: value,
               onStyleChanged: (value) => style.value = value,
             ),

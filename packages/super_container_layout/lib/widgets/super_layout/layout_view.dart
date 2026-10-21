@@ -15,6 +15,10 @@ extension _SuperLayoutView on SuperLayoutState {
       onEdit: _openEditor,
       onAdd: () => _addSlot(_actionZone),
       menuIcon: widget.menuIcon,
+      menuSubtitle: () =>
+          _config.value.positioning == SuperLayoutPositioning.grid
+          ? 'Grille'
+          : widget.zoneLabel(_actionZone),
       axisAction: _config.value.positioning == SuperLayoutPositioning.grid
           ? null
           : () => _axisAction(_actionZone),

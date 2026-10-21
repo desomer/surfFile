@@ -86,7 +86,8 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           tags: const {'appBar'},
           child: bar,
         )
-      else BuilderSlot(
+      else
+        BuilderSlot(
           id: 'scaffold:appBar',
           label: 'AppBar',
           tags: const {'appBar'},
@@ -149,13 +150,14 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
   PreferredSizeWidget? _appBar(NativeComponentEditorState editor) {
     if (!editor.visible('appBar')) return null;
     final slots = editor.slotsFor('appBar');
-    final height = slots.fold<double>(
-      slots.isEmpty ? kToolbarHeight : 0,
-      (sum, slot) {
-        final height = editor.preferredSizeFor(slot)?.height;
-        return sum + (height != null && height.isFinite ? height : kToolbarHeight);
-      },
-    );
+    final height = slots.fold<double>(slots.isEmpty ? kToolbarHeight : 0, (
+      sum,
+      slot,
+    ) {
+      final height = editor.preferredSizeFor(slot)?.height;
+      return sum +
+          (height != null && height.isFinite ? height : kToolbarHeight);
+    });
     return PreferredSize(
       preferredSize: Size.fromHeight(height),
       child: editor.region('appBar'),
@@ -202,6 +204,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
         final config = controller.value;
         return NativeComponentEditor(
           label: widget.label,
+          menuType: 'SuperPage',
           menuIcon: widget.menuIcon,
           keyPrefix: 'scaffold-page',
           settingsTitle: 'Configurer la page',
@@ -239,7 +242,8 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           builder: (context, editor) => ListenableBuilder(
             listenable: Listenable.merge([
               for (final slot in editor.slotsFor('appBar'))
-                if (slot case NativePreferredSizeWidget native) native.sizeListenable(context),
+                if (slot case NativePreferredSizeWidget native)
+                  native.sizeListenable(context),
             ]),
             builder: (context, _) => Scaffold(
               key: _scaffoldKey,

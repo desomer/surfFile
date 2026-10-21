@@ -1059,6 +1059,13 @@ void main() {
           buttons: kSecondaryMouseButton,
         );
         await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('style-menu-Texte')),
+            matching: find.text('SuperText'),
+          ),
+          findsOneWidget,
+        );
         await tester.tap(find.byKey(const ValueKey('style-menu-Texte')));
         await tester.pumpAndSettle();
       }

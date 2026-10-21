@@ -1269,6 +1269,10 @@ void main() {
           const ValueKey('style-menu-Configurer la barre'),
         );
         expect(configure, findsOneWidget);
+        expect(
+          find.descendant(of: configure, matching: find.text('SuperAppBar')),
+          findsOneWidget,
+        );
         expect(find.byKey(const ValueKey('style-menu-AppBar')), findsOneWidget);
         await tester.tap(
           find.descendant(

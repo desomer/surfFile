@@ -77,11 +77,17 @@ void main() {
     expect(LayoutSelection.path.value,
         ['parent', 'Centre', 'child', 'Nord']);
     expect(tester.widget<Text>(
-      find.byKey(const ValueKey('style-menu-zone-Super layout')).first,
+      find.byKey(const ValueKey('style-menu-zone-Layout')).first,
     ).data, 'Nord');
+    final selectedLayoutRow = find.byKey(const ValueKey('style-menu-Layout')).first;
+    final selectedZoneLabel = find.byKey(const ValueKey('style-menu-zone-Layout')).first;
+    expect(
+      tester.getCenter(selectedZoneLabel).dy,
+      greaterThan(tester.getCenter(selectedLayoutRow).dy),
+    );
     final labels = find.byWidgetPredicate(
       (widget) => widget is Text &&
-          widget.key == const ValueKey('style-menu-zone-Super layout'),
+          widget.key == const ValueKey('style-menu-zone-Layout'),
     );
     expect(labels, findsNWidgets(2));
     expect(tester.widgetList<Text>(labels).map((text) => text.data),
@@ -101,29 +107,30 @@ void main() {
     final mode = ValueNotifier(true);
     addTearDown(mode.dispose);
     await pump(tester, mode, EditorZoom(
-      child: Align(
-        alignment: Alignment.topLeft,
-        child: SizedBox(
-          width: 400,
-          height: 300,
-          child: SuperLayout(
-            label: 'Zoom menu',
-            config: config.copyWith(autoSides: {}, northSize: 80),
-            zoneLabels: const {SuperLayoutZone.north: 'En haut'},
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 400,
+            height: 300,
+            child: SuperLayout(
+              label: 'Zoom menu',
+              config: config.copyWith(autoSides: {}, northSize: 80),
+              zoneLabels: const {SuperLayoutZone.north: 'En haut'},
             slots: const [BuilderSlot(
-              id: 'content',
-              label: 'Content',
-              builder: _menuContent,
+                  id: 'content',
+                  label: 'Content',
+                  builder: _menuContent,
             )],
+            ),
           ),
         ),
-      ),
     ));
     await tester.tapAt(const Offset(300, 200));
     await tester.pumpAndSettle();
     Offset screenPoint(Finder finder, Offset local) {
       return tester.renderObject<RenderBox>(finder).localToGlobal(local);
     }
+
     final north = find.byKey(const ValueKey('super-layout-north'));
     await tester.tapAt(screenPoint(north, const Offset(30, 20)),
         buttons: kSecondaryMouseButton);
@@ -233,36 +240,36 @@ void main() {
     final mode = ValueNotifier(true);
     addTearDown(mode.dispose);
     await pump(tester, mode, Row(children: [
-      Expanded(child: layout('first')),
-      Expanded(child: layout('second')),
+            Expanded(child: layout('first')),
+            Expanded(child: layout('second')),
     ]));
     await tester.tapAt(const Offset(300, 350));
-    await tester.pumpAndSettle();
-    LayoutSelection.select(['first', 'Centre', 'first']);
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
-    expect(inside('first', 'slot-resize-content-se'), findsOneWidget);
-    await tester.tapAt(const Offset(700, 350));
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['second']);
-    await tester.tapAt(const Offset(300, 350));
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['first']);
-    expect(inside('first', 'slot-resize-content-se'), findsNothing);
+      await tester.pumpAndSettle();
+      LayoutSelection.select(['first', 'Centre', 'first']);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
+      expect(inside('first', 'slot-resize-content-se'), findsOneWidget);
+      await tester.tapAt(const Offset(700, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['second']);
+      await tester.tapAt(const Offset(300, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['first']);
+      expect(inside('first', 'slot-resize-content-se'), findsNothing);
     expect(inside('first', 'super-layout-zone-selected-center'), findsNothing);
 
-    LayoutSelection.select(['first', 'Centre']);
-    await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(700, 350));
-    await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(300, 350));
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['first']);
-    // A subsequent click in the same layout still selects its slot.
-    await tester.tapAt(const Offset(300, 350));
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
-    expect(tester.takeException(), isNull);
+      LayoutSelection.select(['first', 'Centre']);
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(700, 350));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(300, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['first']);
+      // A subsequent click in the same layout still selects its slot.
+      await tester.tapAt(const Offset(300, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
+      expect(tester.takeException(), isNull);
   });
 
   testWidgets(
@@ -446,11 +453,11 @@ void main() {
     );
     final menuAxis = find.byKey(const ValueKey('style-menu-axis-Super layout'));
     expect(
-      tester.getRect(menuLabel).right,
-      lessThan(tester.getRect(menuZone).left),
+      tester.getCenter(menuZone).dy,
+      greaterThan(tester.getCenter(menuLabel).dy),
     );
     expect(
-      tester.getRect(menuZone).right,
+      tester.getRect(menuLabel).right,
       lessThan(tester.getRect(menuAxis).left),
     );
     await tester.tap(

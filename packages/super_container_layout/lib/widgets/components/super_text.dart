@@ -295,6 +295,7 @@ class _SuperTextState extends State<SuperText> {
         return EditorSlot(
           key: _surface,
           label: 'Texte',
+          menuType: 'SuperText',
           onEdit: () async {
             if (_editorText != null) return;
             final initial = configuration.value;

@@ -549,6 +549,7 @@ class _SuperListViewState extends State<SuperListView> {
 
         return EditorSlot(
           label: 'Liste',
+          menuType: 'SuperListView',
           onEdit: () => _edit(configuration),
           child: LayoutBuilder(
             builder: (context, constraints) {

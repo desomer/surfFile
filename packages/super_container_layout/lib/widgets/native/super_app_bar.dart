@@ -324,6 +324,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
       valueListenable: controller,
       builder: (context, config, _) => NativeComponentEditor(
         label: widget.label,
+        menuType: 'SuperAppBar',
         keyPrefix: 'super-app-bar',
         settingsTitle: 'Configurer la barre',
         editSurface: true,

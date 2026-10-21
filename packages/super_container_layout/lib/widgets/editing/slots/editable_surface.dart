@@ -33,6 +33,8 @@ class EditableSurface extends StatefulWidget {
     this.onEdit,
     this.onAdd,
     this.axisAction,
+    this.menuSubtitle,
+    this.menuType,
     this.onContextMenu,
     this.menuIcon,
     super.key,
@@ -60,6 +62,8 @@ class EditableSurface extends StatefulWidget {
   final Future<void> Function()? onEdit;
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
+  final String? Function()? menuSubtitle;
+  final String? menuType;
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
 
@@ -206,13 +210,14 @@ class EditableSurfaceState extends State<EditableSurface> {
             key: _editorKey,
             label: _label,
             menuTitle: widget.menuTitle,
-            onLabelChanged:
-                widget.onLabelChanged == null ? null : _renameLabel,
+            onLabelChanged: widget.onLabelChanged == null ? null : _renameLabel,
             editable:
                 widget.editable && (widget.slot == null || appearance != null),
             onEdit: openEditor,
             onAdd: widget.onAdd != null || widget.id != null ? _addChild : null,
             axisAction: widget.axisAction,
+            menuSubtitle: widget.menuSubtitle,
+            menuType: widget.menuType,
             onContextMenu: widget.onContextMenu,
             menuIcon: widget.menuIcon,
             identity: widget.slot?.standard,
@@ -242,12 +247,11 @@ class EditableSurfaceState extends State<EditableSurface> {
         id: id,
         label: _label,
         child: widget.child,
-        builder: (context, child, hasChild, removeChild) =>
-            _buildSurface(
-              context,
-              child,
-              onRemoveChild: hasChild ? removeChild : null,
-            ),
+        builder: (context, child, hasChild, removeChild) => _buildSurface(
+          context,
+          child,
+          onRemoveChild: hasChild ? removeChild : null,
+        ),
       );
     }
     return _buildSurface(context, widget.child ?? const SizedBox.expand());

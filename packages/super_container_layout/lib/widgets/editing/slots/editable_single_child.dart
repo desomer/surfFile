@@ -111,6 +111,7 @@ class EditableSingleChildState extends State<EditableSingleChild> {
       builder: (context, config, _) => NativeComponentEditor(
         key: _editor,
         label: widget.label,
+        menuType: 'NewContainer',
         keyPrefix: 'super-container-${widget.id}',
         settingsTitle: 'Configurer le contenu',
         config: config,

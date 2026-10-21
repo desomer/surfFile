@@ -27,6 +27,8 @@ class StyleEditScope extends InheritedNotifier<ValueNotifier<bool>> {
       context.dependOnInheritedWidgetOfExactType<StyleEditScope>()?.notifier;
 }
 
+const double _defaultIndent = 8.0;
+
 EditorComponentLabel? editorComponentLabelOf(BuildContext context) {
   final inherited = context
       .getElementForInheritedWidgetOfExactType<EditorComponentLabel>()
@@ -51,11 +53,13 @@ class EditorSlot extends StatefulWidget {
     this.child,
     this.label,
     this.menuTitle,
+    this.menuType,
     this.onLabelChanged,
     this.editable = true,
     this.onEdit,
     this.onAdd,
     this.axisAction,
+    this.menuSubtitle,
     this.onContextMenu,
     this.menuIcon,
     this.identity,
@@ -67,11 +71,13 @@ class EditorSlot extends StatefulWidget {
   final Widget? child;
   final String? label;
   final String? menuTitle;
+  final String? menuType;
   final ValueChanged<String>? onLabelChanged;
   final bool editable;
   final Future<void> Function()? onEdit;
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
+  final String? Function()? menuSubtitle;
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
 
@@ -235,6 +241,35 @@ class EditorSlotState extends State<EditorSlot> {
     _hoveredTarget.value = deepest;
   }
 
+  Widget _menuIconBadge(
+    IconData icon, {
+    required Color background,
+    required Color foreground,
+  }) => Container(
+    width: 36,
+    height: 36,
+    decoration: BoxDecoration(
+      color: background,
+      borderRadius: BorderRadius.circular(10),
+    ),
+    alignment: Alignment.center,
+    child: Icon(icon, size: 19, color: foreground),
+  );
+
+  ButtonStyle _menuIconButtonStyle(
+    BuildContext context, {
+    bool destructive = false,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return IconButton.styleFrom(
+      foregroundColor: destructive ? colors.error : colors.onSurfaceVariant,
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      minimumSize: const Size.square(36),
+    );
+  }
+
   Widget _menuHover(EditorSlotState target, Widget child) => MouseRegion(
     onEnter: (_) {
       if (!(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
@@ -250,7 +285,7 @@ class EditorSlotState extends State<EditorSlot> {
       }
     },
     child: ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 48),
+      constraints: const BoxConstraints(minHeight: 40),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: child,
@@ -365,11 +400,23 @@ class EditorSlotState extends State<EditorSlot> {
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
+    final colors = Theme.of(context).colorScheme;
+    final hasMenuActions = extraActions.any((action) => !action.inline);
     Object? selected;
     try {
       selected = await showMenu<Object>(
         context: context,
-        constraints: const BoxConstraints(minWidth: 200, maxWidth: 420),
+        constraints: const BoxConstraints(minWidth: 240, maxWidth: 420),
+        color: colors.surfaceContainerHigh.withAlpha(240),
+        surfaceTintColor: Colors.transparent,
+        shadowColor: colors.shadow.withValues(alpha: .18),
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: colors.outlineVariant.withValues(alpha: .55)),
+        ),
+        menuPadding: const EdgeInsets.symmetric(vertical: 4),
+        clipBehavior: Clip.antiAlias,
         position: RelativeRect.fromLTRB(
           position.dx,
           position.dy,
@@ -377,52 +424,86 @@ class EditorSlotState extends State<EditorSlot> {
           overlay.size.height - position.dy,
         ),
         items: [
-          for (final action in extraActions)
-            if (!action.inline)
-              PopupMenuItem<Future<void> Function()>(
-                value: action.onEdit,
-                padding: EdgeInsets.zero,
-                child: _menuHover(
-                  this,
-                  Row(
-                    mainAxisSize: MainAxisSize.max,
-                    children: [
-                      Flexible(child: Text(action.label)),
-                      if (action.onRemove case final remove?)
-                        IconButton(
-                          key: ValueKey('style-menu-remove-${action.label}'),
-                          tooltip: 'Supprimer le slot',
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => Navigator.of(context).pop(remove),
-                        ),
-                    ],
-                  ),
+          for (final (actionIndex, action)
+              in extraActions.where((action) => !action.inline).indexed) ...[
+            if (actionIndex > 0) const PopupMenuDivider(height: 12),
+            PopupMenuItem<Future<void> Function()>(
+              height: 40,
+              value: action.onEdit,
+              padding: EdgeInsets.zero,
+              child: _menuHover(
+                this,
+                Row(
+                  mainAxisSize: MainAxisSize.max,
+                  children: [
+                    _menuIconBadge(
+                      Icons.tune_rounded,
+                      background: colors.tertiaryContainer,
+                      foreground: colors.onTertiaryContainer,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        action.label,
+                        style: Theme.of(context).textTheme.titleSmall,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (action.onRemove case final remove?)
+                      IconButton(
+                        key: ValueKey('style-menu-remove-${action.label}'),
+                        tooltip: 'Supprimer le slot',
+                        icon: const Icon(Icons.delete_outline),
+                        style: _menuIconButtonStyle(context, destructive: true),
+                        onPressed: () => Navigator.of(context).pop(remove),
+                      ),
+                  ],
                 ),
               ),
-          for (final (index, entry) in entries)
+            ),
+          ],
+          if (hasMenuActions && entries.isNotEmpty)
+            const PopupMenuDivider(height: 12),
+          for (final (entryIndex, (index, entry)) in entries.indexed) ...[
+            if (entryIndex > 0) const PopupMenuDivider(height: 12),
             if (entry is EditorContextMenuEntry)
               PopupMenuItem<Future<void> Function()>(
+                height: 40,
                 key: ValueKey('style-menu-entry-${entry.label}'),
                 value: entry.onSelected,
                 padding: EdgeInsets.zero,
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(16 + 8.0 * index, 0, 16, 0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.subdirectory_arrow_left, size: 18),
-                      const SizedBox(width: 10),
-                      Flexible(
-                        child: Text(
-                          entry.label,
-                          overflow: TextOverflow.ellipsis,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 40),
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      16 + _defaultIndent * index,
+                      0,
+                      16,
+                      0,
+                    ),
+                    child: Row(
+                      children: [
+                        _menuIconBadge(
+                          Icons.subdirectory_arrow_left,
+                          background: colors.secondaryContainer,
+                          foreground: colors.onSecondaryContainer,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            entry.label,
+                            style: Theme.of(context).textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               )
             else if (entry case final EditorSlotState state)
               PopupMenuItem<EditorSlotState>(
+                height: 40,
                 key: ValueKey('style-menu-${state.label}'),
                 enabled: state.widget.onEdit != null,
                 value: state,
@@ -430,43 +511,76 @@ class EditorSlotState extends State<EditorSlot> {
                 child: _menuHover(
                   state,
                   Padding(
-                    padding: EdgeInsets.only(left: 12.0 * index),
+                    padding: EdgeInsets.only(left: _defaultIndent * index),
                     child: Row(
                       mainAxisSize: MainAxisSize.max,
                       children: [
-                        Icon(
+                        _menuIconBadge(
                           state.widget.menuIcon ??
                               state.componentLabel?.menuIcon ??
                               (index == 0
                                   ? Icons.brush_outlined
                                   : Icons.subdirectory_arrow_left),
-                          size: 18,
+                          background: colors.primaryContainer,
+                          foreground: colors.onPrimaryContainer,
                         ),
-                        const SizedBox(width: 10),
-                        if (state.widget.menuTitle case final title?) ...[
-                          Text(
-                            title,
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(width: 10),
-                        ],
-                        Flexible(
-                          child: Text(
-                            state.label,
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                state.widget.menuTitle ?? state.label,
+                                style: Theme.of(context).textTheme.titleSmall
+                                    ?.copyWith(fontWeight: FontWeight.w600),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                              if ((state.widget.menuSubtitle?.call() ??
+                                      ((StyleEditScope.controllerOf(
+                                                    state.context,
+                                                  )?.value ??
+                                                  false) &&
+                                              state.widget.axisAction != null
+                                          ? state.widget.axisAction!().zoneLabel
+                                          : state.widget.menuType ??
+                                                (state.widget.menuTitle == null
+                                                    ? null
+                                                    : state.label)))
+                                  case final subtitle?)
+                                Text(
+                                  subtitle,
+                                  key:
+                                      state.widget.menuSubtitle != null ||
+                                          (state.widget.menuType == null &&
+                                              state.widget.menuTitle == null)
+                                      ? ValueKey(
+                                          'style-menu-zone-${state.label}',
+                                        )
+                                      : null,
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              if (state.widget.menuSubtitle == null &&
+                                  state.widget.menuType != null &&
+                                  state.widget.menuTitle != null)
+                                Text(
+                                  state.label,
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: colors.onSurfaceVariant,
+                                      ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                            ],
                           ),
                         ),
-                        if ((StyleEditScope.controllerOf(state.context)
-                                    ?.value ??
-                                false) &&
-                            state.widget.axisAction != null) ...[
-                          const SizedBox(width: 10),
-                          Text(
-                            state.widget.axisAction!().zoneLabel,
-                            key: ValueKey('style-menu-zone-${state.label}'),
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
                         if ((StyleEditScope.controllerOf(state.context)
                                     ?.value ??
                                 false) &&
@@ -493,6 +607,7 @@ class EditorSlotState extends State<EditorSlot> {
                             key: ValueKey('style-menu-rename-${state.label}'),
                             tooltip: 'Renommer',
                             icon: const Icon(Icons.drive_file_rename_outline),
+                            style: _menuIconButtonStyle(context),
                             onPressed: () =>
                                 Navigator.of(context)
                                     .pop<Future<void> Function()>(() async {
@@ -509,6 +624,7 @@ class EditorSlotState extends State<EditorSlot> {
                               key: ValueKey('style-menu-size-${action.label}'),
                               tooltip: action.label,
                               icon: const Icon(Icons.straighten),
+                              style: _menuIconButtonStyle(context),
                               onPressed: () =>
                                   Navigator.of(context).pop(action.onEdit),
                             ),
@@ -519,6 +635,10 @@ class EditorSlotState extends State<EditorSlot> {
                               ),
                               tooltip: 'Supprimer le slot',
                               icon: const Icon(Icons.delete_outline),
+                              style: _menuIconButtonStyle(
+                                context,
+                                destructive: true,
+                              ),
                               onPressed: () =>
                                   Navigator.of(context).pop(remove),
                             ),
@@ -534,6 +654,10 @@ class EditorSlotState extends State<EditorSlot> {
                             ),
                             tooltip: 'Supprimer le composant enfant',
                             icon: const Icon(Icons.delete_outline),
+                            style: _menuIconButtonStyle(
+                              context,
+                              destructive: true,
+                            ),
                             onPressed: () => Navigator.of(context)
                                 .pop<Future<void> Function()>(
                                   state.widget.onRemoveChild,
@@ -547,6 +671,7 @@ class EditorSlotState extends State<EditorSlot> {
                             key: ValueKey('style-menu-add-${state.label}'),
                             tooltip: 'Ajouter un slot',
                             icon: const Icon(Icons.add),
+                            style: _menuIconButtonStyle(context),
                             onPressed: () =>
                                 Navigator.of(context).pop(state.widget.onAdd),
                           ),
@@ -555,6 +680,7 @@ class EditorSlotState extends State<EditorSlot> {
                   ),
                 ),
               ),
+          ],
         ],
       );
     } finally {
