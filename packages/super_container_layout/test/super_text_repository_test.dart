@@ -45,20 +45,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> mount(WidgetTester tester, Widget child) async {
+  Future<void> mount(
+    WidgetTester tester,
+    Widget child, {
+    bool repositoryScopeAboveNavigator = true,
+  }) async {
     await tester.binding.setSurfaceSize(const Size(1200, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await real(
       tester,
       () => tester.pumpWidget(
-        JsonRepositoryScope(
-          store: store,
-          child: MaterialApp(
-            home: Scaffold(
-              body: Center(child: SizedBox(width: 500, child: child)),
-            ),
-          ),
-        ),
+        repositoryScopeAboveNavigator
+            ? JsonRepositoryScope(
+                store: store,
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: Center(child: SizedBox(width: 500, child: child)),
+                  ),
+                ),
+              )
+            : MaterialApp(
+                home: JsonRepositoryScope(
+                  store: store,
+                  child: Scaffold(
+                    body: Center(child: SizedBox(width: 500, child: child)),
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -513,6 +526,7 @@ void main() {
     WidgetTester tester, {
     SuperTextConfig config = const SuperTextConfig(),
     bool allowBinding = true,
+    bool repositoryScopeAboveNavigator = true,
     required ValueChanged<SuperTextConfig?> result,
   }) => mount(
     tester,
@@ -529,6 +543,7 @@ void main() {
         child: const Text('Edit'),
       ),
     ),
+    repositoryScopeAboveNavigator: repositoryScopeAboveNavigator,
   );
 
   testWidgets(
@@ -603,6 +618,296 @@ void main() {
         ),
       );
       expect(await tester.runAsync(() => store.read('People')), before);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'property binding icon opens shared selector and applies the chosen path',
+    (tester) async {
+      SuperTextConfig? result;
+      await editorHost(
+        tester,
+        config: const SuperTextConfig(label: 'Configured label'),
+        repositoryScopeAboveNavigator: false,
+        result: (value) => result = value,
+      );
+      await real(tester, () => tester.tap(find.text('Edit')));
+      final bind = find.byKey(const ValueKey('super-text-bind-label'));
+      await real(tester, () => tester.ensureVisible(bind));
+      await real(tester, () => tester.tap(bind));
+      final repository = find.byKey(
+        const ValueKey('super-text-property-label-repository'),
+      );
+      await real(tester, () => tester.tap(repository));
+      await real(tester, () => tester.tap(find.text('People').last));
+      expect(
+        tester
+            .widget<DropdownButton<String>>(
+              find.descendant(
+                of: repository,
+                matching: find.byType(DropdownButton<String>),
+              ),
+            )
+            .value,
+        binding.repositoryId,
+      );
+      final path = find.byKey(
+        const ValueKey('super-text-property-label-repository-path'),
+      );
+      await real(tester, () => tester.ensureVisible(path));
+      await real(tester, () => tester.enterText(path, 'client.name'));
+      await real(
+        tester,
+        () => tester.tap(
+          find.byKey(const ValueKey('super-text-property-label-apply')),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('super-text-bind-label')),
+        findsOneWidget,
+      );
+      await real(tester, () => tester.tap(find.text('Appliquer').last));
+      expect(
+        result?.propertyBindings[SuperTextProperty.label],
+        JsonTextBinding(
+          repositoryId: binding.repositoryId,
+          path: 'client.name',
+        ),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'property bindings update styles read-only while content binding stays separate',
+    (tester) async {
+      await tester.runAsync(() async {
+        final previous = await store.read('People');
+        await store.save(
+          'People',
+          '{"client":{"name":"Alice","label":"Person","color":"#123456","size":24,"font":"Roboto","weight":"bold","italic":true,"align":"center"}}',
+          expectedText: previous,
+        );
+      });
+      final original = await tester.runAsync(() => store.read('People'));
+      await mount(
+        tester,
+        SuperText(
+          id: 'bound-style',
+          config: SuperTextConfig(
+            binding: binding,
+            label: 'Configured label',
+            color: const Color(0xFFFF0000),
+            propertyBindings: {
+              SuperTextProperty.label: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.label',
+              ),
+              SuperTextProperty.color: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.color',
+              ),
+              SuperTextProperty.fontSize: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.size',
+              ),
+              SuperTextProperty.fontFamily: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.font',
+              ),
+              SuperTextProperty.fontWeight: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.weight',
+              ),
+              SuperTextProperty.italic: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.italic',
+              ),
+              SuperTextProperty.textAlign: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.align',
+              ),
+            },
+          ),
+        ),
+      );
+      await real(tester, () async {});
+      final display = tester.widget<Text>(
+        find.byKey(const ValueKey('super-text-display-bound-style')),
+      );
+      expect(display.style?.color, const Color(0xFF123456));
+      expect(display.style?.fontSize, 24);
+      expect(display.style?.fontFamily, 'Roboto');
+      expect(display.style?.fontWeight, FontWeight.w700);
+      expect(display.style?.fontStyle, FontStyle.italic);
+      expect(display.textAlign, TextAlign.center);
+      expect(find.text('Person'), findsOneWidget);
+      expect(find.text('Alice'), findsOneWidget);
+      expect(await tester.runAsync(() => store.read('People')), original);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'refreshing bound styles keeps the last value until the new value loads',
+    (tester) async {
+      await tester.runAsync(() async {
+        final previous = await store.read('People');
+        await store.save(
+          'People',
+          '{"client":{"name":"Alice","label":"Person","color":"#123456"}}',
+          expectedText: previous,
+        );
+      });
+      await mount(
+        tester,
+        SuperText(
+          id: 'refresh-style',
+          config: SuperTextConfig(
+            label: 'Fallback label',
+            color: const Color(0xFFFF0000),
+            propertyBindings: {
+              SuperTextProperty.label: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.label',
+              ),
+              SuperTextProperty.color: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.color',
+              ),
+            },
+          ),
+        ),
+      );
+      await real(tester, () async {});
+
+      InputDecorator decorator() =>
+          tester.widget<InputDecorator>(find.byType(InputDecorator));
+      Text display() => tester.widget<Text>(
+        find.byKey(const ValueKey('super-text-display-refresh-style')),
+      );
+      expect(decorator().decoration.labelText, 'Person');
+      expect(display().style?.color, const Color(0xFF123456));
+
+      final labelBinding = JsonTextBinding(
+        repositoryId: binding.repositoryId,
+        path: 'client.label',
+      );
+      await tester.runAsync(
+        () => store.writeAttribute(
+          labelBinding,
+          'Updated',
+          expectedValue: 'Person',
+        ),
+      );
+      await tester.pump();
+      expect(decorator().decoration.labelText, 'Person');
+      expect(display().style?.color, const Color(0xFF123456));
+      await real(tester, () async {}, save: true);
+      expect(decorator().decoration.labelText, 'Updated');
+
+      final colorBinding = JsonTextBinding(
+        repositoryId: binding.repositoryId,
+        path: 'client.color',
+      );
+      await tester.runAsync(
+        () => store.writeAttribute(
+          colorBinding,
+          '#654321',
+          expectedValue: '#123456',
+        ),
+      );
+      await tester.pump();
+      expect(display().style?.color, const Color(0xFF123456));
+      await real(tester, () async {}, save: true);
+      expect(display().style?.color, const Color(0xFF654321));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'invalid property value retains configured style and exposes an error',
+    (tester) async {
+      await tester.runAsync(() async {
+        final previous = await store.read('People');
+        await store.save(
+          'People',
+          '{"client":{"name":"Alice","color":"not-a-color"}}',
+          expectedText: previous,
+        );
+      });
+      final original = await tester.runAsync(() => store.read('People'));
+      await mount(
+        tester,
+        SuperText(
+          id: 'bad-style',
+          config: SuperTextConfig(
+            color: const Color(0xFFFF0000),
+            propertyBindings: {
+              SuperTextProperty.color: JsonTextBinding(
+                repositoryId: binding.repositoryId,
+                path: 'client.color',
+              ),
+            },
+          ),
+        ),
+      );
+      await real(tester, () async {});
+      final display = tester.widget<Text>(
+        find.byKey(const ValueKey('super-text-display-bad-style')),
+      );
+      expect(display.style?.color, const Color(0xFFFF0000));
+      expect(
+        find.byKey(
+          const ValueKey('super-text-property-binding-error-color-bad-style'),
+        ),
+        findsOneWidget,
+      );
+      expect(await tester.runAsync(() => store.read('People')), original);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'property bindings resolve inherited repositories and list indices',
+    (tester) async {
+      await tester.runAsync(() async {
+        final previous = await store.read('People');
+        await store.save(
+          'People',
+          '{"clients":[{"label":"First client"}]}',
+          expectedText: previous,
+        );
+      });
+      await mount(
+        tester,
+        JsonListScope(
+          repositoryId: binding.repositoryId,
+          indices: const [0],
+          child: SuperText(
+            id: 'inherited-style',
+            config: const SuperTextConfig(
+              label: 'Configured label',
+              propertyBindings: {
+                SuperTextProperty.label: JsonTextBinding(
+                  path: 'clients[?].label',
+                ),
+              },
+            ),
+          ),
+        ),
+      );
+      await real(tester, () async {});
+      expect(find.text('First client'), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey(
+            'super-text-property-binding-error-label-inherited-style',
+          ),
+        ),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
     },
   );

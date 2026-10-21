@@ -1,20 +1,18 @@
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_text_config.dart';
-import '../../../services/json_list_scope.dart';
-import '../../../services/json_repository_scope.dart';
-import '../../../services/json_repository_store.dart';
 import '../../../theme/container_style.dart';
 import '../../super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../components/super_list_view_editor.dart';
 import '../components/super_text_editor.dart';
+
+export '../repositories/repository_binding_fields.dart'
+    show RepositoryBindingFields;
 
 /// Add wizard settings of a `SuperText`, written to `Registry.textController`.
 ComponentAddConfigurator<SuperTextConfig> superTextAddConfigurator(
@@ -501,206 +499,4 @@ class _ContainerAddForm extends StatelessWidget {
       ),
     ],
   );
-}
-
-/// Repository binding fields of the add wizard « Liaison » step.
-///
-/// The repositories come from `JsonRepositoryScope`; « Hérité de la liste
-/// englobante » is offered inside a `JsonListScope`. [onChanged] receives null
-/// when the binding is removed.
-class RepositoryBindingFields extends StatefulWidget {
-  const RepositoryBindingFields({
-    required this.keyPrefix,
-    required this.binding,
-    required this.onChanged,
-    required this.pathHint,
-    this.helper,
-    super.key,
-  });
-
-  final String keyPrefix;
-  final JsonTextBinding? binding;
-  final ValueChanged<JsonTextBinding?> onChanged;
-  final String pathHint;
-  final String? helper;
-
-  @override
-  State<RepositoryBindingFields> createState() =>
-      _RepositoryBindingFieldsState();
-}
-
-class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
-  late final _path = TextEditingController(text: widget.binding?.path ?? '');
-  late String _repository = widget.binding == null
-      ? ''
-      : widget.binding!.repositoryId ?? inheritedRepositoryValue;
-  List<JsonRepositoryEntry> _repositories = const [];
-  JsonRepositoryStore? _store;
-  bool _loading = false;
-  String? _loadError;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final store = JsonRepositoryScope.maybeOf(context);
-    if (!identical(store, _store)) {
-      _store = store;
-      _load();
-    }
-  }
-
-  @override
-  void dispose() {
-    _path.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final store = _store;
-    if (store == null) return;
-    setState(() {
-      _loading = true;
-      _loadError = null;
-    });
-    try {
-      final entries = await store.catalog();
-      if (mounted && identical(store, _store)) {
-        setState(() => _repositories = entries);
-      }
-    } on FormatException catch (error) {
-      if (mounted) setState(() => _loadError = error.message);
-    } on FileSystemException {
-      if (mounted) {
-        setState(() => _loadError = 'Impossible de charger les repositories.');
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  void _emit() => widget.onChanged(
-    _repository.isEmpty
-        ? null
-        : JsonTextBinding(
-            repositoryId: _repository == inheritedRepositoryValue
-                ? null
-                : _repository,
-            path: _path.text.trim(),
-          ),
-  );
-
-  String? get _pathError {
-    if (_repository.isEmpty) return null;
-    if (_path.text.trim().isEmpty) return 'Chemin requis.';
-    try {
-      JsonAttributePath(_path.text.trim());
-      return null;
-    } on FormatException catch (error) {
-      return error.message;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final available = _store != null;
-    final listScope = JsonListScope.maybeOf(context);
-    final depth = listScope?.indices.length ?? 0;
-    final inheritable =
-        listScope != null || _repository == inheritedRepositoryValue;
-    final known =
-        _repository.isEmpty ||
-        _repository == inheritedRepositoryValue ||
-        _repositories.any((entry) => entry.id == _repository);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                key: ValueKey('${widget.keyPrefix}-repository'),
-                initialValue: _repository,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: 'Repository',
-                  prefixIcon: Icon(Icons.link),
-                ),
-                items: [
-                  const DropdownMenuItem(
-                    value: '',
-                    child: Text('Sans liaison'),
-                  ),
-                  if (inheritable)
-                    const DropdownMenuItem(
-                      value: inheritedRepositoryValue,
-                      child: Text('Hérité de la liste englobante'),
-                    ),
-                  for (final entry in _repositories)
-                    DropdownMenuItem(
-                      value: entry.id,
-                      child: Text(entry.name, overflow: TextOverflow.ellipsis),
-                    ),
-                  if (!known)
-                    DropdownMenuItem(
-                      value: _repository,
-                      child: const Text('Repository indisponible'),
-                    ),
-                ],
-                onChanged: !available && !inheritable
-                    ? null
-                    : (value) {
-                        setState(() => _repository = value ?? '');
-                        _emit();
-                      },
-              ),
-            ),
-            IconButton(
-              key: ValueKey('${widget.keyPrefix}-repository-reload'),
-              tooltip: 'Recharger les repositories',
-              onPressed: available && !_loading ? _load : null,
-              icon: const Icon(Icons.refresh),
-            ),
-          ],
-        ),
-        if (_repository.isNotEmpty)
-          TextField(
-            key: ValueKey('${widget.keyPrefix}-repository-path'),
-            controller: _path,
-            decoration: InputDecoration(
-              isDense: true,
-              labelText: 'Chemin',
-              hintText: widget.pathHint,
-              errorText: _pathError,
-              helperText:
-                  widget.helper ??
-                  (depth == 0
-                      ? '[?] = ligne sélectionnée du tableau'
-                      : 'Chaque [?] reçoit l’indice d’une liste englobante '
-                            '($depth disponible(s)).'),
-            ),
-            onChanged: (_) {
-              setState(() {});
-              _emit();
-            },
-          ),
-        if (!available)
-          Text(
-            'Service de repositories indisponible.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        if (_loading)
-          Text(
-            'Chargement des repositories…',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        if (_loadError != null)
-          Text(
-            _loadError!,
-            key: ValueKey('${widget.keyPrefix}-repository-error'),
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-      ],
-    );
-  }
 }

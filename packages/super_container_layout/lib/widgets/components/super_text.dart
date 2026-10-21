@@ -1,5 +1,9 @@
-import 'package:flutter/foundation.dart' show listEquals;
+import 'dart:io';
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_text_config.dart';
@@ -14,6 +18,99 @@ import '../editing/history/editor_history.dart';
 import '../editing/components/super_text_editor.dart';
 import 'super_text_field.dart';
 import '../editing/slots/editor_slot.dart';
+
+Object _parseBoundProperty(SuperTextProperty property, Object? value) {
+  switch (property) {
+    case SuperTextProperty.label:
+    case SuperTextProperty.placeholder:
+    case SuperTextProperty.fontFamily:
+      if (value is! String ||
+          (property == SuperTextProperty.fontFamily && value.trim().isEmpty)) {
+        throw FormatException(
+          'La valeur liée à ${property.name} doit être un texte valide.',
+        );
+      }
+      return value;
+    case SuperTextProperty.color:
+      if (value is int && value >= 0 && value <= 0xFFFFFFFF) {
+        return Color(value);
+      }
+      if (value is String) {
+        final hex = value.trim().replaceFirst(RegExp(r'^#'), '');
+        if (RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(hex)) {
+          return Color(0xFF000000 | int.parse(hex, radix: 16));
+        }
+        if (RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(hex)) {
+          return Color(int.parse(hex, radix: 16));
+        }
+      }
+      throw const FormatException(
+        'La couleur liée doit être un entier ARGB ou un hexadécimal RGB/ARGB.',
+      );
+    case SuperTextProperty.fontSize:
+      final number = value is num
+          ? value.toDouble()
+          : value is String
+          ? double.tryParse(value.trim().replaceAll(',', '.'))
+          : null;
+      if (number == null || !number.isFinite || number <= 0) {
+        throw const FormatException(
+          'La taille de police liée doit être un nombre positif.',
+        );
+      }
+      return number;
+    case SuperTextProperty.fontWeight:
+      final weight = switch (value) {
+        int weightValue =>
+          FontWeight.values
+              .where((weight) => weight.value == weightValue)
+              .firstOrNull,
+        String text => switch (text.trim().toLowerCase()) {
+          'normal' => FontWeight.w400,
+          'bold' => FontWeight.w700,
+          final value when RegExp(r'^(?:w)?[1-9]00$').hasMatch(value) =>
+            FontWeight.values
+                .where(
+                  (weight) =>
+                      weight.value == int.parse(value.replaceFirst('w', '')),
+                )
+                .firstOrNull,
+          _ => null,
+        },
+        _ => null,
+      };
+      if (weight == null) {
+        throw const FormatException(
+          'La graisse liée doit être normal, bold ou une valeur 100–900.',
+        );
+      }
+      return weight;
+    case SuperTextProperty.italic:
+      if (value is bool) return value;
+      if (value is String) {
+        return switch (value.trim().toLowerCase()) {
+          'true' || 'italic' => true,
+          'false' || 'normal' => false,
+          _ => throw const FormatException(
+            'Le style italique lié doit être true/false ou italic/normal.',
+          ),
+        };
+      }
+      throw const FormatException(
+        'Le style italique lié doit être un booléen ou un texte.',
+      );
+    case SuperTextProperty.textAlign:
+      if (value is String) {
+        final align = TextAlign.values
+            .where((candidate) => candidate.name == value.trim().toLowerCase())
+            .firstOrNull;
+        if (align != null) return align;
+      }
+      throw const FormatException(
+        'L’alignement lié doit être start, end, left, right, center ou justify.',
+      );
+  }
+}
 
 /// Display or edit text; runtime input persists only with a repository binding.
 class SuperText extends StatefulWidget {
@@ -57,6 +154,17 @@ class _SuperTextState extends State<SuperText> {
   bool _requestedPlaceholder = false;
   int _bindingGeneration = 0;
   String? _bindingError;
+  Map<SuperTextProperty, Object> _boundPropertyValues = const {};
+  Map<SuperTextProperty, String> _propertyBindingErrors = const {};
+  List<JsonArrayBinding> _propertySelections = const [];
+  Map<SuperTextProperty, JsonTextBinding> _activePropertyBindings = const {};
+  Map<SuperTextProperty, JsonTextBinding>? _requestedPropertyBindings;
+  JsonRepositoryStore? _requestedPropertyStore;
+  String? _requestedPropertyRepositoryId;
+  List<int> _requestedPropertyIndices = const [];
+  bool _requestedPropertyPlaceholder = false;
+  bool _refreshPropertyBindings = true;
+  int _propertyBindingGeneration = 0;
 
   /// A `[?]` resolved by a selection has no selected row: empty and read-only.
   bool _unselected = false;
@@ -245,10 +353,169 @@ class _SuperTextState extends State<SuperText> {
     if (mounted) setState(() {});
   }
 
+  void _listenPropertySelections(List<JsonArrayBinding> selections) {
+    if (listEquals(_propertySelections, selections)) return;
+    for (final selection in _propertySelections) {
+      selection.removeListener(_propertySelectionChanged);
+    }
+    _propertySelections = selections;
+    for (final selection in selections) {
+      selection.addListener(_propertySelectionChanged);
+    }
+  }
+
+  void _propertySelectionChanged() {
+    _refreshPropertyBindings = true;
+    if (mounted) setState(() {});
+  }
+
+  void _propertyStoreChanged() {
+    final store = _requestedPropertyStore;
+    if (!mounted || store == null || _activePropertyBindings.isEmpty) return;
+    final generation = ++_propertyBindingGeneration;
+    unawaited(
+      _loadPropertyBindings(_activePropertyBindings, store, generation),
+    );
+  }
+
+  void _observePropertyBindings(
+    SuperTextConfig config,
+    JsonListScope? scope,
+    JsonRepositoryStore? store,
+  ) {
+    final bindings = config.propertyBindings;
+    final sameBindingContext =
+        mapEquals(_requestedPropertyBindings, bindings) &&
+        identical(_requestedPropertyStore, store) &&
+        _requestedPropertyRepositoryId == scope?.repositoryId &&
+        listEquals(_requestedPropertyIndices, scope?.indices ?? const []) &&
+        _requestedPropertyPlaceholder == (scope?.placeholder ?? false);
+    if (!_refreshPropertyBindings && sameBindingContext) {
+      return;
+    }
+    _refreshPropertyBindings = false;
+    _requestedPropertyBindings = Map.of(bindings);
+    if (!identical(_requestedPropertyStore, store)) {
+      _requestedPropertyStore?.removeListener(_propertyStoreChanged);
+      store?.addListener(_propertyStoreChanged);
+      _requestedPropertyStore = store;
+    }
+    _requestedPropertyRepositoryId = scope?.repositoryId;
+    _requestedPropertyIndices = List.of(scope?.indices ?? const []);
+    _requestedPropertyPlaceholder = scope?.placeholder ?? false;
+    final generation = ++_propertyBindingGeneration;
+    _propertyBindingErrors = const {};
+    if (bindings.isEmpty || (scope?.placeholder ?? false)) {
+      _boundPropertyValues = const {};
+      _activePropertyBindings = const {};
+      _listenPropertySelections(const []);
+      return;
+    }
+
+    final selections = <JsonArrayBinding>[];
+    final resolved = <SuperTextProperty, JsonTextBinding>{};
+    final errors = <SuperTextProperty, String>{};
+    for (final entry in bindings.entries) {
+      try {
+        final result = JsonListScope.resolveSelected(entry.value, scope, store);
+        selections.addAll(result.arrays);
+        if (result.binding != null) resolved[entry.key] = result.binding!;
+      } on FormatException catch (error) {
+        errors[entry.key] = error.message;
+      }
+    }
+    _listenPropertySelections(selections.toSet().toList());
+    _activePropertyBindings = Map.of(resolved);
+    _propertyBindingErrors = errors;
+    if (resolved.isEmpty) {
+      _boundPropertyValues = const {};
+      return;
+    }
+    if (!sameBindingContext) _boundPropertyValues = const {};
+    if (store == null) {
+      _boundPropertyValues = const {};
+      _propertyBindingErrors = {
+        ..._propertyBindingErrors,
+        for (final property in resolved.keys)
+          property: 'Service de repositories indisponible.',
+      };
+      return;
+    }
+    unawaited(_loadPropertyBindings(resolved, store, generation));
+  }
+
+  Future<void> _loadPropertyBindings(
+    Map<SuperTextProperty, JsonTextBinding> bindings,
+    JsonRepositoryStore store,
+    int generation,
+  ) async {
+    final values = <SuperTextProperty, Object>{};
+    final errors = Map<SuperTextProperty, String>.of(_propertyBindingErrors);
+    for (final entry in bindings.entries) {
+      try {
+        final result = await store.readAttribute(entry.value);
+        final value = _parseBoundProperty(entry.key, result.value);
+        if (entry.key == SuperTextProperty.fontFamily &&
+            widget.availableFontFamilies.isNotEmpty &&
+            !widget.availableFontFamilies.contains(value)) {
+          throw FormatException(
+            'La police liée « $value » n’est pas disponible.',
+          );
+        }
+        values[entry.key] = value;
+        errors.remove(entry.key);
+      } on FormatException catch (error) {
+        errors[entry.key] = error.message;
+      } on FileSystemException {
+        errors[entry.key] = 'Impossible de lire le repository lié.';
+      }
+      if (!mounted || generation != _propertyBindingGeneration) return;
+    }
+    setState(() {
+      _boundPropertyValues = values;
+      _propertyBindingErrors = errors;
+    });
+  }
+
+  SuperTextConfig _withBoundProperties(SuperTextConfig config) {
+    var result = config;
+    for (final entry in _boundPropertyValues.entries) {
+      result = switch (entry.key) {
+        SuperTextProperty.label => result.copyWith(
+          label: entry.value as String,
+        ),
+        SuperTextProperty.placeholder => result.copyWith(
+          placeholder: entry.value as String,
+        ),
+        SuperTextProperty.fontFamily => result.copyWith(
+          fontFamily: entry.value as String,
+        ),
+        SuperTextProperty.color => result.copyWith(color: entry.value as Color),
+        SuperTextProperty.fontSize => result.copyWith(
+          fontSize: entry.value as double,
+        ),
+        SuperTextProperty.fontWeight => result.copyWith(
+          fontWeight: entry.value as FontWeight,
+        ),
+        SuperTextProperty.italic => result.copyWith(
+          italic: entry.value as bool,
+        ),
+        SuperTextProperty.textAlign => result.copyWith(
+          textAlign: entry.value as TextAlign,
+        ),
+      };
+    }
+    return result;
+  }
+
   @override
   void dispose() {
     _bindingGeneration++;
     _listenSelections(const []);
+    _propertyBindingGeneration++;
+    _listenPropertySelections(const []);
+    _requestedPropertyStore?.removeListener(_propertyStoreChanged);
+    _requestedPropertyStore = null;
     _binding?.removeListener(_bindingChanged);
     _binding?.dispose();
     _resetGeneration++;
@@ -273,7 +540,8 @@ class _SuperTextState extends State<SuperText> {
       builder: (context, savedConfig, _) {
         _observeBinding(savedConfig, listScope, repositories);
         _observeConfig(savedConfig);
-        final config = _editorConfig ?? savedConfig;
+        _observePropertyBindings(savedConfig, listScope, repositories);
+        final config = _editorConfig ?? _withBoundProperties(savedConfig);
         final controller = _editorText ?? _text;
         final missingFont =
             config.fontFamily != null &&
@@ -436,6 +704,17 @@ class _SuperTextState extends State<SuperText> {
                           _bindingError ?? _binding!.error!,
                           key: ValueKey(
                             'super-text-binding-error-${widget.id}',
+                          ),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      for (final entry in _propertyBindingErrors.entries)
+                        Text(
+                          'Liaison ${entry.key.name} : ${entry.value}',
+                          key: ValueKey(
+                            'super-text-property-binding-error-'
+                            '${entry.key.name}-${widget.id}',
                           ),
                           style: TextStyle(
                             color: Theme.of(context).colorScheme.error,

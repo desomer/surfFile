@@ -24,11 +24,11 @@ import '../../../models/super_list_view_config.dart';
 import '../../../services/json_list_scope.dart';
 import '../../../services/json_repository_scope.dart';
 import '../../../services/json_repository_store.dart';
+import '../repositories/repository_binding_fields.dart'
+    show inheritedRepositoryValue;
 import '../dialogs/editor_dialog.dart';
 
 /// Valeur de la liste déroulante pour « Hérité de la liste englobante ».
-const inheritedRepositoryValue = '*';
-
 /// Ouvre la fenêtre de réglage pour [config].
 ///
 /// Le repository et la ligne englobante sont lus depuis [context]

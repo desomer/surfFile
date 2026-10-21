@@ -12,7 +12,7 @@ import '../../../services/json_repository_scope.dart';
 import '../../../services/json_repository_store.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../dialogs/editor_dialog.dart';
-import 'super_list_view_editor.dart' show inheritedRepositoryValue;
+import '../repositories/repository_binding_fields.dart';
 import '../styles/style_editor_panel.dart';
 import 'super_text_field_settings.dart';
 
@@ -388,6 +388,56 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         },
       );
 
+  Future<void> _editPropertyBinding(
+    SuperTextProperty property,
+    String label,
+  ) async {
+    final result = await showRepositoryBindingDialog(
+      context: context,
+      title: 'Lier $label',
+      keyPrefix: 'super-text-property-${property.name}',
+      pathHint: 'client.${property.name}',
+      binding: _draft.propertyBindings[property],
+      store: widget.repositories,
+      listScope: widget.listScope,
+      helper: 'Lecture seule : la valeur du repository remplace ce paramètre.',
+    );
+    if (result == null || !mounted) return;
+    final bindings = Map<SuperTextProperty, JsonTextBinding>.of(
+      _draft.propertyBindings,
+    );
+    if (result.binding == null) {
+      bindings.remove(property);
+    } else {
+      bindings[property] = result.binding!;
+    }
+    setState(() => _draft = _draft.copyWith(propertyBindings: bindings));
+  }
+
+  Widget _withBinding(SuperTextProperty property, String label, Widget child) =>
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(child: child),
+          IconButton(
+            key: ValueKey('super-text-bind-${property.name}'),
+            tooltip: _draft.propertyBindings.containsKey(property)
+                ? 'Modifier la liaison de $label'
+                : 'Lier $label à un repository',
+            visualDensity: VisualDensity.compact,
+            onPressed: !widget.allowBinding || widget.repositories == null
+                ? null
+                : () => _editPropertyBinding(property, label),
+            icon: Icon(
+              _draft.propertyBindings.containsKey(property)
+                  ? Icons.link
+                  : Icons.add_link,
+              size: 18,
+            ),
+          ),
+        ],
+      );
+
   Widget _group(List<Widget> children) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -582,8 +632,16 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     ),
                     if (!_draft.obscureText && !_bound)
                       _field('initialText', 'Texte initial'),
-                    _field('label', 'Label'),
-                    _field('placeholder', 'Placeholder'),
+                    _withBinding(
+                      SuperTextProperty.label,
+                      'le label',
+                      _field('label', 'Label'),
+                    ),
+                    _withBinding(
+                      SuperTextProperty.placeholder,
+                      'le placeholder',
+                      _field('placeholder', 'Placeholder'),
+                    ),
                     const Text(
                       'Sans liaison, changer le mode ou le texte initial '
                       'réinitialise la valeur dans l’application. '
@@ -654,93 +712,109 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                           color: Theme.of(context).colorScheme.error,
                         ),
                       ),
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      key: ValueKey(
-                        'super-text-setting-fontFamily-${_draft.fontFamily}',
-                      ),
-                      initialValue: unavailable ? null : _draft.fontFamily,
-                      hint: const Text('Police du thème'),
-                      items: [
-                        const DropdownMenuItem(
-                          value: '',
-                          child: Text('Police du thème'),
+                    _withBinding(
+                      SuperTextProperty.fontFamily,
+                      'la police',
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        key: ValueKey(
+                          'super-text-setting-fontFamily-${_draft.fontFamily}',
                         ),
-                        for (final font in fonts)
-                          DropdownMenuItem(value: font, child: Text(font)),
-                      ],
-                      onChanged: (font) => setState(
-                        () => _draft = _draft.copyWith(
-                          fontFamily: font,
-                          inheritFontFamily: font == null || font.isEmpty,
-                        ),
-                      ),
-                      validator: (_) => unavailable
-                          ? 'Choisissez une police disponible.'
-                          : null,
-                    ),
-                    _field(
-                      'fontSize',
-                      'Taille de police (vide = thème)',
-                      numeric: true,
-                    ),
-                    DropdownButtonFormField<FontWeight>(
-                      isExpanded: true,
-                      initialValue: _draft.fontWeight,
-                      decoration: const InputDecoration(labelText: 'Graisse'),
-                      hint: const Text('Graisse du thème'),
-                      items: [
-                        const DropdownMenuItem<FontWeight>(
-                          value: null,
-                          child: Text('Graisse du thème'),
-                        ),
-                        for (final weight in FontWeight.values)
-                          DropdownMenuItem(
-                            value: weight,
-                            child: Text('${weight.value}'),
+                        initialValue: unavailable ? null : _draft.fontFamily,
+                        hint: const Text('Police du thème'),
+                        items: [
+                          const DropdownMenuItem(
+                            value: '',
+                            child: Text('Police du thème'),
                           ),
-                      ],
-                      onChanged: (weight) => setState(
-                        () => _draft = _draft.copyWith(
-                          fontWeight: weight,
-                          inheritFontWeight: weight == null,
-                        ),
-                      ),
-                    ),
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      key: const ValueKey('super-text-setting-italic'),
-                      initialValue: _draft.italic == null
-                          ? 'inherit'
-                          : _draft.italic!
-                          ? 'italic'
-                          : 'normal',
-                      decoration: const InputDecoration(
-                        labelText: 'Style de police',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'inherit',
-                          child: Text('Style du parent'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'normal',
-                          child: Text('Normal'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'italic',
-                          child: Text('Italique'),
-                        ),
-                      ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(
+                          for (final font in fonts)
+                            DropdownMenuItem(value: font, child: Text(font)),
+                        ],
+                        onChanged: (font) => setState(
                           () => _draft = _draft.copyWith(
-                            italic: value == 'italic',
-                            inheritItalic: value == 'inherit',
+                            fontFamily: font,
+                            inheritFontFamily: font == null || font.isEmpty,
                           ),
-                        );
-                      },
+                        ),
+                        validator: (_) => unavailable
+                            ? 'Choisissez une police disponible.'
+                            : null,
+                      ),
+                    ),
+                    _withBinding(
+                      SuperTextProperty.fontSize,
+                      'la taille de police',
+                      _field(
+                        'fontSize',
+                        'Taille de police (vide = thème)',
+                        numeric: true,
+                      ),
+                    ),
+                    _withBinding(
+                      SuperTextProperty.fontWeight,
+                      'la graisse',
+                      DropdownButtonFormField<FontWeight>(
+                        isExpanded: true,
+                        initialValue: _draft.fontWeight,
+                        decoration: const InputDecoration(labelText: 'Graisse'),
+                        hint: const Text('Graisse du thème'),
+                        items: [
+                          const DropdownMenuItem<FontWeight>(
+                            value: null,
+                            child: Text('Graisse du thème'),
+                          ),
+                          for (final weight in FontWeight.values)
+                            DropdownMenuItem(
+                              value: weight,
+                              child: Text('${weight.value}'),
+                            ),
+                        ],
+                        onChanged: (weight) => setState(
+                          () => _draft = _draft.copyWith(
+                            fontWeight: weight,
+                            inheritFontWeight: weight == null,
+                          ),
+                        ),
+                      ),
+                    ),
+                    _withBinding(
+                      SuperTextProperty.italic,
+                      'le style italique',
+                      DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        key: const ValueKey('super-text-setting-italic'),
+                        initialValue: _draft.italic == null
+                            ? 'inherit'
+                            : _draft.italic!
+                            ? 'italic'
+                            : 'normal',
+                        decoration: const InputDecoration(
+                          labelText: 'Style de police',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'inherit',
+                            child: Text('Style du parent'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'normal',
+                            child: Text('Normal'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'italic',
+                            child: Text('Italique'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(
+                            () => _draft = _draft.copyWith(
+                              italic: value == 'italic',
+                              inheritItalic: value == 'inherit',
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ]),
                 ),
@@ -770,7 +844,11 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                       }),
                       key: const ValueKey('super-text-color-picker'),
                     ),
-                    _field('color', 'Couleur AARRGGBB (vide = parent)'),
+                    _withBinding(
+                      SuperTextProperty.color,
+                      'la couleur',
+                      _field('color', 'Couleur AARRGGBB (vide = parent)'),
+                    ),
                     TextButton(
                       key: const ValueKey('super-text-inherit-color'),
                       onPressed: () =>
@@ -785,26 +863,30 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                   icon: Icons.format_align_left,
                   tag: 'textAlign · height',
                   child: _group([
-                    DropdownButtonFormField<TextAlign>(
-                      isExpanded: true,
-                      initialValue: _draft.textAlign,
-                      decoration: const InputDecoration(
-                        labelText: 'Alignement',
+                    _withBinding(
+                      SuperTextProperty.textAlign,
+                      'l’alignement',
+                      DropdownButtonFormField<TextAlign>(
+                        isExpanded: true,
+                        initialValue: _draft.textAlign,
+                        decoration: const InputDecoration(
+                          labelText: 'Alignement',
+                        ),
+                        items: [
+                          for (final align in TextAlign.values)
+                            DropdownMenuItem(
+                              value: align,
+                              child: Text(align.name),
+                            ),
+                        ],
+                        onChanged: (align) {
+                          if (align != null) {
+                            setState(
+                              () => _draft = _draft.copyWith(textAlign: align),
+                            );
+                          }
+                        },
                       ),
-                      items: [
-                        for (final align in TextAlign.values)
-                          DropdownMenuItem(
-                            value: align,
-                            child: Text(align.name),
-                          ),
-                      ],
-                      onChanged: (align) {
-                        if (align != null) {
-                          setState(
-                            () => _draft = _draft.copyWith(textAlign: align),
-                          );
-                        }
-                      },
                     ),
                     _field(
                       'lineHeight',

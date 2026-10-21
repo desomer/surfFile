@@ -223,12 +223,23 @@ void main() {
       textAlign: TextAlign.center,
       lineHeight: 1.4,
       letterSpacing: -.5,
+      propertyBindings: {
+        SuperTextProperty.label: JsonTextBinding(
+          repositoryId: '0123456789abcdef0123456789abcdef',
+          path: 'client.name',
+        ),
+        SuperTextProperty.color: JsonTextBinding(path: 'client.color'),
+      },
     );
     final decoded = SuperTextConfig.fromJson(
       jsonDecode(jsonEncode(config.toJson())),
     );
     expect(decoded, config);
     expect(decoded.hashCode, config.hashCode);
+    expect(
+      SuperTextConfig.fromJson(<String, dynamic>{}).propertyBindings,
+      isEmpty,
+    );
     final inherited = decoded.copyWith(
       inheritFontFamily: true,
       inheritFontSize: true,
@@ -274,6 +285,16 @@ void main() {
         {'color': -1},
         {'obscureText': true, 'initialText': 'secret'},
         {'obscureText': true, 'maxLines': 2},
+        {
+          'propertyBindings': {
+            'unknown': {'path': 'client.name'},
+          },
+        },
+        {
+          'propertyBindings': {
+            'label': {'path': ''},
+          },
+        },
       ]) {
         expect(() => SuperTextConfig.fromJson(json), throwsFormatException);
       }

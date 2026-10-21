@@ -5,7 +5,7 @@ import '../../../models/registry.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../services/json_list_scope.dart';
 import '../../../services/json_repository_scope.dart';
-import 'component_add_configurators.dart' show RepositoryBindingFields;
+import '../repositories/repository_binding_fields.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 

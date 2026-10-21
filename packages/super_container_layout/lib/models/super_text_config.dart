@@ -1,9 +1,21 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show mapEquals;
 
 import 'json_text_binding.dart';
 import 'super_text_field_config.dart';
 
 enum SuperTextMode { display, input }
+
+enum SuperTextProperty {
+  label,
+  placeholder,
+  fontFamily,
+  color,
+  fontSize,
+  fontWeight,
+  italic,
+  textAlign,
+}
 
 @immutable
 class SuperTextConfig {
@@ -26,6 +38,7 @@ class SuperTextConfig {
     this.lineHeight,
     this.letterSpacing,
     this.binding,
+    this.propertyBindings = const {},
     this.field = const SuperTextFieldConfig(),
   });
 
@@ -47,10 +60,14 @@ class SuperTextConfig {
   final double? lineHeight;
   final double? letterSpacing;
   final JsonTextBinding? binding;
+  final Map<SuperTextProperty, JsonTextBinding> propertyBindings;
   final SuperTextFieldConfig field;
 
   void validate() {
     binding?.validate();
+    for (final binding in propertyBindings.values) {
+      binding.validate();
+    }
     field.validateFor(obscureText: obscureText, maxLines: maxLines);
     if (minLines < 1 ||
         maxLines < minLines ||
@@ -91,6 +108,7 @@ class SuperTextConfig {
     bool inheritLetterSpacing = false,
     JsonTextBinding? binding,
     bool clearBinding = false,
+    Map<SuperTextProperty, JsonTextBinding>? propertyBindings,
     SuperTextFieldConfig? field,
   }) => SuperTextConfig(
     mode: mode ?? this.mode,
@@ -113,6 +131,7 @@ class SuperTextConfig {
         ? null
         : letterSpacing ?? this.letterSpacing,
     binding: clearBinding ? null : binding ?? this.binding,
+    propertyBindings: propertyBindings ?? this.propertyBindings,
     field: field ?? this.field,
   );
 
@@ -137,6 +156,11 @@ class SuperTextConfig {
       'lineHeight': lineHeight,
       'letterSpacing': letterSpacing,
       if (binding != null) 'binding': binding!.toJson(),
+      if (propertyBindings.isNotEmpty)
+        'propertyBindings': {
+          for (final entry in propertyBindings.entries)
+            entry.key.name: entry.value.toJson(),
+        },
       if (field != const SuperTextFieldConfig()) 'field': field.toJson(),
     };
   }
@@ -164,6 +188,7 @@ class SuperTextConfig {
       'lineHeight',
       'letterSpacing',
       'binding',
+      'propertyBindings',
       'field',
     };
     if (value.keys.any((key) => !keys.contains(key))) {
@@ -204,6 +229,23 @@ class SuperTextConfig {
         (family != null && family is! String)) {
       throw const FormatException('Invalid SuperText style.');
     }
+    final rawPropertyBindings = value['propertyBindings'];
+    if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
+      throw const FormatException('Invalid SuperText property bindings.');
+    }
+    final propertyBindings = <SuperTextProperty, JsonTextBinding>{};
+    for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
+      if (entry.key is! String) {
+        throw const FormatException('Invalid SuperText property binding.');
+      }
+      final property = SuperTextProperty.values
+          .where((candidate) => candidate.name == entry.key)
+          .firstOrNull;
+      if (property == null || entry.value is! Map<String, dynamic>) {
+        throw const FormatException('Invalid SuperText property binding.');
+      }
+      propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
+    }
     final result = SuperTextConfig(
       mode: mode,
       textAlign: align,
@@ -225,6 +267,7 @@ class SuperTextConfig {
       binding: value['binding'] == null
           ? null
           : JsonTextBinding.fromJson(value['binding']),
+      propertyBindings: propertyBindings,
       field: value.containsKey('field')
           ? SuperTextFieldConfig.fromJson(value['field'])
           : const SuperTextFieldConfig(),
@@ -258,6 +301,7 @@ class SuperTextConfig {
       lineHeight == other.lineHeight &&
       letterSpacing == other.letterSpacing &&
       binding == other.binding &&
+      mapEquals(propertyBindings, other.propertyBindings) &&
       field == other.field;
 
   @override
@@ -280,6 +324,11 @@ class SuperTextConfig {
     lineHeight,
     letterSpacing,
     binding,
+    Object.hashAllUnordered(
+      propertyBindings.entries.map(
+        (entry) => Object.hash(entry.key, entry.value),
+      ),
+    ),
     field,
   ]);
 }

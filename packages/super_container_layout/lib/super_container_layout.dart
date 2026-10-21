@@ -44,6 +44,7 @@ export 'widgets/editing/addition/component_add_wizard.dart';
 export 'widgets/editing/addition/component_add_configurators.dart';
 export 'widgets/editing/history/editor_history.dart';
 export 'widgets/editing/repositories/json_repository_manager.dart';
+export 'widgets/editing/repositories/repository_binding_fields.dart';
 export 'widgets/surfaces/interaction_effect_box.dart';
 export 'widgets/super_layout/layout_selection.dart';
 export 'widgets/surfaces/neon_surface.dart';
