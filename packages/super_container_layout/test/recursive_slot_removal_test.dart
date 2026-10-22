@@ -76,7 +76,7 @@ void main() {
             SuperLayoutZone.center: ['first', 'list1'],
           },
           slotTypes: {
-            'first': 'registry:Text',
+            'first': 'registry:Value',
             'list1': 'registry:ListView',
           },
         ),
@@ -84,13 +84,13 @@ void main() {
           placements: {
             SuperLayoutZone.center: ['t1'],
           },
-          slotTypes: {'t1': 'registry:Text'},
+          slotTypes: {'t1': 'registry:Value'},
         ),
       },
-      textComponents: {
-        ...appearance.value.textComponents,
-        'first': const SuperTextConfig(initialText: 'First'),
-        't1': const SuperTextConfig(initialText: 'Row text'),
+      valueComponents: {
+        ...appearance.value.valueComponents,
+        'first': const SuperValueConfig(initialText: 'First'),
+        't1': const SuperValueConfig(initialText: 'Row text'),
       },
       listComponents: {
         ...appearance.value.listComponents,
@@ -106,7 +106,7 @@ void main() {
 
   Finder rowText() => find.descendant(
     of: find.byKey(const ValueKey('super-list-row-list1-template')),
-    matching: find.byType(SuperText),
+    matching: find.byType(SuperValue),
   );
 
   testWidgets('a non-first list shows its size and remove actions', (
@@ -151,8 +151,8 @@ void main() {
     expect(after.layouts['lay']!.placements[SuperLayoutZone.center], ['first']);
     expect(after.layouts.containsKey('list1'), isFalse);
     expect(after.listComponents.containsKey('list1'), isFalse);
-    expect(after.textComponents.containsKey('t1'), isFalse);
-    expect(after.textComponents.containsKey('first'), isTrue);
+    expect(after.valueComponents.containsKey('t1'), isFalse);
+    expect(after.valueComponents.containsKey('first'), isTrue);
     expect(find.byType(SuperListView), findsNothing);
 
     final history = EditorHistoryScope.controllerOf(

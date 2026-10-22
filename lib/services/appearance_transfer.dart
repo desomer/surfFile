@@ -14,7 +14,7 @@ class AppearanceTransfer {
     'layouts',
     'scaffoldPages',
     'nativeComponents',
-    'textComponents',
+    'valueComponents',
     'listComponents',
     'pageCatalog',
   };

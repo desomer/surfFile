@@ -105,28 +105,28 @@ void main() {
   FilledButton next(WidgetTester tester) =>
       tester.widget<FilledButton>(find.byKey(const ValueKey('w-add-next')));
 
-  testWidgets('text binding is chosen in the dedicated binding step', (
+  testWidgets('value binding is chosen in the dedicated binding step', (
     tester,
   ) async {
     final result = await open(
       tester,
       ComponentAddCandidate(
-        id: 'text',
-        label: 'Texte',
-        configurator: superTextAddConfigurator(const []),
+        id: 'value',
+        label: 'Valeur',
+        configurator: superValueAddConfigurator(const []),
       ),
-      fields: 'add-text',
+      fields: 'add-value',
     );
     expect(next(tester).onPressed, isNotNull);
     expect(
-      find.byKey(const ValueKey('add-text-repository-path')),
+      find.byKey(const ValueKey('add-value-repository-path')),
       findsNothing,
     );
-    await tapKey(tester, 'add-text-repository');
+    await tapKey(tester, 'add-value-repository');
     await tester.tap(find.text('People').last);
     await tester.pumpAndSettle();
 
-    final path = find.byKey(const ValueKey('add-text-repository-path'));
+    final path = find.byKey(const ValueKey('add-value-repository-path'));
     expect(path, findsOneWidget);
     expect(find.text('Chemin requis.'), findsOneWidget);
     expect(find.text('Chemin de liaison requis.'), findsOneWidget);
@@ -150,7 +150,7 @@ void main() {
     expect(
       tester
           .widget<TextField>(
-            find.byKey(const ValueKey('add-text-repository-path')),
+            find.byKey(const ValueKey('add-value-repository-path')),
           )
           .controller!
           .text,
@@ -166,7 +166,7 @@ void main() {
       findsOneWidget,
     );
     await tapKey(tester, 'w-add-next');
-    final draft = result.value!.draft! as SuperTextConfig;
+    final draft = result.value!.draft! as SuperValueConfig;
     expect(draft.binding!.repositoryId, repositoryId);
     expect(draft.binding!.path, 'client.nom');
     expect(tester.takeException(), isNull);
@@ -205,25 +205,25 @@ void main() {
     final result = await open(
       tester,
       ComponentAddCandidate(
-        id: 'text',
-        label: 'Texte',
-        configurator: superTextAddConfigurator(const []),
+        id: 'value',
+        label: 'Valeur',
+        configurator: superValueAddConfigurator(const []),
       ),
-      fields: 'add-text',
+      fields: 'add-value',
     );
-    await tapKey(tester, 'add-text-repository');
+    await tapKey(tester, 'add-value-repository');
     await tester.tap(find.text('People').last);
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.byKey(const ValueKey('add-text-repository-path')),
+      find.byKey(const ValueKey('add-value-repository-path')),
       'client.nom',
     );
     await tester.pumpAndSettle();
-    await tapKey(tester, 'add-text-repository');
+    await tapKey(tester, 'add-value-repository');
     await tester.tap(find.text('Sans liaison').last);
     await tester.pumpAndSettle();
     await tapKey(tester, 'w-add-next');
     await tapKey(tester, 'w-add-next');
-    expect((result.value!.draft! as SuperTextConfig).binding, isNull);
+    expect((result.value!.draft! as SuperValueConfig).binding, isNull);
   });
 }

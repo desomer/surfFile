@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/super_text_config.dart';
+import '../../models/super_value_config.dart';
 import '../../models/super_text_field_config.dart';
 
 /// Shared by the live component and the isolated editor preview.
@@ -20,7 +20,7 @@ class SuperTextField extends StatefulWidget {
     super.key,
   });
 
-  final SuperTextConfig config;
+  final SuperValueConfig config;
   final TextEditingController controller;
   final Key? inputKey;
   final TextStyle? style;

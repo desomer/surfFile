@@ -7,45 +7,45 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
   test('automatic states roundtrip, reorder and reject invalid keys', () {
-    final config = SuperTextConfig(
-      mode: SuperTextMode.input,
-      states: TextConfigStates(
+    final config = SuperValueConfig(
+      mode: SuperValueMode.input,
+      states: ValueConfigStates(
         automatic: {
           for (final state in AutomaticState.values.skip(2))
-            state: TextConfigOverride(
-              config: const SuperTextConfig(fontSize: 24),
-              properties: {TextStateProperty.fontSize},
+            state: ValueConfigOverride(
+              config: const SuperValueConfig(fontSize: 24),
+              properties: {ValueStateProperty.fontSize},
             ),
         },
       ),
     );
-    final decoded = SuperTextConfig.fromJson(
+    final decoded = SuperValueConfig.fromJson(
       jsonDecode(jsonEncode(config.toJson())) as Map<String, dynamic>,
     );
     expect(decoded, config);
     expect(decoded.hashCode, config.hashCode);
     expect(decoded.states!.automatic.length, 4);
     expect(decoded.states!.order, [
-      TextConfigStates.hoverKey,
-      TextConfigStates.selectedKey,
+      ValueConfigStates.hoverKey,
+      ValueConfigStates.selectedKey,
       ...AutomaticState.values.skip(2).map((state) => state.key),
     ]);
     expect(() => decoded.validate(), returnsNormally);
     final removed = decoded.states!.copyWith(automatic: {});
     expect(removed.order, [
-      TextConfigStates.hoverKey,
-      TextConfigStates.selectedKey,
+      ValueConfigStates.hoverKey,
+      ValueConfigStates.selectedKey,
     ]);
     expect(
-      () => TextConfigStates.fromJson({
+      () => ValueConfigStates.fromJson({
         'named': {},
         'automatic': {'unknown': {}},
       }),
       throwsFormatException,
     );
     expect(
-      () => TextConfigStates(
-        automatic: {AutomaticState.hover: TextConfigOverride()},
+      () => ValueConfigStates(
+        automatic: {AutomaticState.hover: ValueConfigOverride()},
       ),
       throwsFormatException,
     );
@@ -79,7 +79,7 @@ void main() {
 
   Future<void> text(
     WidgetTester tester,
-    SuperTextConfig config, {
+    SuperValueConfig config, {
     TextEditingController? controller,
     ValueChanged<String>? onChanged,
   }) async {
@@ -90,7 +90,7 @@ void main() {
             child: SizedBox(
               width: 280,
               height: 140,
-              child: SuperText(
+              child: SuperValue(
                 id: 'test',
                 config: config,
                 controller: controller,
@@ -104,7 +104,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  final field = find.byKey(const ValueKey('super-text-input-test'));
+  final field = find.byKey(const ValueKey('super-value-input-test'));
 
   testWidgets(
     'focus enters and exits once, resets content and preserves focus while typing',
@@ -112,20 +112,20 @@ void main() {
       final changes = <String>[];
       await text(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           initialText: 'Default',
-          states: TextConfigStates(
+          states: ValueConfigStates(
             automatic: {
-              AutomaticState.focused: TextConfigOverride(
-                config: const SuperTextConfig(
-                  mode: SuperTextMode.input,
+              AutomaticState.focused: ValueConfigOverride(
+                config: const SuperValueConfig(
+                  mode: SuperValueMode.input,
                   initialText: 'Focused',
                   fontSize: 26,
                 ),
                 properties: {
-                  TextStateProperty.content,
-                  TextStateProperty.fontSize,
+                  ValueStateProperty.content,
+                  ValueStateProperty.fontSize,
                 },
               ),
             },
@@ -154,26 +154,26 @@ void main() {
   testWidgets(
     'disabled and readOnly use pre-overlay behavior without oscillation',
     (tester) async {
-      final config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      final config = SuperValueConfig(
+        mode: SuperValueMode.input,
         enabled: false,
         readOnly: true,
-        states: TextConfigStates(
+        states: ValueConfigStates(
           automatic: {
-            AutomaticState.disabled: TextConfigOverride(
-              config: const SuperTextConfig(
+            AutomaticState.disabled: ValueConfigOverride(
+              config: const SuperValueConfig(
                 enabled: true,
                 readOnly: false,
                 fontSize: 25,
               ),
               properties: {
-                TextStateProperty.enabled,
-                TextStateProperty.fontSize,
+                ValueStateProperty.enabled,
+                ValueStateProperty.fontSize,
               },
             ),
-            AutomaticState.readOnly: TextConfigOverride(
-              config: const SuperTextConfig(color: Colors.red),
-              properties: {TextStateProperty.color},
+            AutomaticState.readOnly: ValueConfigOverride(
+              config: const SuperValueConfig(color: Colors.red),
+              properties: {ValueStateProperty.color},
             ),
           },
         ),
@@ -187,9 +187,9 @@ void main() {
         expect(input.style!.color!.toARGB32(), Colors.red.toARGB32());
         await tester.pump(const Duration(milliseconds: 50));
       }
-      await text(tester, config.copyWith(mode: SuperTextMode.display));
+      await text(tester, config.copyWith(mode: SuperValueMode.display));
       final display = tester.widget<Text>(
-        find.byKey(const ValueKey('super-text-display-test')),
+        find.byKey(const ValueKey('super-value-display-test')),
       );
       expect(display.style!.fontSize, isNot(25));
       expect(tester.takeException(), isNull);
@@ -203,13 +203,13 @@ void main() {
     addTearDown(controller.dispose);
     await text(
       tester,
-      SuperTextConfig(
-        mode: SuperTextMode.input,
-        states: TextConfigStates(
+      SuperValueConfig(
+        mode: SuperValueMode.input,
+        states: ValueConfigStates(
           automatic: {
-            AutomaticState.focused: TextConfigOverride(
-              config: const SuperTextConfig(fontSize: 30),
-              properties: {TextStateProperty.fontSize},
+            AutomaticState.focused: ValueConfigOverride(
+              config: const SuperValueConfig(fontSize: 30),
+              properties: {ValueStateProperty.fontSize},
             ),
           },
         ),
@@ -226,15 +226,15 @@ void main() {
   testWidgets(
     'Content hover covers sibling space and is independent across rows and nested Content',
     (tester) async {
-      Widget label(String id) => SuperText(
+      Widget label(String id) => SuperValue(
         id: id,
-        config: SuperTextConfig(
+        config: SuperValueConfig(
           initialText: id,
-          states: TextConfigStates(
+          states: ValueConfigStates(
             automatic: {
-              AutomaticState.contentHover: TextConfigOverride(
-                config: const SuperTextConfig(color: Colors.red),
-                properties: {TextStateProperty.color},
+              AutomaticState.contentHover: ValueConfigOverride(
+                config: const SuperValueConfig(color: Colors.red),
+                properties: {ValueStateProperty.color},
               ),
             },
           ),
@@ -301,7 +301,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       int? color(String id) => tester
-          .widget<Text>(find.byKey(ValueKey('super-text-display-$id')))
+          .widget<Text>(find.byKey(ValueKey('super-value-display-$id')))
           .style!
           .color
           ?.toARGB32();

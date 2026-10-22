@@ -5,7 +5,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
   for (final (name, component, menuLabel) in <(String, Widget, String)>[
-    ('Text', const SuperText(id: 'text'), 'Texte'),
+    ('Value', const SuperValue(id: 'text'), 'Valeur'),
     ('ListView', const SuperListView(id: 'list'), 'Liste'),
     ('Layout', const SuperLayout(), 'Layout'),
   ]) {

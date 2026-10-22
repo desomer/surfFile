@@ -29,7 +29,7 @@
 ///
 /// Un composant qui dépend d'une sélection doit écouter chaque
 /// `JsonArrayBinding` de `arrays` et se résoudre à nouveau à chaque
-/// notification (voir `SuperText` et `SuperListView`).
+/// notification (voir `SuperValue` et `SuperListView`).
 library;
 
 import 'package:flutter/foundation.dart' show listEquals;

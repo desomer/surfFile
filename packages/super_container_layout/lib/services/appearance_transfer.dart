@@ -19,7 +19,7 @@ class AppearanceTransfer {
       key == 'layouts' ||
           key == 'scaffoldPages' ||
           key == 'nativeComponents' ||
-          key == 'textComponents' ||
+          key == 'valueComponents' ||
           key == 'listComponents' ||
           key == 'pageCatalog'
       ? TransferGroup.layouts

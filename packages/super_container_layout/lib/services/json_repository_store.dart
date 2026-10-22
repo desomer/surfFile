@@ -189,6 +189,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     JsonTextBinding binding,
     String text, {
     required Object? expectedValue,
+    bool asBool = false,
   }) => _exclusive(() async {
     binding.validateResolved();
     final name = await _nameOf(binding.repositoryId!);
@@ -200,7 +201,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         'L’attribut lié a été modifié. Rechargez la liaison avant de réessayer.',
       );
     }
-    final updated = path.write(root, text, expectedValue);
+    final updated = path.write(root, text, expectedValue, asBool: asBool);
     await _save(
       name,
       '${const JsonEncoder.withIndent('  ').convert(updated)}\n',

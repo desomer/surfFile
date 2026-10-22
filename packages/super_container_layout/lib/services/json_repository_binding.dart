@@ -16,7 +16,7 @@
 ///   [JsonArrayBinding.select] ;
 /// * toutes les listes sur le même chemin modèle surlignent cette ligne ;
 /// * les composants dont un `[?]` n'est fourni par aucune liste englobante
-///   (par exemple un `SuperText` sur `clients[?].nom` hors de la liste)
+///   (par exemple un `SuperValue` sur `clients[?].nom` hors de la liste)
 ///   lisent la ligne sélectionnée via `JsonListScope.resolveSelected`.
 ///
 /// Il n'y a qu'une sélection par chemin modèle : sélectionner une commande du

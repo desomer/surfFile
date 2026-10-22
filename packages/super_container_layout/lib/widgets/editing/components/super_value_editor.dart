@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
 
-import '../../../models/super_text_config.dart';
+import '../../../models/super_value_config.dart';
 import '../../../models/super_text_field_config.dart';
 import '../../components/super_text_field.dart';
 import '../../../models/json_text_binding.dart';
@@ -20,12 +20,12 @@ import '../styles/style_editor_panel.dart';
 import '../states/editor_state_controls.dart';
 import 'super_text_field_settings.dart';
 
-Future<SuperTextConfig?> showSuperTextEditor({
+Future<SuperValueConfig?> showSuperValueEditor({
   required BuildContext context,
-  required SuperTextConfig config,
+  required SuperValueConfig config,
   required List<String> availableFontFamilies,
   bool allowBinding = true,
-  ValueChanged<SuperTextConfig>? onPreviewChanged,
+  ValueChanged<SuperValueConfig>? onPreviewChanged,
   String? activeState,
   String? stateError,
   bool isHovered = false,
@@ -38,11 +38,11 @@ Future<SuperTextConfig?> showSuperTextEditor({
   final repositories = JsonRepositoryScope.maybeOf(context);
   final listScope = JsonListScope.maybeOf(context);
   try {
-    return await showEditorDialog<SuperTextConfig>(
+    return await showEditorDialog<SuperValueConfig>(
       context: context,
       target: context,
       preferredWidth: width,
-      builder: (_) => _TextStateEditor(
+      builder: (_) => _ValueStateEditor(
         ownerContext: context,
         activeState: activeState,
         stateError: stateError,
@@ -65,8 +65,8 @@ Future<SuperTextConfig?> showSuperTextEditor({
   }
 }
 
-class _TextStateEditor extends StatefulWidget {
-  const _TextStateEditor({
+class _ValueStateEditor extends StatefulWidget {
+  const _ValueStateEditor({
     required this.ownerContext,
     required this.config,
     required this.availableFontFamilies,
@@ -84,7 +84,7 @@ class _TextStateEditor extends StatefulWidget {
     required this.activeAutomatic,
   });
   final BuildContext ownerContext;
-  final SuperTextConfig config;
+  final SuperValueConfig config;
   final List<String> availableFontFamilies;
   final TextStyle textStyle;
   final ValueChanged<double> onWidthChanged;
@@ -93,17 +93,17 @@ class _TextStateEditor extends StatefulWidget {
   final bool allowBinding, isHovered, isSelected;
   final bool allowContentHover;
   final Set<AutomaticState> activeAutomatic;
-  final ValueChanged<SuperTextConfig>? onPreviewChanged;
+  final ValueChanged<SuperValueConfig>? onPreviewChanged;
   final String? activeState, stateError;
   @override
-  State<_TextStateEditor> createState() => _TextStateEditorState();
+  State<_ValueStateEditor> createState() => _ValueStateEditorState();
 }
 
-class _TextStateEditorState extends State<_TextStateEditor> {
-  late SuperTextConfig _root = widget.config;
+class _ValueStateEditorState extends State<_ValueStateEditor> {
+  late SuperValueConfig _root = widget.config;
   String? _state;
   String? _error;
-  GlobalKey<_SuperTextEditorState> _leafKey = GlobalKey();
+  GlobalKey<_SuperValueEditorState> _leafKey = GlobalKey();
   SurfaceStateBinding? _reader;
 
   void _stateChanged() {
@@ -143,7 +143,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
     super.dispose();
   }
 
-  SuperTextConfig get _leaf {
+  SuperValueConfig get _leaf {
     final states = _root.states;
     final automatic = AutomaticState.fromKey(_state);
     if (automatic != null &&
@@ -161,9 +161,9 @@ class _TextStateEditorState extends State<_TextStateEditor> {
     return states?.named[_state] ?? _root.copyWith(clearStates: true);
   }
 
-  SuperTextConfig _withLeaf(SuperTextConfig leaf) {
+  SuperValueConfig _withLeaf(SuperValueConfig leaf) {
     leaf = leaf.copyWith(clearStates: true);
-    final states = _root.states ?? TextConfigStates();
+    final states = _root.states ?? ValueConfigStates();
     if (_state == null) return leaf.copyWith(states: _root.states);
     final automatic = AutomaticState.fromKey(_state);
     if (automatic != null &&
@@ -171,7 +171,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         automatic != AutomaticState.selected) {
       final previous =
           states.automatic[automatic] ??
-          TextConfigOverride(config: _root.copyWith(clearStates: true));
+          ValueConfigOverride(config: _root.copyWith(clearStates: true));
       return _root.copyWith(
         states: states.copyWith(
           automatic: {...states.automatic, automatic: previous.edited(leaf)},
@@ -183,7 +183,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         : states.selected;
     final overlay =
         (previous ??
-                TextConfigOverride(config: _root.copyWith(clearStates: true)))
+                ValueConfigOverride(config: _root.copyWith(clearStates: true)))
             .edited(leaf);
     return _root.copyWith(
       states: _state == hoverSurfaceStateKey
@@ -194,7 +194,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
               named: {...states.named, _state!: leaf},
               namedProperties: {
                 ...states.namedProperties,
-                _state!: TextConfigOverride(
+                _state!: ValueConfigOverride(
                   config: states.named[_state]!,
                   properties: states.namedProperties[_state]!,
                 ).edited(leaf).properties,
@@ -203,7 +203,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
     );
   }
 
-  void _validate(SuperTextConfig root) {
+  void _validate(SuperValueConfig root) {
     root.validate();
     if (!widget.allowBinding) {
       final leaves = [
@@ -215,7 +215,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
       ];
       if (leaves.any((leaf) => leaf.binding != null)) {
         throw const FormatException(
-          'La liaison nécessite le contrôleur interne de Text.',
+          'La liaison nécessite le contrôleur interne de Value.',
         );
       }
     }
@@ -239,7 +239,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
     return false;
   }
 
-  void _preview(SuperTextConfig root) {
+  void _preview(SuperValueConfig root) {
     final states = root.states;
     final config = _state == null
         ? root.copyWith(clearStates: true)
@@ -261,12 +261,12 @@ class _TextStateEditorState extends State<_TextStateEditor> {
   }
 
   void _changeStates(
-    TextConfigStates Function(TextConfigStates states) update,
+    ValueConfigStates Function(ValueConfigStates states) update,
   ) {
     if (!_capture()) return;
     try {
       final root = _root.copyWith(
-        states: update(_root.states ?? TextConfigStates()),
+        states: update(_root.states ?? ValueConfigStates()),
       );
       _validate(root);
       setState(() {
@@ -284,10 +284,10 @@ class _TextStateEditorState extends State<_TextStateEditor> {
   @override
   Widget build(BuildContext context) {
     _syncReader();
-    final states = _root.states ?? TextConfigStates();
+    final states = _root.states ?? ValueConfigStates();
     final automatic = AutomaticState.fromKey(_state);
     final overlay = states.named.containsKey(_state)
-        ? TextConfigOverride(
+        ? ValueConfigOverride(
             config: states.named[_state]!,
             properties: states.namedProperties[_state]!,
           )
@@ -298,7 +298,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         : _state == hoverSurfaceStateKey
         ? states.hover
         : states.selected;
-    return _SuperTextEditor(
+    return _SuperValueEditor(
       key: _leafKey,
       config: _leaf,
       availableFontFamilies: widget.availableFontFamilies,
@@ -330,14 +330,14 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         _validate(root);
         return root;
       },
-      header: EditorStateControls<TextStateProperty>(
-        keyPrefix: 'text-state',
+      header: EditorStateControls<ValueStateProperty>(
+        keyPrefix: 'value-state',
         names: states.named.keys,
         order: states.order
             .where(
               (key) =>
-                  (key != TextConfigStates.hoverKey || states.hover != null) &&
-                  (key != TextConfigStates.selectedKey ||
+                  (key != ValueConfigStates.hoverKey || states.hover != null) &&
+                  (key != ValueConfigStates.selectedKey ||
                       states.selected != null),
             )
             .toList(),
@@ -360,7 +360,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
           AutomaticState.hover,
           if (widget.listScope != null) AutomaticState.selected,
           if (widget.allowContentHover) AutomaticState.contentHover,
-          if (_leaf.mode == SuperTextMode.input) ...{
+          if (_leaf.mode == SuperValueMode.input) ...{
             AutomaticState.focused,
             AutomaticState.disabled,
             AutomaticState.readOnly,
@@ -368,7 +368,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         },
         onAddAutomatic: (value) {
           _changeStates((s) {
-            final override = TextConfigOverride(
+            final override = ValueConfigOverride(
               config: _leaf.copyWith(clearStates: true),
             );
             final order = [
@@ -414,7 +414,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
         },
         validateName: (name) {
           try {
-            TextConfigStates(named: {name: const SuperTextConfig()});
+            ValueConfigStates(named: {name: const SuperValueConfig()});
             return null;
           } on FormatException catch (e) {
             return e.message;
@@ -455,13 +455,13 @@ class _TextStateEditorState extends State<_TextStateEditor> {
           (s) => s.copyWith(binding: binding, clearBinding: binding == null),
         ),
         properties: {
-          for (final property in TextStateProperty.values)
+          for (final property in ValueStateProperty.values)
             property: property.label,
         },
         overrides: overlay?.properties ?? {},
         onOverride: (property, enabled) => _changeStates((s) {
           final current = s.named.containsKey(_state)
-              ? TextConfigOverride(
+              ? ValueConfigOverride(
                   config: s.named[_state]!,
                   properties: s.namedProperties[_state]!,
                 )
@@ -478,7 +478,7 @@ class _TextStateEditorState extends State<_TextStateEditor> {
           } else {
             properties.remove(property);
           }
-          final value = TextConfigOverride(
+          final value = ValueConfigOverride(
             config: current?.config ?? _root.copyWith(clearStates: true),
             properties: properties,
           );
@@ -499,8 +499,8 @@ class _TextStateEditorState extends State<_TextStateEditor> {
   }
 }
 
-class _SuperTextEditor extends StatefulWidget {
-  const _SuperTextEditor({
+class _SuperValueEditor extends StatefulWidget {
+  const _SuperValueEditor({
     required this.config,
     required this.availableFontFamilies,
     required this.textStyle,
@@ -513,27 +513,27 @@ class _SuperTextEditor extends StatefulWidget {
     this.onSave,
     super.key,
   });
-  final SuperTextConfig config;
+  final SuperValueConfig config;
   final List<String> availableFontFamilies;
   final TextStyle textStyle;
   final ValueChanged<double> onWidthChanged;
   final JsonRepositoryStore? repositories;
   final JsonListScope? listScope;
   final bool allowBinding;
-  final ValueChanged<SuperTextConfig>? onPreviewChanged;
+  final ValueChanged<SuperValueConfig>? onPreviewChanged;
   final Widget? header;
-  final SuperTextConfig Function(SuperTextConfig config)? onSave;
+  final SuperValueConfig Function(SuperValueConfig config)? onSave;
 
   @override
-  State<_SuperTextEditor> createState() => _SuperTextEditorState();
+  State<_SuperValueEditor> createState() => _SuperValueEditorState();
 }
 
-class _SuperTextEditorState extends State<_SuperTextEditor> {
+class _SuperValueEditorState extends State<_SuperValueEditor> {
   final _form = GlobalKey<FormState>();
   final _fieldSettings = GlobalKey<SuperTextFieldSettingsState>();
   late SuperTextFieldConfig _fieldConfig;
   String? _fieldError;
-  late SuperTextConfig _draft;
+  late SuperValueConfig _draft;
   late final Map<String, TextEditingController> _fields;
   late bool _dense = StyleEditorPanel.preferredDense;
   final _previewText = TextEditingController();
@@ -543,18 +543,21 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
   String? _repositoryError;
   bool _loadingRepositories = false;
   bool _validating = false;
-  SuperTextConfig? _lastPreview;
+  SuperValueConfig? _lastPreview;
   String? _liveError;
 
-  SuperTextConfig? capture() {
+  bool get _hasFieldSettings =>
+      _draft.mode == SuperValueMode.input && !_draft.kind.isBoolean;
+
+  SuperValueConfig? capture() {
     if (!_form.currentState!.validate() ||
-        (_draft.mode == SuperTextMode.input &&
+        (_hasFieldSettings &&
             _fieldSettings.currentState?.validate() == false)) {
       return null;
     }
     try {
       return _configuration(
-        _draft.mode == SuperTextMode.input
+        _hasFieldSettings
             ? _fieldSettings.currentState?.value() ?? _fieldConfig
             : _fieldConfig,
         _binding,
@@ -562,12 +565,12 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     } on FormatException catch (e) {
       setState(() => _liveError = e.message);
     } on ArgumentError {
-      setState(() => _liveError = 'Réglages du texte invalides.');
+      setState(() => _liveError = 'Réglages de la valeur invalides.');
     }
     return null;
   }
 
-  SuperTextConfig _configuration(
+  SuperValueConfig _configuration(
     SuperTextFieldConfig field,
     JsonTextBinding? binding,
   ) {
@@ -581,11 +584,15 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       return value;
     }
 
-    final min = _draft.mode == SuperTextMode.display
+    final min = _draft.mode == SuperValueMode.display || _draft.kind.isBoolean
         ? _draft.minLines
         : int.tryParse(_fields['minLines']!.text);
-    final max = int.tryParse(_fields['maxLines']!.text);
-    if (!_draft.obscureText && (min == null || max == null)) {
+    final max = _draft.kind.isBoolean
+        ? _draft.maxLines
+        : int.tryParse(_fields['maxLines']!.text);
+    if (!_draft.obscureText &&
+        !_draft.kind.isBoolean &&
+        (min == null || max == null)) {
       throw const FormatException('Nombre de lignes invalide.');
     }
     final color = _fields['color']!.text.trim();
@@ -603,12 +610,12 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       initialText: _draft.obscureText ? '' : _fields['initialText']!.text,
       label: _fields['label']!.text,
       placeholder: _fields['placeholder']!.text,
-      minLines: _draft.obscureText
+      minLines: _draft.obscureText || _draft.kind.isBoolean
           ? 1
-          : _draft.mode == SuperTextMode.display && max != null
+          : _draft.mode == SuperValueMode.display && max != null
           ? math.min(min!, max)
           : min,
-      maxLines: _draft.obscureText ? 1 : max,
+      maxLines: _draft.obscureText || _draft.kind.isBoolean ? 1 : max,
       fontSize: number('fontSize'),
       inheritFontSize: number('fontSize') == null,
       lineHeight: number('lineHeight'),
@@ -629,7 +636,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       try {
         final binding = _binding;
         final config = _configuration(
-          _draft.mode == SuperTextMode.input
+          _hasFieldSettings
               ? _fieldSettings.currentState?.value() ?? _fieldConfig
               : _fieldConfig,
           binding,
@@ -645,7 +652,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         }
       } on ArgumentError {
         const message =
-            'Réglages du texte invalides : vérifiez les lignes et les dimensions.';
+            'Réglages de la valeur invalides : vérifiez les lignes et les dimensions.';
         if (_liveError != message) setState(() => _liveError = message);
       }
     });
@@ -722,11 +729,11 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         !_repositories.any((entry) => entry.id == _repositoryId);
     return _group([
       if (!widget.allowBinding)
-        const Text('La liaison nécessite le contrôleur interne de Text.'),
+        const Text('La liaison nécessite le contrôleur interne de Value.'),
       if (widget.repositories == null)
         const Text('Service de repositories indisponible.'),
       DropdownButtonFormField<String>(
-        key: ValueKey('super-text-repository-$_repositoryId'),
+        key: ValueKey('super-value-repository-$_repositoryId'),
         initialValue: _inheritRepository
             ? inheritedRepositoryValue
             : _repositoryId ?? '',
@@ -767,7 +774,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
               },
       ),
       TextFormField(
-        key: const ValueKey('super-text-repository-path'),
+        key: const ValueKey('super-value-repository-path'),
         controller: _fields['repositoryPath'],
         enabled: available && _bound && !_validating,
         decoration: InputDecoration(
@@ -792,20 +799,20 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       ),
       const Text(
         'Liaison bidirectionnelle. Les attributs absents deviennent des chaînes '
-        'à la saisie ; les indices de tableau doivent déjà exister. '
+        '(ou booléens) à la saisie ; les indices de tableau doivent déjà exister. '
         'Les modifications sont enregistrées automatiquement dans le JSON.',
       ),
       if (_draft.obscureText && _bound)
         const Text(
           'Attention : le mot de passe sera enregistré en clair sur disque.',
-          key: ValueKey('super-text-repository-plaintext-warning'),
+          key: ValueKey('super-value-repository-plaintext-warning'),
         ),
       if (_loadingRepositories) const Text('Chargement des repositories…'),
       if (_validating) const LinearProgressIndicator(),
       if (_repositoryError != null)
         Text(
           _repositoryError!,
-          key: const ValueKey('super-text-repository-error'),
+          key: const ValueKey('super-value-repository-error'),
           style: TextStyle(color: Theme.of(context).colorScheme.error),
         ),
       TextButton.icon(
@@ -829,7 +836,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
 
   Widget _field(String key, String label, {bool numeric = false}) =>
       TextFormField(
-        key: ValueKey('super-text-setting-$key'),
+        key: ValueKey('super-value-setting-$key'),
         controller: _fields[key],
         maxLines: key == 'initialText' ? 3 : 1,
         decoration: InputDecoration(labelText: label, isDense: true),
@@ -844,7 +851,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
             if (number == null || number < 1) return 'Entier positif requis.';
             final min = int.tryParse(_fields['minLines']!.text);
             if (key == 'maxLines' &&
-                _draft.mode == SuperTextMode.input &&
+                _draft.mode == SuperValueMode.input &&
                 min != null &&
                 number < min) {
               return 'Le maximum doit être supérieur ou égal au minimum.';
@@ -866,13 +873,13 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       );
 
   Future<void> _editPropertyBinding(
-    SuperTextProperty property,
+    SuperValueProperty property,
     String label,
   ) async {
     final result = await showRepositoryBindingDialog(
       context: context,
       title: 'Lier $label',
-      keyPrefix: 'super-text-property-${property.name}',
+      keyPrefix: 'super-value-property-${property.name}',
       pathHint: 'client.${property.name}',
       binding: _draft.propertyBindings[property],
       store: widget.repositories,
@@ -880,7 +887,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       helper: 'Lecture seule : la valeur du repository remplace ce paramètre.',
     );
     if (result == null || !mounted) return;
-    final bindings = Map<SuperTextProperty, JsonTextBinding>.of(
+    final bindings = Map<SuperValueProperty, JsonTextBinding>.of(
       _draft.propertyBindings,
     );
     if (result.binding == null) {
@@ -891,29 +898,32 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     setState(() => _draft = _draft.copyWith(propertyBindings: bindings));
   }
 
-  Widget _withBinding(SuperTextProperty property, String label, Widget child) =>
-      Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(child: child),
-          IconButton(
-            key: ValueKey('super-text-bind-${property.name}'),
-            tooltip: _draft.propertyBindings.containsKey(property)
-                ? 'Modifier la liaison de $label'
-                : 'Lier $label à un repository',
-            visualDensity: VisualDensity.compact,
-            onPressed: !widget.allowBinding || widget.repositories == null
-                ? null
-                : () => _editPropertyBinding(property, label),
-            icon: Icon(
-              _draft.propertyBindings.containsKey(property)
-                  ? Icons.link
-                  : Icons.add_link,
-              size: 18,
-            ),
-          ),
-        ],
-      );
+  Widget _withBinding(
+    SuperValueProperty property,
+    String label,
+    Widget child,
+  ) => Row(
+    crossAxisAlignment: CrossAxisAlignment.center,
+    children: [
+      Expanded(child: child),
+      IconButton(
+        key: ValueKey('super-value-bind-${property.name}'),
+        tooltip: _draft.propertyBindings.containsKey(property)
+            ? 'Modifier la liaison de $label'
+            : 'Lier $label à un repository',
+        visualDensity: VisualDensity.compact,
+        onPressed: !widget.allowBinding || widget.repositories == null
+            ? null
+            : () => _editPropertyBinding(property, label),
+        icon: Icon(
+          _draft.propertyBindings.containsKey(property)
+              ? Icons.link
+              : Icons.add_link,
+          size: 18,
+        ),
+      ),
+    ],
+  );
 
   Widget _group(List<Widget> children) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -934,6 +944,9 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     }
 
     final color = _fields['color']!.text.trim();
+    final parsedColor = RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(color)
+        ? Color(int.parse(color, radix: 16))
+        : null;
     final style = widget.textStyle.copyWith(
       fontFamily: unavailable ? null : _draft.fontFamily,
       fontSize: number('fontSize'),
@@ -943,9 +956,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
           : _draft.italic!
           ? FontStyle.italic
           : FontStyle.normal,
-      color: RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(color)
-          ? Color(int.parse(color, radix: 16))
-          : null,
+      color: parsedColor,
       height: number('lineHeight'),
       letterSpacing: number('letterSpacing', positive: false),
     );
@@ -968,20 +979,89 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
       initialText: _draft.obscureText ? '' : text,
       label: label,
       placeholder: placeholder,
-      minLines: _draft.obscureText ? 1 : min,
-      maxLines: _draft.obscureText ? 1 : max,
+      minLines: _draft.obscureText || _draft.kind.isBoolean ? 1 : min,
+      maxLines: _draft.obscureText || _draft.kind.isBoolean ? 1 : max,
     );
     String? previewError;
-    try {
-      _fieldConfig.validateFor(
-        obscureText: previewConfig.obscureText,
-        maxLines: previewConfig.maxLines,
+    if (!_draft.kind.isBoolean) {
+      try {
+        _fieldConfig.validateFor(
+          obscureText: previewConfig.obscureText,
+          maxLines: previewConfig.maxLines,
+        );
+      } on FormatException catch (error) {
+        previewError = error.message;
+      }
+    }
+    final Widget previewBody;
+    if (_draft.kind.isBoolean) {
+      final align = switch (_draft.textAlign) {
+        TextAlign.center => MainAxisAlignment.center,
+        TextAlign.end || TextAlign.right => MainAxisAlignment.end,
+        _ => MainAxisAlignment.start,
+      };
+      final control = _draft.kind == SuperValueKind.checkbox
+          ? Checkbox(
+              value: _draft.initialBool,
+              activeColor: parsedColor,
+              onChanged:
+                  _draft.mode == SuperValueMode.input &&
+                      _draft.enabled &&
+                      !_draft.readOnly
+                  ? (_) {}
+                  : null,
+            )
+          : Switch(
+              value: _draft.initialBool,
+              activeThumbColor: parsedColor,
+              onChanged:
+                  _draft.mode == SuperValueMode.input &&
+                      _draft.enabled &&
+                      !_draft.readOnly
+                  ? (_) {}
+                  : null,
+            );
+      previewBody = Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: align,
+        children: [
+          control,
+          if (label.isNotEmpty)
+            Flexible(
+              child: Text(
+                label,
+                style: style,
+                textAlign: _draft.textAlign,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
       );
-    } on FormatException catch (error) {
-      previewError = error.message;
+    } else if (_draft.mode == SuperValueMode.input) {
+      previewBody = previewError != null
+          ? Text(previewError, style: TextStyle(color: scheme.error))
+          : SuperTextField(
+              config: previewConfig,
+              controller: _previewText,
+              readOnly: true,
+              style: style,
+            );
+    } else if (label.isEmpty) {
+      previewBody = display;
+    } else {
+      previewBody = InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          enabled: _draft.enabled,
+          border: InputBorder.none,
+          isDense: true,
+        ),
+        child: display,
+      );
     }
     return Card(
-      key: const ValueKey('super-text-preview'),
+      key: const ValueKey('super-value-preview'),
       margin: EdgeInsets.zero,
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -998,29 +1078,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: scheme.outlineVariant),
               ),
-              child: _draft.mode == SuperTextMode.input
-                  ? previewError != null
-                        ? Text(
-                            previewError,
-                            style: TextStyle(color: scheme.error),
-                          )
-                        : SuperTextField(
-                            config: previewConfig,
-                            controller: _previewText,
-                            readOnly: true,
-                            style: style,
-                          )
-                  : label.isEmpty
-                  ? display
-                  : InputDecorator(
-                      decoration: InputDecoration(
-                        labelText: label,
-                        enabled: _draft.enabled,
-                        border: InputBorder.none,
-                        isDense: true,
-                      ),
-                      child: display,
-                    ),
+              child: previewBody,
             ),
             const SizedBox(height: 12),
             Text(
@@ -1048,7 +1106,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
     );
     final height = math.min(680.0, math.max(0.0, screen.height - 180));
     return AlertDialog(
-      key: const ValueKey('super-text-settings'),
+      key: const ValueKey('super-value-settings'),
       insetPadding: const EdgeInsets.all(24),
       constraints: BoxConstraints(maxWidth: width + 48),
       content: SizedBox(
@@ -1065,7 +1123,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
               _fieldError = null;
             }),
             builder: (fieldSections) => StyleEditorPanel(
-              label: 'Configurer le texte',
+              label: 'Configurer la valeur',
               dense: _dense,
               onDenseChanged: (value) => setState(() {
                 _dense = value;
@@ -1075,36 +1133,74 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
               sections: [
                 if (widget.header != null)
                   StyleEditorSection(
-                    id: 'text-states',
+                    id: 'value-states',
                     title: 'États',
                     icon: Icons.layers_outlined,
                     child: widget.header!,
                   ),
                 StyleEditorSection(
-                  id: 'text-repository',
+                  id: 'value-repository',
                   title: 'Repository',
                   icon: Icons.storage_outlined,
                   tag: 'repository · path',
                   child: _repositorySettings(),
                 ),
                 StyleEditorSection(
-                  id: 'text-content',
+                  id: 'value-content',
                   title: 'Contenu',
                   icon: Icons.text_fields,
-                  tag: 'mode · initialText',
+                  tag: 'kind · mode · initialText',
                   child: _group([
-                    DropdownButtonFormField<SuperTextMode>(
+                    DropdownButtonFormField<SuperValueKind>(
                       isExpanded: true,
-                      key: const ValueKey('super-text-setting-mode'),
+                      key: const ValueKey('super-value-setting-kind'),
+                      initialValue: _draft.kind,
+                      decoration: const InputDecoration(
+                        labelText: 'Type de valeur',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: SuperValueKind.text,
+                          child: Text('Texte'),
+                        ),
+                        DropdownMenuItem(
+                          value: SuperValueKind.checkbox,
+                          child: Text('Case à cocher (Checkbox)'),
+                        ),
+                        DropdownMenuItem(
+                          value: SuperValueKind.switchControl,
+                          child: Text('Interrupteur (Switch)'),
+                        ),
+                      ],
+                      onChanged: (kind) {
+                        if (kind != null) {
+                          setState(() {
+                            _draft = _draft.copyWith(
+                              kind: kind,
+                              obscureText: kind.isBoolean
+                                  ? false
+                                  : _draft.obscureText,
+                            );
+                            if (kind.isBoolean) {
+                              _fields['minLines']!.text = '1';
+                              _fields['maxLines']!.text = '1';
+                            }
+                          });
+                        }
+                      },
+                    ),
+                    DropdownButtonFormField<SuperValueMode>(
+                      isExpanded: true,
+                      key: const ValueKey('super-value-setting-mode'),
                       initialValue: _draft.mode,
                       decoration: const InputDecoration(labelText: 'Mode'),
                       items: const [
                         DropdownMenuItem(
-                          value: SuperTextMode.display,
+                          value: SuperValueMode.display,
                           child: Text('Affichage'),
                         ),
                         DropdownMenuItem(
-                          value: SuperTextMode.input,
+                          value: SuperValueMode.input,
                           child: Text('Saisie'),
                         ),
                       ],
@@ -1114,67 +1210,82 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                         }
                       },
                     ),
-                    if (!_draft.obscureText && !_bound)
+                    if (_draft.kind.isBoolean && !_bound)
+                      SwitchListTile(
+                        key: const ValueKey('super-value-setting-initialBool'),
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Valeur initiale'),
+                        value: _draft.initialBool,
+                        onChanged: (value) => setState(
+                          () => _draft = _draft.copyWith(initialBool: value),
+                        ),
+                      )
+                    else if (!_draft.kind.isBoolean &&
+                        !_draft.obscureText &&
+                        !_bound)
                       _field('initialText', 'Texte initial'),
                     _withBinding(
-                      SuperTextProperty.label,
+                      SuperValueProperty.label,
                       'le label',
                       _field('label', 'Label'),
                     ),
-                    _withBinding(
-                      SuperTextProperty.placeholder,
-                      'le placeholder',
-                      _field('placeholder', 'Placeholder'),
-                    ),
+                    if (!_draft.kind.isBoolean)
+                      _withBinding(
+                        SuperValueProperty.placeholder,
+                        'le placeholder',
+                        _field('placeholder', 'Placeholder'),
+                      ),
                     const Text(
-                      'Sans liaison, changer le mode ou le texte initial '
+                      'Sans liaison, changer le mode ou la valeur initiale '
                       'réinitialise la valeur dans l’application. '
                       'Avec une liaison, le repository fournit la valeur.',
                     ),
                   ]),
                 ),
                 StyleEditorSection(
-                  id: 'text-behavior',
+                  id: 'value-behavior',
                   title: 'Comportement',
                   icon: Icons.tune,
-                  tag: _draft.mode == SuperTextMode.input
+                  tag: _draft.mode == SuperValueMode.input
                       ? 'enabled · readOnly'
                       : 'obscureText · maxLines',
                   child: _group([
-                    SwitchListTile(
-                      key: const ValueKey('super-text-setting-obscureText'),
-                      title: const Text('Mot de passe'),
-                      value: _draft.obscureText,
-                      onChanged: (value) => setState(() {
-                        _draft = _draft.copyWith(obscureText: value);
-                        if (value) {
-                          _fields['initialText']!.clear();
-                          _fields['minLines']!.text = '1';
-                          _fields['maxLines']!.text = '1';
-                        }
-                      }),
-                    ),
-                    if (_draft.obscureText)
-                      const Text(
-                        'Texte masqué dans les deux modes. Une seule ligne, sans texte initial sauvegardé.',
-                      )
-                    else ...[
-                      if (_draft.mode == SuperTextMode.input)
-                        _field('minLines', 'Lignes minimales', numeric: true),
-                      _field('maxLines', 'Lignes maximales', numeric: true),
-                    ],
-                    if (_draft.mode == SuperTextMode.input)
+                    if (!_draft.kind.isBoolean) ...[
                       SwitchListTile(
-                        key: const ValueKey('super-text-setting-enabled'),
+                        key: const ValueKey('super-value-setting-obscureText'),
+                        title: const Text('Mot de passe'),
+                        value: _draft.obscureText,
+                        onChanged: (value) => setState(() {
+                          _draft = _draft.copyWith(obscureText: value);
+                          if (value) {
+                            _fields['initialText']!.clear();
+                            _fields['minLines']!.text = '1';
+                            _fields['maxLines']!.text = '1';
+                          }
+                        }),
+                      ),
+                      if (_draft.obscureText)
+                        const Text(
+                          'Texte masqué dans les deux modes. Une seule ligne, sans texte initial sauvegardé.',
+                        )
+                      else ...[
+                        if (_draft.mode == SuperValueMode.input)
+                          _field('minLines', 'Lignes minimales', numeric: true),
+                        _field('maxLines', 'Lignes maximales', numeric: true),
+                      ],
+                    ],
+                    if (_draft.mode == SuperValueMode.input)
+                      SwitchListTile(
+                        key: const ValueKey('super-value-setting-enabled'),
                         title: const Text('Activé'),
                         value: _draft.enabled,
                         onChanged: (value) => setState(
                           () => _draft = _draft.copyWith(enabled: value),
                         ),
                       ),
-                    if (_draft.mode == SuperTextMode.input)
+                    if (_draft.mode == SuperValueMode.input)
                       SwitchListTile(
-                        key: const ValueKey('super-text-setting-readOnly'),
+                        key: const ValueKey('super-value-setting-readOnly'),
                         title: const Text('Lecture seule'),
                         value: _draft.readOnly,
                         onChanged: (value) => setState(
@@ -1184,7 +1295,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                   ]),
                 ),
                 StyleEditorSection(
-                  id: 'text-typography',
+                  id: 'value-typography',
                   title: 'Typographie',
                   icon: Icons.font_download_outlined,
                   tag: 'TextStyle',
@@ -1197,12 +1308,12 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                         ),
                       ),
                     _withBinding(
-                      SuperTextProperty.fontFamily,
+                      SuperValueProperty.fontFamily,
                       'la police',
                       DropdownButtonFormField<String>(
                         isExpanded: true,
                         key: ValueKey(
-                          'super-text-setting-fontFamily-${_draft.fontFamily}',
+                          'super-value-setting-fontFamily-${_draft.fontFamily}',
                         ),
                         initialValue: unavailable ? null : _draft.fontFamily,
                         hint: const Text('Police du thème'),
@@ -1226,7 +1337,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                       ),
                     ),
                     _withBinding(
-                      SuperTextProperty.fontSize,
+                      SuperValueProperty.fontSize,
                       'la taille de police',
                       _field(
                         'fontSize',
@@ -1235,7 +1346,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                       ),
                     ),
                     _withBinding(
-                      SuperTextProperty.fontWeight,
+                      SuperValueProperty.fontWeight,
                       'la graisse',
                       DropdownButtonFormField<FontWeight>(
                         isExpanded: true,
@@ -1262,11 +1373,11 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                       ),
                     ),
                     _withBinding(
-                      SuperTextProperty.italic,
+                      SuperValueProperty.italic,
                       'le style italique',
                       DropdownButtonFormField<String>(
                         isExpanded: true,
-                        key: const ValueKey('super-text-setting-italic'),
+                        key: const ValueKey('super-value-setting-italic'),
                         initialValue: _draft.italic == null
                             ? 'inherit'
                             : _draft.italic!
@@ -1303,13 +1414,13 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                   ]),
                 ),
                 StyleEditorSection(
-                  id: 'text-color',
+                  id: 'value-color',
                   title: 'Couleur',
                   icon: Icons.palette_outlined,
                   tag: 'color',
                   child: _group([
                     styleColorTile(
-                      'Couleur du texte',
+                      'Couleur de la valeur',
                       RegExp(r'^[0-9a-fA-F]{8}$')
                               .hasMatch(_fields['color']!.text.trim())
                           ? Color(
@@ -1326,15 +1437,15 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                             .toRadixString(16)
                             .padLeft(8, '0');
                       }),
-                      key: const ValueKey('super-text-color-picker'),
+                      key: const ValueKey('super-value-color-picker'),
                     ),
                     _withBinding(
-                      SuperTextProperty.color,
+                      SuperValueProperty.color,
                       'la couleur',
                       _field('color', 'Couleur AARRGGBB (vide = parent)'),
                     ),
                     TextButton(
-                      key: const ValueKey('super-text-inherit-color'),
+                      key: const ValueKey('super-value-inherit-color'),
                       onPressed: () =>
                           setState(() => _fields['color']!.clear()),
                       child: const Text('Utiliser la couleur du parent'),
@@ -1342,13 +1453,13 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                   ]),
                 ),
                 StyleEditorSection(
-                  id: 'text-spacing',
+                  id: 'value-spacing',
                   title: 'Alignement et espacement',
                   icon: Icons.format_align_left,
                   tag: 'textAlign · height',
                   child: _group([
                     _withBinding(
-                      SuperTextProperty.textAlign,
+                      SuperValueProperty.textAlign,
                       'l’alignement',
                       DropdownButtonFormField<TextAlign>(
                         isExpanded: true,
@@ -1384,7 +1495,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     ),
                   ]),
                 ),
-                if (_draft.mode == SuperTextMode.input) ...fieldSections,
+                if (_hasFieldSettings) ...fieldSections,
               ],
             ),
           ),
@@ -1394,7 +1505,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
         if (_liveError != null)
           Text(
             _liveError!,
-            key: const ValueKey('super-text-live-error'),
+            key: const ValueKey('super-value-live-error'),
             style: TextStyle(color: Theme.of(context).colorScheme.error),
           ),
         if (_fieldError != null)
@@ -1411,17 +1522,17 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
               ? null
               : () async {
                   if (!_form.currentState!.validate()) return;
-                  if (_draft.mode == SuperTextMode.input &&
+                  if (_hasFieldSettings &&
                       _fieldSettings.currentState?.validate() == false) {
                     return;
                   }
-                  final field = _draft.mode == SuperTextMode.input
+                  final field = _hasFieldSettings
                       ? _fieldSettings.currentState?.value() ?? _fieldConfig
                       : _fieldConfig;
                   try {
                     field.validateFor(
                       obscureText: _draft.obscureText,
-                      maxLines: _draft.obscureText
+                      maxLines: _draft.obscureText || _draft.kind.isBoolean
                           ? 1
                           : int.parse(_fields['maxLines']!.text),
                     );
@@ -1452,7 +1563,16 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                         ).binding;
                         // Without selected row, only the path is checked.
                         if (resolved != null) {
-                          await widget.repositories!.readAttribute(resolved);
+                          final attr = await widget.repositories!.readAttribute(
+                            resolved,
+                          );
+                          if (_draft.kind.isBoolean &&
+                              attr.value != null &&
+                              attr.value is! bool) {
+                            throw const FormatException(
+                              'L’attribut lié doit être un booléen.',
+                            );
+                          }
                         }
                       }
                     } on FormatException catch (error) {
@@ -1473,7 +1593,7 @@ class _SuperTextEditorState extends State<_SuperTextEditor> {
                     }
                     if (!mounted) return;
                   }
-                  SuperTextConfig result;
+                  SuperValueConfig result;
                   try {
                     final leaf = _configuration(field, binding);
                     result = widget.onSave?.call(leaf) ?? leaf;

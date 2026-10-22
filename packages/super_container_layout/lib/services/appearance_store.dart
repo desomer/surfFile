@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
-import '../models/super_text_config.dart';
+import '../models/super_value_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import '../theme/appearance.dart';
@@ -55,8 +55,8 @@ class AppearanceCodec {
       for (final entry in a.nativeComponents.entries)
         entry.key: entry.value.toJson(),
     },
-    'textComponents': {
-      for (final entry in a.textComponents.entries)
+    'valueComponents': {
+      for (final entry in a.valueComponents.entries)
         entry.key: entry.value.toJson(),
     },
     'listComponents': {
@@ -80,7 +80,7 @@ class AppearanceCodec {
       'layouts',
       'scaffoldPages',
       'nativeComponents',
-      'textComponents',
+      'valueComponents',
       'listComponents',
       'pageCatalog',
       ...additionalKeys,
@@ -143,9 +143,9 @@ class AppearanceCodec {
         for (final entry in entries('nativeComponents', optional: true).entries)
           entry.key: NativeComponentConfig.fromJson(entry.value),
       },
-      textComponents: {
-        for (final entry in entries('textComponents', optional: true).entries)
-          entry.key: SuperTextConfig.fromJson(entry.value),
+      valueComponents: {
+        for (final entry in entries('valueComponents', optional: true).entries)
+          entry.key: SuperValueConfig.fromJson(entry.value),
       },
       listComponents: {
         for (final entry in entries('listComponents', optional: true).entries)

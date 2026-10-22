@@ -276,7 +276,12 @@ extension _SuperLayoutView on SuperLayoutState {
                             emphasis: _emphasisFor(zone),
                             selected: selected == zone,
                             onSelect: () => _select(zone),
-                            onAdd: widget.editable
+                            onAdd:
+                                widget.editable &&
+                                    !_hasContent(
+                                      config,
+                                      config.contentZone(zone),
+                                    )
                                 ? () => _addSlot(zone)
                                 : null,
                             swapTarget: widget.editable && _canSwapZone(zone)

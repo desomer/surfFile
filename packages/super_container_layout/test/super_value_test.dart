@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/editing/components/super_text_editor.dart';
+import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -32,9 +32,9 @@ void main() {
     }
   });
 
-  const initial = SuperTextConfig(initialText: 'Initial');
-  const input = SuperTextConfig(
-    mode: SuperTextMode.input,
+  const initial = SuperValueConfig(initialText: 'Initial');
+  const input = SuperValueConfig(
+    mode: SuperValueMode.input,
     initialText: 'Initial',
   );
 
@@ -71,20 +71,20 @@ void main() {
               padding: EdgeInsets.only(bottom: 80),
               child: SizedBox(
                 width: 320,
-                child: SuperText(id: 'persisted', config: input),
+                child: SuperValue(id: 'persisted', config: input),
               ),
             ),
           ),
         ),
       );
-      StyleEditScope.controllerOf(tester.element(find.byType(SuperText)))!
+      StyleEditScope.controllerOf(tester.element(find.byType(SuperValue)))!
               .value =
           true;
       await tester.pumpAndSettle();
-      final context = tester.element(find.byType(SuperText));
+      final context = tester.element(find.byType(SuperValue));
       final history = EditorHistoryScope.controllerOf(context)!;
       final appearance = AppearanceScope.controllerOf(context)!;
-      final design = registry.textController('persisted');
+      final design = registry.valueController('persisted');
       final before = const AppearanceCodec().encode(appearance.value);
       await tester.enterText(find.byType(TextField), 'Never persisted');
       await tester.pumpAndSettle();
@@ -92,11 +92,11 @@ void main() {
       expect(history.canUndo, isFalse);
       await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Texte'));
+      await tester.tap(find.text('Valeur'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('super-text-settings')), findsOneWidget);
+      expect(find.byKey(const ValueKey('super-value-settings')), findsOneWidget);
       await tester.enterText(
-        find.byKey(const ValueKey('super-text-setting-initialText')),
+        find.byKey(const ValueKey('super-value-setting-initialText')),
         'Saved design',
       );
       final radius = find.byKey(const ValueKey('text-field-setting-radius'));
@@ -106,7 +106,7 @@ void main() {
       expect(history.canUndo, isFalse);
       expect(design.value, input);
       final live = tester.widget<TextField>(
-        find.byKey(const ValueKey('super-text-input-persisted')),
+        find.byKey(const ValueKey('super-value-input-persisted')),
       );
       expect(live.controller!.text, 'Saved design');
       expect(
@@ -125,7 +125,7 @@ void main() {
       expect(history.canUndo, isTrue);
       final store = AppearanceStore();
       await store.save(appearance.value);
-      expect((await store.load()).textComponents['persisted'], design.value);
+      expect((await store.load()).valueComponents['persisted'], design.value);
       history.undo();
       await tester.pumpAndSettle();
       expect(design.value, input);
@@ -146,9 +146,9 @@ void main() {
     'catalog instances compose inside native bars and grid without sharing state',
     (tester) async {
       final registry = Registry()..bootstrap(availableFontFamilies: ['Roboto']);
-      registry.textController('bar-text', fallback: input);
-      registry.textController('bottom-text', fallback: initial);
-      registry.textController(
+      registry.valueController('bar-text', fallback: input);
+      registry.valueController('bottom-text', fallback: initial);
+      registry.valueController(
         'grid-text',
         fallback: initial.copyWith(initialText: 'Grid'),
       );
@@ -160,7 +160,7 @@ void main() {
         placements: {
           SuperLayoutZone.center: ['grid-text'],
         },
-        slotTypes: {'grid-text': 'registry:Text'},
+        slotTypes: {'grid-text': 'registry:Value'},
       ).withPositioning(SuperLayoutPositioning.grid);
       await mount(
         tester,
@@ -172,7 +172,7 @@ void main() {
               placements: {
                 'title': ['bar-text'],
               },
-              slotTypes: {'bar-text': 'factory:Text'},
+              slotTypes: {'bar-text': 'factory:Value'},
             ),
           ),
           bottomNavigationBar: SuperBottomNavigationBar(
@@ -181,17 +181,17 @@ void main() {
               placements: {
                 'left': ['bottom-text'],
               },
-              slotTypes: {'bottom-text': 'factory:Text'},
+              slotTypes: {'bottom-text': 'factory:Value'},
             ),
           ),
           child: SuperLayout(config: layout),
         ),
       );
-      expect(find.byType(SuperText), findsNWidgets(3));
+      expect(find.byType(SuperValue), findsNWidgets(3));
       expect(find.text('Grid'), findsOneWidget);
       expect(
         tester
-            .widget<SuperText>(find.byType(SuperText).first)
+            .widget<SuperValue>(find.byType(SuperValue).first)
             .availableFontFamilies,
         ['Roboto'],
       );
@@ -200,14 +200,14 @@ void main() {
       expect(find.text('Only bar'), findsOneWidget);
       expect(find.text('Initial'), findsOneWidget);
       expect(find.text('Grid'), findsOneWidget);
-      expect(registry.textController('bar-text').value, input);
+      expect(registry.valueController('bar-text').value, input);
       expect(tester.takeException(), isNull);
     },
   );
 
   test('config round trips all fields and restores inherited typography', () {
-    const config = SuperTextConfig(
-      mode: SuperTextMode.input,
+    const config = SuperValueConfig(
+      mode: SuperValueMode.input,
       initialText: 'Bonjour',
       label: 'Nom',
       placeholder: 'Votre nom',
@@ -224,20 +224,20 @@ void main() {
       lineHeight: 1.4,
       letterSpacing: -.5,
       propertyBindings: {
-        SuperTextProperty.label: JsonTextBinding(
+        SuperValueProperty.label: JsonTextBinding(
           repositoryId: '0123456789abcdef0123456789abcdef',
           path: 'client.name',
         ),
-        SuperTextProperty.color: JsonTextBinding(path: 'client.color'),
+        SuperValueProperty.color: JsonTextBinding(path: 'client.color'),
       },
     );
-    final decoded = SuperTextConfig.fromJson(
+    final decoded = SuperValueConfig.fromJson(
       jsonDecode(jsonEncode(config.toJson())),
     );
     expect(decoded, config);
     expect(decoded.hashCode, config.hashCode);
     expect(
-      SuperTextConfig.fromJson(<String, dynamic>{}).propertyBindings,
+      SuperValueConfig.fromJson(<String, dynamic>{}).propertyBindings,
       isEmpty,
     );
     final inherited = decoded.copyWith(
@@ -256,11 +256,11 @@ void main() {
     expect(inherited.color, isNull);
     expect(inherited.lineHeight, isNull);
     expect(inherited.letterSpacing, isNull);
-    expect(SuperTextConfig.fromJson(<String, dynamic>{}).italic, isNull);
-    expect(SuperTextConfig.fromJson({'italic': null}).italic, isNull);
+    expect(SuperValueConfig.fromJson(<String, dynamic>{}).italic, isNull);
+    expect(SuperValueConfig.fromJson({'italic': null}).italic, isNull);
     for (final italic in [false, true]) {
       final explicit = inherited.copyWith(italic: italic);
-      expect(SuperTextConfig.fromJson(explicit.toJson()).italic, italic);
+      expect(SuperValueConfig.fromJson(explicit.toJson()).italic, italic);
     }
   });
 
@@ -296,13 +296,13 @@ void main() {
           },
         },
       ]) {
-        expect(() => SuperTextConfig.fromJson(json), throwsFormatException);
+        expect(() => SuperValueConfig.fromJson(json), throwsFormatException);
       }
-      const password = SuperTextConfig(obscureText: true);
+      const password = SuperValueConfig(obscureText: true);
       expect(password.toJson().containsKey('initialText'), isFalse);
-      expect(SuperTextConfig.fromJson(password.toJson()), password);
+      expect(SuperValueConfig.fromJson(password.toJson()), password);
       expect(
-        () => const SuperTextConfig(
+        () => const SuperValueConfig(
           obscureText: true,
           initialText: 'secret',
         ).toJson(),
@@ -311,7 +311,7 @@ void main() {
     },
   );
 
-  for (final mode in SuperTextMode.values) {
+  for (final mode in SuperValueMode.values) {
     testWidgets('$mode inherits the native AppBar title style', (
       tester,
     ) async {
@@ -334,18 +334,18 @@ void main() {
           child: SuperPage(
             appBar: SuperAppBar(
               id: 'styled-bar',
-              title: SuperText(
+              title: SuperValue(
                 id: 'title-style',
-                config: SuperTextConfig(mode: mode, initialText: 'Title'),
+                config: SuperValueConfig(mode: mode, initialText: 'Title'),
               ),
             ),
           ),
         ),
       );
-      final style = mode == SuperTextMode.display
+      final style = mode == SuperValueMode.display
           ? tester
                 .widget<Text>(
-                  find.byKey(const ValueKey('super-text-display-title-style')),
+                  find.byKey(const ValueKey('super-value-display-title-style')),
                 )
                 .style!
           : tester.widget<TextField>(find.byType(TextField)).style!;
@@ -370,20 +370,20 @@ void main() {
           height: 1.2,
           letterSpacing: 1.7,
         );
-        Widget text(SuperTextConfig config) => host(
+        Widget text(SuperValueConfig config) => host(
           DefaultTextStyle(
             style: parentStyle,
-            child: SuperText(id: 'inherit', config: config),
+            child: SuperValue(id: 'inherit', config: config),
           ),
         );
-        TextStyle style() => mode == SuperTextMode.display
+        TextStyle style() => mode == SuperValueMode.display
             ? tester
                   .widget<Text>(
-                    find.byKey(const ValueKey('super-text-display-inherit')),
+                    find.byKey(const ValueKey('super-value-display-inherit')),
                   )
                   .style!
             : tester.widget<TextField>(find.byType(TextField)).style!;
-        final config = SuperTextConfig(mode: mode, initialText: 'Parent');
+        final config = SuperValueConfig(mode: mode, initialText: 'Parent');
         await tester.pumpWidget(text(config));
         expect(style(), parentStyle);
         await tester.pumpWidget(
@@ -412,7 +412,7 @@ void main() {
       'display title is vertically centered (${catalog ? 'catalog' : 'direct'})',
       (tester) async {
         final registry = Registry()..bootstrap();
-        registry.textController('centered-title', fallback: initial);
+        registry.valueController('centered-title', fallback: initial);
         await mount(
           tester,
           registry,
@@ -422,20 +422,20 @@ void main() {
               toolbarHeight: 80,
               title: catalog
                   ? null
-                  : const SuperText(id: 'centered-title', config: initial),
+                  : const SuperValue(id: 'centered-title', config: initial),
               nativeConfig: catalog
                   ? NativeComponentConfig(
                       placements: {
                         'title': ['centered-title'],
                       },
-                      slotTypes: {'centered-title': 'factory:Text'},
+                      slotTypes: {'centered-title': 'factory:Value'},
                     )
                   : null,
             ),
           ),
         );
         final title = find.byKey(
-          const ValueKey('super-text-display-centered-title'),
+          const ValueKey('super-value-display-centered-title'),
         );
         final toolbar = find.byType(NavigationToolbar);
         expect(
@@ -444,7 +444,7 @@ void main() {
         );
         expect(
           find.descendant(
-            of: find.byType(SuperText),
+            of: find.byType(SuperValue),
             matching: find.byType(InputDecorator),
           ),
           findsNothing,
@@ -471,11 +471,11 @@ void main() {
             SizedBox(
               key: const ValueKey('tight-text-slot'),
               height: 120,
-              child: SuperText(id: 'tight', config: config),
+              child: SuperValue(id: 'tight', config: config),
             ),
           ),
         );
-        final text = find.byKey(const ValueKey('super-text-display-tight'));
+        final text = find.byKey(const ValueKey('super-value-display-tight'));
         expect(
           tester.getCenter(text).dy,
           closeTo(
@@ -489,7 +489,7 @@ void main() {
         host(
           SizedBox(
             height: 120,
-            child: SuperText(
+            child: SuperValue(
               id: 'tight',
               config: initial.copyWith(label: 'Label'),
             ),
@@ -507,12 +507,12 @@ void main() {
     tester,
   ) async {
     for (final choice in ['Normal', 'Italique', 'Style du parent']) {
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       await tester.pumpWidget(
         host(
           Builder(
             builder: (context) => TextButton(
-              onPressed: () async => result = await showSuperTextEditor(
+              onPressed: () async => result = await showSuperValueEditor(
                 context: context,
                 config: initial.copyWith(italic: true),
                 availableFontFamilies: [],
@@ -524,7 +524,7 @@ void main() {
       );
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
-      final dropdown = find.byKey(const ValueKey('super-text-setting-italic'));
+      final dropdown = find.byKey(const ValueKey('super-value-setting-italic'));
       await tester.ensureVisible(dropdown);
       await tester.tap(dropdown);
       await tester.pumpAndSettle();
@@ -545,12 +545,12 @@ void main() {
       (tester) async {
         await tester.binding.setSurfaceSize(screen);
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        SuperTextConfig? result;
+        SuperValueConfig? result;
         await tester.pumpWidget(
           host(
             Builder(
               builder: (context) => TextButton(
-                onPressed: () async => result = await showSuperTextEditor(
+                onPressed: () async => result = await showSuperValueEditor(
                   context: context,
                   config: initial,
                   availableFontFamilies: ['Roboto'],
@@ -564,27 +564,27 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(StyleEditorPanel), findsOneWidget);
         expect(
-          find.byKey(const ValueKey('super-text-preview')),
+          find.byKey(const ValueKey('super-value-preview')),
           findsOneWidget,
         );
         for (final id in [
-          'text-content',
-          'text-behavior',
-          'text-typography',
-          'text-color',
-          'text-spacing',
+          'value-content',
+          'value-behavior',
+          'value-typography',
+          'value-color',
+          'value-spacing',
         ]) {
           expect(find.byKey(ValueKey('style-card-$id')), findsOneWidget);
         }
         final field = find.byKey(
-          const ValueKey('super-text-setting-initialText'),
+          const ValueKey('super-value-setting-initialText'),
         );
         await tester.ensureVisible(field);
         await tester.enterText(field, 'Preview draft');
         await tester.pumpAndSettle();
         expect(
           find.descendant(
-            of: find.byKey(const ValueKey('super-text-preview')),
+            of: find.byKey(const ValueKey('super-value-preview')),
             matching: find.text('Preview draft'),
           ),
           findsOneWidget,
@@ -592,7 +592,7 @@ void main() {
         expect(result, isNull);
         await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
         await tester.pumpAndSettle();
-        expect(find.byKey(const ValueKey('super-text-preview')), findsNothing);
+        expect(find.byKey(const ValueKey('super-value-preview')), findsNothing);
         expect(
           tester.widget<TextFormField>(field).controller!.text,
           'Preview draft',
@@ -600,7 +600,7 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('style-dense-toggle')));
         await tester.pumpAndSettle();
         expect(
-          find.byKey(const ValueKey('super-text-preview')),
+          find.byKey(const ValueKey('super-value-preview')),
           findsOneWidget,
         );
         expect(tester.takeException(), isNull);
@@ -614,12 +614,12 @@ void main() {
   testWidgets(
     'text palette and inherited color update only the draft preview',
     (tester) async {
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       await tester.pumpWidget(
         host(
           Builder(
             builder: (context) => TextButton(
-              onPressed: () async => result = await showSuperTextEditor(
+              onPressed: () async => result = await showSuperValueEditor(
                 context: context,
                 config: initial.copyWith(color: Colors.red),
                 availableFontFamilies: [],
@@ -631,19 +631,19 @@ void main() {
       );
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
-      final color = find.byKey(const ValueKey('super-text-setting-color'));
+      final color = find.byKey(const ValueKey('super-value-setting-color'));
       await tester.ensureVisible(color);
       await tester.enterText(color, 'ff0000ff');
       await tester.pumpAndSettle();
       final preview = find.descendant(
-        of: find.byKey(const ValueKey('super-text-preview')),
+        of: find.byKey(const ValueKey('super-value-preview')),
         matching: find.text('Initial'),
       );
       expect(
         tester.widget<Text>(preview).style!.color,
         const Color(0xFF0000FF),
       );
-      final reset = find.byKey(const ValueKey('super-text-inherit-color'));
+      final reset = find.byKey(const ValueKey('super-value-inherit-color'));
       await tester.ensureVisible(reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
@@ -657,7 +657,7 @@ void main() {
 
   test('appearance codecs transfer reset and subtype preserve text design', () {
     const codec = DefaultAppearanceCodec();
-    const styled = SuperTextConfig(
+    const styled = SuperValueConfig(
       initialText: 'Initial',
       field: SuperTextFieldConfig(
         variant: TextFieldVariant.filled,
@@ -667,15 +667,15 @@ void main() {
       ),
     );
     final appearance = DefaultAppearance(cardWidth: 222)
-        .withTextComponent('title', styled);
+        .withValueComponent('title', styled);
     expect(appearance.cardWidth, 222);
     final decoded = codec.decode(codec.encode(appearance)) as DefaultAppearance;
-    expect(decoded.textComponents, {'title': styled});
+    expect(decoded.valueComponents, {'title': styled});
     expect(decoded.cardWidth, 222);
-    expect(decoded.copyWith(spacing: 20).textComponents, {'title': styled});
-    expect(decoded.resetLayouts().textComponents, isEmpty);
-    final legacy = codec.toJson(appearance)..remove('textComponents');
-    expect(codec.fromJson(legacy).textComponents, isEmpty);
+    expect(decoded.copyWith(spacing: 20).valueComponents, {'title': styled});
+    expect(decoded.resetLayouts().valueComponents, isEmpty);
+    final legacy = codec.toJson(appearance)..remove('valueComponents');
+    expect(codec.fromJson(legacy).valueComponents, isEmpty);
     final exported = AppearanceTransfer.export(appearance, {
       TransferGroup.layouts,
     }, codec: codec);
@@ -685,13 +685,13 @@ void main() {
       {TransferGroup.layouts},
       codec: codec,
     ) as DefaultAppearance;
-    expect(imported.textComponents, {'title': styled});
+    expect(imported.valueComponents, {'title': styled});
     expect(imported.cardWidth, 240);
     final styles = AppearanceTransfer.export(appearance, {
       TransferGroup.styles,
     }, codec: codec);
-    expect(jsonDecode(styles)['data'].containsKey('textComponents'), isFalse);
-    final invalid = codec.toJson(appearance)..['textComponents'] = {'a': 'bad'};
+    expect(jsonDecode(styles)['data'].containsKey('valueComponents'), isFalse);
+    final invalid = codec.toJson(appearance)..['valueComponents'] = {'a': 'bad'};
     expect(() => codec.fromJson(invalid), throwsFormatException);
   });
 
@@ -706,11 +706,11 @@ void main() {
         editMode: edit,
       );
       registry.bindAppearance(appearance);
-      final a = registry.textController('a', fallback: initial);
-      final b = registry.textController('b');
+      final a = registry.valueController('a', fallback: initial);
+      final b = registry.valueController('b');
       a.value = input;
-      expect(appearance.value.textComponents['a'], input);
-      expect(b.value, const SuperTextConfig());
+      expect(appearance.value.valueComponents['a'], input);
+      expect(b.value, const SuperValueConfig());
       history.undo();
       expect(a.value, initial);
       history.redo();
@@ -719,21 +719,21 @@ void main() {
       expect(a.value, initial);
       registry.unbindAppearance();
       a.value = input;
-      expect(appearance.value.textComponents, isEmpty);
+      expect(appearance.value.valueComponents, isEmpty);
       final second = ValueNotifier<Appearance>(
-        Appearance(textComponents: {'a': initial}),
+        Appearance(valueComponents: {'a': initial}),
       );
       registry.bindAppearance(second);
       expect(a.value, initial);
-      expect(registry.registry['Text']!.tags, {'text', 'input'});
-      final firstWidget = registry.registry['Text']!.getWidget(
+      expect(registry.registry['Value']!.tags, {'text', 'input'});
+      final firstWidget = registry.registry['Value']!.getWidget(
         XuiBuildCtx(id: 'x'),
       );
-      final secondWidget = registry.registry['Text']!.getWidget(
+      final secondWidget = registry.registry['Value']!.getWidget(
         XuiBuildCtx(id: 'y'),
       );
-      expect((firstWidget as SuperText).id, 'x');
-      expect((secondWidget as SuperText).id, 'y');
+      expect((firstWidget as SuperValue).id, 'x');
+      expect((secondWidget as SuperValue).id, 'y');
       registry.unbindAppearance();
       history.dispose();
       appearance.dispose();
@@ -746,8 +746,8 @@ void main() {
     'local input initializes once resets on mode and initial changes only',
     (tester) async {
       final events = <String>[];
-      Widget text(SuperTextConfig config) =>
-          host(SuperText(id: 'local', config: config, onChanged: events.add));
+      Widget text(SuperValueConfig config) =>
+          host(SuperValue(id: 'local', config: config, onChanged: events.add));
       await tester.pumpWidget(text(input));
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
@@ -781,9 +781,9 @@ void main() {
       final first = TextEditingController(text: 'Application');
       final second = TextEditingController(text: 'Autre');
       final events = <String>[];
-      Widget text(TextEditingController controller, SuperTextConfig config) =>
+      Widget text(TextEditingController controller, SuperValueConfig config) =>
           host(
-            SuperText(
+            SuperValue(
               id: 'bound',
               controller: controller,
               config: config,
@@ -825,7 +825,7 @@ void main() {
           StatefulBuilder(
             builder: (_, setState) {
               update = setState;
-              return SuperText(
+              return SuperValue(
                 id: 'controlled',
                 config: config,
                 value: value,
@@ -861,9 +861,9 @@ void main() {
       final events = <String>[];
       await tester.pumpWidget(
         host(
-          SuperText(
+          SuperValue(
             id: 'password',
-            config: const SuperTextConfig(obscureText: true),
+            config: const SuperValueConfig(obscureText: true),
             controller: controller,
             onChanged: events.add,
           ),
@@ -874,7 +874,7 @@ void main() {
       expect(
         tester
             .getSemantics(
-              find.byKey(const ValueKey('super-text-display-password')),
+              find.byKey(const ValueKey('super-value-display-password')),
             )
             .getSemanticsData()
             .label,
@@ -883,10 +883,10 @@ void main() {
       expect(events, isEmpty);
       await tester.pumpWidget(
         host(
-          SuperText(
+          SuperValue(
             id: 'password',
-            config: const SuperTextConfig(
-              mode: SuperTextMode.input,
+            config: const SuperValueConfig(
+              mode: SuperValueMode.input,
               obscureText: true,
             ),
             controller: controller,
@@ -903,9 +903,9 @@ void main() {
       );
       await tester.pumpWidget(
         host(
-          SuperText(
+          SuperValue(
             id: 'password',
-            config: const SuperTextConfig(mode: SuperTextMode.input),
+            config: const SuperValueConfig(mode: SuperValueMode.input),
             controller: controller,
           ),
         ),
@@ -913,10 +913,10 @@ void main() {
       controller.text = 'New secret';
       await tester.pumpWidget(
         host(
-          SuperText(
+          SuperValue(
             id: 'password',
-            config: const SuperTextConfig(
-              mode: SuperTextMode.input,
+            config: const SuperValueConfig(
+              mode: SuperValueMode.input,
               obscureText: true,
             ),
             controller: controller,
@@ -937,8 +937,8 @@ void main() {
     tester,
   ) async {
     final events = <String>[];
-    Widget text(SuperTextConfig config) => host(
-      SuperText(
+    Widget text(SuperValueConfig config) => host(
+      SuperValue(
         id: 'fixed',
         config: config,
         value: 'Fixed',
@@ -967,13 +967,13 @@ void main() {
         host(
           StyleEditScope(
             controller: edit,
-            child: const SuperText(id: 'menu-mode', config: input),
+            child: const SuperValue(id: 'menu-mode', config: input),
           ),
         ),
       );
       await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('style-menu-Texte')), findsOneWidget);
+      expect(find.byKey(const ValueKey('style-menu-Valeur')), findsOneWidget);
       expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
       final field = tester.widget<TextField>(find.byType(TextField));
       expect(field.contextMenuBuilder, isNull);
@@ -985,7 +985,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('style-menu-Texte')), findsNothing);
+      expect(find.byKey(const ValueKey('style-menu-Valeur')), findsNothing);
       expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
       expect(
         tester.widget<TextField>(find.byType(TextField)).contextMenuBuilder,
@@ -996,7 +996,7 @@ void main() {
       expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
       await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('style-menu-Texte')), findsOneWidget);
+      expect(find.byKey(const ValueKey('style-menu-Valeur')), findsOneWidget);
       expect(find.byType(AdaptiveTextSelectionToolbar), findsNothing);
       await tester.pumpWidget(const SizedBox());
       expect(tester.takeException(), isNull);
@@ -1011,13 +1011,13 @@ void main() {
       host(
         StyleEditScope(
           controller: edit,
-          child: const SuperText(id: 'runtime', config: input),
+          child: const SuperValue(id: 'runtime', config: input),
         ),
       ),
     );
     await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('style-menu-Texte')), findsNothing);
+    expect(find.byKey(const ValueKey('style-menu-Valeur')), findsNothing);
     expect(find.byType(AdaptiveTextSelectionToolbar), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     edit.dispose();
@@ -1031,12 +1031,12 @@ void main() {
         MaterialApp(
           home: Scaffold(
             appBar: AppBar(
-              actions: [SuperText(id: 'action', config: config)],
+              actions: [SuperValue(id: 'action', config: config)],
             ),
             bottomNavigationBar: SizedBox(
               height: 56,
               child: Row(
-                children: [SuperText(id: 'bottom', config: config)],
+                children: [SuperValue(id: 'bottom', config: config)],
               ),
             ),
           ),
@@ -1055,7 +1055,7 @@ void main() {
         host(
           StyleEditScope(
             controller: edit,
-            child: SuperText(
+            child: SuperValue(
               id: 'style',
               config: input.copyWith(
                 label: 'Nom',
@@ -1090,7 +1090,7 @@ void main() {
       expect(field.style!.letterSpacing, 2);
       expect(field.textAlign, TextAlign.end);
       expect(
-        find.byKey(const ValueKey('super-text-font-warning-style')),
+        find.byKey(const ValueKey('super-value-font-warning-style')),
         findsOneWidget,
       );
       await tester.pumpWidget(const SizedBox());
@@ -1106,11 +1106,11 @@ void main() {
         baseOffset: 1,
         extentOffset: 4,
       );
-      final configs = <SuperTextConfig>[];
+      final configs = <SuperValueConfig>[];
       final events = <String>[];
       await tester.pumpWidget(
         host(
-          SuperText(
+          SuperValue(
             id: 'editor',
             config: initial,
             controller: controller,
@@ -1121,24 +1121,24 @@ void main() {
       );
       Future<void> open() async {
         await tester.tap(
-          find.byKey(const ValueKey('super-text-display-editor')),
+          find.byKey(const ValueKey('super-value-display-editor')),
           buttons: kSecondaryMouseButton,
         );
         await tester.pumpAndSettle();
         expect(
           find.descendant(
-            of: find.byKey(const ValueKey('style-menu-Texte')),
-            matching: find.text('Text'),
+            of: find.byKey(const ValueKey('style-menu-Valeur')),
+            matching: find.text('Value'),
           ),
           findsOneWidget,
         );
-        await tester.tap(find.byKey(const ValueKey('style-menu-Texte')));
+        await tester.tap(find.byKey(const ValueKey('style-menu-Valeur')));
         await tester.pumpAndSettle();
       }
 
       await open();
       await tester.enterText(
-        find.byKey(const ValueKey('super-text-setting-initialText')),
+        find.byKey(const ValueKey('super-value-setting-initialText')),
         'Draft',
       );
       await tester.pumpAndSettle();
@@ -1146,7 +1146,7 @@ void main() {
       expect(
         tester
             .widget<Text>(
-              find.byKey(const ValueKey('super-text-display-editor')),
+              find.byKey(const ValueKey('super-value-display-editor')),
             )
             .data,
         'Draft',
@@ -1167,7 +1167,7 @@ void main() {
       expect(
         tester
             .widget<Text>(
-              find.byKey(const ValueKey('super-text-display-editor')),
+              find.byKey(const ValueKey('super-value-display-editor')),
             )
             .data,
         'Runtime',
@@ -1176,7 +1176,7 @@ void main() {
       expect(events, isEmpty);
       await open();
       await tester.enterText(
-        find.byKey(const ValueKey('super-text-setting-label')),
+        find.byKey(const ValueKey('super-value-setting-label')),
         'Temporary label',
       );
       await tester.pumpAndSettle();
@@ -1185,7 +1185,7 @@ void main() {
             .widget<InputDecorator>(
               find
                   .descendant(
-                    of: find.byType(SuperText),
+                    of: find.byType(SuperValue),
                     matching: find.byType(InputDecorator),
                   )
                   .first,
@@ -1196,12 +1196,12 @@ void main() {
       );
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('super-text-settings')), findsNothing);
+      expect(find.byKey(const ValueKey('super-value-settings')), findsNothing);
       expect(controller.text, 'Runtime');
       expect(configs, isEmpty);
       await open();
       await tester.enterText(
-        find.byKey(const ValueKey('super-text-setting-initialText')),
+        find.byKey(const ValueKey('super-value-setting-initialText')),
         'Applied',
       );
       await tester.tap(find.text('Appliquer'));
@@ -1221,21 +1221,21 @@ void main() {
       final events = <String>[];
       await tester.pumpWidget(
         host(
-          SuperText(
+          SuperValue(
             id: 'live-password',
             controller: controller,
             onChanged: events.add,
-            config: const SuperTextConfig(
-              mode: SuperTextMode.input,
+            config: const SuperValueConfig(
+              mode: SuperValueMode.input,
               obscureText: true,
             ),
           ),
         ),
       );
-      final live = find.byKey(const ValueKey('super-text-input-live-password'));
+      final live = find.byKey(const ValueKey('super-value-input-live-password'));
       await tester.tap(live, buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-menu-Texte')));
+      await tester.tap(find.byKey(const ValueKey('style-menu-Valeur')));
       await tester.pumpAndSettle();
       final radius = find.byKey(const ValueKey('text-field-setting-radius'));
       await tester.ensureVisible(radius);
@@ -1258,12 +1258,12 @@ void main() {
   testWidgets(
     'dialog password clears defaults and validates numeric typography',
     (tester) async {
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       await tester.pumpWidget(
         host(
           Builder(
             builder: (context) => TextButton(
-              onPressed: () async => result = await showSuperTextEditor(
+              onPressed: () async => result = await showSuperValueEditor(
                 context: context,
                 config: initial.copyWith(minLines: 2, maxLines: 3),
                 availableFontFamilies: ['Roboto'],
@@ -1276,17 +1276,17 @@ void main() {
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(
-        find.byKey(const ValueKey('super-text-setting-obscureText')),
+        find.byKey(const ValueKey('super-value-setting-obscureText')),
       );
       await tester.tap(
-        find.byKey(const ValueKey('super-text-setting-obscureText')),
+        find.byKey(const ValueKey('super-value-setting-obscureText')),
       );
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('super-text-setting-initialText')),
+        find.byKey(const ValueKey('super-value-setting-initialText')),
         findsNothing,
       );
-      final size = find.byKey(const ValueKey('super-text-setting-fontSize'));
+      final size = find.byKey(const ValueKey('super-value-setting-fontSize'));
       await tester.ensureVisible(size);
       await tester.enterText(size, '-4');
       await tester.tap(find.text('Appliquer'));
@@ -1304,4 +1304,128 @@ void main() {
       expect(result!.toJson().containsKey('initialText'), isFalse);
     },
   );
+
+  test('boolean kinds round trip and reject obscureText', () {
+    for (final kind in [
+      SuperValueKind.checkbox,
+      SuperValueKind.switchControl,
+    ]) {
+      final config = SuperValueConfig(
+        mode: SuperValueMode.input,
+        kind: kind,
+        initialBool: true,
+        label: 'Actif',
+      );
+      final decoded = SuperValueConfig.fromJson(
+        jsonDecode(jsonEncode(config.toJson())),
+      );
+      expect(decoded, config);
+      expect(decoded.hashCode, config.hashCode);
+      expect(
+        () => SuperValueConfig(kind: kind, obscureText: true).validate(),
+        throwsArgumentError,
+      );
+    }
+    expect(
+      SuperValueConfig.fromJson({'kind': 'switch'}).kind,
+      SuperValueKind.switchControl,
+    );
+    expect(
+      () => SuperValueConfig.fromJson({'kind': 'invalid'}),
+      throwsFormatException,
+    );
+  });
+
+  testWidgets('checkbox and switch render and toggle in input mode only', (
+    tester,
+  ) async {
+    final boolEvents = <bool>[];
+    final textEvents = <String>[];
+    await tester.pumpWidget(
+      host(
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SuperValue(
+              id: 'cb',
+              config: const SuperValueConfig(
+                mode: SuperValueMode.input,
+                kind: SuperValueKind.checkbox,
+                initialBool: false,
+                label: 'Case',
+              ),
+              onBoolChanged: boolEvents.add,
+              onChanged: textEvents.add,
+            ),
+            const SuperValue(
+              id: 'sw-display',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                kind: SuperValueKind.switchControl,
+                initialBool: true,
+                label: 'Interrupteur',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    final cbFinder = find.byKey(const ValueKey('super-value-checkbox-cb'));
+    final swFinder = find.byKey(
+      const ValueKey('super-value-switch-sw-display'),
+    );
+    expect(tester.widget<Checkbox>(cbFinder).value, isFalse);
+    expect(tester.widget<Switch>(swFinder).value, isTrue);
+    expect(tester.widget<Switch>(swFinder).onChanged, isNull);
+
+    await tester.tap(cbFinder);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(cbFinder).value, isTrue);
+    expect(boolEvents, [true]);
+    expect(textEvents, ['true']);
+
+    await tester.tap(find.byKey(const ValueKey('super-value-label-cb')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Checkbox>(cbFinder).value, isFalse);
+    expect(boolEvents, [true, false]);
+    expect(textEvents, ['true', 'false']);
+  });
+
+  testWidgets('editor configures checkbox and switch with initialBool', (
+    tester,
+  ) async {
+    SuperValueConfig? result;
+    await tester.pumpWidget(
+      host(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () async => result = await showSuperValueEditor(
+              context: context,
+              config: initial,
+              availableFontFamilies: const [],
+            ),
+            child: const Text('Open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    final kindDropdown = find.byKey(const ValueKey('super-value-setting-kind'));
+    await tester.ensureVisible(kindDropdown);
+    await tester.tap(kindDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Case à cocher (Checkbox)').last);
+    await tester.pumpAndSettle();
+    final initBool = find.byKey(
+      const ValueKey('super-value-setting-initialBool'),
+    );
+    await tester.ensureVisible(initBool);
+    await tester.tap(initBool);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Appliquer'));
+    await tester.pumpAndSettle();
+    expect(result!.kind, SuperValueKind.checkbox);
+    expect(result!.initialBool, isTrue);
+  });
 }

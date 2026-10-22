@@ -2,9 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
-import 'super_text_config.dart';
+import 'super_value_config.dart';
 import '../widgets/components/super_list_view.dart';
-import '../widgets/components/super_text.dart';
+import '../widgets/components/super_value.dart';
 import '../widgets/super_layout/iterable_content.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
@@ -35,7 +35,7 @@ enum EditorConfigKind {
   style,
   nativeComponent,
   scaffoldPage,
-  text,
+  value,
   list,
 }
 
@@ -50,7 +50,7 @@ class EditorConfigRef {
     : kind = EditorConfigKind.nativeComponent;
   const EditorConfigRef.scaffoldPage(this.id)
     : kind = EditorConfigKind.scaffoldPage;
-  const EditorConfigRef.text(this.id) : kind = EditorConfigKind.text;
+  const EditorConfigRef.value(this.id) : kind = EditorConfigKind.value;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
 
   final EditorConfigKind kind;
@@ -70,7 +70,7 @@ class EditorConfigRef {
 /// Copies one persisted configuration of a duplicated instance.
 ///
 /// [value] is the source `SuperLayoutConfig`, `ContainerStyle`,
-/// `NativeComponentConfig`, `ScaffoldPageConfig`, `SuperTextConfig` or
+/// `NativeComponentConfig`, `ScaffoldPageConfig`, `SuperValueConfig` or
 /// `SuperListViewConfig`; the result must have the same type. [remap] returns
 /// the new ID of every instance/configuration ID owned by the duplicated graph
 /// and returns other IDs unchanged.
@@ -111,7 +111,9 @@ class ComponentDuplicationContract {
     EditorConfigRef.style(id),
     EditorConfigRef.nativeComponent(id),
   ];
-  static List<EditorConfigRef> _text(String id) => [EditorConfigRef.text(id)];
+  static List<EditorConfigRef> _value(String id) => [
+    EditorConfigRef.value(id),
+  ];
   static List<EditorConfigRef> _list(String id) => [
     EditorConfigRef.layout(id),
     EditorConfigRef.style(id),
@@ -131,7 +133,7 @@ class ComponentDuplicationContract {
   ];
 
   /// Contracts of the components installed by [Registry.bootstrap].
-  static const superText = ComponentDuplicationContract(ownedConfigs: _text);
+  static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _appBar,
   );
@@ -205,8 +207,8 @@ class Registry {
   bool _syncing = false;
   final Map<String, SuperLayoutConfig> _layoutDefaults = {};
   final Map<String, ContainerStyle> _styleDefaults = {};
-  final Map<String, ValueNotifier<SuperTextConfig>> textConfigById = {};
-  final Map<String, SuperTextConfig> _textDefaults = {};
+  final Map<String, ValueNotifier<SuperValueConfig>> valueConfigById = {};
+  final Map<String, SuperValueConfig> _valueDefaults = {};
   final Map<String, ValueNotifier<SuperListViewConfig>> listConfigById = {};
   final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
@@ -231,8 +233,8 @@ class Registry {
     for (final entry in nativeComponentConfigById.entries.toList()) {
       nativeComponentController(entry.key, fallback: entry.value.value);
     }
-    for (final entry in textConfigById.entries.toList()) {
-      textController(entry.key, fallback: entry.value.value);
+    for (final entry in valueConfigById.entries.toList()) {
+      valueController(entry.key, fallback: entry.value.value);
     }
     for (final entry in listConfigById.entries.toList()) {
       listController(entry.key, fallback: entry.value.value);
@@ -363,10 +365,10 @@ class Registry {
       for (final entry in nativeComponentConfigById.entries) {
         entry.value.value = _nativeValue(appearance, entry.key);
       }
-      for (final entry in textConfigById.entries) {
-        entry.value.value = appearance.textComponent(
+      for (final entry in valueConfigById.entries) {
+        entry.value.value = appearance.valueComponent(
           entry.key,
-          fallback: _textDefaults[entry.key]!,
+          fallback: _valueDefaults[entry.key]!,
         );
       }
       for (final entry in listConfigById.entries) {
@@ -397,23 +399,23 @@ class Registry {
     );
   }
 
-  ValueNotifier<SuperTextConfig> textController(
+  ValueNotifier<SuperValueConfig> valueController(
     String id, {
-    SuperTextConfig fallback = const SuperTextConfig(),
+    SuperValueConfig fallback = const SuperValueConfig(),
   }) {
     fallback.validate();
-    _textDefaults.putIfAbsent(id, () => fallback);
-    final notifier = textConfigById.putIfAbsent(
+    _valueDefaults.putIfAbsent(id, () => fallback);
+    final notifier = valueConfigById.putIfAbsent(
       id,
       () => ValueNotifier(
-        _appearance?.value.textComponent(id, fallback: fallback) ?? fallback,
+        _appearance?.value.valueComponent(id, fallback: fallback) ?? fallback,
       ),
     );
     if (_appearance != null && !_listeners.containsKey(notifier)) {
       void write() {
         notifier.value.validate();
         if (!_syncing) {
-          _appearance!.value = _appearance!.value.withTextComponent(
+          _appearance!.value = _appearance!.value.withValueComponent(
             id,
             notifier.value,
           );
@@ -506,13 +508,13 @@ class Registry {
   }
 
   void bootstrap({List<String> availableFontFamilies = const []}) {
-    registry['Text'] = ComponentBuilderDynamic(
+    registry['Value'] = ComponentBuilderDynamic(
       menuIcon: Icons.text_fields,
-      duplication: ComponentDuplicationContract.superText,
+      duplication: ComponentDuplicationContract.superValue,
       tags: const {'text', 'input'},
-      addConfigurator: superTextAddConfigurator(availableFontFamilies),
+      addConfigurator: superValueAddConfigurator(availableFontFamilies),
       dynamicBuilder: (ctx) =>
-          SuperText(id: ctx.id, availableFontFamilies: availableFontFamilies),
+          SuperValue(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
     registry['AppBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.web_asset,

@@ -8,7 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/editing/components/super_text_editor.dart';
+import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
 void main() {
   late Directory directory;
@@ -17,7 +17,7 @@ void main() {
 
   setUp(() async {
     StyleEditorPanel.preferredDense = false;
-    directory = await Directory.systemTemp.createTemp('super-text-repository-');
+    directory = await Directory.systemTemp.createTemp('super-value-repository-');
     store = JsonRepositoryStore(directory);
     await store.create('People');
     binding = JsonTextBinding(
@@ -76,7 +76,7 @@ void main() {
     );
   }
 
-  Finder input(String id) => find.byKey(ValueKey('super-text-input-$id'));
+  Finder input(String id) => find.byKey(ValueKey('super-value-input-$id'));
   String text(WidgetTester tester, String id) =>
       tester.widget<TextField>(input(id)).controller!.text;
 
@@ -86,9 +86,9 @@ void main() {
       var changes = 0;
       await mount(
         tester,
-        SuperText(
+        SuperValue(
           id: 'live',
-          config: SuperTextConfig(mode: SuperTextMode.input, binding: binding),
+          config: SuperValueConfig(mode: SuperValueMode.input, binding: binding),
           onChanged: (_) => changes++,
         ),
       );
@@ -100,7 +100,7 @@ void main() {
       );
       await real(
         tester,
-        () => tester.tap(find.byKey(const ValueKey('style-menu-Texte'))),
+        () => tester.tap(find.byKey(const ValueKey('style-menu-Valeur'))),
       );
       final radius = find.byKey(const ValueKey('text-field-setting-radius'));
       await tester.ensureVisible(radius);
@@ -115,7 +115,7 @@ void main() {
       await tester.enterText(radius, '-1');
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('super-text-live-error')),
+        find.byKey(const ValueKey('super-value-live-error')),
         findsOneWidget,
       );
       expect(
@@ -124,7 +124,7 @@ void main() {
             .borderRadius,
         BorderRadius.circular(23),
       );
-      final path = find.byKey(const ValueKey('super-text-repository-path'));
+      final path = find.byKey(const ValueKey('super-value-repository-path'));
       await tester.ensureVisible(path);
       await tester.enterText(path, 'client.other');
       await tester.pumpAndSettle();
@@ -148,17 +148,17 @@ void main() {
         tester,
         Column(
           children: [
-            SuperText(
+            SuperValue(
               id: 'input',
-              config: SuperTextConfig(
-                mode: SuperTextMode.input,
+              config: SuperValueConfig(
+                mode: SuperValueMode.input,
                 binding: binding,
               ),
               onChanged: (_) => changed++,
             ),
-            SuperText(
+            SuperValue(
               id: 'display',
-              config: SuperTextConfig(binding: binding),
+              config: SuperValueConfig(binding: binding),
             ),
             Builder(
               builder: (context) => TextButton(
@@ -218,8 +218,8 @@ void main() {
     'programmatic controller edits persist and mode changes do not reset data',
     (tester) async {
       final config = ValueNotifier(
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           initialText: 'Never written',
           binding: binding,
         ),
@@ -227,9 +227,9 @@ void main() {
       addTearDown(config.dispose);
       await mount(
         tester,
-        ValueListenableBuilder<SuperTextConfig>(
+        ValueListenableBuilder<SuperValueConfig>(
           valueListenable: config,
-          builder: (_, value, _) => SuperText(id: 'text', config: value),
+          builder: (_, value, _) => SuperValue(id: 'text', config: value),
         ),
       );
       final controller = tester.widget<TextField>(input('text')).controller!;
@@ -242,7 +242,7 @@ void main() {
       );
       await real(tester, () async {
         config.value = config.value.copyWith(
-          mode: SuperTextMode.display,
+          mode: SuperValueMode.display,
           initialText: 'Do not reset',
         );
       });
@@ -272,10 +272,10 @@ void main() {
     );
     await mount(
       tester,
-      SuperText(
+      SuperValue(
         id: 'missing',
-        config: SuperTextConfig(
-          mode: SuperTextMode.input,
+        config: SuperValueConfig(
+          mode: SuperValueMode.input,
           initialText: 'Fallback',
           binding: missing,
         ),
@@ -300,12 +300,12 @@ void main() {
   testWidgets('masked runtime data is saved only in the repository', (
     tester,
   ) async {
-    final config = SuperTextConfig(
-      mode: SuperTextMode.input,
+    final config = SuperValueConfig(
+      mode: SuperValueMode.input,
       obscureText: true,
       binding: binding,
     );
-    await mount(tester, SuperText(id: 'password', config: config));
+    await mount(tester, SuperValue(id: 'password', config: config));
     expect(tester.widget<TextField>(input('password')).obscureText, isTrue);
     await real(
       tester,
@@ -344,10 +344,10 @@ void main() {
                 child: SizedBox(
                   width: 400,
                   height: 200,
-                  child: SuperText(
+                  child: SuperValue(
                     id: 'app',
-                    config: SuperTextConfig(
-                      mode: SuperTextMode.input,
+                    config: SuperValueConfig(
+                      mode: SuperValueMode.input,
                       binding: binding,
                     ),
                   ),
@@ -367,26 +367,26 @@ void main() {
       await real(tester, () async {});
       expect(text(tester, 'app'), 'Alice');
       await real(tester, () async {
-        final design = registry.textController('app');
+        final design = registry.valueController('app');
         design.value = design.value.copyWith(fontSize: 16);
       });
-      final context = tester.element(find.byType(SuperText));
+      final context = tester.element(find.byType(SuperValue));
       StyleEditScope.controllerOf(context)!.value = true;
       await tester.pumpAndSettle();
       final history = EditorHistoryScope.controllerOf(context)!;
       await real(tester, () async {
-        final design = registry.textController('app');
+        final design = registry.valueController('app');
         design.value = design.value.copyWith(clearBinding: true);
       });
       expect(text(tester, 'app'), '');
       await real(tester, () async => history.undo());
       expect(text(tester, 'app'), 'Alice');
-      expect(registry.textController('app').value.binding, binding);
+      expect(registry.valueController('app').value.binding, binding);
       final appearance = AppearanceScope.controllerOf(context)!.value;
       final decoded = const AppearanceCodec().decode(
         const AppearanceCodec().encode(appearance),
       );
-      expect(decoded.textComponents['app']!.binding, binding);
+      expect(decoded.valueComponents['app']!.binding, binding);
       expect(tester.takeException(), isNull);
     },
   );
@@ -402,14 +402,14 @@ void main() {
         () => store.writeAttribute(other, 'Original', expectedValue: null),
       );
       final config = ValueNotifier(
-        SuperTextConfig(mode: SuperTextMode.input, binding: binding),
+        SuperValueConfig(mode: SuperValueMode.input, binding: binding),
       );
       addTearDown(config.dispose);
       await mount(
         tester,
-        ValueListenableBuilder<SuperTextConfig>(
+        ValueListenableBuilder<SuperValueConfig>(
           valueListenable: config,
-          builder: (_, value, _) => SuperText(id: 'switch', config: value),
+          builder: (_, value, _) => SuperValue(id: 'switch', config: value),
         ),
       );
       await real(tester, () async {
@@ -438,12 +438,12 @@ void main() {
         addTearDown(controller.dispose);
         await mount(
           tester,
-          SuperText(
+          SuperValue(
             id: 'external',
             controller: controlled ? null : controller,
             value: controlled ? 'External' : null,
-            config: SuperTextConfig(
-              mode: SuperTextMode.input,
+            config: SuperValueConfig(
+              mode: SuperValueMode.input,
               binding: binding,
             ),
           ),
@@ -474,10 +474,10 @@ void main() {
       });
       await mount(
         tester,
-        SuperText(
+        SuperValue(
           id: 'numeric',
-          config: SuperTextConfig(
-            mode: SuperTextMode.input,
+          config: SuperValueConfig(
+            mode: SuperValueMode.input,
             binding: binding,
             field: const SuperTextFieldConfig(errorText: 'Manual error'),
           ),
@@ -524,16 +524,16 @@ void main() {
 
   Future<void> editorHost(
     WidgetTester tester, {
-    SuperTextConfig config = const SuperTextConfig(),
+    SuperValueConfig config = const SuperValueConfig(),
     bool allowBinding = true,
     bool repositoryScopeAboveNavigator = true,
-    required ValueChanged<SuperTextConfig?> result,
+    required ValueChanged<SuperValueConfig?> result,
   }) => mount(
     tester,
     Builder(
       builder: (context) => TextButton(
         onPressed: () async => result(
-          await showSuperTextEditor(
+          await showSuperValueEditor(
             context: context,
             config: config,
             availableFontFamilies: const [],
@@ -550,14 +550,14 @@ void main() {
     'field styles and limits never rewrite repository values; clear does',
     (tester) async {
       final config = ValueNotifier(
-        SuperTextConfig(mode: SuperTextMode.input, binding: binding),
+        SuperValueConfig(mode: SuperValueMode.input, binding: binding),
       );
       addTearDown(config.dispose);
       await mount(
         tester,
-        ValueListenableBuilder<SuperTextConfig>(
+        ValueListenableBuilder<SuperValueConfig>(
           valueListenable: config,
-          builder: (_, value, _) => SuperText(id: 'decorated', config: value),
+          builder: (_, value, _) => SuperValue(id: 'decorated', config: value),
         ),
       );
       final original = await tester.runAsync(() => store.read('People'));
@@ -588,14 +588,14 @@ void main() {
   );
 
   Future<void> choose(WidgetTester tester) async {
-    final dropdown = find.byKey(const ValueKey('super-text-repository-null'));
+    final dropdown = find.byKey(const ValueKey('super-value-repository-null'));
     await real(tester, () => tester.ensureVisible(dropdown));
     await real(tester, () => tester.tap(dropdown));
     await real(
       tester,
       () => tester.tap(find.text('People (${binding.repositoryId})').last),
     );
-    final path = find.byKey(const ValueKey('super-text-repository-path'));
+    final path = find.byKey(const ValueKey('super-value-repository-path'));
     await real(tester, () => tester.ensureVisible(path));
     await tester.enterText(path, 'new.attribute');
     await tester.pump();
@@ -604,7 +604,7 @@ void main() {
   testWidgets(
     'editor selects stable ID and path; applying never creates an attribute',
     (tester) async {
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       final before = await tester.runAsync(() => store.read('People'));
       await editorHost(tester, result: (value) => result = value);
       await real(tester, () => tester.tap(find.text('Edit')));
@@ -625,19 +625,19 @@ void main() {
   testWidgets(
     'property binding icon opens shared selector and applies the chosen path',
     (tester) async {
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       await editorHost(
         tester,
-        config: const SuperTextConfig(label: 'Configured label'),
+        config: const SuperValueConfig(label: 'Configured label'),
         repositoryScopeAboveNavigator: false,
         result: (value) => result = value,
       );
       await real(tester, () => tester.tap(find.text('Edit')));
-      final bind = find.byKey(const ValueKey('super-text-bind-label'));
+      final bind = find.byKey(const ValueKey('super-value-bind-label'));
       await real(tester, () => tester.ensureVisible(bind));
       await real(tester, () => tester.tap(bind));
       final repository = find.byKey(
-        const ValueKey('super-text-property-label-repository'),
+        const ValueKey('super-value-property-label-repository'),
       );
       await real(tester, () => tester.tap(repository));
       await real(tester, () => tester.tap(find.text('People').last));
@@ -653,23 +653,23 @@ void main() {
         binding.repositoryId,
       );
       final path = find.byKey(
-        const ValueKey('super-text-property-label-repository-path'),
+        const ValueKey('super-value-property-label-repository-path'),
       );
       await real(tester, () => tester.ensureVisible(path));
       await real(tester, () => tester.enterText(path, 'client.name'));
       await real(
         tester,
         () => tester.tap(
-          find.byKey(const ValueKey('super-text-property-label-apply')),
+          find.byKey(const ValueKey('super-value-property-label-apply')),
         ),
       );
       expect(
-        find.byKey(const ValueKey('super-text-bind-label')),
+        find.byKey(const ValueKey('super-value-bind-label')),
         findsOneWidget,
       );
       await real(tester, () => tester.tap(find.text('Appliquer').last));
       expect(
-        result?.propertyBindings[SuperTextProperty.label],
+        result?.propertyBindings[SuperValueProperty.label],
         JsonTextBinding(
           repositoryId: binding.repositoryId,
           path: 'client.name',
@@ -693,38 +693,38 @@ void main() {
       final original = await tester.runAsync(() => store.read('People'));
       await mount(
         tester,
-        SuperText(
+        SuperValue(
           id: 'bound-style',
-          config: SuperTextConfig(
+          config: SuperValueConfig(
             binding: binding,
             label: 'Configured label',
             color: const Color(0xFFFF0000),
             propertyBindings: {
-              SuperTextProperty.label: JsonTextBinding(
+              SuperValueProperty.label: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.label',
               ),
-              SuperTextProperty.color: JsonTextBinding(
+              SuperValueProperty.color: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.color',
               ),
-              SuperTextProperty.fontSize: JsonTextBinding(
+              SuperValueProperty.fontSize: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.size',
               ),
-              SuperTextProperty.fontFamily: JsonTextBinding(
+              SuperValueProperty.fontFamily: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.font',
               ),
-              SuperTextProperty.fontWeight: JsonTextBinding(
+              SuperValueProperty.fontWeight: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.weight',
               ),
-              SuperTextProperty.italic: JsonTextBinding(
+              SuperValueProperty.italic: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.italic',
               ),
-              SuperTextProperty.textAlign: JsonTextBinding(
+              SuperValueProperty.textAlign: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.align',
               ),
@@ -734,7 +734,7 @@ void main() {
       );
       await real(tester, () async {});
       final display = tester.widget<Text>(
-        find.byKey(const ValueKey('super-text-display-bound-style')),
+        find.byKey(const ValueKey('super-value-display-bound-style')),
       );
       expect(display.style?.color, const Color(0xFF123456));
       expect(display.style?.fontSize, 24);
@@ -762,17 +762,17 @@ void main() {
       });
       await mount(
         tester,
-        SuperText(
+        SuperValue(
           id: 'refresh-style',
-          config: SuperTextConfig(
+          config: SuperValueConfig(
             label: 'Fallback label',
             color: const Color(0xFFFF0000),
             propertyBindings: {
-              SuperTextProperty.label: JsonTextBinding(
+              SuperValueProperty.label: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.label',
               ),
-              SuperTextProperty.color: JsonTextBinding(
+              SuperValueProperty.color: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.color',
               ),
@@ -785,7 +785,7 @@ void main() {
       InputDecorator decorator() =>
           tester.widget<InputDecorator>(find.byType(InputDecorator));
       Text display() => tester.widget<Text>(
-        find.byKey(const ValueKey('super-text-display-refresh-style')),
+        find.byKey(const ValueKey('super-value-display-refresh-style')),
       );
       expect(decorator().decoration.labelText, 'Person');
       expect(display().style?.color, const Color(0xFF123456));
@@ -840,12 +840,12 @@ void main() {
       final original = await tester.runAsync(() => store.read('People'));
       await mount(
         tester,
-        SuperText(
+        SuperValue(
           id: 'bad-style',
-          config: SuperTextConfig(
+          config: SuperValueConfig(
             color: const Color(0xFFFF0000),
             propertyBindings: {
-              SuperTextProperty.color: JsonTextBinding(
+              SuperValueProperty.color: JsonTextBinding(
                 repositoryId: binding.repositoryId,
                 path: 'client.color',
               ),
@@ -855,12 +855,12 @@ void main() {
       );
       await real(tester, () async {});
       final display = tester.widget<Text>(
-        find.byKey(const ValueKey('super-text-display-bad-style')),
+        find.byKey(const ValueKey('super-value-display-bad-style')),
       );
       expect(display.style?.color, const Color(0xFFFF0000));
       expect(
         find.byKey(
-          const ValueKey('super-text-property-binding-error-color-bad-style'),
+          const ValueKey('super-value-property-binding-error-color-bad-style'),
         ),
         findsOneWidget,
       );
@@ -885,12 +885,12 @@ void main() {
         JsonListScope(
           repositoryId: binding.repositoryId,
           indices: const [0],
-          child: SuperText(
+          child: SuperValue(
             id: 'inherited-style',
-            config: const SuperTextConfig(
+            config: const SuperValueConfig(
               label: 'Configured label',
               propertyBindings: {
-                SuperTextProperty.label: JsonTextBinding(
+                SuperValueProperty.label: JsonTextBinding(
                   path: 'clients[?].label',
                 ),
               },
@@ -903,7 +903,7 @@ void main() {
       expect(
         find.byKey(
           const ValueKey(
-            'super-text-property-binding-error-label-inherited-style',
+            'super-value-property-binding-error-label-inherited-style',
           ),
         ),
         findsNothing,
@@ -915,7 +915,7 @@ void main() {
   testWidgets(
     'editor cancel never changes the document or publishes a binding',
     (tester) async {
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       final before = await tester.runAsync(() => store.read('People'));
       await editorHost(tester, result: (value) => result = value);
       await real(tester, () => tester.tap(find.text('Edit')));
@@ -930,16 +930,99 @@ void main() {
   testWidgets(
     'masked binding warns about plaintext without previewing repository values',
     (tester) async {
-      final config = SuperTextConfig(obscureText: true, binding: binding);
+      final config = SuperValueConfig(obscureText: true, binding: binding);
       expect(jsonEncode(config.toJson()), isNot(contains('Alice')));
       await editorHost(tester, config: config, result: (_) {});
       await real(tester, () => tester.tap(find.text('Edit')));
       expect(
-        find.byKey(const ValueKey('super-text-repository-plaintext-warning')),
+        find.byKey(const ValueKey('super-value-repository-plaintext-warning')),
         findsOneWidget,
       );
       expect(find.text('Alice'), findsNothing);
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'checkbox and switch bind to JSON booleans and default missing attributes to false',
+    (tester) async {
+      final activeBinding = JsonTextBinding(
+        repositoryId: binding.repositoryId,
+        path: 'client.active',
+      );
+      final boolEvents = <bool>[];
+      await mount(
+        tester,
+        Column(
+          children: [
+            SuperValue(
+              id: 'cb',
+              config: SuperValueConfig(
+                mode: SuperValueMode.input,
+                kind: SuperValueKind.checkbox,
+                binding: activeBinding,
+              ),
+              onBoolChanged: boolEvents.add,
+            ),
+            SuperValue(
+              id: 'sw',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                kind: SuperValueKind.switchControl,
+                binding: activeBinding,
+              ),
+            ),
+          ],
+        ),
+      );
+      final cbFinder = find.byKey(const ValueKey('super-value-checkbox-cb'));
+      final swFinder = find.byKey(const ValueKey('super-value-switch-sw'));
+      expect(tester.widget<Checkbox>(cbFinder).value, isFalse);
+      expect(tester.widget<Switch>(swFinder).value, isFalse);
+      var doc =
+          jsonDecode((await tester.runAsync(() => store.read('People')))!)
+              as Map<String, dynamic>;
+      expect((doc['client'] as Map).containsKey('active'), isFalse);
+
+      await real(tester, () => tester.tap(cbFinder), save: true);
+      expect(tester.widget<Checkbox>(cbFinder).value, isTrue);
+      expect(tester.widget<Switch>(swFinder).value, isTrue);
+      expect(boolEvents, contains(true));
+      doc =
+          jsonDecode((await tester.runAsync(() => store.read('People')))!)
+              as Map<String, dynamic>;
+      expect((doc['client'] as Map)['active'], isTrue);
+
+      await real(tester, () => tester.tap(cbFinder), save: true);
+      expect(tester.widget<Checkbox>(cbFinder).value, isFalse);
+      expect(tester.widget<Switch>(swFinder).value, isFalse);
+      doc =
+          jsonDecode((await tester.runAsync(() => store.read('People')))!)
+              as Map<String, dynamic>;
+      expect((doc['client'] as Map)['active'], isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('boolean binding reports an error when JSON value is not a bool', (
+    tester,
+  ) async {
+    await mount(
+      tester,
+      SuperValue(
+        id: 'bad-bool',
+        config: SuperValueConfig(
+          mode: SuperValueMode.input,
+          kind: SuperValueKind.switchControl,
+          binding: binding,
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('super-value-binding-error-bad-bool')),
+      findsOneWidget,
+    );
+    expect(find.text('L’attribut lié doit être un booléen.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

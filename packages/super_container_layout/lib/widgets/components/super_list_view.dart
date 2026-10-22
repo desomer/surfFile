@@ -6,7 +6,7 @@
 /// 2. Clic droit sur la liste, *Liste* : choisissez le repository et le
 ///    chemin du tableau, par exemple `clients`.
 /// 3. Concevez la ligne : chaque ligne est un `SuperLayout` (« Ligne »)
-///    partagé par tous les éléments. Placez-y des `SuperText` liés à
+///    partagé par tous les éléments. Placez-y des `SuperValue` liés à
 ///    `clients[?].nom` avec le repository « Hérité de la liste englobante ».
 /// 4. Pour une sous-liste, placez une autre *SuperListView* dans la ligne,
 ///    liée à `clients[?].commandes` ; ses textes utilisent
@@ -43,9 +43,9 @@
 ///     BuilderSlot(
 ///       id: 'nom',
 ///       label: 'Nom',
-///       builder: (_) => const SuperText(
+///       builder: (_) => const SuperValue(
 ///         id: 'nom',
-///         config: SuperTextConfig(
+///         config: SuperValueConfig(
 ///           binding: JsonTextBinding(path: 'clients[?].nom'),
 ///         ),
 ///       ),

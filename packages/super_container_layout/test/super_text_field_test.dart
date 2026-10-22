@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/components/super_text_field.dart';
-import 'package:super_container_layout/widgets/editing/components/super_text_editor.dart';
+import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,10 +23,10 @@ void main() {
             body: SizedBox(
               width: 300,
               height: 80,
-              child: SuperText(
+              child: SuperValue(
                 id: 'native-menu',
-                config: SuperTextConfig(
-                  mode: SuperTextMode.input,
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
                   initialText: 'Selectable text',
                 ),
               ),
@@ -93,17 +93,17 @@ void main() {
       autocorrect: false,
       suggestions: false,
     );
-    const config = SuperTextConfig(mode: SuperTextMode.input, field: field);
-    final decoded = SuperTextConfig.fromJson(
+    const config = SuperValueConfig(mode: SuperValueMode.input, field: field);
+    final decoded = SuperValueConfig.fromJson(
       jsonDecode(jsonEncode(config.toJson())),
     );
     expect(decoded, config);
     expect(decoded.hashCode, config.hashCode);
     expect(
-      SuperTextConfig.fromJson(<String, dynamic>{}).field,
+      SuperValueConfig.fromJson(<String, dynamic>{}).field,
       const SuperTextFieldConfig(),
     );
-    expect(const SuperTextConfig().toJson().containsKey('field'), isFalse);
+    expect(const SuperValueConfig().toJson().containsKey('field'), isFalse);
     expect(
       config.copyWith(field: const SuperTextFieldConfig()).field,
       const SuperTextFieldConfig(),
@@ -139,13 +139,13 @@ void main() {
       expect(() => SuperTextFieldConfig.fromJson(json), throwsFormatException);
     }
     expect(
-      () => const SuperTextConfig(
+      () => const SuperValueConfig(
         field: SuperTextFieldConfig(action: TextFieldAction.newline),
       ).validate(),
       throwsFormatException,
     );
     expect(
-      () => const SuperTextConfig(
+      () => const SuperValueConfig(
         obscureText: true,
         field: SuperTextFieldConfig(keyboard: TextFieldKeyboard.multiline),
       ).validate(),
@@ -155,7 +155,7 @@ void main() {
 
   Future<void> mount(
     WidgetTester tester,
-    SuperTextConfig config, {
+    SuperValueConfig config, {
     TextEditingController? controller,
     ValueChanged<String>? onChanged,
     InputDecorationThemeData? theme,
@@ -167,7 +167,7 @@ void main() {
           body: Center(
             child: SizedBox(
               width: 400,
-              child: SuperText(
+              child: SuperValue(
                 id: 'field',
                 config: config,
                 controller: controller,
@@ -181,15 +181,15 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Finder getInput() => find.byKey(const ValueKey('super-text-input-field'));
+  Finder getInput() => find.byKey(const ValueKey('super-value-input-field'));
   TextField input(WidgetTester tester) => tester.widget<TextField>(getInput());
 
   for (final variant in TextFieldVariant.values) {
     testWidgets('$variant renders without changing display mode', (
       tester,
     ) async {
-      final config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      final config = SuperValueConfig(
+        mode: SuperValueMode.input,
         label: 'Name',
         field: SuperTextFieldConfig(variant: variant),
       );
@@ -211,7 +211,7 @@ void main() {
       }
       await mount(
         tester,
-        config.copyWith(mode: SuperTextMode.display, initialText: 'Display'),
+        config.copyWith(mode: SuperValueMode.display, initialText: 'Display'),
       );
       expect(find.byType(TextField), findsNothing);
       expect(find.text('Display'), findsOneWidget);
@@ -240,7 +240,7 @@ void main() {
     );
     await mount(
       tester,
-      const SuperTextConfig(mode: SuperTextMode.input),
+      const SuperValueConfig(mode: SuperValueMode.input),
       theme: theme,
     );
     expect(input(tester).decoration!.filled, isNull);
@@ -256,8 +256,8 @@ void main() {
     );
     await mount(
       tester,
-      const SuperTextConfig(
-        mode: SuperTextMode.input,
+      const SuperValueConfig(
+        mode: SuperValueMode.input,
         field: SuperTextFieldConfig(radius: 24),
       ),
       theme: theme,
@@ -289,7 +289,7 @@ void main() {
     );
     await mount(
       tester,
-      const SuperTextConfig(mode: SuperTextMode.input, field: field),
+      const SuperValueConfig(mode: SuperValueMode.input, field: field),
     );
     final decoration = input(tester).decoration!;
     expect(decoration.enabledBorder!.borderSide.color, Colors.black);
@@ -329,8 +329,8 @@ void main() {
       var changes = 0;
       final controller = TextEditingController(text: 'Value');
       addTearDown(controller.dispose);
-      const config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      const config = SuperValueConfig(
+        mode: SuperValueMode.input,
         field: SuperTextFieldConfig(suffix: TextFieldSuffix.clear),
       );
       await mount(
@@ -378,12 +378,12 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: SuperText(
+            body: SuperValue(
               id: 'controlled',
               value: 'Owned by parent',
               onChanged: (_) => changes++,
-              config: const SuperTextConfig(
-                mode: SuperTextMode.input,
+              config: const SuperValueConfig(
+                mode: SuperValueMode.input,
                 field: SuperTextFieldConfig(suffix: TextFieldSuffix.clear),
               ),
             ),
@@ -401,8 +401,8 @@ void main() {
   testWidgets('password visibility is local and never re-enables suggestions', (
     tester,
   ) async {
-    const config = SuperTextConfig(
-      mode: SuperTextMode.input,
+    const config = SuperValueConfig(
+      mode: SuperValueMode.input,
       obscureText: true,
       field: SuperTextFieldConfig(suffix: TextFieldSuffix.visibility),
     );
@@ -426,8 +426,8 @@ void main() {
     (tester) async {
       final controller = TextEditingController(text: 'Programmatic content');
       addTearDown(controller.dispose);
-      const config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      const config = SuperValueConfig(
+        mode: SuperValueMode.input,
         field: SuperTextFieldConfig(
           filter: TextFieldFilter.digits,
           maxLength: 3,
@@ -450,8 +450,8 @@ void main() {
   testWidgets(
     'maxLength counts graphemes and counter can be hidden or unlimited',
     (tester) async {
-      const config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      const config = SuperValueConfig(
+        mode: SuperValueMode.input,
         field: SuperTextFieldConfig(maxLength: 2, showCounter: true),
       );
       await mount(tester, config);
@@ -530,8 +530,8 @@ void main() {
     (tester) async {
       await mount(
         tester,
-        const SuperTextConfig(
-          mode: SuperTextMode.input,
+        const SuperValueConfig(
+          mode: SuperValueMode.input,
           maxLines: 4,
           field: SuperTextFieldConfig(
             keyboard: TextFieldKeyboard.multiline,
@@ -573,16 +573,16 @@ void main() {
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(1280, 1000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
-      SuperTextConfig? result;
+      SuperValueConfig? result;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
             body: Builder(
               builder: (context) => TextButton(
-                onPressed: () async => result = await showSuperTextEditor(
+                onPressed: () async => result = await showSuperValueEditor(
                   context: context,
-                  config: const SuperTextConfig(
-                    mode: SuperTextMode.input,
+                  config: const SuperValueConfig(
+                    mode: SuperValueMode.input,
                     initialText: 'Draft',
                   ),
                   availableFontFamilies: const [],
@@ -599,15 +599,15 @@ void main() {
       final panel = tester.widget<StyleEditorPanel>(
         find.byType(StyleEditorPanel),
       );
-      expect(panel.sections.first.id, 'text-states');
+      expect(panel.sections.first.id, 'value-states');
       expect(panel.sections.map((section) => section.id), [
-        'text-states',
-        'text-repository',
-        'text-content',
-        'text-behavior',
-        'text-typography',
-        'text-color',
-        'text-spacing',
+        'value-states',
+        'value-repository',
+        'value-content',
+        'value-behavior',
+        'value-typography',
+        'value-color',
+        'value-spacing',
         'text-field-style',
         'text-field-colors',
         'text-field-ornaments',
@@ -634,7 +634,7 @@ void main() {
       await tester.tap(find.text('Outlined').last);
       await tester.pumpAndSettle();
       final preview = find.descendant(
-        of: find.byKey(const ValueKey('super-text-preview')),
+        of: find.byKey(const ValueKey('super-value-preview')),
         matching: find.byType(TextField),
       );
       expect(
@@ -654,15 +654,15 @@ void main() {
     StyleEditorPanel.preferredDense = false;
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    SuperTextConfig? result;
+    SuperValueConfig? result;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
-              onPressed: () async => result = await showSuperTextEditor(
+              onPressed: () async => result = await showSuperValueEditor(
                 context: context,
-                config: const SuperTextConfig(mode: SuperTextMode.input),
+                config: const SuperValueConfig(mode: SuperValueMode.input),
                 availableFontFamilies: const [],
               ),
               child: const Text('Open'),
@@ -716,15 +716,15 @@ void main() {
     StyleEditorPanel.preferredDense = false;
     await tester.binding.setSurfaceSize(const Size(1280, 1000));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    SuperTextConfig? result;
+    SuperValueConfig? result;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
-              onPressed: () async => result = await showSuperTextEditor(
+              onPressed: () async => result = await showSuperValueEditor(
                 context: context,
-                config: const SuperTextConfig(),
+                config: const SuperValueConfig(),
                 availableFontFamilies: const [],
               ),
               child: const Text('Open'),
@@ -740,29 +740,29 @@ void main() {
       final panel = tester.widget<StyleEditorPanel>(
         find.byType(StyleEditorPanel),
       );
-      expect(panel.sections.first.id, 'text-states');
+      expect(panel.sections.first.id, 'value-states');
       expect(
         panel.sections.where((section) => section.id.startsWith('text-field-')),
         hasLength(input ? 6 : 0),
       );
       for (final key in ['readOnly', 'enabled', 'minLines']) {
         expect(
-          find.byKey(ValueKey('super-text-setting-$key')),
+          find.byKey(ValueKey('super-value-setting-$key')),
           input ? findsOneWidget : findsNothing,
         );
       }
       expect(
-        find.byKey(const ValueKey('super-text-setting-maxLines')),
+        find.byKey(const ValueKey('super-value-setting-maxLines')),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('super-text-setting-obscureText')),
+        find.byKey(const ValueKey('super-value-setting-obscureText')),
         findsOneWidget,
       );
     }
 
     Future<void> mode(String label) async {
-      final field = find.byKey(const ValueKey('super-text-setting-mode'));
+      final field = find.byKey(const ValueKey('super-value-setting-mode'));
       await tester.ensureVisible(field);
       await tester.pumpAndSettle();
       await tester.tap(field);
@@ -790,7 +790,7 @@ void main() {
     checkMode(false);
     await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();
-    expect(result!.mode, SuperTextMode.display);
+    expect(result!.mode, SuperValueMode.display);
     expect(result!.field.radius, 18);
     expect(tester.takeException(), isNull);
   });
@@ -804,9 +804,9 @@ void main() {
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
-              onPressed: () => showSuperTextEditor(
+              onPressed: () => showSuperValueEditor(
                 context: context,
-                config: const SuperTextConfig(),
+                config: const SuperValueConfig(),
                 availableFontFamilies: const [],
               ),
               child: const Text('Open'),
@@ -818,7 +818,7 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pumpAndSettle();
     final initial = find.byKey(
-      const ValueKey('super-text-setting-initialText'),
+      const ValueKey('super-value-setting-initialText'),
     );
     await tester.ensureVisible(initial);
     await tester.enterText(initial, 'Preview draft');
@@ -830,7 +830,7 @@ void main() {
     final panel = tester.widget<StyleEditorPanel>(
       find.byType(StyleEditorPanel),
     );
-    expect(panel.sections.first.id, 'text-states');
+    expect(panel.sections.first.id, 'value-states');
     for (final section in panel.sections) {
       await tester.ensureVisible(
         find.byKey(ValueKey('style-card-${section.id}')),

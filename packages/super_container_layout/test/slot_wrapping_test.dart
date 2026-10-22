@@ -72,7 +72,7 @@ void main() {
             ? aliased
                   ? 'template'
                   : sourceId
-            : 'factory:Text');
+            : 'factory:Value');
     final suppliedSlots = [
       if (provided)
         if (aliased)
@@ -190,9 +190,9 @@ void main() {
       nativeComponents: owner == 'native' || owner == 'surface'
           ? {'root': native}
           : const {},
-      textComponents: provided
+      valueComponents: provided
           ? const {}
-          : {sourceId: const SuperTextConfig(initialText: 'Saved target')},
+          : {sourceId: const SuperValueConfig(initialText: 'Saved target')},
     );
     await tester.pumpAndSettle();
     StyleEditScope.controllerOf(context)!.value = editing;
@@ -203,7 +203,7 @@ void main() {
 
   Future<void> openMenu(WidgetTester tester, bool provided) async {
     await tester.tap(
-      provided ? find.text('Provided target') : find.byType(SuperText),
+      provided ? find.text('Provided target') : find.byType(SuperValue),
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
@@ -275,10 +275,10 @@ void main() {
               expect(after.layouts[id]!.slotLabels[sourceId], 'My child');
             }
             expect(
-              provided ? find.text('Provided target') : find.byType(SuperText),
+              provided ? find.text('Provided target') : find.byType(SuperValue),
               findsOneWidget,
             );
-            expect(after.textComponents, before.textComponents);
+            expect(after.valueComponents, before.valueComponents);
             const codec = AppearanceCodec();
             final decoded = codec.fromJson(codec.toJson(after));
             expect(codec.toJson(decoded), codec.toJson(after));
@@ -290,7 +290,7 @@ void main() {
             expect(appearance.value, same(before));
             expect(history.canUndo, isFalse);
             expect(
-              provided ? find.text('Provided target') : find.byType(SuperText),
+              provided ? find.text('Provided target') : find.byType(SuperValue),
               findsOneWidget,
             );
             history.redo();
@@ -300,7 +300,7 @@ void main() {
             appearance.value = decoded;
             await tester.pumpAndSettle();
             expect(
-              provided ? find.text('Provided target') : find.byType(SuperText),
+              provided ? find.text('Provided target') : find.byType(SuperValue),
               findsOneWidget,
             );
             expect(tester.takeException(), isNull);
@@ -412,7 +412,7 @@ void main() {
             ? copy.nativeComponents[wrapper]!.slotsOf('child').single
             : copy.layouts[wrapper]!.placedSlotIds.single;
         expect(source, isNot('source'));
-        expect(copy.textComponents[source]!.initialText, 'Saved target');
+        expect(copy.valueComponents[source]!.initialText, 'Saved target');
         expect(tester.takeException(), isNull);
       },
     );
@@ -436,14 +436,14 @@ void main() {
       expect(appearance.value.layouts['root']!.placedSlotIds, isEmpty);
       expect(appearance.value.layouts.containsKey(wrapper), isFalse);
       expect(appearance.value.nativeComponents.containsKey(wrapper), isFalse);
-      expect(appearance.value.textComponents.containsKey('source'), isFalse);
+      expect(appearance.value.valueComponents.containsKey('source'), isFalse);
       final history = EditorHistoryScope.controllerOf(
         tester.element(find.byKey(hostKey)),
       )!;
       history.undo();
       await tester.pumpAndSettle();
       expect(appearance.value, same(before));
-      expect(find.byType(SuperText), findsOneWidget);
+      expect(find.byType(SuperValue), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

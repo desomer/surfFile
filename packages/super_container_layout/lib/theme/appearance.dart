@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
-import '../models/super_text_config.dart';
+import '../models/super_value_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'container_fill.dart';
@@ -24,7 +24,7 @@ class Appearance {
     Map<String, SuperLayoutConfig> layouts = const {},
     Map<String, ScaffoldPageConfig> scaffoldPages = const {},
     Map<String, NativeComponentConfig> nativeComponents = const {},
-    Map<String, SuperTextConfig> textComponents = const {},
+    Map<String, SuperValueConfig> valueComponents = const {},
     Map<String, SuperListViewConfig> listComponents = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
@@ -55,7 +55,7 @@ class Appearance {
        }),
        scaffoldPages = Map.unmodifiable(scaffoldPages),
        nativeComponents = Map.unmodifiable(nativeComponents),
-       textComponents = Map.unmodifiable(textComponents),
+       valueComponents = Map.unmodifiable(valueComponents),
        listComponents = Map.unmodifiable(listComponents);
 
   final ThemeMode mode;
@@ -67,18 +67,18 @@ class Appearance {
   final Map<String, SuperLayoutConfig> layouts;
   final Map<String, ScaffoldPageConfig> scaffoldPages;
   final Map<String, NativeComponentConfig> nativeComponents;
-  final Map<String, SuperTextConfig> textComponents;
+  final Map<String, SuperValueConfig> valueComponents;
   final Map<String, SuperListViewConfig> listComponents;
   final EditorPageCatalog pageCatalog;
 
-  SuperTextConfig textComponent(
+  SuperValueConfig valueComponent(
     String id, {
-    SuperTextConfig fallback = const SuperTextConfig(),
-  }) => textComponents[id] ?? fallback;
+    SuperValueConfig fallback = const SuperValueConfig(),
+  }) => valueComponents[id] ?? fallback;
 
-  Appearance withTextComponent(String id, SuperTextConfig value) {
+  Appearance withValueComponent(String id, SuperValueConfig value) {
     value.validate();
-    return copyWith(textComponents: {...textComponents, id: value});
+    return copyWith(valueComponents: {...valueComponents, id: value});
   }
 
   SuperListViewConfig listComponent(
@@ -149,7 +149,7 @@ class Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
-    Map<String, SuperTextConfig>? textComponents,
+    Map<String, SuperValueConfig>? valueComponents,
     Map<String, SuperListViewConfig>? listComponents,
     EditorPageCatalog? pageCatalog,
   }) => Appearance(
@@ -164,7 +164,7 @@ class Appearance {
     layouts: layouts ?? this.layouts,
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
-    textComponents: textComponents ?? this.textComponents,
+    valueComponents: valueComponents ?? this.valueComponents,
     listComponents: listComponents ?? this.listComponents,
     pageCatalog: pageCatalog ?? this.pageCatalog,
   );
@@ -194,7 +194,7 @@ class Appearance {
     layouts: const {},
     scaffoldPages: const {},
     nativeComponents: const {},
-    textComponents: const {},
+    valueComponents: const {},
     listComponents: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );

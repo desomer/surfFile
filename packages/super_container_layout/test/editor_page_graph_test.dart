@@ -4,7 +4,7 @@ import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:super_container_layout/models/native_component_config.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/models/super_text_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/automatic_state.dart';
@@ -46,9 +46,9 @@ Appearance _sample() => Appearance(
       },
       slotTypes: {
         'cont1': 'registry:Card',
-        'txt2': 'registry:Text',
+        'txt2': 'registry:Value',
         'nested': 'registry:Layout',
-        'hiddenTxt': 'registry:Text',
+        'hiddenTxt': 'registry:Value',
       },
       slotLabels: {'txt2': 'Titre'},
       slotPreferredSizes: {'cont1': Size(10, 20)},
@@ -69,7 +69,7 @@ Appearance _sample() => Appearance(
       placements: {
         SuperLayoutZone.center: ['txt3'],
       },
-      slotTypes: {'txt3': 'registry:Text'},
+      slotTypes: {'txt3': 'registry:Value'},
     ),
   },
   nativeComponents: {
@@ -88,7 +88,7 @@ Appearance _sample() => Appearance(
       slotTypes: {
         'bar1': 'factory:AppBar',
         'lay1': 'factory:Layout',
-        'txtHidden': 'factory:Text',
+        'txtHidden': 'factory:Value',
       },
       slotPreferredSizes: {'lay1': const Size(1, 2)},
     ),
@@ -96,12 +96,12 @@ Appearance _sample() => Appearance(
       placements: {
         'title': ['txt1'],
       },
-      slotTypes: {'txt1': 'factory:Text'},
+      slotTypes: {'txt1': 'factory:Value'},
     ),
   },
-  textComponents: {
+  valueComponents: {
     for (final id in ['txt1', 'txt2', 'txt3', 'hiddenTxt', 'txtHidden'])
-      id: SuperTextConfig(initialText: id),
+      id: SuperValueConfig(initialText: id),
   },
   pageCatalog: _catalog(['p1']),
 );
@@ -117,12 +117,12 @@ void main() {
               placements: {
                 'child': ['inside'],
               },
-              slotTypes: {'inside': 'factory:Text'},
+              slotTypes: {'inside': 'factory:Value'},
             ),
           )
-          .withTextComponent(
+          .withValueComponent(
             'inside',
-            const SuperTextConfig(initialText: 'Nested'),
+            const SuperValueConfig(initialText: 'Nested'),
           );
       final copy = EditorPageGraph.duplicate(
         appearance: source,
@@ -139,9 +139,9 @@ void main() {
       expect(child, isNot('inside'));
       expect(
         copy.nativeComponents[container]!.slotTypeOf(child),
-        'factory:Text',
+        'factory:Value',
       );
-      expect(copy.textComponents[child]!.initialText, 'Nested');
+      expect(copy.valueComponents[child]!.initialText, 'Nested');
       expect(copy.styles[container], source.styles['cont1']);
       expect(copy.nativeComponents['cont1'], source.nativeComponents['cont1']);
       final removed = EditorPageGraph.remove(
@@ -150,7 +150,7 @@ void main() {
         pageId: 'p1',
       );
       expect(removed.nativeComponents.containsKey('cont1'), isFalse);
-      expect(removed.textComponents.containsKey('inside'), isFalse);
+      expect(removed.valueComponents.containsKey('inside'), isFalse);
     },
   );
 
@@ -161,33 +161,33 @@ void main() {
         repositoryId: '0123456789abcdef0123456789abcdef',
         path: 'client.name',
       );
-      final source = _sample().withTextComponent(
+      final source = _sample().withValueComponent(
         'txt1',
-        SuperTextConfig(
+        SuperValueConfig(
           binding: binding,
-          states: TextConfigStates(
+          states: ValueConfigStates(
             binding: const JsonTextBinding(
               repositoryId: '0123456789abcdef0123456789abcdef',
               path: 'client.status',
             ),
-            named: {'ready': const SuperTextConfig(binding: binding)},
+            named: {'ready': const SuperValueConfig(binding: binding)},
             namedProperties: {
-              'ready': {TextStateProperty.binding},
+              'ready': {ValueStateProperty.binding},
             },
-            hover: TextConfigOverride(
-              config: const SuperTextConfig(fontSize: 20),
-              properties: {TextStateProperty.fontSize},
+            hover: ValueConfigOverride(
+              config: const SuperValueConfig(fontSize: 20),
+              properties: {ValueStateProperty.fontSize},
             ),
             automatic: {
-              AutomaticState.contentHover: TextConfigOverride(
-                config: const SuperTextConfig(binding: binding),
-                properties: {TextStateProperty.binding},
+              AutomaticState.contentHover: ValueConfigOverride(
+                config: const SuperValueConfig(binding: binding),
+                properties: {ValueStateProperty.binding},
               ),
             },
             order: [
-              TextConfigStates.hoverKey,
+              ValueConfigStates.hoverKey,
               'ready',
-              TextConfigStates.selectedKey,
+              ValueConfigStates.selectedKey,
               AutomaticState.contentHover.key,
             ],
           ),
@@ -204,21 +204,24 @@ void main() {
         targetPageId: 'p2',
         generateId: _ids(),
       );
-      final copies = result.textComponents.entries.where(
+      final copies = result.valueComponents.entries.where(
         (entry) => entry.key != 'txt1' && entry.value.binding != null,
       );
       expect(copies, hasLength(1));
       expect(copies.single.value.binding, binding);
-      expect(copies.single.value.field, source.textComponents['txt1']!.field);
-      expect(source.textComponents['txt1']!.binding, binding);
-      expect(copies.single.value.states, source.textComponents['txt1']!.states);
+      expect(copies.single.value.field, source.valueComponents['txt1']!.field);
+      expect(source.valueComponents['txt1']!.binding, binding);
+      expect(
+        copies.single.value.states,
+        source.valueComponents['txt1']!.states,
+      );
       final removed = EditorPageGraph.remove(
         appearance: result,
         registry: _registry(),
         pageId: 'p2',
       );
-      expect(removed.textComponents.containsKey(copies.single.key), isFalse);
-      expect(removed.textComponents['txt1'], source.textComponents['txt1']);
+      expect(removed.valueComponents.containsKey(copies.single.key), isFalse);
+      expect(removed.valueComponents['txt1'], source.valueComponents['txt1']);
     },
   );
 
@@ -249,14 +252,14 @@ void main() {
     for (final id in originals) {
       expect(result.nativeComponents[id], source.nativeComponents[id]);
       expect(result.layouts[id], source.layouts[id]);
-      expect(result.textComponents[id], source.textComponents[id]);
+      expect(result.valueComponents[id], source.valueComponents[id]);
     }
     expect(result.layouts['contA'], source.layouts['contA']);
     expect(result.styles['background'], source.styles['background']);
     expect(result.nativeComponents['root'], source.nativeComponents['root']);
     expect(result.layouts.length, source.layouts.length + 2);
     expect(result.nativeComponents.length, source.nativeComponents.length + 2);
-    expect(result.textComponents.length, source.textComponents.length + 5);
+    expect(result.valueComponents.length, source.valueComponents.length + 5);
     expect(result.styles.length, source.styles.length + 1);
 
     final page = result.nativeComponents['p2']!;
@@ -269,11 +272,11 @@ void main() {
     }
     expect(page.slotTypeOf(bar), 'factory:AppBar');
     expect(page.slotPreferredSizes, {lay: const Size(1, 2)});
-    expect(result.textComponents[hidden]!.initialText, 'txtHidden');
+    expect(result.valueComponents[hidden]!.initialText, 'txtHidden');
 
     final title = result.nativeComponents[bar]!.slotsOf('title').single;
     expect(originals, isNot(contains(title)));
-    expect(result.textComponents[title]!.initialText, 'txt1');
+    expect(result.valueComponents[title]!.initialText, 'txt1');
 
     final layout = result.layouts[lay]!;
     final [cont, txt, nested] = layout.placementsOf(SuperLayoutZone.center);
@@ -292,11 +295,11 @@ void main() {
     expect(layout.grid!.items.keys.toSet(), {cont, txt, nested});
     expect(layout.grid!.items[txt], const GridSlotPosition(y: 3));
     expect(result.styles[cont], const ContainerStyle(radius: 7));
-    expect(result.textComponents[txt]!.initialText, 'txt2');
-    expect(result.textComponents[hiddenTxt]!.initialText, 'hiddenTxt');
+    expect(result.valueComponents[txt]!.initialText, 'txt2');
+    expect(result.valueComponents[hiddenTxt]!.initialText, 'hiddenTxt');
     final txt3 = result.layouts[nested]!.placementsOf(SuperLayoutZone.center);
     expect(originals, isNot(contains(txt3.single)));
-    expect(result.textComponents[txt3.single]!.initialText, 'txt3');
+    expect(result.valueComponents[txt3.single]!.initialText, 'txt3');
 
     // Editing the copy leaves the original untouched.
     final edited = result.withStyle(cont, const ContainerStyle(radius: 2));
@@ -373,14 +376,14 @@ void main() {
     expect(source.nativeComponents.keys, ['p1']);
     expect(source.layouts.keys, ['lay']);
 
-    final replaced = _registry()..registerFactory('Text', const SizedBox());
+    final replaced = _registry()..registerFactory('Value', const SizedBox());
     final text = Appearance(
       nativeComponents: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['t'],
           },
-          slotTypes: {'t': 'factory:Text'},
+          slotTypes: {'t': 'factory:Value'},
         ),
       },
     );
@@ -463,11 +466,11 @@ void main() {
         const SizedBox(),
         duplication: ComponentDuplicationContract(
           ownedConfigs: (id) => [
-            EditorConfigRef.text('$id.title'),
+            EditorConfigRef.value('$id.title'),
             EditorConfigRef.layout('$id.body'),
           ],
           copyConfig: (ref, value, remap) => switch (value) {
-            SuperTextConfig() => SuperTextConfig(
+            SuperValueConfig() => SuperValueConfig(
               initialText: '${value.initialText} (copie)',
             ),
             SuperLayoutConfig() => SuperLayoutConfig(
@@ -504,16 +507,16 @@ void main() {
           slotTypes: {'card': 'factory:Card', 'b': 'component:badge'},
         ),
       },
-      textComponents: {
-        'card.title': const SuperTextConfig(initialText: 'Titre'),
-        'inner': const SuperTextConfig(initialText: 'inner'),
+      valueComponents: {
+        'card.title': const SuperValueConfig(initialText: 'Titre'),
+        'inner': const SuperValueConfig(initialText: 'inner'),
       },
       layouts: {
         'card.body': const SuperLayoutConfig(
           placements: {
             SuperLayoutZone.center: ['inner'],
           },
-          slotTypes: {'inner': 'registry:Text'},
+          slotTypes: {'inner': 'registry:Value'},
         ),
       },
     );
@@ -530,14 +533,14 @@ void main() {
     expect(card, isNot('card'));
     expect(badge, isNot('b'));
     expect(page.slotTypeOf(badge), 'component:badge');
-    expect(result.textComponents['$card.title']!.initialText, 'Titre (copie)');
+    expect(result.valueComponents['$card.title']!.initialText, 'Titre (copie)');
     final inner = result.layouts['$card.body']!
         .placementsOf(SuperLayoutZone.center)
         .single;
     expect(inner, isNot('inner'));
     // Nested bootstrap components keep their own structural copy.
-    expect(result.textComponents[inner]!.initialText, 'inner');
-    expect(result.textComponents['card.title']!.initialText, 'Titre');
+    expect(result.valueComponents[inner]!.initialText, 'inner');
+    expect(result.valueComponents['card.title']!.initialText, 'Titre');
   });
 
   test('bootstrap builders carry their contract metadata', () {
@@ -654,12 +657,12 @@ void main() {
     expect(removed.nativeComponents.keys, unorderedEquals(['root', 'p2', bar]));
     for (final id in ['lay1', 'nested', 'txt1', 'cont1']) {
       expect(removed.layouts.containsKey(id), isFalse);
-      expect(removed.textComponents.containsKey(id), isFalse);
+      expect(removed.valueComponents.containsKey(id), isFalse);
       expect(removed.styles.containsKey(id), isFalse);
     }
     expect(removed.layouts.keys, contains('contA'));
     expect(removed.styles.keys, contains('background'));
-    expect(removed.textComponents.length, 5);
+    expect(removed.valueComponents.length, 5);
     expect(removed.layouts.length, 3);
   });
 
@@ -683,7 +686,7 @@ void main() {
       expect(removed.layouts.keys, unorderedEquals(['contA']));
       expect(removed.styles.keys, unorderedEquals(['background']));
       expect(
-        removed.textComponents.keys,
+        removed.valueComponents.keys,
         unorderedEquals(['txt1', 'txtHidden']),
       );
       expect(
@@ -727,8 +730,8 @@ void main() {
         containerKind: EditorConfigKind.nativeComponent,
       );
       expect(removed.layouts.keys, unorderedEquals(['contA', 'nested']));
-      expect(removed.textComponents.keys, contains('txt3'));
-      expect(removed.textComponents.keys, isNot(contains('txt2')));
+      expect(removed.valueComponents.keys, contains('txt3'));
+      expect(removed.valueComponents.keys, isNot(contains('txt2')));
     });
   });
 }

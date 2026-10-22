@@ -93,19 +93,20 @@ Les labels des zones affichent aussi `drag_indicator`, uniquement lorsque
 leur déplacement/échange est autorisé ; le centre et les zones non déplaçables
 n'affichent pas cette icône.
 
-## Text : affichage ou saisie
+## Value : affichage ou saisie (texte, checkbox, switch)
 
 `Registry.bootstrap(availableFontFamilies: ['Segoe UI', 'Roboto'])` ajoute
-`Text` au catalogue avec les tags `text` et `input`. Chaque ajout possède
-son propre identifiant et sa propre configuration. Le composant est utilisable
-dans les dispositions et les zones internes des barres, mais ne remplace pas
-une barre native complète.
+`Value` au catalogue avec les tags `text` et `input`. Chaque ajout possède
+son propre identifiant et sa propre configuration (`SuperValueConfig`, incluant
+`kind: SuperValueKind.text | SuperValueKind.checkbox | SuperValueKind.switchControl`).
+Le composant est utilisable dans les dispositions et les zones internes des
+barres, mais ne remplace pas une barre native complète.
 
 ```dart
-SuperText(
+SuperValue(
   id: 'customer-name',
-  config: const SuperTextConfig(
-    mode: SuperTextMode.input,
+  config: const SuperValueConfig(
+    mode: SuperValueMode.input,
     initialText: '',
     label: 'Nom',
     placeholder: 'Votre nom',
@@ -170,7 +171,7 @@ la nouvelle valeur. L'activation du mot de passe efface aussi la valeur.
 Le mot de passe est masqué dans les deux modes, sur une seule ligne, et
 n'autorise aucun texte initial persistant.
 
-Seuls les réglages sont sauvegardés dans `Appearance.textComponents`, jamais
+Seuls les réglages sont sauvegardés dans `Appearance.valueComponents`, jamais
 la saisie courante ni le contenu du controller. Pendant l'édition, les réglages
 valides modifient en temps réel le composant dans la page, sans attendre
 **Appliquer**. Les valeurs invalides sont signalées et le dernier rendu valide
@@ -233,10 +234,10 @@ avant toutes les surcharges automatiques. Une surcharge ne réévalue donc pas
 son propre déclencheur et ne peut pas provoquer d'oscillation. Le verrou
 temporaire de chargement d'une liaison n'est pas un état Désactivé configuré.
 
-`SuperTextConfig.states` contient un `TextConfigStates` : les états nommés
+`SuperValueConfig.states` contient un `ValueConfigStates` : les états nommés
 conservent leurs valeurs dans `named` et leurs groupes activés dans
 `namedProperties`. Comme Hover et Sélectionné, ils appliquent seulement
-les groupes explicitement activés, avec la logique de `TextConfigOverride`.
+les groupes explicitement activés, avec la logique de `ValueConfigOverride`.
 Les groupes non cochés héritent des valeurs précédentes dans l'ordre des états.
 Un état nommé nouveau ou enregistré sans `namedProperties` commence sans
 aucune surcharge, toutes les puces décochées. Ses anciennes valeurs sont
@@ -333,9 +334,9 @@ chargées depuis un repository. Changer les options ne réécrit pas ces donnée
 L'aperçu utilise le même rendu que le composant, sans accéder au repository.
 Les brouillons invalides bloquent **Appliquer** ; **Annuler** ne publie rien.
 Ces options suivent la sauvegarde, l'import/export et l'annulation des autres
-réglages de SuperText.
+réglages de SuperValue.
 
-### Liaison SuperText / repository JSON
+### Liaison SuperValue / repository JSON
 
 La section **Repository** de l'editeur permet de choisir un document du dossier
 par defaut puis un chemin d'attribut, par exemple `client.nom` ou
@@ -345,10 +346,10 @@ ne casse pas les textes lies. Un repository absent ou un ID duplique/corrompu
 produit une erreur explicite, sans recherche approximative par ancien nom.
 
 ```dart
-SuperText(
+SuperValue(
   id: 'client-name',
-  config: SuperTextConfig(
-    mode: SuperTextMode.input,
+  config: SuperValueConfig(
+    mode: SuperValueMode.input,
     binding: JsonTextBinding(
       repositoryId: repositoryId,
       path: 'client.nom',
@@ -357,7 +358,7 @@ SuperText(
 )
 ```
 
-La liaison utilise uniquement le controleur interne de SuperText ; `controller`
+La liaison utilise uniquement le controleur interne de SuperValue ; `controller`
 et `value` fournis par l'application sont incompatibles avec une liaison.
 Le JSON fournit la valeur initiale, en affichage comme en saisie ; changer le
 mode ou le texte initial ne remplace plus cette valeur. Les changements de texte
@@ -376,7 +377,7 @@ contenant des points ou des crochets et les expressions JSONPath ne sont pas
 prises en charge.
 
 `SuperApp` fournit un `JsonRepositoryStore` partage. Une sauvegarde depuis le
-gestionnaire actualise les SuperText, et inversement. Les ecritures sont
+gestionnaire actualise les SuperValue, et inversement. Les ecritures sont
 serialisees ; un changement d'un autre attribut est preserve, tandis qu'un
 conflit sur l'attribut lie conserve la saisie locale et affiche une erreur.
 **Recharger la liaison** demande confirmation avant d'abandonner cette saisie.
@@ -425,11 +426,11 @@ Les factories dynamiques acceptent aussi `tags` sur `ComponentBuilderDynamic`.
 `Card`, `layout` à `Layout`, et les deux tags `container` et `layout` à `IterableContent`.
 
 Les noms du catalogue, des menus et des types sauvegardes sont `Card`, `Layout`,
-`IterableContent`, `Text`, `ListView`, `AppBar` et `BottomNavigationBar` ; le type d'edition d'une
+`IterableContent`, `Value`, `ListView`, `AppBar` et `BottomNavigationBar` ; le type d'edition d'une
 page est `Page`. Les classes et les fichiers Dart conservent leur nom avec
-prefixe `Super` (par exemple `SuperContainer`, `SuperLayout`, `SuperText`).
+prefixe `Super` (par exemple `SuperContainer`, `SuperLayout`, `SuperValue`).
 Les anciennes cles de catalogue et de persistance (`NewContainer`, `NewLayout`,
-`SuperText`, etc.) ne sont pas conservees comme alias : les documents existants
+`SuperText`, `Text`, etc.) ne sont pas conservees comme alias : les documents existants
 doivent etre recrees ou leurs types mis a jour.
 
 ### Icone dans le menu d'edition
@@ -444,7 +445,7 @@ registry.registerComponent(
   RegisteredComponent(
     label: 'Titre',
     menuIcon: Icons.title,
-    builder: (_) => const SuperText(id: 'page-title'),
+    builder: (_) => const SuperValue(id: 'page-title'),
   ),
 );
 registry.registerFactory(
@@ -784,7 +785,7 @@ registry.registerComponent(
 
 Pour un composant qui possede des configurations derivees de son identifiant,
 utilisez `ComponentDuplicationContract(ownedConfigs: (id) => [
-EditorConfigRef.text('$id.title'), EditorConfigRef.style('$id.surface')])`.
+EditorConfigRef.value('$id.title'), EditorConfigRef.style('$id.surface')])`.
 Ces references doivent correspondre exactement aux identifiants utilises par
 son builder, dans le meme ordre pour chaque instance. Le contrat peut fournir
 `copyConfig: (source, value, remap) => ...` pour remapper des references internes

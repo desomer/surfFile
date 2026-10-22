@@ -51,7 +51,7 @@ void main() {
             placements: {
               SuperLayoutZone.center: ['text'],
             },
-            slotTypes: {'text': 'registry:Text'},
+            slotTypes: {'text': 'registry:Value'},
           ),
         },
         nativeComponents: {
@@ -62,7 +62,7 @@ void main() {
             slotTypes: {'item': 'registry:$type'},
           ),
         },
-        textComponents: {'text': const SuperTextConfig(initialText: 'Saved')},
+        valueComponents: {'text': const SuperValueConfig(initialText: 'Saved')},
         listComponents: type == 'ListView'
             ? {'item': const SuperListViewConfig()}
             : const {},
@@ -84,7 +84,7 @@ void main() {
       );
       final child = copy.layouts[id]!.placedSlotIds.single;
       expect(child, isNot('text'));
-      expect(copy.textComponents[child]!.initialText, 'Saved');
+      expect(copy.valueComponents[child]!.initialText, 'Saved');
       if (type == 'ListView') {
         expect(copy.listComponents.containsKey(id), isTrue);
       }
@@ -99,7 +99,7 @@ void main() {
       );
       expect(removed.styles.containsKey('item'), isFalse);
       expect(removed.layouts.containsKey('item'), isFalse);
-      expect(removed.textComponents.containsKey('text'), isFalse);
+      expect(removed.valueComponents.containsKey('text'), isFalse);
       expect(removed.listComponents.containsKey('item'), isFalse);
       final shared = EditorPageGraph.removeInstance(
         appearance: original.copyWith(

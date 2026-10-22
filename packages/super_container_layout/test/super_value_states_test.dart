@@ -3,32 +3,32 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
-import 'package:super_container_layout/models/super_text_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
 
 void main() {
   test(
     'legacy named Text states start empty and explicit masks persist immutably',
     () {
-      final states = TextConfigStates(
+      final states = ValueConfigStates(
         named: {
-          'ready': const SuperTextConfig(initialText: 'Ready', fontSize: 24),
+          'ready': const SuperValueConfig(initialText: 'Ready', fontSize: 24),
         },
       );
-      const base = SuperTextConfig(initialText: 'Default', fontSize: 16);
+      const base = SuperValueConfig(initialText: 'Default', fontSize: 16);
       expect(states.resolve(base, name: 'ready'), base);
       final legacy = states.toJson()..remove('namedProperties');
-      final migrated = TextConfigStates.fromJson(legacy);
+      final migrated = ValueConfigStates.fromJson(legacy);
       expect(migrated.namedProperties['ready'], isEmpty);
       expect(migrated.resolve(base, name: 'ready'), base);
-      final properties = <TextStateProperty>{TextStateProperty.fontSize};
+      final properties = <ValueStateProperty>{ValueStateProperty.fontSize};
       final configured = states.copyWith(
         namedProperties: {'ready': properties},
       );
       properties.clear();
       expect(configured.resolve(base, name: 'ready').fontSize, 24);
       expect(configured.resolve(base, name: 'ready').initialText, 'Default');
-      final decoded = TextConfigStates.fromJson(
+      final decoded = ValueConfigStates.fromJson(
         jsonDecode(jsonEncode(configured.toJson())),
       );
       expect(decoded, configured);
@@ -38,7 +38,7 @@ void main() {
         throwsUnsupportedError,
       );
       expect(
-        () => TextConfigStates.fromJson({
+        () => ValueConfigStates.fromJson({
           ...legacy,
           'namedProperties': {
             'ready': ['unknown'],
@@ -47,7 +47,7 @@ void main() {
         throwsFormatException,
       );
       expect(
-        () => TextConfigStates.fromJson({
+        () => ValueConfigStates.fromJson({
           ...legacy,
           'namedProperties': {'missing': []},
         }),
@@ -62,7 +62,7 @@ void main() {
     },
   );
 
-  const base = SuperTextConfig(
+  const base = SuperValueConfig(
     initialText: 'base',
     label: 'Base',
     fontSize: 16,
@@ -73,10 +73,10 @@ void main() {
   const binding = JsonTextBinding(path: 'status');
 
   test('legacy const constructor and absent states retain their codec', () {
-    const legacy = SuperTextConfig();
+    const legacy = SuperValueConfig();
     expect(legacy.states, isNull);
     expect(legacy.toJson().containsKey('states'), isFalse);
-    expect(SuperTextConfig.fromJson(legacy.toJson()), legacy);
+    expect(SuperValueConfig.fromJson(legacy.toJson()), legacy);
     expect(legacy.copyWith(label: 'changed').states, isNull);
     expect(() => legacy.validate(), returnsNormally);
   });
@@ -84,31 +84,31 @@ void main() {
   test(
     'named states inherit unchecked properties and follow persisted order',
     () {
-      final states = TextConfigStates(
+      final states = ValueConfigStates(
         binding: binding,
         named: {
-          'ready': const SuperTextConfig(label: 'Ready', color: Colors.green),
+          'ready': const SuperValueConfig(label: 'Ready', color: Colors.green),
         },
         namedProperties: {
-          'ready': {TextStateProperty.textLabel, TextStateProperty.color},
+          'ready': {ValueStateProperty.textLabel, ValueStateProperty.color},
         },
-        hover: TextConfigOverride(
-          config: const SuperTextConfig(color: Colors.red, letterSpacing: 0),
+        hover: ValueConfigOverride(
+          config: const SuperValueConfig(color: Colors.red, letterSpacing: 0),
           properties: {
-            TextStateProperty.color,
-            TextStateProperty.letterSpacing,
+            ValueStateProperty.color,
+            ValueStateProperty.letterSpacing,
           },
         ),
-        selected: TextConfigOverride(
-          config: const SuperTextConfig(color: Colors.blue),
-          properties: {TextStateProperty.color},
+        selected: ValueConfigOverride(
+          config: const SuperValueConfig(color: Colors.blue),
+          properties: {ValueStateProperty.color},
         ),
       );
       final configured = base.copyWith(states: states);
       expect(states.order, [
         'ready',
-        TextConfigStates.hoverKey,
-        TextConfigStates.selectedKey,
+        ValueConfigStates.hoverKey,
+        ValueConfigStates.selectedKey,
       ]);
       expect(states.resolve(configured).states, isNull);
       expect(states.resolve(configured, name: 'missing'), base);
@@ -129,8 +129,8 @@ void main() {
       final hoverLast = states.copyWith(
         order: [
           'ready',
-          TextConfigStates.selectedKey,
-          TextConfigStates.hoverKey,
+          ValueConfigStates.selectedKey,
+          ValueConfigStates.hoverKey,
         ],
       );
       expect(
@@ -141,8 +141,8 @@ void main() {
       );
       final namedLast = states.copyWith(
         order: [
-          TextConfigStates.hoverKey,
-          TextConfigStates.selectedKey,
+          ValueConfigStates.hoverKey,
+          ValueConfigStates.selectedKey,
           'ready',
         ],
       );
@@ -169,12 +169,12 @@ void main() {
       enabled: false,
       readOnly: true,
     );
-    final override = TextConfigOverride(
-      config: const SuperTextConfig(italic: false, letterSpacing: 0),
-      properties: TextStateProperty.values.toSet(),
+    final override = ValueConfigOverride(
+      config: const SuperValueConfig(italic: false, letterSpacing: 0),
+      properties: ValueStateProperty.values.toSet(),
     );
     final result = override.apply(source);
-    expect(result, const SuperTextConfig(italic: false, letterSpacing: 0));
+    expect(result, const SuperValueConfig(italic: false, letterSpacing: 0));
     expect(result.binding, isNull);
     expect(result.enabled, isTrue);
     expect(result.readOnly, isFalse);
@@ -188,8 +188,8 @@ void main() {
   test(
     'every field is covered by a typed group and edited accumulates groups',
     () {
-      const full = SuperTextConfig(
-        mode: SuperTextMode.input,
+      const full = SuperValueConfig(
+        mode: SuperValueMode.input,
         initialText: 'hello',
         label: 'Label',
         placeholder: 'Hint',
@@ -207,14 +207,14 @@ void main() {
         letterSpacing: 3,
         binding: binding,
         propertyBindings: {
-          SuperTextProperty.label: binding,
-          SuperTextProperty.placeholder: binding,
-          SuperTextProperty.fontFamily: binding,
-          SuperTextProperty.fontSize: binding,
-          SuperTextProperty.fontWeight: binding,
-          SuperTextProperty.italic: binding,
-          SuperTextProperty.color: binding,
-          SuperTextProperty.textAlign: binding,
+          SuperValueProperty.label: binding,
+          SuperValueProperty.placeholder: binding,
+          SuperValueProperty.fontFamily: binding,
+          SuperValueProperty.fontSize: binding,
+          SuperValueProperty.fontWeight: binding,
+          SuperValueProperty.italic: binding,
+          SuperValueProperty.color: binding,
+          SuperValueProperty.textAlign: binding,
         },
         field: SuperTextFieldConfig(
           keyboard: TextFieldKeyboard.multiline,
@@ -222,32 +222,43 @@ void main() {
           horizontalPadding: 0,
         ),
       );
-      final edited = TextConfigOverride().edited(full);
-      expect(edited.properties, TextStateProperty.values.toSet());
+      final edited = ValueConfigOverride().edited(full);
+      expect(edited.properties, ValueStateProperty.values.toSet());
       expect(edited.apply(base), full);
       expect(edited.config, full);
       expect(edited.isEmpty, isFalse);
-      expect(TextConfigOverride().isEmpty, isTrue);
+      expect(ValueConfigOverride().isEmpty, isTrue);
       expect(
-        edited.edited(const SuperTextConfig()).properties,
-        TextStateProperty.values.toSet(),
+        edited.edited(const SuperValueConfig()).properties,
+        ValueStateProperty.values.toSet(),
       );
       expect(edited.copyWith(clearProperties: true).isEmpty, isTrue);
       expect(
-        TextConfigOverride()
-            .edited(const SuperTextConfig(obscureText: true))
+        ValueConfigOverride()
+            .edited(const SuperValueConfig(obscureText: true))
             .properties,
-        {TextStateProperty.content},
+        {ValueStateProperty.content},
       );
       expect(
-        TextConfigOverride()
+        ValueConfigOverride()
             .edited(
-              const SuperTextConfig(field: SuperTextFieldConfig(radius: 0)),
+              const SuperValueConfig(field: SuperTextFieldConfig(radius: 0)),
             )
             .properties,
-        {TextStateProperty.content},
+        {ValueStateProperty.content},
       );
-      for (final property in TextStateProperty.values) {
+      expect(
+        ValueConfigOverride()
+            .edited(
+              const SuperValueConfig(
+                kind: SuperValueKind.checkbox,
+                initialBool: true,
+              ),
+            )
+            .properties,
+        {ValueStateProperty.content},
+      );
+      for (final property in ValueStateProperty.values) {
         expect(property.label, isNotEmpty);
       }
     },
@@ -255,24 +266,24 @@ void main() {
 
   test('each property binding follows only its corresponding group', () {
     final allBindings = {
-      for (final property in SuperTextProperty.values) property: binding,
+      for (final property in SuperValueProperty.values) property: binding,
     };
     final bound = base.copyWith(propertyBindings: allBindings);
-    for (final property in TextStateProperty.values) {
+    for (final property in ValueStateProperty.values) {
       final target = property.bindingProperty;
       if (target == null) continue;
-      final reset = TextConfigOverride(properties: {property}).apply(bound);
+      final reset = ValueConfigOverride(properties: {property}).apply(bound);
       expect(reset.propertyBindings.containsKey(target), isFalse);
       expect(reset.propertyBindings.length, allBindings.length - 1);
-      final next = const SuperTextConfig().copyWith(
+      final next = const SuperValueConfig().copyWith(
         propertyBindings: {target: binding},
       );
-      final edit = TextConfigOverride().edited(next);
+      final edit = ValueConfigOverride().edited(next);
       expect(edit.properties, {property});
       expect(edit.apply(base).propertyBindings, {target: binding});
     }
     expect(
-      TextConfigOverride(properties: {TextStateProperty.enabled})
+      ValueConfigOverride(properties: {ValueStateProperty.enabled})
           .apply(bound)
           .propertyBindings,
       allBindings,
@@ -282,8 +293,8 @@ void main() {
   test(
     'input content group keeps password and multiline validation atomic',
     () {
-      const multiline = SuperTextConfig(
-        mode: SuperTextMode.input,
+      const multiline = SuperValueConfig(
+        mode: SuperValueMode.input,
         initialText: 'multiline',
         minLines: 2,
         maxLines: 4,
@@ -292,34 +303,34 @@ void main() {
           action: TextFieldAction.newline,
         ),
       );
-      const password = SuperTextConfig(
-        mode: SuperTextMode.input,
+      const password = SuperValueConfig(
+        mode: SuperValueMode.input,
         obscureText: true,
         field: SuperTextFieldConfig(
           keyboard: TextFieldKeyboard.text,
           suffix: TextFieldSuffix.visibility,
         ),
       );
-      final states = TextConfigStates(
+      final states = ValueConfigStates(
         named: {'secret': password, 'multiple': multiline},
-        hover: TextConfigOverride(
+        hover: ValueConfigOverride(
           config: multiline,
-          properties: {TextStateProperty.content},
+          properties: {ValueStateProperty.content},
         ),
-        selected: TextConfigOverride(
+        selected: ValueConfigOverride(
           config: password,
-          properties: {TextStateProperty.content},
+          properties: {ValueStateProperty.content},
         ),
       );
       expect(() => base.copyWith(states: states).validate(), returnsNormally);
       for (final name in <String?>[null, ...states.named.keys]) {
         expect(
-          states.resolve(const SuperTextConfig(), name: name, isHovered: true),
+          states.resolve(const SuperValueConfig(), name: name, isHovered: true),
           multiline,
         );
         expect(
           states.resolve(
-            const SuperTextConfig(),
+            const SuperValueConfig(),
             name: name,
             isHovered: true,
             isSelected: true,
@@ -328,19 +339,19 @@ void main() {
         );
       }
       expect(password.toJson().containsKey('initialText'), isFalse);
-      expect(SuperTextConfig.fromJson(password.toJson()), password);
+      expect(SuperValueConfig.fromJson(password.toJson()), password);
     },
   );
 
   test('validate checks base, named and both override configurations', () {
     final invalids = [
-      const SuperTextConfig(fontSize: 0),
-      const SuperTextConfig(minLines: 2),
-      const SuperTextConfig(obscureText: true, initialText: 'secret'),
-      const SuperTextConfig(
+      const SuperValueConfig(fontSize: 0),
+      const SuperValueConfig(minLines: 2),
+      const SuperValueConfig(obscureText: true, initialText: 'secret'),
+      const SuperValueConfig(
         field: SuperTextFieldConfig(action: TextFieldAction.newline),
       ),
-      const SuperTextConfig(field: SuperTextFieldConfig(radius: -1)),
+      const SuperValueConfig(field: SuperTextFieldConfig(radius: -1)),
     ];
     for (final invalid in invalids) {
       expect(
@@ -348,9 +359,9 @@ void main() {
         throwsA(anyOf(isArgumentError, isFormatException)),
       );
       for (final states in [
-        TextConfigStates(named: {'bad': invalid}),
-        TextConfigStates(hover: TextConfigOverride(config: invalid)),
-        TextConfigStates(selected: TextConfigOverride(config: invalid)),
+        ValueConfigStates(named: {'bad': invalid}),
+        ValueConfigStates(hover: ValueConfigOverride(config: invalid)),
+        ValueConfigStates(selected: ValueConfigOverride(config: invalid)),
       ]) {
         final config = base.copyWith(states: states);
         expect(
@@ -366,24 +377,24 @@ void main() {
   });
 
   test('states and overrides round trip with value equality and hash', () {
-    final states = TextConfigStates(
+    final states = ValueConfigStates(
       binding: binding,
       named: {
         'ready': base,
-        'done': const SuperTextConfig(label: 'Done'),
+        'done': const SuperValueConfig(label: 'Done'),
       },
-      hover: TextConfigOverride(
-        config: const SuperTextConfig(color: Color(0xFF2196F3)),
-        properties: {TextStateProperty.color, TextStateProperty.textLabel},
+      hover: ValueConfigOverride(
+        config: const SuperValueConfig(color: Color(0xFF2196F3)),
+        properties: {ValueStateProperty.color, ValueStateProperty.textLabel},
       ),
-      selected: TextConfigOverride(
-        config: const SuperTextConfig(fontSize: 22),
-        properties: {TextStateProperty.fontSize},
+      selected: ValueConfigOverride(
+        config: const SuperValueConfig(fontSize: 22),
+        properties: {ValueStateProperty.fontSize},
       ),
-      order: [TextConfigStates.selectedKey, 'done'],
+      order: [ValueConfigStates.selectedKey, 'done'],
     );
     final config = base.copyWith(states: states);
-    final restored = SuperTextConfig.fromJson(
+    final restored = SuperValueConfig.fromJson(
       jsonDecode(jsonEncode(config.toJson())),
     );
     expect(restored, config);
@@ -392,9 +403,9 @@ void main() {
     expect(restored.states.hashCode, states.hashCode);
     expect(restored.states!.hover, states.hover);
     expect(restored.states!.hover.hashCode, states.hover.hashCode);
-    final reverse = TextConfigOverride(
+    final reverse = ValueConfigOverride(
       config: states.hover!.config,
-      properties: {TextStateProperty.textLabel, TextStateProperty.color},
+      properties: {ValueStateProperty.textLabel, ValueStateProperty.color},
     );
     expect(reverse, states.hover);
     expect(reverse.hashCode, states.hover.hashCode);
@@ -407,24 +418,24 @@ void main() {
     expect(states.copyWith(clearNamed: true), isNot(states));
     expect(states.copyWith(clearOrder: true), isNot(states));
     final legacy = states.toJson()..remove('order');
-    expect(TextConfigStates.fromJson(legacy).order, [
+    expect(ValueConfigStates.fromJson(legacy).order, [
       'ready',
       'done',
-      TextConfigStates.hoverKey,
-      TextConfigStates.selectedKey,
+      ValueConfigStates.hoverKey,
+      ValueConfigStates.selectedKey,
     ]);
   });
 
   test('collections are immutable snapshots and copy clear flags win', () {
-    final bindings = {SuperTextProperty.color: binding};
+    final bindings = {SuperValueProperty.color: binding};
     final named = {'ready': base.copyWith(propertyBindings: bindings)};
-    final properties = {TextStateProperty.color};
+    final properties = {ValueStateProperty.color};
     final order = ['ready'];
-    final override = TextConfigOverride(
+    final override = ValueConfigOverride(
       config: named['ready']!,
       properties: properties,
     );
-    final states = TextConfigStates(
+    final states = ValueConfigStates(
       binding: binding,
       named: named,
       hover: override,
@@ -438,7 +449,7 @@ void main() {
     expect(states.named.length, 1);
     expect(states.named['ready']!.propertyBindings.length, 1);
     expect(override.config.propertyBindings.length, 1);
-    expect(override.properties, {TextStateProperty.color});
+    expect(override.properties, {ValueStateProperty.color});
     expect(states.order.first, 'ready');
     expect(() => states.named.clear(), throwsUnsupportedError);
     expect(() => states.order.clear(), throwsUnsupportedError);
@@ -464,25 +475,25 @@ void main() {
     expect(cleared.hover, isNull);
     expect(cleared.selected, isNull);
     expect(cleared.order, [
-      TextConfigStates.hoverKey,
-      TextConfigStates.selectedKey,
+      ValueConfigStates.hoverKey,
+      ValueConfigStates.selectedKey,
     ]);
     final changed = states.copyWith(named: {'other': base});
     expect(changed.order, [
-      TextConfigStates.hoverKey,
-      TextConfigStates.selectedKey,
+      ValueConfigStates.hoverKey,
+      ValueConfigStates.selectedKey,
       'other',
     ]);
   });
 
   test('nested states are rejected in constructors, edited and codecs', () {
-    final nested = base.copyWith(states: TextConfigStates());
+    final nested = base.copyWith(states: ValueConfigStates());
     expect(
-      () => TextConfigStates(named: {'bad': nested}),
+      () => ValueConfigStates(named: {'bad': nested}),
       throwsFormatException,
     );
-    expect(() => TextConfigOverride(config: nested), throwsFormatException);
-    expect(() => TextConfigOverride().edited(nested), throwsFormatException);
+    expect(() => ValueConfigOverride(config: nested), throwsFormatException);
+    expect(() => ValueConfigOverride().edited(nested), throwsFormatException);
     for (final states in [
       {
         'named': {'bad': nested.toJson()},
@@ -504,7 +515,7 @@ void main() {
         },
       },
     ]) {
-      expect(() => TextConfigStates.fromJson(states), throwsFormatException);
+      expect(() => ValueConfigStates.fromJson(states), throwsFormatException);
     }
   });
 
@@ -526,11 +537,11 @@ void main() {
       'survol',
     ]) {
       expect(
-        () => TextConfigStates(named: {name: base}),
+        () => ValueConfigStates(named: {name: base}),
         throwsFormatException,
       );
       expect(
-        () => TextConfigStates.fromJson({
+        () => ValueConfigStates.fromJson({
           'named': {name: base.toJson()},
         }),
         throwsFormatException,
@@ -556,7 +567,7 @@ void main() {
       },
       {
         'named': {},
-        'order': [TextConfigStates.hoverKey, TextConfigStates.hoverKey],
+        'order': [ValueConfigStates.hoverKey, ValueConfigStates.hoverKey],
       },
       {'named': {}, 'hover': null},
       {'named': {}, 'selected': []},
@@ -565,7 +576,7 @@ void main() {
         'binding': {'path': ''},
       },
     ]) {
-      expect(() => TextConfigStates.fromJson(value), throwsFormatException);
+      expect(() => ValueConfigStates.fromJson(value), throwsFormatException);
     }
     for (final value in <Object?>[
       null,
@@ -586,11 +597,11 @@ void main() {
       },
       {'config': base.toJson(), 'properties': [], 'extra': 1},
     ]) {
-      expect(() => TextConfigOverride.fromJson(value), throwsFormatException);
+      expect(() => ValueConfigOverride.fromJson(value), throwsFormatException);
     }
-    expect(() => TextConfigStates(order: ['unknown']), throwsFormatException);
+    expect(() => ValueConfigStates(order: ['unknown']), throwsFormatException);
     expect(
-      () => SuperTextConfig.fromJson({
+      () => SuperValueConfig.fromJson({
         ...base.toJson(),
         'states': {
           'named': {

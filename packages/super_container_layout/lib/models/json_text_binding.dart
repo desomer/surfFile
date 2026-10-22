@@ -5,7 +5,7 @@
 /// définit :
 ///
 /// * [JsonTextBinding] : la liaison persistée d'un composant (repository +
-///   chemin), par exemple la valeur d'un `SuperText` ou le tableau d'une
+///   chemin), par exemple la valeur d'un `SuperValue` ou le tableau d'une
 ///   `SuperListView` ;
 /// * [JsonAttributePath] : la syntaxe des chemins et les lectures / écritures
 ///   immuables dans un arbre JSON.
@@ -33,7 +33,7 @@
 ///    `clients[3].nom` ;
 /// 2. puis, pour les `[?]` restants, par la **ligne sélectionnée** (clic) du
 ///    tableau correspondant, mémorisée dans le `JsonRepositoryBinding` du
-///    repository (voir `JsonListScope.resolveSelected`). Un `SuperText` placé
+///    repository (voir `JsonListScope.resolveSelected`). Un `SuperValue` placé
 ///    hors de toute liste avec `clients[?].nom` affiche donc le client
 ///    sélectionné : c'est le mécanisme maître / détail.
 ///
@@ -54,11 +54,11 @@
 /// ```
 ///
 /// * une `SuperListView` liée à `clients` répète son gabarit pour Alice et
-///   Bob ; dans son gabarit, un `SuperText` lié à `clients[?].nom` avec le
+///   Bob ; dans son gabarit, un `SuperValue` lié à `clients[?].nom` avec le
 ///   repository hérité affiche le nom de la ligne ;
 /// * une sous-liste liée à `clients[?].commandes` affiche les commandes de
 ///   chaque client ;
-/// * hors de la liste, un `SuperText` lié à `clients[?].commandes[?].ref`
+/// * hors de la liste, un `SuperValue` lié à `clients[?].commandes[?].ref`
 ///   affiche la commande sélectionnée du client sélectionné.
 ///
 /// ```dart
@@ -431,8 +431,11 @@ class JsonAttributePath {
   );
 
   /// Retourne un nouvel arbre JSON où ce chemin reçoit [text], converti selon
-  /// le type de [previous] (la valeur actuelle, lue avec [read]).
+  /// le type de [previous] (la valeur actuelle, lue avec [read]), ou en
+  /// booléen lorsque [asBool] vaut `true`.
   ///
+  /// * [asBool] `true` : [previous] doit être `null` ou `bool`, et [text] doit
+  ///   être `true` ou `false` en JSON (un attribut absent devient un `bool`) ;
   /// * `previous` `null` ou `String` : [text] est écrit tel quel (un attribut
   ///   absent devient une chaîne) ;
   /// * `num` ou `bool` : [text] doit être un nombre fini ou `true` / `false`
@@ -440,7 +443,12 @@ class JsonAttributePath {
   ///
   /// Les objets manquants sont créés ; les indices de tableau doivent exister.
   /// [root] n'est jamais modifié, même en cas d'erreur.
-  Object? write(Object? root, String text, Object? previous) {
+  Object? write(
+    Object? root,
+    String text,
+    Object? previous, {
+    bool asBool = false,
+  }) {
     requireResolved();
     if (previous != null &&
         previous is! String &&
@@ -449,7 +457,21 @@ class JsonAttributePath {
       throw const FormatException('L’attribut doit être une valeur simple.');
     }
     final Object? replacement;
-    if (previous == null || previous is String) {
+    if (asBool) {
+      if (previous != null && previous is! bool) {
+        throw const FormatException('Valeur incompatible avec le type JSON.');
+      }
+      Object? parsed;
+      try {
+        parsed = jsonDecode(text);
+      } on FormatException {
+        throw const FormatException('Valeur incompatible avec le type JSON.');
+      }
+      if (parsed is! bool) {
+        throw const FormatException('Valeur incompatible avec le type JSON.');
+      }
+      replacement = parsed;
+    } else if (previous == null || previous is String) {
       replacement = text;
     } else {
       Object? parsed;

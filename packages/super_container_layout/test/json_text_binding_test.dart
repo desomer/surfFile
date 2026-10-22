@@ -16,14 +16,14 @@ void main() {
         repositoryId: id,
         path: 'clients[0].name',
       );
-      const config = SuperTextConfig(binding: binding);
-      final restored = SuperTextConfig.fromJson(
+      const config = SuperValueConfig(binding: binding);
+      final restored = SuperValueConfig.fromJson(
         jsonDecode(jsonEncode(config.toJson())),
       );
       expect(restored, config);
       expect(restored.hashCode, config.hashCode);
       expect(restored.copyWith(clearBinding: true).binding, isNull);
-      expect(SuperTextConfig.fromJson(<String, dynamic>{}).binding, isNull);
+      expect(SuperValueConfig.fromJson(<String, dynamic>{}).binding, isNull);
       for (final json in [
         {'repositoryId': id, 'path': 'client..name'},
         {'repositoryId': 'invalid', 'path': 'name'},

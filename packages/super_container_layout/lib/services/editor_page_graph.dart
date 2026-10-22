@@ -4,7 +4,7 @@ import '../models/native_component_config.dart';
 import '../models/registry.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/super_layout_config.dart';
-import '../models/super_text_config.dart';
+import '../models/super_value_config.dart';
 import '../models/super_list_view_config.dart';
 import '../theme/appearance.dart';
 import '../theme/container_style.dart';
@@ -442,7 +442,7 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.style => appearance.styles[ref.id],
   EditorConfigKind.nativeComponent => appearance.nativeComponents[ref.id],
   EditorConfigKind.scaffoldPage => appearance.scaffoldPages[ref.id],
-  EditorConfigKind.text => appearance.textComponents[ref.id],
+  EditorConfigKind.value => appearance.valueComponents[ref.id],
   EditorConfigKind.list => appearance.listComponents[ref.id],
 };
 
@@ -451,7 +451,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.style => value is ContainerStyle,
   EditorConfigKind.nativeComponent => value is NativeComponentConfig,
   EditorConfigKind.scaffoldPage => value is ScaffoldPageConfig,
-  EditorConfigKind.text => value is SuperTextConfig,
+  EditorConfigKind.value => value is SuperValueConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
 };
 
@@ -462,7 +462,7 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
     EditorConfigRef.nativeComponent(id),
   for (final id in appearance.scaffoldPages.keys)
     EditorConfigRef.scaffoldPage(id),
-  for (final id in appearance.textComponents.keys) EditorConfigRef.text(id),
+  for (final id in appearance.valueComponents.keys) EditorConfigRef.value(id),
   for (final id in appearance.listComponents.keys) EditorConfigRef.list(id),
 ];
 
@@ -571,7 +571,7 @@ Object _copy(Object value, String Function(String) remap) {
       grid: grid?.copyWith(items: _remapKeys(grid.items, remap)),
     );
   }
-  // Immutable values; a SuperText repository ID is external, not a component ID.
+  // Immutable values; a SuperValue repository ID is external, not a component ID.
   return value;
 }
 
@@ -604,7 +604,7 @@ Appearance _write(
       EditorConfigKind.scaffoldPage,
       appearance.scaffoldPages,
     ),
-    textComponents: update(EditorConfigKind.text, appearance.textComponents),
+    valueComponents: update(EditorConfigKind.value, appearance.valueComponents),
     listComponents: update(EditorConfigKind.list, appearance.listComponents),
   );
 }

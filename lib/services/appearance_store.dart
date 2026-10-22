@@ -378,7 +378,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
     return (preferences: document.preferences, appearance: prepare(document.appearance.copyWith(
       styles: generic.styles,
       layouts: generic.layouts,
-      textComponents: generic.textComponents,
+      valueComponents: generic.valueComponents,
       listComponents: generic.listComponents,
       pageCatalog: generic.pageCatalog,
     )));

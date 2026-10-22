@@ -25,11 +25,17 @@ class _DelayedStore extends JsonRepositoryStore {
     JsonTextBinding binding,
     String text, {
     required Object? expectedValue,
+    bool asBool = false,
   }) async {
     final pending = nextWrite;
     nextWrite = null;
     if (pending != null) await pending.future;
-    return super.writeAttribute(binding, text, expectedValue: expectedValue);
+    return super.writeAttribute(
+      binding,
+      text,
+      expectedValue: expectedValue,
+      asBool: asBool,
+    );
   }
 }
 
@@ -67,7 +73,7 @@ void main() {
 
   Future<void> mount(
     WidgetTester tester,
-    SuperTextConfig config, {
+    SuperValueConfig config, {
     ValueChanged<String>? onChanged,
   }) async {
     await real(
@@ -81,7 +87,7 @@ void main() {
                 child: SizedBox(
                   width: 300,
                   height: 100,
-                  child: SuperText(
+                  child: SuperValue(
                     id: 'state',
                     config: config,
                     onChanged: onChanged,
@@ -100,7 +106,7 @@ void main() {
     await real(tester, store.flushBindings);
   }
 
-  final field = find.byKey(const ValueKey('super-text-input-state'));
+  final field = find.byKey(const ValueKey('super-value-input-state'));
   String text(WidgetTester tester) =>
       tester.widget<TextField>(field).controller!.text;
 
@@ -110,10 +116,10 @@ void main() {
       final changes = <String>[];
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(hover: TextConfigOverride()),
+          states: ValueConfigStates(hover: ValueConfigOverride()),
         ),
         onChanged: changes.add,
       );
@@ -165,20 +171,20 @@ void main() {
     (tester) async {
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(
+          states: ValueConfigStates(
             binding: binding('status'),
             named: {
-              'second': SuperTextConfig(
-                mode: SuperTextMode.input,
+              'second': SuperValueConfig(
+                mode: SuperValueMode.input,
                 binding: binding('b'),
-                propertyBindings: {SuperTextProperty.fontSize: binding('size')},
+                propertyBindings: {SuperValueProperty.fontSize: binding('size')},
               ),
             },
             namedProperties: {
-              'second': {TextStateProperty.binding, TextStateProperty.fontSize},
+              'second': {ValueStateProperty.binding, ValueStateProperty.fontSize},
             },
           ),
         ),
@@ -216,13 +222,13 @@ void main() {
       final changes = <String>[];
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(
-            hover: TextConfigOverride(
-              config: SuperTextConfig(binding: binding('b')),
-              properties: {TextStateProperty.binding},
+          states: ValueConfigStates(
+            hover: ValueConfigOverride(
+              config: SuperValueConfig(binding: binding('b')),
+              properties: {ValueStateProperty.binding},
             ),
           ),
         ),
@@ -260,13 +266,13 @@ void main() {
     (tester) async {
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(
-            hover: TextConfigOverride(
-              config: const SuperTextConfig(fontSize: 24),
-              properties: {TextStateProperty.fontSize},
+          states: ValueConfigStates(
+            hover: ValueConfigOverride(
+              config: const SuperValueConfig(fontSize: 24),
+              properties: {ValueStateProperty.fontSize},
             ),
           ),
         ),
@@ -289,13 +295,13 @@ void main() {
     (tester) async {
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(
-            hover: TextConfigOverride(
-              config: SuperTextConfig(binding: binding('b')),
-              properties: {TextStateProperty.binding},
+          states: ValueConfigStates(
+            hover: ValueConfigOverride(
+              config: SuperValueConfig(binding: binding('b')),
+              properties: {ValueStateProperty.binding},
             ),
           ),
         ),
@@ -336,14 +342,14 @@ void main() {
       final changes = <String>[];
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(
+          states: ValueConfigStates(
             binding: binding('status'),
             named: {
-              'second': SuperTextConfig(
-                mode: SuperTextMode.input,
+              'second': SuperValueConfig(
+                mode: SuperValueMode.input,
                 initialText: 'Second preview',
                 binding: binding('b'),
               ),
@@ -359,14 +365,14 @@ void main() {
       await real(tester, () async {
         await tester.pump();
       });
-      for (final key in ['second', TextConfigStates.hoverKey, '']) {
-        final chip = find.byKey(ValueKey('text-state-choice-$key'));
-        if (key == TextConfigStates.hoverKey) {
-          final add = find.byKey(const ValueKey('text-state-add'));
+      for (final key in ['second', ValueConfigStates.hoverKey, '']) {
+        final chip = find.byKey(ValueKey('value-state-choice-$key'));
+        if (key == ValueConfigStates.hoverKey) {
+          final add = find.byKey(const ValueKey('value-state-add'));
           await tester.ensureVisible(add);
           await tester.tap(add);
           await tester.pumpAndSettle();
-          await tester.tap(find.byKey(const ValueKey('text-state-add-hover')));
+          await tester.tap(find.byKey(const ValueKey('value-state-add-hover')));
           await tester.pumpAndSettle();
         }
         await tester.ensureVisible(chip);
@@ -375,7 +381,7 @@ void main() {
           await tester.pump();
         });
       }
-      final label = find.byKey(const ValueKey('super-text-setting-label'));
+      final label = find.byKey(const ValueKey('super-value-setting-label'));
       await tester.ensureVisible(label);
       await tester.enterText(label, 'Only a draft');
       await real(tester, () async {
@@ -400,29 +406,29 @@ void main() {
       final changes = <String>[];
       await mount(
         tester,
-        SuperTextConfig(
-          mode: SuperTextMode.input,
+        SuperValueConfig(
+          mode: SuperValueMode.input,
           binding: binding('a'),
-          states: TextConfigStates(
+          states: ValueConfigStates(
             binding: binding('status'),
             named: {
-              'locked': SuperTextConfig(
-                mode: SuperTextMode.input,
+              'locked': SuperValueConfig(
+                mode: SuperValueMode.input,
                 enabled: false,
                 binding: binding('a'),
               ),
             },
             namedProperties: {
-              'locked': {TextStateProperty.enabled},
+              'locked': {ValueStateProperty.enabled},
             },
             automatic: {
-              AutomaticState.focused: TextConfigOverride(
-                config: const SuperTextConfig(fontSize: 25),
-                properties: {TextStateProperty.fontSize},
+              AutomaticState.focused: ValueConfigOverride(
+                config: const SuperValueConfig(fontSize: 25),
+                properties: {ValueStateProperty.fontSize},
               ),
-              AutomaticState.disabled: TextConfigOverride(
-                config: const SuperTextConfig(color: Colors.red),
-                properties: {TextStateProperty.color},
+              AutomaticState.disabled: ValueConfigOverride(
+                config: const SuperValueConfig(color: Colors.red),
+                properties: {ValueStateProperty.color},
               ),
             },
           ),

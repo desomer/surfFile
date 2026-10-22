@@ -4,7 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
-import '../models/super_text_config.dart';
+import '../models/super_value_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'appearance.dart';
@@ -30,7 +30,7 @@ class DefaultAppearance extends Appearance {
     super.layouts,
     super.scaffoldPages,
     super.nativeComponents,
-    super.textComponents,
+    super.valueComponents,
     super.listComponents,
     super.pageCatalog,
     this.cardHeight = 142,
@@ -68,9 +68,9 @@ class DefaultAppearance extends Appearance {
       copyWith(layouts: {...layouts, id: value});
 
   @override
-  DefaultAppearance withTextComponent(String id, SuperTextConfig value) {
+  DefaultAppearance withValueComponent(String id, SuperValueConfig value) {
     value.validate();
-    return copyWith(textComponents: {...textComponents, id: value});
+    return copyWith(valueComponents: {...valueComponents, id: value});
   }
 
   @override
@@ -88,7 +88,7 @@ class DefaultAppearance extends Appearance {
     layouts: const {},
     scaffoldPages: const {},
     nativeComponents: const {},
-    textComponents: const {},
+    valueComponents: const {},
     listComponents: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
@@ -99,7 +99,7 @@ class DefaultAppearance extends Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
-    Map<String, SuperTextConfig>? textComponents,
+    Map<String, SuperValueConfig>? valueComponents,
     Map<String, SuperListViewConfig>? listComponents,
     EditorPageCatalog? pageCatalog,
     ThemeMode? mode,
@@ -121,7 +121,7 @@ class DefaultAppearance extends Appearance {
     layouts: layouts ?? this.layouts,
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
-    textComponents: textComponents ?? this.textComponents,
+    valueComponents: valueComponents ?? this.valueComponents,
     listComponents: listComponents ?? this.listComponents,
     pageCatalog: pageCatalog ?? this.pageCatalog,
     mode: mode ?? this.mode,

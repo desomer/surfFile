@@ -263,12 +263,17 @@ void main() {
       find.byKey(const ValueKey('super-layout-name-west')),
     );
     final badgeBox = tester.renderObject<RenderBox>(
-      find.descendant(
-        of: find.byKey(const ValueKey('super-layout-name-west')),
-        matching: find.byType(Material),
-      ).first,
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('super-layout-name-west')),
+            matching: find.byType(Material),
+          )
+          .first,
     );
-    expect(badgeBox.localToGlobal(badgeBox.size.center(Offset.zero)), zoneCentre);
+    expect(
+      badgeBox.localToGlobal(badgeBox.size.center(Offset.zero)),
+      zoneCentre,
+    );
 
     editMode.value = false;
     await tester.pumpAndSettle();
@@ -387,7 +392,20 @@ void main() {
     final editMode = ValueNotifier(false);
     addTearDown(editMode.dispose);
     final changes = <SuperLayoutConfig>[];
-    await pumpSlotPicker(tester, editMode: editMode, onChanged: changes.add);
+    await pumpSlotPicker(
+      tester,
+      editMode: editMode,
+      config: const SuperLayoutConfig(
+        north: true,
+        south: true,
+        east: true,
+        west: true,
+        placements: {
+          SuperLayoutZone.center: ['placed'],
+        },
+      ),
+      onChanged: changes.add,
+    );
     expect(find.byIcon(Icons.add), findsNothing);
 
     editMode.value = true;
@@ -397,7 +415,7 @@ void main() {
     for (final zone in SuperLayoutZone.values) {
       expect(
         find.byKey(ValueKey('super-layout-add-${zone.name}')),
-        findsOneWidget,
+        zone == SuperLayoutZone.center ? findsNothing : findsOneWidget,
       );
     }
     final addFinder = find.byKey(const ValueKey('super-layout-add-ne'));
@@ -431,7 +449,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(changes.single.placementsOf(SuperLayoutZone.ne), ['available']);
     expect(find.text('Nouveau contenu'), findsOneWidget);
-    expect(find.byKey(const ValueKey('super-layout-add-ne')), findsOneWidget);
+    expect(find.byKey(const ValueKey('super-layout-add-ne')), findsNothing);
     expect(find.byKey(const ValueKey('super-layout-name-ne')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -446,6 +464,8 @@ void main() {
       tester,
       editMode: editMode,
       config: const SuperLayoutConfig(
+        north: true,
+        south: true,
         swaps: {SuperLayoutZone.north},
         placements: {
           SuperLayoutZone.center: ['placed'],
@@ -467,6 +487,7 @@ void main() {
       find.byKey(const ValueKey('super-layout-name-north')),
       findsOneWidget,
     );
+    expect(find.byKey(const ValueKey('super-layout-add-north')), findsNothing);
     expect(
       find.byKey(const ValueKey('super-layout-add-center')),
       findsOneWidget,

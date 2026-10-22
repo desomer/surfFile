@@ -1,7 +1,7 @@
 /// Tests de widget de `SuperListView` sur un vrai repository temporaire :
 /// lignes et sous-lignes, saisie, ajout / suppression, fenêtre de réglage,
 /// gabarit en mode édition, et maître / détail (sélection au clic lue par des
-/// `SuperText` et une liste placés hors de la liste).
+/// `SuperValue` et une liste placés hors de la liste).
 ///
 /// Les lectures et écritures de fichiers ont lieu en temps réel : les
 /// interactions passent par `real`, qui exécute l'action dans
@@ -136,14 +136,14 @@ void main() {
   SlotImplementation text(
     String id,
     String path, {
-    SuperTextMode mode = SuperTextMode.display,
+    SuperValueMode mode = SuperValueMode.display,
   }) => BuilderSlot(
     id: id,
     label: id,
     showLabel: false,
-    builder: (_) => SuperText(
+    builder: (_) => SuperValue(
       id: id,
-      config: SuperTextConfig(
+      config: SuperValueConfig(
         mode: mode,
         binding: JsonTextBinding(path: path),
       ),
@@ -475,7 +475,7 @@ void main() {
           itemExtent: 80,
         ),
         template: center(['name']),
-        slots: [text('name', 'clients[?].name', mode: SuperTextMode.input)],
+        slots: [text('name', 'clients[?].name', mode: SuperValueMode.input)],
       ),
     );
     final field = find.descendant(
@@ -730,9 +730,9 @@ void main() {
                   height: index == 0 ? 40 : 60,
                   child: child,
                 ),
-                child: SuperText(
+                child: SuperValue(
                   id: 'name',
-                  config: const SuperTextConfig(
+                  config: const SuperValueConfig(
                     binding: JsonTextBinding(path: 'clients[?].name'),
                   ),
                 ),
@@ -1067,19 +1067,19 @@ void main() {
       find.byKey(const ValueKey('super-list-message-inner')),
       findsNothing,
     );
-    expect(find.byKey(const ValueKey('super-text-value-error')), findsNothing);
+    expect(find.byKey(const ValueKey('super-value-value-error')), findsNothing);
   });
 
   group('master/detail', () {
-    Widget outside(String id, String path) => SuperText(
+    Widget outside(String id, String path) => SuperValue(
       id: id,
-      config: SuperTextConfig(
-        mode: SuperTextMode.input,
+      config: SuperValueConfig(
+        mode: SuperValueMode.input,
         binding: JsonTextBinding(repositoryId: repository, path: path),
       ),
     );
 
-    // The detail is not a component: plain SuperTexts and a list placed
+    // The detail is not a component: plain SuperValues and a list placed
     // outside the master read the selected rows through their [?].
     Widget page({bool allowChanges = false}) => Column(
       children: [
@@ -1138,7 +1138,7 @@ void main() {
 
     Finder selected(String list, int index) =>
         find.byKey(ValueKey('super-list-selected-$list-$index'));
-    Finder input(String id) => find.byKey(ValueKey('super-text-input-$id'));
+    Finder input(String id) => find.byKey(ValueKey('super-value-input-$id'));
     TextField field(WidgetTester tester, String id) =>
         tester.widget<TextField>(input(id));
     Future<void> select(WidgetTester tester, Finder target) =>
@@ -1152,7 +1152,7 @@ void main() {
       expect(field(tester, 'detailName').readOnly, isTrue);
       expect(find.text('Aucune ligne sélectionnée.'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('super-text-detailName-error')),
+        find.byKey(const ValueKey('super-value-detailName-error')),
         findsNothing,
       );
 
@@ -1289,5 +1289,82 @@ void main() {
       expect(store.bindingOf(repository).array('clients').selection, isNull);
       expect(field(tester, 'detailName').readOnly, isTrue);
     });
+
+    testWidgets(
+      'boolean checkbox and switch follow row selection in master/detail',
+      (tester) async {
+        await mount(
+          tester,
+          Column(
+            children: [
+              SizedBox(
+                height: 220,
+                child: SuperListView(
+                  id: 'clients',
+                  config: SuperListViewConfig(
+                    binding: JsonTextBinding(
+                      repositoryId: repository,
+                      path: 'clients',
+                    ),
+                    itemExtent: 80,
+                  ),
+                  template: center(['name', 'vip']),
+                  slots: [
+                    text('name', 'clients[?].name'),
+                    BuilderSlot(
+                      id: 'vip',
+                      label: 'vip',
+                      showLabel: false,
+                      builder: (_) => const SuperValue(
+                        id: 'vip',
+                        config: SuperValueConfig(
+                          mode: SuperValueMode.display,
+                          kind: SuperValueKind.switchControl,
+                          binding: JsonTextBinding(path: 'clients[?].vip'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SuperValue(
+                id: 'detailVip',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.checkbox,
+                  binding: JsonTextBinding(
+                    repositoryId: repository,
+                    path: 'clients[?].vip',
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+        final detailCb = find.byKey(
+          const ValueKey('super-value-checkbox-detailVip'),
+        );
+        // Unselected: read-only (onChanged is null) and false
+        expect(tester.widget<Checkbox>(detailCb).value, isFalse);
+        expect(tester.widget<Checkbox>(detailCb).onChanged, isNull);
+
+        await select(
+          tester,
+          find.descendant(of: row('clients', 1), matching: find.text('Bob')),
+        );
+        expect(tester.widget<Checkbox>(detailCb).onChanged, isNotNull);
+        expect(tester.widget<Checkbox>(detailCb).value, isFalse);
+
+        await real(tester, () => tester.tap(detailCb), save: true);
+        expect(tester.widget<Checkbox>(detailCb).value, isTrue);
+        final rowSwitch = find.descendant(
+          of: row('clients', 1),
+          matching: find.byType(Switch),
+        );
+        expect(tester.widget<Switch>(rowSwitch).value, isTrue);
+        final clients = (await document(tester))['clients'] as List;
+        expect(clients[1]['vip'], isTrue);
+      },
+    );
   });
 }

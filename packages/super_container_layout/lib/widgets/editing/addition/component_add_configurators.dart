@@ -3,23 +3,23 @@ import 'package:material_ui/material_ui.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
-import '../../../models/super_text_config.dart';
+import '../../../models/super_value_config.dart';
 import '../../../theme/container_style.dart';
 import '../../super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../components/super_list_view_editor.dart';
-import '../components/super_text_editor.dart';
+import '../components/super_value_editor.dart';
 
 export '../repositories/repository_binding_fields.dart'
     show RepositoryBindingFields;
 
-/// Add wizard settings of a `SuperText`, written to `Registry.textController`.
-ComponentAddConfigurator<SuperTextConfig> superTextAddConfigurator(
+/// Add wizard settings of a `SuperValue`, written to `Registry.valueController`.
+ComponentAddConfigurator<SuperValueConfig> superValueAddConfigurator(
   List<String> availableFontFamilies,
-) => ComponentAddConfigurator<SuperTextConfig>(
-  initial: (_) => const SuperTextConfig(),
-  builder: (context, draft, onChanged) => _SuperTextAddForm(
+) => ComponentAddConfigurator<SuperValueConfig>(
+  initial: (_) => const SuperValueConfig(),
+  builder: (context, draft, onChanged) => _SuperValueAddForm(
     draft: draft,
     onChanged: onChanged,
     availableFontFamilies: availableFontFamilies,
@@ -34,23 +34,31 @@ ComponentAddConfigurator<SuperTextConfig> superTextAddConfigurator(
     } on FormatException catch (error) {
       return error.message;
     } on Object {
-      return 'Configuration du texte invalide.';
+      return 'Configuration de la valeur invalide.';
     }
   },
   summary: (draft) => [
-    ('Mode', draft.mode == SuperTextMode.input ? 'Saisie' : 'Affichage'),
-    if (draft.initialText.isNotEmpty) ('Texte initial', draft.initialText),
+    if (draft.kind != SuperValueKind.text)
+      (
+        'Type',
+        draft.kind == SuperValueKind.checkbox ? 'Checkbox' : 'Switch',
+      ),
+    ('Mode', draft.mode == SuperValueMode.input ? 'Saisie' : 'Affichage'),
+    if (!draft.kind.isBoolean && draft.initialText.isNotEmpty)
+      ('Texte initial', draft.initialText),
+    if (draft.kind.isBoolean) ('Valeur initiale', _yes(draft.initialBool)),
     if (draft.label.isNotEmpty) ('Libellé du champ', draft.label),
-    if (draft.placeholder.isNotEmpty) ('Texte indicatif', draft.placeholder),
+    if (!draft.kind.isBoolean && draft.placeholder.isNotEmpty)
+      ('Texte indicatif', draft.placeholder),
     if (draft.fontSize != null) ('Taille du texte', '${draft.fontSize}'),
     ('Alignement', _alignLabel(draft.textAlign)),
     ('Liaison', _bindingLabel(draft.binding)),
   ],
-  apply: (registry, id, draft) => registry.textController(id).value = draft,
+  apply: (registry, id, draft) => registry.valueController(id).value = draft,
   readBinding: (draft) => draft.binding,
   writeBinding: (draft, binding) =>
       draft.copyWith(binding: binding, clearBinding: binding == null),
-  bindingKeyPrefix: 'add-text',
+  bindingKeyPrefix: 'add-value',
   bindingPathHint: 'client.nom ou clients[?].nom',
   bindingHelp: 'Le repository fournit la valeur (liaison bidirectionnelle).',
 );
@@ -156,27 +164,27 @@ String _alignLabel(TextAlign align) => switch (align) {
 double? _parse(String text) =>
     double.tryParse(text.trim().replaceAll(',', '.'));
 
-class _SuperTextAddForm extends StatefulWidget {
-  const _SuperTextAddForm({
+class _SuperValueAddForm extends StatefulWidget {
+  const _SuperValueAddForm({
     required this.draft,
     required this.onChanged,
     required this.availableFontFamilies,
   });
 
-  final SuperTextConfig draft;
-  final ValueChanged<SuperTextConfig> onChanged;
+  final SuperValueConfig draft;
+  final ValueChanged<SuperValueConfig> onChanged;
   final List<String> availableFontFamilies;
 
   @override
-  State<_SuperTextAddForm> createState() => _SuperTextAddFormState();
+  State<_SuperValueAddForm> createState() => _SuperValueAddFormState();
 }
 
-class _SuperTextAddFormState extends State<_SuperTextAddForm> {
+class _SuperValueAddFormState extends State<_SuperValueAddForm> {
   /// Recreates the text fields after the full editor changed the draft.
   int _revision = 0;
 
   Future<void> _more() async {
-    final result = await showSuperTextEditor(
+    final result = await showSuperValueEditor(
       context: context,
       config: widget.draft,
       availableFontFamilies: widget.availableFontFamilies,
@@ -189,28 +197,65 @@ class _SuperTextAddFormState extends State<_SuperTextAddForm> {
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
-    final input = draft.mode == SuperTextMode.input;
+    final input = draft.mode == SuperValueMode.input;
     return KeyedSubtree(
       key: ValueKey(_revision),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SegmentedButton<SuperTextMode>(
-            key: const ValueKey('add-text-mode'),
+          SegmentedButton<SuperValueKind>(
+            key: const ValueKey('add-value-kind'),
+            segments: const [
+              ButtonSegment(value: SuperValueKind.text, label: Text('Texte')),
+              ButtonSegment(
+                value: SuperValueKind.checkbox,
+                label: Text('Checkbox'),
+              ),
+              ButtonSegment(
+                value: SuperValueKind.switchControl,
+                label: Text('Switch'),
+              ),
+            ],
+            selected: {draft.kind},
+            onSelectionChanged: (value) {
+              final kind = value.single;
+              widget.onChanged(
+                draft.copyWith(
+                  kind: kind,
+                  obscureText: kind.isBoolean ? false : draft.obscureText,
+                  minLines: kind.isBoolean ? 1 : draft.minLines,
+                  maxLines: kind.isBoolean ? 1 : draft.maxLines,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<SuperValueMode>(
+            key: const ValueKey('add-value-mode'),
             segments: const [
               ButtonSegment(
-                value: SuperTextMode.display,
+                value: SuperValueMode.display,
                 label: Text('Affichage'),
               ),
-              ButtonSegment(value: SuperTextMode.input, label: Text('Saisie')),
+              ButtonSegment(value: SuperValueMode.input, label: Text('Saisie')),
             ],
             selected: {draft.mode},
             onSelectionChanged: (value) =>
                 widget.onChanged(draft.copyWith(mode: value.single)),
           ),
-          if (!draft.obscureText)
+          if (draft.kind.isBoolean)
+            SwitchListTile(
+              key: const ValueKey('add-value-initial-bool'),
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Valeur initiale'),
+              value: draft.initialBool,
+              onChanged: (value) =>
+                  widget.onChanged(draft.copyWith(initialBool: value)),
+            )
+          else if (!draft.obscureText)
             TextFormField(
-              key: const ValueKey('add-text-initial'),
+              key: const ValueKey('add-value-initial'),
               initialValue: draft.initialText,
               decoration: const InputDecoration(
                 isDense: true,
@@ -219,9 +264,9 @@ class _SuperTextAddFormState extends State<_SuperTextAddForm> {
               onChanged: (value) =>
                   widget.onChanged(draft.copyWith(initialText: value)),
             ),
-          if (input) ...[
+          if (input || draft.kind.isBoolean) ...[
             TextFormField(
-              key: const ValueKey('add-text-label'),
+              key: const ValueKey('add-value-label'),
               initialValue: draft.label,
               decoration: const InputDecoration(
                 isDense: true,
@@ -230,19 +275,20 @@ class _SuperTextAddFormState extends State<_SuperTextAddForm> {
               onChanged: (value) =>
                   widget.onChanged(draft.copyWith(label: value)),
             ),
-            TextFormField(
-              key: const ValueKey('add-text-placeholder'),
-              initialValue: draft.placeholder,
-              decoration: const InputDecoration(
-                isDense: true,
-                labelText: 'Texte indicatif',
+            if (!draft.kind.isBoolean)
+              TextFormField(
+                key: const ValueKey('add-value-placeholder'),
+                initialValue: draft.placeholder,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'Texte indicatif',
+                ),
+                onChanged: (value) =>
+                    widget.onChanged(draft.copyWith(placeholder: value)),
               ),
-              onChanged: (value) =>
-                  widget.onChanged(draft.copyWith(placeholder: value)),
-            ),
           ],
           TextFormField(
-            key: const ValueKey('add-text-font-size'),
+            key: const ValueKey('add-value-font-size'),
             initialValue: draft.fontSize?.toString() ?? '',
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
@@ -260,7 +306,7 @@ class _SuperTextAddFormState extends State<_SuperTextAddForm> {
           ),
           const SizedBox(height: 8),
           SegmentedButton<TextAlign>(
-            key: const ValueKey('add-text-align'),
+            key: const ValueKey('add-value-align'),
             segments: const [
               ButtonSegment(
                 value: TextAlign.start,
@@ -289,7 +335,7 @@ class _SuperTextAddFormState extends State<_SuperTextAddForm> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              key: const ValueKey('add-text-more'),
+              key: const ValueKey('add-value-more'),
               onPressed: _more,
               icon: const Icon(Icons.tune),
               label: const Text('Plus d’options…'),

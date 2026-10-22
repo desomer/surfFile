@@ -1,68 +1,70 @@
-part of 'super_text_config.dart';
+part of 'super_value_config.dart';
 
 /// Dependent input settings are atomic. Each bindable property also carries
-/// its own entry in [SuperTextConfig.propertyBindings], including its removal.
-enum TextStateProperty {
+/// its own entry in [SuperValueConfig.propertyBindings], including its removal.
+enum ValueStateProperty {
   content('Contenu et champ', [
     'mode',
+    'kind',
     'initialText',
+    'initialBool',
     'obscureText',
     'minLines',
     'maxLines',
     'field',
   ]),
-  textLabel('Libellé', ['label'], SuperTextProperty.label),
-  placeholder('Placeholder', ['placeholder'], SuperTextProperty.placeholder),
+  textLabel('Libellé', ['label'], SuperValueProperty.label),
+  placeholder('Placeholder', ['placeholder'], SuperValueProperty.placeholder),
   enabled('Activation et lecture seule', ['enabled', 'readOnly']),
-  fontFamily('Police', ['fontFamily'], SuperTextProperty.fontFamily),
-  fontSize('Taille du texte', ['fontSize'], SuperTextProperty.fontSize),
-  fontWeight('Graisse', ['fontWeight'], SuperTextProperty.fontWeight),
-  italic('Italique', ['italic'], SuperTextProperty.italic),
-  color('Couleur', ['color'], SuperTextProperty.color),
-  textAlign('Alignement', ['textAlign'], SuperTextProperty.textAlign),
+  fontFamily('Police', ['fontFamily'], SuperValueProperty.fontFamily),
+  fontSize('Taille du texte', ['fontSize'], SuperValueProperty.fontSize),
+  fontWeight('Graisse', ['fontWeight'], SuperValueProperty.fontWeight),
+  italic('Italique', ['italic'], SuperValueProperty.italic),
+  color('Couleur', ['color'], SuperValueProperty.color),
+  textAlign('Alignement', ['textAlign'], SuperValueProperty.textAlign),
   lineHeight('Interligne', ['lineHeight']),
   letterSpacing('Espacement des lettres', ['letterSpacing']),
   binding('Liaison du contenu', ['binding']);
 
-  const TextStateProperty(this.label, this.keys, [this.bindingProperty]);
+  const ValueStateProperty(this.label, this.keys, [this.bindingProperty]);
 
   final String label;
   final List<String> keys;
-  final SuperTextProperty? bindingProperty;
+  final SuperValueProperty? bindingProperty;
 }
 
 @immutable
-class TextConfigOverride {
-  TextConfigOverride({
-    SuperTextConfig config = const SuperTextConfig(),
-    Set<TextStateProperty> properties = const {},
-  }) : config = _textStateLeaf(config),
+class ValueConfigOverride {
+  ValueConfigOverride({
+    SuperValueConfig config = const SuperValueConfig(),
+    Set<ValueStateProperty> properties = const {},
+  }) : config = _valueStateLeaf(config),
        properties = Set.unmodifiable(properties);
 
-  final SuperTextConfig config;
-  final Set<TextStateProperty> properties;
+  final SuperValueConfig config;
+  final Set<ValueStateProperty> properties;
   bool get isEmpty => properties.isEmpty;
 
-  TextConfigOverride copyWith({
-    SuperTextConfig? config,
-    Set<TextStateProperty>? properties,
+  ValueConfigOverride copyWith({
+    SuperValueConfig? config,
+    Set<ValueStateProperty>? properties,
     bool clearProperties = false,
-  }) => TextConfigOverride(
+  }) => ValueConfigOverride(
     config: config ?? this.config,
     properties: clearProperties ? const {} : properties ?? this.properties,
   );
 
-  TextConfigOverride edited(SuperTextConfig next) {
-    final leaf = _textStateLeaf(next);
+  ValueConfigOverride edited(SuperValueConfig next) {
+    final leaf = _valueStateLeaf(next);
     final before = config.toJson();
     final after = leaf.toJson();
-    return TextConfigOverride(
+    return ValueConfigOverride(
       config: leaf,
       properties: {
         ...properties,
-        for (final property in TextStateProperty.values)
+        for (final property in ValueStateProperty.values)
           if (property.keys.any(
-                (key) => !_sameTextStateValue(before[key], after[key]),
+                (key) => !_sameValueStateValue(before[key], after[key]),
               ) ||
               (property.bindingProperty != null &&
                   config.propertyBindings[property.bindingProperty] !=
@@ -72,8 +74,8 @@ class TextConfigOverride {
     );
   }
 
-  SuperTextConfig apply(SuperTextConfig base) {
-    final bindings = Map<SuperTextProperty, JsonTextBinding>.of(
+  SuperValueConfig apply(SuperValueConfig base) {
+    final bindings = Map<SuperValueProperty, JsonTextBinding>.of(
       base.propertyBindings,
     );
     for (final property in properties) {
@@ -87,43 +89,45 @@ class TextConfigOverride {
         }
       }
     }
-    bool has(TextStateProperty property) => properties.contains(property);
-    final content = has(TextStateProperty.content) ? config : base;
-    final interaction = has(TextStateProperty.enabled) ? config : base;
-    final result = SuperTextConfig(
+    bool has(ValueStateProperty property) => properties.contains(property);
+    final content = has(ValueStateProperty.content) ? config : base;
+    final interaction = has(ValueStateProperty.enabled) ? config : base;
+    final result = SuperValueConfig(
       mode: content.mode,
+      kind: content.kind,
       initialText: content.initialText,
+      initialBool: content.initialBool,
       obscureText: content.obscureText,
       minLines: content.minLines,
       maxLines: content.maxLines,
       field: content.field,
-      label: has(TextStateProperty.textLabel) ? config.label : base.label,
-      placeholder: has(TextStateProperty.placeholder)
+      label: has(ValueStateProperty.textLabel) ? config.label : base.label,
+      placeholder: has(ValueStateProperty.placeholder)
           ? config.placeholder
           : base.placeholder,
       enabled: interaction.enabled,
       readOnly: interaction.readOnly,
-      fontFamily: has(TextStateProperty.fontFamily)
+      fontFamily: has(ValueStateProperty.fontFamily)
           ? config.fontFamily
           : base.fontFamily,
-      fontSize: has(TextStateProperty.fontSize)
+      fontSize: has(ValueStateProperty.fontSize)
           ? config.fontSize
           : base.fontSize,
-      fontWeight: has(TextStateProperty.fontWeight)
+      fontWeight: has(ValueStateProperty.fontWeight)
           ? config.fontWeight
           : base.fontWeight,
-      italic: has(TextStateProperty.italic) ? config.italic : base.italic,
-      color: has(TextStateProperty.color) ? config.color : base.color,
-      textAlign: has(TextStateProperty.textAlign)
+      italic: has(ValueStateProperty.italic) ? config.italic : base.italic,
+      color: has(ValueStateProperty.color) ? config.color : base.color,
+      textAlign: has(ValueStateProperty.textAlign)
           ? config.textAlign
           : base.textAlign,
-      lineHeight: has(TextStateProperty.lineHeight)
+      lineHeight: has(ValueStateProperty.lineHeight)
           ? config.lineHeight
           : base.lineHeight,
-      letterSpacing: has(TextStateProperty.letterSpacing)
+      letterSpacing: has(ValueStateProperty.letterSpacing)
           ? config.letterSpacing
           : base.letterSpacing,
-      binding: has(TextStateProperty.binding) ? config.binding : base.binding,
+      binding: has(ValueStateProperty.binding) ? config.binding : base.binding,
       propertyBindings: Map.unmodifiable(bindings),
     );
     result._validateLeaf();
@@ -135,30 +139,30 @@ class TextConfigOverride {
     'properties': properties.map((p) => p.name).toList()..sort(),
   };
 
-  factory TextConfigOverride.fromJson(Object? value) {
+  factory ValueConfigOverride.fromJson(Object? value) {
     if (value is! Map ||
         value.keys.any((key) => key != 'config' && key != 'properties') ||
         value['properties'] is! List) {
-      throw const FormatException('Invalid Text override.');
+      throw const FormatException('Invalid Value override.');
     }
-    final properties = <TextStateProperty>{};
+    final properties = <ValueStateProperty>{};
     for (final name in value['properties'] as List) {
-      final property = TextStateProperty.values
+      final property = ValueStateProperty.values
           .where((property) => property.name == name)
           .firstOrNull;
       if (property == null || !properties.add(property)) {
-        throw const FormatException('Invalid Text override property.');
+        throw const FormatException('Invalid Value override property.');
       }
     }
-    return TextConfigOverride(
-      config: _readTextStateLeaf(value['config']),
+    return ValueConfigOverride(
+      config: _readValueStateLeaf(value['config']),
       properties: properties,
     );
   }
 
   @override
   bool operator ==(Object other) =>
-      other is TextConfigOverride &&
+      other is ValueConfigOverride &&
       config == other.config &&
       setEquals(properties, other.properties);
 
@@ -167,37 +171,37 @@ class TextConfigOverride {
 }
 
 @immutable
-class TextConfigStates {
-  TextConfigStates({
+class ValueConfigStates {
+  ValueConfigStates({
     this.binding,
-    Map<String, SuperTextConfig> named = const {},
-    Map<String, Set<TextStateProperty>> namedProperties = const {},
+    Map<String, SuperValueConfig> named = const {},
+    Map<String, Set<ValueStateProperty>> namedProperties = const {},
     this.hover,
     this.selected,
-    Map<AutomaticState, TextConfigOverride> automatic = const {},
+    Map<AutomaticState, ValueConfigOverride> automatic = const {},
     List<String>? order,
   }) : named = Map.unmodifiable({
          for (final entry in named.entries)
-           _textStateName(entry.key): _textStateLeaf(entry.value),
+           _valueStateName(entry.key): _valueStateLeaf(entry.value),
        }),
        automatic = Map.unmodifiable(automatic),
        namedProperties = Map.unmodifiable({
          for (final name in named.keys)
-           name: Set<TextStateProperty>.unmodifiable(
+           name: Set<ValueStateProperty>.unmodifiable(
              namedProperties[name] ?? {},
            ),
        }),
        order = List.unmodifiable(
-         _textStateOrder(named.keys, order, automatic.keys),
+         _valueStateOrder(named.keys, order, automatic.keys),
        ) {
     binding?.validate();
     if (namedProperties.keys.any((name) => !named.containsKey(name))) {
-      throw const FormatException('Unknown named Text override.');
+      throw const FormatException('Unknown named Value override.');
     }
     if (automatic.keys.any(
       (s) => s == AutomaticState.hover || s == AutomaticState.selected,
     )) {
-      throw const FormatException('Duplicate automatic Text state.');
+      throw const FormatException('Duplicate automatic Value state.');
     }
   }
 
@@ -205,31 +209,31 @@ class TextConfigStates {
   static const selectedKey = '\u0000selected';
 
   final JsonTextBinding? binding;
-  final Map<String, SuperTextConfig> named;
-  final Map<String, Set<TextStateProperty>> namedProperties;
-  final TextConfigOverride? hover;
-  final TextConfigOverride? selected;
-  final Map<AutomaticState, TextConfigOverride> automatic;
+  final Map<String, SuperValueConfig> named;
+  final Map<String, Set<ValueStateProperty>> namedProperties;
+  final ValueConfigOverride? hover;
+  final ValueConfigOverride? selected;
+  final Map<AutomaticState, ValueConfigOverride> automatic;
   final List<String> order;
 
-  TextConfigStates copyWith({
+  ValueConfigStates copyWith({
     JsonTextBinding? binding,
     bool clearBinding = false,
-    Map<String, SuperTextConfig>? named,
-    Map<String, Set<TextStateProperty>>? namedProperties,
+    Map<String, SuperValueConfig>? named,
+    Map<String, Set<ValueStateProperty>>? namedProperties,
     bool clearNamed = false,
-    TextConfigOverride? hover,
+    ValueConfigOverride? hover,
     bool clearHover = false,
-    TextConfigOverride? selected,
+    ValueConfigOverride? selected,
     bool clearSelected = false,
-    Map<AutomaticState, TextConfigOverride>? automatic,
+    Map<AutomaticState, ValueConfigOverride>? automatic,
     List<String>? order,
     bool clearOrder = false,
   }) {
     final nextNamed = clearNamed
-        ? <String, SuperTextConfig>{}
+        ? <String, SuperValueConfig>{}
         : named ?? this.named;
-    return TextConfigStates(
+    return ValueConfigStates(
       binding: clearBinding ? null : binding ?? this.binding,
       named: nextNamed,
       namedProperties:
@@ -258,8 +262,8 @@ class TextConfigStates {
     );
   }
 
-  SuperTextConfig resolve(
-    SuperTextConfig base, {
+  SuperValueConfig resolve(
+    SuperValueConfig base, {
     String? name,
     bool isHovered = false,
     bool isSelected = false,
@@ -272,7 +276,7 @@ class TextConfigStates {
       } else if (key == selectedKey) {
         if (isSelected && selected != null) result = selected!.apply(result);
       } else if (key == name) {
-        result = TextConfigOverride(
+        result = ValueConfigOverride(
           config: named[key]!,
           properties: namedProperties[key]!,
         ).apply(result);
@@ -285,7 +289,7 @@ class TextConfigStates {
     return result;
   }
 
-  void _validateAgainst(SuperTextConfig base) {
+  void _validateAgainst(SuperValueConfig base) {
     binding?.validate();
     for (final config in named.values) {
       config._validateLeaf();
@@ -334,7 +338,7 @@ class TextConfigStates {
     'order': order,
   };
 
-  factory TextConfigStates.fromJson(Object? value) {
+  factory ValueConfigStates.fromJson(Object? value) {
     if (value is! Map ||
         value.keys.any(
           (key) => !{
@@ -351,44 +355,44 @@ class TextConfigStates {
         (value.containsKey('order') &&
             (value['order'] is! List ||
                 (value['order'] as List).any((key) => key is! String)))) {
-      throw const FormatException('Invalid Text states.');
+      throw const FormatException('Invalid Value states.');
     }
-    final named = <String, SuperTextConfig>{};
+    final named = <String, SuperValueConfig>{};
     for (final entry in (value['named'] as Map).entries) {
       if (entry.key is! String) {
-        throw const FormatException('Invalid Text state name.');
+        throw const FormatException('Invalid Value state name.');
       }
-      named[_textStateName(entry.key as String)] = _readTextStateLeaf(
+      named[_valueStateName(entry.key as String)] = _readValueStateLeaf(
         entry.value,
       );
     }
     try {
-      return TextConfigStates(
+      return ValueConfigStates(
         binding: value['binding'] == null
             ? null
             : JsonTextBinding.fromJson(value['binding']),
         named: named,
-        namedProperties: _readTextNamedProperties(
+        namedProperties: _readValueNamedProperties(
           value['namedProperties'],
           named,
         ),
         hover: value.containsKey('hover')
-            ? TextConfigOverride.fromJson(value['hover'])
+            ? ValueConfigOverride.fromJson(value['hover'])
             : null,
         selected: value.containsKey('selected')
-            ? TextConfigOverride.fromJson(value['selected'])
+            ? ValueConfigOverride.fromJson(value['selected'])
             : null,
-        automatic: _readTextAutomatic(value['automatic']),
+        automatic: _readValueAutomatic(value['automatic']),
         order: (value['order'] as List?)?.cast<String>(),
       );
     } on ArgumentError {
-      throw const FormatException('Invalid Text states.');
+      throw const FormatException('Invalid Value states.');
     }
   }
 
   @override
   bool operator ==(Object other) =>
-      other is TextConfigStates &&
+      other is ValueConfigStates &&
       binding == other.binding &&
       mapEquals(named, other.named) &&
       namedProperties.length == other.namedProperties.length &&
@@ -420,27 +424,27 @@ class TextConfigStates {
   );
 }
 
-Map<String, Set<TextStateProperty>> _readTextNamedProperties(
+Map<String, Set<ValueStateProperty>> _readValueNamedProperties(
   Object? value,
-  Map<String, SuperTextConfig> named,
+  Map<String, SuperValueConfig> named,
 ) {
   if (value == null) return {};
   if (value is! Map || value.keys.any((key) => !named.containsKey(key))) {
-    throw const FormatException('Invalid named Text overrides.');
+    throw const FormatException('Invalid named Value overrides.');
   }
   return {
     for (final entry in value.entries)
-      entry.key as String: TextConfigOverride.fromJson({
+      entry.key as String: ValueConfigOverride.fromJson({
         'config': named[entry.key]!.toJson(),
         'properties': entry.value,
       }).properties,
   };
 }
 
-Map<AutomaticState, TextConfigOverride> _readTextAutomatic(Object? value) {
+Map<AutomaticState, ValueConfigOverride> _readValueAutomatic(Object? value) {
   if (value == null) return {};
   if (value is! Map) {
-    throw const FormatException('Invalid automatic Text states.');
+    throw const FormatException('Invalid automatic Value states.');
   }
   return {
     for (final entry in value.entries)
@@ -452,28 +456,28 @@ Map<AutomaticState, TextConfigOverride> _readTextAutomatic(Object? value) {
                         s != AutomaticState.selected,
                   )
                   .firstOrNull ??
-              (throw const FormatException('Unknown automatic Text state.'))):
-          TextConfigOverride.fromJson(entry.value),
+              (throw const FormatException('Unknown automatic Value state.'))):
+          ValueConfigOverride.fromJson(entry.value),
   };
 }
 
-SuperTextConfig _textStateLeaf(SuperTextConfig config) {
+SuperValueConfig _valueStateLeaf(SuperValueConfig config) {
   if (config.states != null) {
-    throw const FormatException('Text states cannot contain nested states.');
+    throw const FormatException('Value states cannot contain nested states.');
   }
   return config.copyWith(
     propertyBindings: Map.unmodifiable(config.propertyBindings),
   );
 }
 
-SuperTextConfig _readTextStateLeaf(Object? value) {
+SuperValueConfig _readValueStateLeaf(Object? value) {
   if (value is! Map<String, dynamic> || value.containsKey('states')) {
-    throw const FormatException('Invalid or nested Text state.');
+    throw const FormatException('Invalid or nested Value state.');
   }
-  return _textStateLeaf(SuperTextConfig.fromJson(value));
+  return _valueStateLeaf(SuperValueConfig.fromJson(value));
 }
 
-String _textStateName(String name) {
+String _valueStateName(String name) {
   if (name.isEmpty ||
       name.trim() != name ||
       name.contains('\u0000') ||
@@ -488,41 +492,41 @@ String _textStateName(String name) {
         'selectionne',
         'survol',
       }.contains(name.toLowerCase())) {
-    throw const FormatException('Empty or reserved Text state name.');
+    throw const FormatException('Empty or reserved Value state name.');
   }
   return name;
 }
 
-List<String> _textStateOrder(
+List<String> _valueStateOrder(
   Iterable<String> names,
   List<String>? order,
   Iterable<AutomaticState> automatic,
 ) {
   final defaults = [
     ...names,
-    TextConfigStates.hoverKey,
-    TextConfigStates.selectedKey,
+    ValueConfigStates.hoverKey,
+    ValueConfigStates.selectedKey,
     ...automatic.map((s) => s.key),
   ];
   if (order == null) return defaults;
   if (order.toSet().length != order.length ||
       order.any((key) => !defaults.contains(key))) {
-    throw const FormatException('Invalid Text state order.');
+    throw const FormatException('Invalid Value state order.');
   }
   return [...order, ...defaults.where((key) => !order.contains(key))];
 }
 
-bool _sameTextStateValue(Object? a, Object? b) {
+bool _sameValueStateValue(Object? a, Object? b) {
   if (a is Map && b is Map) {
     return a.length == b.length &&
         a.keys.every(
-          (key) => b.containsKey(key) && _sameTextStateValue(a[key], b[key]),
+          (key) => b.containsKey(key) && _sameValueStateValue(a[key], b[key]),
         );
   }
   if (a is List && b is List) {
     return a.length == b.length &&
         Iterable.generate(a.length)
-            .every((i) => _sameTextStateValue(a[i], b[i]));
+            .every((i) => _sameValueStateValue(a[i], b[i]));
   }
   return a == b;
 }

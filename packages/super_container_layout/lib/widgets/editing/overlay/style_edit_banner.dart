@@ -96,11 +96,11 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     key: const ValueKey('style-edit-banner-drag'),
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Icon(
-                      //   Icons.brush_outlined,
-                      //   size: 16,
-                      //   color: scheme.onPrimary,
-                      // ),
+                      Icon(
+                        Icons.drag_indicator,
+                        size: 16,
+                        color: scheme.onPrimary,
+                      ),
                       // const SizedBox(width: 8),
                       Text(
                         'Mode édition',

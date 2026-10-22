@@ -5,11 +5,19 @@ import 'json_text_binding.dart';
 import 'automatic_state.dart';
 import 'super_text_field_config.dart';
 
-part 'super_text_states.dart';
+part 'super_value_states.dart';
 
-enum SuperTextMode { display, input }
+enum SuperValueMode { display, input }
 
-enum SuperTextProperty {
+enum SuperValueKind {
+  text,
+  checkbox,
+  switchControl;
+
+  bool get isBoolean => this != SuperValueKind.text;
+}
+
+enum SuperValueProperty {
   label,
   placeholder,
   fontFamily,
@@ -21,10 +29,12 @@ enum SuperTextProperty {
 }
 
 @immutable
-class SuperTextConfig {
-  const SuperTextConfig({
-    this.mode = SuperTextMode.display,
+class SuperValueConfig {
+  const SuperValueConfig({
+    this.mode = SuperValueMode.display,
+    this.kind = SuperValueKind.text,
     this.initialText = '',
+    this.initialBool = false,
     this.label = '',
     this.placeholder = '',
     this.enabled = true,
@@ -46,8 +56,10 @@ class SuperTextConfig {
     this.states,
   });
 
-  final SuperTextMode mode;
+  final SuperValueMode mode;
+  final SuperValueKind kind;
   final String initialText;
+  final bool initialBool;
   final String label;
   final String placeholder;
   final bool enabled;
@@ -64,9 +76,9 @@ class SuperTextConfig {
   final double? lineHeight;
   final double? letterSpacing;
   final JsonTextBinding? binding;
-  final Map<SuperTextProperty, JsonTextBinding> propertyBindings;
+  final Map<SuperValueProperty, JsonTextBinding> propertyBindings;
   final SuperTextFieldConfig field;
-  final TextConfigStates? states;
+  final ValueConfigStates? states;
 
   void validate() {
     _validateLeaf();
@@ -82,18 +94,23 @@ class SuperTextConfig {
     if (minLines < 1 ||
         maxLines < minLines ||
         (obscureText &&
-            (initialText.isNotEmpty || minLines != 1 || maxLines != 1)) ||
+            (kind.isBoolean ||
+                initialText.isNotEmpty ||
+                minLines != 1 ||
+                maxLines != 1)) ||
         (fontFamily != null && fontFamily!.trim().isEmpty) ||
         (fontSize != null && (!fontSize!.isFinite || fontSize! <= 0)) ||
         (lineHeight != null && (!lineHeight!.isFinite || lineHeight! <= 0)) ||
         (letterSpacing != null && !letterSpacing!.isFinite)) {
-      throw ArgumentError('Invalid Text configuration.');
+      throw ArgumentError('Invalid Value configuration.');
     }
   }
 
-  SuperTextConfig copyWith({
-    SuperTextMode? mode,
+  SuperValueConfig copyWith({
+    SuperValueMode? mode,
+    SuperValueKind? kind,
     String? initialText,
+    bool? initialBool,
     String? label,
     String? placeholder,
     bool? enabled,
@@ -118,13 +135,15 @@ class SuperTextConfig {
     bool inheritLetterSpacing = false,
     JsonTextBinding? binding,
     bool clearBinding = false,
-    Map<SuperTextProperty, JsonTextBinding>? propertyBindings,
+    Map<SuperValueProperty, JsonTextBinding>? propertyBindings,
     SuperTextFieldConfig? field,
-    TextConfigStates? states,
+    ValueConfigStates? states,
     bool clearStates = false,
-  }) => SuperTextConfig(
+  }) => SuperValueConfig(
     mode: mode ?? this.mode,
+    kind: kind ?? this.kind,
     initialText: initialText ?? this.initialText,
+    initialBool: initialBool ?? this.initialBool,
     label: label ?? this.label,
     placeholder: placeholder ?? this.placeholder,
     enabled: enabled ?? this.enabled,
@@ -152,7 +171,9 @@ class SuperTextConfig {
     validate();
     return {
       'mode': mode.name,
+      if (kind != SuperValueKind.text) 'kind': kind.name,
       if (!obscureText) 'initialText': initialText,
+      if (initialBool) 'initialBool': initialBool,
       'label': label,
       'placeholder': placeholder,
       'enabled': enabled,
@@ -179,13 +200,15 @@ class SuperTextConfig {
     };
   }
 
-  factory SuperTextConfig.fromJson(Object? value) {
+  factory SuperValueConfig.fromJson(Object? value) {
     if (value is! Map<String, dynamic>) {
-      throw const FormatException('Invalid Text configuration.');
+      throw const FormatException('Invalid Value configuration.');
     }
     const keys = {
       'mode',
+      'kind',
       'initialText',
+      'initialBool',
       'label',
       'placeholder',
       'enabled',
@@ -207,12 +230,12 @@ class SuperTextConfig {
       'states',
     };
     if (value.keys.any((key) => !keys.contains(key))) {
-      throw const FormatException('Unknown Text preference.');
+      throw const FormatException('Unknown Value preference.');
     }
     T field<T>(String key, T fallback) {
       if (!value.containsKey(key)) return fallback;
       final result = value[key];
-      if (result is! T) throw FormatException('Invalid Text "$key".');
+      if (result is! T) throw FormatException('Invalid Value "$key".');
       return result;
     }
 
@@ -220,14 +243,22 @@ class SuperTextConfig {
       final result = value[key];
       if (result == null) return null;
       if (result is! num || !result.isFinite) {
-        throw FormatException('Invalid Text "$key".');
+        throw FormatException('Invalid Value "$key".');
       }
       return result.toDouble();
     }
 
-    final mode = SuperTextMode.values
+    final mode = SuperValueMode.values
         .where((mode) => mode.name == field('mode', 'display'))
         .firstOrNull;
+    final rawKind = field('kind', 'text');
+    final kind = switch (rawKind) {
+      'switch' => SuperValueKind.switchControl,
+      _ =>
+        SuperValueKind.values
+            .where((candidate) => candidate.name == rawKind)
+            .firstOrNull,
+    };
     final align = TextAlign.values
         .where((align) => align.name == field('textAlign', 'start'))
         .firstOrNull;
@@ -238,33 +269,36 @@ class SuperTextConfig {
     final color = value['color'];
     final family = value['fontFamily'];
     if (mode == null ||
+        kind == null ||
         align == null ||
         (weight != null && (weight is! int || fontWeight == null)) ||
         (color != null && (color is! int || color < 0 || color > 0xFFFFFFFF)) ||
         (family != null && family is! String)) {
-      throw const FormatException('Invalid Text style.');
+      throw const FormatException('Invalid Value style.');
     }
     final rawPropertyBindings = value['propertyBindings'];
     if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
-      throw const FormatException('Invalid Text property bindings.');
+      throw const FormatException('Invalid Value property bindings.');
     }
-    final propertyBindings = <SuperTextProperty, JsonTextBinding>{};
+    final propertyBindings = <SuperValueProperty, JsonTextBinding>{};
     for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
       if (entry.key is! String) {
-        throw const FormatException('Invalid Text property binding.');
+        throw const FormatException('Invalid Value property binding.');
       }
-      final property = SuperTextProperty.values
+      final property = SuperValueProperty.values
           .where((candidate) => candidate.name == entry.key)
           .firstOrNull;
       if (property == null || entry.value is! Map<String, dynamic>) {
-        throw const FormatException('Invalid Text property binding.');
+        throw const FormatException('Invalid Value property binding.');
       }
       propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
     }
-    final result = SuperTextConfig(
+    final result = SuperValueConfig(
       mode: mode,
+      kind: kind,
       textAlign: align,
       initialText: field('initialText', ''),
+      initialBool: field('initialBool', false),
       label: field('label', ''),
       placeholder: field('placeholder', ''),
       enabled: field('enabled', true),
@@ -288,21 +322,23 @@ class SuperTextConfig {
           : const SuperTextFieldConfig(),
       states: value['states'] == null
           ? null
-          : TextConfigStates.fromJson(value['states']),
+          : ValueConfigStates.fromJson(value['states']),
     );
     try {
       result.validate();
     } on ArgumentError {
-      throw const FormatException('Invalid Text configuration.');
+      throw const FormatException('Invalid Value configuration.');
     }
     return result;
   }
 
   @override
   bool operator ==(Object other) =>
-      other is SuperTextConfig &&
+      other is SuperValueConfig &&
       mode == other.mode &&
+      kind == other.kind &&
       initialText == other.initialText &&
+      initialBool == other.initialBool &&
       label == other.label &&
       placeholder == other.placeholder &&
       enabled == other.enabled &&
@@ -326,7 +362,9 @@ class SuperTextConfig {
   @override
   int get hashCode => Object.hashAll([
     mode,
+    kind,
     initialText,
+    initialBool,
     label,
     placeholder,
     enabled,

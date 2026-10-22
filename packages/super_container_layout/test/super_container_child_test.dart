@@ -113,12 +113,12 @@ void main() {
       final appearance = AppearanceScope.controllerOf(context)!;
       history.clear();
       await open(tester, 'Card');
-      await choose(tester, 'factory:Text');
-      expect(find.byType(SuperText), findsOneWidget);
+      await choose(tester, 'factory:Value');
+      expect(find.byType(SuperValue), findsOneWidget);
       final config = components.nativeComponentController('box').value;
       final id = config.slotsOf('child').single;
-      expect(config.slotTypeOf(id), 'factory:Text');
-      expect(tester.widget<SuperText>(find.byType(SuperText)).id, id);
+      expect(config.slotTypeOf(id), 'factory:Value');
+      expect(tester.widget<SuperValue>(find.byType(SuperValue)).id, id);
       expect(history.canUndo, isTrue);
       final store = AppearanceStore();
       await store.save(appearance.value);
@@ -141,16 +141,16 @@ void main() {
       expect(imported.nativeComponents['box']!.toJson(), config.toJson());
       history.undo();
       await tester.pumpAndSettle();
-      expect(find.byType(SuperText), findsNothing);
+      expect(find.byType(SuperValue), findsNothing);
       expect(history.canUndo, isFalse);
       history.redo();
       await tester.pumpAndSettle();
-      expect(tester.widget<SuperText>(find.byType(SuperText)).id, id);
+      expect(tester.widget<SuperValue>(find.byType(SuperValue)).id, id);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       final restored = registry();
       await mount(tester, restored, fromCatalog: true);
-      expect(tester.widget<SuperText>(find.byType(SuperText)).id, id);
+      expect(tester.widget<SuperValue>(find.byType(SuperValue)).id, id);
       expect(
         restored.nativeComponentController('box').value.toJson(),
         config.toJson(),

@@ -5,7 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/models/super_text_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
@@ -64,19 +64,19 @@ void main() {
     expect(codec.fromJson(oldDocument).pageCatalog.pages, isEmpty);
   });
 
-  test('SurfFile codec preserves Text design and application preferences', () {
+  test('SurfFile codec preserves Value design and application preferences', () {
     final appearance = defaultSurfFileAppearance().copyWith(
       cardWidth: 240,
-      textComponents: {
-        'title': const SuperTextConfig(initialText: 'Titre'),
-        'password': const SuperTextConfig(obscureText: true),
+      valueComponents: {
+        'title': const SuperValueConfig(initialText: 'Titre'),
+        'password': const SuperValueConfig(obscureText: true),
       },
     );
     final decoded = AppearanceStore.decode(AppearanceStore.encode(appearance));
-    expect(decoded.textComponents, appearance.textComponents);
+    expect(decoded.valueComponents, appearance.valueComponents);
     expect(decoded.cardWidth, 240);
-    expect(decoded.copyWith(spacing: 24).textComponents, appearance.textComponents);
-    expect(decoded.resetLayouts().textComponents, isEmpty);
+    expect(decoded.copyWith(spacing: 24).valueComponents, appearance.valueComponents);
+    expect(decoded.resetLayouts().valueComponents, isEmpty);
   });
 
   test('independent preferences share immutable queued document snapshots', () async {

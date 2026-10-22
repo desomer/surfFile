@@ -6,7 +6,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 void main() {
   Future<void> mount(
     WidgetTester tester,
-    SuperTextConfig config, {
+    SuperValueConfig config, {
     bool selected = false,
     bool outerSelected = false,
     TextEditingController? controller,
@@ -28,7 +28,7 @@ void main() {
                   repositoryId: null,
                   indices: const [0],
                   selected: selected,
-                  child: SuperText(
+                  child: SuperValue(
                     id: 'state',
                     config: config,
                     controller: controller,
@@ -48,11 +48,11 @@ void main() {
   testWidgets('unconfigured hover and row selection do not reset Text input', (
     tester,
   ) async {
-    final config = SuperTextConfig(
-      mode: SuperTextMode.input,
-      states: TextConfigStates(),
+    final config = SuperValueConfig(
+      mode: SuperValueMode.input,
+      states: ValueConfigStates(),
     );
-    final field = find.byKey(const ValueKey('super-text-input-state'));
+    final field = find.byKey(const ValueKey('super-value-input-state'));
     await mount(tester, config);
     await tester.enterText(field, 'Draft');
     await tester.pumpAndSettle();
@@ -73,18 +73,18 @@ void main() {
     'hover and row selection resolve all Text properties and reset on transitions only',
     (tester) async {
       final changes = <String>[];
-      final config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      final config = SuperValueConfig(
+        mode: SuperValueMode.input,
         initialText: 'Default',
-        states: TextConfigStates(
-          hover: TextConfigOverride(
-            config: const SuperTextConfig(fontSize: 24),
-            properties: {TextStateProperty.fontSize},
+        states: ValueConfigStates(
+          hover: ValueConfigOverride(
+            config: const SuperValueConfig(fontSize: 24),
+            properties: {ValueStateProperty.fontSize},
           ),
         ),
       );
       await mount(tester, config, onChanged: changes.add);
-      final field = find.byKey(const ValueKey('super-text-input-state'));
+      final field = find.byKey(const ValueKey('super-value-input-state'));
       await tester.enterText(field, 'Draft');
       await tester.pumpAndSettle();
       final count = changes.length;
@@ -113,15 +113,15 @@ void main() {
   ) async {
     final controller = TextEditingController(text: 'External');
     addTearDown(controller.dispose);
-    final config = SuperTextConfig(
-      states: TextConfigStates(
-        hover: TextConfigOverride(
-          config: const SuperTextConfig(fontSize: 24),
-          properties: {TextStateProperty.fontSize},
+    final config = SuperValueConfig(
+      states: ValueConfigStates(
+        hover: ValueConfigOverride(
+          config: const SuperValueConfig(fontSize: 24),
+          properties: {ValueStateProperty.fontSize},
         ),
-        selected: TextConfigOverride(
-          config: const SuperTextConfig(color: Colors.red),
-          properties: {TextStateProperty.color},
+        selected: ValueConfigOverride(
+          config: const SuperValueConfig(color: Colors.red),
+          properties: {ValueStateProperty.color},
         ),
       ),
     );
@@ -132,7 +132,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.text, 'External');
     final text = tester.widget<Text>(
-      find.byKey(const ValueKey('super-text-display-state')),
+      find.byKey(const ValueKey('super-value-display-state')),
     );
     expect(text.style!.fontSize, 24);
     expect(text.style!.color!.toARGB32(), Colors.red.toARGB32());
@@ -143,20 +143,20 @@ void main() {
   testWidgets(
     'nearest row shadows selection and persisted priority changes the winner',
     (tester) async {
-      final config = SuperTextConfig(
+      final config = SuperValueConfig(
         initialText: 'Text',
-        states: TextConfigStates(
-          hover: TextConfigOverride(
-            config: const SuperTextConfig(color: Colors.blue),
-            properties: {TextStateProperty.color},
+        states: ValueConfigStates(
+          hover: ValueConfigOverride(
+            config: const SuperValueConfig(color: Colors.blue),
+            properties: {ValueStateProperty.color},
           ),
-          selected: TextConfigOverride(
-            config: const SuperTextConfig(color: Colors.red),
-            properties: {TextStateProperty.color},
+          selected: ValueConfigOverride(
+            config: const SuperValueConfig(color: Colors.red),
+            properties: {ValueStateProperty.color},
           ),
         ),
       );
-      final display = find.byKey(const ValueKey('super-text-display-state'));
+      final display = find.byKey(const ValueKey('super-value-display-state'));
       await mount(tester, config, outerSelected: true);
       expect(
         tester.widget<Text>(display).style!.color!.toARGB32(),
@@ -179,7 +179,7 @@ void main() {
         tester,
         config.copyWith(
           states: config.states!.copyWith(
-            order: [TextConfigStates.selectedKey, TextConfigStates.hoverKey],
+            order: [ValueConfigStates.selectedKey, ValueConfigStates.hoverKey],
           ),
         ),
         selected: true,
@@ -197,12 +197,12 @@ void main() {
     'effective content edits and removing states reset without artificial changes',
     (tester) async {
       final changes = <String>[];
-      final config = SuperTextConfig(
-        mode: SuperTextMode.input,
+      final config = SuperValueConfig(
+        mode: SuperValueMode.input,
         initialText: 'First',
-        states: TextConfigStates(),
+        states: ValueConfigStates(),
       );
-      final field = find.byKey(const ValueKey('super-text-input-state'));
+      final field = find.byKey(const ValueKey('super-value-input-state'));
       await mount(tester, config, onChanged: changes.add);
       await tester.enterText(field, 'Draft');
       await tester.pumpAndSettle();
@@ -232,20 +232,20 @@ void main() {
     'controlled value is not reset on hover or selection transitions',
     (tester) async {
       final changes = <String>[];
-      final config = SuperTextConfig(
-        mode: SuperTextMode.input,
-        states: TextConfigStates(
-          hover: TextConfigOverride(
-            config: const SuperTextConfig(
-              mode: SuperTextMode.input,
+      final config = SuperValueConfig(
+        mode: SuperValueMode.input,
+        states: ValueConfigStates(
+          hover: ValueConfigOverride(
+            config: const SuperValueConfig(
+              mode: SuperValueMode.input,
               initialText: 'Hovered',
             ),
-            properties: {TextStateProperty.content},
+            properties: {ValueStateProperty.content},
           ),
         ),
       );
       await mount(tester, config, value: 'Owned', onChanged: changes.add);
-      final field = find.byKey(const ValueKey('super-text-input-state'));
+      final field = find.byKey(const ValueKey('super-value-input-state'));
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       await mouse.addPointer(location: Offset.zero);
       await mouse.moveTo(tester.getCenter(field));

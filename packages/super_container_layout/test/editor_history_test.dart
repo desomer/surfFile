@@ -4,38 +4,38 @@ import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 
 void main() {
-  test('Text state tables survive appearance codec and atomic undo redo', () {
-    final original = const SuperTextConfig(initialText: 'Default');
+  test('Value state tables survive appearance codec and atomic undo redo', () {
+    final original = const SuperValueConfig(initialText: 'Default');
     final configured = original.copyWith(
-      states: TextConfigStates(
+      states: ValueConfigStates(
         binding: const JsonTextBinding(
           repositoryId: '0123456789abcdef0123456789abcdef',
           path: 'status',
         ),
-        named: {'ready': const SuperTextConfig(initialText: 'Ready')},
+        named: {'ready': const SuperValueConfig(initialText: 'Ready')},
         namedProperties: {
-          'ready': {TextStateProperty.content},
+          'ready': {ValueStateProperty.content},
         },
-        hover: TextConfigOverride(
-          config: const SuperTextConfig(fontSize: 24),
-          properties: {TextStateProperty.fontSize},
+        hover: ValueConfigOverride(
+          config: const SuperValueConfig(fontSize: 24),
+          properties: {ValueStateProperty.fontSize},
         ),
         automatic: {
-          AutomaticState.contentHover: TextConfigOverride(
-            config: const SuperTextConfig(fontSize: 28),
-            properties: {TextStateProperty.fontSize},
+          AutomaticState.contentHover: ValueConfigOverride(
+            config: const SuperValueConfig(fontSize: 28),
+            properties: {ValueStateProperty.fontSize},
           ),
         },
         order: [
-          TextConfigStates.selectedKey,
+          ValueConfigStates.selectedKey,
           'ready',
-          TextConfigStates.hoverKey,
+          ValueConfigStates.hoverKey,
           AutomaticState.contentHover.key,
         ],
       ),
     );
     final appearance = ValueNotifier<Appearance>(
-      DefaultAppearance().withTextComponent('text', original),
+      DefaultAppearance().withValueComponent('text', original),
     );
     final editMode = ValueNotifier(true);
     final history = EditorHistoryController(
@@ -45,24 +45,24 @@ void main() {
     final registry = Registry()..bootstrap();
     registry.bindAppearance(appearance);
     addTearDown(registry.unbindAppearance);
-    final text = registry.textController('text', fallback: original);
+    final text = registry.valueController('text', fallback: original);
     addTearDown(appearance.dispose);
     addTearDown(editMode.dispose);
     addTearDown(history.dispose);
     history.beginTransaction();
-    appearance.value = appearance.value.withTextComponent('text', configured);
+    appearance.value = appearance.value.withValueComponent('text', configured);
     history.commitTransaction();
     const codec = DefaultAppearanceCodec();
     expect(
-      codec.decode(codec.encode(appearance.value)).textComponents['text'],
+      codec.decode(codec.encode(appearance.value)).valueComponents['text'],
       configured,
     );
     history.undo();
-    expect(appearance.value.textComponents['text'], original);
+    expect(appearance.value.valueComponents['text'], original);
     expect(text.value, original);
     expect(history.canUndo, isFalse);
     history.redo();
-    expect(appearance.value.textComponents['text'], configured);
+    expect(appearance.value.valueComponents['text'], configured);
     expect(text.value, configured);
   });
 

@@ -13,6 +13,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     required this.binding,
     required this.controller,
     this.onChanged,
+    this.asBool = false,
   }) {
     controller.addListener(_edited);
     store.addListener(_repositoryChanged);
@@ -24,6 +25,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
   final JsonTextBinding binding;
   final TextEditingController controller;
   final ValueChanged<String>? onChanged;
+  final bool asBool;
   String? error;
   bool loading = true;
   bool saving = false;
@@ -60,6 +62,12 @@ class JsonTextControllerBinding extends ChangeNotifier {
     try {
       final result = await store.readAttribute(binding);
       if (_disposed || generation != _generation) return;
+      if (asBool && result.value != null && result.value is! bool) {
+        throw const FormatException('L’attribut lié doit être un booléen.');
+      }
+      final resolvedText = asBool
+          ? (result.value == true ? 'true' : 'false')
+          : result.text;
       if (dirty) {
         if (result.value != _expected) {
           _failure(
@@ -69,16 +77,16 @@ class JsonTextControllerBinding extends ChangeNotifier {
         return;
       }
       _expected = result.value;
-      _saved = result.text;
-      _queuedText = result.text;
+      _saved = resolvedText;
+      _queuedText = resolvedText;
       _ready = true;
       _applying = true;
-      if (controller.text != result.text) {
+      if (controller.text != resolvedText) {
         controller.value = TextEditingValue(
-          text: result.text,
-          selection: TextSelection.collapsed(offset: result.text.length),
+          text: resolvedText,
+          selection: TextSelection.collapsed(offset: resolvedText.length),
         );
-        onChanged?.call(result.text);
+        onChanged?.call(resolvedText);
       }
       _observed = controller.text;
       _applying = false;
@@ -138,6 +146,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
           binding,
           text,
           expectedValue: _expected,
+          asBool: asBool,
         );
         _expected = result.value;
         _saved = text;
