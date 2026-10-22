@@ -29,6 +29,7 @@ class _TestAppState extends State<TestApp> {
   final _registry = Registry()..bootstrap();
   late final EditorPageRouter _pageRouting;
   GoRouter get _router => _pageRouting.router;
+  _ToolbarLayout _toolbarLayout = _ToolbarLayout(null);
 
   @override
   void initState() {
@@ -102,14 +103,14 @@ class _TestAppState extends State<TestApp> {
                   ),
                 ),
               ),
-              Positioned(
-                top: 56,
-                right: 16,
-                bottom: 16,
-                child: Align(
-                  alignment: Alignment.topRight,
+              Positioned.fill(
+                child: CustomSingleChildLayout(
+                  delegate: _toolbarLayout,
                   child: Material(
-                    type: MaterialType.transparency,
+                    key: const ValueKey('appearance-toolbar'),
+                    type: MaterialType.card,
+                    elevation: 8,
+                    borderRadius: BorderRadius.circular(8),
                     child: SingleChildScrollView(child: overlyRight(context)),
                   ),
                 ),
@@ -128,6 +129,26 @@ class _TestAppState extends State<TestApp> {
           return Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Tooltip(
+                message: 'Déplacer la barre',
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.move,
+                  child: GestureDetector(
+                    key: const ValueKey('appearance-toolbar-drag'),
+                    behavior: HitTestBehavior.opaque,
+                    onPanUpdate: (details) => setState(() {
+                      _toolbarLayout = _ToolbarLayout(
+                        _toolbarLayout.resolvedPosition + details.delta,
+                      );
+                    }),
+                    child: const SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: Icon(Icons.drag_indicator, size: 20),
+                    ),
+                  ),
+                ),
+              ),
               _NavigationButton(
                 key: const ValueKey('style-edit-mode'),
                 tooltip: editMode.value
@@ -152,6 +173,37 @@ class _TestAppState extends State<TestApp> {
 
     // Removed as it's now handled inside the Builder above.
   }
+}
+
+class _ToolbarLayout extends SingleChildLayoutDelegate {
+  _ToolbarLayout(this.position) : resolvedPosition = position ?? Offset.zero;
+
+  final Offset? position;
+  Offset resolvedPosition;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final desired = position ?? Offset(size.width - childSize.width - 16, 56);
+    resolvedPosition = Offset(
+      desired.dx.clamp(
+        0.0,
+        (size.width - childSize.width).clamp(0.0, double.infinity),
+      ),
+      desired.dy.clamp(
+        0.0,
+        (size.height - childSize.height).clamp(0.0, double.infinity),
+      ),
+    );
+    return resolvedPosition;
+  }
+
+  @override
+  bool shouldRelayout(_ToolbarLayout oldDelegate) =>
+      position != oldDelegate.position;
 }
 
 class _NavigationButton extends StatelessWidget {

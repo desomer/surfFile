@@ -51,6 +51,10 @@ La lecture, les migrations et les imports utilisent le même codec.
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
+Dans l'application de démonstration, la barre d'apparence en haut à droite
+se déplace en faisant glisser la poignée à six points placée avant les boutons.
+Elle reste dans les limites de la fenêtre, y compris après redimensionnement.
+
 En édition, les labels des composants de `SuperLayout` partagent le même
 badge en modes **Zones** et **Grille** : icône `drag_indicator`, fond
 `tertiaryContainer` et angles arrondis. Le glisser-déposer conserve les règles
