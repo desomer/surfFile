@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 
+import 'json_syntax.dart';
 import 'json_text_binding.dart';
 import 'automatic_state.dart';
 import 'super_text_field_config.dart';
@@ -200,15 +201,82 @@ class SuperValueConfig {
     };
   }
 
-  factory SuperValueConfig.fromJson(Object? value) {
-    if (value is! Map<String, dynamic>) {
+  Map<String, Object?> toCompactJson() {
+    validate();
+    const d = SuperValueConfig();
+    return {
+      if (mode != d.mode) 'mode': mode.name,
+      if (kind != SuperValueKind.text) 'kind': kind.name,
+      if (!obscureText && initialText.isNotEmpty) 'initialText': initialText,
+      if (initialBool) 'initialBool': initialBool,
+      if (label.isNotEmpty) 'label': label,
+      if (placeholder.isNotEmpty) 'placeholder': placeholder,
+      if (enabled != d.enabled) 'enabled': enabled,
+      if (readOnly != d.readOnly) 'readOnly': readOnly,
+      if (obscureText != d.obscureText) 'obscureText': obscureText,
+      if (minLines != d.minLines) 'minLines': minLines,
+      if (maxLines != d.maxLines) 'maxLines': maxLines,
+      if (fontFamily != null) 'fontFamily': fontFamily,
+      if (fontSize != null) 'fontSize': fontSize,
+      if (fontWeight != null) 'fontWeight': fontWeight!.value,
+      if (italic != null) 'italic': italic,
+      if (color != null) 'color': JsonColor.toHex(color!),
+      if (textAlign != d.textAlign) 'textAlign': textAlign.name,
+      if (lineHeight != null) 'lineHeight': lineHeight,
+      if (letterSpacing != null) 'letterSpacing': letterSpacing,
+      if (binding != null) 'binding': binding!.toCompactJson(),
+      if (propertyBindings.isNotEmpty)
+        'propertyBindings': {
+          for (final entry in propertyBindings.entries)
+            entry.key.name: entry.value.toCompactJson(),
+        },
+      if (field != const SuperTextFieldConfig())
+        'field': field.toCompactJson(),
+      if (states != null) 'states': states!.toCompactJson(),
+    };
+  }
+
+  /// Applique un patch JSON partiel sur cette configuration en conservant
+  /// toutes les propriétés non mentionnées dans [patch].
+  SuperValueConfig patchFromJson(Map<Object?, Object?> patch) =>
+      SuperValueConfig.fromJson(patch, fallback: this);
+
+  static FontWeight? _parseFontWeight(Object? weight) {
+    if (weight == null) return null;
+    if (weight is int) {
+      return FontWeight.values.where((w) => w.value == weight).firstOrNull;
+    }
+    if (weight is String) {
+      return switch (weight.trim().toLowerCase()) {
+        'thin' || 'w100' || '100' => FontWeight.w100,
+        'extralight' || 'w200' || '200' => FontWeight.w200,
+        'light' || 'w300' || '300' => FontWeight.w300,
+        'normal' || 'regular' || 'w400' || '400' => FontWeight.w400,
+        'medium' || 'w500' || '500' => FontWeight.w500,
+        'semibold' || 'w600' || '600' => FontWeight.w600,
+        'bold' || 'w700' || '700' => FontWeight.w700,
+        'extrabold' || 'w800' || '800' => FontWeight.w800,
+        'black' || 'w900' || '900' => FontWeight.w900,
+        _ => null,
+      };
+    }
+    return null;
+  }
+
+  factory SuperValueConfig.fromJson(
+    Object? value, {
+    SuperValueConfig fallback = const SuperValueConfig(),
+  }) {
+    if (value is! Map) {
       throw const FormatException('Invalid Value configuration.');
     }
     const keys = {
       'mode',
       'kind',
       'initialText',
+      'text',
       'initialBool',
+      'value',
       'label',
       'placeholder',
       'enabled',
@@ -232,14 +300,15 @@ class SuperValueConfig {
     if (value.keys.any((key) => !keys.contains(key))) {
       throw const FormatException('Unknown Value preference.');
     }
-    T field<T>(String key, T fallback) {
-      if (!value.containsKey(key)) return fallback;
+    T field<T>(String key, T fallbackVal) {
+      if (!value.containsKey(key)) return fallbackVal;
       final result = value[key];
       if (result is! T) throw FormatException('Invalid Value "$key".');
       return result;
     }
 
-    double? number(String key) {
+    double? number(String key, double? fallbackVal) {
+      if (!value.containsKey(key)) return fallbackVal;
       final result = value[key];
       if (result == null) return null;
       if (result is! num || !result.isFinite) {
@@ -249,9 +318,9 @@ class SuperValueConfig {
     }
 
     final mode = SuperValueMode.values
-        .where((mode) => mode.name == field('mode', 'display'))
+        .where((mode) => mode.name == field('mode', fallback.mode.name))
         .firstOrNull;
-    final rawKind = field('kind', 'text');
+    final rawKind = field('kind', fallback.kind.name);
     final kind = switch (rawKind) {
       'switch' => SuperValueKind.switchControl,
       _ =>
@@ -260,19 +329,31 @@ class SuperValueConfig {
             .firstOrNull,
     };
     final align = TextAlign.values
-        .where((align) => align.name == field('textAlign', 'start'))
+        .where(
+          (align) => align.name == field('textAlign', fallback.textAlign.name),
+        )
         .firstOrNull;
+    final hasWeight = value.containsKey('fontWeight');
     final weight = value['fontWeight'];
-    final fontWeight = FontWeight.values
-        .where((w) => w.value == weight)
-        .firstOrNull;
-    final color = value['color'];
-    final family = value['fontFamily'];
+    final fontWeight = hasWeight
+        ? _parseFontWeight(weight)
+        : fallback.fontWeight;
+    final hasColor = value.containsKey('color');
+    final rawColor = value['color'];
+    final Color? parsedColor;
+    try {
+      parsedColor = hasColor
+          ? JsonColor.parseNullable(rawColor, 'color')
+          : fallback.color;
+    } on FormatException {
+      throw const FormatException('Invalid Value style.');
+    }
+    final hasFamily = value.containsKey('fontFamily');
+    final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
     if (mode == null ||
         kind == null ||
         align == null ||
-        (weight != null && (weight is! int || fontWeight == null)) ||
-        (color != null && (color is! int || color < 0 || color > 0xFFFFFFFF)) ||
+        (hasWeight && weight != null && fontWeight == null) ||
         (family != null && family is! String)) {
       throw const FormatException('Invalid Value style.');
     }
@@ -280,47 +361,88 @@ class SuperValueConfig {
     if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
       throw const FormatException('Invalid Value property bindings.');
     }
-    final propertyBindings = <SuperValueProperty, JsonTextBinding>{};
-    for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
-      if (entry.key is! String) {
-        throw const FormatException('Invalid Value property binding.');
+    final Map<SuperValueProperty, JsonTextBinding> propertyBindings;
+    if (!value.containsKey('propertyBindings')) {
+      propertyBindings = fallback.propertyBindings;
+    } else {
+      propertyBindings = <SuperValueProperty, JsonTextBinding>{};
+      for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
+        if (entry.key is! String) {
+          throw const FormatException('Invalid Value property binding.');
+        }
+        final property = SuperValueProperty.values
+            .where((candidate) => candidate.name == entry.key)
+            .firstOrNull;
+        if (property == null ||
+            (entry.value is! Map && entry.value is! String)) {
+          throw const FormatException('Invalid Value property binding.');
+        }
+        propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
       }
-      final property = SuperValueProperty.values
-          .where((candidate) => candidate.name == entry.key)
-          .firstOrNull;
-      if (property == null || entry.value is! Map<String, dynamic>) {
-        throw const FormatException('Invalid Value property binding.');
-      }
-      propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
     }
+
+    var resolvedInitialText = fallback.initialText;
+    if (value.containsKey('initialText')) {
+      resolvedInitialText = field('initialText', fallback.initialText);
+    } else if (value.containsKey('text')) {
+      resolvedInitialText = field('text', fallback.initialText);
+    } else if (value.containsKey('value') && value['value'] is String) {
+      resolvedInitialText = value['value'] as String;
+    }
+
+    var resolvedInitialBool = fallback.initialBool;
+    if (value.containsKey('initialBool')) {
+      resolvedInitialBool = field('initialBool', fallback.initialBool);
+    } else if (value.containsKey('value') && value['value'] is bool) {
+      resolvedInitialBool = value['value'] as bool;
+    } else if (value.containsKey('value') &&
+        value['value'] is! String &&
+        value['value'] is! bool) {
+      throw const FormatException('Invalid Value "value".');
+    }
+
+    final resolvedObscure = field('obscureText', fallback.obscureText);
+    if (resolvedObscure &&
+        !value.containsKey('initialText') &&
+        !value.containsKey('text')) {
+      resolvedInitialText = '';
+    }
+
     final result = SuperValueConfig(
       mode: mode,
       kind: kind,
       textAlign: align,
-      initialText: field('initialText', ''),
-      initialBool: field('initialBool', false),
-      label: field('label', ''),
-      placeholder: field('placeholder', ''),
-      enabled: field('enabled', true),
-      readOnly: field('readOnly', false),
-      obscureText: field('obscureText', false),
-      minLines: field<int>('minLines', 1),
-      maxLines: field<int>('maxLines', 1),
+      initialText: resolvedInitialText,
+      initialBool: resolvedInitialBool,
+      label: field('label', fallback.label),
+      placeholder: field('placeholder', fallback.placeholder),
+      enabled: field('enabled', fallback.enabled),
+      readOnly: field('readOnly', fallback.readOnly),
+      obscureText: resolvedObscure,
+      minLines: field<int>('minLines', fallback.minLines),
+      maxLines: field<int>('maxLines', fallback.maxLines),
       fontFamily: family as String?,
-      fontSize: number('fontSize'),
+      fontSize: number('fontSize', fallback.fontSize),
       fontWeight: fontWeight,
-      italic: field<bool?>('italic', null),
-      color: color == null ? null : Color(color as int),
-      lineHeight: number('lineHeight'),
-      letterSpacing: number('letterSpacing'),
-      binding: value['binding'] == null
+      italic: field<bool?>('italic', fallback.italic),
+      color: parsedColor,
+      lineHeight: number('lineHeight', fallback.lineHeight),
+      letterSpacing: number('letterSpacing', fallback.letterSpacing),
+      binding: !value.containsKey('binding')
+          ? fallback.binding
+          : value['binding'] == null
           ? null
           : JsonTextBinding.fromJson(value['binding']),
       propertyBindings: propertyBindings,
       field: value.containsKey('field')
-          ? SuperTextFieldConfig.fromJson(value['field'])
-          : const SuperTextFieldConfig(),
-      states: value['states'] == null
+          ? SuperTextFieldConfig.fromJson(
+              value['field'],
+              fallback: fallback.field,
+            )
+          : fallback.field,
+      states: !value.containsKey('states')
+          ? fallback.states
+          : value['states'] == null
           ? null
           : ValueConfigStates.fromJson(value['states']),
     );

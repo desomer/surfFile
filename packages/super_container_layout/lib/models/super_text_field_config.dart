@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'json_syntax.dart';
+
 enum TextFieldVariant { theme, filled, outlined, underline, borderless }
 
 enum TextFieldFilter { none, digits, decimal, letters, pattern }
@@ -294,24 +296,72 @@ class SuperTextFieldConfig {
     'suggestions': suggestions,
   };
 
-  factory SuperTextFieldConfig.fromJson(Object? json) {
-    if (json is! Map<String, dynamic>) {
+  Map<String, Object?> toCompactJson() {
+    const d = SuperTextFieldConfig();
+    return {
+      if (variant != d.variant) 'variant': variant.name,
+      if (fillColor != null) 'fillColor': JsonColor.toHex(fillColor!),
+      if (focusFillColor != null)
+        'focusFillColor': JsonColor.toHex(focusFillColor!),
+      if (disabledFillColor != null)
+        'disabledFillColor': JsonColor.toHex(disabledFillColor!),
+      if (errorFillColor != null)
+        'errorFillColor': JsonColor.toHex(errorFillColor!),
+      if (borderColor != null) 'borderColor': JsonColor.toHex(borderColor!),
+      if (focusBorderColor != null)
+        'focusBorderColor': JsonColor.toHex(focusBorderColor!),
+      if (disabledBorderColor != null)
+        'disabledBorderColor': JsonColor.toHex(disabledBorderColor!),
+      if (errorBorderColor != null)
+        'errorBorderColor': JsonColor.toHex(errorBorderColor!),
+      if (radius != null) 'radius': radius,
+      if (borderWidth != null) 'borderWidth': borderWidth,
+      if (horizontalPadding != null) 'horizontalPadding': horizontalPadding,
+      if (verticalPadding != null) 'verticalPadding': verticalPadding,
+      if (dense != null) 'dense': dense,
+      if (prefixText.isNotEmpty) 'prefixText': prefixText,
+      if (suffixText.isNotEmpty) 'suffixText': suffixText,
+      if (prefixIcon != null) 'prefixIcon': prefixIcon!.name,
+      if (suffixIcon != null) 'suffixIcon': suffixIcon!.name,
+      if (suffix != d.suffix) 'suffix': suffix.name,
+      if (helperText.isNotEmpty) 'helperText': helperText,
+      if (errorText.isNotEmpty) 'errorText': errorText,
+      if (showCounter != d.showCounter) 'showCounter': showCounter,
+      if (maxLength != null) 'maxLength': maxLength,
+      if (filter != d.filter) 'filter': filter.name,
+      if (pattern.isNotEmpty) 'pattern': pattern,
+      if (keyboard != d.keyboard) 'keyboard': keyboard.name,
+      if (action != d.action) 'action': action.name,
+      if (capitalization != d.capitalization)
+        'capitalization': capitalization.name,
+      if (verticalAlign != d.verticalAlign) 'verticalAlign': verticalAlign.name,
+      if (floatingLabel != null) 'floatingLabel': floatingLabel!.name,
+      if (autocorrect != d.autocorrect) 'autocorrect': autocorrect,
+      if (suggestions != d.suggestions) 'suggestions': suggestions,
+    };
+  }
+
+  factory SuperTextFieldConfig.fromJson(
+    Object? json, {
+    SuperTextFieldConfig fallback = const SuperTextFieldConfig(),
+  }) {
+    if (json is! Map) {
       throw const FormatException('Options de champ invalides.');
     }
-    final defaults = const SuperTextFieldConfig().toJson();
+    final defaults = fallback.toJson();
     if (json.keys.any((key) => !defaults.containsKey(key))) {
       throw const FormatException('Option de champ inconnue.');
     }
-    T field<T>(String key, T fallback) {
-      final value = json.containsKey(key) ? json[key] : fallback;
+    T field<T>(String key, T fallbackVal) {
+      final value = json.containsKey(key) ? json[key] : fallbackVal;
       if (value is! T) {
         throw FormatException('Option de champ invalide : $key.');
       }
       return value;
     }
 
-    T choice<T extends Enum>(String key, List<T> values, T fallback) {
-      final name = field(key, fallback.name);
+    T choice<T extends Enum>(String key, List<T> values, T fallbackVal) {
+      final name = field(key, fallbackVal.name);
       final value = values.where((value) => value.name == name).firstOrNull;
       if (value == null) {
         throw FormatException('Option de champ invalide : $key.');
@@ -319,16 +369,19 @@ class SuperTextFieldConfig {
       return value;
     }
 
-    Color? color(String key) {
+    Color? color(String key, Color? defaultColor) {
+      if (!json.containsKey(key)) return defaultColor;
       final value = json[key];
       if (value == null) return null;
-      if (value is! int || value < 0 || value > 0xFFFFFFFF) {
+      try {
+        return JsonColor.parse(value, key);
+      } on FormatException {
         throw FormatException('Couleur de champ invalide : $key.');
       }
-      return Color(value);
     }
 
-    double? number(String key) {
+    double? number(String key, double? defaultNum) {
+      if (!json.containsKey(key)) return defaultNum;
       final value = json[key];
       if (value == null) return null;
       if (value is! num || !value.isFinite || value < 0) {
@@ -337,7 +390,8 @@ class SuperTextFieldConfig {
       return value.toDouble();
     }
 
-    TextFieldIcon? icon(String key) {
+    TextFieldIcon? icon(String key, TextFieldIcon? defaultIcon) {
+      if (!json.containsKey(key)) return defaultIcon;
       if (json[key] == null) return null;
       return choice(key, TextFieldIcon.values, TextFieldIcon.person);
     }
@@ -346,65 +400,73 @@ class SuperTextFieldConfig {
       variant: choice(
         'variant',
         TextFieldVariant.values,
-        TextFieldVariant.theme,
+        fallback.variant,
       ),
-      fillColor: color('fillColor'),
-      focusFillColor: color('focusFillColor'),
-      disabledFillColor: color('disabledFillColor'),
-      errorFillColor: color('errorFillColor'),
-      borderColor: color('borderColor'),
-      focusBorderColor: color('focusBorderColor'),
-      disabledBorderColor: color('disabledBorderColor'),
-      errorBorderColor: color('errorBorderColor'),
-      radius: number('radius'),
-      borderWidth: number('borderWidth'),
-      horizontalPadding: number('horizontalPadding'),
-      verticalPadding: number('verticalPadding'),
-      dense: field<bool?>('dense', null),
-      prefixText: field('prefixText', ''),
-      suffixText: field('suffixText', ''),
-      prefixIcon: icon('prefixIcon'),
-      suffixIcon: icon('suffixIcon'),
+      fillColor: color('fillColor', fallback.fillColor),
+      focusFillColor: color('focusFillColor', fallback.focusFillColor),
+      disabledFillColor: color('disabledFillColor', fallback.disabledFillColor),
+      errorFillColor: color('errorFillColor', fallback.errorFillColor),
+      borderColor: color('borderColor', fallback.borderColor),
+      focusBorderColor: color('focusBorderColor', fallback.focusBorderColor),
+      disabledBorderColor: color(
+        'disabledBorderColor',
+        fallback.disabledBorderColor,
+      ),
+      errorBorderColor: color('errorBorderColor', fallback.errorBorderColor),
+      radius: number('radius', fallback.radius),
+      borderWidth: number('borderWidth', fallback.borderWidth),
+      horizontalPadding: number(
+        'horizontalPadding',
+        fallback.horizontalPadding,
+      ),
+      verticalPadding: number('verticalPadding', fallback.verticalPadding),
+      dense: field<bool?>('dense', fallback.dense),
+      prefixText: field('prefixText', fallback.prefixText),
+      suffixText: field('suffixText', fallback.suffixText),
+      prefixIcon: icon('prefixIcon', fallback.prefixIcon),
+      suffixIcon: icon('suffixIcon', fallback.suffixIcon),
       suffix: choice(
         'suffix',
         TextFieldSuffix.values,
-        TextFieldSuffix.decoration,
+        fallback.suffix,
       ),
-      helperText: field('helperText', ''),
-      errorText: field('errorText', ''),
-      showCounter: field('showCounter', false),
-      maxLength: field<int?>('maxLength', null),
-      filter: choice('filter', TextFieldFilter.values, TextFieldFilter.none),
-      pattern: field('pattern', ''),
+      helperText: field('helperText', fallback.helperText),
+      errorText: field('errorText', fallback.errorText),
+      showCounter: field('showCounter', fallback.showCounter),
+      maxLength: field<int?>('maxLength', fallback.maxLength),
+      filter: choice('filter', TextFieldFilter.values, fallback.filter),
+      pattern: field('pattern', fallback.pattern),
       keyboard: choice(
         'keyboard',
         TextFieldKeyboard.values,
-        TextFieldKeyboard.automatic,
+        fallback.keyboard,
       ),
       action: choice(
         'action',
         TextFieldAction.values,
-        TextFieldAction.automatic,
+        fallback.action,
       ),
       capitalization: choice(
         'capitalization',
         TextCapitalization.values,
-        TextCapitalization.none,
+        fallback.capitalization,
       ),
       verticalAlign: choice(
         'verticalAlign',
         TextFieldVerticalAlign.values,
-        TextFieldVerticalAlign.automatic,
+        fallback.verticalAlign,
       ),
-      floatingLabel: json['floatingLabel'] == null
+      floatingLabel: !json.containsKey('floatingLabel')
+          ? fallback.floatingLabel
+          : json['floatingLabel'] == null
           ? null
           : choice(
               'floatingLabel',
               FloatingLabelBehavior.values,
               FloatingLabelBehavior.auto,
             ),
-      autocorrect: field('autocorrect', true),
-      suggestions: field('suggestions', true),
+      autocorrect: field('autocorrect', fallback.autocorrect),
+      suggestions: field('suggestions', fallback.suggestions),
     );
     result.validate();
     return result;

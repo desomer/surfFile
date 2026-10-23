@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../models/json_syntax.dart';
 import '../models/json_text_binding.dart';
 
 import 'container_fill.dart';
@@ -288,6 +289,59 @@ class ContainerStyle {
     if (states != null) 'states': states!.toJson(),
   };
 
+  Map<String, Object?> toCompactJson() {
+    const d = ContainerStyle();
+    return {
+      if (color != null) 'color': JsonColor.toHex(color!),
+      if (fill != d.fill) 'fill': fill.toCompactJson(),
+      if (radius != d.radius) 'radius': radius,
+      if (borderWidth != d.borderWidth) 'borderWidth': borderWidth,
+      if (borderColor != null) 'borderColor': JsonColor.toHex(borderColor!),
+      if (elevation != d.elevation) 'elevation': elevation,
+      if (shadowOpacity != d.shadowOpacity) 'shadowOpacity': shadowOpacity,
+      if (neon != null && neon != const NeonStyle())
+        'neon': neon!.toCompactJson(),
+      if (padding != d.padding) 'padding': padding,
+      if (margin != d.margin) 'margin': margin,
+      if (designSystem != d.designSystem) 'designSystem': designSystem.name,
+      if (interactionEffect != d.interactionEffect)
+        'interactionEffect': interactionEffect.name,
+      if (hoverEffect != d.hoverEffect) 'hoverEffect': hoverEffect,
+      if (hoverTint != d.hoverTint) 'hoverTint': hoverTint.name,
+      if (hoverColor != null) 'hoverColor': JsonColor.toHex(hoverColor!),
+      if (radii != null) 'radii': radii!.toJson(),
+      if (borderWidths != null) 'borderWidths': borderWidths!.toJson(),
+      if (borderLine != BorderLine.solid) 'borderLine': borderLine.name,
+      if (shadow != null) 'shadow': shadow!.toCompactJson(),
+      if (innerShadow != null) 'innerShadow': innerShadow!.toCompactJson(),
+      if (opacity != 1) 'opacity': opacity,
+      if (paddingInsets != null) 'paddingInsets': paddingInsets!.toJson(),
+      if (marginInsets != null) 'marginInsets': marginInsets!.toJson(),
+      if (backdropBlur != null) 'backdropBlur': backdropBlur,
+      if (pattern != SurfacePattern.none) 'pattern': pattern.name,
+      if (patternOpacity != .1) 'patternOpacity': patternOpacity,
+      if (transform != null) 'transform': transform!.toJson(),
+      if (states != null) 'states': states!.toCompactJson(),
+    };
+  }
+
+  /// Applique un patch JSON partiel sur ce style en conservant toutes les
+  /// propriétés non mentionnées dans [patch].
+  ContainerStyle patchFromJson(Map<Object?, Object?> patch) {
+    final merged = <String, Object?>{
+      ...toJson(),
+      for (final entry in patch.entries)
+        if (entry.key is String) entry.key as String: entry.value,
+    };
+    if (patch['fill'] is Map) {
+      merged['fill'] = ContainerFill.fromJson(
+        patch['fill'],
+        fallback: fill,
+      ).toJson();
+    }
+    return ContainerStyle.fromJson(merged, fallback: this);
+  }
+
   static ContainerStyle fromJson(
     Object? value, {
     ContainerStyle fallback = const ContainerStyle(),
@@ -296,17 +350,24 @@ class ContainerStyle {
     if (value is! Map) {
       throw const FormatException('Style de conteneur invalide.');
     }
-    final color = value['color'];
-    if (color != null && (color is! int || color < 0 || color > 0xFFFFFFFF)) {
+    final Color? parsedColor;
+    try {
+      parsedColor = value.containsKey('color')
+          ? JsonColor.parseNullable(value['color'], 'color')
+          : fallback.color;
+    } on FormatException {
       throw const FormatException('Couleur de conteneur invalide.');
     }
-    final borderColor = value['borderColor'];
-    if (borderColor != null &&
-        (borderColor is! int || borderColor < 0 || borderColor > 0xFFFFFFFF)) {
+    final Color? parsedBorderColor;
+    try {
+      parsedBorderColor = value.containsKey('borderColor')
+          ? JsonColor.parseNullable(value['borderColor'], 'borderColor')
+          : fallback.borderColor;
+    } on FormatException {
       throw const FormatException('Couleur de bordure invalide.');
     }
-    double number(String key, double min, double max, [double? fallback]) {
-      final number = value[key] ?? fallback;
+    double number(String key, double min, double max, [double? fallbackVal]) {
+      final number = value[key] ?? fallbackVal;
       if (number is! num || !number.isFinite || number < min || number > max) {
         throw FormatException('Paramètre de conteneur invalide : $key.');
       }
@@ -337,9 +398,12 @@ class ContainerStyle {
         !HoverTint.values.any((tint) => tint.name == hoverTint)) {
       throw const FormatException('Teinte du survol invalide.');
     }
-    final hoverColor = value['hoverColor'];
-    if (hoverColor != null &&
-        (hoverColor is! int || hoverColor < 0 || hoverColor > 0xFFFFFFFF)) {
+    final Color? parsedHoverColor;
+    try {
+      parsedHoverColor = value.containsKey('hoverColor')
+          ? JsonColor.parseNullable(value['hoverColor'], 'hoverColor')
+          : fallback.hoverColor;
+    } on FormatException {
       throw const FormatException('Couleur du survol invalide.');
     }
     final borderLine = value['borderLine'];
@@ -354,16 +418,20 @@ class ContainerStyle {
     }
     return ContainerStyle(
       states: value['states'] == null
-          ? null
+          ? fallback.states
           : SurfaceStyleStates.fromJson(value['states']),
-      color: color == null ? null : Color(color as int),
-      fill: ContainerFill.fromJson(value['fill']),
-      radius: number('radius', 0, 36),
-      borderWidth: number('borderWidth', 0, 4),
-      borderColor: borderColor == null ? null : Color(borderColor as int),
-      elevation: number('elevation', 0, 16),
-      shadowOpacity: number('shadowOpacity', 0, 1),
-      neon: value['neon'] == null ? null : NeonStyle.fromJson(value['neon']),
+      color: parsedColor,
+      fill: value['fill'] == null
+          ? fallback.fill
+          : ContainerFill.fromJson(value['fill'], fallback: fallback.fill),
+      radius: number('radius', 0, 36, fallback.radius),
+      borderWidth: number('borderWidth', 0, 4, fallback.borderWidth),
+      borderColor: parsedBorderColor,
+      elevation: number('elevation', 0, 16, fallback.elevation),
+      shadowOpacity: number('shadowOpacity', 0, 1, fallback.shadowOpacity),
+      neon: value['neon'] == null
+          ? fallback.neon
+          : NeonStyle.fromJson(value['neon']),
       padding: number('padding', 0, maxSpacing, fallback.padding),
       margin: number('margin', 0, maxSpacing, fallback.margin),
       designSystem: designSystem == null
@@ -376,27 +444,25 @@ class ContainerStyle {
       hoverTint: hoverTint == null
           ? fallback.hoverTint
           : HoverTint.values.byName(hoverTint as String),
-      hoverColor: hoverColor == null
-          ? fallback.hoverColor
-          : Color(hoverColor as int),
+      hoverColor: parsedHoverColor,
       radii: value['radii'] == null
-          ? null
+          ? fallback.radii
           : Quad.fromJson(value['radii'], 0, 36, 'radii'),
       borderWidths: value['borderWidths'] == null
-          ? null
+          ? fallback.borderWidths
           : Quad.fromJson(value['borderWidths'], 0, 4, 'borderWidths'),
       borderLine: borderLine == null
-          ? BorderLine.solid
+          ? fallback.borderLine
           : BorderLine.values.byName(borderLine as String),
       shadow: value['shadow'] == null
-          ? null
+          ? fallback.shadow
           : ShadowSpec.fromJson(value['shadow'], 'shadow'),
       innerShadow: value['innerShadow'] == null
-          ? null
+          ? fallback.innerShadow
           : ShadowSpec.fromJson(value['innerShadow'], 'innerShadow'),
-      opacity: number('opacity', 0, 1, 1),
+      opacity: number('opacity', 0, 1, fallback.opacity),
       paddingInsets: value['paddingInsets'] == null
-          ? null
+          ? fallback.paddingInsets
           : Quad.fromJson(
               value['paddingInsets'],
               0,
@@ -404,17 +470,17 @@ class ContainerStyle {
               'paddingInsets',
             ),
       marginInsets: value['marginInsets'] == null
-          ? null
+          ? fallback.marginInsets
           : Quad.fromJson(value['marginInsets'], 0, maxSpacing, 'marginInsets'),
       backdropBlur: value['backdropBlur'] == null
-          ? null
+          ? fallback.backdropBlur
           : number('backdropBlur', 0, maxBlur),
       pattern: pattern == null
-          ? SurfacePattern.none
+          ? fallback.pattern
           : SurfacePattern.values.byName(pattern as String),
-      patternOpacity: number('patternOpacity', 0, 1, .1),
+      patternOpacity: number('patternOpacity', 0, 1, fallback.patternOpacity),
       transform: value['transform'] == null
-          ? null
+          ? fallback.transform
           : TransformSpec.fromJson(value['transform']),
     );
   }

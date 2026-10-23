@@ -1,6 +1,6 @@
-import '../theme/appearance.dart';
-import '../theme/default_appearance.dart';
-import 'appearance_store.dart';
+import '../../theme/appearance.dart';
+import '../../theme/default_appearance.dart';
+import 'appearance_codec.dart';
 
 /// Opt-in persistence for the reusable dimensions and scrolling preferences.
 class DefaultAppearanceCodec extends AppearanceCodec {
@@ -25,24 +25,24 @@ class DefaultAppearanceCodec extends AppearanceCodec {
   DefaultAppearance get defaults => DefaultAppearance();
 
   @override
-  Map<String, Object?> toJson(Appearance appearance) {
-    if (appearance is! DefaultAppearance) {
+  Map<String, Object?> toJson(Appearance a) {
+    if (a is! DefaultAppearance) {
       throw ArgumentError.value(
-        appearance,
+        a,
         'appearance',
         'DefaultAppearanceCodec requires DefaultAppearance.',
       );
     }
     return {
-      ...super.toJson(appearance),
-      'cardHeight': appearance.cardHeight,
-      'cardWidth': appearance.cardWidth,
-      'rowHeight': appearance.rowHeight,
-      'spacing': appearance.spacing,
-      'fontSize': appearance.fontSize,
-      'iconSize': appearance.iconSize,
-      'scrollFadeEnabled': appearance.scrollFadeEnabled,
-      'scrollFadeExtent': appearance.scrollFadeExtent,
+      ...super.toJson(a),
+      'cardHeight': a.cardHeight,
+      'cardWidth': a.cardWidth,
+      'rowHeight': a.rowHeight,
+      'spacing': a.spacing,
+      'fontSize': a.fontSize,
+      'iconSize': a.iconSize,
+      'scrollFadeEnabled': a.scrollFadeEnabled,
+      'scrollFadeExtent': a.scrollFadeExtent,
     };
   }
 

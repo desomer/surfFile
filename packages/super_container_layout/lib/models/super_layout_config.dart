@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/painting.dart' show Axis, EdgeInsets;
 
 import 'grid_layout_config.dart';
+import 'json_syntax.dart';
 export 'grid_layout_config.dart';
 
 /// Les neuf zones d'un [SuperLayoutConfig].
@@ -85,19 +86,7 @@ class SlotDimension {
     'unit': unit == SlotSizeUnit.pixels ? 'px' : 'percent',
   };
 
-  static SlotDimension fromJson(Object? value) {
-    if (value is! Map ||
-        value['value'] is! num ||
-        !(value['value'] as num).isFinite ||
-        (value['value'] as num) < 0 ||
-        (value['unit'] != 'px' && value['unit'] != 'percent')) {
-      throw const FormatException('Dimension de slot invalide.');
-    }
-    return SlotDimension(
-      (value['value'] as num).toDouble(),
-      value['unit'] == 'px' ? SlotSizeUnit.pixels : SlotSizeUnit.percent,
-    );
-  }
+  static SlotDimension fromJson(Object? value) => JsonDimension.parse(value);
 
   @override
   bool operator ==(Object other) =>
@@ -946,14 +935,17 @@ class SuperLayoutConfig {
       final String type;
       if (placement is String) {
         id = placement;
-        type = placement;
+        type = JsonComponentType.normalize(placement, id: placement);
       } else if (placement is Map &&
           placement['id'] is String &&
           placement['type'] is String &&
           (placement['id'] as String).isNotEmpty &&
           (placement['type'] as String).isNotEmpty) {
         id = placement['id'] as String;
-        type = placement['type'] as String;
+        type = JsonComponentType.normalize(
+          placement['type'] as String,
+          id: id,
+        );
       } else {
         throw const FormatException('Placement invalide : type et id requis.');
       }
@@ -965,8 +957,12 @@ class SuperLayoutConfig {
       return id;
     }
 
+    final rawPlacements = value.containsKey('placements')
+        ? value['placements']
+        : value['zones'];
+
     Map<SuperLayoutZone, List<String>> placementMap() {
-      final v = value['placements'];
+      final v = rawPlacements;
       if (v == null) return fallback.placements;
       if (v is! Map) {
         throw const FormatException('Valeur invalide pour "placements".');
@@ -997,24 +993,10 @@ class SuperLayoutConfig {
         if (entry.key is! String || (entry.key as String).isEmpty) {
           throw const FormatException('Taille preferee invalide.');
         }
-        if (dimensions == null) {
-          result[entry.key as String] = null;
-          continue;
-        }
-        if (dimensions is! Map) {
-          throw const FormatException('Taille preferee invalide.');
-        }
-        final width = dimensions['width'];
-        final height = dimensions['height'];
-        if (width is! num ||
-            height is! num ||
-            !width.isFinite ||
-            !height.isFinite ||
-            width <= 0 ||
-            height <= 0) {
-          throw const FormatException('Dimensions positives requises.');
-        }
-        result[entry.key as String] = Size(width.toDouble(), height.toDouble());
+        result[entry.key as String] = JsonDimension.parsePreferredSize(
+          dimensions,
+          allowInfiniteSides: false,
+        );
       }
       return result;
     }
@@ -1049,8 +1031,8 @@ class SuperLayoutConfig {
               (throw const FormatException(
                 'Zone invalide pour "zoneAxes".',
               )): switch (entry.value) {
-            'row' => Axis.horizontal,
-            'column' => Axis.vertical,
+            'row' || 'horizontal' => Axis.horizontal,
+            'column' || 'vertical' => Axis.vertical,
             _ => throw const FormatException(
               'Axe invalide : row ou column requis.',
             ),
@@ -1058,11 +1040,42 @@ class SuperLayoutConfig {
       };
     }
 
+    final parsedPlacements = placementMap();
+    final inferSidesFromZones = value.containsKey('zones');
+    bool hasZoneContent(List<SuperLayoutZone> zones) => zones.any(
+      (z) => (parsedPlacements[z]?.isNotEmpty ?? false),
+    );
+    bool sideFlag(
+      String key,
+      bool fallbackSide,
+      List<SuperLayoutZone> relatedZones,
+    ) {
+      if (value.containsKey(key)) return flag(key, fallbackSide);
+      if (inferSidesFromZones && hasZoneContent(relatedZones)) return true;
+      return fallbackSide;
+    }
+
     return SuperLayoutConfig(
-      north: flag('north', fallback.north),
-      south: flag('south', fallback.south),
-      west: flag('west', fallback.west),
-      east: flag('east', fallback.east),
+      north: sideFlag('north', fallback.north, const [
+        SuperLayoutZone.north,
+        SuperLayoutZone.nw,
+        SuperLayoutZone.ne,
+      ]),
+      south: sideFlag('south', fallback.south, const [
+        SuperLayoutZone.south,
+        SuperLayoutZone.sw,
+        SuperLayoutZone.se,
+      ]),
+      west: sideFlag('west', fallback.west, const [
+        SuperLayoutZone.west,
+        SuperLayoutZone.nw,
+        SuperLayoutZone.sw,
+      ]),
+      east: sideFlag('east', fallback.east, const [
+        SuperLayoutZone.east,
+        SuperLayoutZone.ne,
+        SuperLayoutZone.se,
+      ]),
       nw: merge('nw', fallback.nw),
       ne: merge('ne', fallback.ne),
       sw: merge('sw', fallback.sw),
@@ -1076,8 +1089,8 @@ class SuperLayoutConfig {
       collapsedSides: collapsed(),
       swaps: swapSet(),
       autoSides: autoSet(),
-      placements: placementMap(),
-      slotTypes: value['placements'] == null ? fallback.slotTypes : slotTypes,
+      placements: parsedPlacements,
+      slotTypes: rawPlacements == null ? fallback.slotTypes : slotTypes,
       slotPreferredSizes: preferredSizes(),
       slotSizeConstraints: slotConstraints(),
       zoneAxes: axes(),

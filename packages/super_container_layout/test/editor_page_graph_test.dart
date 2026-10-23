@@ -8,7 +8,7 @@ import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/automatic_state.dart';
-import 'package:super_container_layout/services/editor_page_graph.dart';
+import 'package:super_container_layout/services/pages/editor_page_graph.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 

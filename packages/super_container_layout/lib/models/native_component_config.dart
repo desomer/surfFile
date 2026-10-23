@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show listEquals;
 
+import 'json_syntax.dart';
 import 'super_layout_config.dart' show SlotSizeConstraints;
 
 /// Immutable placements shared by adapters for native Flutter components.
@@ -309,12 +310,20 @@ class NativeComponentConfig {
       }
       final ids = <String>[];
       for (final slot in entry.value as List) {
+        if (slot is String && slot.trim().isNotEmpty) {
+          ids.add(slot);
+          types[slot] = JsonComponentType.normalize(slot, id: slot);
+          continue;
+        }
         if (slot is! Map || slot['id'] is! String || slot['type'] is! String) {
           throw const FormatException('Invalid native slot.');
         }
         final id = slot['id'] as String;
         ids.add(id);
-        types[id] = slot['type'] as String;
+        types[id] = JsonComponentType.normalize(
+          slot['type'] as String,
+          id: id,
+        );
       }
       placements[entry.key as String] = ids;
     }
@@ -337,25 +346,13 @@ class NativeComponentConfig {
       final sizes = <String, Size?>{};
       for (final entry in rawSizes.entries) {
         final size = entry.value;
-        if (entry.key is! String ||
-            (size != null &&
-                (size is! List ||
-                    size.length != 2 ||
-                    size.any(
-                      (dimension) =>
-                          dimension != null &&
-                          (dimension is! num ||
-                              !dimension.isFinite ||
-                              dimension < 0),
-                    )))) {
+        if (entry.key is! String) {
           throw const FormatException('Invalid native slot size.');
         }
-        sizes[entry.key as String] = size == null
-            ? null
-            : Size(
-                (size[0] as num?)?.toDouble() ?? double.infinity,
-                (size[1] as num?)?.toDouble() ?? double.infinity,
-              );
+        sizes[entry.key as String] = JsonDimension.parsePreferredSize(
+          size,
+          allowInfiniteSides: true,
+        );
       }
       return NativeComponentConfig(
         useDefaultNavigation: navigation as bool?,

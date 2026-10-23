@@ -5,8 +5,8 @@ import 'package:shortid/shortid.dart';
 
 import '../../../models/editor_page_config.dart';
 import '../../../models/registry.dart';
-import '../../../services/editor_page_graph.dart';
-import '../../../services/editor_page_router.dart';
+import '../../../services/pages/editor_page_graph.dart';
+import '../../../services/pages/editor_page_router.dart';
 import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../history/editor_history.dart';

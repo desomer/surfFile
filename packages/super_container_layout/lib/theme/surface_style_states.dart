@@ -78,6 +78,11 @@ class SelectedSurfaceStyle {
     'properties': properties.map((p) => p.name).toList()..sort(),
   };
 
+  Map<String, Object?> toCompactJson() => {
+    'style': style.toCompactJson(),
+    'properties': properties.map((p) => p.name).toList()..sort(),
+  };
+
   @override
   bool operator ==(Object other) =>
       other is SelectedSurfaceStyle &&
@@ -231,6 +236,24 @@ class SurfaceStyleStates {
       'automatic': {
         for (final entry in automatic.entries)
           entry.key.name: entry.value.toJson(),
+      },
+    'order': order,
+  };
+
+  Map<String, Object?> toCompactJson() => {
+    if (binding != null) 'binding': binding!.toCompactJson(),
+    'named': {for (final e in named.entries) e.key: e.value.toCompactJson()},
+    if (namedProperties.values.any((s) => s.isNotEmpty))
+      'namedProperties': {
+        for (final entry in namedProperties.entries)
+          entry.key: entry.value.map((p) => p.name).toList()..sort(),
+      },
+    if (selected != null) 'selected': selected!.toCompactJson(),
+    if (hover != null) 'hover': hover!.toCompactJson(),
+    if (automatic.isNotEmpty)
+      'automatic': {
+        for (final entry in automatic.entries)
+          entry.key.name: entry.value.toCompactJson(),
       },
     'order': order,
   };

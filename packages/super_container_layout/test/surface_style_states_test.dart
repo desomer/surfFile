@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
+import 'package:super_container_layout/services/appearance/appearance_codec.dart';
+
 void main() {
   test(
     'legacy named surfaces start empty and inherit until explicitly overridden',

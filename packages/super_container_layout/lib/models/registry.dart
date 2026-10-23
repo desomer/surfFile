@@ -13,7 +13,7 @@ import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/native/super_app_bar.dart';
 
 import '../widgets/native/super_bottom_navigation_bar.dart';
-import '../services/editor_page_graph.dart';
+import '../services/pages/editor_page_graph.dart';
 import '../widgets/editing/addition/component_add_configurators.dart';
 import '../widgets/editing/addition/component_add_wizard.dart';
 

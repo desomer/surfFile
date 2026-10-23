@@ -10,7 +10,7 @@ import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/services/personal_folders.dart';
 import 'package:surf_file/services/disk_space.dart';
 import 'package:surf_file/services/appearance_store.dart';
-import 'package:super_container_layout/services/window_transparency.dart';
+import 'package:super_container_layout/services/window/window_transparency.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';

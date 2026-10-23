@@ -3,8 +3,9 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../services/appearance_transfer.dart';
-import '../../services/appearance_store.dart';
+import '../../services/appearance/appearance_codec.dart';
+import '../../services/appearance/appearance_transfer.dart';
+import '../../services/appearance/appearance_store.dart';
 import '../../theme/appearance.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/dialogs/editor_dialog_header.dart';

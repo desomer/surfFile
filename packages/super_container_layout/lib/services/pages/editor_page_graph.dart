@@ -1,13 +1,13 @@
 import 'package:shortid/shortid.dart';
 
-import '../models/native_component_config.dart';
-import '../models/registry.dart';
-import '../models/scaffold_page_config.dart';
-import '../models/super_layout_config.dart';
-import '../models/super_value_config.dart';
-import '../models/super_list_view_config.dart';
-import '../theme/appearance.dart';
-import '../theme/container_style.dart';
+import '../../models/native_component_config.dart';
+import '../../models/registry.dart';
+import '../../models/scaffold_page_config.dart';
+import '../../models/super_layout_config.dart';
+import '../../models/super_value_config.dart';
+import '../../models/super_list_view_config.dart';
+import '../../theme/appearance.dart';
+import '../../theme/container_style.dart';
 
 /// Result of [EditorPageGraph.removal].
 class EditorPageRemoval {

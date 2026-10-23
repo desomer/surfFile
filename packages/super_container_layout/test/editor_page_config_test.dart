@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
-import 'package:super_container_layout/services/appearance_transfer.dart';
-import 'package:super_container_layout/services/default_appearance_codec.dart';
+import 'package:super_container_layout/services/appearance/appearance_store.dart';
+import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
+import 'package:super_container_layout/services/appearance/default_appearance_codec.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/default_appearance.dart';
+import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 
 EditorPageCatalog sampleCatalog() => EditorPageCatalog(
   pages: [

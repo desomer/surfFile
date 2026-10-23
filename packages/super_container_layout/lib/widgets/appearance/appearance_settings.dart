@@ -1,7 +1,7 @@
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../services/appearance_store.dart';
+import '../../services/appearance/appearance_store.dart';
 import '../../theme/appearance.dart';
 import '../../theme/appearance_slot.dart';
 import '../../theme/default_appearance.dart';

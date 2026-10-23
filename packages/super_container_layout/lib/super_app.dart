@@ -8,11 +8,11 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 
 import 'models/registry.dart';
 
-import 'services/appearance_store.dart';
-import 'services/editor_page_router.dart';
-import 'services/json_repository_store.dart';
-import 'services/json_repository_scope.dart';
-import 'services/window_transparency.dart';
+import 'services/appearance/appearance_store.dart';
+import 'services/pages/editor_page_router.dart';
+import 'services/repositories/json_repository_store.dart';
+import 'services/repositories/json_repository_scope.dart';
+import 'services/window/window_transparency.dart';
 import 'theme/appearance.dart';
 import 'theme/container_style.dart';
 import 'theme/neon_style.dart';

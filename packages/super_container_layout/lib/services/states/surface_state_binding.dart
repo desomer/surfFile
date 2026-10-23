@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/json_text_binding.dart';
-import 'json_list_scope.dart';
-import 'json_repository_binding.dart';
-import 'json_repository_store.dart';
+import '../../models/json_text_binding.dart';
+import '../repositories/json_list_scope.dart';
+import '../repositories/json_repository_binding.dart';
+import '../repositories/json_repository_store.dart';
 
 /// Read-only runtime binding for a surface state's name.
 ///

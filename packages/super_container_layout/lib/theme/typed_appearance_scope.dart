@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../services/appearance_store.dart';
+import '../services/appearance/appearance_codec.dart';
+import '../services/appearance/appearance_store.dart';
 import 'appearance.dart';
 
 /// Exposes an application-typed controller to the generic appearance widgets.

@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
-import 'package:super_container_layout/services/json_list_scope.dart';
-import 'package:super_container_layout/services/json_repository_store.dart';
-import 'package:super_container_layout/services/surface_state_binding.dart';
+import 'package:super_container_layout/services/repositories/json_list_scope.dart';
+import 'package:super_container_layout/services/repositories/json_repository_store.dart';
+import 'package:super_container_layout/services/states/surface_state_binding.dart';
 
 void main() {
   late Directory directory;

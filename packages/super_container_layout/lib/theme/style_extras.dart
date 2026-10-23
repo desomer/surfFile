@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../models/json_syntax.dart';
+
 /// Quatre valeurs : haut, droite, bas, gauche pour des côtés ; haut-gauche,
 /// haut-droite, bas-droite, bas-gauche pour des coins.
 @immutable
@@ -164,6 +166,16 @@ class ShadowSpec {
     'dy': dy,
   };
 
+  Map<String, Object?> toCompactJson() => {
+    if (!enabled) 'enabled': false,
+    if (color != const Color(0xFF000000)) 'color': JsonColor.toHex(color),
+    if (opacity != .1) 'opacity': opacity,
+    if (blur != 16) 'blur': blur,
+    if (spread != 0) 'spread': spread,
+    if (dx != 0) 'dx': dx,
+    if (dy != 8) 'dy': dy,
+  };
+
   static ShadowSpec fromJson(Object? value, String name) {
     if (value is! Map) {
       throw FormatException('Paramètre de conteneur invalide : $name.');
@@ -176,8 +188,11 @@ class ShadowSpec {
       return number.toDouble();
     }
 
-    final color = value['color'];
-    if (color != null && (color is! int || color < 0 || color > 0xFFFFFFFF)) {
+    final rawColor = value['color'];
+    final Color? parsedColor;
+    try {
+      parsedColor = JsonColor.parseNullable(rawColor, '$name.color');
+    } on FormatException {
       throw FormatException('Paramètre de conteneur invalide : $name.color.');
     }
     final enabled = value['enabled'];
@@ -187,7 +202,7 @@ class ShadowSpec {
     const d = ShadowSpec();
     return ShadowSpec(
       enabled: enabled as bool? ?? true,
-      color: color == null ? d.color : Color(color as int),
+      color: parsedColor ?? d.color,
       opacity: number('opacity', 0, 1, d.opacity),
       blur: number('blur', 0, maxBlur, d.blur),
       spread: number('spread', -maxSpread, maxSpread, d.spread),

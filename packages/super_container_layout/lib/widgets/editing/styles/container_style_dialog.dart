@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
-import '../../../services/window_transparency.dart';
+import '../../../services/window/window_transparency.dart';
 import '../../../theme/appearance.dart';
 import '../../../theme/appearance_slot.dart';
 import '../../../theme/container_style.dart';

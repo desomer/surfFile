@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../models/json_syntax.dart';
+
 @immutable
 class NeonStyle {
   static const maxIntensity = 3.0;
@@ -27,25 +29,37 @@ class NeonStyle {
     'intensity': intensity,
   };
 
+  Map<String, Object?> toCompactJson() => {
+    'enabled': enabled,
+    if (color != null) 'color': JsonColor.toHex(color!),
+    if (intensity != .6) 'intensity': intensity,
+  };
+
   static NeonStyle fromJson(Object? value) {
     if (value == null) return const NeonStyle();
+    if (value is bool) return NeonStyle(enabled: value);
     if (value is! Map) {
       throw const FormatException('Style néon invalide.');
     }
-    final enabled = value['enabled'];
-    final color = value['color'];
-    final intensity = value['intensity'];
+    final enabled = value.containsKey('enabled') ? value['enabled'] : true;
+    final rawColor = value['color'];
+    final intensity = value.containsKey('intensity') ? value['intensity'] : .6;
     if (enabled is! bool ||
-        (color != null && (color is! int || color < 0 || color > 0xFFFFFFFF)) ||
         intensity is! num ||
         !intensity.isFinite ||
         intensity < 0 ||
         intensity > maxIntensity) {
       throw const FormatException('Paramètres néon invalides.');
     }
+    final Color? parsedColor;
+    try {
+      parsedColor = JsonColor.parseNullable(rawColor, 'neon.color');
+    } on FormatException {
+      throw const FormatException('Paramètres néon invalides.');
+    }
     return NeonStyle(
       enabled: enabled,
-      color: color == null ? null : Color(color as int),
+      color: parsedColor,
       intensity: intensity.toDouble(),
     );
   }

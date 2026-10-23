@@ -1,17 +1,16 @@
 import 'dart:convert';
-
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
-import 'package:shared_preferences/shared_preferences.dart';
-
-import '../models/super_layout_config.dart';
-import '../models/scaffold_page_config.dart';
-import '../models/native_component_config.dart';
-import '../models/super_value_config.dart';
-import '../models/super_list_view_config.dart';
-import '../models/editor_page_config.dart';
-import '../theme/appearance.dart';
-import '../theme/container_style.dart';
+import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/editor_page_config.dart';
+import 'package:super_container_layout/models/json_syntax.dart';
+import 'package:super_container_layout/models/native_component_config.dart';
+import 'package:super_container_layout/models/scaffold_page_config.dart';
+import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_list_view_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
+import 'package:super_container_layout/services/appearance/screen_tree_codec.dart';
+import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/theme/container_style.dart';
 
 /// Override this codec to retain application-owned preferences and migrations.
 class AppearanceCodec {
@@ -83,10 +82,22 @@ class AppearanceCodec {
       'valueComponents',
       'listComponents',
       'pageCatalog',
+      'screens',
+      'ops',
+      'vibe',
+      'merge',
       ...additionalKeys,
     };
     if (json.keys.any((key) => !known.contains(key))) {
       throw const FormatException('Unknown appearance preference.');
+    }
+    if (ScreenTreeCodec.isAiDocument(json)) {
+      final expanded = ScreenTreeCodec.expandToCanonicalJson(json);
+      json = {
+        ...expanded,
+        for (final key in additionalKeys)
+          if (json.containsKey(key)) key: json[key],
+      };
     }
     double number(String key, double fallback, double min, double max) {
       final value = json[key] ?? fallback;
@@ -97,20 +108,22 @@ class AppearanceCodec {
     }
 
     final mode = ThemeMode.values
-        .where((v) => v.name == json['mode'])
+        .where((v) => v.name == (json['mode'] ?? 'light'))
         .firstOrNull;
     final effect = WindowEffect.values
         .where((v) => v.name == (json['windowEffect'] ?? 'transparent'))
         .firstOrNull;
-    final accent = json['accent'] ?? 0xFF5268D9;
-    if (mode == null ||
-        effect == null ||
-        accent is! int ||
-        accent < 0 ||
-        accent > 0xFFFFFFFF) {
+    final rawAccent = json['accent'] ?? 0xFF5268D9;
+    final Color parsedAccent;
+    try {
+      parsedAccent = JsonColor.parse(rawAccent, 'accent');
+    } on FormatException {
       throw const FormatException('Invalid theme or window preferences.');
     }
-    Map<String, dynamic> entries(String key, {bool optional = false}) {
+    if (mode == null || effect == null) {
+      throw const FormatException('Invalid theme or window preferences.');
+    }
+    Map<String, dynamic> entries(String key, {bool optional = true}) {
       final value = json[key];
       if (value == null && optional) return {};
       if (value is! Map<String, dynamic> ||
@@ -123,7 +136,7 @@ class AppearanceCodec {
 
     return Appearance(
       mode: mode,
-      accent: Color(accent),
+      accent: parsedAccent,
       windowEffect: effect,
       backgroundOpacity: number('backgroundOpacity', 1, 0, 1),
       windowOpacity: number('windowOpacity', 1, .2, 1),
@@ -164,7 +177,13 @@ class AppearanceCodec {
     if (version != schemaVersion) {
       throw const FormatException('Unsupported export version.');
     }
-    final known = toJson(defaults).keys.toSet()..remove('version');
+    final known = {
+      ...toJson(defaults).keys,
+      'screens',
+      'ops',
+      'vibe',
+      'merge',
+    }..remove('version');
     if (data.keys.any((key) => !known.contains(key))) {
       throw const FormatException('Unknown export preference.');
     }
@@ -177,125 +196,4 @@ class AppearanceCodec {
     Object? imported,
     int sourceVersion,
   ) => imported;
-}
-
-class AppearanceStore {
-  AppearanceStore({
-    this.key = 'super_container_layout.appearance',
-    this.codec = const AppearanceCodec(),
-  });
-  final String key;
-  final AppearanceCodec codec;
-  static const version = 1;
-  static String encode(Appearance appearance) =>
-      const AppearanceCodec().encode(appearance);
-  static Appearance decode(String text) => const AppearanceCodec().decode(text);
-  Future<Appearance> load() async {
-    final preferences = await SharedPreferences.getInstance();
-    final stored = preferences.get(key);
-    if (stored == null) {
-      codec.resetAdditional();
-      return codec.defaults;
-    }
-    if (stored is! String) {
-      throw const FormatException('Invalid stored appearance.');
-    }
-    final result = codec.decode(stored);
-    codec.restoreAdditional(stored);
-    if (codec.needsMigration(stored)) await save(result);
-    return result;
-  }
-
-  Future<void> save(Appearance appearance) async {
-    final encoded = codec.encode(appearance);
-    await saveEncoded(encoded);
-  }
-
-  Future<void> saveEncoded(String encoded) async {
-    codec.decode(encoded);
-    final preferences = await SharedPreferences.getInstance();
-    if (!await preferences.setString(key, encoded)) {
-      throw StateError('Appearance save failed.');
-    }
-  }
-}
-
-class AppearanceServicesScope extends InheritedWidget {
-  const AppearanceServicesScope({
-    required this.codec,
-    required super.child,
-    super.key,
-  });
-  final AppearanceCodec codec;
-  static AppearanceCodec codecOf(BuildContext context) =>
-      context
-          .dependOnInheritedWidgetOfExactType<AppearanceServicesScope>()
-          ?.codec ??
-      const AppearanceCodec();
-  @override
-  bool updateShouldNotify(AppearanceServicesScope oldWidget) =>
-      codec != oldWidget.codec;
-}
-
-class PersistentAppearanceController extends ValueNotifier<Appearance> {
-  PersistentAppearanceController(
-    this.store,
-    this.onSaveError, {
-    this.validateAppearance,
-  }) : super(store.codec.defaults) {
-    store.codec.additionalPreferences?.addListener(persist);
-  }
-  final AppearanceStore store;
-  final void Function(Object error) onSaveError;
-  final void Function(Appearance appearance)? validateAppearance;
-  Future<void> _pending = Future.value();
-  Future<void> get saved => _pending;
-  bool _restoring = false;
-  Future<void> restore() async {
-    _restoring = true;
-    try {
-      final next = await store.load();
-      validateAppearance?.call(next);
-      super.value = next;
-    } finally {
-      _restoring = false;
-    }
-  }
-
-  @override
-  set value(Appearance appearance) {
-    final next = store.codec.prepare(appearance);
-    validateAppearance?.call(next);
-    super.value = next;
-    persist();
-  }
-
-  void reset() {
-    store.codec.resetAdditional();
-    value = store.codec.defaults;
-  }
-
-  void persist() {
-    if (_restoring) return;
-    final String encoded;
-    try {
-      encoded = store.codec.encode(value);
-    } catch (error) {
-      onSaveError(error);
-      return;
-    }
-    _pending = _pending.then((_) async {
-      try {
-        await store.saveEncoded(encoded);
-      } catch (error) {
-        onSaveError(error);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    store.codec.additionalPreferences?.removeListener(persist);
-    super.dispose();
-  }
 }

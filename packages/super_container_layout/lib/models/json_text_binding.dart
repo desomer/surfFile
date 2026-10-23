@@ -174,10 +174,37 @@ class JsonTextBinding {
     return {'repositoryId': ?repositoryId, 'path': path};
   }
 
-  /// Lecture stricte : seules les clés `repositoryId` et `path` sont
-  /// acceptées, sinon une [FormatException] est levée.
+  /// Forme compacte : simple chaîne `path` lorsque le repository est hérité,
+  /// ou objet `{"repositoryId": "...", "path": "..."}` sinon.
+  Object toCompactJson() {
+    validate();
+    return repositoryId == null
+        ? path
+        : {'repositoryId': repositoryId, 'path': path};
+  }
+
+  /// Lecture souple : accepte une chaîne directe (`"clients[?].nom"` ou
+  /// `"<repositoryId>:clients[?].nom"`) ou un objet `{"repositoryId": ..., "path": ...}`.
   factory JsonTextBinding.fromJson(Object? json) {
-    if (json is! Map<String, dynamic> ||
+    if (json is String) {
+      final trimmed = json.trim();
+      final colon = trimmed.indexOf(':');
+      if (colon == 32) {
+        final candidateRepo = trimmed.substring(0, 32);
+        if (_repositoryIdPattern.hasMatch(candidateRepo)) {
+          final result = JsonTextBinding(
+            repositoryId: candidateRepo,
+            path: trimmed.substring(33),
+          );
+          result.validate();
+          return result;
+        }
+      }
+      final result = JsonTextBinding(path: trimmed);
+      result.validate();
+      return result;
+    }
+    if (json is! Map ||
         json['path'] is! String ||
         json.keys.any((key) => key != 'repositoryId' && key != 'path') ||
         (json.containsKey('repositoryId') && json['repositoryId'] is! String)) {

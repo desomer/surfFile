@@ -139,6 +139,11 @@ class ValueConfigOverride {
     'properties': properties.map((p) => p.name).toList()..sort(),
   };
 
+  Map<String, Object?> toCompactJson() => {
+    'config': config.toCompactJson(),
+    'properties': properties.map((p) => p.name).toList()..sort(),
+  };
+
   factory ValueConfigOverride.fromJson(Object? value) {
     if (value is! Map ||
         value.keys.any((key) => key != 'config' && key != 'properties') ||
@@ -338,6 +343,26 @@ class ValueConfigStates {
     'order': order,
   };
 
+  Map<String, Object?> toCompactJson() => {
+    if (binding != null) 'binding': binding!.toCompactJson(),
+    'named': {
+      for (final entry in named.entries) entry.key: entry.value.toCompactJson(),
+    },
+    if (namedProperties.values.any((s) => s.isNotEmpty))
+      'namedProperties': {
+        for (final entry in namedProperties.entries)
+          entry.key: entry.value.map((p) => p.name).toList()..sort(),
+      },
+    if (hover != null) 'hover': hover!.toCompactJson(),
+    if (selected != null) 'selected': selected!.toCompactJson(),
+    if (automatic.isNotEmpty)
+      'automatic': {
+        for (final entry in automatic.entries)
+          entry.key.name: entry.value.toCompactJson(),
+      },
+    'order': order,
+  };
+
   factory ValueConfigStates.fromJson(Object? value) {
     if (value is! Map ||
         value.keys.any(
@@ -471,7 +496,7 @@ SuperValueConfig _valueStateLeaf(SuperValueConfig config) {
 }
 
 SuperValueConfig _readValueStateLeaf(Object? value) {
-  if (value is! Map<String, dynamic> || value.containsKey('states')) {
+  if (value is! Map || value.containsKey('states')) {
     throw const FormatException('Invalid or nested Value state.');
   }
   return _valueStateLeaf(SuperValueConfig.fromJson(value));

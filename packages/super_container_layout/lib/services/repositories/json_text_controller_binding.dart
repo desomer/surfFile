@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../models/json_text_binding.dart';
+import '../../models/json_text_binding.dart';
 import 'json_repository_store.dart';
 
 /// Runtime data stays here, never in appearance preferences or editor history.

@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/typed_appearance_scope.dart';
-import 'package:super_container_layout/services/appearance_store.dart';
+import 'package:super_container_layout/services/appearance/appearance_store.dart';
 
 import '../services/appearance_store.dart' as app;
 import 'surffile_appearance.dart';

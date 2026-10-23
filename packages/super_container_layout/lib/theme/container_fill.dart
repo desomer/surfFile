@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../models/json_syntax.dart';
+
 enum FillType { solid, linear, radial, sweep }
 
 @immutable
@@ -63,26 +65,38 @@ class ContainerFill {
     'radius': radius,
   };
 
-  static ContainerFill fromJson(Object? value) {
-    if (value == null) return const ContainerFill();
+  Map<String, Object> toCompactJson() => {
+    'type': type.name,
+    'start': JsonColor.toHex(start),
+    'end': JsonColor.toHex(end),
+    if (type != FillType.solid && angle != 45) 'angle': angle,
+    if (type == FillType.radial && radius != .8) 'radius': radius,
+  };
+
+  static ContainerFill fromJson(
+    Object? value, {
+    ContainerFill fallback = const ContainerFill(),
+  }) {
+    if (value == null) return fallback;
     if (value is! Map) throw const FormatException('Style de fond invalide.');
-    final type = switch (value['type']) {
+    final type = switch (value['type'] ?? fallback.type.name) {
       'solid' => FillType.solid,
       'linear' => FillType.linear,
       'radial' => FillType.radial,
       'sweep' => FillType.sweep,
       _ => throw const FormatException('Type de dégradé invalide.'),
     };
-    Color color(String key) {
-      final color = value[key];
-      if (color is! int || color < 0 || color > 0xFFFFFFFF) {
+    Color color(String key, Color defaultColor) {
+      if (!value.containsKey(key) || value[key] == null) return defaultColor;
+      try {
+        return JsonColor.parse(value[key], key);
+      } on FormatException {
         throw FormatException('Couleur de dégradé invalide : $key.');
       }
-      return Color(color);
     }
 
-    double number(String key, double min, double max) {
-      final number = value[key];
+    double number(String key, double min, double max, double defaultVal) {
+      final number = value[key] ?? defaultVal;
       if (number is! num || !number.isFinite || number < min || number > max) {
         throw FormatException('Paramètre de dégradé invalide : $key.');
       }
@@ -91,10 +105,10 @@ class ContainerFill {
 
     return ContainerFill(
       type: type,
-      start: color('start'),
-      end: color('end'),
-      angle: number('angle', 0, 360),
-      radius: number('radius', .1, 2),
+      start: color('start', fallback.start),
+      end: color('end', fallback.end),
+      angle: number('angle', 0, 360, fallback.angle),
+      radius: number('radius', .1, 2, fallback.radius),
     );
   }
 }

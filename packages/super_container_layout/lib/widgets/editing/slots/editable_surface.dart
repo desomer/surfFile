@@ -1,14 +1,14 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
-import '../../../services/content_hover_scope.dart';
+import '../../../services/states/content_hover_scope.dart';
 
 import '../../../theme/appearance.dart';
 import '../../../theme/appearance_slot.dart';
 import '../../../theme/container_style.dart';
-import '../../../services/json_list_scope.dart';
-import '../../../services/json_repository_scope.dart';
-import '../../../services/surface_state_binding.dart';
+import '../../../services/repositories/json_list_scope.dart';
+import '../../../services/repositories/json_repository_scope.dart';
+import '../../../services/states/surface_state_binding.dart';
 import '../../surfaces/super_container.dart';
 import '../../super_layout/layout_selection.dart';
 import '../styles/container_style_dialog.dart';

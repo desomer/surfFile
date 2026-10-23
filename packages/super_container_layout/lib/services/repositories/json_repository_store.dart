@@ -5,7 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
-import '../models/json_text_binding.dart';
+import '../../models/json_text_binding.dart';
 import 'json_repository_binding.dart';
 
 typedef JsonRepositoryEntry = ({String name, String id});

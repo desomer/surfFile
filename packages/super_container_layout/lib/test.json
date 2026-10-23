@@ -1,0 +1,131 @@
+{
+  "format": "super_container_layout.appearance",
+  "version": 1,
+  "groups": [
+    "styles",
+    "layouts"
+  ],
+  "data": {
+    "mode": "light",
+    "accent": "#5268D9",
+    "styles": {
+      "CjcSL71dp6": {
+        "fill": {
+          "type": "solid",
+          "start": "#5268D9",
+          "end": "#B794F4"
+        }
+      }
+    },
+    "screens": {
+      "root": {
+        "regions": {
+          "bottomNavigationBar": true
+        },
+        "body": {
+          "type": "Layout",
+          "id": "contA",
+          "autoSides": [
+            "north",
+            "south",
+            "east",
+            "west"
+          ],
+          "zones": {
+            "center": [
+              {
+                "type": "Card",
+                "id": "vPZEE5zDjI",
+                "style": {
+                  "fill": {
+                    "type": "solid",
+                    "start": "#5268D9",
+                    "end": "#B794F4"
+                  },
+                  "margin": 22.324754675060124
+                },
+                "child": {
+                  "type": "factory:ListView",
+                  "id": "CjcSL71dp6",
+                  "slotLabel": "ListView"
+                }
+              }
+            ]
+          }
+        },
+        "bottomNavigationBar": [
+          {
+            "type": "factory:BottomNavigationBar",
+            "id": "AJDT8wvUNh"
+          }
+        ]
+      }
+    },
+    "layouts": {
+      "CjcSL71dp6": {
+        "autoSides": [
+          "north",
+          "south",
+          "east",
+          "west"
+        ],
+        "zoneAxes": {
+          "center": "row"
+        },
+        "zones": {
+          "center": [
+            {
+              "type": "factory:Value",
+              "id": "BpZxoQL3PM"
+            },
+            {
+              "type": "factory:Value",
+              "id": "IsWEDA2ZDT"
+            }
+          ]
+        }
+      }
+    },
+    "nativeComponents": {
+      "AJDT8wvUNh": {
+        "regions": {
+          "left": true,
+          "center": true,
+          "right": true
+        },
+        "right": [
+          {
+            "type": "factory:Value",
+            "id": "_U2vhbUOGt"
+          }
+        ]
+      }
+    },
+    "valueComponents": {
+      "_U2vhbUOGt": {
+        "initialText": "xwcqswcxcwxcc<w"
+      },
+      "BpZxoQL3PM": {
+        "binding": "b[?].c"
+      },
+      "IsWEDA2ZDT": {
+        "initialText": "ddddd"
+      }
+    },
+    "listComponents": {
+      "CjcSL71dp6": {
+        "binding": {
+          "repositoryId": "48df28734b98175363c237b8a5939ad6",
+          "path": "b"
+        },
+        "itemSize": {
+          "preferredHeight": "25px"
+        }
+      }
+    },
+    "pageCatalog": {
+      "pages": [],
+      "homePageId": null
+    }
+  }
+}

@@ -18,6 +18,7 @@ library;
 import 'package:flutter/painting.dart' show Axis;
 import 'package:flutter/foundation.dart';
 
+import 'json_syntax.dart';
 import 'json_text_binding.dart';
 import 'super_layout_config.dart';
 
@@ -155,6 +156,28 @@ class SuperListViewConfig {
     };
   }
 
+  Map<String, Object?> toCompactJson() {
+    validate();
+    const d = SuperListViewConfig();
+    return {
+      if (binding != null) 'binding': binding!.toCompactJson(),
+      if (axis != d.axis) 'axis': axis.name,
+      if (wrap != d.wrap) 'wrap': wrap,
+      if (wrapSizing != d.wrapSizing) 'wrapSizing': wrapSizing.name,
+      if (itemWidth != d.itemWidth) 'itemWidth': itemWidth,
+      if (itemSize != null)
+        'itemSize': JsonDimension.formatConstraintsCompact(itemSize!),
+      if (itemExtent != d.itemExtent) 'itemExtent': itemExtent,
+      if (spacing != d.spacing) 'spacing': spacing,
+      if (allowAdd != d.allowAdd) 'allowAdd': allowAdd,
+      if (allowRemove != d.allowRemove) 'allowRemove': allowRemove,
+      if (emptyText != d.emptyText) 'emptyText': emptyText,
+    };
+  }
+
+  SuperListViewConfig patchFromJson(Map<Object?, Object?> patch) =>
+      SuperListViewConfig.fromJson(patch, fallback: this);
+
   static const _keys = {
     'binding',
     'axis',
@@ -170,26 +193,29 @@ class SuperListViewConfig {
   };
 
   /// Lecture stricte : les clés inconnues ou les types invalides lèvent une
-  /// [FormatException] ; les clés absentes prennent leur valeur par défaut.
-  factory SuperListViewConfig.fromJson(Object? value) {
-    if (value is! Map<String, dynamic> ||
-        value.keys.any((key) => !_keys.contains(key))) {
+  /// [FormatException] ; les clés absentes prennent leur valeur de [fallback].
+  factory SuperListViewConfig.fromJson(
+    Object? value, {
+    SuperListViewConfig fallback = const SuperListViewConfig(),
+  }) {
+    if (value is! Map || value.keys.any((key) => !_keys.contains(key))) {
       throw const FormatException('Configuration de liste invalide.');
     }
-    const defaults = SuperListViewConfig();
-    T read<T>(String key, T fallback) {
+    T read<T>(String key, T fallbackVal) {
       final raw = value[key];
-      if (raw == null) return fallback;
+      if (raw == null) return fallbackVal;
       if (raw is! T) {
         throw const FormatException('Configuration de liste invalide.');
       }
       return raw;
     }
 
-    final axis = read<String>('axis', defaults.axis.name);
-    final wrapSizing = read<String>('wrapSizing', defaults.wrapSizing.name);
+    final axis = read<String>('axis', fallback.axis.name);
+    final wrapSizing = read<String>('wrapSizing', fallback.wrapSizing.name);
     final result = SuperListViewConfig(
-      binding: value['binding'] == null
+      binding: !value.containsKey('binding')
+          ? fallback.binding
+          : value['binding'] == null
           ? null
           : JsonTextBinding.fromJson(value['binding']),
       axis: Axis.values.firstWhere(
@@ -197,21 +223,23 @@ class SuperListViewConfig {
         orElse: () =>
             throw const FormatException('Orientation de liste invalide.'),
       ),
-      wrap: read<bool>('wrap', defaults.wrap),
+      wrap: read<bool>('wrap', fallback.wrap),
       wrapSizing: ListWrapSizing.values.firstWhere(
         (candidate) => candidate.name == wrapSizing,
         orElse: () =>
             throw const FormatException('Taille Wrap de liste invalide.'),
       ),
-      itemWidth: read<num>('itemWidth', defaults.itemWidth).toDouble(),
-      itemSize: value['itemSize'] == null
+      itemWidth: read<num>('itemWidth', fallback.itemWidth).toDouble(),
+      itemSize: !value.containsKey('itemSize')
+          ? fallback.itemSize
+          : value['itemSize'] == null
           ? null
           : SlotSizeConstraints.fromJson(value['itemSize']),
-      itemExtent: read<num>('itemExtent', defaults.itemExtent).toDouble(),
-      spacing: read<num>('spacing', defaults.spacing).toDouble(),
-      allowAdd: read<bool>('allowAdd', defaults.allowAdd),
-      allowRemove: read<bool>('allowRemove', defaults.allowRemove),
-      emptyText: read<String>('emptyText', defaults.emptyText),
+      itemExtent: read<num>('itemExtent', fallback.itemExtent).toDouble(),
+      spacing: read<num>('spacing', fallback.spacing).toDouble(),
+      allowAdd: read<bool>('allowAdd', fallback.allowAdd),
+      allowRemove: read<bool>('allowRemove', fallback.allowRemove),
+      emptyText: read<String>('emptyText', fallback.emptyText),
     );
     result.validate();
     return result;

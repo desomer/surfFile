@@ -4,9 +4,9 @@ import 'dart:convert';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../models/editor_page_config.dart';
-import '../models/scaffold_page_config.dart';
-import '../super_page.dart';
+import '../../models/editor_page_config.dart';
+import '../../models/scaffold_page_config.dart';
+import '../../super_page.dart';
 
 /// A route declared in the application's code, exposed for navigation only.
 class EditorCodedRoute {

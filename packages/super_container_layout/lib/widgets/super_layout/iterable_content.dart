@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_layout_config.dart';
-import '../../services/content_hover_scope.dart';
+import '../../services/states/content_hover_scope.dart';
 import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import '../editing/slots/editable_surface.dart';

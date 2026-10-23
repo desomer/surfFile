@@ -1,10 +1,10 @@
-import 'package:super_container_layout/services/appearance_transfer.dart'
+import 'package:super_container_layout/services/appearance/appearance_transfer.dart'
     as shell;
 
 import '../theme/surffile_appearance.dart';
 import 'appearance_store.dart';
 
-export 'package:super_container_layout/services/appearance_transfer.dart'
+export 'package:super_container_layout/services/appearance/appearance_transfer.dart'
     show TransferGroup;
 
 class AppearanceTransfer {
