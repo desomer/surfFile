@@ -155,12 +155,17 @@ class ComponentDuplicationContract {
 class ComponentBuilder {
   ComponentBuilder({
     this.tags = const {},
+    this.placementTags = const {},
     this.menuIcon,
     this.duplication,
     this.addConfigurator,
   });
 
   final Set<String> tags;
+
+  /// Non-empty for a component dedicated to some zones: the add wizards only
+  /// offer zones whose tag filter explicitly includes one of these tags.
+  final Set<String> placementTags;
 
   /// Optional icon for this component's editing context-menu entry.
   final IconData? menuIcon;
@@ -180,6 +185,7 @@ class RegisteredComponentImpl extends ComponentBuilder {
   RegisteredComponentImpl({
     required this.widget,
     super.tags,
+    super.placementTags,
     super.menuIcon,
     super.duplication,
     super.addConfigurator,
@@ -516,16 +522,20 @@ class Registry {
       dynamicBuilder: (ctx) =>
           SuperValue(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
-    registry['AppBar'] = ComponentBuilderDynamic(
+    
+    registry['ApplicationBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.web_asset,
       duplication: ComponentDuplicationContract.superAppBar,
       tags: const {'appBar'},
+      placementTags: const {'appBar'},
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
     );
+
     registry['BottomNavigationBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.space_dashboard_outlined,
       duplication: ComponentDuplicationContract.superBottomNavigationBar,
       tags: const {'bottomNavigationBar'},
+      placementTags: const {'bottomNavigationBar'},
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
@@ -607,6 +617,7 @@ class ComponentBuilderDynamic extends ComponentBuilder {
   ComponentBuilderDynamic({
     required this.dynamicBuilder,
     super.tags,
+    super.placementTags,
     super.menuIcon,
     super.duplication,
     super.addConfigurator,
@@ -625,6 +636,7 @@ class RegisteredComponent {
     this.preferredSize,
     this.isAvailable,
     this.tags = const {},
+    this.placementTags = const {},
     this.menuIcon,
     this.duplication,
     this.addConfigurator,
@@ -639,6 +651,10 @@ class RegisteredComponent {
   final Size? preferredSize;
   final bool Function(BuildContext)? isAvailable;
   final Set<String> tags;
+
+  /// Non-empty for a component dedicated to some zones: the add wizards only
+  /// offer zones whose tag filter explicitly includes one of these tags.
+  final Set<String> placementTags;
 
   /// Optional icon for this component's editing context-menu entry.
   final IconData? menuIcon;

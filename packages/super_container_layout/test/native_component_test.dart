@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zone_badge.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -95,6 +96,32 @@ void main() {
       );
     },
   );
+
+  testWidgets('native body badge matches SuperLayout and hides add when used', (
+    tester,
+  ) async {
+    await mount(
+      const SuperPage(child: Text('Body content')),
+      tester,
+      Registry(),
+    );
+    final context = tester.element(find.byType(SuperPage));
+    StyleEditScope.controllerOf(context)!.value = true;
+    await tester.pumpAndSettle();
+
+    final body = find.byKey(const ValueKey('scaffold-page-select-body'));
+    expect(body, findsOneWidget);
+    expect(find.byKey(const ValueKey('scaffold-page-add-body')), findsNothing);
+    final badge = find
+        .ancestor(of: body, matching: find.byType(Material))
+        .first;
+    final colors = Theme.of(tester.element(body)).colorScheme;
+    expect(
+      tester.widget<Material>(badge).color,
+      colors.primary.withValues(alpha: .35),
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   for (final appBar in [true, false]) {
     testWidgets(
@@ -766,13 +793,8 @@ void main() {
   );
 
   testWidgets(
-    'single regions replace atomically while native additions undo and redo',
+    'native overlays hide add for occupied regions and zoom sibling badges',
     (tester) async {
-      final registry = Registry()
-        ..registerComponent(
-          'item',
-          const RegisteredComponent(label: 'Item', builder: _item),
-        );
       await mount(
         const SuperPage(
           appBar: SuperAppBar(
@@ -781,10 +803,9 @@ void main() {
           ),
         ),
         tester,
-        registry,
+        Registry(),
       );
       final context = tester.element(find.byType(SuperAppBar));
-      final history = EditorHistoryScope.controllerOf(context)!;
       StyleEditScope.controllerOf(context)!.value = true;
       await tester.pumpAndSettle();
       await tester.drag(
@@ -798,30 +819,52 @@ void main() {
       await tester.pumpAndSettle();
       for (var level = 0; level < 2; level++) {
         await tester.pump(const Duration(seconds: 1));
-        final point = tester.getTopLeft(find.text('Original leading')) +
+        final point =
+            tester.getTopLeft(find.text('Original leading')) +
             const Offset(2, 2);
         await tester.tapAt(point);
         await tester.pump(const Duration(milliseconds: 80));
         await tester.tapAt(point);
         await tester.pumpAndSettle();
       }
-      await tester.tap(find.byKey(const ValueKey('super-app-bar-add-leading')));
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('super-app-bar-add-slot-component:item')),
+      expect(
+        find.byKey(const ValueKey('super-app-bar-add-leading')),
+        findsNothing,
       );
-      await tester.pumpAndSettle();
-      final controller = registry.nativeComponentController('root-appBar');
-      final id = controller.value.slotsOf('leading').single;
-      expect(id, isNot('component:item'));
-      expect(controller.value.slotTypeOf(id), 'component:item');
-      expect(find.text('Original leading'), findsNothing);
-      history.undo();
-      await tester.pumpAndSettle();
-      expect(find.text('Original leading'), findsOneWidget);
-      history.redo();
-      await tester.pumpAndSettle();
-      expect(controller.value.slotsOf('leading'), [id]);
+      final titleBadge = find.byKey(
+        const ValueKey('super-app-bar-select-title'),
+      );
+      expect(titleBadge, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-app-bar-select-leading')),
+        findsOneWidget,
+      );
+
+      final titleBadgeWidget = tester.widget<EditorZoneBadge>(
+        find.byKey(const ValueKey('super-app-bar-badge-content-title')),
+      );
+      titleBadgeWidget.onHover!(true);
+      await tester.pump(const Duration(milliseconds: 150));
+      for (final region in ['title', 'leading']) {
+        final badge = find.byKey(
+          ValueKey('super-app-bar-badge-content-$region'),
+        );
+        final scale = tester.widget<AnimatedScale>(
+          find.ancestor(of: badge, matching: find.byType(AnimatedScale)),
+        );
+        expect(scale.scale, EmphasizedLabel.scale);
+      }
+      titleBadgeWidget.onHover!(false);
+      await tester.pump(const Duration(milliseconds: 150));
+      for (final region in ['title', 'leading']) {
+        final badge = find.byKey(
+          ValueKey('super-app-bar-badge-content-$region'),
+        );
+        final scale = tester.widget<AnimatedScale>(
+          find.ancestor(of: badge, matching: find.byType(AnimatedScale)),
+        );
+        expect(scale.scale, 1);
+      }
       expect(tester.takeException(), isNull);
     },
   );
@@ -1339,9 +1382,7 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('super-app-bar-add-title')));
         await tester.pumpAndSettle();
         await tester.tap(
-          find.byKey(
-            const ValueKey('super-app-bar-add-slot-factory:Card'),
-          ),
+          find.byKey(const ValueKey('super-app-bar-add-slot-factory:Card')),
         );
         await tester.pumpAndSettle();
         final controller = registry.nativeComponentController(
@@ -1478,24 +1519,24 @@ void main() {
         find.byKey(const ValueKey('super-bottom-navigation-bar-add-right')),
         findsNothing,
       );
-      for (var i = 0; i < 2; i++) {
-        await tester.tap(
-          find.byKey(const ValueKey('super-bottom-navigation-bar-add-left')),
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(
-            const ValueKey(
-              'super-bottom-navigation-bar-add-slot-factory:Card',
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-      }
+      await tester.tap(
+        find.byKey(const ValueKey('super-bottom-navigation-bar-add-left')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('super-bottom-navigation-bar-add-slot-factory:Card'),
+        ),
+      );
+      await tester.pumpAndSettle();
       final controller = registry.nativeComponentController('free-bar');
       final ids = controller.value.slotsOf('left');
-      expect(ids, hasLength(2));
-      expect(ids.toSet(), hasLength(2));
+      expect(ids, hasLength(1));
+      expect(ids.toSet(), hasLength(1));
+      expect(
+        find.byKey(const ValueKey('super-bottom-navigation-bar-add-left')),
+        findsNothing,
+      );
       expect(tester.getSize(find.byType(BottomAppBar)).height, 56);
       final slot = find.byKey(ValueKey('slot-item-${ids.last}'));
       await tester.tapAt(
@@ -1505,9 +1546,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
-          const ValueKey(
-            'style-menu-remove-Taille et marge préférées : Card',
-          ),
+          const ValueKey('style-menu-remove-Taille et marge préférées : Card'),
         ),
       );
       await tester.pumpAndSettle();
@@ -1561,5 +1600,3 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 }
-
-Widget _item(BuildContext context) => const SizedBox(width: 32, height: 32);

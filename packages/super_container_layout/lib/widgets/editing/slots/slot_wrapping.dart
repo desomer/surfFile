@@ -37,16 +37,38 @@ List<EditorSlotWrapAction> slotWrapActions({
           ),
 ];
 
-/// Creates a real parent and reparents, rather than recreating, the child.
-void wrapSlotInstance(
+/// A new component placed next to the wrapped child, inside a `Layout`
+/// wrapper's center zone.
+class WrapSibling {
+  const WrapSibling({
+    required this.type,
+    required this.axis,
+    required this.before,
+    this.label,
+    this.size,
+    this.configure,
+  });
+
+  final String type;
+
+  /// Axis of the wrapper's center zone.
+  final Axis axis;
+
+  /// Whether the sibling precedes the wrapped child.
+  final bool before;
+  final String? label;
+  final SlotSizeConstraints? size;
+
+  /// Writes the sibling settings under its new instance ID.
+  final void Function(String instanceId)? configure;
+}
+
+/// Generates an instance ID unused by [occupiedIds] and every persisted
+/// configuration.
+String uniqueInstanceId(
   BuildContext context, {
-  required Registry registry,
-  required EditorSlotWrapper wrapper,
-  required String id,
-  required String type,
-  required String label,
-  required Set<String> occupiedIds,
-  required void Function(String wrapperId, String wrapperType) replace,
+  required Registry? registry,
+  Set<String> occupiedIds = const {},
 }) {
   final appearance = AppearanceScope.of(context);
   final used = <String>{
@@ -57,27 +79,53 @@ void wrapSlotInstance(
     ...appearance.scaffoldPages.keys,
     ...appearance.valueComponents.keys,
     ...appearance.listComponents.keys,
-    ...registry.superLayoutConfigById.keys,
-    ...registry.nativeComponentConfigById.keys,
-    ...registry.containerStyleById.keys,
-    ...registry.scaffoldPageConfigById.keys,
-    ...registry.valueConfigById.keys,
-    ...registry.listConfigById.keys,
+    if (registry != null) ...[
+      ...registry.superLayoutConfigById.keys,
+      ...registry.nativeComponentConfigById.keys,
+      ...registry.containerStyleById.keys,
+      ...registry.scaffoldPageConfigById.keys,
+      ...registry.valueConfigById.keys,
+      ...registry.listConfigById.keys,
+    ],
     for (final config in appearance.layouts.values) ...config.placedSlotIds,
     for (final config in appearance.nativeComponents.values)
       for (final ids in config.placements.values) ...ids,
   };
-  String? wrapperId;
   for (var attempt = 0; attempt < 1000; attempt++) {
     final candidate = shortid.generate();
-    if (!used.contains(candidate)) {
-      wrapperId = candidate;
-      break;
-    }
+    if (!used.contains(candidate)) return candidate;
   }
-  if (wrapperId == null) {
-    throw StateError('Unable to generate a unique wrapper ID.');
-  }
+  throw StateError('Unable to generate a unique instance ID.');
+}
+
+/// Creates a real parent and reparents, rather than recreating, the child.
+///
+/// With [sibling], only allowed for [EditorSlotWrapper.layout], a new
+/// component is placed next to the child in the wrapper's center zone.
+void wrapSlotInstance(
+  BuildContext context, {
+  required Registry registry,
+  required EditorSlotWrapper wrapper,
+  required String id,
+  required String type,
+  required String label,
+  required Set<String> occupiedIds,
+  required void Function(String wrapperId, String wrapperType) replace,
+  WrapSibling? sibling,
+}) {
+  assert(sibling == null || wrapper == EditorSlotWrapper.layout);
+  final wrapperId = uniqueInstanceId(
+    context,
+    registry: registry,
+    occupiedIds: occupiedIds,
+  );
+  final siblingId = sibling == null
+      ? null
+      : uniqueInstanceId(
+          context,
+          registry: registry,
+          occupiedIds: {...occupiedIds, wrapperId},
+        );
   final history = EditorHistoryScope.controllerOf(context);
   history?.beginTransaction();
   try {
@@ -100,11 +148,18 @@ void wrapSlotInstance(
           west: false,
           east: false,
           placements: {
-            SuperLayoutZone.center: [id],
+            SuperLayoutZone.center: [
+              if (sibling != null && sibling.before) siblingId!,
+              id,
+              if (sibling != null && !sibling.before) siblingId!,
+            ],
           },
-          slotTypes: {id: type},
-          slotLabels: {id: label},
+          slotTypes: {id: type, if (sibling != null) siblingId!: sibling.type},
+          slotLabels: {id: label, ?siblingId: ?sibling?.label},
+          slotSizeConstraints: {?siblingId: ?sibling?.size},
+          zoneAxes: {if (sibling != null) SuperLayoutZone.center: sibling.axis},
         );
+        if (sibling != null) sibling.configure?.call(siblingId!);
     }
     replace(wrapperId, wrapper.type);
   } finally {

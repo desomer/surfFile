@@ -14,10 +14,12 @@ import '../editing/slots/slot_removal.dart';
 import '../editing/slots/slot_wrapping.dart';
 import '../editing/slots/provided_slot_scope.dart';
 import '../editing/addition/component_add_wizard.dart';
+import '../editing/addition/insertion_plan.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/dialogs/editor_dialog_header.dart';
 import '../editing/overlay/editor_overlay.dart';
 import '../editing/overlay/editor_resize_handle.dart';
+import '../editing/overlay/editor_zone_badge.dart';
 import '../editing/overlay/editor_zoom.dart';
 import '../editing/slots/slot_size_editor.dart';
 

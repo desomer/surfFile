@@ -68,6 +68,25 @@ extension _SuperLayoutSlots on SuperLayoutState {
     return null;
   }
 
+  /// Placement tags of a registry slot returned by [_availableSlots].
+  Set<String> _placementTagsOf(BuildContext context, String slotId) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry == null) return const {};
+    final ids = {for (final slot in widget.slots) slot.id};
+    if (ids.contains(slotId)) return const {};
+    for (final entry in registry.registry.entries) {
+      if (_registrySlotId(entry.key, ids) == slotId) {
+        return entry.value.placementTags;
+      }
+    }
+    for (final entry in registry.components.entries) {
+      if ((entry.value.slotId ?? _registrySlotId(entry.key, ids)) == slotId) {
+        return entry.value.placementTags;
+      }
+    }
+    return const {};
+  }
+
   /// Resout uniquement le slot demande, sans construire les autres slots.
   /// Retourne aussi les slots masques ; un identifiant inconnu renvoie null.
   SlotImplementation? _searchSlot(
@@ -160,6 +179,210 @@ extension _SuperLayoutSlots on SuperLayoutState {
     );
   }
 
+  /// Contextual addition around [slot]: in its zone stack, after switching a
+  /// single-slot zone's axis, or by wrapping it in a new `Layout`.
+  EditorSlotInsertion? _insertionForSlot(SlotImplementation slot) {
+    final config = _config.value;
+    final zone = _displayZoneOf(config, slot.id);
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (zone == null || registry == null) return null;
+    final grid = config.positioning == SuperLayoutPositioning.grid;
+    final filter = widget.zoneTagFilters[zone];
+    final layout = registry.registry[EditorSlotWrapper.layout.factory];
+    return EditorSlotInsertion(
+      label: slot.label,
+      host: InsertionHost(
+        axis: config.axisOf(zone),
+        stacked: !grid,
+        axisMutable:
+            !grid &&
+            config
+                .placementsOf(config.contentZone(zone))
+                .every((id) => id == slot.id),
+        canWrap: layout != null && (filter?.accepts(layout.tags) ?? true),
+      ),
+      acceptsTags: (tags) => filter?.accepts(tags) ?? true,
+      zoneTags: filter?.include ?? const {},
+      insert: (plan, component) async => _insertAround(slot, plan, component),
+    );
+  }
+
+  void _insertAround(
+    SlotImplementation slot,
+    InsertionPlan plan,
+    InsertedComponent component,
+  ) {
+    final current = _config.value;
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (!mounted ||
+        registry == null ||
+        !current.placedSlotIds.contains(slot.id)) {
+      return;
+    }
+    final occupied = {
+      ...current.placedSlotIds,
+      ...widget.slots.map((s) => s.id),
+    };
+    switch (plan) {
+      case WrapInsertion():
+        wrapSlotInstance(
+          context,
+          registry: registry,
+          wrapper: EditorSlotWrapper.layout,
+          id: slot.id,
+          type: current.slotTypeOf(slot.id),
+          label: slot.label,
+          occupiedIds: occupied,
+          sibling: WrapSibling(
+            type: component.type,
+            axis: plan.axis,
+            before: plan.newFirst,
+            label: component.label,
+            size: component.size,
+            configure: component.configure,
+          ),
+          replace: (id, type) {
+            var next = current.withSlotReplaced(slot.id, id, type);
+            if (!current.slotPreferredSizes.containsKey(slot.id) &&
+                !current.slotSizeConstraints.containsKey(slot.id) &&
+                slot.preferredSize != null) {
+              next = next.withSlotPreferredSize(id, slot.preferredSize);
+            }
+            _update(next);
+            _selectedSlot.value = id;
+          },
+        );
+      case DirectInsertion(:final axis):
+        final zone = _displayZoneOf(current, slot.id)!;
+        final content = current.contentZone(zone);
+        final id = uniqueInstanceId(
+          context,
+          registry: registry,
+          occupiedIds: occupied,
+        );
+        var next = axis == null ? current : current.withAxis(zone, axis);
+        next = next.withSlotMoved(
+          id,
+          content,
+          beforeId: plan.newFirst ? slot.id : null,
+          afterId: plan.newFirst ? null : slot.id,
+          type: component.type,
+        );
+        if (plan.mode == InsertMode.push) {
+          // The new component takes the target's size; the target reverts to
+          // its default sizing.
+          final preferred = {...next.slotPreferredSizes};
+          final constraints = {...next.slotSizeConstraints};
+          if (preferred.containsKey(slot.id)) {
+            preferred[id] = preferred.remove(slot.id);
+          }
+          if (constraints.remove(slot.id) case final saved?) {
+            constraints[id] = saved;
+          }
+          next = next.copyWith(
+            slotPreferredSizes: preferred,
+            slotSizeConstraints: constraints,
+          );
+        }
+        _commitAddition(next, id, zone, component, before: current);
+    }
+  }
+
+  /// Applies the settings, sizing and label of an added instance [id] already
+  /// placed in [next], as a single history step.
+  void _commitAddition(
+    SuperLayoutConfig next,
+    String id,
+    SuperLayoutZone zone,
+    InsertedComponent component, {
+    required SuperLayoutConfig before,
+  }) {
+    final content = before.contentZone(zone);
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    try {
+      component.configure(id);
+      if (_searchSlot(id, configuration: next) case final added?) {
+        next = widget.onSlotAdded(
+          SlotAddition(
+            slotId: id,
+            component: added,
+            zone: zone,
+            contentZone: content,
+            existingSlots: List.unmodifiable(_slotsOf(before, content)),
+            config: next,
+          ),
+        );
+      }
+      if (component.size case final size?) {
+        next = next.copyWith(
+          slotPreferredSizes: {...next.slotPreferredSizes}..remove(id),
+          slotSizeConstraints: {...next.slotSizeConstraints, id: size},
+        );
+      }
+      if (component.label case final label?) {
+        next = next.withSlotLabel(id, label);
+      }
+      _update(next);
+    } finally {
+      history?.commitTransaction();
+    }
+  }
+
+  /// Zones offered by the contextual add wizard: the selected one first, then
+  /// the other visible zones, then the hidden sides, enabled by the addition.
+  List<EditorAddZone> _addZones() {
+    final config = _config.value;
+    final grid = config.positioning == SuperLayoutPositioning.grid;
+    final action = _actionZone;
+    final visible = config.visibleZones;
+    final zones = grid
+        ? const [SuperLayoutZone.center]
+        : [
+            action,
+            for (final zone in SuperLayoutZone.values)
+              if (zone != action && visible.contains(zone)) zone,
+            for (final zone in SuperLayoutZone.values)
+              if (zone.isSide && !visible.contains(zone)) zone,
+          ];
+    return [
+      for (final zone in zones)
+        EditorAddZone(
+          id: zone.name,
+          label: grid ? 'Grille' : widget.zoneLabel(zone),
+          hint: grid || visible.contains(zone)
+              ? null
+              : 'Active la zone ${widget.zoneLabel(zone)}',
+          accepts: (tags) => widget.zoneTagFilters[zone]?.accepts(tags) ?? true,
+          zoneTags: widget.zoneTagFilters[zone]?.include ?? const {},
+          insert: (component) async => _insertInZone(zone, component),
+        ),
+    ];
+  }
+
+  void _insertInZone(SuperLayoutZone zone, InsertedComponent component) {
+    if (!mounted) return;
+    final current = _config.value;
+    if (current.positioning == SuperLayoutPositioning.grid) {
+      zone = SuperLayoutZone.center;
+    }
+    final id = uniqueInstanceId(
+      context,
+      registry: SuperApp.maybeOf(context)?.registry,
+      occupiedIds: {...current.placedSlotIds, ...widget.slots.map((s) => s.id)},
+    );
+    final shown = zone.isSide && !current.hasSide(zone)
+        ? current.withSide(zone, true)
+        : current;
+    _commitAddition(
+      shown.withSlotMoved(id, shown.contentZone(zone), type: component.type),
+      id,
+      zone,
+      component,
+      before: current,
+    );
+  }
+
   /// Slots visibles rangés dans la zone de contenu [content], dans l'ordre de
   /// [SuperLayoutConfig.placements] ; un identifiant inconnu est ignoré.
   List<SlotImplementation> _slotsOf(
@@ -223,6 +446,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
           : null,
       onEditPreferredSize: canEditSlots ? _editSlotPreferredSize : null,
       wrapActionsForSlot: canEditSlots ? _wrapActionsForSlot : null,
+      insertionForSlot: canEditSlots ? _insertionForSlot : null,
       onRemoveSlot: canEditSlots
           ? (slot) async {
               if (mounted) _removeSlot(slot.id);

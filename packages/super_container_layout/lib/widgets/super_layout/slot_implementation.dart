@@ -11,6 +11,7 @@ import '../editing/overlay/editor_overlay.dart';
 import '../editing/overlay/editor_zoom.dart';
 import '../editing/dialogs/editor_dialog_header.dart';
 import '../editing/overlay/editor_resize_handle.dart';
+import '../editing/addition/insertion_plan.dart';
 import '../editing/slots/editor_slot.dart';
 import '../editing/slots/editor_selection_region.dart';
 
@@ -218,6 +219,7 @@ class SlotStack extends StatelessWidget {
     this.onEditPreferredSize,
     this.onRemoveSlot,
     this.wrapActionsForSlot,
+    this.insertionForSlot,
     this.onSelectSlot,
     this.onTapSlot,
     this.onSelectContent,
@@ -261,6 +263,9 @@ class SlotStack extends StatelessWidget {
   final Future<void> Function(SlotImplementation)? onRemoveSlot;
   final List<EditorSlotWrapAction> Function(SlotImplementation)?
   wrapActionsForSlot;
+
+  /// Lets the contextual wizard add a component around a slot.
+  final EditorSlotInsertion? Function(SlotImplementation)? insertionForSlot;
   final ValueChanged<SlotImplementation>? onSelectSlot;
 
   /// Content clicks, distinct from the label's selection toggle.
@@ -310,13 +315,15 @@ class SlotStack extends StatelessWidget {
     enabled:
         onEditPreferredSize != null ||
         onRemoveSlot != null ||
-        wrapActionsForSlot != null,
+        wrapActionsForSlot != null ||
+        insertionForSlot != null,
     showEdit: onEditPreferredSize != null,
     onEdit: () async => onEditPreferredSize?.call(slot),
     onRemove: onRemoveSlot != null
         ? () async => onRemoveSlot?.call(slot)
         : null,
     wrapActions: wrapActionsForSlot?.call(slot) ?? const [],
+    insertion: insertionForSlot?.call(slot),
     child: KeyedSubtree(
       key: focusKeys?.putIfAbsent(slot.id, GlobalKey.new),
       child: _LabeledSlot(

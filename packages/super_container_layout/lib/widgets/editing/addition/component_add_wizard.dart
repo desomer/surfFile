@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/component_tag_filter.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/registry.dart';
 import '../../../models/super_layout_config.dart';
@@ -76,6 +77,7 @@ class ComponentAddCandidate {
     required this.id,
     required this.label,
     this.tags = const {},
+    this.placementTags = const {},
     this.configurator,
   });
 
@@ -83,7 +85,16 @@ class ComponentAddCandidate {
   final String id;
   final String label;
   final Set<String> tags;
+
+  /// Restricts the component to targets dedicated to one of these tags; see
+  /// [ComponentTagFilter.fits].
+  final Set<String> placementTags;
   final ComponentAddConfigurator<Object>? configurator;
+
+  /// Whether the component fits a target dedicated to [zoneTags] whose filter
+  /// is [accepts].
+  bool fitsIn(Set<String> zoneTags, bool Function(Set<String>) accepts) =>
+      accepts(tags) && ComponentTagFilter.fits(placementTags, zoneTags);
 }
 
 /// A zone or region able to receive the new component.
@@ -93,6 +104,7 @@ class ComponentAddTarget {
     required this.label,
     this.siblings = const [],
     this.accepts,
+    this.zoneTags = const {},
     this.replaces = false,
   });
 
@@ -103,10 +115,48 @@ class ComponentAddTarget {
   final List<(String, String)> siblings;
   final bool Function(Set<String> tags)? accepts;
 
+  /// Tags the zone is dedicated to (its filter's `include`).
+  final Set<String> zoneTags;
+
   /// The target holds a single component, replaced by the addition.
   final bool replaces;
 
   bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
+
+  bool admits(ComponentAddCandidate candidate) =>
+      candidate.fitsIn(zoneTags, accept);
+}
+
+/// A position relative to the edited element, offered instead of zones.
+class ComponentAddPlacement {
+  const ComponentAddPlacement({
+    required this.id,
+    required this.group,
+    required this.label,
+    required this.icon,
+    this.hint,
+    this.accepts,
+    this.zoneTags = const {},
+  });
+
+  final String id;
+
+  /// Title of the element the position refers to.
+  final String group;
+  final String label;
+  final IconData icon;
+
+  /// Structural consequence, such as an added wrapper.
+  final String? hint;
+  final bool Function(Set<String> tags)? accepts;
+
+  /// Tags the receiving zone is dedicated to (its filter's `include`).
+  final Set<String> zoneTags;
+
+  bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
+
+  bool admits(ComponentAddCandidate candidate) =>
+      candidate.fitsIn(zoneTags, accept);
 }
 
 /// Result of the add wizard.
@@ -118,10 +168,14 @@ class ComponentAddRequest {
     this.label,
     this.size,
     this.draft,
+    this.placementId,
   });
 
   final ComponentAddCandidate component;
   final String targetId;
+
+  /// Chosen [ComponentAddPlacement.id], when the wizard offers placements.
+  final String? placementId;
 
   /// Sibling placed after the new component; null appends it.
   final String? beforeId;
@@ -152,13 +206,18 @@ class ComponentAddRequest {
 /// is null when the wizard is cancelled. Each card keeps the historical
 /// `$keyPrefix-add-slot-<id>` key on its « Ajouter directement » button, which
 /// adds the component with its default settings.
+///
+/// With [placements], the « Emplacement » step offers these positions instead
+/// of [targets]; the request then carries the chosen
+/// [ComponentAddRequest.placementId].
 Future<ComponentAddRequest?> showComponentAddWizard({
   required BuildContext context,
   required String title,
   required String keyPrefix,
   required List<ComponentAddCandidate> candidates,
-  required List<ComponentAddTarget> targets,
-  required String initialTargetId,
+  List<ComponentAddTarget> targets = const [],
+  String initialTargetId = '',
+  List<ComponentAddPlacement>? placements,
   BuildContext? target,
   bool editableLabel = true,
   String emptyMessage = 'Aucun composant disponible.',
@@ -182,6 +241,7 @@ Future<ComponentAddRequest?> showComponentAddWizard({
           candidates: candidates,
           targets: targets,
           initialTargetId: initialTargetId,
+          placements: placements,
           editableLabel: editableLabel,
           emptyMessage: emptyMessage,
         );
@@ -209,8 +269,9 @@ class ComponentAddWizard extends StatefulWidget {
     required this.title,
     required this.keyPrefix,
     required this.candidates,
-    required this.targets,
-    required this.initialTargetId,
+    this.targets = const [],
+    this.initialTargetId = '',
+    this.placements,
     this.editableLabel = true,
     this.emptyMessage = 'Aucun composant disponible.',
     super.key,
@@ -221,6 +282,9 @@ class ComponentAddWizard extends StatefulWidget {
   final List<ComponentAddCandidate> candidates;
   final List<ComponentAddTarget> targets;
   final String initialTargetId;
+
+  /// Relative positions replacing [targets] in the « Emplacement » step.
+  final List<ComponentAddPlacement>? placements;
   final bool editableLabel;
   final String emptyMessage;
 
@@ -239,6 +303,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   late String _targetId = widget.initialTargetId;
   String? _beforeId;
+  String? _placementId;
   final _label = TextEditingController();
   bool _customSize = false;
   final _size = _SizeDraft();
@@ -257,9 +322,31 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   List<ComponentAddTarget> _targetsFor(ComponentAddCandidate candidate) => [
     for (final target in widget.targets)
-      if (target.id == widget.initialTargetId || target.accept(candidate.tags))
-        target,
+      if (target.admits(candidate)) target,
   ];
+
+  List<ComponentAddPlacement> _placementsFor(ComponentAddCandidate candidate) =>
+      [
+        for (final placement in widget.placements ?? const [])
+          if (placement.admits(candidate)) placement,
+      ];
+
+  /// Candidates with at least one compatible target or placement.
+  List<ComponentAddCandidate> get _offered => [
+    for (final candidate in widget.candidates)
+      if (widget.placements != null
+          ? _placementsFor(candidate).isNotEmpty
+          : _targetsFor(candidate).isNotEmpty)
+        candidate,
+  ];
+
+  ComponentAddPlacement? get _placement {
+    final candidate = _selected;
+    if (candidate == null) return null;
+    final options = _placementsFor(candidate);
+    return options.where((option) => option.id == _placementId).firstOrNull ??
+        options.firstOrNull;
+  }
 
   Object? _draftOf(ComponentAddCandidate candidate) {
     final configurator = candidate.configurator;
@@ -285,19 +372,35 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     setState(() {
       if (_selected?.id != candidate.id) {
         _selected = candidate;
-        if (!_targetsFor(candidate).any((target) => target.id == _targetId)) {
-          _targetId = widget.initialTargetId;
+        if (widget.placements == null &&
+            !_targetsFor(candidate).any((target) => target.id == _targetId)) {
+          _targetId = _defaultTargetFor(candidate);
         }
         _beforeId = null;
       }
     });
   }
 
+  /// The initial target when compatible, otherwise the first compatible one.
+  String _defaultTargetFor(ComponentAddCandidate candidate) {
+    final targets = _targetsFor(candidate);
+    return targets.any((target) => target.id == widget.initialTargetId)
+        ? widget.initialTargetId
+        : targets.firstOrNull?.id ?? widget.initialTargetId;
+  }
+
   void _addDirectly(ComponentAddCandidate candidate) {
+    final placement = widget.placements == null
+        ? null
+        : _placementsFor(candidate).firstOrNull;
+    if (widget.placements != null && placement == null) return;
     Navigator.of(context).pop(
       ComponentAddRequest(
         component: candidate,
-        targetId: widget.initialTargetId,
+        targetId: widget.placements == null
+            ? _defaultTargetFor(candidate)
+            : widget.initialTargetId,
+        placementId: placement?.id,
       ),
     );
   }
@@ -359,9 +462,13 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   }
 
   bool get _canContinue => switch (_stage) {
-    _WizardStage.component => _selected != null,
+    _WizardStage.component =>
+      _selected != null &&
+          (widget.placements == null || _placementsFor(_selected!).isNotEmpty),
     _WizardStage.settings => _settingsError == null,
-    _WizardStage.placement => !_customSize || _size.error == null,
+    _WizardStage.placement =>
+      (widget.placements == null || _placement != null) &&
+          (!_customSize || _size.error == null),
     _WizardStage.binding => _bindingError == null,
     _WizardStage.summary => true,
   };
@@ -373,11 +480,13 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
       return;
     }
     final candidate = _selected!;
+    final relative = widget.placements != null;
     Navigator.of(context).pop(
       ComponentAddRequest(
         component: candidate,
-        targetId: _target.id,
-        beforeId: _target.replaces ? null : _beforeId,
+        targetId: relative ? widget.initialTargetId : _target.id,
+        beforeId: relative || _target.replaces ? null : _beforeId,
+        placementId: relative ? _placement!.id : null,
         label: _labelValue,
         size: _customSize ? _size.value : null,
         draft: _draftOf(candidate),
@@ -508,8 +617,9 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   Widget _buildChoice(BuildContext context) {
     final query = _query.trim().toLowerCase();
+    final offered = _offered;
     final visible = [
-      for (final candidate in widget.candidates)
+      for (final candidate in offered)
         if (query.isEmpty ||
             candidate.label.toLowerCase().contains(query) ||
             candidate.tags.any((tag) => tag.toLowerCase().contains(query)))
@@ -518,7 +628,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.candidates.isEmpty)
+        if (offered.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Text(widget.emptyMessage),
@@ -593,8 +703,6 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     ComponentAddCandidate candidate,
   ) {
     final theme = Theme.of(context);
-    final targets = _targetsFor(candidate);
-    final target = _target;
     final error = _customSize ? _size.error : null;
     Widget section(String title, List<Widget> children) => Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -611,70 +719,20 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
       key: ValueKey('${widget.keyPrefix}-add-placement'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        section('Emplacement', [
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey('${widget.keyPrefix}-add-target'),
-                  initialValue: target.id,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Zone',
-                  ),
-                  items: [
-                    for (final option in targets)
-                      DropdownMenuItem(
-                        value: option.id,
-                        child: Text(option.label),
-                      ),
-                  ],
-                  onChanged: (value) => setState(() {
-                    _targetId = value ?? widget.initialTargetId;
-                    _beforeId = null;
-                  }),
+        if (widget.placements != null)
+          section('Emplacement', [
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 280),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: _relativePlacements(context, candidate),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: target.replaces
-                    ? Text(
-                        target.siblings.isEmpty
-                            ? 'Composant unique'
-                            : 'Remplace le contenu actuel',
-                        style: theme.textTheme.bodySmall,
-                      )
-                    : DropdownButtonFormField<String?>(
-                        key: ValueKey(
-                          '${widget.keyPrefix}-add-position-${target.id}',
-                        ),
-                        initialValue: _beforeId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          labelText: 'Position',
-                        ),
-                        items: [
-                          for (final (id, label) in target.siblings)
-                            DropdownMenuItem(
-                              value: id,
-                              child: Text(
-                                'Avant $label',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          const DropdownMenuItem<String?>(
-                            value: null,
-                            child: Text('À la fin'),
-                          ),
-                        ],
-                        onChanged: (value) => setState(() => _beforeId = value),
-                      ),
-              ),
-            ],
-          ),
-        ]),
+            ),
+          ])
+        else
+          section('Emplacement', [_zonePlacement(context, candidate)]),
         section('Taille', [
           SwitchListTile(
             key: ValueKey('${widget.keyPrefix}-add-custom-size'),
@@ -700,6 +758,125 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
           ),
       ],
     );
+  }
+
+  Widget _zonePlacement(BuildContext context, ComponentAddCandidate candidate) {
+    final theme = Theme.of(context);
+    final targets = _targetsFor(candidate);
+    final target = _target;
+    return Row(
+      children: [
+        Expanded(
+          child: DropdownButtonFormField<String>(
+            key: ValueKey('${widget.keyPrefix}-add-target'),
+            initialValue: target.id,
+            isExpanded: true,
+            decoration: const InputDecoration(isDense: true, labelText: 'Zone'),
+            items: [
+              for (final option in targets)
+                DropdownMenuItem(value: option.id, child: Text(option.label)),
+            ],
+            onChanged: (value) => setState(() {
+              _targetId = value ?? widget.initialTargetId;
+              _beforeId = null;
+            }),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: target.replaces
+              ? Text(
+                  target.siblings.isEmpty
+                      ? 'Composant unique'
+                      : 'Remplace le contenu actuel',
+                  style: theme.textTheme.bodySmall,
+                )
+              : DropdownButtonFormField<String?>(
+                  key: ValueKey(
+                    '${widget.keyPrefix}-add-position-${target.id}',
+                  ),
+                  initialValue: _beforeId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    labelText: 'Position',
+                  ),
+                  items: [
+                    for (final (id, label) in target.siblings)
+                      DropdownMenuItem(
+                        value: id,
+                        child: Text(
+                          'Avant $label',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('À la fin'),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() => _beforeId = value),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Relative positions grouped by the element they refer to.
+  List<Widget> _relativePlacements(
+    BuildContext context,
+    ComponentAddCandidate candidate,
+  ) {
+    final theme = Theme.of(context);
+    final selected = _placement;
+    // Consecutive runs: two levels sharing a title stay separate.
+    final groups = <(String, List<ComponentAddPlacement>)>[];
+    for (final option in _placementsFor(candidate)) {
+      if (groups.lastOrNull case (final group, final options)
+          when group == option.group) {
+        options.add(option);
+      } else {
+        groups.add((option.group, [option]));
+      }
+    }
+    return [
+      for (final (group, options) in groups) ...[
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 4),
+          child: Text(group, style: theme.textTheme.labelLarge),
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final option in options)
+              Tooltip(
+                message: option.hint ?? option.label,
+                child: ChoiceChip(
+                  key: ValueKey(
+                    '${widget.keyPrefix}-add-placement-${option.id}',
+                  ),
+                  avatar: Icon(option.icon, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  label: Text(option.label),
+                  selected: selected?.id == option.id,
+                  onSelected: (_) => setState(() => _placementId = option.id),
+                ),
+              ),
+          ],
+        ),
+      ],
+      if (selected?.hint case final hint?)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            hint,
+            key: ValueKey('${widget.keyPrefix}-add-placement-hint'),
+            style: theme.textTheme.bodySmall,
+          ),
+        ),
+    ];
   }
 
   Widget _buildBinding(BuildContext context, ComponentAddCandidate candidate) {
@@ -756,8 +933,11 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   }
 
   Widget _buildSummary(BuildContext context, ComponentAddCandidate candidate) {
-    final target = _target;
-    final position = target.replaces
+    final placement = widget.placements == null ? null : _placement;
+    final target = placement == null ? _target : null;
+    final position = target == null
+        ? placement!.label
+        : target.replaces
         ? (target.siblings.isEmpty ? 'Unique' : 'Remplace le contenu actuel')
         : _beforeId == null
         ? 'À la fin'
@@ -766,8 +946,10 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     final lines = <(String, String)>[
       ('Composant', candidate.label),
       if (candidate.tags.isNotEmpty) ('Tags', candidate.tags.join(', ')),
-      ('Zone', target.label),
+      if (target != null) ('Zone', target.label),
+      if (placement != null) ('Par rapport à', placement.group),
       ('Position', position),
+      if (placement?.hint case final hint?) ('Structure', hint),
       ('Taille', _customSize ? _size.describe() : 'Par défaut'),
       if (candidate.configurator case final configurator? when draft != null)
         ...configurator.summarize(draft),

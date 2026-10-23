@@ -145,6 +145,9 @@ class EditableSingleChildState extends State<EditableSingleChild> {
               wrapActions: children.isEmpty
                   ? const []
                   : editor.wrapActionsForSlot('child', children.single),
+              insertion: children.isEmpty
+                  ? null
+                  : editor.insertionForSlot('child', children.single),
               child: child,
             ),
             children.isNotEmpty,

@@ -7,11 +7,13 @@ import '../../models/component_tag_filter.dart';
 import '../../models/registry.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/addition/component_add_wizard.dart';
+import '../editing/addition/insertion_plan.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/slot_removal.dart';
 import '../editing/slots/slot_wrapping.dart';
 import '../editing/slots/provided_slot_scope.dart';
 import '../editing/overlay/editor_overlay.dart';
+import '../editing/overlay/editor_zone_badge.dart';
 import '../editing/slots/slot_size_editor.dart';
 import '../super_layout/layout_selection.dart';
 import '../super_layout/slot_implementation.dart';
@@ -165,6 +167,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   String? _selected;
   String? _selectedSlot;
   bool _active = false;
+  final _hoveredRegionScopes = ValueNotifier<Set<Object>>({});
   List<String> _path = const [];
   Size _layoutSize = Size.zero;
   final _config = ValueNotifier<NativeComponentConfig>(NativeComponentConfig());
@@ -246,6 +249,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       _active = false;
       _selected = null;
       _selectedSlot = null;
+      _hoveredRegionScopes.value = {};
     });
     LayoutSelection.report(this, const []);
   }
@@ -560,6 +564,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             id: entry.key,
             label: entry.value,
             tags: _tagsForType(entry.key),
+            placementTags: _placementTagsForType(entry.key),
             configurator: _addConfiguratorOf(entry.key),
           ),
       ],
@@ -574,6 +579,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 for (final slot in slotsFor(option.id)) (slot.id, slot.label),
               ],
               accepts: option.tagFilter.accepts,
+              zoneTags: option.tagFilter.include,
             ),
       ],
     );
@@ -605,24 +611,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         when next.slotsOf(region).contains(beforeId)) {
       next = next.withSlotMoved(id, region, beforeId: beforeId);
     }
-    final slot =
-        provided[type] ??
-        registry?.components.entries
-            .where((entry) => _componentType(entry.key, entry.value) == type)
-            .firstOrNull
-            ?.value
-            .createSlot(id) ??
-        BuilderSlot(
-          id: id,
-          label: candidates[type]!,
-          tags: _tagsForType(type),
-          menuIcon:
-              registry?.registry[type.substring('factory:'.length)]?.menuIcon,
-          builder: (_) => registry!.getWidget(
-            type.substring('factory:'.length),
-            XuiBuildCtx(id: id),
-          ),
-        );
+    final slot = _createSlot(type, id, label: candidates[type]!);
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
     try {
@@ -640,6 +629,254 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     } finally {
       history?.commitTransaction();
     }
+  }
+
+  SlotImplementation _createSlot(
+    String type,
+    String id, {
+    required String label,
+  }) {
+    final registry = widget.registry;
+    return _provided()[type] ??
+        registry?.components.entries
+            .where((entry) => _componentType(entry.key, entry.value) == type)
+            .firstOrNull
+            ?.value
+            .createSlot(id) ??
+        BuilderSlot(
+          id: id,
+          label: label,
+          tags: _tagsForType(type),
+          menuIcon:
+              registry?.registry[type.substring('factory:'.length)]?.menuIcon,
+          builder: (_) => registry!.getWidget(
+            type.substring('factory:'.length),
+            XuiBuildCtx(id: id),
+          ),
+        );
+  }
+
+  /// Contextual addition around [slot] of [region]: in the region stack when
+  /// the direction follows its axis, otherwise by wrapping it in a `Layout`.
+  EditorSlotInsertion? insertionForSlot(
+    String region,
+    SlotImplementation slot,
+  ) {
+    final registry = widget.registry;
+    if (registry == null) return null;
+    final spec = definition(region);
+    final layout = registry.registry[EditorSlotWrapper.layout.factory];
+    return EditorSlotInsertion(
+      label: slot.label,
+      host: InsertionHost(
+        axis: spec.axis,
+        single: spec.single,
+        canWrap: layout != null && spec.tagFilter.accepts(layout.tags),
+      ),
+      acceptsTags: spec.tagFilter.accepts,
+      zoneTags: spec.tagFilter.include,
+      insert: (plan, component) async =>
+          _insertAround(region, slot, plan, component),
+    );
+  }
+
+  void _insertAround(
+    String region,
+    SlotImplementation slot,
+    InsertionPlan plan,
+    InsertedComponent component,
+  ) {
+    final current = _config.value;
+    final registry = widget.registry;
+    if (!mounted ||
+        registry == null ||
+        !current.slotsOf(region).contains(slot.id)) {
+      return;
+    }
+    final occupied = {
+      for (final ids in current.placements.values) ...ids,
+      ...widget.slots.map((s) => s.id),
+    };
+    switch (plan) {
+      case WrapInsertion():
+        wrapSlotInstance(
+          context,
+          registry: registry,
+          wrapper: EditorSlotWrapper.layout,
+          id: slot.id,
+          type: current.slotTypeOf(slot.id),
+          label: slot.label,
+          occupiedIds: occupied,
+          sibling: WrapSibling(
+            type: component.type,
+            axis: plan.axis,
+            before: plan.newFirst,
+            label: component.label,
+            size: component.size,
+            configure: component.configure,
+          ),
+          replace: (id, type) {
+            var next = current.withSlotReplaced(slot.id, id, type);
+            final preferred = preferredSizeFor(slot);
+            if (!current.slotPreferredSizes.containsKey(slot.id) &&
+                !current.slotSizeConstraints.containsKey(slot.id) &&
+                preferred != null) {
+              next = next.withSlotSize(id, preferred);
+            }
+            _update(next);
+            _selectedSlot = id;
+          },
+        );
+      case DirectInsertion():
+        final id = uniqueInstanceId(
+          context,
+          registry: registry,
+          occupiedIds: occupied,
+        );
+        var next = current
+            .withSlotAdded(id, region, type: component.type)
+            .withSlotMoved(
+              id,
+              region,
+              beforeId: plan.newFirst ? slot.id : null,
+              afterId: plan.newFirst ? null : slot.id,
+            );
+        if (plan.mode == InsertMode.push) {
+          // The new component takes the target's size; the target reverts to
+          // its default sizing.
+          final preferred = {...next.slotPreferredSizes};
+          final constraints = {...next.slotSizeConstraints};
+          if (preferred.containsKey(slot.id)) {
+            preferred[id] = preferred.remove(slot.id);
+          }
+          if (constraints.remove(slot.id) case final saved?) {
+            constraints[id] = saved;
+          }
+          next = NativeComponentConfig(
+            useDefaultNavigation: next.useDefaultNavigation,
+            placements: next.placements,
+            slotTypes: next.slotTypes,
+            regions: next.regions,
+            slotPreferredSizes: preferred,
+            slotSizeConstraints: constraints,
+            slotLabels: next.slotLabels,
+          );
+        }
+        _commitAddition(next, region, id, component);
+    }
+  }
+
+  /// Applies the settings, sizing and label of an added instance [id] already
+  /// placed in [next], as a single history step.
+  void _commitAddition(
+    NativeComponentConfig next,
+    String region,
+    String id,
+    InsertedComponent component,
+  ) {
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    try {
+      component.configure(id);
+      final added = _createSlot(
+        component.type,
+        id,
+        label:
+            component.label ??
+            (component.type.startsWith('factory:')
+                ? component.type.substring('factory:'.length)
+                : component.type),
+      );
+      next =
+          widget.onSlotAdded?.call(next, region, id, added, slotsFor(region)) ??
+          next;
+      if (component.size case final size?) {
+        next = next.withSlotSizeConstraints(id, size);
+      }
+      if (component.label case final label?) {
+        next = next.withSlotLabel(id, label);
+      }
+      _update(next);
+    } finally {
+      history?.commitTransaction();
+    }
+  }
+
+  /// Regions offered by the contextual add wizard: the selected one first,
+  /// then the other enabled regions, then the disabled but available ones,
+  /// enabled by the addition. An occupied single region is skipped: wrapping
+  /// covers that case.
+  List<EditorAddZone> _addZones() {
+    if (widget.registry == null) return const [];
+    final selected = _selected;
+    bool available(NativeRegion region) =>
+        (widget.isRegionAvailable?.call(widget.config, region.id) ?? true) &&
+        !(region.single && _config.value.slotsOf(region.id).isNotEmpty);
+    return [
+      for (final region in [
+        ?widget.regions
+            .where((region) => region.id == selected && enabled(region.id))
+            .firstOrNull,
+        for (final region in widget.regions)
+          if (region.id != selected && enabled(region.id)) region,
+        for (final region in widget.regions)
+          if (!enabled(region.id)) region,
+      ])
+        if (available(region))
+          EditorAddZone(
+            id: region.id,
+            label: region.label,
+            hint: enabled(region.id) ? null : 'Active la zone ${region.label}',
+            accepts: region.tagFilter.accepts,
+            zoneTags: region.tagFilter.include,
+            insert: (component) async => _insertInRegion(region.id, component),
+          ),
+    ];
+  }
+
+  void _insertInRegion(String region, InsertedComponent component) {
+    if (!mounted ||
+        !(widget.isRegionAvailable?.call(widget.config, region) ?? true)) {
+      return;
+    }
+    final current = _config.value;
+    final id = uniqueInstanceId(
+      context,
+      registry: widget.registry,
+      occupiedIds: {
+        for (final ids in current.placements.values) ...ids,
+        ...widget.slots.map((s) => s.id),
+      },
+    );
+    _commitAddition(
+      current.withSlotAdded(
+        id,
+        region,
+        type: component.type,
+        replace: definition(region).single,
+      ),
+      region,
+      id,
+      component,
+    );
+  }
+
+  /// Placement tags of a registry type (`factory:` or `component:`).
+  Set<String> _placementTagsForType(String type) {
+    final registry = widget.registry;
+    if (registry == null) return const {};
+    if (type.startsWith('factory:')) {
+      return registry
+              .registry[type.substring('factory:'.length)]
+              ?.placementTags ??
+          const {};
+    }
+    for (final entry in registry.components.entries) {
+      if (_componentType(entry.key, entry.value) == type) {
+        return entry.value.placementTags;
+      }
+    }
+    return const {};
   }
 
   ComponentAddConfigurator<Object>? _addConfiguratorOf(String type) {
@@ -741,7 +978,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     );
   }
 
-  bool _showOverlay(String id) {
+  bool _showOverlay() {
     final path = LayoutSelection.path.value;
     return editing &&
         _active &&
@@ -750,8 +987,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         List.generate(
           _path.length,
           (index) => path[index] == _path[index],
-        ).every((value) => value) &&
-        (_selected == null || _selected == id);
+        ).every((value) => value);
+  }
+
+  void _setRegionHovered(String id, bool hovered) {
+    if (!mounted) return;
+    final scopes = {..._hoveredRegionScopes.value};
+    final changed = hovered ? scopes.add(id) : scopes.remove(id);
+    if (!changed) return;
+    setState(() => _hoveredRegionScopes.value = scopes);
   }
 
   bool _canMoveSlot(String slotId, String region) {
@@ -840,8 +1084,13 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   }) {
     final spec = definition(id);
     final slots = item == null ? slotsFor(id) : [item];
-    final overlay = _showOverlay(id);
+    final overlay = _showOverlay();
     final selected = _selected == id;
+    final emphasis = LabelEmphasis(
+      scopes: _hoveredRegionScopes,
+      scope: id,
+      onHover: (_, _, value) => _setRegionHovered(id, value),
+    );
     final colors = Theme.of(context).colorScheme;
     final content =
         child ??
@@ -901,6 +1150,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           onEditPreferredSize: editing ? _editSize : null,
           wrapActionsForSlot: editing
               ? (slot) => wrapActionsForSlot(id, slot)
+              : null,
+          insertionForSlot: editing
+              ? (slot) => insertionForSlot(id, slot)
               : null,
         );
     return LayoutSelectionScope(
@@ -967,41 +1219,50 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     ),
                   ),
                   if (overlay && showBadge)
+                    ValueListenableBuilder<Set<Object>>(
+                      valueListenable: _hoveredRegionScopes,
+                      builder: (context, hoveredRegions, _) =>
+                          hoveredRegions.contains(id)
+                          ? EditorZoneHighlight(
+                              key: ValueKey(
+                                '${widget.keyPrefix}-zone-highlight-$id',
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  if (overlay && showBadge)
                     Positioned.fill(
-                      child: EditorOverlayVisibility(
+                      key: ValueKey('${widget.keyPrefix}-badge-$id'),
+                      child: EditorOverlay(
                         child: Center(
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
-                            child: Material(
-                              color: colors.primaryContainer,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TextButton(
-                                    key: ValueKey(
-                                      '${widget.keyPrefix}-select-$id',
-                                    ),
-                                    onPressed: () => select(
-                                      selected ? null : id,
-                                      regionContext,
-                                    ),
-                                    child: Text(spec.label),
-                                  ),
-                                  IconButton(
-                                    key: ValueKey(
-                                      '${widget.keyPrefix}-add-$id',
-                                    ),
-                                    tooltip: 'Ajouter dans ${spec.label}',
-                                    visualDensity: VisualDensity.compact,
-                                    icon: const Icon(Icons.add),
-                                    onPressed: () {
-                                      select(id, regionContext);
-                                      add(id);
-                                    },
-                                  ),
-                                  ...?widget.regionActions?.call(id),
-                                ],
+                            child: EmphasizedLabel(
+                              emphasis: emphasis,
+                              allScopes: true,
+                              child: EditorZoneBadge(
+                                key: ValueKey(
+                                  '${widget.keyPrefix}-badge-content-$id',
+                                ),
+                                label: spec.label,
+                                labelKey: ValueKey(
+                                  '${widget.keyPrefix}-select-$id',
+                                ),
+                                selected: selected,
+                                onHover: (hovered) =>
+                                    emphasis.report(id, hovered),
+                                onTap: () =>
+                                    select(selected ? null : id, regionContext),
+                                onAdd: slots.isEmpty
+                                    ? () {
+                                        select(id, regionContext);
+                                        add(id);
+                                      }
+                                    : null,
+                                addKey: ValueKey('${widget.keyPrefix}-add-$id'),
+                                addTooltip: 'Ajouter dans ${spec.label}',
+                                actions:
+                                    widget.regionActions?.call(id) ?? const [],
                               ),
                             ),
                           ),
@@ -1022,34 +1283,39 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     _validate(widget.config);
     return ProvidedSlotScope(
       slots: widget.slots,
-      child: ListenableBuilder(
-        listenable: LayoutSelection.path,
-        builder: (context, _) => LayoutBuilder(
-          builder: (context, constraints) {
-            _layoutSize = Size(
-              constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
-              constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
-            );
-            final child = widget.builder(context, this);
-            if (!widget.editSurface) return child;
-            return EditorSelectionRegion(
-              enabled: editing,
-              isZone: true,
-              fallback: true,
-              selected: _active && _selected == null,
-              onSelect: () => select(null),
-              child: EditorSlot(
-                label: widget.settingsTitle,
-                menuTitle: widget.label,
-                menuType: widget.menuType,
-                menuIcon: widget.menuIcon,
-                editable: true,
-                onEdit: configure,
-                onContextMenu: (_) => select(null),
-                child: child,
-              ),
-            );
-          },
+      child: EditorAddZones(
+        label: widget.label,
+        enabled: editing,
+        zones: _addZones,
+        child: ListenableBuilder(
+          listenable: LayoutSelection.path,
+          builder: (context, _) => LayoutBuilder(
+            builder: (context, constraints) {
+              _layoutSize = Size(
+                constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
+                constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
+              );
+              final child = widget.builder(context, this);
+              if (!widget.editSurface) return child;
+              return EditorSelectionRegion(
+                enabled: editing,
+                isZone: true,
+                fallback: true,
+                selected: _active && _selected == null,
+                onSelect: () => select(null),
+                child: EditorSlot(
+                  label: widget.settingsTitle,
+                  menuTitle: widget.label,
+                  menuType: widget.menuType,
+                  menuIcon: widget.menuIcon,
+                  editable: true,
+                  onEdit: configure,
+                  onContextMenu: (_) => select(null),
+                  child: child,
+                ),
+              );
+            },
+          ),
         ),
       ),
     );
@@ -1063,6 +1329,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       (_) => LayoutSelection.report(this, const []),
     );
     _config.dispose();
+    _hoveredRegionScopes.dispose();
     super.dispose();
   }
 }

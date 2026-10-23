@@ -96,6 +96,7 @@ extension _SuperLayoutDialogs on SuperLayoutState {
               id: slot.id,
               label: slot.label,
               tags: slot.tags,
+              placementTags: _placementTagsOf(context, slot.id),
               configurator: _addConfiguratorOf(context, slot.id),
             ),
       ],
@@ -110,6 +111,7 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             ],
             accepts: (tags) =>
                 widget.zoneTagFilters[option]?.accepts(tags) ?? true,
+            zoneTags: widget.zoneTagFilters[option]?.include ?? const {},
           ),
       ],
     );

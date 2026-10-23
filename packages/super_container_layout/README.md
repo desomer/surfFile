@@ -479,6 +479,60 @@ Elle fonctionne aussi avec les slots et les champs `child` fournis par le code :
 leur definition doit rester presente dans le widget d'origine pour les retrouver
 au chargement. Les enveloppements successifs sont possibles.
 
+### Ajouter a cote d'un composant
+
+En mode edition, la premiere entree du menu contextuel d'un composant place dans
+une zone de Layout, une grille, une zone native ou une Card est **Ajouter…**.
+Elle ouvre l'assistant d'ajout ; son etape **Emplacement** propose des positions
+relatives au composant clique puis a chacun de ses parents (un groupe par
+niveau) :
+
+- **A droite / A gauche / Au-dessus / En dessous** : le nouveau composant se
+  place a cote, le composant cible garde sa taille ;
+- **A la place, pousse …** : le nouveau composant prend la position et les
+  contraintes de taille de la cible, qui est decalee dans la direction choisie et
+  reprend sa taille par defaut.
+
+L'algorithme (`planInsertion`) choisit la structure :
+
+1. direction le long de l'axe de la pile : insertion directe avant/apres ;
+2. direction perpendiculaire et zone de Layout ne contenant que la cible : la zone
+   passe en ligne ou en colonne, puis insertion directe ;
+3. sinon (freres presents, axe fixe d'une region native, Card a enfant unique,
+   grille) : la cible est enveloppee dans un nouveau **Layout** dont la zone
+   Centre contient la cible et le nouveau composant, en ligne ou en colonne.
+   Les zones laterales ne sont jamais activees.
+
+Les positions refusees par les tags de la zone (ou du Layout englobant) sont
+masquees.
+
+L'etape propose aussi des groupes **Dans <conteneur>** pour chaque `SuperLayout`
+ou composant natif (`NativeComponentEditor` : Scaffold, AppBar, Card…) qui
+contient l'element : le composant est ajoute a la fin de la zone choisie. La zone
+sous le pointeur vient en premier, puis les autres zones affichees, puis les zones
+masquees (cotes desactives d'un Layout, regions natives desactivees comme
+**AppBar** d'une page) : l'ajout les active. Une region a enfant unique deja
+occupee n'est pas proposee. Un clic droit dans une zone vide propose aussi
+**Ajouter…**. Les conteneurs publient leurs zones via `EditorAddZones`.
+
+Compatibilite des tags : une zone accepte un composant selon son
+`ComponentTagFilter` (`include`/`exclude`). En sens inverse, un composant peut
+etre reserve a certaines zones via `placementTags` (`ComponentBuilder`,
+`RegisteredComponent`) : il n'est propose que dans les zones dont le filtre
+**inclut explicitement** un de ces tags (`ComponentTagFilter.admits`). Ainsi
+`ApplicationBar` (`placementTags: {'appBar'}`) n'est propose que dans la zone
+AppBar d'une page, et `BottomNavigationBar` dans la barre basse, jamais a cote
+d'un texte ni dans un Layout englobant. La regle s'applique a l'assistant
+contextuel et aux assistants « + » des Layouts et composants natifs
+(`ComponentAddCandidate.placementTags`, `ComponentAddTarget.zoneTags`) ; les
+deplacements et enveloppements existants ne changent pas. Un composant sans
+zone compatible n'apparait pas dans la liste.
+
+Seuls les composants du registre sont proposes. L'ajout est une seule
+etape d'annulation/retablissement. Un hote expose ces positions via
+`EditorSlotAction.insertion` (`EditorSlotInsertion`) ; `SlotStack` le renseigne
+avec `insertionForSlot`.
+
 ### Styles de surface par état
 
 Toutes les surfaces `EditableSurface` (dont Card et IterableContent) proposent

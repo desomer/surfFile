@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../../theme/appearance.dart';
 import '../../super_layout/layout_selection.dart';
 import '../../super_layout/zone_axis_button.dart';
+import '../addition/contextual_add.dart';
+import '../addition/insertion_plan.dart';
 import 'editor_context_menu.dart';
 import 'editor_selection_region.dart';
 import '../dialogs/editor_dialog.dart';
@@ -310,7 +312,11 @@ class EditorSlotState extends State<EditorSlot> {
     );
   }
 
-  Widget _menuHover(EditorSlotState target, Widget child) => MouseRegion(
+  Widget _menuHover(
+    EditorSlotState target,
+    Widget child, {
+    double minHeight = 40,
+  }) => MouseRegion(
     onEnter: (_) {
       if (!(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
         return;
@@ -325,7 +331,7 @@ class EditorSlotState extends State<EditorSlot> {
       }
     },
     child: ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 40),
+      constraints: BoxConstraints(minHeight: minHeight),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: child,
@@ -408,6 +414,31 @@ class EditorSlotState extends State<EditorSlot> {
     return result;
   }
 
+  /// Contextual addition levels, from the clicked element to its outermost
+  /// editable parent: positions around elements and zones of containers.
+  /// [provided] holds actions found below this slot.
+  List<ContextualAddLevel> _insertionLevels(List<EditorSlotAction>? provided) {
+    final seen = Set<Object>.identity();
+    final levels = <ContextualAddLevel>[];
+    void collect(Widget widget) {
+      if (!seen.add(widget)) return;
+      if (widget is EditorSlotAction &&
+          widget.enabled &&
+          widget.insertion != null) {
+        levels.add(widget.insertion!);
+      } else if (widget is EditorAddZones) {
+        if (widget.group() case final group?) levels.add(group);
+      }
+    }
+
+    provided?.forEach(collect);
+    context.visitAncestorElements((element) {
+      collect(element.widget);
+      return true;
+    });
+    return levels;
+  }
+
   /// Opens this slot's menu at a global pointer position.
   Future<void> openMenu(
     Offset globalPosition, {
@@ -443,8 +474,9 @@ class EditorSlotState extends State<EditorSlot> {
       return true;
     });
     final hasMenuActions = extraActions.any((action) => !action.inline);
+    final insertions = _insertionLevels(actions);
     // Inline actions only render inside an editable entry, never on their own.
-    if (entries.isEmpty && !hasMenuActions) return;
+    if (entries.isEmpty && !hasMenuActions && insertions.isEmpty) return;
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
@@ -471,6 +503,43 @@ class EditorSlotState extends State<EditorSlot> {
           overlay.size.height - position.dy,
         ),
         items: [
+          if (insertions.isNotEmpty) ...[
+            PopupMenuItem<Future<void> Function()>(
+              height: 28,
+              key: const ValueKey('style-menu-insert'),
+              value: () =>
+                  showContextualAddWizard(context, insertions, target: context),
+              padding: EdgeInsets.zero,
+              child: _menuHover(
+                this,
+                minHeight: 28,
+                Row(
+                  children: [
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: colors.primary,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(Icons.add, size: 14, color: colors.onPrimary),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _menuTitle(
+                        'Ajouter…',
+                        destination: null,
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (hasMenuActions || entries.isNotEmpty)
+              const PopupMenuDivider(height: 8),
+          ],
           for (final (actionIndex, action)
               in extraActions.where((action) => !action.inline).indexed) ...[
             if (actionIndex > 0) const PopupMenuDivider(height: 12),

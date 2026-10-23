@@ -42,6 +42,8 @@ export 'widgets/appearance/appearance_style_section.dart';
 export 'widgets/editing/styles/container_style_editor.dart';
 export 'widgets/editing/addition/component_add_wizard.dart';
 export 'widgets/editing/addition/component_add_configurators.dart';
+export 'widgets/editing/addition/contextual_add.dart';
+export 'widgets/editing/addition/insertion_plan.dart';
 export 'widgets/editing/history/editor_history.dart';
 export 'widgets/editing/repositories/json_repository_manager.dart';
 export 'widgets/editing/repositories/repository_binding_fields.dart';

@@ -350,6 +350,7 @@ class _GridSurfaceState extends State<_GridSurface> {
                           onRemove: () async =>
                               widget.owner._removeSlot(slot.id),
                           wrapActions: widget.owner._wrapActionsForSlot(slot),
+                          insertion: widget.owner._insertionForSlot(slot),
                           child: Builder(
                             builder: (context) => _LabelScope(
                               path: [...widget.path, slot.label],

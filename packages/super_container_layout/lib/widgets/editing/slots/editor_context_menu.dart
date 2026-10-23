@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 
+import '../addition/insertion_plan.dart';
+
 enum EditorMenuDestination { style, configuration }
 
 class EditorSlotWrapAction {
@@ -24,6 +26,7 @@ class EditorSlotAction extends InheritedWidget {
     this.inline = false,
     this.showEdit = true,
     this.wrapActions = const [],
+    this.insertion,
     this.destination = EditorMenuDestination.configuration,
     required super.child,
     super.key,
@@ -36,6 +39,9 @@ class EditorSlotAction extends InheritedWidget {
   final bool inline;
   final bool showEdit;
   final List<EditorSlotWrapAction> wrapActions;
+
+  /// Adds a component around this child through the contextual wizard.
+  final EditorSlotInsertion? insertion;
   final EditorMenuDestination destination;
 
   static List<EditorSlotAction> of(BuildContext context) {
@@ -59,6 +65,7 @@ class EditorSlotAction extends InheritedWidget {
       onEdit != oldWidget.onEdit ||
       onRemove != oldWidget.onRemove ||
       wrapActions != oldWidget.wrapActions ||
+      insertion != oldWidget.insertion ||
       inline != oldWidget.inline ||
       showEdit != oldWidget.showEdit ||
       destination != oldWidget.destination;

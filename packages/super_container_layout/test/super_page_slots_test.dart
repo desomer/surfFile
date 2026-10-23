@@ -581,11 +581,11 @@ void main() {
         expect(LayoutSelection.path.value, ['Page']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-body')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(
           find.byKey(const ValueKey('scaffold-page-add-appBar')),
-          findsOneWidget,
+          findsNothing,
         );
         await tester.tapAt(const Offset(650, 450));
         await tester.pumpAndSettle();
@@ -605,7 +605,7 @@ void main() {
         expect(LayoutSelection.path.value, ['Page']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-body')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(
           find.byKey(const ValueKey('super-layout-add-center')),
@@ -630,7 +630,7 @@ void main() {
         expect(LayoutSelection.path.value, ['Page', 'Corps']);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-body')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(tester.takeException(), isNull);
       },
@@ -882,18 +882,10 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('page editor adds a registered slot to a native region', (
+  testWidgets('occupied app bar region hides its overlay add action', (
     tester,
   ) async {
     final registry = Registry();
-    registry.registerComponent(
-      'test-title',
-      const RegisteredComponent(
-        label: 'Test title',
-        tags: {'appBar'},
-        builder: _title,
-      ),
-    );
     await pumpPage(
       tester,
       SuperPage(appBar: AppBar(title: const Text('Page title'))),
@@ -907,19 +899,14 @@ void main() {
       const Offset(0, 200),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('scaffold-page-add-appBar')));
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('scaffold-page-add-slot-component:test-title')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Registered title'), findsOneWidget);
     expect(
-      registry.scaffoldPageController('root').value.slotTypes.values,
-      contains('component:test-title'),
+      find.byKey(const ValueKey('scaffold-page-add-appBar')),
+      findsNothing,
     );
-    StyleEditScope.controllerOf(context)!.value = false;
-    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('scaffold-page-select-appBar')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 

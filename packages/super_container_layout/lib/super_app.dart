@@ -348,13 +348,27 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       scaffoldMessengerKey: _messenger,
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       themeMode: value.mode,
-      theme: value.theme(Brightness.light),
-      darkTheme: value.theme(Brightness.dark),
+      theme: _withHitTestablePages(value.theme(Brightness.light)),
+      darkTheme: _withHitTestablePages(value.theme(Brightness.dark)),
       builder: (context, child) => _buildShell(
         context,
         _buildContent(child!),
         value,
         router.routerDelegate.navigatorKey,
+      ),
+    );
+  }
+
+  static ThemeData _withHitTestablePages(ThemeData theme) {
+    final builders = theme.pageTransitionsTheme.builders;
+    return theme.copyWith(
+      pageTransitionsTheme: PageTransitionsTheme(
+        builders: {
+          for (final platform in TargetPlatform.values)
+            platform: _HitTestablePageTransitionsBuilder(
+              builders[platform] ?? const ZoomPageTransitionsBuilder(),
+            ),
+        },
       ),
     );
   }
@@ -460,4 +474,45 @@ class _SuperAppScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(_SuperAppScope oldWidget) => app != oldWidget.app;
+}
+
+/// Makes every page opaque to hit testing. Otherwise a click on an empty area
+/// reaches the route's non-dismissible ModalBarrier, which plays the system
+/// alert sound (Windows beep).
+class _HitTestablePageTransitionsBuilder extends PageTransitionsBuilder {
+  const _HitTestablePageTransitionsBuilder(this.inner);
+
+  final PageTransitionsBuilder inner;
+
+  @override
+  DelegatedTransitionBuilder? get delegatedTransition =>
+      inner.delegatedTransition;
+
+  @override
+  Duration get transitionDuration => inner.transitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration => inner.reverseTransitionDuration;
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => inner.buildTransitions<T>(
+    route,
+    context,
+    animation,
+    secondaryAnimation,
+    ColoredBox(color: const Color(0x00000000), child: child),
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is _HitTestablePageTransitionsBuilder && other.inner == inner;
+
+  @override
+  int get hashCode => inner.hashCode;
 }

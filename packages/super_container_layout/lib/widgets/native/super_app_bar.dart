@@ -14,7 +14,7 @@ import '../editing/slots/editor_slot.dart';
 class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   const SuperAppBar({
     this.id = 'root-appBar',
-    this.label = 'AppBar',
+    this.label = 'ApplicationBar',
     this.title,
     this.leading,
     this.action,

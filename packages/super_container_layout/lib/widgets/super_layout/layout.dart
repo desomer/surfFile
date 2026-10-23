@@ -449,6 +449,13 @@ class SuperLayoutState extends State<SuperLayout> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      ProvidedSlotScope(slots: widget.slots, child: _buildLayout(context));
+  Widget build(BuildContext context) => ProvidedSlotScope(
+    slots: widget.slots,
+    child: EditorAddZones(
+      label: _displayLabel,
+      enabled: widget.editable,
+      zones: _addZones,
+      child: _buildLayout(context),
+    ),
+  );
 }
