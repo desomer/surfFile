@@ -5,6 +5,7 @@ import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_value_config.dart';
+import '../models/super_action_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'container_fill.dart';
@@ -25,6 +26,7 @@ class Appearance {
     Map<String, ScaffoldPageConfig> scaffoldPages = const {},
     Map<String, NativeComponentConfig> nativeComponents = const {},
     Map<String, SuperValueConfig> valueComponents = const {},
+    Map<String, SuperActionConfig> actionComponents = const {},
     Map<String, SuperListViewConfig> listComponents = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
@@ -56,6 +58,7 @@ class Appearance {
        scaffoldPages = Map.unmodifiable(scaffoldPages),
        nativeComponents = Map.unmodifiable(nativeComponents),
        valueComponents = Map.unmodifiable(valueComponents),
+       actionComponents = Map.unmodifiable(actionComponents),
        listComponents = Map.unmodifiable(listComponents);
 
   final ThemeMode mode;
@@ -68,6 +71,7 @@ class Appearance {
   final Map<String, ScaffoldPageConfig> scaffoldPages;
   final Map<String, NativeComponentConfig> nativeComponents;
   final Map<String, SuperValueConfig> valueComponents;
+  final Map<String, SuperActionConfig> actionComponents;
   final Map<String, SuperListViewConfig> listComponents;
   final EditorPageCatalog pageCatalog;
 
@@ -79,6 +83,16 @@ class Appearance {
   Appearance withValueComponent(String id, SuperValueConfig value) {
     value.validate();
     return copyWith(valueComponents: {...valueComponents, id: value});
+  }
+
+  SuperActionConfig actionComponent(
+    String id, {
+    SuperActionConfig fallback = const SuperActionConfig(),
+  }) => actionComponents[id] ?? fallback;
+
+  Appearance withActionComponent(String id, SuperActionConfig value) {
+    value.validate();
+    return copyWith(actionComponents: {...actionComponents, id: value});
   }
 
   SuperListViewConfig listComponent(
@@ -150,6 +164,7 @@ class Appearance {
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
     Map<String, SuperValueConfig>? valueComponents,
+    Map<String, SuperActionConfig>? actionComponents,
     Map<String, SuperListViewConfig>? listComponents,
     EditorPageCatalog? pageCatalog,
   }) => Appearance(
@@ -165,6 +180,7 @@ class Appearance {
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
     valueComponents: valueComponents ?? this.valueComponents,
+    actionComponents: actionComponents ?? this.actionComponents,
     listComponents: listComponents ?? this.listComponents,
     pageCatalog: pageCatalog ?? this.pageCatalog,
   );
@@ -195,6 +211,7 @@ class Appearance {
     scaffoldPages: const {},
     nativeComponents: const {},
     valueComponents: const {},
+    actionComponents: const {},
     listComponents: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );

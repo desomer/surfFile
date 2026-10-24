@@ -9,6 +9,7 @@ import '../../models/scaffold_page_config.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../models/super_value_config.dart';
+import '../../models/super_action_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 
@@ -92,6 +93,37 @@ abstract final class ScreenTreeCodec {
     'binding',
     'propertyBindings',
     'field',
+    'states',
+  };
+
+  static const Set<String> _actionKeys = {
+    'kind',
+    'variant',
+    'label',
+    'text',
+    'tooltip',
+    'icon',
+    'iconPosition',
+    'iconSize',
+    'iconSpacing',
+    'enabled',
+    'fontFamily',
+    'fontSize',
+    'fontWeight',
+    'italic',
+    'color',
+    'iconColor',
+    'backgroundColor',
+    'borderColor',
+    'radius',
+    'borderWidth',
+    'elevation',
+    'horizontalPadding',
+    'verticalPadding',
+    'textAlign',
+    'letterSpacing',
+    'style',
+    'propertyBindings',
     'states',
   };
 
@@ -318,6 +350,24 @@ abstract final class ScreenTreeCodec {
       }
     }
 
+    if (input.containsKey('actionComponents') &&
+        input['actionComponents'] != null) {
+      final rawActions = input['actionComponents'];
+      if (rawActions is! Map) {
+        throw const FormatException('Invalid "actionComponents" map.');
+      }
+      for (final entry in rawActions.entries) {
+        final id = _requireId(entry.key, 'actionComponents');
+        if (entry.value is! Map) {
+          throw const FormatException('Invalid "actionComponents" map.');
+        }
+        final existing = state.actionComponents[id];
+        state.actionComponents[id] = existing != null && isMerge
+            ? existing.patchFromJson(entry.value as Map)
+            : SuperActionConfig.fromJson(entry.value);
+      }
+    }
+
     if (input.containsKey('listComponents') &&
         input['listComponents'] != null) {
       final rawLists = input['listComponents'];
@@ -436,6 +486,7 @@ abstract final class ScreenTreeCodec {
       scaffoldPages: state.scaffoldPages,
       nativeComponents: state.nativeComponents,
       valueComponents: state.valueComponents,
+      actionComponents: state.actionComponents,
       listComponents: state.listComponents,
       pageCatalog: EditorPageCatalog(
         pages: state.pages,
@@ -468,6 +519,10 @@ abstract final class ScreenTreeCodec {
       },
       'valueComponents': {
         for (final e in compiledAppearance.valueComponents.entries)
+          e.key: e.value.toJson(),
+      },
+      'actionComponents': {
+        for (final e in compiledAppearance.actionComponents.entries)
           e.key: e.value.toJson(),
       },
       'listComponents': {
@@ -518,6 +573,7 @@ class _Decompiler {
   final consumedStyles = <String>{};
   final consumedNatives = <String>{};
   final consumedValues = <String>{};
+  final consumedActions = <String>{};
   final consumedLists = <String>{};
   final refCounts = <String, int>{};
   final activeStack = <String>{};
@@ -666,7 +722,7 @@ class _Decompiler {
     final node = <String, Object?>{
       'type': shortType,
       'id': id,
-      if (slotLabel != null) 'slotLabel': slotLabel,
+      'slotLabel': ?slotLabel,
       if (constraints != null)
         'size': JsonDimension.formatConstraintsCompact(constraints),
       if (hasPreferredSize)
@@ -689,6 +745,11 @@ class _Decompiler {
           if (appearance.valueComponents[id] case final val?) {
             consumedValues.add(id);
             node.addAll(val.toCompactJson());
+          }
+        case 'Action':
+          if (appearance.actionComponents[id] case final act?) {
+            consumedActions.add(id);
+            node.addAll(act.toCompactJson());
           }
         case 'Card':
           if (includeInlineStyles) {
@@ -827,6 +888,10 @@ class _Decompiler {
       for (final e in appearance.valueComponents.entries)
         if (!consumedValues.contains(e.key)) e.key: e.value.toCompactJson(),
     };
+    final remainingActions = {
+      for (final e in appearance.actionComponents.entries)
+        if (!consumedActions.contains(e.key)) e.key: e.value.toCompactJson(),
+    };
     final remainingLists = {
       for (final e in appearance.listComponents.entries)
         if (!consumedLists.contains(e.key)) e.key: e.value.toCompactJson(),
@@ -852,6 +917,7 @@ class _Decompiler {
         },
       if (remainingNatives.isNotEmpty) 'nativeComponents': remainingNatives,
       if (remainingValues.isNotEmpty) 'valueComponents': remainingValues,
+      if (remainingActions.isNotEmpty) 'actionComponents': remainingActions,
       if (remainingLists.isNotEmpty) 'listComponents': remainingLists,
       'pageCatalog': appearance.pageCatalog.toJson(),
     };
@@ -865,6 +931,7 @@ class _CompilationState {
     required this.scaffoldPages,
     required this.nativeComponents,
     required this.valueComponents,
+    required this.actionComponents,
     required this.listComponents,
     required this.pages,
     required this.homePageId,
@@ -876,6 +943,7 @@ class _CompilationState {
     scaffoldPages: Map<String, ScaffoldPageConfig>.of(a.scaffoldPages),
     nativeComponents: Map<String, NativeComponentConfig>.of(a.nativeComponents),
     valueComponents: Map<String, SuperValueConfig>.of(a.valueComponents),
+    actionComponents: Map<String, SuperActionConfig>.of(a.actionComponents),
     listComponents: Map<String, SuperListViewConfig>.of(a.listComponents),
     pages: List<EditorPageConfig>.of(a.pageCatalog.pages),
     homePageId: a.pageCatalog.homePageId,
@@ -886,6 +954,7 @@ class _CompilationState {
   final Map<String, ScaffoldPageConfig> scaffoldPages;
   final Map<String, NativeComponentConfig> nativeComponents;
   final Map<String, SuperValueConfig> valueComponents;
+  final Map<String, SuperActionConfig> actionComponents;
   final Map<String, SuperListViewConfig> listComponents;
   final List<EditorPageConfig> pages;
   String? homePageId;
@@ -897,6 +966,7 @@ class _CompilationState {
     ...scaffoldPages.keys,
     ...nativeComponents.keys,
     ...valueComponents.keys,
+    ...actionComponents.keys,
     ...listComponents.keys,
     for (final p in pages) p.id,
     for (final l in layouts.values) ...l.placedSlotIds,
@@ -1420,6 +1490,7 @@ class _CompilationState {
     final String? slotLabel = item['slotLabel'] is String
         ? item['slotLabel'] as String
         : (shortType != 'Value' &&
+              shortType != 'Action' &&
               item['label'] is String &&
               shortType != 'Layout')
         ? item['label'] as String
@@ -1467,6 +1538,12 @@ class _CompilationState {
             item.containsKey('center') ||
             item.containsKey('right'))) {
       return 'BottomNavigationBar';
+    }
+    if (item.containsKey('variant') ||
+        item.containsKey('icon') ||
+        item.containsKey('iconPosition') ||
+        item.containsKey('tooltip')) {
+      return 'Action';
     }
     if (item.containsKey('initialText') ||
         item.containsKey('text') ||
@@ -1566,6 +1643,23 @@ class _CompilationState {
           valueComponents[id] = existing != null && isMerge
               ? existing.patchFromJson(valueSource)
               : SuperValueConfig.fromJson(valueSource);
+        }
+      case 'Action':
+        final actionSource = node['config'] is Map
+            ? node['config'] as Map
+            : node['actionConfig'] is Map
+            ? node['actionConfig'] as Map
+            : <String, Object?>{
+                for (final e in node.entries)
+                  if (e.key is String &&
+                      ScreenTreeCodec._actionKeys.contains(e.key))
+                    e.key as String: e.value,
+              };
+        if (actionSource.isNotEmpty) {
+          final existing = actionComponents[id];
+          actionComponents[id] = existing != null && isMerge
+              ? existing.patchFromJson(actionSource)
+              : SuperActionConfig.fromJson(actionSource);
         }
       case 'ApplicationBar':
         compileNativeMap(
@@ -1794,6 +1888,11 @@ class _CompilationState {
       valueComponents[id] = existing.patchFromJson(op['value'] as Map);
       matched = true;
     }
+    if (op['action'] is Map) {
+      final existing = actionComponents[id] ?? const SuperActionConfig();
+      actionComponents[id] = existing.patchFromJson(op['action'] as Map);
+      matched = true;
+    }
     if (op['layout'] is Map) {
       compileLayoutMap(id, op['layout'] as Map, isMerge: true);
       matched = true;
@@ -1854,6 +1953,11 @@ class _CompilationState {
           if (e.key is String && ScreenTreeCodec._valueKeys.contains(e.key))
             e.key as String: e.value,
       };
+      final directAction = <String, Object?>{
+        for (final e in op.entries)
+          if (e.key is String && ScreenTreeCodec._actionKeys.contains(e.key))
+            e.key as String: e.value,
+      };
       final directLayout = <String, Object?>{
         for (final e in op.entries)
           if (e.key is String && ScreenTreeCodec._layoutKeys.contains(e.key))
@@ -1865,7 +1969,11 @@ class _CompilationState {
             e.key as String: e.value,
       };
 
-      if (valueComponents.containsKey(id) && directValue.isNotEmpty) {
+      if (actionComponents.containsKey(id) && directAction.isNotEmpty) {
+        actionComponents[id] = actionComponents[id]!.patchFromJson(
+          directAction,
+        );
+      } else if (valueComponents.containsKey(id) && directValue.isNotEmpty) {
         valueComponents[id] = valueComponents[id]!.patchFromJson(directValue);
       } else if (styles.containsKey(id) && directStyle.isNotEmpty) {
         styles[id] = styles[id]!.patchFromJson(directStyle);
@@ -1959,6 +2067,7 @@ class _CompilationState {
       layouts.remove(id);
       nativeComponents.remove(id);
       valueComponents.remove(id);
+      actionComponents.remove(id);
       listComponents.remove(id);
     }
   }

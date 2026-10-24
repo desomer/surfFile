@@ -3,7 +3,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 
 class _Codec extends AppearanceCodec {
   int resets = 0;

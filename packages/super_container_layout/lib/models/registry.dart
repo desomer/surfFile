@@ -3,8 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
 import 'super_value_config.dart';
+import 'super_action_config.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_value.dart';
+import '../widgets/components/super_action.dart';
 import '../widgets/super_layout/iterable_content.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
@@ -36,6 +38,7 @@ enum EditorConfigKind {
   nativeComponent,
   scaffoldPage,
   value,
+  action,
   list,
 }
 
@@ -51,6 +54,7 @@ class EditorConfigRef {
   const EditorConfigRef.scaffoldPage(this.id)
     : kind = EditorConfigKind.scaffoldPage;
   const EditorConfigRef.value(this.id) : kind = EditorConfigKind.value;
+  const EditorConfigRef.action(this.id) : kind = EditorConfigKind.action;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
 
   final EditorConfigKind kind;
@@ -111,8 +115,9 @@ class ComponentDuplicationContract {
     EditorConfigRef.style(id),
     EditorConfigRef.nativeComponent(id),
   ];
-  static List<EditorConfigRef> _value(String id) => [
-    EditorConfigRef.value(id),
+  static List<EditorConfigRef> _value(String id) => [EditorConfigRef.value(id)];
+  static List<EditorConfigRef> _action(String id) => [
+    EditorConfigRef.action(id),
   ];
   static List<EditorConfigRef> _list(String id) => [
     EditorConfigRef.layout(id),
@@ -134,6 +139,9 @@ class ComponentDuplicationContract {
 
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
+  static const superAction = ComponentDuplicationContract(
+    ownedConfigs: _action,
+  );
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _appBar,
   );
@@ -215,6 +223,8 @@ class Registry {
   final Map<String, ContainerStyle> _styleDefaults = {};
   final Map<String, ValueNotifier<SuperValueConfig>> valueConfigById = {};
   final Map<String, SuperValueConfig> _valueDefaults = {};
+  final Map<String, ValueNotifier<SuperActionConfig>> actionConfigById = {};
+  final Map<String, SuperActionConfig> _actionDefaults = {};
   final Map<String, ValueNotifier<SuperListViewConfig>> listConfigById = {};
   final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
@@ -241,6 +251,9 @@ class Registry {
     }
     for (final entry in valueConfigById.entries.toList()) {
       valueController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in actionConfigById.entries.toList()) {
+      actionController(entry.key, fallback: entry.value.value);
     }
     for (final entry in listConfigById.entries.toList()) {
       listController(entry.key, fallback: entry.value.value);
@@ -377,6 +390,12 @@ class Registry {
           fallback: _valueDefaults[entry.key]!,
         );
       }
+      for (final entry in actionConfigById.entries) {
+        entry.value.value = appearance.actionComponent(
+          entry.key,
+          fallback: _actionDefaults[entry.key]!,
+        );
+      }
       for (final entry in listConfigById.entries) {
         entry.value.value = appearance.listComponent(
           entry.key,
@@ -422,6 +441,35 @@ class Registry {
         notifier.value.validate();
         if (!_syncing) {
           _appearance!.value = _appearance!.value.withValueComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperActionConfig> actionController(
+    String id, {
+    SuperActionConfig fallback = const SuperActionConfig(),
+  }) {
+    fallback.validate();
+    _actionDefaults.putIfAbsent(id, () => fallback);
+    final notifier = actionConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.actionComponent(id, fallback: fallback) ?? fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withActionComponent(
             id,
             notifier.value,
           );
@@ -522,7 +570,16 @@ class Registry {
       dynamicBuilder: (ctx) =>
           SuperValue(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
-    
+
+    registry['Action'] = ComponentBuilderDynamic(
+      menuIcon: Icons.smart_button_outlined,
+      duplication: ComponentDuplicationContract.superAction,
+      tags: const {'action', 'button', 'input'},
+      addConfigurator: superActionAddConfigurator(availableFontFamilies),
+      dynamicBuilder: (ctx) =>
+          SuperAction(id: ctx.id, availableFontFamilies: availableFontFamilies),
+    );
+
     registry['ApplicationBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.web_asset,
       duplication: ComponentDuplicationContract.superAppBar,

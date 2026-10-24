@@ -21,6 +21,7 @@ class AppearanceTransfer {
           key == 'scaffoldPages' ||
           key == 'nativeComponents' ||
           key == 'valueComponents' ||
+          key == 'actionComponents' ||
           key == 'listComponents' ||
           key == 'pageCatalog' ||
           key == 'screens' ||

@@ -78,6 +78,7 @@ String uniqueInstanceId(
     ...appearance.nativeComponents.keys,
     ...appearance.scaffoldPages.keys,
     ...appearance.valueComponents.keys,
+    ...appearance.actionComponents.keys,
     ...appearance.listComponents.keys,
     if (registry != null) ...[
       ...registry.superLayoutConfigById.keys,
@@ -85,6 +86,7 @@ String uniqueInstanceId(
       ...registry.containerStyleById.keys,
       ...registry.scaffoldPageConfigById.keys,
       ...registry.valueConfigById.keys,
+      ...registry.actionConfigById.keys,
       ...registry.listConfigById.keys,
     ],
     for (final config in appearance.layouts.values) ...config.placedSlotIds,

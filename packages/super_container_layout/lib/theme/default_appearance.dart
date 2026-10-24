@@ -5,6 +5,7 @@ import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_value_config.dart';
+import '../models/super_action_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'appearance.dart';
@@ -31,6 +32,7 @@ class DefaultAppearance extends Appearance {
     super.scaffoldPages,
     super.nativeComponents,
     super.valueComponents,
+    super.actionComponents,
     super.listComponents,
     super.pageCatalog,
     this.cardHeight = 142,
@@ -74,6 +76,12 @@ class DefaultAppearance extends Appearance {
   }
 
   @override
+  DefaultAppearance withActionComponent(String id, SuperActionConfig value) {
+    value.validate();
+    return copyWith(actionComponents: {...actionComponents, id: value});
+  }
+
+  @override
   DefaultAppearance withListComponent(String id, SuperListViewConfig value) {
     value.validate();
     return copyWith(listComponents: {...listComponents, id: value});
@@ -89,6 +97,7 @@ class DefaultAppearance extends Appearance {
     scaffoldPages: const {},
     nativeComponents: const {},
     valueComponents: const {},
+    actionComponents: const {},
     listComponents: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
@@ -100,6 +109,7 @@ class DefaultAppearance extends Appearance {
     Map<String, ScaffoldPageConfig>? scaffoldPages,
     Map<String, NativeComponentConfig>? nativeComponents,
     Map<String, SuperValueConfig>? valueComponents,
+    Map<String, SuperActionConfig>? actionComponents,
     Map<String, SuperListViewConfig>? listComponents,
     EditorPageCatalog? pageCatalog,
     ThemeMode? mode,
@@ -122,6 +132,7 @@ class DefaultAppearance extends Appearance {
     scaffoldPages: scaffoldPages ?? this.scaffoldPages,
     nativeComponents: nativeComponents ?? this.nativeComponents,
     valueComponents: valueComponents ?? this.valueComponents,
+    actionComponents: actionComponents ?? this.actionComponents,
     listComponents: listComponents ?? this.listComponents,
     pageCatalog: pageCatalog ?? this.pageCatalog,
     mode: mode ?? this.mode,

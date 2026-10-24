@@ -8,6 +8,7 @@ import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
+import 'package:super_container_layout/models/super_action_config.dart';
 import 'package:super_container_layout/services/appearance/screen_tree_codec.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -58,6 +59,10 @@ class AppearanceCodec {
       for (final entry in a.valueComponents.entries)
         entry.key: entry.value.toJson(),
     },
+    'actionComponents': {
+      for (final entry in a.actionComponents.entries)
+        entry.key: entry.value.toJson(),
+    },
     'listComponents': {
       for (final entry in a.listComponents.entries)
         entry.key: entry.value.toJson(),
@@ -80,6 +85,7 @@ class AppearanceCodec {
       'scaffoldPages',
       'nativeComponents',
       'valueComponents',
+      'actionComponents',
       'listComponents',
       'pageCatalog',
       'screens',
@@ -159,6 +165,10 @@ class AppearanceCodec {
       valueComponents: {
         for (final entry in entries('valueComponents', optional: true).entries)
           entry.key: SuperValueConfig.fromJson(entry.value),
+      },
+      actionComponents: {
+        for (final entry in entries('actionComponents', optional: true).entries)
+          entry.key: SuperActionConfig.fromJson(entry.value),
       },
       listComponents: {
         for (final entry in entries('listComponents', optional: true).entries)

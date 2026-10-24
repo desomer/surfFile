@@ -4,12 +4,14 @@ import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_value_config.dart';
+import '../../../models/super_action_config.dart';
 import '../../../theme/container_style.dart';
 import '../../super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../components/super_list_view_editor.dart';
 import '../components/super_value_editor.dart';
+import '../components/super_action_editor.dart';
 
 export '../repositories/repository_binding_fields.dart'
     show RepositoryBindingFields;
@@ -61,6 +63,45 @@ ComponentAddConfigurator<SuperValueConfig> superValueAddConfigurator(
   bindingKeyPrefix: 'add-value',
   bindingPathHint: 'client.nom ou clients[?].nom',
   bindingHelp: 'Le repository fournit la valeur (liaison bidirectionnelle).',
+);
+
+/// Add wizard settings of a `SuperAction`, written to `Registry.actionController`.
+ComponentAddConfigurator<SuperActionConfig> superActionAddConfigurator(
+  List<String> availableFontFamilies,
+) => ComponentAddConfigurator<SuperActionConfig>(
+  initial: (_) => const SuperActionConfig(),
+  builder: (context, draft, onChanged) => _SuperActionAddForm(
+    draft: draft,
+    onChanged: onChanged,
+    availableFontFamilies: availableFontFamilies,
+  ),
+  validate: (draft) {
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration de l’action invalide.';
+    }
+  },
+  summary: (draft) => [
+    (
+      'Type',
+      switch (draft.kind) {
+        SuperActionKind.text => 'Texte',
+        SuperActionKind.icon => 'Icône',
+        SuperActionKind.textAndIcon => 'Texte et icône',
+      },
+    ),
+    ('Variante', draft.variant.name),
+    if (draft.kind.hasText && draft.label.isNotEmpty) ('Libellé', draft.label),
+    if (draft.kind.hasIcon) ('Icône', SuperActionIcons.labelOf(draft.icon)),
+    if (draft.fontSize != null) ('Taille du texte', '${draft.fontSize}'),
+    if (draft.iconSize != null) ('Taille de l’icône', '${draft.iconSize}'),
+    ('Alignement', _alignLabel(draft.textAlign)),
+  ],
+  apply: (registry, id, draft) => registry.actionController(id).value = draft,
 );
 
 /// Add wizard settings of a `SuperListView`, written to `Registry.listController`.
@@ -545,4 +586,180 @@ class _ContainerAddForm extends StatelessWidget {
       ),
     ],
   );
+}
+
+class _SuperActionAddForm extends StatefulWidget {
+  const _SuperActionAddForm({
+    required this.draft,
+    required this.onChanged,
+    required this.availableFontFamilies,
+  });
+
+  final SuperActionConfig draft;
+  final ValueChanged<SuperActionConfig> onChanged;
+  final List<String> availableFontFamilies;
+
+  @override
+  State<_SuperActionAddForm> createState() => _SuperActionAddFormState();
+}
+
+class _SuperActionAddFormState extends State<_SuperActionAddForm> {
+  int _revision = 0;
+
+  Future<void> _more() async {
+    final result = await showSuperActionEditor(
+      context: context,
+      config: widget.draft,
+      availableFontFamilies: widget.availableFontFamilies,
+    );
+    if (result == null || !mounted) return;
+    setState(() => _revision++);
+    widget.onChanged(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final draft = widget.draft;
+    return KeyedSubtree(
+      key: ValueKey(_revision),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SegmentedButton<SuperActionKind>(
+            key: const ValueKey('add-action-kind'),
+            segments: const [
+              ButtonSegment(value: SuperActionKind.text, label: Text('Texte')),
+              ButtonSegment(value: SuperActionKind.icon, label: Text('Icône')),
+              ButtonSegment(
+                value: SuperActionKind.textAndIcon,
+                label: Text('Texte + Icône'),
+              ),
+            ],
+            selected: {draft.kind},
+            onSelectionChanged: (value) =>
+                widget.onChanged(draft.copyWith(kind: value.single)),
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<SuperActionVariant>(
+            key: const ValueKey('add-action-variant'),
+            isExpanded: true,
+            initialValue: draft.variant,
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Style / variante du bouton',
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: SuperActionVariant.filled,
+                child: Text('Filled (plein)'),
+              ),
+              DropdownMenuItem(
+                value: SuperActionVariant.tonal,
+                child: Text('Tonal (secondaire)'),
+              ),
+              DropdownMenuItem(
+                value: SuperActionVariant.elevated,
+                child: Text('Elevated (élevé)'),
+              ),
+              DropdownMenuItem(
+                value: SuperActionVariant.outlined,
+                child: Text('Outlined (contour)'),
+              ),
+              DropdownMenuItem(
+                value: SuperActionVariant.text,
+                child: Text('Text (sans fond)'),
+              ),
+              DropdownMenuItem(
+                value: SuperActionVariant.icon,
+                child: Text('Icon Button'),
+              ),
+              DropdownMenuItem(
+                value: SuperActionVariant.surface,
+                child: Text('Surface personnalisée'),
+              ),
+            ],
+            onChanged: (variant) {
+              if (variant != null) {
+                widget.onChanged(draft.copyWith(variant: variant));
+              }
+            },
+          ),
+          if (draft.kind.hasText)
+            TextFormField(
+              key: const ValueKey('add-action-label'),
+              initialValue: draft.label,
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Libellé du bouton',
+              ),
+              onChanged: (value) =>
+                  widget.onChanged(draft.copyWith(label: value)),
+            ),
+          if (draft.kind.hasIcon)
+            DropdownButtonFormField<String>(
+              key: const ValueKey('add-action-icon'),
+              isExpanded: true,
+              initialValue: SuperActionIcons.isKnown(draft.icon)
+                  ? draft.icon
+                  : 'touch_app',
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Icône',
+              ),
+              items: [
+                for (final entry in SuperActionIcons.catalog.entries)
+                  DropdownMenuItem(
+                    value: entry.key,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(entry.value.icon, size: 18),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            entry.value.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+              onChanged: (icon) {
+                if (icon != null) {
+                  widget.onChanged(draft.copyWith(icon: icon));
+                }
+              },
+            ),
+          TextFormField(
+            key: const ValueKey('add-action-font-size'),
+            initialValue: draft.fontSize?.toString() ?? '',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Taille du texte (vide : héritée)',
+            ),
+            onChanged: (value) {
+              final size = _parse(value);
+              widget.onChanged(
+                value.trim().isEmpty
+                    ? draft.copyWith(inheritFontSize: true)
+                    : draft.copyWith(fontSize: size ?? -1),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const ValueKey('add-action-more'),
+              onPressed: _more,
+              icon: const Icon(Icons.tune),
+              label: const Text('Plus d’options…'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

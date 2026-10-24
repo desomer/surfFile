@@ -1,6 +1,7 @@
 export 'models/registry.dart';
 export 'models/json_syntax.dart';
 export 'models/super_value_config.dart';
+export 'models/super_action_config.dart';
 export 'models/super_text_field_config.dart';
 export 'models/json_text_binding.dart';
 export 'models/super_list_view_config.dart';
@@ -9,6 +10,8 @@ export 'services/repositories/json_list_scope.dart';
 export 'services/repositories/json_repository_binding.dart';
 export 'models/editor_page_config.dart';
 export 'widgets/components/super_value.dart';
+export 'widgets/components/super_action.dart';
+export 'widgets/editing/components/super_action_editor.dart';
 export 'models/component_tag_filter.dart';
 export 'models/native_component_config.dart';
 export 'widgets/native/native_component_editor.dart';

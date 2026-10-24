@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
-import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

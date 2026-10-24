@@ -5,6 +5,7 @@ import '../../models/registry.dart';
 import '../../models/scaffold_page_config.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/super_value_config.dart';
+import '../../models/super_action_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
@@ -443,6 +444,7 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.nativeComponent => appearance.nativeComponents[ref.id],
   EditorConfigKind.scaffoldPage => appearance.scaffoldPages[ref.id],
   EditorConfigKind.value => appearance.valueComponents[ref.id],
+  EditorConfigKind.action => appearance.actionComponents[ref.id],
   EditorConfigKind.list => appearance.listComponents[ref.id],
 };
 
@@ -452,6 +454,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.nativeComponent => value is NativeComponentConfig,
   EditorConfigKind.scaffoldPage => value is ScaffoldPageConfig,
   EditorConfigKind.value => value is SuperValueConfig,
+  EditorConfigKind.action => value is SuperActionConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
 };
 
@@ -463,6 +466,8 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
   for (final id in appearance.scaffoldPages.keys)
     EditorConfigRef.scaffoldPage(id),
   for (final id in appearance.valueComponents.keys) EditorConfigRef.value(id),
+  for (final id in appearance.actionComponents.keys)
+    EditorConfigRef.action(id),
   for (final id in appearance.listComponents.keys) EditorConfigRef.list(id),
 ];
 
@@ -605,6 +610,10 @@ Appearance _write(
       appearance.scaffoldPages,
     ),
     valueComponents: update(EditorConfigKind.value, appearance.valueComponents),
+    actionComponents: update(
+      EditorConfigKind.action,
+      appearance.actionComponents,
+    ),
     listComponents: update(EditorConfigKind.list, appearance.listComponents),
   );
 }

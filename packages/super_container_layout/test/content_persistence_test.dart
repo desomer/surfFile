@@ -5,7 +5,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

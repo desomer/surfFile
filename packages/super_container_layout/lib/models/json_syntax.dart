@@ -77,6 +77,8 @@ abstract final class JsonColor {
 abstract final class JsonComponentType {
   static const Map<String, String> _aliases = {
     'Value': 'Value',
+    'Action': 'Action',
+    'Button': 'Action',
     'Card': 'Card',
     'Layout': 'Layout',
     'ListView': 'ListView',
