@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_app.dart';
@@ -13,8 +16,28 @@ import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 export 'package:super_container_layout/models/registry.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  var envText = '';
+  final paths = [
+    'env',
+    'packages${Platform.pathSeparator}super_container_layout${Platform.pathSeparator}env',
+  ];
+  for (final path in paths) {
+    final file = File(path);
+    if (await file.exists()) {
+      envText = await file.readAsString();
+      break;
+    }
+  }
+  final environmentKey = Platform.environment['GEMINI_API_KEY'];
+  dotenv.loadFromString(
+    envString: envText,
+    isOptional: true,
+    mergeWith: environmentKey == null
+        ? const {}
+        : {'GEMINI_API_KEY': environmentKey},
+  );
   runApp(const TestApp());
 }
 

@@ -1,10 +1,13 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/ai/call_gemini.dart';
+import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
+import 'package:super_container_layout/widgets/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
+import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 
 /// Pastille deplacable, initialement en haut au centre du mode edition.
 ///
@@ -12,12 +15,20 @@ import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 /// elle fournit alors son propre [Overlay] pour l'info-bulle du bouton.
 /// Sa frontière sémantique sépare cet overlay de celui du navigateur.
 class StyleEditBanner extends StatefulWidget {
-  const StyleEditBanner({this.navigatorKey, this.onManagePages, super.key});
+  const StyleEditBanner({
+    this.navigatorKey,
+    this.onManagePages,
+    this.aiResponseGenerator,
+    this.validateAppearance,
+    super.key,
+  });
 
   /// Navigateur de l'application, où s'ouvre la boîte d'import / export : la
   /// bannière est au-dessus de lui. Sans lui, celui du contexte est utilisé.
   final GlobalKey<NavigatorState>? navigatorKey;
   final Future<void> Function()? onManagePages;
+  final Future<String> Function(String prompt)? aiResponseGenerator;
+  final void Function(Appearance appearance)? validateAppearance;
 
   @override
   State<StyleEditBanner> createState() => _StyleEditBannerState();
@@ -25,6 +36,8 @@ class StyleEditBanner extends StatefulWidget {
 
 class _StyleEditBannerState extends State<StyleEditBanner> {
   _BannerLayout _layout = _BannerLayout(null);
+  _VibeChatLayout _chatLayout = _VibeChatLayout(null);
+  bool _chatOpen = false;
 
   @override
   void initState() {
@@ -39,6 +52,10 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   void _reposition() => setState(() {
     _layout = _BannerLayout(
       _layout.position,
+      available: LayoutSelection.editorViewport.value,
+    );
+    _chatLayout = _VibeChatLayout(
+      _chatLayout.position,
       available: LayoutSelection.editorViewport.value,
     );
   });
@@ -62,13 +79,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     final editMode = StyleEditScope.controllerOf(context);
     if (editMode == null || !editMode.value) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
-    return CustomSingleChildLayout(
+    final appearance = AppearanceScope.controllerOf(context);
+    final codec = AppearanceServicesScope.codecOf(context);
+    final available = LayoutSelection.editorViewport.value;
+    final banner = CustomSingleChildLayout(
       delegate: _layout,
       child: GestureDetector(
         onPanUpdate: (details) => setState(
           () => _layout = _BannerLayout(
             _layout.resolvedPosition + details.delta,
-            available: LayoutSelection.editorViewport.value,
+            available: available,
           ),
         ),
         child: Material(
@@ -163,6 +183,25 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     JsonRepositoryManager.show(target);
                   },
                 ),
+                if (appearance != null)
+                  IconButton(
+                    key: const ValueKey('style-edit-banner-ai'),
+                    tooltip: 'Générer un écran avec l’IA',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 18,
+                    color: scheme.onPrimary,
+                    isSelected: _chatOpen,
+                    icon: const Icon(Icons.auto_awesome_outlined),
+                    onPressed: () => setState(() {
+                      _chatOpen = !_chatOpen;
+                      if (_chatOpen) {
+                        _chatLayout = _VibeChatLayout(
+                          null,
+                          available: available,
+                        );
+                      }
+                    }),
+                  ),
                 if (AppearanceScope.controllerOf(context)
                     case final appearance?)
                   IconButton(
@@ -244,6 +283,28 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
         ),
       ),
     );
+    if (!_chatOpen || appearance == null) return banner;
+    return Stack(
+      children: [
+        banner,
+        CustomSingleChildLayout(
+          delegate: _chatLayout,
+          child: VibeChatDialog(
+            controller: appearance,
+            codec: codec,
+            onClose: () => setState(() => _chatOpen = false),
+            onDrag: (delta) => setState(
+              () => _chatLayout = _VibeChatLayout(
+                _chatLayout.resolvedPosition + delta,
+                available: available,
+              ),
+            ),
+            generate: widget.aiResponseGenerator ?? callGemini,
+            validateAppearance: widget.validateAppearance,
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -286,6 +347,53 @@ class _BannerLayout extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_BannerLayout oldDelegate) =>
+      position != oldDelegate.position || available != oldDelegate.available;
+}
+
+class _VibeChatLayout extends SingleChildLayoutDelegate {
+  _VibeChatLayout(this.position, {this.available})
+    : resolvedPosition = position ?? Offset.zero;
+
+  final Offset? position;
+  Offset resolvedPosition;
+  final Rect? available;
+
+  Rect _bounds(Size size) =>
+      available?.intersect(Offset.zero & size) ?? (Offset.zero & size);
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final bounds = _bounds(constraints.biggest);
+    return BoxConstraints.tightFor(
+      width: bounds.width.clamp(0.0, 440.0),
+      height: bounds.height.clamp(0.0, 600.0),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final bounds = _bounds(size);
+    final desired =
+        position ??
+        Offset(
+          bounds.right - childSize.width - 16,
+          bounds.bottom - childSize.height - 16,
+        );
+    resolvedPosition = Offset(
+      desired.dx.clamp(
+        bounds.left,
+        (bounds.right - childSize.width).clamp(bounds.left, double.infinity),
+      ),
+      desired.dy.clamp(
+        bounds.top,
+        (bounds.bottom - childSize.height).clamp(bounds.top, double.infinity),
+      ),
+    );
+    return resolvedPosition;
+  }
+
+  @override
+  bool shouldRelayout(_VibeChatLayout oldDelegate) =>
       position != oldDelegate.position || available != oldDelegate.available;
 }
 

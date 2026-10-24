@@ -260,6 +260,7 @@ Modifie uniquement les propriétés précisées sur un composant existant, **san
 ```
 - Tu peux aussi modifier la taille ou le badge d'un slot dans son parent :
   `{"op": "patch", "id": "input-nom", "size": {"preferredHeight": "72px", "padding": 12}}`.
+- Pour modifier le gabarit d'une liste, utilise son ID avec `"template"` (alias `"row"`) : `{"op":"patch","id":"list-b","template":{"zones":{"east":[{"type":"Value","id":"item-b-text-a","text":"text A"}]}}}`. Le gabarit est fusionné avec sa disposition existante, ses composants imbriqués sont compilés et les zones ajoutées sont activées automatiquement.
 
 #### 3. `"move"` (Déplacer un composant d'une zone à une autre)
 ```json
@@ -429,3 +430,8 @@ Répète un gabarit `template` pour chaque élément d'un tableau JSON :
 - `shadow` / `innerShadow` : `{"enabled": true, "color": "#000000", "opacity": 0..1, "blur": 0..48, "spread": -32..32, "dx": -32..32, "dy": -32..32}`.
 - `transform` : `{"dx": -48..48, "dy": -48..48, "rotation": -180..180, "scale": 0.5..1.5}`.
 
+## 5. Chat Vibe du mode édition
+
+La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"ops":[...]}}` (ou fournir un patch Vibe valide dans `vibe`).
+
+Pour l’application de démonstration, la clé `GEMINI_API_KEY` peut être définie dans le fichier local `env` ou dans l’environnement du processus. Ne versionnez jamais cette clé. Les applications de production devraient appeler un service intermédiaire plutôt que d’embarquer une clé Gemini dans le client.

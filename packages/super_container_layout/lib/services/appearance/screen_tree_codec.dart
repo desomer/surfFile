@@ -361,11 +361,7 @@ abstract final class ScreenTreeCodec {
         if (entry.value is! Map) {
           throw const FormatException('Invalid "nativeComponents" map.');
         }
-        state.compileNativeMap(
-          id,
-          entry.value as Map,
-          isMerge: isMerge,
-        );
+        state.compileNativeMap(id, entry.value as Map, isMerge: isMerge);
       }
     }
 
@@ -379,11 +375,7 @@ abstract final class ScreenTreeCodec {
         if (entry.value is! Map) {
           throw const FormatException('Invalid "layouts" map.');
         }
-        state.compileLayoutMap(
-          id,
-          entry.value as Map,
-          isMerge: isMerge,
-        );
+        state.compileLayoutMap(id, entry.value as Map, isMerge: isMerge);
       }
     }
 
@@ -669,8 +661,7 @@ class _Decompiler {
     bool infiniteSides = false,
   }) {
     final shortType = JsonComponentType.shortName(type);
-    final canInline =
-        (refCounts[id] ?? 0) <= 1 && !activeStack.contains(id);
+    final canInline = (refCounts[id] ?? 0) <= 1 && !activeStack.contains(id);
 
     final node = <String, Object?>{
       'type': shortType,
@@ -719,8 +710,9 @@ class _Decompiler {
                 type: native.slotTypeOf(childId),
                 constraints: native.slotSizeConstraints[childId],
                 preferredSize: native.slotPreferredSizes[childId],
-                hasPreferredSize:
-                    native.slotPreferredSizes.containsKey(childId),
+                hasPreferredSize: native.slotPreferredSizes.containsKey(
+                  childId,
+                ),
                 slotLabel: native.slotLabels[childId],
                 infiniteSides: true,
               );
@@ -943,8 +935,7 @@ class _CompilationState {
     // Si la définition d'écran porte des métadonnées de route (path, name, home),
     // on met à jour le pageCatalog automatiquement (sauf pour 'root').
     if (screenId != 'root' &&
-        (map.containsKey('path') ||
-            pages.any((p) => p.id == screenId))) {
+        (map.containsKey('path') || pages.any((p) => p.id == screenId))) {
       final existingPage = pages.where((p) => p.id == screenId).firstOrNull;
       final path = (map['path'] as String?) ?? existingPage?.path;
       final name =
@@ -1223,9 +1214,7 @@ class _CompilationState {
     Set<String>? defaultRegions,
   }) {
     final existing = isMerge ? nativeComponents[nativeId] : null;
-    final regions = <String, bool>{
-      if (existing != null) ...existing.regions,
-    };
+    final regions = <String, bool>{if (existing != null) ...existing.regions};
     if (rawMap.containsKey('regions')) {
       final rawRegions = rawMap['regions'];
       if (rawRegions is! Map) {
@@ -1399,8 +1388,8 @@ class _CompilationState {
     }
 
     final shortType = JsonComponentType.shortName(inferredType);
-    final id = (rawId as String?) ??
-        _generateId(parentId, zoneOrRegion, shortType);
+    final id =
+        (rawId as String?) ?? _generateId(parentId, zoneOrRegion, shortType);
     final normalizedType = JsonComponentType.normalize(inferredType, id: id);
 
     // Extraction des métadonnées de placement (size, preferredSize, slotLabel)
@@ -1430,7 +1419,9 @@ class _CompilationState {
     final preferredSize = item['preferredSize'];
     final String? slotLabel = item['slotLabel'] is String
         ? item['slotLabel'] as String
-        : (shortType != 'Value' && item['label'] is String && shortType != 'Layout')
+        : (shortType != 'Value' &&
+              item['label'] is String &&
+              shortType != 'Layout')
         ? item['label'] as String
         : null;
 
@@ -1453,7 +1444,10 @@ class _CompilationState {
     );
   }
 
-  String? _inferType(Map<Object?, Object?> item, {required String zoneOrRegion}) {
+  String? _inferType(
+    Map<Object?, Object?> item, {
+    required String zoneOrRegion,
+  }) {
     if (item['type'] is String) return item['type'] as String;
     if (item.containsKey('zones') || item.containsKey('grid')) return 'Layout';
     if (item.containsKey('child')) return 'Card';
@@ -1809,6 +1803,15 @@ class _CompilationState {
       listComponents[id] = existing.patchFromJson(op['list'] as Map);
       matched = true;
     }
+    if (op.containsKey('template') || op.containsKey('row')) {
+      final template = op['template'] ?? op['row'];
+      if (template is! Map) {
+        throw const FormatException(
+          'Opération "patch" : "template" ou "row" doit être un objet.',
+        );
+      }
+      compileLayoutMap(id, template, isMerge: true);
+    }
     if (op['native'] is Map) {
       compileNativeMap(id, op['native'] as Map, isMerge: true);
       matched = true;
@@ -1881,10 +1884,8 @@ class _CompilationState {
       } else if (directLayout.isNotEmpty) {
         compileLayoutMap(id, directLayout, isMerge: true);
       } else if (directList.isNotEmpty) {
-        listComponents[id] =
-            (listComponents[id] ?? const SuperListViewConfig()).patchFromJson(
-              directList,
-            );
+        listComponents[id] = (listComponents[id] ?? const SuperListViewConfig())
+            .patchFromJson(directList);
       }
     }
   }

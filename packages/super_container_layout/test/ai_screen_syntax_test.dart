@@ -6,17 +6,20 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
   group('AI JSON primitives (JsonColor, JsonDimension, JsonComponentType)', () {
-    test('JsonColor parses hex formats and formats back to #RRGGBB / #AARRGGBB', () {
-      expect(JsonColor.parse('#5268D9'), const Color(0xFF5268D9));
-      expect(JsonColor.parse('#80FFFFFF'), const Color(0x80FFFFFF));
-      expect(JsonColor.parse('#FFF'), const Color(0xFFFFFFFF));
-      expect(JsonColor.parse('#8FFF'), const Color(0x88FFFFFF));
-      expect(JsonColor.parse('0xFF123456'), const Color(0xFF123456));
-      expect(JsonColor.parse(0xFF5268D9), const Color(0xFF5268D9));
-      expect(JsonColor.toHex(const Color(0xFF5268D9)), '#5268D9');
-      expect(JsonColor.toHex(const Color(0x80FFFFFF)), '#80FFFFFF');
-      expect(() => JsonColor.parse('not-a-color'), throwsFormatException);
-    });
+    test(
+      'JsonColor parses hex formats and formats back to #RRGGBB / #AARRGGBB',
+      () {
+        expect(JsonColor.parse('#5268D9'), const Color(0xFF5268D9));
+        expect(JsonColor.parse('#80FFFFFF'), const Color(0x80FFFFFF));
+        expect(JsonColor.parse('#FFF'), const Color(0xFFFFFFFF));
+        expect(JsonColor.parse('#8FFF'), const Color(0x88FFFFFF));
+        expect(JsonColor.parse('0xFF123456'), const Color(0xFF123456));
+        expect(JsonColor.parse(0xFF5268D9), const Color(0xFF5268D9));
+        expect(JsonColor.toHex(const Color(0xFF5268D9)), '#5268D9');
+        expect(JsonColor.toHex(const Color(0x80FFFFFF)), '#80FFFFFF');
+        expect(() => JsonColor.parse('not-a-color'), throwsFormatException);
+      },
+    );
 
     test('SlotDimension accepts numbers, px/% strings and maps', () {
       expect(
@@ -163,7 +166,10 @@ void main() {
       expect(imported.nativeComponents['main-appbar']!.slotsOf('title'), [
         'app-title',
       ]);
-      expect(imported.valueComponent('app-title').initialText, 'Gestion Clients');
+      expect(
+        imported.valueComponent('app-title').initialText,
+        'Gestion Clients',
+      );
 
       // West side auto-enabled because `zones.west` has items
       final contA = imported.layout('contA');
@@ -216,11 +222,113 @@ void main() {
         TransferGroup.styles,
         TransferGroup.layouts,
       });
-      expect(AppearanceStore.encode(reimported), AppearanceStore.encode(imported));
+      expect(
+        AppearanceStore.encode(reimported),
+        AppearanceStore.encode(imported),
+      );
     });
   });
 
   group('Vibe Mode (Step-by-step incremental modeling & ops)', () {
+    test('patch compiles a list template and preserves existing settings', () {
+      final current = AppearanceTransfer.applyVibe(
+        Appearance(),
+        jsonEncode({
+          'screens': {
+            'root': {
+              'zones': {
+                'center': [
+                  {
+                    'type': 'ListView',
+                    'id': 'list-b',
+                    'binding': 'b',
+                    'spacing': 8,
+                    'template': {
+                      'westSize': 120,
+                      'zones': {
+                        'center': [
+                          {
+                            'type': 'Value',
+                            'id': 'item-b-value',
+                            'binding': 'b[?].c',
+                            'fontSize': 20,
+                          },
+                        ],
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      );
+      final updated = AppearanceTransfer.applyVibe(current, '''
+{
+  "ops": [
+    {
+      "op": "patch",
+      "id": "list-b",
+      "template": {
+        "autoSides": ["east"],
+        "zones": {
+          "center": [
+            {
+              "type": "Value",
+              "id": "item-b-value",
+              "initialText": "Élément",
+              "binding": "b[?].c"
+            }
+          ],
+          "east": [
+            {
+              "type": "Value",
+              "id": "item-b-text-a",
+              "text": "text A"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
+''');
+      final template = updated.layout('list-b');
+      expect(template.east, isTrue);
+      expect(template.autoSides, contains(SuperLayoutZone.east));
+      expect(template.westSize, 120);
+      expect(template.placementsOf(SuperLayoutZone.center), ['item-b-value']);
+      expect(template.placementsOf(SuperLayoutZone.east), ['item-b-text-a']);
+      expect(updated.valueComponent('item-b-text-a').initialText, 'text A');
+      expect(updated.valueComponent('item-b-value').initialText, 'Élément');
+      expect(updated.valueComponent('item-b-value').fontSize, 20);
+      expect(updated.valueComponent('item-b-value').binding?.path, 'b[?].c');
+      expect(updated.listComponent('list-b'), current.listComponent('list-b'));
+
+      final combined = AppearanceTransfer.applyVibe(
+        updated,
+        jsonEncode({
+          'ops': [
+            {
+              'op': 'patch',
+              'id': 'list-b',
+              'list': {'spacing': 12},
+              'row': {'eastSize': 100},
+            },
+          ],
+        }),
+      );
+      expect(combined.listComponent('list-b').spacing, 12);
+      expect(combined.layout('list-b').eastSize, 100);
+      expect(
+        () => AppearanceTransfer.applyVibe(
+          current,
+          '{"ops":[{"op":"patch","id":"list-b","template":42}]}',
+        ),
+        throwsFormatException,
+      );
+    });
+
     test('builds and refines a screen step-by-step using applyVibe and ops', () {
       var current = Appearance();
 
@@ -250,7 +358,10 @@ void main() {
         }),
       );
       expect(current.layout('contA').north, isTrue);
-      expect(current.valueComponent('header-title').initialText, 'Tableau de bord');
+      expect(
+        current.valueComponent('header-title').initialText,
+        'Tableau de bord',
+      );
 
       // Étape 2 : Ajouter une Card contenant un champ de saisie dans `center` via `ops.add`
       current = AppearanceTransfer.applyVibe(
@@ -367,7 +478,10 @@ void main() {
           ],
         }),
       );
-      expect(current.layout('contA').placementsOf(SuperLayoutZone.west), isEmpty);
+      expect(
+        current.layout('contA').placementsOf(SuperLayoutZone.west),
+        isEmpty,
+      );
       expect(current.styles.containsKey('card-profile'), isFalse);
     });
   });

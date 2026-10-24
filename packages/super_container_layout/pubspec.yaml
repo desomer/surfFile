@@ -11,7 +11,9 @@ dependencies:
   flutter:
     sdk: flutter
   flutter_acrylic: ^1.1.4
+  flutter_dotenv: ^6.0.1
   go_router: ^18.0.2
+  google_generative_ai: ^0.4.7
   material_ui: ^1.5.0
   shared_preferences: ^2.5.5
   shortid: ^0.1.2
@@ -23,3 +25,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - SCREEN_JSON_AI_GUIDE.md

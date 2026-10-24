@@ -415,6 +415,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         Positioned.fill(
           child: StyleEditBanner(
             navigatorKey: navigatorKey,
+            validateAppearance: (appearance) =>
+                widget.pageRouting?.validate(appearance.pageCatalog),
             onManagePages: widget.pageRouting == null || widget.registry == null
                 ? null
                 : () async {
