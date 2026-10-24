@@ -27,32 +27,50 @@ class Appearance {
     Map<String, ComponentConfig> components = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
-       layouts = Map.unmodifiable({
-         for (final entry in layouts.entries)
-           entry.key: entry.value.copyWith(
-             swaps: Set.unmodifiable(entry.value.swaps),
-             autoSides: Set.unmodifiable(entry.value.autoSides),
-             sideResizing: Map.unmodifiable(entry.value.sideResizing),
-             collapsedSides: Map.unmodifiable(entry.value.collapsedSides),
-             zoneAxes: Map.unmodifiable(entry.value.zoneAxes),
-             slotTypes: Map.unmodifiable(entry.value.slotTypes),
-             slotLabels: Map.unmodifiable(entry.value.slotLabels),
-             grid: entry.value.grid?.copyWith(
-               items: Map.unmodifiable(entry.value.grid!.items),
-             ),
-             slotPreferredSizes: Map.unmodifiable(
-               entry.value.slotPreferredSizes,
-             ),
-             slotSizeConstraints: Map.unmodifiable(
-               entry.value.slotSizeConstraints,
-             ),
-             placements: Map.unmodifiable({
-               for (final placement in entry.value.placements.entries)
-                 placement.key: List<String>.unmodifiable(placement.value),
-             }),
-           ),
-       }),
-       components = Map.unmodifiable(components);
+       components = Map.unmodifiable(_mergeComponents(components, layouts));
+
+  static SuperLayoutConfig _freezeLayout(SuperLayoutConfig l) => l.copyWith(
+    swaps: Set.unmodifiable(l.swaps),
+    autoSides: Set.unmodifiable(l.autoSides),
+    sideResizing: Map.unmodifiable(l.sideResizing),
+    collapsedSides: Map.unmodifiable(l.collapsedSides),
+    zoneAxes: Map.unmodifiable(l.zoneAxes),
+    slotTypes: Map.unmodifiable(l.slotTypes),
+    slotLabels: Map.unmodifiable(l.slotLabels),
+    grid: l.grid?.copyWith(items: Map.unmodifiable(l.grid!.items)),
+    slotPreferredSizes: Map.unmodifiable(l.slotPreferredSizes),
+    slotSizeConstraints: Map.unmodifiable(l.slotSizeConstraints),
+    placements: Map.unmodifiable({
+      for (final placement in l.placements.entries)
+        placement.key: List<String>.unmodifiable(placement.value),
+    }),
+  );
+
+  static Map<String, ComponentConfig> _mergeComponents(
+    Map<String, ComponentConfig> components,
+    Map<String, SuperLayoutConfig> layouts,
+  ) {
+    final result = <String, ComponentConfig>{
+      for (final entry in components.entries)
+        entry.key: switch (entry.value) {
+          final SuperLayoutConfig l => _freezeLayout(l),
+          final SuperListViewConfig list => list.copyWith(
+            template: _freezeLayout(list.template),
+          ),
+          final other => other,
+        },
+    };
+    for (final entry in layouts.entries) {
+      final frozen = _freezeLayout(entry.value);
+      final existing = result[entry.key];
+      if (existing is SuperListViewConfig) {
+        result[entry.key] = existing.copyWith(template: frozen);
+      } else {
+        result[entry.key] = frozen;
+      }
+    }
+    return result;
+  }
 
   final ThemeMode mode;
   final Color accent;
@@ -60,9 +78,16 @@ class Appearance {
   final double windowOpacity;
   final WindowEffect windowEffect;
   final Map<String, ContainerStyle> styles;
-  final Map<String, SuperLayoutConfig> layouts;
   final Map<String, ComponentConfig> components;
   final EditorPageCatalog pageCatalog;
+
+  Map<String, SuperLayoutConfig> get layouts => Map.unmodifiable({
+    for (final entry in components.entries)
+      if (entry.value case final SuperLayoutConfig l)
+        entry.key: l
+      else if (entry.value case final SuperListViewConfig list)
+        entry.key: list.template,
+  });
 
   T? tryComponent<T extends ComponentConfig>(String id) =>
       switch (components[id]) {
@@ -111,8 +136,18 @@ class Appearance {
     SuperListViewConfig fallback = const SuperListViewConfig(),
   }) => component<SuperListViewConfig>(id, fallback: fallback);
 
-  Appearance withListComponent(String id, SuperListViewConfig value) =>
-      withComponent(id, value);
+  Appearance withListComponent(String id, SuperListViewConfig value) {
+    final existing = components[id];
+    final merged =
+        value.template == const SuperLayoutConfig() &&
+            existing is SuperLayoutConfig
+        ? value.copyWith(template: existing)
+        : value.template == const SuperLayoutConfig() &&
+              existing is SuperListViewConfig
+        ? value.copyWith(template: existing.template)
+        : value;
+    return withComponent(id, merged);
+  }
 
   NativeComponentConfig nativeComponent(
     String id, {
@@ -130,7 +165,11 @@ class Appearance {
   SuperLayoutConfig layout(
     String id, {
     SuperLayoutConfig fallback = const SuperLayoutConfig(),
-  }) => layouts[id] ?? fallback;
+  }) => switch (components[id]) {
+    final SuperLayoutConfig l => l,
+    final SuperListViewConfig list => list.template,
+    _ => fallback,
+  };
   ScaffoldPageConfig scaffoldPage(String id, {ScaffoldPageConfig? fallback}) =>
       switch (components[id]) {
         final ScaffoldPageConfig s => s,
@@ -178,19 +217,29 @@ class Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ComponentConfig>? components,
     EditorPageCatalog? pageCatalog,
-  }) => Appearance(
-    mode: mode ?? this.mode,
-    accent: accent ?? this.accent,
-    backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
-    windowOpacity: windowOpacity ?? this.windowOpacity,
-    windowEffect: windowEffect ?? this.windowEffect,
-    styles: backgroundStyle == null
-        ? styles ?? this.styles
-        : {...styles ?? this.styles, 'background': backgroundStyle},
-    layouts: layouts ?? this.layouts,
-    components: components ?? this.components,
-    pageCatalog: pageCatalog ?? this.pageCatalog,
-  );
+  }) {
+    final baseComponents =
+        components ??
+        (layouts != null
+            ? {
+                for (final entry in this.components.entries)
+                  if (entry.value is! SuperLayoutConfig) entry.key: entry.value,
+              }
+            : this.components);
+    return Appearance(
+      mode: mode ?? this.mode,
+      accent: accent ?? this.accent,
+      backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
+      windowOpacity: windowOpacity ?? this.windowOpacity,
+      windowEffect: windowEffect ?? this.windowEffect,
+      styles: backgroundStyle == null
+          ? styles ?? this.styles
+          : {...styles ?? this.styles, 'background': backgroundStyle},
+      layouts: layouts ?? const {},
+      components: baseComponents,
+      pageCatalog: pageCatalog ?? this.pageCatalog,
+    );
+  }
 
   Appearance withStyle(String id, ContainerStyle? value) {
     final next = {...styles};
@@ -203,7 +252,13 @@ class Appearance {
   }
 
   Appearance withLayout(String id, SuperLayoutConfig value) =>
-      copyWith(layouts: {...layouts, id: value});
+      switch (components[id]) {
+        final SuperListViewConfig list => withComponent(
+          id,
+          list.copyWith(template: value),
+        ),
+        _ => withComponent(id, value),
+      };
   Appearance withPageCatalog(EditorPageCatalog value) =>
       copyWith(pageCatalog: value);
   Appearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
@@ -211,7 +266,6 @@ class Appearance {
   Appearance withNativeComponent(String id, NativeComponentConfig value) =>
       withComponent(id, value);
   Appearance resetLayouts() => copyWith(
-    layouts: const {},
     components: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );

@@ -464,16 +464,19 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
 };
 
 Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
-  for (final id in appearance.layouts.keys) EditorConfigRef.layout(id),
   for (final id in appearance.styles.keys) EditorConfigRef.style(id),
   for (final entry in appearance.components.entries)
-    switch (entry.value) {
-      NativeComponentConfig() => EditorConfigRef.nativeComponent(entry.key),
-      ScaffoldPageConfig() => EditorConfigRef.scaffoldPage(entry.key),
-      SuperValueConfig() => EditorConfigRef.value(entry.key),
-      SuperActionConfig() => EditorConfigRef.action(entry.key),
-      SuperListViewConfig() => EditorConfigRef.list(entry.key),
-      _ => EditorConfigRef.component(entry.key),
+    ...switch (entry.value) {
+      SuperLayoutConfig() => [EditorConfigRef.layout(entry.key)],
+      NativeComponentConfig() => [EditorConfigRef.nativeComponent(entry.key)],
+      ScaffoldPageConfig() => [EditorConfigRef.scaffoldPage(entry.key)],
+      SuperValueConfig() => [EditorConfigRef.value(entry.key)],
+      SuperActionConfig() => [EditorConfigRef.action(entry.key)],
+      SuperListViewConfig() => [
+        EditorConfigRef.layout(entry.key),
+        EditorConfigRef.list(entry.key),
+      ],
+      _ => [EditorConfigRef.component(entry.key)],
     },
 ];
 
@@ -591,40 +594,48 @@ Appearance _write(
   Map<EditorConfigRef, Object> copies = const {},
   Set<EditorConfigRef> removed = const {},
 }) {
-  Map<String, V>? update<V>(EditorConfigKind kind, Map<String, V> source) {
-    final drop = {
-      for (final ref in removed)
-        if (ref.kind == kind) ref.id,
-    };
-    final add = {
-      for (final entry in copies.entries)
-        if (entry.key.kind == kind) entry.key.id: entry.value as V,
-    };
-    if (drop.isEmpty && add.isEmpty) return null;
-    return {...source, ...add}..removeWhere((id, _) => drop.contains(id));
+  final styleDrop = {
+    for (final ref in removed)
+      if (ref.kind == EditorConfigKind.style) ref.id,
+  };
+  final styleAdd = {
+    for (final entry in copies.entries)
+      if (entry.key.kind == EditorConfigKind.style)
+        entry.key.id: entry.value as ContainerStyle,
+  };
+  final nextStyles = (styleDrop.isEmpty && styleAdd.isEmpty)
+      ? null
+      : ({...appearance.styles, ...styleAdd}
+          ..removeWhere((id, _) => styleDrop.contains(id)));
+
+  final compDrop = {
+    for (final ref in removed)
+      if (ref.kind != EditorConfigKind.style) ref.id,
+  };
+  final hasCompChanges =
+      compDrop.isNotEmpty ||
+      copies.keys.any((ref) => ref.kind != EditorConfigKind.style);
+  Map<String, ComponentConfig>? nextComponents;
+  if (hasCompChanges) {
+    nextComponents = {...appearance.components}
+      ..removeWhere((id, _) => compDrop.contains(id));
+    for (final entry in copies.entries) {
+      if (entry.key.kind == EditorConfigKind.style) continue;
+      final id = entry.key.id;
+      final value = entry.value;
+      final current = nextComponents[id];
+      if (value is SuperLayoutConfig && current is SuperListViewConfig) {
+        nextComponents[id] = current.copyWith(template: value);
+      } else if (value is SuperListViewConfig && current is SuperLayoutConfig) {
+        nextComponents[id] = value.copyWith(template: current);
+      } else {
+        nextComponents[id] = value as ComponentConfig;
+      }
+    }
   }
 
-  final componentDrop = {
-    for (final ref in removed)
-      if (ref.kind != EditorConfigKind.layout &&
-          ref.kind != EditorConfigKind.style)
-        ref.id,
-  };
-  final componentAdd = {
-    for (final entry in copies.entries)
-      if (entry.key.kind != EditorConfigKind.layout &&
-          entry.key.kind != EditorConfigKind.style)
-        entry.key.id: entry.value as ComponentConfig,
-  };
-
   return appearance.copyWith(
-    layouts: update(EditorConfigKind.layout, appearance.layouts),
-    styles: update(EditorConfigKind.style, appearance.styles),
-    components: (componentDrop.isEmpty && componentAdd.isEmpty)
-        ? null
-        : ({
-            ...appearance.components,
-            ...componentAdd,
-          }..removeWhere((id, _) => componentDrop.contains(id))),
+    styles: nextStyles,
+    components: nextComponents,
   );
 }

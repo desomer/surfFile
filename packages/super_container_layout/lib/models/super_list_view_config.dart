@@ -41,6 +41,7 @@ class SuperListViewConfig extends ComponentConfig {
     this.allowAdd = false,
     this.allowRemove = false,
     this.emptyText = 'Aucun élément',
+    this.template = const SuperLayoutConfig(),
   });
 
   /// Tableau JSON affiché, ou `null` pour une liste non liée.
@@ -80,6 +81,9 @@ class SuperListViewConfig extends ComponentConfig {
 
   /// Message affiché quand le tableau est vide.
   final String emptyText;
+
+  /// Disposition du gabarit de ligne répétée pour chaque élément.
+  final SuperLayoutConfig template;
 
   /// Bornes de [itemExtent].
   static const minItemExtent = 16.0;
@@ -129,6 +133,7 @@ class SuperListViewConfig extends ComponentConfig {
     bool? allowAdd,
     bool? allowRemove,
     String? emptyText,
+    SuperLayoutConfig? template,
   }) => SuperListViewConfig(
     binding: clearBinding ? null : binding ?? this.binding,
     axis: axis ?? this.axis,
@@ -141,6 +146,7 @@ class SuperListViewConfig extends ComponentConfig {
     allowAdd: allowAdd ?? this.allowAdd,
     allowRemove: allowRemove ?? this.allowRemove,
     emptyText: emptyText ?? this.emptyText,
+    template: template ?? this.template,
   );
 
   /// Forme JSON persistée dans l'apparence.
@@ -159,6 +165,7 @@ class SuperListViewConfig extends ComponentConfig {
       'allowAdd': allowAdd,
       'allowRemove': allowRemove,
       'emptyText': emptyText,
+      if (template != const SuperLayoutConfig()) 'template': template.toJson(),
     };
   }
 
@@ -179,6 +186,7 @@ class SuperListViewConfig extends ComponentConfig {
       if (allowAdd != d.allowAdd) 'allowAdd': allowAdd,
       if (allowRemove != d.allowRemove) 'allowRemove': allowRemove,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
+      if (template != d.template) 'template': template.toCompactJson(),
     };
   }
 
@@ -198,6 +206,8 @@ class SuperListViewConfig extends ComponentConfig {
     'allowAdd',
     'allowRemove',
     'emptyText',
+    'template',
+    'row',
   };
 
   /// Lecture stricte : les clés inconnues ou les types invalides lèvent une
@@ -216,6 +226,23 @@ class SuperListViewConfig extends ComponentConfig {
         throw const FormatException('Configuration de liste invalide.');
       }
       return raw;
+    }
+
+    final rawTemplate = value.containsKey('template')
+        ? value['template']
+        : value['row'];
+    final SuperLayoutConfig resolvedTemplate;
+    if (!value.containsKey('template') && !value.containsKey('row')) {
+      resolvedTemplate = fallback.template;
+    } else if (rawTemplate == null) {
+      resolvedTemplate = const SuperLayoutConfig();
+    } else if (rawTemplate is Map) {
+      resolvedTemplate = SuperLayoutConfig.fromJson(
+        rawTemplate,
+        fallback: fallback.template,
+      );
+    } else {
+      throw const FormatException('Configuration de liste invalide.');
     }
 
     final axis = read<String>('axis', fallback.axis.name);
@@ -248,6 +275,7 @@ class SuperListViewConfig extends ComponentConfig {
       allowAdd: read<bool>('allowAdd', fallback.allowAdd),
       allowRemove: read<bool>('allowRemove', fallback.allowRemove),
       emptyText: read<String>('emptyText', fallback.emptyText),
+      template: resolvedTemplate,
     );
     result.validate();
     return result;
@@ -266,7 +294,8 @@ class SuperListViewConfig extends ComponentConfig {
       spacing == other.spacing &&
       allowAdd == other.allowAdd &&
       allowRemove == other.allowRemove &&
-      emptyText == other.emptyText;
+      emptyText == other.emptyText &&
+      template == other.template;
 
   @override
   int get hashCode => Object.hash(
@@ -281,5 +310,6 @@ class SuperListViewConfig extends ComponentConfig {
     allowAdd,
     allowRemove,
     emptyText,
+    template,
   );
 }

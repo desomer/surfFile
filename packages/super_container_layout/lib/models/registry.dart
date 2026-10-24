@@ -668,6 +668,7 @@ class Registry {
       menuIcon: Icons.article_outlined,
       duplication: ComponentDuplicationContract.iterableContent,
       tags: const {'container', 'layout'},
+      placementTags: const {'list'},
       addConfigurator: containerAddConfigurator,
       dynamicBuilder: (ctx) => IterableContent(id: ctx.id),
     );

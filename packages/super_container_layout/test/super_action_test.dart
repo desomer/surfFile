@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart';
@@ -354,32 +353,43 @@ void main() {
     expect(find.byIcon(Icons.star_border), findsOneWidget);
   });
 
-  test('ScreenTreeCodec and EditorPageGraph handle Action components', () {
+  test('AppearanceCodec and EditorPageGraph handle Action components', () {
     final registry = Registry()..bootstrap();
-    final expanded = ScreenTreeCodec.expandToCanonicalJson({
-      'screens': {
+    final appearance = const AppearanceCodec().fromJson({
+      'version': 1,
+      'components': {
         'home': {
-          'title': 'Accueil',
-          'path': '/',
-          'body': {
-            'zones': {
-              'center': [
-                {
-                  'id': 'act1',
-                  'type': 'Action',
-                  'kind': 'textAndIcon',
-                  'variant': 'outlined',
-                  'label': 'Cliquer',
-                  'icon': 'send',
-                },
-              ],
-            },
+          'type': 'native',
+          'regions': {'body': true},
+          'placements': {
+            'body': [
+              {'id': 'home-body', 'type': 'registry:Layout'},
+            ],
           },
         },
+        'home-body': {
+          'type': 'layout',
+          'placements': {
+            'center': [
+              {'id': 'act1', 'type': 'registry:Action'},
+            ],
+          },
+        },
+        'act1': {
+          'type': 'action',
+          'kind': 'textAndIcon',
+          'variant': 'outlined',
+          'label': 'Cliquer',
+          'icon': 'send',
+        },
+      },
+      'pageCatalog': {
+        'pages': [
+          {'id': 'home', 'name': 'Accueil', 'path': '/'},
+        ],
+        'homePageId': null,
       },
     });
-
-    final appearance = const AppearanceCodec().fromJson(expanded);
     final act1 = appearance.tryComponent<SuperActionConfig>('act1');
     expect(act1, isNotNull);
     expect(act1!.kind, SuperActionKind.textAndIcon);

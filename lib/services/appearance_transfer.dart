@@ -11,7 +11,6 @@ class AppearanceTransfer {
   const AppearanceTransfer._();
   static const format = 'surf_file.appearance';
   static const layoutKeys = {
-    'layouts',
     'components',
     'pageCatalog',
   };

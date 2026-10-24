@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'appearance_codec.dart';
-import 'screen_tree_codec.dart';
 import '../../theme/appearance.dart';
 
 enum TransferGroup {
@@ -17,18 +16,9 @@ class AppearanceTransfer {
   const AppearanceTransfer._();
   static const format = 'super_container_layout.appearance';
   static TransferGroup _groupOf(String key) =>
-      key == 'layouts' ||
-          key == 'components' ||
-          key == 'pageCatalog' ||
-          key == 'screens' ||
-          key == 'ops'
+      key == 'components' || key == 'pageCatalog'
       ? TransferGroup.layouts
       : TransferGroup.styles;
-
-  static Set<TransferGroup> _groupsForKey(String key) =>
-      key == 'ops'
-      ? const {TransferGroup.layouts, TransferGroup.styles}
-      : {_groupOf(key)};
 
   static String export(
     Appearance appearance,
@@ -38,18 +28,7 @@ class AppearanceTransfer {
     if (groups.isEmpty) {
       throw ArgumentError.value(groups, 'groups', 'No groups selected.');
     }
-    final includeLayouts = groups.contains(TransferGroup.layouts);
-    final includeStyles = groups.contains(TransferGroup.styles);
-    final rawCodecData = codec.toJson(appearance);
-    final aiData = ScreenTreeCodec.toAiJson(
-      appearance,
-      includeInlineStyles: includeLayouts && includeStyles,
-    )..remove('version');
-    for (final key in codec.additionalKeys) {
-      if (rawCodecData.containsKey(key)) {
-        aiData[key] = rawCodecData[key];
-      }
-    }
+    final rawCodecData = codec.toJson(appearance)..remove('version');
     return const JsonEncoder.withIndent('  ').convert({
       'format': codec.format,
       'version': codec.schemaVersion,
@@ -58,7 +37,7 @@ class AppearanceTransfer {
           if (groups.contains(group)) group.name,
       ],
       'data': {
-        for (final entry in aiData.entries)
+        for (final entry in rawCodecData.entries)
           if (groups.contains(_groupOf(entry.key))) entry.key: entry.value,
       },
     });
@@ -77,15 +56,13 @@ class AppearanceTransfer {
     if (json is! Map<String, dynamic>) {
       throw const FormatException('Invalid appearance export.');
     }
-    final hasAiRoot =
-        json.containsKey('screens') ||
-        json.containsKey('ops') ||
+    final isPatch =
         json['vibe'] == true ||
         json['merge'] == true ||
         json['mode'] == 'vibe';
     final version = json.containsKey('version')
         ? json['version']
-        : (hasAiRoot ? codec.schemaVersion : null);
+        : (isPatch ? codec.schemaVersion : null);
     if (version is! int) throw const FormatException('Invalid export version.');
     if (json.containsKey('format')) {
       if ((json['format'] != codec.format &&
@@ -122,14 +99,10 @@ class AppearanceTransfer {
     AppearanceCodec codec = const AppearanceCodec(),
   }) {
     final data = _document(text, codec).data;
-    final known = {
-      ...codec.toJson(codec.defaults).keys,
-      'screens',
-      'ops',
-    }..remove('version');
+    final known = {...codec.toJson(codec.defaults).keys}..remove('version');
     final groups = <TransferGroup>{
       for (final key in data.keys)
-        if (known.contains(key)) ..._groupsForKey(key),
+        if (known.contains(key)) _groupOf(key),
     };
     if (groups.isEmpty) {
       throw const FormatException('No styles or layouts found.');
@@ -147,7 +120,6 @@ class AppearanceTransfer {
     if (selected.isEmpty) {
       throw const FormatException('No selected groups to import.');
     }
-    final merged = codec.toJson(current);
     final document = _document(text, codec);
     final dataMap = <String, dynamic>{
       for (final e in document.data.entries) e.key: e.value,
@@ -156,30 +128,31 @@ class AppearanceTransfer {
     final isMerge =
         dataMap['vibe'] == true ||
         dataMap['merge'] == true ||
-        dataMap['mode'] == 'vibe' ||
-        dataMap.containsKey('ops');
-    final expanded = ScreenTreeCodec.expandToCanonicalJson(
-      dataMap,
-      base: isMerge ? current : null,
-      forceMerge: isMerge,
-    );
-    for (final entry in expanded.entries) {
-      if (entry.key == 'version') continue;
+        dataMap['mode'] == 'vibe';
+    if (isMerge) {
+      final filtered = <String, dynamic>{
+        for (final entry in dataMap.entries)
+          if (entry.key == 'vibe' ||
+              entry.key == 'merge' ||
+              selected.contains(_groupOf(entry.key)))
+            entry.key: entry.value,
+      };
+      final patched = codec.patchFromJson(current, filtered);
+      final encoded = codec.encode(patched);
+      final result = codec.decode(encoded);
+      codec.restoreAdditional(encoded);
+      return result;
+    }
+
+    final merged = codec.toJson(current);
+    for (final entry in dataMap.entries) {
+      if (entry.key == 'version' ||
+          entry.key == 'vibe' ||
+          entry.key == 'merge') {
+        continue;
+      }
       if (merged.containsKey(entry.key) &&
           selected.contains(_groupOf(entry.key))) {
-        if (!isMerge &&
-            entry.key == 'styles' &&
-            !dataMap.containsKey('styles') &&
-            dataMap.containsKey('screens')) {
-          final currentStyles = Map<String, Object?>.from(
-            (merged['styles'] as Map?) ?? const {},
-          );
-          final newStyles = Map<String, Object?>.from(
-            (entry.value as Map?) ?? const {},
-          );
-          merged['styles'] = {...currentStyles, ...newStyles};
-          continue;
-        }
         merged[entry.key] = codec.mergeTransferValue(
           entry.key,
           merged[entry.key],
@@ -199,8 +172,7 @@ class AppearanceTransfer {
     return result;
   }
 
-  /// Applique une étape "Vibe" (fusion partielle par ID et/ou liste d'opérations `ops`)
-  /// sur l'apparence [current].
+  /// Applies an incremental GenUI-style surface update onto [current].
   static Appearance applyVibe(
     Appearance current,
     String text, {
@@ -229,7 +201,7 @@ class AppearanceTransfer {
     );
   }
 
-  /// Exporte l'apparence au format hiérarchique et compact pensé pour les IA (`screens` + `#HEX`).
+  /// Exports the flat GenUI JSON representation for AI or transfer.
   static String exportAi(
     Appearance appearance, {
     Set<TransferGroup> groups = const {

@@ -35,7 +35,7 @@ void main() {
       expect(json['groups'], ['styles', 'layouts']);
       expect(
         dataOf(text).keys,
-        containsAll(['accent', 'layouts', 'application', 'styles']),
+        containsAll(['accent', 'components', 'application', 'styles']),
       );
       expect(dataOf(text).containsKey('version'), isFalse);
     });

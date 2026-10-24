@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter/painting.dart' show Axis, EdgeInsets;
 
+import 'component_config.dart';
 import 'grid_layout_config.dart';
 import 'json_syntax.dart';
 export 'grid_layout_config.dart';
@@ -234,7 +235,7 @@ class SlotSizeConstraints {
 ///
 /// Un coin n'existe que si ses deux voisins existent ; sinon sa fusion est
 /// sans effet.
-class SuperLayoutConfig {
+class SuperLayoutConfig extends ComponentConfig {
   const SuperLayoutConfig({
     this.north = false,
     this.south = false,
@@ -749,6 +750,14 @@ class SuperLayoutConfig {
         _ => throw ArgumentError.value(side, 'side', 'Pas un côté'),
       };
 
+  @override
+  String get componentType => 'layout';
+
+  @override
+  SuperLayoutConfig patchFromJson(Map<Object?, Object?> patch) =>
+      SuperLayoutConfig.fromJson(patch, fallback: this);
+
+  @override
   Map<String, Object?> toJson() => {
     'north': north,
     'south': south,

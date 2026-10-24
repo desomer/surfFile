@@ -377,7 +377,10 @@ void main() {
         ),
       ),
     );
-    expect(source.components.keys, ['p1']);
+    expect(
+      source.componentsOfType<NativeComponentConfig>().keys,
+      ['p1'],
+    );
     expect(source.layouts.keys, ['lay']);
 
     final replaced = _registry()..registerFactory('Value', const SizedBox());

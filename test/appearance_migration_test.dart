@@ -223,7 +223,7 @@ void main() {
       {...valid, 'version': 2},
       {...valid, 'version': 99},
       {...valid, 'styles': {'broken': 'bad'}},
-      {...valid, 'layouts': []},
+      {...valid, 'components': []},
       {...valid, 'application': {'cardWidth': -1}},
       {...valid, 'application': {'folderTransition': 'invalid'}},
       {...valid, 'application': {'unknown': 1}},

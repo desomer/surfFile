@@ -20,7 +20,6 @@ export 'models/scaffold_page_config.dart';
 export 'models/super_layout_config.dart';
 export 'services/appearance/appearance_codec.dart';
 export 'services/appearance/appearance_store.dart';
-export 'services/appearance/screen_tree_codec.dart';
 export 'services/appearance/default_appearance_codec.dart';
 export 'services/pages/editor_page_router.dart';
 export 'services/pages/editor_page_graph.dart';

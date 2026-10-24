@@ -7,83 +7,149 @@
   ],
   "data": {
     "mode": "light",
-    "accent": "#5268D9",
+    "accent": 4283590873,
+    "backgroundOpacity": 1.0,
+    "windowOpacity": 1.0,
+    "windowEffect": "transparent",
     "styles": {},
-    "screens": {
-      "root": {
-        "regions": {
-          "body": true,
-          "appBar": true
+    "components": {
+      "Lks2zoQw9J": {
+        "type": "list",
+        "binding": {
+          "repositoryId": "48df28734b98175363c237b8a5939ad6",
+          "path": "b"
         },
-        "body": {
-          "type": "Layout",
-          "id": "contA",
+        "axis": "vertical",
+        "wrap": false,
+        "wrapSizing": "fixed",
+        "itemWidth": 160.0,
+        "itemExtent": 56.0,
+        "spacing": 0.0,
+        "allowAdd": true,
+        "allowRemove": true,
+        "emptyText": "Aucun élément",
+        "template": {
+          "north": false,
+          "south": false,
+          "west": false,
+          "east": false,
+          "nw": "none",
+          "ne": "none",
+          "sw": "none",
+          "se": "none",
+          "northSize": 50.0,
+          "southSize": 50.0,
+          "westSize": 100.0,
+          "eastSize": 100.0,
+          "resizeSides": false,
+          "sideResizing": {},
+          "collapsedSides": {},
+          "swaps": [],
           "autoSides": [
             "north",
             "south",
             "east",
             "west"
           ],
-          "zones": {
+          "zoneAxes": {
+            "center": "row"
+          },
+          "slotPreferredSizes": {},
+          "slotSizeConstraints": {},
+          "positioning": "zones",
+          "placements": {
             "center": [
               {
-                "type": "factory:ListView",
-                "id": "uJPuYCW4JB"
-              }
-            ]
-          }
-        },
-        "appBar": [
-          {
-            "type": "ApplicationBar",
-            "id": "main-appbar",
-            "regions": {
-              "title": true
-            },
-            "title": [
+                "type": "factory:Value",
+                "id": "8y7X24WISA"
+              },
               {
-                "type": "Value",
-                "id": "app-title",
-                "initialText": "Accueil",
-                "fontSize": 18.0,
-                "fontWeight": 600
+                "type": "factory:Value",
+                "id": "muBTw-FSyO"
               }
             ]
           }
-        ]
-      }
-    },
-    "layouts": {
-      "uJPuYCW4JB": {
+        }
+      },
+      "contA": {
+        "type": "layout",
+        "north": false,
+        "south": false,
+        "west": false,
+        "east": false,
+        "nw": "none",
+        "ne": "none",
+        "sw": "none",
+        "se": "none",
+        "northSize": 50.0,
+        "southSize": 50.0,
+        "westSize": 100.0,
+        "eastSize": 100.0,
+        "resizeSides": false,
+        "sideResizing": {},
+        "collapsedSides": {},
+        "swaps": [],
         "autoSides": [
           "north",
           "south",
           "east",
           "west"
         ],
-        "zones": {
+        "zoneAxes": {},
+        "slotPreferredSizes": {},
+        "slotSizeConstraints": {},
+        "positioning": "zones",
+        "placements": {
           "center": [
             {
-              "type": "factory:Value",
-              "id": "9cL5LcbIhK"
+              "type": "factory:ListView",
+              "id": "Lks2zoQw9J"
             }
           ]
         }
-      }
-    },
-    "components": {
-      "uJPuYCW4JB": {
-        "type": "list",
-        "binding": {
-          "repositoryId": "48df28734b98175363c237b8a5939ad6",
-          "path": "b"
-        },
-        "allowAdd": true,
-        "allowRemove": true
       },
-      "9cL5LcbIhK": {
+      "8y7X24WISA": {
         "type": "value",
-        "binding": "b[?].c"
+        "mode": "display",
+        "initialText": "",
+        "label": "",
+        "placeholder": "",
+        "enabled": true,
+        "readOnly": false,
+        "obscureText": false,
+        "minLines": 1,
+        "maxLines": 1,
+        "fontFamily": null,
+        "fontSize": null,
+        "fontWeight": null,
+        "italic": null,
+        "color": null,
+        "textAlign": "start",
+        "lineHeight": null,
+        "letterSpacing": null,
+        "binding": {
+          "path": "b[?].c"
+        }
+      },
+      "muBTw-FSyO": {
+        "type": "value",
+        "mode": "display",
+        "initialText": "xcxcxc",
+        "label": "",
+        "placeholder": "",
+        "enabled": true,
+        "readOnly": false,
+        "obscureText": false,
+        "minLines": 1,
+        "maxLines": 1,
+        "fontFamily": null,
+        "fontSize": null,
+        "fontWeight": null,
+        "italic": null,
+        "color": null,
+        "textAlign": "start",
+        "lineHeight": null,
+        "letterSpacing": null
       }
     },
     "pageCatalog": {

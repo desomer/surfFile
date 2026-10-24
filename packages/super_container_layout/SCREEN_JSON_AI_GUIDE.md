@@ -1,8 +1,6 @@
-# Guide pour IA : Modéliser et configurer un écran en JSON (`super_container_layout`)
+# Guide pour IA : Modéliser et configurer un écran en JSON (Modèle GenUI `super_container_layout`)
 
-Ce document est une spécification technique destinée à une Intelligence Artificielle. Il explique comment générer le JSON de configuration d'un écran dans `super_container_layout` selon deux approches complémentaires :
-1. **En 1 Phase (Arbre déclaratif imbriqué `screens`)** : décrire un écran complet dans une hiérarchie naturelle où chaque composant porte son style, sa taille et ses enfants.
-2. **En mode "Vibe" (Étape par étape / Incrémental)** : construire ou retoucher un écran progressivement à l'aide de patchs partiels (**Deep Merge**) ou d'opérations atomiques (**`ops`**).
+Ce document est la spécification technique destinée à une Intelligence Artificielle. Il décrit le format JSON plat et polymorphe inspiré de **Flutter GenUI** utilisé par `super_container_layout` pour le stockage, l'import/export et les mises à jour incrémentales (`applyVibe`).
 
 ---
 
@@ -17,366 +15,211 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
 | **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` |
-| **Types de composants** | `"Layout"`, `"Card"`, `"Value"`, `"ListView"`, `"IterableContent"`, `"ApplicationBar"`, `"BottomNavigationBar"` | Alias `"AppBar"`, `"BottomBar"`, `"List"` ou `"registry:<Type>"` |
-| **Valeurs par défaut** | **Omises** : n'écris que les propriétés que tu souhaites personnaliser | Objet complet |
+| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"` | `"Layout"`, `"Card"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"AppBar"`, `"BottomBar"` |
 
 ---
 
-## 2. Mode 1-Phase : Créer un écran complet avec `screens`
+## 2. Architecture GenUI : Un seul format plat par ID
 
-Au lieu d'éclater la configuration dans plusieurs dictionnaires, tu peux déclarer tes écrans dans l'objet **`screens`** :
-- **`"root"`** : représente l'écran principal de l'application (`SuperPage(id: "root")` dont le corps pilote le `SuperLayout` principal `"contA"`).
-- **`"<pageId>"`** (ex: `"page-settings"`) : crée automatiquement une page routée dans `pageCatalog` si tu fournis `"path": "/settings"` et `"name": "Paramètres"` (et `"home": true` si c'est la page d'accueil).
+Toute l'interface est représentée par des dictionnaires plats indexés par l'`id` de chaque instance :
+1. **`components`** (`Map<String, ComponentConfig>`) : contient **tous** les composants, chacun identifié par son discriminateur `"type"` :
+   - `"layout"` (`SuperLayoutConfig`)
+   - `"native"` (`NativeComponentConfig`)
+   - `"scaffold"` (`ScaffoldPageConfig`)
+   - `"value"` (`SuperValueConfig`)
+   - `"action"` (`SuperActionConfig`)
+   - `"list"` (`SuperListViewConfig`, qui embarque directement son `"template"` de ligne)
+2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView`, `IterableContent`).
+3. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
 
-### Anatomie d'un écran dans `screens`
-
-Un écran possède les régions d'un `Scaffold` (`appBar`, `body`, `drawer`, `endDrawer`, `bottomNavigationBar`, `floatingActionButton`, `bottomSheet`), ou directement un objet `zones` s'il n'a qu'un corps en grille :
+### Exemple complet d'écran
 
 ```json
 {
+  "version": 1,
   "mode": "light",
   "accent": "#5268D9",
   "styles": {
-    "background": { "color": "#F5F7FA", "padding": 12 }
+    "background": { "color": "#F5F7FA", "padding": 12 },
+    "card-detail": { "color": "#FFFFFF", "radius": 16, "padding": 20, "elevation": 3 },
+    "list-clients": { "color": "#FFFFFF", "radius": 10, "hoverEffect": true }
   },
-  "screens": {
+  "components": {
     "root": {
-      "appBar": {
-        "type": "ApplicationBar",
-        "id": "main-appbar",
-        "title": {
-          "type": "Value",
-          "id": "app-title",
-          "text": "Gestion des Clients",
-          "fontSize": 18,
-          "fontWeight": "semibold"
-        },
-        "actions": [
-          {
-            "type": "Value",
-            "id": "app-search",
-            "mode": "input",
-            "placeholder": "Rechercher...",
-            "size": { "preferredWidth": "240px" },
-            "field": {
-              "variant": "outlined",
-              "prefixIcon": "search",
-              "suffix": "clear",
-              "radius": 20,
-              "dense": true
-            }
-          }
-        ]
+      "type": "native",
+      "regions": { "appBar": true, "body": true },
+      "placements": {
+        "appBar": [{ "id": "main-appbar", "type": "registry:ApplicationBar" }],
+        "body": [{ "id": "scaffold:body", "type": "scaffold:body" }]
+      }
+    },
+    "main-appbar": {
+      "type": "native",
+      "regions": { "title": true },
+      "placements": {
+        "title": [{ "id": "app-title", "type": "registry:Value" }]
+      }
+    },
+    "app-title": {
+      "type": "value",
+      "text": "Gestion des Clients",
+      "fontSize": 18,
+      "fontWeight": "semibold"
+    },
+    "contA": {
+      "type": "layout",
+      "west": true,
+      "westSize": 260,
+      "resizeSides": true,
+      "placements": {
+        "west": [{ "id": "list-clients", "type": "registry:ListView" }],
+        "center": [{ "id": "card-detail", "type": "registry:Card" }]
+      }
+    },
+    "list-clients": {
+      "type": "list",
+      "binding": {
+        "repositoryId": "0123456789abcdef0123456789abcdef",
+        "path": "clients"
       },
-      "body": {
-        "type": "Layout",
-        "id": "contA",
-        "westSize": 260,
-        "resizeSides": true,
-        "zones": {
-          "west": [
-            {
-              "type": "ListView",
-              "id": "list-clients",
-              "binding": {
-                "repositoryId": "0123456789abcdef0123456789abcdef",
-                "path": "clients"
-              },
-              "itemExtent": 56,
-              "spacing": 8,
-              "allowAdd": true,
-              "allowRemove": true,
-              "style": {
-                "color": "#FFFFFF",
-                "radius": 10,
-                "padding": 10,
-                "hoverEffect": true,
-                "hoverTint": "accent"
-              },
-              "template": {
-                "zones": {
-                  "center": [
-                    {
-                      "type": "Value",
-                      "id": "row-client-nom",
-                      "text": "Nom du client",
-                      "fontWeight": "medium",
-                      "binding": "clients[?].nom"
-                    }
-                  ]
-                }
-              }
-            }
-          ],
-          "center": [
-            {
-              "type": "Card",
-              "id": "card-detail",
-              "style": {
-                "color": "#FFFFFF",
-                "radius": 16,
-                "padding": 20,
-                "margin": 8,
-                "elevation": 3
-              },
-              "child": {
-                "type": "Layout",
-                "id": "layout-form",
-                "zones": {
-                  "north": [
-                    {
-                      "type": "Value",
-                      "id": "form-title",
-                      "text": "Fiche du client sélectionné",
-                      "fontSize": 20,
-                      "fontWeight": "bold"
-                    }
-                  ],
-                  "center": [
-                    {
-                      "type": "Value",
-                      "id": "input-nom",
-                      "mode": "input",
-                      "label": "Nom complet",
-                      "size": { "preferredHeight": "64px", "padding": 8 },
-                      "binding": "0123456789abcdef0123456789abcdef:clients[?].nom"
-                    },
-                    {
-                      "type": "Value",
-                      "id": "input-email",
-                      "mode": "input",
-                      "label": "E-mail",
-                      "size": { "preferredHeight": "64px", "padding": 8 },
-                      "field": { "variant": "outlined", "prefixIcon": "email" },
-                      "binding": "0123456789abcdef0123456789abcdef:clients[?].email"
-                    },
-                    {
-                      "type": "Value",
-                      "id": "input-actif",
-                      "mode": "input",
-                      "kind": "switch",
-                      "label": "Client actif",
-                      "value": true,
-                      "size": { "preferredHeight": "48px", "padding": 8 },
-                      "binding": "0123456789abcdef0123456789abcdef:clients[?].actif"
-                    }
-                  ]
-                }
-              }
-            }
-          ]
+      "itemExtent": 56,
+      "spacing": 8,
+      "allowAdd": true,
+      "allowRemove": true,
+      "template": {
+        "placements": {
+          "center": [{ "id": "row-client-nom", "type": "registry:Value" }]
         }
       }
+    },
+    "row-client-nom": {
+      "type": "value",
+      "binding": "clients[?].nom"
+    },
+    "card-detail": {
+      "type": "native",
+      "regions": { "child": true },
+      "placements": {
+        "child": [{ "id": "layout-form", "type": "registry:Layout" }]
+      }
+    },
+    "layout-form": {
+      "type": "layout",
+      "slotSizeConstraints": {
+        "input-nom": { "preferredHeight": "64px", "padding": 8 }
+      },
+      "placements": {
+        "center": [
+          { "id": "input-nom", "type": "registry:Value" },
+          { "id": "btn-save", "type": "registry:Action" }
+        ]
+      }
+    },
+    "input-nom": {
+      "type": "value",
+      "mode": "input",
+      "label": "Nom complet",
+      "binding": "0123456789abcdef0123456789abcdef:clients[?].nom"
+    },
+    "btn-save": {
+      "type": "action",
+      "kind": "textAndIcon",
+      "variant": "filled",
+      "label": "Enregistrer",
+      "icon": "save"
     }
+  },
+  "pageCatalog": {
+    "pages": [],
+    "homePageId": null
   }
 }
 ```
 
-### Règles d'inférence automatiques en mode 1-Phase :
-1. **Activation automatique des zones** : Dès que tu places un composant dans `zones.north`, `zones.south`, `zones.west` ou `zones.east` (ou dans un coin `nw`, `ne`, `sw`, `se`), les booléens `north: true`, `west: true`, etc. sont **activés automatiquement**.
-2. **IDs optionnels** : Si tu omets `"id"` sur un composant imbriqué, un identifiant stable unique est généré automatiquement (`<parentId>_<zone>_<type>`). Il est toutefois recommandé de donner un `"id"` explicite (ex: `"card-detail"`) si tu souhaites le cibler plus tard en mode Vibe.
-3. **Propriétés communes à tout slot placé** :
-   - `"id"` : identifiant unique du composant.
-   - `"type"` : `"Layout"`, `"Card"`, `"Value"`, `"ListView"`, `"IterableContent"`, `"ApplicationBar"`, `"BottomNavigationBar"` (peut même être omis si la forme de l'objet est non ambiguë : présence de `zones`, `child`, `template` ou `text`).
-   - `"slotLabel"` : libellé affiché sur le badge du slot en mode édition.
-   - `"size"` : contraintes de taille et marge du slot dans son parent :
-     ```json
-     "size": {
-       "percentBasis": "zone",
-       "padding": 8,
-       "minWidth": "120px",
-       "maxWidth": "80%",
-       "preferredWidth": "240px",
-       "preferredHeight": "64px"
-     }
-     ```
-
 ---
 
-## 3. Mode "Vibe" : Construire et modifier un écran étape par étape
+## 3. Mode "Vibe" (`applyVibe` / `surfaceUpdate` incrémental)
 
-En mode Vibe (`AppearanceTransfer.applyVibe` ou via l'import avec `"mode": "vibe"` / `"ops"`), tu n'as **pas besoin de renvoyer tout l'écran**. Tu peux envoyer uniquement les modifications souhaitées à chaque étape grâce au tableau **`"ops"`** (ou via un objet partiel avec `"merge": true`).
+En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`), tu n'as **pas besoin de renvoyer tout l'écran**. Tu envoies uniquement les clés modifiées dans `components`, `styles` ou `pageCatalog` :
 
-### Les 6 opérations atomiques du mode Vibe (`"ops"`)
+1. **Modifier partiellement un composant ou un style existant** : fournis son `id` dans `components` ou `styles` avec uniquement les propriétés à changer (le champ `"type"` peut être omis si le composant existe déjà).
+2. **Ajouter un composant** : déclare son entrée avec son `"type"` dans `components` et ajoute sa référence `{"id": "...", "type": "registry:..."}` dans les `placements` de son conteneur parent.
+3. **Supprimer un composant** : passe son entrée à `null` dans `components` (`"components": { "old-id": null }`). Il est automatiquement supprimé de `components`, de `styles`, et retiré des `placements` de ses parents.
 
-#### 1. `"add"` (Ajouter ou remplacer un composant / sous-arbre dans une zone)
-Ajoute un composant (ou tout un sous-arbre imbriqué) dans une zone d'un `Layout` ou une région d'une `Page` / `Card` / `ApplicationBar`, et active automatiquement la zone :
 ```json
 {
-  "ops": [
-    {
-      "op": "add",
-      "target": "contA",
-      "zone": "east",
-      "node": {
-        "type": "Card",
-        "id": "card-stats",
-        "style": { "color": "#FFFFFF", "radius": 12, "padding": 16 },
-        "child": {
-          "type": "Value",
-          "id": "stats-title",
-          "text": "Statistiques",
-          "fontSize": 16,
-          "fontWeight": "bold"
+  "styles": {
+    "card-detail": { "radius": 24, "elevation": 6 }
+  },
+  "components": {
+    "app-title": { "text": "Nouveau Titre CRM", "color": "#5268D9" },
+    "list-clients": {
+      "spacing": 12,
+      "template": {
+        "east": true,
+        "autoSides": ["east"],
+        "placements": {
+          "center": [{ "id": "row-client-nom", "type": "registry:Value" }],
+          "east": [{ "id": "btn-delete", "type": "registry:Action" }]
         }
       }
-    }
-  ]
-}
-```
-- Paramètres optionnels de `"add"` :
-  - `"beforeId"` / `"afterId"` : insère le composant juste avant ou après un slot existant dans la zone.
-  - `"replace": true` : vide la zone cible avant d'insérer le(s) nouveau(x) composant(s).
-
-#### 2. `"patch"` (Modifier partiellement un composant, un style ou une disposition)
-Modifie uniquement les propriétés précisées sur un composant existant, **sans écraser ses autres réglages** :
-```json
-{
-  "ops": [
-    {
-      "op": "patch",
-      "id": "card-detail",
-      "style": {
-        "radius": 24,
-        "designSystem": "neumorphism",
-        "elevation": 6
-      }
     },
-    {
-      "op": "patch",
-      "id": "app-title",
-      "text": "Nouveau Titre CRM",
-      "color": "#5268D9"
+    "btn-delete": {
+      "type": "action",
+      "kind": "icon",
+      "variant": "icon",
+      "icon": "delete"
     },
-    {
-      "op": "patch",
-      "id": "contA",
-      "layout": {
-        "westSize": 300
-      }
-    }
-  ]
-}
-```
-- Tu peux aussi modifier la taille ou le badge d'un slot dans son parent :
-  `{"op": "patch", "id": "input-nom", "size": {"preferredHeight": "72px", "padding": 12}}`.
-- Pour modifier le gabarit d'une liste, utilise son ID avec `"template"` (alias `"row"`) : `{"op":"patch","id":"list-b","template":{"zones":{"east":[{"type":"Value","id":"item-b-text-a","text":"text A"}]}}}`. Le gabarit est fusionné avec sa disposition existante, ses composants imbriqués sont compilés et les zones ajoutées sont activées automatiquement.
-
-#### 3. `"move"` (Déplacer un composant d'une zone à une autre)
-```json
-{
-  "ops": [
-    {
-      "op": "move",
-      "target": "contA",
-      "id": "card-stats",
-      "zone": "south",
-      "beforeId": "other-slot"
-    }
-  ]
-}
-```
-
-#### 4. `"remove"` (Supprimer un composant et nettoyer ses données)
-```json
-{
-  "ops": [
-    {
-      "op": "remove",
-      "target": "contA",
-      "id": "card-stats"
-    }
-  ]
-}
-```
-
-#### 5. `"upsertPage"` (Créer ou mettre à jour une page routée)
-```json
-{
-  "ops": [
-    {
-      "op": "upsertPage",
-      "id": "page-settings",
-      "name": "Paramètres",
-      "path": "/settings",
-      "home": false,
-      "body": {
-        "type": "Layout",
-        "id": "layout-settings",
-        "zones": {
-          "center": [
-            {
-              "type": "Value",
-              "id": "toggle-notif",
-              "mode": "input",
-              "kind": "switch",
-              "label": "Activer les notifications",
-              "value": true
-            }
-          ]
-        }
-      }
-    }
-  ]
-}
-```
-
-#### 6. `"removePage"` (Supprimer une page routée)
-```json
-{
-  "ops": [
-    {
-      "op": "removePage",
-      "id": "page-settings"
-    }
-  ]
+    "old-widget": null
+  }
 }
 ```
 
 ---
 
-## 4. Référence des composants et de leurs propriétés
+## 4. Référence des composants du `ComponentConfigCatalog`
 
-### 4.1. `Layout` (`SuperLayoutConfig`)
+### 4.1. `"layout"` (`SuperLayoutConfig`)
 Dispose ses enfants selon 2 modes (`"positioning"`) :
 - **`"zones"` (par défaut)** : Grille 3×3 (`nw`, `north`, `ne`, `west`, `center`, `east`, `sw`, `south`, `se`).
-  - `north`, `south`, `west`, `east` (`bool`) : activés automatiquement si leur zone contient des éléments dans `zones`.
-  - `northSize`, `southSize`, `westSize`, `eastSize` (`number`, **bornes : `24` à `400`**) : épaisseur en pixels des côtés fixes.
+  - `north`, `south`, `west`, `east` (`bool`) : activation des côtés.
+  - `northSize`, `southSize`, `westSize`, `eastSize` (`number`, **bornes : `20` à `400`**) : épaisseur en pixels des côtés fixes.
   - `autoSides` (`List<string>`) : côtés (`"north"`, `"south"`, `"west"`, `"east"`) dont l'épaisseur s'adapte automatiquement à leur contenu.
-  - `nw`, `ne`, `sw`, `se` : `"none"` (case propre), `"row"` (absorbé par Nord/Sud), `"column"` (absorbé par Ouest/Est).
+  - `nw`, `ne`, `sw`, `se` (`"row"` | `"column"` | `"none"`) : fusion des coins lorsqu'un bord horizontal (`north` / `south`) et un bord vertical (`west` / `east`) sont tous deux actifs :
+    - **Bonne pratique (fortement recommandé)** : utilise **`"row"`** (le coin est absorbé par la bande `north` ou `south`, qui s'étend alors sur toute la largeur) ou **`"column"`** (le coin est absorbé par le panneau latéral `west` ou `east`, qui s'étend alors sur toute la hauteur).
+    - **À éviter** : laisser `"none"` (case propre) sans placer de composant dans ce coin crée une case vide disgracieuse dans l'angle de l'écran. N'utilise `"none"` que si tu places explicitement un composant dédié dans la zone de coin correspondante (`placements.nw`, `ne`, `sw`, `se`).
   - `zoneAxes` (`Map<Zone, "row" | "column">`) : axe d'empilement des composants par zone (`"column"` par défaut).
   - `resizeSides` (`bool`) et `sideResizing` (`Map<Side, bool>`) : poignées de redimensionnement utilisateur.
-- **`"grid"`** : Grille libre 2D :
-  ```json
-  {
-    "type": "Layout",
-    "id": "dashboard-grid",
-    "positioning": "grid",
-    "grid": {
-      "columns": 12,
-      "rowHeight": 64,
-      "gap": 8,
-      "compact": true,
-      "items": {
-        "kpi-1": { "x": 0, "y": 0, "width": 6, "height": 2 },
-        "kpi-2": { "x": 6, "y": 0, "width": 6, "height": 2 }
-      }
-    },
-    "zones": {
-      "center": [
-        { "type": "Card", "id": "kpi-1", "style": { "radius": 12 } },
-        { "type": "Card", "id": "kpi-2", "style": { "radius": 12 } }
-      ]
-    }
-  }
-  ```
-  *(Contraintes `grid` : `columns` de `1` à `48`, `rowHeight` de `16` à `400`, `gap` de `0` à `64`, aucun chevauchement entre les rectangles `items`).*
+  - `slotSizeConstraints` (`Map<slotId, SlotSizeConstraints>`) : contraintes de taille et marges par slot enfant.
+  - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots.
+  - `placements` (`Map<Zone, List<{"id": string, "type": string}>>`) : composants placés dans chaque zone.
+- **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` de `16` à `400`, `gap` de `0` à `64`).
 
-### 4.2. `Card` (`EditableSurface` + enfant unique)
-- `"style"` : objet `ContainerStyle` (voir 4.6).
-- `"child"` : un composant enfant unique (ex: un `"Layout"` ou un `"Value"`).
+### 4.2. `"native"` (`NativeComponentConfig`) & `"scaffold"` (`ScaffoldPageConfig`) — Lien avec les widgets Flutter Material
+Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les widgets structurels standards de la bibliothèque **Flutter Material** (`package:flutter/material.dart`). Leurs noms de régions dans `regions` et `placements` reprennent exactement les paramètres nommés des constructeurs Flutter correspondants :
 
-### 4.3. `Value` (`SuperValueConfig`)
+- **Page / Écran (`"root"` ou `<pageId>` du `pageCatalog`) $\rightarrow$ `Scaffold` de Flutter** (`type: "native"` ou `"scaffold"`) :
+  - `appBar` (1 slot max, dédié au composant `"registry:ApplicationBar"`) : barre supérieure du `Scaffold`.
+  - `body` (empilement vertical, toujours actif) : contenu principal de la page. Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"contA"`.
+  - `drawer` / `endDrawer` (empilement vertical) : panneaux latéraux coulissants gauche / droite (`Drawer` Flutter).
+  - `bottomNavigationBar` (1 slot max, dédié au composant `"registry:BottomNavigationBar"`) : barre de navigation inférieure.
+  - `floatingActionButton` (1 slot max) : bouton d'action flottant en bas à droite.
+  - `bottomSheet` (1 slot max) : panneau persistant affiché en bas du `Scaffold`.
+- **`"registry:ApplicationBar"` $\rightarrow$ `AppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `appBar` d'une page) :
+  - `useDefaultNavigation` (`bool`, `true` par défaut) : laisse Flutter gérer automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`). Mettre à `false` pour utiliser une région `leading` personnalisée.
+  - `leading` (1 slot max) : widget placé tout à gauche de l'`AppBar` (ignoré si `useDefaultNavigation: true`).
+  - `title` (liste horizontale) : titre ou barre d'outils centrale de l'`AppBar`.
+  - `actions` (liste horizontale) : boutons/actions alignés à droite de l'`AppBar`.
+  - `bottom` (1 slot max) : barre secondaire sous l'`AppBar` (ex. onglets ou barre de filtres).
+  - `flexibleSpace` (1 slot max) : arrière-plan de l'`AppBar`.
+- **`"registry:BottomNavigationBar"` $\rightarrow$ `BottomAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
+  - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).
+- **`"registry:Card"` $\rightarrow$ `Card` / `Container` de Flutter** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
+  - `child` (1 slot unique max) : composant enfant contenu dans la carte (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants).
+
+Propriétés communes dans `components[id]` pour `"native"` : `useDefaultNavigation` (`bool?`), `regions` (`Map<string, bool>`), `placements` (`Map<string, List<{"id": string, "type": string}>>`), `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
+
+### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher ou un interrupteur :
 - `mode` : `"display"` (défaut) ou `"input"`.
 - `kind` : `"text"` (défaut), `"checkbox"` ou `"switch"` (`"switchControl"`).
@@ -384,18 +227,26 @@ Affiche un texte, un champ de saisie, une case à cocher ou un interrupteur :
 - `value` (ou `initialBool`) : valeur booléenne initiale (`bool`) pour `checkbox` / `switch`.
 - `label`, `placeholder` : `string`.
 - `enabled` (`true`), `readOnly` (`false`), `obscureText` (`false`) : `bool`.
-  - *Note* : si `obscureText: true`, exige `kind: "text"`, `minLines: 1`, `maxLines: 1`, et pas de texte initial non vide.
 - `minLines` (`1`), `maxLines` (`1`) : `int` (`maxLines >= minLines >= 1`).
 - Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
 - `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}`.
-- `field` (`SuperTextFieldConfig`, pour `mode: "input"`) :
-  - `variant` : `"theme"`, `"filled"`, `"outlined"`, `"underline"`, `"borderless"`.
-  - Couleurs : `fillColor`, `focusFillColor`, `borderColor`, `focusBorderColor`, `errorBorderColor` (`"#RRGGBB"`).
-  - Dimensions : `radius`, `borderWidth`, `horizontalPadding`, `verticalPadding` (`number >= 0`), `dense` (`bool`).
-  - Ornement : `prefixText`, `suffixText`, `helperText`, `errorText`, `prefixIcon` / `suffixIcon` (`"person"`, `"email"`, `"phone"`, `"search"`, `"lock"`, `"link"`, `"home"`, `"calendar"`, `"info"`, `"check"`), `suffix` (`"decoration"`, `"clear"`, `"visibility"`).
-  - Saisie : `maxLength` (`int >= 1`), `showCounter` (`bool`), `filter` (`"none"`, `"digits"`, `"decimal"`, `"letters"`, `"pattern"`), `pattern` (regex non vide), `keyboard` (`"automatic"`, `"text"`, `"multiline"`, `"email"`, `"phone"`, `"url"`, `"number"`, `"decimal"`, `"signedDecimal"`), `action` (`"automatic"`, `"done"`, `"next"`, `"previous"`, `"search"`, `"send"`, `"go"`, `"newline"`).
+- `field` (`SuperTextFieldConfig`, pour `mode: "input"`).
 
-### 4.4. `ListView` (`SuperListViewConfig`)
+### 4.4. `"action"` (`SuperActionConfig`)
+Affiche un bouton interactif :
+- `kind` : `"text"` (défaut), `"icon"`, ou `"textAndIcon"`.
+- `variant` : `"filled"` (défaut), `"tonal"`, `"elevated"`, `"outlined"`, `"text"`, `"icon"`, ou `"surface"`.
+- `label` (ou `text`) : libellé du bouton (`string`, défaut `"Action"`).
+- `tooltip` : infobulle (`string`).
+- `icon` : identifiant d'icône du catalogue (`"touch_app"`, `"smart_button"`, `"add"`, `"edit"`, `"delete"`, `"check"`, `"close"`, `"search"`, `"settings"`, `"refresh"`, `"save"`, `"share"`, `"download"`, `"upload"`, `"arrow_back"`, `"arrow_forward"`, `"home"`, `"person"`, `"favorite"`, `"star"`, `"info"`, `"warning"`, `"play_arrow"`, `"send"`, `"more_vert"`, `"open_in_new"`, `"copy"`, `"filter_list"`, `"visibility"`, `"lock"`).
+- `iconPosition` : `"leading"` (défaut) ou `"trailing"`.
+- `iconSize` (`number > 0`), `iconSpacing` (`number >= 0`, défaut `8`).
+- `enabled` (`bool`, défaut `true`).
+- Typographie & Couleurs : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `iconColor`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`.
+- `style` (`ContainerStyle`) : style de surface avancé optionnel.
+- `propertyBindings` & `states` : liaisons repository et états nommés/automatiques.
+
+### 4.5. `"list"` (`SuperListViewConfig`)
 Répète un gabarit `template` pour chaque élément d'un tableau JSON :
 - `binding` : `"clients"` (si imbriquée) ou `{"repositoryId": "<32hex>", "path": "clients"}`.
 - `axis` : `"vertical"` (défaut) ou `"horizontal"`.
@@ -405,17 +256,9 @@ Répète un gabarit `template` pour chaque élément d'un tableau JSON :
 - `spacing` (`0`) : `number` entre **`0` et `200`**.
 - `allowAdd` (`false`), `allowRemove` (`false`) : `bool`.
 - `emptyText` : `string` (`"Aucun élément"`).
-- `style` : `ContainerStyle` appliqué à chaque ligne de la liste.
-- `template` : `SuperLayoutConfig` (contenant `"zones": { ... }`) décrivant les composants à l'intérieur d'une ligne. Les `Value` placés dans `template` utilisent `"binding": "clients[?].champ"` (le `repositoryId` est automatiquement hérité de la liste !).
+- `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes. Le style visuel de la ligne est stocké sous le même `id` dans `styles[id]`.
 
-### 4.5. `ApplicationBar` & `BottomNavigationBar`
-- **`ApplicationBar`** (uniquement dans la région `"appBar"` d'un écran) :
-  - `useDefaultNavigation` (`bool`) : bouton burger/retour automatique (`true` par défaut ; mettre `false` pour personnaliser `leading`).
-  - Régions : `leading` (1 slot max), `title` (horizontal), `actions` (horizontal), `bottom` (1 slot max), `flexibleSpace` (1 slot max).
-- **`BottomNavigationBar`** (uniquement dans la région `"bottomNavigationBar"` d'un écran) :
-  - Régions : `left`, `center`, `right` (horizontales).
-
-### 4.6. `style` (`ContainerStyle`) et ses bornes
+### 4.6. `styles` (`ContainerStyle`) et ses bornes
 - `color`, `borderColor`, `hoverColor` : `"#RRGGBB"` ou `"#AARRGGBB"`.
 - `fill` : `{"type": "solid" | "linear" | "radial" | "sweep", "start": "#5268D9", "end": "#B794F4", "angle": 0..360, "radius": 0.1..2.0}`.
 - `radius` : **`0` à `36`** (ou `radii`: `[topLeft, topRight, bottomRight, bottomLeft]` de `0` à `36`).
@@ -432,6 +275,6 @@ Répète un gabarit `template` pour chaque élément d'un tableau JSON :
 
 ## 5. Chat Vibe du mode édition
 
-La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"ops":[...]}}` (ou fournir un patch Vibe valide dans `vibe`).
+La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"components":{...},"styles":{...}}}`.
 
 Pour l’application de démonstration, la clé `GEMINI_API_KEY` peut être définie dans le fichier local `env` ou dans l’environnement du processus. Ne versionnez jamais cette clé. Les applications de production devraient appeler un service intermédiaire plutôt que d’embarquer une clé Gemini dans le client.

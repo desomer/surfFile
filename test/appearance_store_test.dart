@@ -68,6 +68,7 @@ void main() {
     final appearance = defaultSurfFileAppearance().copyWith(
       cardWidth: 240,
       components: {
+        ...defaultSurfFileAppearance().components,
         'title': const SuperValueConfig(initialText: 'Titre'),
         'password': const SuperValueConfig(obscureText: true),
       },
@@ -100,7 +101,7 @@ void main() {
     expect(store.documents.map((d) => (d['application'] as Map)['cardWidth']), [180, 240, 240, 240]);
     expect(store.documents.map((d) => (d['application'] as Map)['folderTransitionDuration']), [400, 400, 700, 700]);
     expect((store.documents[2]['application'] as Map)['diskGaugeStyle']['columns'], 3);
-    expect((store.documents.last['layouts'] as Map).containsKey('dynamic'), isTrue);
+    expect((store.documents.last['components'] as Map).containsKey('dynamic'), isTrue);
     expect(errors, isEmpty);
   });
 

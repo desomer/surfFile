@@ -29,11 +29,11 @@ class AppearanceStore {
     if (stored is! String) {
       throw const FormatException('Invalid stored appearance.');
     }
-    print('Stored appearance: $stored');
+    // print('Stored appearance: $stored');
 
-    var rawJson = jsonDecode(stored);
-    final prettyJson = JsonEncoder.withIndent('  ').convert(rawJson);
-    print('Raw JSON: $prettyJson');
+    // var rawJson = jsonDecode(stored);
+    // final prettyJson = JsonEncoder.withIndent('  ').convert(rawJson);
+    // print('Raw JSON: $prettyJson');
 
     final result = codec.decode(stored);
     codec.restoreAdditional(stored);

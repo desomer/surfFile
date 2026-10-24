@@ -29,7 +29,7 @@ void main() {
           ),
         },
         components: {
-          'workspace': ScaffoldPageConfig(
+          'workspace-page': ScaffoldPageConfig(
             placements: {
               ScaffoldPageRegion.drawer: ['navigation'],
             },
@@ -55,11 +55,13 @@ void main() {
         const Size(250, 150),
       );
       expect(
-        restored.scaffoldPage('workspace').slotTypeOf('navigation'),
+        restored.scaffoldPage('workspace-page').slotTypeOf('navigation'),
         'component:navigation',
       );
       expect(
-        restored.scaffoldPage('workspace').isEnabled(ScaffoldPageRegion.drawer),
+        restored
+            .scaffoldPage('workspace-page')
+            .isEnabled(ScaffoldPageRegion.drawer),
         isFalse,
       );
       final export = AppearanceTransfer.export(value, {
@@ -150,14 +152,14 @@ void main() {
       expect(restart.layout('workspace').westSize, 257);
       expect(restart.style('preview').radius, 27);
       controller.value = controller.value.resetLayouts();
-      expect(layout.value.westSize, 120);
+      expect(layout.value.westSize, 100);
       expect(style.value.radius, 27);
       controller.value = Appearance();
       expect(style.value.radius, 0);
       await controller.saved;
     },
   );
-  test('invalid versions, keys, styles and layouts are rejected', () {
+  test('invalid versions, keys, styles and components are rejected', () {
     final valid = jsonDecode(
       AppearanceStore.encode(Appearance()),
     ) as Map<String, dynamic>;
@@ -171,7 +173,7 @@ void main() {
       {...valid, 'styles': []},
       {
         ...valid,
-        'layouts': {'bad': false},
+        'components': {'bad': false},
       },
       {...valid, 'windowOpacity': 0},
       {...valid, 'mode': 'invalid'},

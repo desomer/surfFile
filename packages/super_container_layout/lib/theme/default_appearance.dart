@@ -64,7 +64,13 @@ class DefaultAppearance extends Appearance {
 
   @override
   DefaultAppearance withLayout(String id, SuperLayoutConfig value) =>
-      copyWith(layouts: {...layouts, id: value});
+      switch (components[id]) {
+        final SuperListViewConfig list => withComponent(
+          id,
+          list.copyWith(template: value),
+        ),
+        _ => withComponent(id, value),
+      };
 
   @override
   DefaultAppearance withComponent(String id, ComponentConfig? value) {
@@ -87,8 +93,18 @@ class DefaultAppearance extends Appearance {
       withComponent(id, value);
 
   @override
-  DefaultAppearance withListComponent(String id, SuperListViewConfig value) =>
-      withComponent(id, value);
+  DefaultAppearance withListComponent(String id, SuperListViewConfig value) {
+    final existing = components[id];
+    final merged =
+        value.template == const SuperLayoutConfig() &&
+            existing is SuperLayoutConfig
+        ? value.copyWith(template: existing)
+        : value.template == const SuperLayoutConfig() &&
+              existing is SuperListViewConfig
+        ? value.copyWith(template: existing.template)
+        : value;
+    return withComponent(id, merged);
+  }
 
   @override
   DefaultAppearance withNativeComponent(
@@ -106,7 +122,6 @@ class DefaultAppearance extends Appearance {
 
   @override
   DefaultAppearance resetLayouts() => copyWith(
-    layouts: const {},
     components: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
@@ -131,23 +146,33 @@ class DefaultAppearance extends Appearance {
     double? iconSize,
     bool? scrollFadeEnabled,
     double? scrollFadeExtent,
-  }) => DefaultAppearance(
-    styles: {...styles ?? this.styles, 'background': ?backgroundStyle},
-    layouts: layouts ?? this.layouts,
-    components: components ?? this.components,
-    pageCatalog: pageCatalog ?? this.pageCatalog,
-    mode: mode ?? this.mode,
-    accent: accent ?? this.accent,
-    backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
-    windowOpacity: windowOpacity ?? this.windowOpacity,
-    windowEffect: windowEffect ?? this.windowEffect,
-    cardHeight: cardHeight ?? this.cardHeight,
-    cardWidth: cardWidth ?? this.cardWidth,
-    rowHeight: rowHeight ?? this.rowHeight,
-    spacing: spacing ?? this.spacing,
-    fontSize: fontSize ?? this.fontSize,
-    iconSize: iconSize ?? this.iconSize,
-    scrollFadeEnabled: scrollFadeEnabled ?? this.scrollFadeEnabled,
-    scrollFadeExtent: scrollFadeExtent ?? this.scrollFadeExtent,
-  );
+  }) {
+    final baseComponents =
+        components ??
+        (layouts != null
+            ? {
+                for (final entry in this.components.entries)
+                  if (entry.value is! SuperLayoutConfig) entry.key: entry.value,
+              }
+            : this.components);
+    return DefaultAppearance(
+      styles: {...styles ?? this.styles, 'background': ?backgroundStyle},
+      layouts: layouts ?? const {},
+      components: baseComponents,
+      pageCatalog: pageCatalog ?? this.pageCatalog,
+      mode: mode ?? this.mode,
+      accent: accent ?? this.accent,
+      backgroundOpacity: backgroundOpacity ?? this.backgroundOpacity,
+      windowOpacity: windowOpacity ?? this.windowOpacity,
+      windowEffect: windowEffect ?? this.windowEffect,
+      cardHeight: cardHeight ?? this.cardHeight,
+      cardWidth: cardWidth ?? this.cardWidth,
+      rowHeight: rowHeight ?? this.rowHeight,
+      spacing: spacing ?? this.spacing,
+      fontSize: fontSize ?? this.fontSize,
+      iconSize: iconSize ?? this.iconSize,
+      scrollFadeEnabled: scrollFadeEnabled ?? this.scrollFadeEnabled,
+      scrollFadeExtent: scrollFadeExtent ?? this.scrollFadeExtent,
+    );
+  }
 }

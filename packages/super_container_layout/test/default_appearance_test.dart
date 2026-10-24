@@ -57,7 +57,7 @@ void main() {
       styles: {'custom': const ContainerStyle(radius: 22)},
       layouts: {'custom': const SuperLayoutConfig(east: false)},
       components: {
-        'custom': ScaffoldPageConfig(
+        'custom-page': ScaffoldPageConfig(
           placements: {
             ScaffoldPageRegion.endDrawer: ['slot'],
           },
@@ -73,7 +73,7 @@ void main() {
     expect(
       codec
           .fromJson(codec.toJson(appearance))
-          .scaffoldPage('custom')
+          .scaffoldPage('custom-page')
           .slotsOf(ScaffoldPageRegion.endDrawer),
       ['slot'],
     );
