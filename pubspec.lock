@@ -441,10 +441,10 @@ packages:
     dependency: "direct main"
     description:
       name: pro_image_editor
-      sha256: bc36694142eaf2e7458d084ccfb53a4facf8c2113d56926880f74c8c9a366d8a
+      sha256: d2ac8a4ce26e3674f8d59f3d32a54fb03412eddaa05daa9994b8b94ad7d4fb74
       url: "https://pub.dev"
     source: hosted
-    version: "14.15.0"
+    version: "14.19.0"
   pub_semver:
     dependency: transitive
     description:
@@ -473,10 +473,10 @@ packages:
     dependency: transitive
     description:
       name: shared_preferences_android
-      sha256: a67a1a6a62b241ad4ddd8a97f5a12bb547c445190930233b63cd28cc0a104a76
+      sha256: "732b86c5c726402ac781a9fe14fe9cadad3c7dde8f99c72ab43a75a307077336"
       url: "https://pub.dev"
     source: hosted
-    version: "2.5.1"
+    version: "2.5.2"
   shared_preferences_foundation:
     dependency: transitive
     description:
@@ -661,10 +661,10 @@ packages:
     dependency: transitive
     description:
       name: web
-      sha256: "868d88a33d8a87b18ffc05f9f030ba328ffefba92d6c127917a2ba740f9cfe4a"
+      sha256: e119e82ac4795c7925103b7cf3768191f33941b99e7ccffbd6c645201d9f606b
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.1"
+    version: "1.1.2"
   webview_flutter:
     dependency: transitive
     description:

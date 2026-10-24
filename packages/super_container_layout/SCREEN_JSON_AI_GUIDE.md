@@ -216,6 +216,9 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
   - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).
 - **`"registry:Card"` $\rightarrow$ `Card` / `Container` de Flutter** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
   - `child` (1 slot unique max) : composant enfant contenu dans la carte (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants).
+- **`"registry:IterableContent"` $\rightarrow$ Surface stylisée + `SuperLayout` intégré (alternative compacte à `Card` + `Layout`)** :
+  - Contrairement à `Card` (qui n'accepte qu'un seul `child` dans une config `"native"` et nécessite un second composant `"layout"` enfant), `IterableContent` fusionne directement **une surface stylisée** (`styles[id]`) et **une grille `SuperLayout`** (`components[id]` avec `"type": "layout"`) sous **le même `id`** !
+  - De plus, `IterableContent` fournit automatiquement un `ContentHoverScope` à tous ses composants enfants, ce qui permet aux `Value`, `Action` et `styles` placés à l'intérieur de réagir à l'état automatique `contentHover` dès que le curseur survole la carte.
 
 Propriétés communes dans `components[id]` pour `"native"` : `useDefaultNavigation` (`bool?`), `regions` (`Map<string, bool>`), `placements` (`Map<string, List<{"id": string, "type": string}>>`), `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
 
@@ -231,6 +234,7 @@ Affiche un texte, un champ de saisie, une case à cocher ou un interrupteur :
 - Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
 - `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}`.
 - `field` (`SuperTextFieldConfig`, pour `mode: "input"`).
+- `propertyBindings` & `states` : liaisons repository et surcharges par état (voir § 4.7).
 
 ### 4.4. `"action"` (`SuperActionConfig`)
 Affiche un bouton interactif :
@@ -244,19 +248,24 @@ Affiche un bouton interactif :
 - `enabled` (`bool`, défaut `true`).
 - Typographie & Couleurs : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `iconColor`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`.
 - `style` (`ContainerStyle`) : style de surface avancé optionnel.
-- `propertyBindings` & `states` : liaisons repository et états nommés/automatiques.
+- `propertyBindings` & `states` : liaisons repository et états nommés/automatiques (voir § 4.7).
 
-### 4.5. `"list"` (`SuperListViewConfig`)
-Répète un gabarit `template` pour chaque élément d'un tableau JSON :
-- `binding` : `"clients"` (si imbriquée) ou `{"repositoryId": "<32hex>", "path": "clients"}`.
-- `axis` : `"vertical"` (défaut) ou `"horizontal"`.
-- `wrap` : `bool` (`false` par défaut ; si `true`, disposition fluide en grille `Wrap`).
-- `wrapSizing` : `"fixed"` ou `"automatic"`.
-- `itemWidth` (`160`), `itemExtent` (`56`) : `number` entre **`16` et `2000`**.
-- `spacing` (`0`) : `number` entre **`0` et `200`**.
-- `allowAdd` (`false`), `allowRemove` (`false`) : `bool`.
-- `emptyText` : `string` (`"Aucun élément"`).
-- `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes. Le style visuel de la ligne est stocké sous le même `id` dans `styles[id]`.
+### 4.5. `"list"` (`SuperListViewConfig`) — Embarque un `IterableContent` par défaut
+Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
+- **Important (`IterableContent` déjà intégré par défaut)** : chaque ligne d'une `ListView` **est déjà enveloppée automatiquement dans un `IterableContent`** par le framework !
+  - Le `SuperLayout` de cet `IterableContent` implicite est directement l'objet **`template`** (alias `"row"`) de `components[listId]`.
+  - Le `ContainerStyle` de cet `IterableContent` implicite (couleur de fond de la ligne, rayon, bordure, padding, survol, état sélectionné `states.selected`) est directement stocké sous le **même `listId`** dans **`styles[listId]`**.
+  - **À ne JAMAIS faire** : n'ajoute pas de `"registry:Card"` ni de `"registry:IterableContent"` dans `template.placements.center` pour styliser la ligne elle-même, cela créerait une double boîte inutile. Place directement tes composants feuilles (`Value`, `Action`, etc.) dans les zones de `template.placements` !
+- Propriétés de `components[listId]` (`type: "list"`) :
+  - `binding` : `"clients"` (si imbriquée) ou `{"repositoryId": "<32hex>", "path": "clients"}`.
+  - `axis` : `"vertical"` (défaut) ou `"horizontal"`.
+  - `wrap` : `bool` (`false` par défaut ; si `true`, disposition fluide en grille `Wrap`).
+  - `wrapSizing` : `"fixed"` ou `"automatic"`.
+  - `itemWidth` (`160`), `itemExtent` (`56`) : `number` entre **`16` et `2000`**.
+  - `spacing` (`0`) : `number` entre **`0` et `200`**.
+  - `allowAdd` (`false`), `allowRemove` (`false`) : `bool` (génère automatiquement le bouton `+` d'ajout et l'icône de suppression sur chaque ligne : inutile de créer des boutons `Action` manuels pour ajouter/supprimer une ligne).
+  - `emptyText` : `string` (`"Aucun élément"`).
+  - `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes.
 
 ### 4.6. `styles` (`ContainerStyle`) et ses bornes
 - `color`, `borderColor`, `hoverColor` : `"#RRGGBB"` ou `"#AARRGGBB"`.
@@ -272,8 +281,187 @@ Répète un gabarit `template` pour chaque élément d'un tableau JSON :
 - `neon` : `true` ou `{"enabled": true, "color": "#00FFFF", "intensity": 0..3}`.
 - `shadow` / `innerShadow` : `{"enabled": true, "color": "#000000", "opacity": 0..1, "blur": 0..48, "spread": -32..32, "dx": -32..32, "dy": -32..32}`.
 - `transform` : `{"dx": -48..48, "dy": -48..48, "rotation": -180..180, "scale": 0.5..1.5}`.
+- `states` : surcharges de surface par état (voir § 4.7).
 
-## 5. Chat Vibe du mode édition
+### 4.7. États interactifs et styles conditionnels (`states`)
+
+**Tu peux configurer des styles différents au survol, à la sélection, au focus, etc.** Ces états sont déclenchés par le moteur : ne crée pas de composant supplémentaire pour représenter chaque état.
+
+#### États disponibles et emplacement JSON
+
+| État | Surfaces (`styles[id].states`) | `Value` (`components[id].states`) | `Action` (`components[id].states`) |
+| :--- | :--- | :--- | :--- |
+| Survol du composant lui-même | `hover` | `hover` | `hover` |
+| Ligne de `ListView` sélectionnée | `selected` | `selected` (enfant de la ligne) | `selected` (enfant de la ligne) |
+| Survol du contenu englobant | `automatic.contentHover` | `automatic.contentHover` | `automatic.contentHover` |
+| Focus clavier | Non | `automatic.focused` (`mode: "input"`) | `automatic.focused` |
+| Désactivé | Non | `automatic.disabled` (`mode: "input"`, `enabled: false`) | `automatic.disabled` (`enabled: false`) |
+| Lecture seule | Non | `automatic.readOnly` (`mode: "input"`, `readOnly: true`) | Non |
+
+- `selected` correspond à la **sélection de données d'une ligne**, pas à la sélection d'un widget dans l'éditeur.
+- `contentHover` est fourni par le `ContentHoverScope` de l'`IterableContent` englobant (notamment celui déjà présent sur chaque ligne de `ListView`). Contrairement à `hover`, il permet de modifier un enfant dès que la souris survole la ligne, sans devoir survoler cet enfant.
+- `focused`, `disabled` et `readOnly` sont évalués sur la configuration source, avant application des surcharges d'état. Ne les utilise pas pour simuler leur propre déclenchement.
+- N'invente pas d'états `pressed`, `active` ou `checked` dans `automatic`. `interactionEffect: "pressed"` est un effet visuel distinct, pas un état JSON configurable.
+
+#### Format obligatoire des surcharges
+
+- Chaque objet `states` doit contenir **`"named": {}`**, même sans état métier nommé.
+- Pour une **surface**, une surcharge est `{"style": { ... }, "properties": ["..."]}`.
+- Pour un **Value / Action**, une surcharge est `{"config": { ... }, "properties": ["..."]}`.
+- **`properties` est indispensable** : seules les propriétés ou groupes listés sont appliqués. Un objet `style` ou `config` rempli avec `"properties": []` n'a aucun effet.
+- N'imbrique pas de `states` dans les objets `style` ou `config` d'une surcharge.
+- `hover` et `selected` se placent directement dans `states`, **jamais dans `states.automatic`**. Les autres états automatiques se placent dans `states.automatic`.
+
+Les noms acceptés dans `properties` sont :
+
+| Cible | Noms de propriétés / groupes |
+| :--- | :--- |
+| Surface | `background` (`color` + `fill`), `corners` (`radius` + `radii`), `border` (`borderWidth`, `borderWidths`, `borderColor`, `borderLine`), `shadow` (`elevation`, `shadowOpacity`, `shadow`), `innerShadow`, `neon`, `padding`, `margin`, `designSystem`, `interaction` (`interactionEffect`), `hover` (`hoverEffect`, `hoverTint`, `hoverColor`), `opacity`, `blur` (`backdropBlur`), `pattern` (`pattern`, `patternOpacity`), `transform` |
+| Value | `content` (`mode`, `kind`, `initialText`, `initialBool`, `obscureText`, `minLines`, `maxLines`, `field`), `textLabel` (`label`), `placeholder`, `enabled` (`enabled` + `readOnly`), `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `textAlign`, `lineHeight`, `letterSpacing`, `binding` |
+| Action | `content` (`kind`, `variant`, `iconPosition`, `iconSpacing`), `textLabel` (`label`), `tooltip`, `icon`, `enabled`, `fontFamily`, `fontSize`, `iconSize`, `fontWeight`, `italic`, `color`, `iconColor`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `padding` (`horizontalPadding` + `verticalPadding`), `textAlign`, `letterSpacing`, `style` |
+
+**Attention aux groupes** : `"properties": ["background"]` surcharge le fond complet, pas seulement `color`. Fournis toutes les valeurs du groupe que tu souhaites conserver ; les valeurs omises dans la surcharge reprennent les valeurs par défaut, pas nécessairement celles de la base. De même, `Action.properties: ["style"]` remplace tout le style de surface de l'action.
+
+#### Exemple : ligne survolée et sélectionnée
+
+Ce patch s'applique à une liste existante d'ID `list-clients`. Le style cible directement sa surface de ligne implicite :
+
+```json
+{
+  "styles": {
+    "list-clients": {
+      "color": "#FFFFFF",
+      "radius": 10,
+      "states": {
+        "named": {},
+        "hover": {
+          "style": { "color": "#EEF2FF" },
+          "properties": ["background"]
+        },
+        "selected": {
+          "style": {
+            "color": "#DCE4FF",
+            "borderColor": "#5268D9",
+            "borderWidth": 2
+          },
+          "properties": ["background", "border"]
+        }
+      }
+    }
+  }
+}
+```
+
+`hoverEffect` / `hoverTint` / `hoverColor` sont un raccourci pour un effet de survol de surface. Utilise `states.hover` pour des surcharges explicites de fond, bordure, rayon, etc. ; `hoverEffect: true` n'est pas requis pour activer `states.hover`.
+
+#### Exemple : bouton au survol et champ au focus
+
+```json
+{
+  "components": {
+    "btn-save": {
+      "type": "action",
+      "label": "Enregistrer",
+      "backgroundColor": "#5268D9",
+      "states": {
+        "named": {},
+        "hover": {
+          "config": { "backgroundColor": "#3548A8", "elevation": 4 },
+          "properties": ["backgroundColor", "elevation"]
+        }
+      }
+    },
+    "input-nom": {
+      "type": "value",
+      "mode": "input",
+      "states": {
+        "named": {},
+        "automatic": {
+          "focused": {
+            "config": { "color": "#5268D9" },
+            "properties": ["color"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Ces entrées configurent les composants ; si tu les crées, ajoute aussi leurs références aux `placements` du parent.
+
+#### Exemple : révéler visuellement une action au survol de la ligne
+
+Place `btn-row-edit` dans le `template.placements` d'une liste existante (ou dans un `IterableContent`). L'état à utiliser est **`contentHover`**, pas `hover` :
+
+```json
+{
+  "components": {
+    "btn-row-edit": {
+      "type": "action",
+      "kind": "icon",
+      "variant": "surface",
+      "icon": "edit",
+      "style": { "opacity": 0 },
+      "states": {
+        "named": {},
+        "automatic": {
+          "contentHover": {
+            "config": { "style": { "opacity": 1 } },
+            "properties": ["style"]
+          },
+          "focused": {
+            "config": { "style": { "opacity": 1 } },
+            "properties": ["style"]
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+La variante `surface` garantit ici l'utilisation du style de surface personnalisé. `opacity: 0` rend le bouton transparent, **sans retirer son emplacement ni ses interactions** ; ce n'est pas une propriété de visibilité. Le focus le révèle aussi pour la navigation clavier. Il n'existe pas de propriété `visible` dans ces surcharges.
+
+#### États métier nommés et priorité
+
+Pour un style dépendant des données, utilise `states.binding` pour lire un **nom d'état sous forme de chaîne** dans le repository, `states.named` pour définir les configurations correspondantes et `states.namedProperties` pour déclarer leurs groupes surchargés. Exemple de surface :
+
+```json
+{
+  "states": {
+    "binding": "0123456789abcdef0123456789abcdef:clients[?].statut",
+    "named": {
+      "urgent": { "color": "#FFF0F0" }
+    },
+    "namedProperties": {
+      "urgent": ["background"]
+    }
+  }
+}
+```
+
+Cet extrait représente le contenu d'un style de surface, pas un document d'écran complet. Pour `Value` et `Action`, `named[état]` contient directement une configuration du composant (sans enveloppe `config`), avec les noms de groupes de sa propre famille dans `namedProperties`.
+
+Plusieurs états peuvent être actifs simultanément. Ils sont appliqués dans l'ordre et **le dernier gagne pour les propriétés communes**. Sans `order` explicite : états nommés, puis `hover`, puis `selected`, puis les états de `automatic` dans leur ordre de déclaration. Dans le premier exemple, le fond sélectionné l'emporte donc sur le fond survolé.
+
+Pour personnaliser la priorité, `states.order` accepte les noms métier et les clés automatiques préfixées par un caractère nul échappé JSON : par exemple `["\u0000selected", "\u0000hover"]` donne priorité au survol sur la sélection. Utilise `"\u0000contentHover"`, `"\u0000focused"`, etc. pour les autres états automatiques, et conserve l'ordre existant lors d'un patch si tu ne souhaites pas changer les priorités.
+
+---
+
+## 5. Composants implicites déjà fournis par défaut (À ne JAMAIS dupliquer)
+
+Certains widgets structurels sont instanciés automatiquement par le framework. Tu dois les **configurer** plutôt que d'en ajouter de nouveaux par-dessus :
+
+| Contexte | Ce qui est déjà fourni par défaut | Comment le configurer (sans le recréer) |
+| :--- | :--- | :--- |
+| **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"contA"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["contA"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
+| **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** complet (surface stylisée + `SuperLayout` + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template` et le style de la carte de ligne dans `styles["<listId>"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
+| **`ApplicationBar`** | Tant que `useDefaultNavigation` vaut `true` (défaut), Flutter affiche automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`) à gauche, ainsi que les boutons système à droite. | N'ajoute pas de bouton menu/retour dans `leading` sauf si tu passes explicitement `"useDefaultNavigation": false`. |
+
+---
+
+## 6. Chat Vibe du mode édition
 
 La bannière du mode édition ouvre un chat flottant et déplaçable. Chaque demande envoie à Gemini la conversation et l’export JSON courant de l’apparence. La réponse est appliquée avec `AppearanceTransfer.applyVibe` ; elle doit suivre la forme `{"message":"résumé","vibe":{"components":{...},"styles":{...}}}`.
 

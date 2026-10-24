@@ -600,7 +600,7 @@ void main() {
         NativeComponentConfig(),
       );
       expect(changed, isA<DefaultAppearance>());
-      expect((changed as DefaultAppearance).spacing, 19);
+      expect((changed).spacing, 19);
       expect(changed.resetLayouts().components, isEmpty);
     },
   );

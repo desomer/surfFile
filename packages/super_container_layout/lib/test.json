@@ -11,7 +11,31 @@
     "backgroundOpacity": 1.0,
     "windowOpacity": 1.0,
     "windowEffect": "transparent",
-    "styles": {},
+    "styles": {
+      "Lks2zoQw9J": {
+        "color": 1641693505,
+        "fill": {
+          "type": "solid",
+          "start": 4283590873,
+          "end": 4290221300,
+          "angle": 45.0,
+          "radius": 0.8
+        },
+        "radius": 0.0,
+        "borderWidth": 0.0,
+        "borderColor": null,
+        "elevation": 0.0,
+        "shadowOpacity": 0.2,
+        "neon": null,
+        "padding": 0.0,
+        "margin": 0.0,
+        "designSystem": "material",
+        "interactionEffect": "ripple",
+        "hoverEffect": false,
+        "hoverTint": "material",
+        "hoverColor": null
+      }
+    },
     "components": {
       "Lks2zoQw9J": {
         "type": "list",
@@ -150,6 +174,118 @@
         "textAlign": "start",
         "lineHeight": null,
         "letterSpacing": null
+      },
+      "root": {
+        "type": "native",
+        "regions": {
+          "appBar": true,
+          "body": true
+        },
+        "placements": {
+          "appBar": [
+            {
+              "id": "main-appbar",
+              "type": "registry:ApplicationBar"
+            }
+          ],
+          "body": [
+            {
+              "id": "scaffold:body",
+              "type": "scaffold:body"
+            }
+          ]
+        }
+      },
+      "main-appbar": {
+        "type": "native",
+        "regions": {
+          "title": true,
+          "actions": true
+        },
+        "placements": {
+          "title": [
+            {
+              "id": "app-title",
+              "type": "registry:Value"
+            }
+          ],
+          "actions": [
+            {
+              "id": "btn-help",
+              "type": "registry:Action"
+            }
+          ]
+        }
+      },
+      "app-title": {
+        "type": "value",
+        "mode": "display",
+        "initialText": "Liste des éléments",
+        "label": "",
+        "placeholder": "",
+        "enabled": true,
+        "readOnly": false,
+        "obscureText": false,
+        "minLines": 1,
+        "maxLines": 1,
+        "fontFamily": null,
+        "fontSize": 20.0,
+        "fontWeight": 600,
+        "italic": null,
+        "color": null,
+        "textAlign": "start",
+        "lineHeight": null,
+        "letterSpacing": null
+      },
+      "btn-help": {
+        "type": "action",
+        "kind": "icon",
+        "variant": "icon",
+        "label": "Aide",
+        "tooltip": "Aide",
+        "icon": "info",
+        "iconPosition": "leading",
+        "iconSize": null,
+        "iconSpacing": 8.0,
+        "enabled": true,
+        "fontFamily": null,
+        "fontSize": null,
+        "fontWeight": null,
+        "italic": null,
+        "color": null,
+        "iconColor": null,
+        "backgroundColor": null,
+        "borderColor": null,
+        "radius": null,
+        "borderWidth": null,
+        "elevation": null,
+        "horizontalPadding": null,
+        "verticalPadding": null,
+        "textAlign": "center",
+        "letterSpacing": null,
+        "style": {
+          "color": null,
+          "fill": {
+            "type": "solid",
+            "start": 4283590873,
+            "end": 4290221300,
+            "angle": 45.0,
+            "radius": 0.8
+          },
+          "radius": 20.0,
+          "borderWidth": 0.0,
+          "borderColor": null,
+          "elevation": 0.0,
+          "shadowOpacity": 0.2,
+          "neon": null,
+          "padding": 0.0,
+          "margin": 0.0,
+          "designSystem": "material",
+          "interactionEffect": "ripple",
+          "hoverEffect": true,
+          "hoverTint": "material",
+          "hoverColor": 4293455615
+        }
       }
     },
     "pageCatalog": {
