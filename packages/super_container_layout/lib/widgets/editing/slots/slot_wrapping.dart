@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../../models/native_component_config.dart';
+import '../../../models/scaffold_page_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../theme/appearance.dart';
@@ -75,23 +76,23 @@ String uniqueInstanceId(
     ...occupiedIds,
     ...appearance.styles.keys,
     ...appearance.layouts.keys,
-    ...appearance.nativeComponents.keys,
-    ...appearance.scaffoldPages.keys,
-    ...appearance.valueComponents.keys,
-    ...appearance.actionComponents.keys,
-    ...appearance.listComponents.keys,
+    ...appearance.components.keys,
     if (registry != null) ...[
       ...registry.superLayoutConfigById.keys,
-      ...registry.nativeComponentConfigById.keys,
       ...registry.containerStyleById.keys,
+      ...registry.componentConfigById.keys,
+      ...registry.nativeComponentConfigById.keys,
       ...registry.scaffoldPageConfigById.keys,
       ...registry.valueConfigById.keys,
       ...registry.actionConfigById.keys,
       ...registry.listConfigById.keys,
     ],
     for (final config in appearance.layouts.values) ...config.placedSlotIds,
-    for (final config in appearance.nativeComponents.values)
-      for (final ids in config.placements.values) ...ids,
+    for (final config in appearance.components.values)
+      if (config case final NativeComponentConfig native)
+        for (final ids in native.placements.values) ...ids
+      else if (config case final ScaffoldPageConfig scaffold)
+        for (final ids in scaffold.native.placements.values) ...ids,
   };
   for (var attempt = 0; attempt < 1000; attempt++) {
     final candidate = shortid.generate();

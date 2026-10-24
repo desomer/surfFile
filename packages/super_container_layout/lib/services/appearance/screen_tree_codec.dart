@@ -2,6 +2,7 @@ import 'package:flutter/painting.dart' show Axis;
 import 'package:material_ui/material_ui.dart' show Color, Size, ThemeMode;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 
+import '../../models/component_config.dart';
 import '../../models/editor_page_config.dart';
 import '../../models/json_syntax.dart';
 import '../../models/native_component_config.dart';
@@ -203,11 +204,11 @@ abstract final class ScreenTreeCodec {
         }
       }
     }
-    final natives = json['nativeComponents'];
-    if (natives is Map) {
-      for (final native in natives.values) {
-        if (native is Map) {
-          if (native.keys.any(
+    final comps = json['components'];
+    if (comps is Map) {
+      for (final comp in comps.values) {
+        if (comp is Map) {
+          if (comp.keys.any(
             (k) =>
                 _scaffoldRegions.contains(k) ||
                 _appBarRegions.contains(k) ||
@@ -216,7 +217,7 @@ abstract final class ScreenTreeCodec {
           )) {
             return true;
           }
-          final placements = native['placements'];
+          final placements = comp['placements'];
           if (placements is Map) {
             for (final list in placements.values) {
               if (list is Map) return true;
@@ -313,8 +314,7 @@ abstract final class ScreenTreeCodec {
       windowEffect = parsedEffect;
     }
 
-    // 2. Dictionnaires plats explicites (styles, valueComponents, listComponents,
-    //    scaffoldPages, nativeComponents, layouts, pageCatalog)
+    // 2. Dictionnaires plats explicites (styles, components, layouts, pageCatalog)
     if (input.containsKey('styles')) {
       final rawStyles = input['styles'];
       if (rawStyles is! Map) {
@@ -332,86 +332,47 @@ abstract final class ScreenTreeCodec {
       }
     }
 
-    if (input.containsKey('valueComponents') &&
-        input['valueComponents'] != null) {
-      final rawValues = input['valueComponents'];
-      if (rawValues is! Map) {
-        throw const FormatException('Invalid "valueComponents" map.');
+    if (input.containsKey('components') && input['components'] != null) {
+      final rawComponents = input['components'];
+      if (rawComponents is! Map) {
+        throw const FormatException('Invalid "components" map.');
       }
-      for (final entry in rawValues.entries) {
-        final id = _requireId(entry.key, 'valueComponents');
+      for (final entry in rawComponents.entries) {
+        final id = _requireId(entry.key, 'components');
         if (entry.value is! Map) {
-          throw const FormatException('Invalid "valueComponents" map.');
+          throw const FormatException('Invalid "components" map.');
         }
-        final existing = state.valueComponents[id];
-        state.valueComponents[id] = existing != null && isMerge
-            ? existing.patchFromJson(entry.value as Map)
-            : SuperValueConfig.fromJson(entry.value);
-      }
-    }
-
-    if (input.containsKey('actionComponents') &&
-        input['actionComponents'] != null) {
-      final rawActions = input['actionComponents'];
-      if (rawActions is! Map) {
-        throw const FormatException('Invalid "actionComponents" map.');
-      }
-      for (final entry in rawActions.entries) {
-        final id = _requireId(entry.key, 'actionComponents');
-        if (entry.value is! Map) {
-          throw const FormatException('Invalid "actionComponents" map.');
+        final map = entry.value as Map;
+        final rawType = map['type'] ?? map['componentType'];
+        final payload = <String, Object?>{
+          for (final e in map.entries)
+            if (e.key is String &&
+                e.key != 'type' &&
+                e.key != 'componentType')
+              e.key as String: e.value,
+        };
+        if (rawType == 'native' ||
+            (rawType == null &&
+                map.keys.any(
+                  (k) =>
+                      k == 'placements' ||
+                      k == 'regions' ||
+                      _scaffoldRegions.contains(k) ||
+                      _appBarRegions.contains(k) ||
+                      _bottomBarRegions.contains(k) ||
+                      k == 'child',
+                ))) {
+          state.compileNativeMap(id, payload, isMerge: isMerge);
+        } else {
+          final existing = state.components[id];
+          if (existing != null &&
+              isMerge &&
+              (rawType == null || existing.componentType == rawType)) {
+            state.components[id] = existing.patchFromJson(payload);
+          } else {
+            state.components[id] = ComponentConfig.fromJson(map);
+          }
         }
-        final existing = state.actionComponents[id];
-        state.actionComponents[id] = existing != null && isMerge
-            ? existing.patchFromJson(entry.value as Map)
-            : SuperActionConfig.fromJson(entry.value);
-      }
-    }
-
-    if (input.containsKey('listComponents') &&
-        input['listComponents'] != null) {
-      final rawLists = input['listComponents'];
-      if (rawLists is! Map) {
-        throw const FormatException('Invalid "listComponents" map.');
-      }
-      for (final entry in rawLists.entries) {
-        final id = _requireId(entry.key, 'listComponents');
-        if (entry.value is! Map) {
-          throw const FormatException('Invalid "listComponents" map.');
-        }
-        final existing = state.listComponents[id];
-        state.listComponents[id] = existing != null && isMerge
-            ? existing.patchFromJson(entry.value as Map)
-            : SuperListViewConfig.fromJson(entry.value);
-      }
-    }
-
-    if (input.containsKey('scaffoldPages') && input['scaffoldPages'] != null) {
-      final rawPages = input['scaffoldPages'];
-      if (rawPages is! Map) {
-        throw const FormatException('Invalid "scaffoldPages" map.');
-      }
-      for (final entry in rawPages.entries) {
-        final id = _requireId(entry.key, 'scaffoldPages');
-        if (entry.value is! Map) {
-          throw const FormatException('Invalid "scaffoldPages" map.');
-        }
-        state.scaffoldPages[id] = ScaffoldPageConfig.fromJson(entry.value);
-      }
-    }
-
-    if (input.containsKey('nativeComponents') &&
-        input['nativeComponents'] != null) {
-      final rawNative = input['nativeComponents'];
-      if (rawNative is! Map) {
-        throw const FormatException('Invalid "nativeComponents" map.');
-      }
-      for (final entry in rawNative.entries) {
-        final id = _requireId(entry.key, 'nativeComponents');
-        if (entry.value is! Map) {
-          throw const FormatException('Invalid "nativeComponents" map.');
-        }
-        state.compileNativeMap(id, entry.value as Map, isMerge: isMerge);
       }
     }
 
@@ -483,11 +444,7 @@ abstract final class ScreenTreeCodec {
       windowEffect: windowEffect,
       styles: state.styles,
       layouts: state.layouts,
-      scaffoldPages: state.scaffoldPages,
-      nativeComponents: state.nativeComponents,
-      valueComponents: state.valueComponents,
-      actionComponents: state.actionComponents,
-      listComponents: state.listComponents,
+      components: state.components,
       pageCatalog: EditorPageCatalog(
         pages: state.pages,
         homePageId: state.homePageId,
@@ -509,25 +466,9 @@ abstract final class ScreenTreeCodec {
         for (final e in compiledAppearance.layouts.entries)
           e.key: e.value.toJson(),
       },
-      'scaffoldPages': {
-        for (final e in compiledAppearance.scaffoldPages.entries)
-          e.key: e.value.toJson(),
-      },
-      'nativeComponents': {
-        for (final e in compiledAppearance.nativeComponents.entries)
-          e.key: e.value.toJson(),
-      },
-      'valueComponents': {
-        for (final e in compiledAppearance.valueComponents.entries)
-          e.key: e.value.toJson(),
-      },
-      'actionComponents': {
-        for (final e in compiledAppearance.actionComponents.entries)
-          e.key: e.value.toJson(),
-      },
-      'listComponents': {
-        for (final e in compiledAppearance.listComponents.entries)
-          e.key: e.value.toJson(),
+      'components': {
+        for (final e in compiledAppearance.components.entries)
+          e.key: e.value.toTypedJson(),
       },
       'pageCatalog': compiledAppearance.pageCatalog.toJson(),
     };
@@ -558,10 +499,18 @@ class _Decompiler {
         refCounts[id] = (refCounts[id] ?? 0) + 1;
       }
     }
-    for (final native in appearance.nativeComponents.values) {
-      for (final ids in native.placements.values) {
-        for (final id in ids) {
-          refCounts[id] = (refCounts[id] ?? 0) + 1;
+    for (final comp in appearance.components.values) {
+      if (comp case final NativeComponentConfig native) {
+        for (final ids in native.placements.values) {
+          for (final id in ids) {
+            refCounts[id] = (refCounts[id] ?? 0) + 1;
+          }
+        }
+      } else if (comp case final ScaffoldPageConfig scaffold) {
+        for (final ids in scaffold.native.placements.values) {
+          for (final id in ids) {
+            refCounts[id] = (refCounts[id] ?? 0) + 1;
+          }
         }
       }
     }
@@ -571,10 +520,7 @@ class _Decompiler {
   final bool includeInlineStyles;
   final consumedLayouts = <String>{};
   final consumedStyles = <String>{};
-  final consumedNatives = <String>{};
-  final consumedValues = <String>{};
-  final consumedActions = <String>{};
-  final consumedLists = <String>{};
+  final consumedComponents = <String>{};
   final refCounts = <String, int>{};
   final activeStack = <String>{};
 
@@ -616,10 +562,30 @@ class _Decompiler {
       if (config.label != null) 'label': config.label,
       if (config.positioning != d.positioning)
         'positioning': config.positioning.name,
-      if (config.north) 'north': true,
-      if (config.south) 'south': true,
-      if (config.west) 'west': true,
-      if (config.east) 'east': true,
+      if (config.north)
+        'north': true
+      else if (zones.containsKey('north') ||
+          zones.containsKey('nw') ||
+          zones.containsKey('ne'))
+        'north': false,
+      if (config.south)
+        'south': true
+      else if (zones.containsKey('south') ||
+          zones.containsKey('sw') ||
+          zones.containsKey('se'))
+        'south': false,
+      if (config.west)
+        'west': true
+      else if (zones.containsKey('west') ||
+          zones.containsKey('nw') ||
+          zones.containsKey('sw'))
+        'west': false,
+      if (config.east)
+        'east': true
+      else if (zones.containsKey('east') ||
+          zones.containsKey('ne') ||
+          zones.containsKey('se'))
+        'east': false,
       if (config.nw != d.nw) 'nw': config.nw.name,
       if (config.ne != d.ne) 'ne': config.ne.name,
       if (config.sw != d.sw) 'sw': config.sw.name,
@@ -742,13 +708,13 @@ class _Decompiler {
     try {
       switch (shortType) {
         case 'Value':
-          if (appearance.valueComponents[id] case final val?) {
-            consumedValues.add(id);
+          if (appearance.tryComponent<SuperValueConfig>(id) case final val?) {
+            consumedComponents.add(id);
             node.addAll(val.toCompactJson());
           }
         case 'Action':
-          if (appearance.actionComponents[id] case final act?) {
-            consumedActions.add(id);
+          if (appearance.tryComponent<SuperActionConfig>(id) case final act?) {
+            consumedComponents.add(id);
             node.addAll(act.toCompactJson());
           }
         case 'Card':
@@ -759,8 +725,9 @@ class _Decompiler {
               if (compactStyle.isNotEmpty) node['style'] = compactStyle;
             }
           }
-          if (appearance.nativeComponents[id] case final native?) {
-            consumedNatives.add(id);
+          if (appearance.tryComponent<NativeComponentConfig>(id)
+              case final native?) {
+            consumedComponents.add(id);
             final childIds = native.slotsOf('child');
             if (childIds.length == 1 &&
                 native.regions.keys.every((k) => k == 'child') &&
@@ -799,8 +766,9 @@ class _Decompiler {
             node.addAll(decompileLayout(id, layout));
           }
         case 'ListView':
-          if (appearance.listComponents[id] case final list?) {
-            consumedLists.add(id);
+          if (appearance.tryComponent<SuperListViewConfig>(id)
+              case final list?) {
+            consumedComponents.add(id);
             node.addAll(list.toCompactJson());
           }
           if (includeInlineStyles) {
@@ -815,8 +783,9 @@ class _Decompiler {
             node['template'] = decompileLayout(id, template);
           }
         case 'ApplicationBar' || 'BottomNavigationBar':
-          if (appearance.nativeComponents[id] case final native?) {
-            consumedNatives.add(id);
+          if (appearance.tryComponent<NativeComponentConfig>(id)
+              case final native?) {
+            consumedComponents.add(id);
             node.addAll(decompileNative(id, native));
           }
       }
@@ -829,12 +798,11 @@ class _Decompiler {
   Map<String, Object?> decompile() {
     final screens = <String, Object?>{};
     // 1. Écran principal `root` / `contA`
-    if (appearance.nativeComponents.containsKey('root') ||
-        appearance.layouts.containsKey('contA')) {
-      final rootNative = appearance.nativeComponents['root'];
+    final rootNative = appearance.tryComponent<NativeComponentConfig>('root');
+    if (rootNative != null || appearance.layouts.containsKey('contA')) {
       final rootScreen = <String, Object?>{};
       if (rootNative != null) {
-        consumedNatives.add('root');
+        consumedComponents.add('root');
         rootScreen.addAll(decompileNative('root', rootNative));
       }
       final bodySlots = rootNative?.slotsOf('body') ?? const ['scaffold:body'];
@@ -863,8 +831,9 @@ class _Decompiler {
           'defaultParameters': page.defaultParameters,
         if (appearance.pageCatalog.homePageId == page.id) 'home': true,
       };
-      if (appearance.nativeComponents[page.id] case final native?) {
-        consumedNatives.add(page.id);
+      if (appearance.tryComponent<NativeComponentConfig>(page.id)
+          case final native?) {
+        consumedComponents.add(page.id);
         pageScreen.addAll(decompileNative(page.id, native));
       }
       screens[page.id] = pageScreen;
@@ -879,22 +848,16 @@ class _Decompiler {
         if (!consumedLayouts.contains(e.key))
           e.key: decompileLayout(e.key, e.value),
     };
-    final remainingNatives = {
-      for (final e in appearance.nativeComponents.entries)
-        if (!consumedNatives.contains(e.key))
-          e.key: decompileNative(e.key, e.value),
-    };
-    final remainingValues = {
-      for (final e in appearance.valueComponents.entries)
-        if (!consumedValues.contains(e.key)) e.key: e.value.toCompactJson(),
-    };
-    final remainingActions = {
-      for (final e in appearance.actionComponents.entries)
-        if (!consumedActions.contains(e.key)) e.key: e.value.toCompactJson(),
-    };
-    final remainingLists = {
-      for (final e in appearance.listComponents.entries)
-        if (!consumedLists.contains(e.key)) e.key: e.value.toCompactJson(),
+    final remainingComponents = {
+      for (final e in appearance.components.entries)
+        if (!consumedComponents.contains(e.key))
+          e.key: switch (e.value) {
+            final NativeComponentConfig n => {
+              'type': 'native',
+              ...decompileNative(e.key, n),
+            },
+            final other => other.toTypedCompactJson(),
+          },
     };
 
     return {
@@ -910,15 +873,7 @@ class _Decompiler {
       'styles': remainingStyles,
       if (screens.isNotEmpty) 'screens': screens,
       if (remainingLayouts.isNotEmpty) 'layouts': remainingLayouts,
-      if (appearance.scaffoldPages.isNotEmpty)
-        'scaffoldPages': {
-          for (final e in appearance.scaffoldPages.entries)
-            e.key: e.value.toJson(),
-        },
-      if (remainingNatives.isNotEmpty) 'nativeComponents': remainingNatives,
-      if (remainingValues.isNotEmpty) 'valueComponents': remainingValues,
-      if (remainingActions.isNotEmpty) 'actionComponents': remainingActions,
-      if (remainingLists.isNotEmpty) 'listComponents': remainingLists,
+      'components': remainingComponents,
       'pageCatalog': appearance.pageCatalog.toJson(),
     };
   }
@@ -928,11 +883,7 @@ class _CompilationState {
   _CompilationState({
     required this.styles,
     required this.layouts,
-    required this.scaffoldPages,
-    required this.nativeComponents,
-    required this.valueComponents,
-    required this.actionComponents,
-    required this.listComponents,
+    required this.components,
     required this.pages,
     required this.homePageId,
   });
@@ -940,38 +891,41 @@ class _CompilationState {
   factory _CompilationState.fromAppearance(Appearance a) => _CompilationState(
     styles: Map<String, ContainerStyle>.of(a.styles),
     layouts: Map<String, SuperLayoutConfig>.of(a.layouts),
-    scaffoldPages: Map<String, ScaffoldPageConfig>.of(a.scaffoldPages),
-    nativeComponents: Map<String, NativeComponentConfig>.of(a.nativeComponents),
-    valueComponents: Map<String, SuperValueConfig>.of(a.valueComponents),
-    actionComponents: Map<String, SuperActionConfig>.of(a.actionComponents),
-    listComponents: Map<String, SuperListViewConfig>.of(a.listComponents),
+    components: Map<String, ComponentConfig>.of(a.components),
     pages: List<EditorPageConfig>.of(a.pageCatalog.pages),
     homePageId: a.pageCatalog.homePageId,
   );
 
   final Map<String, ContainerStyle> styles;
   final Map<String, SuperLayoutConfig> layouts;
-  final Map<String, ScaffoldPageConfig> scaffoldPages;
-  final Map<String, NativeComponentConfig> nativeComponents;
-  final Map<String, SuperValueConfig> valueComponents;
-  final Map<String, SuperActionConfig> actionComponents;
-  final Map<String, SuperListViewConfig> listComponents;
+  final Map<String, ComponentConfig> components;
   final List<EditorPageConfig> pages;
   String? homePageId;
   int _counter = 1;
 
+  T? tryComponent<T extends ComponentConfig>(String id) =>
+      switch (components[id]) {
+        final T v => v,
+        _ => null,
+      };
+
+  NativeComponentConfig? tryNative(String id) => switch (components[id]) {
+    final NativeComponentConfig n => n,
+    final ScaffoldPageConfig s => s.native,
+    _ => null,
+  };
+
   Set<String> get _allUsedIds => {
     ...styles.keys,
     ...layouts.keys,
-    ...scaffoldPages.keys,
-    ...nativeComponents.keys,
-    ...valueComponents.keys,
-    ...actionComponents.keys,
-    ...listComponents.keys,
+    ...components.keys,
     for (final p in pages) p.id,
     for (final l in layouts.values) ...l.placedSlotIds,
-    for (final n in nativeComponents.values)
-      ...n.placements.values.expand((ids) => ids),
+    for (final c in components.values)
+      if (c case final NativeComponentConfig n)
+        ...n.placements.values.expand((ids) => ids)
+      else if (c case final ScaffoldPageConfig s)
+        ...s.native.placements.values.expand((ids) => ids),
   };
 
   String _generateId(String parentId, String regionOrZone, String shortType) {
@@ -1045,8 +999,8 @@ class _CompilationState {
       final targetLayoutId = screenId == 'root' ? 'contA' : '$screenId-body';
       compileLayoutMap(targetLayoutId, map, isMerge: isMerge);
       if (screenId != 'root') {
-        final existingNative = nativeComponents[screenId];
-        nativeComponents[screenId] = NativeComponentConfig(
+        final existingNative = tryNative(screenId);
+        components[screenId] = NativeComponentConfig(
           useDefaultNavigation: existingNative?.useDefaultNavigation,
           regions: {...?existingNative?.regions, 'body': true},
           placements: {
@@ -1120,7 +1074,7 @@ class _CompilationState {
     }
 
     if (screenId == 'root' && !placements.containsKey('body')) {
-      final existingBody = nativeComponents['root']?.slotsOf('body');
+      final existingBody = tryNative('root')?.slotsOf('body');
       if (existingBody == null || existingBody.isEmpty) {
         placements['body'] = [
           {'id': 'scaffold:body', 'type': 'scaffold:body'},
@@ -1147,6 +1101,7 @@ class _CompilationState {
     final existing = isMerge
         ? (layouts[layoutId] ?? const SuperLayoutConfig(autoSides: {}))
         : const SuperLayoutConfig(autoSides: {});
+    layouts[layoutId] = existing;
 
     final cleaned = <String, Object?>{};
     for (final entry in rawMap.entries) {
@@ -1283,7 +1238,7 @@ class _CompilationState {
     required bool isMerge,
     Set<String>? defaultRegions,
   }) {
-    final existing = isMerge ? nativeComponents[nativeId] : null;
+    final existing = isMerge ? tryNative(nativeId) : null;
     final regions = <String, bool>{if (existing != null) ...existing.regions};
     if (rawMap.containsKey('regions')) {
       final rawRegions = rawMap['regions'];
@@ -1416,7 +1371,7 @@ class _CompilationState {
       if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
     };
 
-    nativeComponents[nativeId] = NativeComponentConfig.fromJson(canonical);
+    components[nativeId] = NativeComponentConfig.fromJson(canonical);
   }
 
   /// Compile un élément de slot (chaîne simple, référence `{id, type}` ou nœud complet inline).
@@ -1616,8 +1571,8 @@ class _CompilationState {
                     e.key as String: e.value,
               };
         if (listSource.isNotEmpty) {
-          final existing = listComponents[id];
-          listComponents[id] = existing != null && isMerge
+          final existing = tryComponent<SuperListViewConfig>(id);
+          components[id] = existing != null && isMerge
               ? existing.patchFromJson(listSource)
               : SuperListViewConfig.fromJson(listSource);
         }
@@ -1639,8 +1594,8 @@ class _CompilationState {
                     e.key as String: e.value,
               };
         if (valueSource.isNotEmpty) {
-          final existing = valueComponents[id];
-          valueComponents[id] = existing != null && isMerge
+          final existing = tryComponent<SuperValueConfig>(id);
+          components[id] = existing != null && isMerge
               ? existing.patchFromJson(valueSource)
               : SuperValueConfig.fromJson(valueSource);
         }
@@ -1656,8 +1611,8 @@ class _CompilationState {
                     e.key as String: e.value,
               };
         if (actionSource.isNotEmpty) {
-          final existing = actionComponents[id];
-          actionComponents[id] = existing != null && isMerge
+          final existing = tryComponent<SuperActionConfig>(id);
+          components[id] = existing != null && isMerge
               ? existing.patchFromJson(actionSource)
               : SuperActionConfig.fromJson(actionSource);
         }
@@ -1751,7 +1706,7 @@ class _CompilationState {
 
     // Est-ce une cible NativeComponent (ou page root / Card) ?
     final isNativeTarget =
-        nativeComponents.containsKey(target) ||
+        tryNative(target) != null ||
         target == 'root' ||
         pages.any((p) => p.id == target) ||
         (zoneOrRegion != null &&
@@ -1764,7 +1719,7 @@ class _CompilationState {
               ? 'body'
               : 'child');
       var current =
-          nativeComponents[target] ??
+          tryNative(target) ??
           (target == 'root'
               ? NativeComponentConfig(
                   regions: const {'body': true},
@@ -1814,7 +1769,7 @@ class _CompilationState {
           current = current.withSlotLabel(compiled.id, compiled.slotLabel);
         }
       }
-      nativeComponents[target] = current;
+      components[target] = current;
       return;
     }
 
@@ -1884,13 +1839,15 @@ class _CompilationState {
       matched = true;
     }
     if (op['value'] is Map) {
-      final existing = valueComponents[id] ?? const SuperValueConfig();
-      valueComponents[id] = existing.patchFromJson(op['value'] as Map);
+      final existing =
+          tryComponent<SuperValueConfig>(id) ?? const SuperValueConfig();
+      components[id] = existing.patchFromJson(op['value'] as Map);
       matched = true;
     }
     if (op['action'] is Map) {
-      final existing = actionComponents[id] ?? const SuperActionConfig();
-      actionComponents[id] = existing.patchFromJson(op['action'] as Map);
+      final existing =
+          tryComponent<SuperActionConfig>(id) ?? const SuperActionConfig();
+      components[id] = existing.patchFromJson(op['action'] as Map);
       matched = true;
     }
     if (op['layout'] is Map) {
@@ -1898,8 +1855,9 @@ class _CompilationState {
       matched = true;
     }
     if (op['list'] is Map) {
-      final existing = listComponents[id] ?? const SuperListViewConfig();
-      listComponents[id] = existing.patchFromJson(op['list'] as Map);
+      final existing =
+          tryComponent<SuperListViewConfig>(id) ?? const SuperListViewConfig();
+      components[id] = existing.patchFromJson(op['list'] as Map);
       matched = true;
     }
     if (op.containsKey('template') || op.containsKey('row')) {
@@ -1969,22 +1927,22 @@ class _CompilationState {
             e.key as String: e.value,
       };
 
-      if (actionComponents.containsKey(id) && directAction.isNotEmpty) {
-        actionComponents[id] = actionComponents[id]!.patchFromJson(
-          directAction,
-        );
-      } else if (valueComponents.containsKey(id) && directValue.isNotEmpty) {
-        valueComponents[id] = valueComponents[id]!.patchFromJson(directValue);
+      final existingComp = components[id];
+      if (existingComp is SuperActionConfig && directAction.isNotEmpty) {
+        components[id] = existingComp.patchFromJson(directAction);
+      } else if (existingComp is SuperValueConfig && directValue.isNotEmpty) {
+        components[id] = existingComp.patchFromJson(directValue);
       } else if (styles.containsKey(id) && directStyle.isNotEmpty) {
         styles[id] = styles[id]!.patchFromJson(directStyle);
       } else if (layouts.containsKey(id) && directLayout.isNotEmpty) {
         compileLayoutMap(id, directLayout, isMerge: true);
-      } else if (listComponents.containsKey(id) && directList.isNotEmpty) {
-        listComponents[id] = listComponents[id]!.patchFromJson(directList);
+      } else if (existingComp is SuperListViewConfig && directList.isNotEmpty) {
+        components[id] = existingComp.patchFromJson(directList);
       } else if (directValue.isNotEmpty &&
           !directStyle.keys.any((k) => k != 'color' && k != 'states')) {
-        valueComponents[id] = (valueComponents[id] ?? const SuperValueConfig())
-            .patchFromJson(directValue);
+        components[id] =
+            (tryComponent<SuperValueConfig>(id) ?? const SuperValueConfig())
+                .patchFromJson(directValue);
       } else if (directStyle.isNotEmpty) {
         styles[id] = (styles[id] ?? const ContainerStyle()).patchFromJson(
           directStyle,
@@ -1992,8 +1950,10 @@ class _CompilationState {
       } else if (directLayout.isNotEmpty) {
         compileLayoutMap(id, directLayout, isMerge: true);
       } else if (directList.isNotEmpty) {
-        listComponents[id] = (listComponents[id] ?? const SuperListViewConfig())
-            .patchFromJson(directList);
+        components[id] =
+            (tryComponent<SuperListViewConfig>(id) ??
+                    const SuperListViewConfig())
+                .patchFromJson(directList);
       }
     }
   }
@@ -2026,8 +1986,8 @@ class _CompilationState {
       );
       return;
     }
-    if (nativeComponents.containsKey(target)) {
-      nativeComponents[target] = nativeComponents[target]!.withSlotMoved(
+    if (tryNative(target) case final native?) {
+      components[target] = native.withSlotMoved(
         id,
         dest,
         beforeId: beforeId,
@@ -2050,25 +2010,26 @@ class _CompilationState {
         layouts[entry.key] = entry.value.withoutSlot(id);
       }
     }
-    for (final entry in nativeComponents.entries.toList()) {
+    for (final entry in components.entries.toList()) {
       if (target != null && entry.key != target) continue;
-      if (entry.value.placements.values.any((ids) => ids.contains(id))) {
-        nativeComponents[entry.key] = entry.value.withoutSlot(id);
+      final native = tryNative(entry.key);
+      if (native != null &&
+          native.placements.values.any((ids) => ids.contains(id))) {
+        components[entry.key] = native.withoutSlot(id);
       }
     }
     // Si le slot n'est plus placé nulle part, nettoyer ses configurations propres
     final stillPlaced =
         layouts.values.any((l) => l.placedSlotIds.contains(id)) ||
-        nativeComponents.values.any(
-          (n) => n.placements.values.any((ids) => ids.contains(id)),
+        components.keys.any(
+          (k) =>
+              tryNative(k)?.placements.values.any((ids) => ids.contains(id)) ??
+              false,
         );
     if (!stillPlaced && op['keepConfig'] != true) {
       styles.remove(id);
       layouts.remove(id);
-      nativeComponents.remove(id);
-      valueComponents.remove(id);
-      actionComponents.remove(id);
-      listComponents.remove(id);
+      components.remove(id);
     }
   }
 
@@ -2114,8 +2075,7 @@ class _CompilationState {
     }
     pages.removeWhere((p) => p.id == id);
     if (homePageId == id) homePageId = null;
-    nativeComponents.remove(id);
-    scaffoldPages.remove(id);
+    components.remove(id);
   }
 
   SuperLayoutConfig _enableZoneSides(

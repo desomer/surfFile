@@ -1,14 +1,10 @@
 import 'dart:convert';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/component_config.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:super_container_layout/models/json_syntax.dart';
-import 'package:super_container_layout/models/native_component_config.dart';
-import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/models/super_list_view_config.dart';
-import 'package:super_container_layout/models/super_value_config.dart';
-import 'package:super_container_layout/models/super_action_config.dart';
 import 'package:super_container_layout/services/appearance/screen_tree_codec.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -47,28 +43,14 @@ class AppearanceCodec {
     'layouts': {
       for (final entry in a.layouts.entries) entry.key: entry.value.toJson(),
     },
-    'scaffoldPages': {
-      for (final entry in a.scaffoldPages.entries)
-        entry.key: entry.value.toJson(),
-    },
-    'nativeComponents': {
-      for (final entry in a.nativeComponents.entries)
-        entry.key: entry.value.toJson(),
-    },
-    'valueComponents': {
-      for (final entry in a.valueComponents.entries)
-        entry.key: entry.value.toJson(),
-    },
-    'actionComponents': {
-      for (final entry in a.actionComponents.entries)
-        entry.key: entry.value.toJson(),
-    },
-    'listComponents': {
-      for (final entry in a.listComponents.entries)
-        entry.key: entry.value.toJson(),
+    'components': {
+      for (final entry in a.components.entries)
+        entry.key: entry.value.toTypedJson(),
     },
     'pageCatalog': a.pageCatalog.toJson(),
   };
+
+  
   Appearance fromJson(Map<String, dynamic> json) {
     if (json['version'] != schemaVersion) {
       throw const FormatException('Unsupported appearance version.');
@@ -82,11 +64,7 @@ class AppearanceCodec {
       'windowEffect',
       'styles',
       'layouts',
-      'scaffoldPages',
-      'nativeComponents',
-      'valueComponents',
-      'actionComponents',
-      'listComponents',
+      'components',
       'pageCatalog',
       'screens',
       'ops',
@@ -154,25 +132,9 @@ class AppearanceCodec {
         for (final entry in entries('layouts').entries)
           entry.key: SuperLayoutConfig.fromJson(entry.value),
       },
-      scaffoldPages: {
-        for (final entry in entries('scaffoldPages', optional: true).entries)
-          entry.key: ScaffoldPageConfig.fromJson(entry.value),
-      },
-      nativeComponents: {
-        for (final entry in entries('nativeComponents', optional: true).entries)
-          entry.key: NativeComponentConfig.fromJson(entry.value),
-      },
-      valueComponents: {
-        for (final entry in entries('valueComponents', optional: true).entries)
-          entry.key: SuperValueConfig.fromJson(entry.value),
-      },
-      actionComponents: {
-        for (final entry in entries('actionComponents', optional: true).entries)
-          entry.key: SuperActionConfig.fromJson(entry.value),
-      },
-      listComponents: {
-        for (final entry in entries('listComponents', optional: true).entries)
-          entry.key: SuperListViewConfig.fromJson(entry.value),
+      components: {
+        for (final entry in entries('components', optional: true).entries)
+          entry.key: ComponentConfig.fromJson(entry.value),
       },
       pageCatalog: json.containsKey('pageCatalog')
           ? EditorPageCatalog.fromJson(json['pageCatalog'])

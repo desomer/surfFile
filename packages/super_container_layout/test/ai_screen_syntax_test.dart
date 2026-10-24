@@ -157,13 +157,13 @@ void main() {
       expect(imported.mode, ThemeMode.dark);
       expect(imported.accent, const Color(0xFF5268D9));
       expect(imported.backgroundStyle.color, const Color(0xFF171A23));
-      expect(imported.nativeComponents['root']!.slotsOf('appBar'), [
+      expect(imported.nativeComponent('root').slotsOf('appBar'), [
         'main-appbar',
       ]);
-      expect(imported.nativeComponents['root']!.slotsOf('body'), [
+      expect(imported.nativeComponent('root').slotsOf('body'), [
         'scaffold:body',
       ]);
-      expect(imported.nativeComponents['main-appbar']!.slotsOf('title'), [
+      expect(imported.nativeComponent('main-appbar').slotsOf('title'), [
         'app-title',
       ]);
       expect(
@@ -193,7 +193,7 @@ void main() {
 
       // Card extracted to styles and nativeComponents, nested layout and input
       expect(imported.style('card-detail').radius, 16);
-      expect(imported.nativeComponents['card-detail']!.slotsOf('child'), [
+      expect(imported.nativeComponent('card-detail').slotsOf('child'), [
         'layout-form',
       ]);
       expect(

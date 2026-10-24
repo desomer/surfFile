@@ -18,6 +18,7 @@ library;
 import 'package:flutter/painting.dart' show Axis;
 import 'package:flutter/foundation.dart';
 
+import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
 import 'super_layout_config.dart';
@@ -27,7 +28,7 @@ enum ListWrapSizing { fixed, automatic }
 /// Réglages d'une `SuperListView` : tableau lié, orientation, taille des
 /// lignes et actions autorisées. Valeur immuable, comparable par valeur.
 @immutable
-class SuperListViewConfig {
+class SuperListViewConfig extends ComponentConfig {
   const SuperListViewConfig({
     this.binding,
     this.axis = Axis.vertical,
@@ -87,8 +88,12 @@ class SuperListViewConfig {
   /// Borne supérieure de [spacing].
   static const maxSpacing = 200.0;
 
+  @override
+  String get componentType => 'list';
+
   /// Vérifie la liaison et les bornes numériques ; lève une
   /// [FormatException] avec un message affichable sinon.
+  @override
   void validate() {
     binding?.validate();
     if (itemSize case final dimensions?) {
@@ -139,6 +144,7 @@ class SuperListViewConfig {
   );
 
   /// Forme JSON persistée dans l'apparence.
+  @override
   Map<String, Object?> toJson() {
     validate();
     return {
@@ -156,6 +162,7 @@ class SuperListViewConfig {
     };
   }
 
+  @override
   Map<String, Object?> toCompactJson() {
     validate();
     const d = SuperListViewConfig();
@@ -175,6 +182,7 @@ class SuperListViewConfig {
     };
   }
 
+  @override
   SuperListViewConfig patchFromJson(Map<Object?, Object?> patch) =>
       SuperListViewConfig.fromJson(patch, fallback: this);
 

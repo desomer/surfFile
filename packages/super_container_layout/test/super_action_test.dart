@@ -264,7 +264,7 @@ void main() {
       final store = AppearanceStore();
       await store.save(appearance.value);
       expect(
-        (await store.load()).actionComponents['persisted-action']?.label,
+        (await store.load()).tryComponent<SuperActionConfig>('persisted-action')?.label,
         'Bouton Modifié',
       );
 
@@ -380,17 +380,12 @@ void main() {
     });
 
     final appearance = const AppearanceCodec().fromJson(expanded);
-    expect(appearance.actionComponents.containsKey('act1'), isTrue);
-    expect(
-      appearance.actionComponents['act1']!.kind,
-      SuperActionKind.textAndIcon,
-    );
-    expect(
-      appearance.actionComponents['act1']!.variant,
-      SuperActionVariant.outlined,
-    );
-    expect(appearance.actionComponents['act1']!.label, 'Cliquer');
-    expect(appearance.actionComponents['act1']!.icon, 'send');
+    final act1 = appearance.tryComponent<SuperActionConfig>('act1');
+    expect(act1, isNotNull);
+    expect(act1!.kind, SuperActionKind.textAndIcon);
+    expect(act1.variant, SuperActionVariant.outlined);
+    expect(act1.label, 'Cliquer');
+    expect(act1.icon, 'send');
 
     final duplicated = EditorPageGraph.duplicate(
       appearance: appearance,
@@ -398,7 +393,10 @@ void main() {
       sourcePageId: 'home',
       targetPageId: 'copy',
     );
-    expect(duplicated.actionComponents.length, 2);
+    expect(
+      duplicated.componentsOfType<SuperActionConfig>().length,
+      2,
+    );
   });
 
   testWidgets('superActionAddConfigurator configures draft in add wizard and surface variant renders StyledSurface', (
@@ -460,5 +458,58 @@ void main() {
     expect(find.byType(StyledSurface), findsOneWidget);
     expect(find.text('Surface Action'), findsOneWidget);
     expect(find.byIcon(Icons.check), findsOneWidget);
+  });
+
+  test('Unified Appearance.components map and ComponentConfig polymorphism round-trip through codec', () {
+    final appearance = Appearance(
+      components: {
+        'v1': const SuperValueConfig(initialText: 'Hello'),
+        'a1': const SuperActionConfig(
+          kind: SuperActionKind.icon,
+          icon: 'search',
+        ),
+        'l1': const SuperListViewConfig(itemExtent: 72),
+        'n1': NativeComponentConfig(
+          placements: {
+            'child': ['v1'],
+          },
+          slotTypes: {'v1': 'registry:Value'},
+        ),
+        's1': ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.body: ['l1'],
+          },
+          slotTypes: {'l1': 'registry:ListView'},
+        ),
+      },
+    );
+
+    for (final entry in appearance.components.entries) {
+      expect(entry.value, isA<ComponentConfig>());
+    }
+
+    const codec = AppearanceCodec();
+    final json = codec.toJson(appearance);
+    expect(json.containsKey('components'), isTrue);
+    expect(json.containsKey('valueComponents'), isFalse);
+    expect(json.containsKey('actionComponents'), isFalse);
+    expect(json.containsKey('listComponents'), isFalse);
+    expect(json.containsKey('nativeComponents'), isFalse);
+    expect(json.containsKey('scaffoldPages'), isFalse);
+
+    final compsJson = json['components'] as Map<String, Object?>;
+    expect((compsJson['v1'] as Map)['type'], 'value');
+    expect((compsJson['a1'] as Map)['type'], 'action');
+    expect((compsJson['l1'] as Map)['type'], 'list');
+    expect((compsJson['n1'] as Map)['type'], 'native');
+    expect((compsJson['s1'] as Map)['type'], 'scaffold');
+
+    final decoded = codec.decode(codec.encode(appearance));
+    expect(decoded.components.keys, appearance.components.keys);
+    expect(decoded.valueComponent('v1').initialText, 'Hello');
+    expect(decoded.actionComponent('a1').icon, 'search');
+    expect(decoded.listComponent('l1').itemExtent, 72);
+    expect(decoded.nativeComponent('n1').slotsOf('child'), ['v1']);
+    expect(decoded.scaffoldPage('s1').slotsOf(ScaffoldPageRegion.body), ['l1']);
   });
 }

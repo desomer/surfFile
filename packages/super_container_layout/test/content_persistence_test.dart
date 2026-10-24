@@ -55,18 +55,16 @@ void main() {
             slotTypes: {'text': 'registry:Value'},
           ),
         },
-        nativeComponents: {
+        components: {
           'page': NativeComponentConfig(
             placements: {
               'body': ['item'],
             },
             slotTypes: {'item': 'registry:$type'},
           ),
+          'text': const SuperValueConfig(initialText: 'Saved'),
+          if (type == 'ListView') 'item': const SuperListViewConfig(),
         },
-        valueComponents: {'text': const SuperValueConfig(initialText: 'Saved')},
-        listComponents: type == 'ListView'
-            ? {'item': const SuperListViewConfig()}
-            : const {},
       );
       final copy = EditorPageGraph.duplicate(
         appearance: original,
@@ -74,7 +72,7 @@ void main() {
         sourcePageId: 'page',
         targetPageId: 'copy',
       );
-      final id = copy.nativeComponents['copy']!.slotsOf('body').single;
+      final id = copy.nativeComponent('copy').slotsOf('body').single;
       expect(id, isNot('item'));
       expect(copy.styles[id]!.radius, 14);
       expect(copy.styles[id]!.color, Colors.blue);
@@ -85,13 +83,16 @@ void main() {
       );
       final child = copy.layouts[id]!.placedSlotIds.single;
       expect(child, isNot('text'));
-      expect(copy.valueComponents[child]!.initialText, 'Saved');
+      expect(copy.valueComponent(child).initialText, 'Saved');
       if (type == 'ListView') {
-        expect(copy.listComponents.containsKey(id), isTrue);
+        expect(copy.tryComponent<SuperListViewConfig>(id), isNotNull);
       }
       final removed = EditorPageGraph.removeInstance(
         appearance: original.copyWith(
-          nativeComponents: {'page': NativeComponentConfig()},
+          components: {
+            ...original.components,
+            'page': NativeComponentConfig(),
+          },
         ),
         registry: registry,
         instanceId: 'item',
@@ -100,11 +101,13 @@ void main() {
       );
       expect(removed.styles.containsKey('item'), isFalse);
       expect(removed.layouts.containsKey('item'), isFalse);
-      expect(removed.valueComponents.containsKey('text'), isFalse);
-      expect(removed.listComponents.containsKey('item'), isFalse);
+      expect(removed.components.containsKey('text'), isFalse);
+      expect(removed.components.containsKey('item'), isFalse);
       final shared = EditorPageGraph.removeInstance(
         appearance: original.copyWith(
-          nativeComponents: {
+          components: {
+            ...original.components,
+            'page': NativeComponentConfig(),
             'other': NativeComponentConfig(
               placements: {
                 'body': ['item'],
@@ -258,7 +261,7 @@ void main() {
     );
     const codec = AppearanceCodec();
     expect(
-      codec.decode(codec.encode(appearance.value)).listComponents['list'],
+      codec.decode(codec.encode(appearance.value)).components['list'],
       wrap,
     );
     history.undo();

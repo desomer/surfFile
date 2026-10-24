@@ -48,6 +48,7 @@ abstract final class SurfFileAppearanceDefaults {
   static const defaultExplorerLayout = SuperLayoutConfig(
     north: false,
     south: false,
+    west: true,
     east: false,
     westSize: defaultSidebarWidth,
     placements: {
@@ -58,6 +59,7 @@ abstract final class SurfFileAppearanceDefaults {
 
   /// Barres empilées au nord (hauteur automatique), contenu au centre.
   static const defaultExplorerMainLayout = SuperLayoutConfig(
+    north: true,
     south: false,
     west: false,
     east: false,
@@ -78,6 +80,7 @@ abstract final class SurfFileAppearanceDefaults {
   /// Espace perso / favoris au centre, disques au sud (hauteur automatique).
   static const defaultExplorerSidebarLayout = SuperLayoutConfig(
     north: false,
+    south: true,
     west: false,
     east: false,
     autoSides: {SuperLayoutZone.south},

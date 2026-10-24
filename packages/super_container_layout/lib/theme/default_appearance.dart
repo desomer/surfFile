@@ -1,6 +1,7 @@
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
+import '../models/component_config.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
@@ -29,11 +30,7 @@ class DefaultAppearance extends Appearance {
     super.windowEffect,
     super.styles,
     super.layouts,
-    super.scaffoldPages,
-    super.nativeComponents,
-    super.valueComponents,
-    super.actionComponents,
-    super.listComponents,
+    super.components,
     super.pageCatalog,
     this.cardHeight = 142,
     this.cardWidth = 180,
@@ -70,22 +67,38 @@ class DefaultAppearance extends Appearance {
       copyWith(layouts: {...layouts, id: value});
 
   @override
-  DefaultAppearance withValueComponent(String id, SuperValueConfig value) {
-    value.validate();
-    return copyWith(valueComponents: {...valueComponents, id: value});
+  DefaultAppearance withComponent(String id, ComponentConfig? value) {
+    final next = {...components};
+    if (value == null) {
+      next.remove(id);
+    } else {
+      value.validate();
+      next[id] = value;
+    }
+    return copyWith(components: next);
   }
 
   @override
-  DefaultAppearance withActionComponent(String id, SuperActionConfig value) {
-    value.validate();
-    return copyWith(actionComponents: {...actionComponents, id: value});
-  }
+  DefaultAppearance withValueComponent(String id, SuperValueConfig value) =>
+      withComponent(id, value);
 
   @override
-  DefaultAppearance withListComponent(String id, SuperListViewConfig value) {
-    value.validate();
-    return copyWith(listComponents: {...listComponents, id: value});
-  }
+  DefaultAppearance withActionComponent(String id, SuperActionConfig value) =>
+      withComponent(id, value);
+
+  @override
+  DefaultAppearance withListComponent(String id, SuperListViewConfig value) =>
+      withComponent(id, value);
+
+  @override
+  DefaultAppearance withNativeComponent(
+    String id,
+    NativeComponentConfig value,
+  ) => withComponent(id, value);
+
+  @override
+  DefaultAppearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
+      withNativeComponent(id, value.native);
 
   @override
   DefaultAppearance withPageCatalog(EditorPageCatalog value) =>
@@ -94,11 +107,7 @@ class DefaultAppearance extends Appearance {
   @override
   DefaultAppearance resetLayouts() => copyWith(
     layouts: const {},
-    scaffoldPages: const {},
-    nativeComponents: const {},
-    valueComponents: const {},
-    actionComponents: const {},
-    listComponents: const {},
+    components: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
 
@@ -106,11 +115,7 @@ class DefaultAppearance extends Appearance {
   DefaultAppearance copyWith({
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
-    Map<String, ScaffoldPageConfig>? scaffoldPages,
-    Map<String, NativeComponentConfig>? nativeComponents,
-    Map<String, SuperValueConfig>? valueComponents,
-    Map<String, SuperActionConfig>? actionComponents,
-    Map<String, SuperListViewConfig>? listComponents,
+    Map<String, ComponentConfig>? components,
     EditorPageCatalog? pageCatalog,
     ThemeMode? mode,
     Color? accent,
@@ -129,11 +134,7 @@ class DefaultAppearance extends Appearance {
   }) => DefaultAppearance(
     styles: {...styles ?? this.styles, 'background': ?backgroundStyle},
     layouts: layouts ?? this.layouts,
-    scaffoldPages: scaffoldPages ?? this.scaffoldPages,
-    nativeComponents: nativeComponents ?? this.nativeComponents,
-    valueComponents: valueComponents ?? this.valueComponents,
-    actionComponents: actionComponents ?? this.actionComponents,
-    listComponents: listComponents ?? this.listComponents,
+    components: components ?? this.components,
     pageCatalog: pageCatalog ?? this.pageCatalog,
     mode: mode ?? this.mode,
     accent: accent ?? this.accent,

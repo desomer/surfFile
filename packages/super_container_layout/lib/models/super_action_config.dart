@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 
 import '../theme/container_style.dart';
 import 'automatic_state.dart';
+import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
 
@@ -94,7 +95,7 @@ abstract final class SuperActionIcons {
 }
 
 @immutable
-class SuperActionConfig {
+class SuperActionConfig extends ComponentConfig {
   const SuperActionConfig({
     this.kind = SuperActionKind.text,
     this.variant = SuperActionVariant.filled,
@@ -153,6 +154,10 @@ class SuperActionConfig {
   final Map<SuperActionProperty, JsonTextBinding> propertyBindings;
   final ActionConfigStates? states;
 
+  @override
+  String get componentType => 'action';
+
+  @override
   void validate() {
     _validateLeaf();
     states?._validateAgainst(this);
@@ -264,6 +269,7 @@ class SuperActionConfig {
     states: clearStates ? null : states ?? this.states,
   );
 
+  @override
   Map<String, Object?> toJson() {
     validate();
     return {
@@ -301,6 +307,7 @@ class SuperActionConfig {
     };
   }
 
+  @override
   Map<String, Object?> toCompactJson() {
     validate();
     const d = SuperActionConfig();
@@ -342,6 +349,7 @@ class SuperActionConfig {
 
   /// Applique un patch JSON partiel sur cette configuration en conservant
   /// toutes les propriétés non mentionnées dans [patch].
+  @override
   SuperActionConfig patchFromJson(Map<Object?, Object?> patch) =>
       SuperActionConfig.fromJson(patch, fallback: this);
 

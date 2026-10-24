@@ -41,24 +41,29 @@ void main() {
       }
     }
     final codec = SurfFileAppearanceCodec();
-    codec.restoreAdditional('{"version":1,"mode":"light"}');
-    final legacy = codec.preferences.value;
-    expect(legacy.folderTransition, FolderTransition.none);
-    expect(legacy.folderTransitionDuration, 220);
+    final baseJson = codec.toJson(Appearance());
+    (baseJson['application'] as Map)
+      ..remove('folderTransition')
+      ..remove('folderTransitionDuration');
+    codec.restoreAdditional(jsonEncode(baseJson));
+    final defaults = codec.preferences.value;
+    expect(defaults.folderTransition, FolderTransition.none);
+    expect(defaults.folderTransitionDuration, 220);
     for (final value in ['bad', 1]) {
+      final invalid = codec.toJson(Appearance());
+      (invalid['application'] as Map)['folderTransition'] = value;
       expect(
-          () => AppearanceStore.decode(jsonEncode(
-              {'version': 1, 'mode': 'light', 'folderTransition': value})),
-          throwsFormatException);
+        () => AppearanceStore.decode(jsonEncode(invalid)),
+        throwsFormatException,
+      );
     }
     for (final value in [99, 1001, 'slow']) {
+      final invalid = codec.toJson(Appearance());
+      (invalid['application'] as Map)['folderTransitionDuration'] = value;
       expect(
-          () => AppearanceStore.decode(jsonEncode({
-                'version': 1,
-                'mode': 'light',
-                'folderTransitionDuration': value,
-              })),
-          throwsFormatException);
+        () => AppearanceStore.decode(jsonEncode(invalid)),
+        throwsFormatException,
+      );
     }
   });
 

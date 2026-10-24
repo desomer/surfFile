@@ -12,10 +12,7 @@ class AppearanceTransfer {
   static const format = 'surf_file.appearance';
   static const layoutKeys = {
     'layouts',
-    'scaffoldPages',
-    'nativeComponents',
-    'valueComponents',
-    'listComponents',
+    'components',
     'pageCatalog',
   };
   static String export(

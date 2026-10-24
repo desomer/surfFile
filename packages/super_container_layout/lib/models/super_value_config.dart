@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 
+import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
 import 'automatic_state.dart';
@@ -30,7 +31,7 @@ enum SuperValueProperty {
 }
 
 @immutable
-class SuperValueConfig {
+class SuperValueConfig extends ComponentConfig {
   const SuperValueConfig({
     this.mode = SuperValueMode.display,
     this.kind = SuperValueKind.text,
@@ -81,6 +82,10 @@ class SuperValueConfig {
   final SuperTextFieldConfig field;
   final ValueConfigStates? states;
 
+  @override
+  String get componentType => 'value';
+
+  @override
   void validate() {
     _validateLeaf();
     states?._validateAgainst(this);
@@ -168,6 +173,7 @@ class SuperValueConfig {
     states: clearStates ? null : states ?? this.states,
   );
 
+  @override
   Map<String, Object?> toJson() {
     validate();
     return {
@@ -201,6 +207,7 @@ class SuperValueConfig {
     };
   }
 
+  @override
   Map<String, Object?> toCompactJson() {
     validate();
     const d = SuperValueConfig();
@@ -238,6 +245,7 @@ class SuperValueConfig {
 
   /// Applique un patch JSON partiel sur cette configuration en conservant
   /// toutes les propriétés non mentionnées dans [patch].
+  @override
   SuperValueConfig patchFromJson(Map<Object?, Object?> patch) =>
       SuperValueConfig.fromJson(patch, fallback: this);
 

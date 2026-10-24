@@ -1,6 +1,7 @@
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
+import '../models/component_config.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
@@ -23,11 +24,7 @@ class Appearance {
     this.windowEffect = WindowEffect.transparent,
     Map<String, ContainerStyle> styles = const {},
     Map<String, SuperLayoutConfig> layouts = const {},
-    Map<String, ScaffoldPageConfig> scaffoldPages = const {},
-    Map<String, NativeComponentConfig> nativeComponents = const {},
-    Map<String, SuperValueConfig> valueComponents = const {},
-    Map<String, SuperActionConfig> actionComponents = const {},
-    Map<String, SuperListViewConfig> listComponents = const {},
+    Map<String, ComponentConfig> components = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
        layouts = Map.unmodifiable({
@@ -55,11 +52,7 @@ class Appearance {
              }),
            ),
        }),
-       scaffoldPages = Map.unmodifiable(scaffoldPages),
-       nativeComponents = Map.unmodifiable(nativeComponents),
-       valueComponents = Map.unmodifiable(valueComponents),
-       actionComponents = Map.unmodifiable(actionComponents),
-       listComponents = Map.unmodifiable(listComponents);
+       components = Map.unmodifiable(components);
 
   final ThemeMode mode;
   final Color accent;
@@ -68,47 +61,67 @@ class Appearance {
   final WindowEffect windowEffect;
   final Map<String, ContainerStyle> styles;
   final Map<String, SuperLayoutConfig> layouts;
-  final Map<String, ScaffoldPageConfig> scaffoldPages;
-  final Map<String, NativeComponentConfig> nativeComponents;
-  final Map<String, SuperValueConfig> valueComponents;
-  final Map<String, SuperActionConfig> actionComponents;
-  final Map<String, SuperListViewConfig> listComponents;
+  final Map<String, ComponentConfig> components;
   final EditorPageCatalog pageCatalog;
+
+  T? tryComponent<T extends ComponentConfig>(String id) =>
+      switch (components[id]) {
+        final T value => value,
+        _ => null,
+      };
+
+  T component<T extends ComponentConfig>(String id, {required T fallback}) =>
+      tryComponent<T>(id) ?? fallback;
+
+  Map<String, T> componentsOfType<T extends ComponentConfig>() =>
+      Map.unmodifiable({
+        for (final entry in components.entries)
+          if (entry.value is T) entry.key: entry.value as T,
+      });
+
+  Appearance withComponent(String id, ComponentConfig? value) {
+    final next = {...components};
+    if (value == null) {
+      next.remove(id);
+    } else {
+      value.validate();
+      next[id] = value;
+    }
+    return copyWith(components: next);
+  }
 
   SuperValueConfig valueComponent(
     String id, {
     SuperValueConfig fallback = const SuperValueConfig(),
-  }) => valueComponents[id] ?? fallback;
+  }) => component<SuperValueConfig>(id, fallback: fallback);
 
-  Appearance withValueComponent(String id, SuperValueConfig value) {
-    value.validate();
-    return copyWith(valueComponents: {...valueComponents, id: value});
-  }
+  Appearance withValueComponent(String id, SuperValueConfig value) =>
+      withComponent(id, value);
 
   SuperActionConfig actionComponent(
     String id, {
     SuperActionConfig fallback = const SuperActionConfig(),
-  }) => actionComponents[id] ?? fallback;
+  }) => component<SuperActionConfig>(id, fallback: fallback);
 
-  Appearance withActionComponent(String id, SuperActionConfig value) {
-    value.validate();
-    return copyWith(actionComponents: {...actionComponents, id: value});
-  }
+  Appearance withActionComponent(String id, SuperActionConfig value) =>
+      withComponent(id, value);
 
   SuperListViewConfig listComponent(
     String id, {
     SuperListViewConfig fallback = const SuperListViewConfig(),
-  }) => listComponents[id] ?? fallback;
+  }) => component<SuperListViewConfig>(id, fallback: fallback);
 
-  Appearance withListComponent(String id, SuperListViewConfig value) {
-    value.validate();
-    return copyWith(listComponents: {...listComponents, id: value});
-  }
+  Appearance withListComponent(String id, SuperListViewConfig value) =>
+      withComponent(id, value);
 
   NativeComponentConfig nativeComponent(
     String id, {
     NativeComponentConfig? fallback,
-  }) => nativeComponents[id] ?? fallback ?? NativeComponentConfig();
+  }) => switch (components[id]) {
+    final NativeComponentConfig n => n,
+    final ScaffoldPageConfig s => s.native,
+    _ => fallback ?? NativeComponentConfig(),
+  };
 
   ContainerStyle style(
     String id, {
@@ -119,9 +132,11 @@ class Appearance {
     SuperLayoutConfig fallback = const SuperLayoutConfig(),
   }) => layouts[id] ?? fallback;
   ScaffoldPageConfig scaffoldPage(String id, {ScaffoldPageConfig? fallback}) =>
-      nativeComponents.containsKey(id)
-      ? ScaffoldPageConfig.fromNative(nativeComponents[id]!)
-      : scaffoldPages[id] ?? fallback ?? ScaffoldPageConfig();
+      switch (components[id]) {
+        final ScaffoldPageConfig s => s,
+        final NativeComponentConfig n => ScaffoldPageConfig.fromNative(n),
+        _ => fallback ?? ScaffoldPageConfig(),
+      };
   ContainerStyle get backgroundStyle => style('background');
 
   /// Resolves the optional variant [id] (a selected state, for instance) of
@@ -161,11 +176,7 @@ class Appearance {
     ContainerStyle? backgroundStyle,
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
-    Map<String, ScaffoldPageConfig>? scaffoldPages,
-    Map<String, NativeComponentConfig>? nativeComponents,
-    Map<String, SuperValueConfig>? valueComponents,
-    Map<String, SuperActionConfig>? actionComponents,
-    Map<String, SuperListViewConfig>? listComponents,
+    Map<String, ComponentConfig>? components,
     EditorPageCatalog? pageCatalog,
   }) => Appearance(
     mode: mode ?? this.mode,
@@ -177,11 +188,7 @@ class Appearance {
         ? styles ?? this.styles
         : {...styles ?? this.styles, 'background': backgroundStyle},
     layouts: layouts ?? this.layouts,
-    scaffoldPages: scaffoldPages ?? this.scaffoldPages,
-    nativeComponents: nativeComponents ?? this.nativeComponents,
-    valueComponents: valueComponents ?? this.valueComponents,
-    actionComponents: actionComponents ?? this.actionComponents,
-    listComponents: listComponents ?? this.listComponents,
+    components: components ?? this.components,
     pageCatalog: pageCatalog ?? this.pageCatalog,
   );
 
@@ -202,17 +209,10 @@ class Appearance {
   Appearance withScaffoldPage(String id, ScaffoldPageConfig value) =>
       withNativeComponent(id, value.native);
   Appearance withNativeComponent(String id, NativeComponentConfig value) =>
-      copyWith(
-        nativeComponents: {...nativeComponents, id: value},
-        scaffoldPages: {...scaffoldPages}..remove(id),
-      );
+      withComponent(id, value);
   Appearance resetLayouts() => copyWith(
     layouts: const {},
-    scaffoldPages: const {},
-    nativeComponents: const {},
-    valueComponents: const {},
-    actionComponents: const {},
-    listComponents: const {},
+    components: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
 

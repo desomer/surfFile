@@ -1,5 +1,6 @@
 import 'package:shortid/shortid.dart';
 
+import '../../models/component_config.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/scaffold_page_config.dart';
@@ -441,16 +442,20 @@ _Resolution _resolve(Registry registry, String type, EditorConfigKind kind) {
 Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.layout => appearance.layouts[ref.id],
   EditorConfigKind.style => appearance.styles[ref.id],
-  EditorConfigKind.nativeComponent => appearance.nativeComponents[ref.id],
-  EditorConfigKind.scaffoldPage => appearance.scaffoldPages[ref.id],
-  EditorConfigKind.value => appearance.valueComponents[ref.id],
-  EditorConfigKind.action => appearance.actionComponents[ref.id],
-  EditorConfigKind.list => appearance.listComponents[ref.id],
+  EditorConfigKind.component => appearance.components[ref.id],
+  EditorConfigKind.nativeComponent =>
+    appearance.tryComponent<NativeComponentConfig>(ref.id),
+  EditorConfigKind.scaffoldPage =>
+    appearance.tryComponent<ScaffoldPageConfig>(ref.id),
+  EditorConfigKind.value => appearance.tryComponent<SuperValueConfig>(ref.id),
+  EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
+  EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
 };
 
 bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.layout => value is SuperLayoutConfig,
   EditorConfigKind.style => value is ContainerStyle,
+  EditorConfigKind.component => value is ComponentConfig,
   EditorConfigKind.nativeComponent => value is NativeComponentConfig,
   EditorConfigKind.scaffoldPage => value is ScaffoldPageConfig,
   EditorConfigKind.value => value is SuperValueConfig,
@@ -461,14 +466,15 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
 Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
   for (final id in appearance.layouts.keys) EditorConfigRef.layout(id),
   for (final id in appearance.styles.keys) EditorConfigRef.style(id),
-  for (final id in appearance.nativeComponents.keys)
-    EditorConfigRef.nativeComponent(id),
-  for (final id in appearance.scaffoldPages.keys)
-    EditorConfigRef.scaffoldPage(id),
-  for (final id in appearance.valueComponents.keys) EditorConfigRef.value(id),
-  for (final id in appearance.actionComponents.keys)
-    EditorConfigRef.action(id),
-  for (final id in appearance.listComponents.keys) EditorConfigRef.list(id),
+  for (final entry in appearance.components.entries)
+    switch (entry.value) {
+      NativeComponentConfig() => EditorConfigRef.nativeComponent(entry.key),
+      ScaffoldPageConfig() => EditorConfigRef.scaffoldPage(entry.key),
+      SuperValueConfig() => EditorConfigRef.value(entry.key),
+      SuperActionConfig() => EditorConfigRef.action(entry.key),
+      SuperListViewConfig() => EditorConfigRef.list(entry.key),
+      _ => EditorConfigRef.component(entry.key),
+    },
 ];
 
 Set<String> _usedIds(Appearance appearance) => {
@@ -598,22 +604,27 @@ Appearance _write(
     return {...source, ...add}..removeWhere((id, _) => drop.contains(id));
   }
 
+  final componentDrop = {
+    for (final ref in removed)
+      if (ref.kind != EditorConfigKind.layout &&
+          ref.kind != EditorConfigKind.style)
+        ref.id,
+  };
+  final componentAdd = {
+    for (final entry in copies.entries)
+      if (entry.key.kind != EditorConfigKind.layout &&
+          entry.key.kind != EditorConfigKind.style)
+        entry.key.id: entry.value as ComponentConfig,
+  };
+
   return appearance.copyWith(
     layouts: update(EditorConfigKind.layout, appearance.layouts),
     styles: update(EditorConfigKind.style, appearance.styles),
-    nativeComponents: update(
-      EditorConfigKind.nativeComponent,
-      appearance.nativeComponents,
-    ),
-    scaffoldPages: update(
-      EditorConfigKind.scaffoldPage,
-      appearance.scaffoldPages,
-    ),
-    valueComponents: update(EditorConfigKind.value, appearance.valueComponents),
-    actionComponents: update(
-      EditorConfigKind.action,
-      appearance.actionComponents,
-    ),
-    listComponents: update(EditorConfigKind.list, appearance.listComponents),
+    components: (componentDrop.isEmpty && componentAdd.isEmpty)
+        ? null
+        : ({
+            ...appearance.components,
+            ...componentAdd,
+          }..removeWhere((id, _) => componentDrop.contains(id))),
   );
 }

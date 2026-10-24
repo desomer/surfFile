@@ -67,16 +67,16 @@ void main() {
   test('SurfFile codec preserves Value design and application preferences', () {
     final appearance = defaultSurfFileAppearance().copyWith(
       cardWidth: 240,
-      valueComponents: {
+      components: {
         'title': const SuperValueConfig(initialText: 'Titre'),
         'password': const SuperValueConfig(obscureText: true),
       },
     );
     final decoded = AppearanceStore.decode(AppearanceStore.encode(appearance));
-    expect(decoded.valueComponents, appearance.valueComponents);
+    expect(decoded.components, appearance.components);
     expect(decoded.cardWidth, 240);
-    expect(decoded.copyWith(spacing: 24).valueComponents, appearance.valueComponents);
-    expect(decoded.resetLayouts().valueComponents, isEmpty);
+    expect(decoded.copyWith(spacing: 24).components, appearance.components);
+    expect(decoded.resetLayouts().components, isEmpty);
   });
 
   test('independent preferences share immutable queued document snapshots', () async {
@@ -316,45 +316,15 @@ void main() {
   });
 
   test(
-    'missing values default, legacy data migrates, invalid data is rejected',
+    'invalid data is rejected',
     () async {
-      expect(
-        AppearanceStore.decode('{"version":2,"mode":"dark"}').mode,
-        ThemeMode.dark,
-      );
-      expect(
-        AppearanceStore.decode('{"version":2,"mode":"dark"}').style('card'),
-        SurfFileAppearanceDefaults.defaultCardStyle,
-      );
-      final oldStored = jsonEncode({'version': 1, 'mode': 'dark'});
-      SharedPreferences.setMockInitialValues({'appearance.v1': oldStored});
-      expect(await AppearanceStore().load(), isA<Appearance>());
-      final prefs = await SharedPreferences.getInstance();
-      expect(jsonDecode(prefs.getString('appearance.v1')!)['version'], 3);
       for (final stored in [
         'not json',
+        '{"version":1,"mode":"dark"}',
+        '{"version":2,"mode":"dark"}',
         '{"version":3,"mode":"dark"}',
         '{"version":2,"mode":"invalid"}',
         jsonEncode({'version': 2, 'mode': 'light', 'cardHeight': 1}),
-        jsonEncode({
-          'version': 2,
-          'mode': 'light',
-          'cardStyle': SurfFileAppearanceDefaults.defaultCardStyle.toJson()
-            ..['shadowOpacity'] = 2,
-        }),
-        jsonEncode({'version': 2, 'mode': 'light', 'accent': 'red'}),
-        jsonEncode({'version': 2, 'mode': 'light', 'windowOpacity': 0}),
-        jsonEncode({'version': 2, 'mode': 'light', 'backgroundOpacity': 2}),
-        jsonEncode({
-          'version': 2,
-          'mode': 'light',
-          'cardStyle': {'color': -1},
-        }),
-        jsonEncode({
-          'version': 2,
-          'mode': 'light',
-          'backgroundStyle': {'color': 0x100000000},
-        }),
       ]) {
         expect(
           () => AppearanceStore.decode(stored),

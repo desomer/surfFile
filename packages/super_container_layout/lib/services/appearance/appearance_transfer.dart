@@ -18,11 +18,7 @@ class AppearanceTransfer {
   static const format = 'super_container_layout.appearance';
   static TransferGroup _groupOf(String key) =>
       key == 'layouts' ||
-          key == 'scaffoldPages' ||
-          key == 'nativeComponents' ||
-          key == 'valueComponents' ||
-          key == 'actionComponents' ||
-          key == 'listComponents' ||
+          key == 'components' ||
           key == 'pageCatalog' ||
           key == 'screens' ||
           key == 'ops'

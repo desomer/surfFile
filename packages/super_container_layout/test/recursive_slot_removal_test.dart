@@ -60,15 +60,6 @@ void main() {
     final context = tester.element(find.byKey(targetKey));
     final appearance = AppearanceScope.controllerOf(context)!;
     appearance.value = appearance.value.copyWith(
-      nativeComponents: {
-        ...appearance.value.nativeComponents,
-        'box': NativeComponentConfig(
-          placements: {
-            'child': ['lay'],
-          },
-          slotTypes: {'lay': 'factory:Layout'},
-        ),
-      },
       layouts: {
         ...appearance.value.layouts,
         'lay': const SuperLayoutConfig(
@@ -87,13 +78,16 @@ void main() {
           slotTypes: {'t1': 'registry:Value'},
         ),
       },
-      valueComponents: {
-        ...appearance.value.valueComponents,
+      components: {
+        ...appearance.value.components,
+        'box': NativeComponentConfig(
+          placements: {
+            'child': ['lay'],
+          },
+          slotTypes: {'lay': 'factory:Layout'},
+        ),
         'first': const SuperValueConfig(initialText: 'First'),
         't1': const SuperValueConfig(initialText: 'Row text'),
-      },
-      listComponents: {
-        ...appearance.value.listComponents,
         'list1': const SuperListViewConfig(),
       },
     );
@@ -150,9 +144,9 @@ void main() {
     final after = appearance.value;
     expect(after.layouts['lay']!.placements[SuperLayoutZone.center], ['first']);
     expect(after.layouts.containsKey('list1'), isFalse);
-    expect(after.listComponents.containsKey('list1'), isFalse);
-    expect(after.valueComponents.containsKey('t1'), isFalse);
-    expect(after.valueComponents.containsKey('first'), isTrue);
+    expect(after.components.containsKey('list1'), isFalse);
+    expect(after.components.containsKey('t1'), isFalse);
+    expect(after.components.containsKey('first'), isTrue);
     expect(find.byType(SuperListView), findsNothing);
 
     final history = EditorHistoryScope.controllerOf(

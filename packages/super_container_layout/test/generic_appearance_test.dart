@@ -28,7 +28,7 @@ void main() {
             swaps: {SuperLayoutZone.west},
           ),
         },
-        scaffoldPages: {
+        components: {
           'workspace': ScaffoldPageConfig(
             placements: {
               ScaffoldPageRegion.drawer: ['navigation'],

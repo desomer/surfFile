@@ -644,7 +644,7 @@ void main() {
         final store = AppearanceStore();
         await store.save(
           Appearance(
-            scaffoldPages: {
+            components: {
               'root': ScaffoldPageConfig(
                 placements: {
                   ScaffoldPageRegion.body: [if (!emptyBody) 'replacement'],
@@ -770,7 +770,7 @@ void main() {
       final store = AppearanceStore();
       await store.save(
         Appearance(
-          scaffoldPages: {
+          components: {
             'root': ScaffoldPageConfig(
               placements: {
                 ScaffoldPageRegion.body: ['scaffold:body'],

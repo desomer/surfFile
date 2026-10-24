@@ -152,10 +152,10 @@ void main() {
       ),
     );
     final restored = codec.decode(codec.encode(appearance));
-    expect(restored.listComponents, appearance.listComponents);
-    final legacy = codec.toJson(appearance)..remove('listComponents');
-    expect(codec.fromJson(legacy).listComponents, isEmpty);
-    expect(appearance.resetLayouts().listComponents, isEmpty);
+    expect(restored.components, appearance.components);
+    final legacy = codec.toJson(appearance)..remove('components');
+    expect(codec.fromJson(legacy).components, isEmpty);
+    expect(appearance.resetLayouts().components, isEmpty);
     final defaults = DefaultAppearance().withListComponent(
       'list',
       const SuperListViewConfig(itemExtent: 80),

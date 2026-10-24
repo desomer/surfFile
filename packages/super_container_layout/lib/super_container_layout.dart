@@ -1,4 +1,5 @@
 export 'models/registry.dart';
+export 'models/component_config.dart';
 export 'models/json_syntax.dart';
 export 'models/super_value_config.dart';
 export 'models/super_action_config.dart';

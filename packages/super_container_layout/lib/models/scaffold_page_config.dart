@@ -1,3 +1,4 @@
+import 'component_config.dart';
 import 'native_component_config.dart';
 
 /// Native content regions owned by a `Scaffold`.
@@ -12,7 +13,7 @@ enum ScaffoldPageRegion {
 }
 
 /// Typed compatibility API for Scaffold configurations.
-class ScaffoldPageConfig {
+class ScaffoldPageConfig extends ComponentConfig {
   ScaffoldPageConfig({
     Map<ScaffoldPageRegion, List<String>> placements = const {},
     Map<String, String> slotTypes = const {},
@@ -63,6 +64,14 @@ class ScaffoldPageConfig {
       ScaffoldPageConfig.fromNative(native.withSlotAdded(id, region.name, type: type));
   ScaffoldPageConfig withoutSlot(String id) =>
       ScaffoldPageConfig.fromNative(native.withoutSlot(id));
+  @override
+  String get componentType => 'scaffold';
+
+  @override
+  ScaffoldPageConfig patchFromJson(Map<Object?, Object?> patch) =>
+      ScaffoldPageConfig.fromJson({...toJson(), ...patch});
+
+  @override
   Map<String, Object> toJson() => native.toJson();
 
   factory ScaffoldPageConfig.fromJson(Object? value) {

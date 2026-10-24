@@ -8,19 +8,12 @@
   "data": {
     "mode": "light",
     "accent": "#5268D9",
-    "styles": {
-      "CjcSL71dp6": {
-        "fill": {
-          "type": "solid",
-          "start": "#5268D9",
-          "end": "#B794F4"
-        }
-      }
-    },
+    "styles": {},
     "screens": {
       "root": {
         "regions": {
-          "bottomNavigationBar": true
+          "body": true,
+          "appBar": true
         },
         "body": {
           "type": "Layout",
@@ -34,93 +27,63 @@
           "zones": {
             "center": [
               {
-                "type": "Card",
-                "id": "vPZEE5zDjI",
-                "style": {
-                  "fill": {
-                    "type": "solid",
-                    "start": "#5268D9",
-                    "end": "#B794F4"
-                  },
-                  "margin": 22.324754675060124
-                },
-                "child": {
-                  "type": "factory:ListView",
-                  "id": "CjcSL71dp6",
-                  "slotLabel": "ListView"
-                }
+                "type": "factory:ListView",
+                "id": "uJPuYCW4JB"
               }
             ]
           }
         },
-        "bottomNavigationBar": [
+        "appBar": [
           {
-            "type": "factory:BottomNavigationBar",
-            "id": "AJDT8wvUNh"
+            "type": "ApplicationBar",
+            "id": "main-appbar",
+            "regions": {
+              "title": true
+            },
+            "title": [
+              {
+                "type": "Value",
+                "id": "app-title",
+                "initialText": "Accueil",
+                "fontSize": 18.0,
+                "fontWeight": 600
+              }
+            ]
           }
         ]
       }
     },
     "layouts": {
-      "CjcSL71dp6": {
+      "uJPuYCW4JB": {
         "autoSides": [
           "north",
           "south",
           "east",
           "west"
         ],
-        "zoneAxes": {
-          "center": "row"
-        },
         "zones": {
           "center": [
             {
               "type": "factory:Value",
-              "id": "BpZxoQL3PM"
-            },
-            {
-              "type": "factory:Value",
-              "id": "IsWEDA2ZDT"
+              "id": "9cL5LcbIhK"
             }
           ]
         }
       }
     },
-    "nativeComponents": {
-      "AJDT8wvUNh": {
-        "regions": {
-          "left": true,
-          "center": true,
-          "right": true
-        },
-        "right": [
-          {
-            "type": "factory:Value",
-            "id": "_U2vhbUOGt"
-          }
-        ]
-      }
-    },
-    "valueComponents": {
-      "_U2vhbUOGt": {
-        "initialText": "xwcqswcxcwxcc<w"
-      },
-      "BpZxoQL3PM": {
-        "binding": "b[?].c"
-      },
-      "IsWEDA2ZDT": {
-        "initialText": "ddddd"
-      }
-    },
-    "listComponents": {
-      "CjcSL71dp6": {
+    "components": {
+      "uJPuYCW4JB": {
+        "type": "list",
         "binding": {
           "repositoryId": "48df28734b98175363c237b8a5939ad6",
           "path": "b"
         },
-        "itemSize": {
-          "preferredHeight": "25px"
-        }
+        "allowAdd": true,
+        "allowRemove": true
+      },
+      "9cL5LcbIhK": {
+        "type": "value",
+        "binding": "b[?].c"
       }
     },
     "pageCatalog": {

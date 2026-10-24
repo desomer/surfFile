@@ -2,11 +2,12 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show listEquals;
 
+import 'component_config.dart';
 import 'json_syntax.dart';
 import 'super_layout_config.dart' show SlotSizeConstraints;
 
 /// Immutable placements shared by adapters for native Flutter components.
-class NativeComponentConfig {
+class NativeComponentConfig extends ComponentConfig {
   NativeComponentConfig({
     this.useDefaultNavigation,
     Map<String, List<String>> placements = const {},
@@ -260,6 +261,14 @@ class NativeComponentConfig {
           ..addAll({id: ?label}),
       );
 
+  @override
+  String get componentType => 'native';
+
+  @override
+  NativeComponentConfig patchFromJson(Map<Object?, Object?> patch) =>
+      NativeComponentConfig.fromJson({...toJson(), ...patch});
+
+  @override
   Map<String, Object> toJson() => {
     'useDefaultNavigation': ?useDefaultNavigation,
     'regions': regions,

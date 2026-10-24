@@ -54,15 +54,15 @@ void main() {
     history.commitTransaction();
     const codec = DefaultAppearanceCodec();
     expect(
-      codec.decode(codec.encode(appearance.value)).valueComponents['text'],
+      codec.decode(codec.encode(appearance.value)).components['text'],
       configured,
     );
     history.undo();
-    expect(appearance.value.valueComponents['text'], original);
+    expect(appearance.value.components['text'], original);
     expect(text.value, original);
     expect(history.canUndo, isFalse);
     history.redo();
-    expect(appearance.value.valueComponents['text'], configured);
+    expect(appearance.value.components['text'], configured);
     expect(text.value, configured);
   });
 

@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'component_config.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
 import 'super_value_config.dart';
@@ -35,6 +36,7 @@ class XuiBuildCtx {
 enum EditorConfigKind {
   layout,
   style,
+  component,
   nativeComponent,
   scaffoldPage,
   value,
@@ -49,6 +51,7 @@ class EditorConfigRef {
 
   const EditorConfigRef.layout(this.id) : kind = EditorConfigKind.layout;
   const EditorConfigRef.style(this.id) : kind = EditorConfigKind.style;
+  const EditorConfigRef.component(this.id) : kind = EditorConfigKind.component;
   const EditorConfigRef.nativeComponent(this.id)
     : kind = EditorConfigKind.nativeComponent;
   const EditorConfigRef.scaffoldPage(this.id)
@@ -213,6 +216,7 @@ class Registry {
   final Map<String, ValueNotifier<SuperLayoutConfig>> superLayoutConfigById =
       {};
   final Map<String, ValueNotifier<ContainerStyle>> containerStyleById = {};
+  final Map<String, ValueNotifier<ComponentConfig>> componentConfigById = {};
   final Map<String, ValueNotifier<ScaffoldPageConfig>> scaffoldPageConfigById =
       {};
   final Map<String, ValueNotifier<NativeComponentConfig>>
@@ -221,6 +225,7 @@ class Registry {
   bool _syncing = false;
   final Map<String, SuperLayoutConfig> _layoutDefaults = {};
   final Map<String, ContainerStyle> _styleDefaults = {};
+  final Map<String, ComponentConfig> _componentDefaults = {};
   final Map<String, ValueNotifier<SuperValueConfig>> valueConfigById = {};
   final Map<String, SuperValueConfig> _valueDefaults = {};
   final Map<String, ValueNotifier<SuperActionConfig>> actionConfigById = {};
@@ -242,6 +247,12 @@ class Registry {
     }
     for (final entry in containerStyleById.entries.toList()) {
       styleController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in componentConfigById.entries.toList()) {
+      componentController<ComponentConfig>(
+        entry.key,
+        fallback: entry.value.value,
+      );
     }
     for (final entry in scaffoldPageConfigById.entries.toList()) {
       scaffoldPageController(entry.key, fallback: entry.value.value);
@@ -344,7 +355,8 @@ class Registry {
     final native = nativeComponentController(
       id,
       fallback: initial.native,
-      legacy: (appearance) => appearance.scaffoldPages[id]?.native,
+      legacy: (appearance) =>
+          appearance.tryComponent<ScaffoldPageConfig>(id)?.native,
     );
     final notifier = scaffoldPageConfigById.putIfAbsent(
       id,
@@ -379,6 +391,12 @@ class Registry {
         entry.value.value = appearance.style(
           entry.key,
           fallback: _styleDefaults[entry.key] ?? const ContainerStyle(),
+        );
+      }
+      for (final entry in componentConfigById.entries) {
+        entry.value.value = appearance.component(
+          entry.key,
+          fallback: _componentDefaults[entry.key]!,
         );
       }
       for (final entry in nativeComponentConfigById.entries) {
@@ -422,6 +440,35 @@ class Registry {
       addConfigurator: addConfigurator,
       dynamicBuilder: (xuiCtx) => widget,
     );
+  }
+
+  ValueNotifier<T> componentController<T extends ComponentConfig>(
+    String id, {
+    required T fallback,
+  }) {
+    fallback.validate();
+    _componentDefaults.putIfAbsent(id, () => fallback);
+    final notifier = componentConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier<T>(
+        _appearance?.value.component<T>(id, fallback: fallback) ?? fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier as ValueNotifier<T>;
   }
 
   ValueNotifier<SuperValueConfig> valueController(
@@ -542,7 +589,7 @@ class Registry {
   }
 
   NativeComponentConfig _nativeValue(Appearance appearance, String id) =>
-      appearance.nativeComponents[id] ??
+      appearance.tryComponent<NativeComponentConfig>(id) ??
       _nativeMigrations[id]?.call(appearance) ??
       _nativeDefaults[id]!;
 

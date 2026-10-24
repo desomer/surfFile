@@ -7,12 +7,12 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('map updates retain reusable preferences and immutable collections', () {
-    final appearance = DefaultAppearance(
+      final appearance = DefaultAppearance(
       cardHeight: 200,
       spacing: 18,
       fontSize: 14,
       scrollFadeEnabled: false,
-      scaffoldPages: {
+      components: {
         'workspace': ScaffoldPageConfig(
           placements: {
             ScaffoldPageRegion.drawer: ['navigation'],
@@ -36,7 +36,7 @@ void main() {
     );
     expect(updated.withStyle('panel', null).styles, isEmpty);
     expect(updated.resetLayouts().layouts, isEmpty);
-    expect(updated.resetLayouts().scaffoldPages, isEmpty);
+    expect(updated.resetLayouts().components, isEmpty);
     expect(updated.resetLayouts().cardHeight, 200);
     expect(() => updated.styles.clear(), throwsUnsupportedError);
     expect(() => updated.layouts.clear(), throwsUnsupportedError);
@@ -56,7 +56,7 @@ void main() {
       scrollFadeExtent: 0,
       styles: {'custom': const ContainerStyle(radius: 22)},
       layouts: {'custom': const SuperLayoutConfig(east: false)},
-      scaffoldPages: {
+      components: {
         'custom': ScaffoldPageConfig(
           placements: {
             ScaffoldPageRegion.endDrawer: ['slot'],

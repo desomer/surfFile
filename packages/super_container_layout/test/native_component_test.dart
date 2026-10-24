@@ -573,7 +573,7 @@ void main() {
     () async {
       final appearance = DefaultAppearance(
         spacing: 19,
-        nativeComponents: {
+        components: {
           'bar': NativeComponentConfig(
             placements: {
               'title': ['heading'],
@@ -601,7 +601,7 @@ void main() {
       );
       expect(changed, isA<DefaultAppearance>());
       expect((changed as DefaultAppearance).spacing, 19);
-      expect(changed.resetLayouts().nativeComponents, isEmpty);
+      expect(changed.resetLayouts().components, isEmpty);
     },
   );
 
@@ -612,7 +612,7 @@ void main() {
       },
     );
     final appearance = ValueNotifier<Appearance>(
-      Appearance(scaffoldPages: {'page': original}),
+      Appearance(components: {'page': original}),
     );
     final registry = Registry()..bindAppearance(appearance);
     addTearDown(registry.unbindAppearance);
@@ -622,8 +622,7 @@ void main() {
     expect(page.value.slotsOf(ScaffoldPageRegion.body), ['body']);
     page.value = page.value.withRegionEnabled(ScaffoldPageRegion.drawer, true);
     expect(native.value.isEnabled('drawer'), isTrue);
-    expect(appearance.value.nativeComponents.containsKey('page'), isTrue);
-    expect(appearance.value.scaffoldPages.containsKey('page'), isFalse);
+    expect(appearance.value.components['page'], isA<NativeComponentConfig>());
     expect(
       appearance.value
           .scaffoldPage('page')
@@ -988,19 +987,19 @@ void main() {
         }),
         throwsFormatException,
       );
-      final appearance = Appearance(nativeComponents: {'bar': config});
+      final appearance = Appearance(components: {'bar': config});
       final restored = AppearanceStore.decode(
         AppearanceStore.encode(appearance),
       );
-      expect(restored.nativeComponents['bar']!.useDefaultNavigation, isTrue);
+      expect(restored.nativeComponent('bar').useDefaultNavigation, isTrue);
       final exported = AppearanceTransfer.export(appearance, {
         TransferGroup.layouts,
       });
       final imported = AppearanceTransfer.import(Appearance(), exported, {
         TransferGroup.layouts,
       });
-      expect(imported.nativeComponents['bar']!.useDefaultNavigation, isTrue);
-      expect(imported.resetLayouts().nativeComponents, isEmpty);
+      expect(imported.nativeComponent('bar').useDefaultNavigation, isTrue);
+      expect(imported.resetLayouts().components, isEmpty);
     },
   );
 

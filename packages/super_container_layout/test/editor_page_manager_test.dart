@@ -158,7 +158,7 @@ void main() {
     await tester.pumpAndSettle();
     final pageId = appearance.value.pageCatalog.pages.single.id;
     expect(
-      appearance.value.nativeComponents[pageId]!.slotsOf('body'),
+      appearance.value.nativeComponent(pageId).slotsOf('body'),
       hasLength(1),
     );
     expect(tester.takeException(), isNull);

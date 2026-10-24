@@ -124,12 +124,12 @@ void main() {
       final store = AppearanceStore();
       await store.save(appearance.value);
       final saved = await store.load();
-      expect(saved.nativeComponents['box']!.toJson(), config.toJson());
+      expect(saved.nativeComponent('box').toJson(), config.toJson());
       final encoded = const AppearanceCodec().encode(saved);
       expect(
         const AppearanceCodec()
             .decode(encoded)
-            .nativeComponents['box']!
+            .nativeComponent('box')
             .toJson(),
         config.toJson(),
       );
@@ -139,7 +139,7 @@ void main() {
       final imported = AppearanceTransfer.import(Appearance(), exported, {
         TransferGroup.layouts,
       });
-      expect(imported.nativeComponents['box']!.toJson(), config.toJson());
+      expect(imported.nativeComponent('box').toJson(), config.toJson());
       history.undo();
       await tester.pumpAndSettle();
       expect(find.byType(SuperValue), findsNothing);

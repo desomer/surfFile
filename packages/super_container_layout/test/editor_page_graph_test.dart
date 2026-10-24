@@ -72,7 +72,7 @@ Appearance _sample() => Appearance(
       slotTypes: {'txt3': 'registry:Value'},
     ),
   },
-  nativeComponents: {
+  components: {
     'root': NativeComponentConfig(
       placements: {
         'body': ['scaffold:body'],
@@ -86,7 +86,7 @@ Appearance _sample() => Appearance(
       },
       regions: {'drawer': false},
       slotTypes: {
-        'bar1': 'factory:AppBar',
+        'bar1': 'factory:ApplicationBar',
         'lay1': 'factory:Layout',
         'txtHidden': 'factory:Value',
       },
@@ -98,8 +98,6 @@ Appearance _sample() => Appearance(
       },
       slotTypes: {'txt1': 'factory:Value'},
     ),
-  },
-  valueComponents: {
     for (final id in ['txt1', 'txt2', 'txt3', 'hiddenTxt', 'txtHidden'])
       id: SuperValueConfig(initialText: id),
   },
@@ -131,26 +129,26 @@ void main() {
         targetPageId: 'p2',
         generateId: _ids(),
       );
-      final layout = copy.nativeComponents['p2']!.slotsOf('body').single;
+      final layout = copy.nativeComponent('p2').slotsOf('body').single;
       final container = copy.layouts[layout]!
           .placementsOf(SuperLayoutZone.center)
           .first;
-      final child = copy.nativeComponents[container]!.slotsOf('child').single;
+      final child = copy.nativeComponent(container).slotsOf('child').single;
       expect(child, isNot('inside'));
       expect(
-        copy.nativeComponents[container]!.slotTypeOf(child),
+        copy.nativeComponent(container).slotTypeOf(child),
         'factory:Value',
       );
-      expect(copy.valueComponents[child]!.initialText, 'Nested');
+      expect(copy.valueComponent(child).initialText, 'Nested');
       expect(copy.styles[container], source.styles['cont1']);
-      expect(copy.nativeComponents['cont1'], source.nativeComponents['cont1']);
+      expect(copy.components['cont1'], source.components['cont1']);
       final removed = EditorPageGraph.remove(
         appearance: source,
         registry: _registry(),
         pageId: 'p1',
       );
-      expect(removed.nativeComponents.containsKey('cont1'), isFalse);
-      expect(removed.valueComponents.containsKey('inside'), isFalse);
+      expect(removed.components.containsKey('cont1'), isFalse);
+      expect(removed.components.containsKey('inside'), isFalse);
     },
   );
 
@@ -204,24 +202,25 @@ void main() {
         targetPageId: 'p2',
         generateId: _ids(),
       );
-      final copies = result.valueComponents.entries.where(
-        (entry) => entry.key != 'txt1' && entry.value.binding != null,
-      );
+      final copies = result
+          .componentsOfType<SuperValueConfig>()
+          .entries
+          .where((entry) => entry.key != 'txt1' && entry.value.binding != null);
       expect(copies, hasLength(1));
       expect(copies.single.value.binding, binding);
-      expect(copies.single.value.field, source.valueComponents['txt1']!.field);
-      expect(source.valueComponents['txt1']!.binding, binding);
+      expect(copies.single.value.field, source.valueComponent('txt1').field);
+      expect(source.valueComponent('txt1').binding, binding);
       expect(
         copies.single.value.states,
-        source.valueComponents['txt1']!.states,
+        source.valueComponent('txt1').states,
       );
       final removed = EditorPageGraph.remove(
         appearance: result,
         registry: _registry(),
         pageId: 'p2',
       );
-      expect(removed.valueComponents.containsKey(copies.single.key), isFalse);
-      expect(removed.valueComponents['txt1'], source.valueComponents['txt1']);
+      expect(removed.components.containsKey(copies.single.key), isFalse);
+      expect(removed.components['txt1'], source.components['txt1']);
     },
   );
 
@@ -250,19 +249,24 @@ void main() {
 
     expect(identical(result.pageCatalog, source.pageCatalog), isTrue);
     for (final id in originals) {
-      expect(result.nativeComponents[id], source.nativeComponents[id]);
+      expect(result.components[id], source.components[id]);
       expect(result.layouts[id], source.layouts[id]);
-      expect(result.valueComponents[id], source.valueComponents[id]);
     }
     expect(result.layouts['contA'], source.layouts['contA']);
     expect(result.styles['background'], source.styles['background']);
-    expect(result.nativeComponents['root'], source.nativeComponents['root']);
+    expect(result.components['root'], source.components['root']);
     expect(result.layouts.length, source.layouts.length + 2);
-    expect(result.nativeComponents.length, source.nativeComponents.length + 2);
-    expect(result.valueComponents.length, source.valueComponents.length + 5);
+    expect(
+      result.componentsOfType<NativeComponentConfig>().length,
+      source.componentsOfType<NativeComponentConfig>().length + 2,
+    );
+    expect(
+      result.componentsOfType<SuperValueConfig>().length,
+      source.componentsOfType<SuperValueConfig>().length + 5,
+    );
     expect(result.styles.length, source.styles.length + 1);
 
-    final page = result.nativeComponents['p2']!;
+    final page = result.nativeComponent('p2');
     expect(page.regions, {'drawer': false});
     final bar = page.slotsOf('appBar').single;
     final lay = page.slotsOf('body').single;
@@ -270,13 +274,13 @@ void main() {
     for (final id in [bar, lay, hidden]) {
       expect(originals, isNot(contains(id)));
     }
-    expect(page.slotTypeOf(bar), 'factory:AppBar');
+    expect(page.slotTypeOf(bar), 'factory:ApplicationBar');
     expect(page.slotPreferredSizes, {lay: const Size(1, 2)});
-    expect(result.valueComponents[hidden]!.initialText, 'txtHidden');
+    expect(result.valueComponent(hidden).initialText, 'txtHidden');
 
-    final title = result.nativeComponents[bar]!.slotsOf('title').single;
+    final title = result.nativeComponent(bar).slotsOf('title').single;
     expect(originals, isNot(contains(title)));
-    expect(result.valueComponents[title]!.initialText, 'txt1');
+    expect(result.valueComponent(title).initialText, 'txt1');
 
     final layout = result.layouts[lay]!;
     final [cont, txt, nested] = layout.placementsOf(SuperLayoutZone.center);
@@ -295,11 +299,11 @@ void main() {
     expect(layout.grid!.items.keys.toSet(), {cont, txt, nested});
     expect(layout.grid!.items[txt], const GridSlotPosition(y: 3));
     expect(result.styles[cont], const ContainerStyle(radius: 7));
-    expect(result.valueComponents[txt]!.initialText, 'txt2');
-    expect(result.valueComponents[hiddenTxt]!.initialText, 'hiddenTxt');
+    expect(result.valueComponent(txt).initialText, 'txt2');
+    expect(result.valueComponent(hiddenTxt).initialText, 'hiddenTxt');
     final txt3 = result.layouts[nested]!.placementsOf(SuperLayoutZone.center);
     expect(originals, isNot(contains(txt3.single)));
-    expect(result.valueComponents[txt3.single]!.initialText, 'txt3');
+    expect(result.valueComponent(txt3.single).initialText, 'txt3');
 
     // Editing the copy leaves the original untouched.
     final edited = result.withStyle(cont, const ContainerStyle(radius: 2));
@@ -327,7 +331,7 @@ void main() {
       first.layouts.keys.toSet(),
     );
     expect(ids2.intersection(ids3), isEmpty);
-    expect(second.nativeComponents['p2'], first.nativeComponents['p2']);
+    expect(second.components['p2'], first.components['p2']);
     expect(
       () => EditorPageGraph.duplicate(
         appearance: first,
@@ -341,7 +345,7 @@ void main() {
 
   test('refuses custom components without contract atomically', () {
     final source = Appearance(
-      nativeComponents: {
+      components: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['lay'],
@@ -373,12 +377,12 @@ void main() {
         ),
       ),
     );
-    expect(source.nativeComponents.keys, ['p1']);
+    expect(source.components.keys, ['p1']);
     expect(source.layouts.keys, ['lay']);
 
     final replaced = _registry()..registerFactory('Value', const SizedBox());
     final text = Appearance(
-      nativeComponents: {
+      components: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['t'],
@@ -400,7 +404,7 @@ void main() {
 
   test('refuses unknown components and cycles', () {
     Appearance page(String type) => Appearance(
-      nativeComponents: {
+      components: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['x'],
@@ -455,7 +459,7 @@ void main() {
       registry: _registry(),
       pageId: 'p1',
     );
-    expect(removed.nativeComponents, isEmpty);
+    expect(removed.components, isEmpty);
     expect(removed.layouts, isEmpty);
   });
 
@@ -498,7 +502,7 @@ void main() {
         ),
       );
     final source = Appearance(
-      nativeComponents: {
+      components: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['card'],
@@ -506,8 +510,6 @@ void main() {
           },
           slotTypes: {'card': 'factory:Card', 'b': 'component:badge'},
         ),
-      },
-      valueComponents: {
         'card.title': const SuperValueConfig(initialText: 'Titre'),
         'inner': const SuperValueConfig(initialText: 'inner'),
       },
@@ -527,20 +529,20 @@ void main() {
       targetPageId: 'p2',
       generateId: _ids(),
     );
-    final page = result.nativeComponents['p2']!;
+    final page = result.nativeComponent('p2');
     final card = page.slotsOf('body').single;
     final badge = page.slotsOf('appBar').single;
     expect(card, isNot('card'));
     expect(badge, isNot('b'));
     expect(page.slotTypeOf(badge), 'component:badge');
-    expect(result.valueComponents['$card.title']!.initialText, 'Titre (copie)');
+    expect(result.valueComponent('$card.title').initialText, 'Titre (copie)');
     final inner = result.layouts['$card.body']!
         .placementsOf(SuperLayoutZone.center)
         .single;
     expect(inner, isNot('inner'));
     // Nested bootstrap components keep their own structural copy.
-    expect(result.valueComponents[inner]!.initialText, 'inner');
-    expect(result.valueComponents['card.title']!.initialText, 'Titre');
+    expect(result.valueComponent(inner).initialText, 'inner');
+    expect(result.valueComponent('card.title').initialText, 'Titre');
   });
 
   test('bootstrap builders carry their contract metadata', () {
@@ -549,7 +551,7 @@ void main() {
       registry.registry['Layout']!.duplication,
       same(ComponentDuplicationContract.newLayout),
     );
-    expect(registry.registry['AppBar']!.duplication!.ownedConfigs('x'), [
+    expect(registry.registry['ApplicationBar']!.duplication!.ownedConfigs('x'), [
       const EditorConfigRef.nativeComponent('x'),
       const EditorConfigRef.layout('x'),
     ]);
@@ -585,7 +587,7 @@ void main() {
         ),
         'contA': const SuperLayoutConfig(label: 'global'),
       },
-      nativeComponents: {
+      components: {
         'p1': NativeComponentConfig(
           placements: {
             'body': ['l1'],
@@ -615,7 +617,10 @@ void main() {
     );
     final result = removal.appearance;
     expect(identical(result.pageCatalog, source.pageCatalog), isTrue);
-    expect(result.nativeComponents.keys, unorderedEquals(['p2', 'root']));
+    expect(
+      result.componentsOfType<NativeComponentConfig>().keys,
+      unorderedEquals(['p2', 'root']),
+    );
     expect(result.layouts.keys, unorderedEquals(['l2', 'contA']));
     expect(
       result.styles.keys,
@@ -653,24 +658,27 @@ void main() {
       registry: _registry(),
       pageId: 'p1',
     );
-    final bar = copied.nativeComponents['p2']!.slotsOf('appBar').single;
-    expect(removed.nativeComponents.keys, unorderedEquals(['root', 'p2', bar]));
+    final bar = copied.nativeComponent('p2').slotsOf('appBar').single;
+    expect(
+      removed.componentsOfType<NativeComponentConfig>().keys,
+      unorderedEquals(['root', 'p2', bar]),
+    );
     for (final id in ['lay1', 'nested', 'txt1', 'cont1']) {
       expect(removed.layouts.containsKey(id), isFalse);
-      expect(removed.valueComponents.containsKey(id), isFalse);
+      expect(removed.components.containsKey(id), isFalse);
       expect(removed.styles.containsKey(id), isFalse);
     }
     expect(removed.layouts.keys, contains('contA'));
     expect(removed.styles.keys, contains('background'));
-    expect(removed.valueComponents.length, 5);
+    expect(removed.componentsOfType<SuperValueConfig>().length, 5);
     expect(removed.layouts.length, 3);
   });
 
   group('removeInstance', () {
     Appearance unplaced(Appearance appearance) => appearance.copyWith(
-      nativeComponents: {
-        ...appearance.nativeComponents,
-        'p1': appearance.nativeComponents['p1']!.withoutSlot('lay1'),
+      components: {
+        ...appearance.components,
+        'p1': appearance.nativeComponent('p1').withoutSlot('lay1'),
       },
     );
 
@@ -686,11 +694,11 @@ void main() {
       expect(removed.layouts.keys, unorderedEquals(['contA']));
       expect(removed.styles.keys, unorderedEquals(['background']));
       expect(
-        removed.valueComponents.keys,
+        removed.componentsOfType<SuperValueConfig>().keys,
         unorderedEquals(['txt1', 'txtHidden']),
       );
       expect(
-        removed.nativeComponents.keys,
+        removed.componentsOfType<NativeComponentConfig>().keys,
         containsAll(['root', 'p1', 'bar1']),
       );
     });
@@ -730,8 +738,14 @@ void main() {
         containerKind: EditorConfigKind.nativeComponent,
       );
       expect(removed.layouts.keys, unorderedEquals(['contA', 'nested']));
-      expect(removed.valueComponents.keys, contains('txt3'));
-      expect(removed.valueComponents.keys, isNot(contains('txt2')));
+      expect(
+        removed.componentsOfType<SuperValueConfig>().keys,
+        contains('txt3'),
+      );
+      expect(
+        removed.componentsOfType<SuperValueConfig>().keys,
+        isNot(contains('txt2')),
+      );
     });
   });
 }

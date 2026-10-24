@@ -1,4 +1,6 @@
 
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,6 +29,12 @@ class AppearanceStore {
     if (stored is! String) {
       throw const FormatException('Invalid stored appearance.');
     }
+    print('Stored appearance: $stored');
+
+    var rawJson = jsonDecode(stored);
+    final prettyJson = JsonEncoder.withIndent('  ').convert(rawJson);
+    print('Raw JSON: $prettyJson');
+
     final result = codec.decode(stored);
     codec.restoreAdditional(stored);
     if (codec.needsMigration(stored)) await save(result);

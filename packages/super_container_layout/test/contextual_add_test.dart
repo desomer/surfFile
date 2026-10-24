@@ -203,8 +203,8 @@ void main() {
     final appearance = AppearanceScope.controllerOf(context)!;
     appearance.value = appearance.value.copyWith(
       layouts: owner == 'layout' ? {'root': root, ...innerLayouts} : const {},
-      nativeComponents: owner == 'layout' ? const {} : {'root': native},
-      valueComponents: {
+      components: {
+        if (owner != 'layout') 'root': native,
         for (final id in ['source', 'other'])
           id: SuperValueConfig(initialText: 'Text $id'),
       },
@@ -458,9 +458,9 @@ void main() {
     await openInsertWizard(tester);
     await addVia(tester, '0-beside-down');
     final after = appearance.value;
-    final wrapper = after.nativeComponents['root']!.slotsOf('child').single;
+    final wrapper = after.nativeComponent('root').slotsOf('child').single;
     expect(
-      after.nativeComponents['root']!.slotTypeOf(wrapper),
+      after.nativeComponent('root').slotTypeOf(wrapper),
       'registry:Layout',
     );
     final inner = after.layouts[wrapper]!;
@@ -499,7 +499,7 @@ void main() {
     await tester.pumpAndSettle();
     await openInsertWizard(tester);
     await addVia(tester, '0-beside-up');
-    final ids = appearance.value.nativeComponents['root']!.slotsOf('body');
+    final ids = appearance.value.nativeComponent('root').slotsOf('body');
     expect(ids, hasLength(2));
     expect(ids.last, 'source');
     expect(tester.takeException(), isNull);
@@ -529,7 +529,7 @@ void main() {
     final appearance = await mount(tester, owner: 'native');
     await openInsertWizard(tester);
     await addVia(tester, 'z0-body');
-    final ids = appearance.value.nativeComponents['root']!.slotsOf('body');
+    final ids = appearance.value.nativeComponent('root').slotsOf('body');
     expect(ids, hasLength(2));
     expect(ids.first, 'source');
     expect(tester.takeException(), isNull);
@@ -580,7 +580,7 @@ void main() {
     final appearance = await mount(tester, owner: 'native');
     await openInsertWizard(tester);
     await addVia(tester, 'z0-header', component: 'factory:ApplicationBar');
-    final native = appearance.value.nativeComponents['root']!;
+    final native = appearance.value.nativeComponent('root');
     expect(native.slotsOf('header'), hasLength(1));
     expect(native.isEnabled('header'), isTrue);
     expect(

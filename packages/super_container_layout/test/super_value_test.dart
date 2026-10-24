@@ -126,7 +126,7 @@ void main() {
       expect(history.canUndo, isTrue);
       final store = AppearanceStore();
       await store.save(appearance.value);
-      expect((await store.load()).valueComponents['persisted'], design.value);
+      expect((await store.load()).components['persisted'], design.value);
       history.undo();
       await tester.pumpAndSettle();
       expect(design.value, input);
@@ -671,12 +671,12 @@ void main() {
         .withValueComponent('title', styled);
     expect(appearance.cardWidth, 222);
     final decoded = codec.decode(codec.encode(appearance)) as DefaultAppearance;
-    expect(decoded.valueComponents, {'title': styled});
+    expect(decoded.components, {'title': styled});
     expect(decoded.cardWidth, 222);
-    expect(decoded.copyWith(spacing: 20).valueComponents, {'title': styled});
-    expect(decoded.resetLayouts().valueComponents, isEmpty);
-    final legacy = codec.toJson(appearance)..remove('valueComponents');
-    expect(codec.fromJson(legacy).valueComponents, isEmpty);
+    expect(decoded.copyWith(spacing: 20).components, {'title': styled});
+    expect(decoded.resetLayouts().components, isEmpty);
+    final legacy = codec.toJson(appearance)..remove('components');
+    expect(codec.fromJson(legacy).components, isEmpty);
     final exported = AppearanceTransfer.export(appearance, {
       TransferGroup.layouts,
     }, codec: codec);
@@ -686,13 +686,13 @@ void main() {
       {TransferGroup.layouts},
       codec: codec,
     ) as DefaultAppearance;
-    expect(imported.valueComponents, {'title': styled});
+    expect(imported.components, {'title': styled});
     expect(imported.cardWidth, 240);
     final styles = AppearanceTransfer.export(appearance, {
       TransferGroup.styles,
     }, codec: codec);
-    expect(jsonDecode(styles)['data'].containsKey('valueComponents'), isFalse);
-    final invalid = codec.toJson(appearance)..['valueComponents'] = {'a': 'bad'};
+    expect(jsonDecode(styles)['data'].containsKey('components'), isFalse);
+    final invalid = codec.toJson(appearance)..['components'] = {'a': 'bad'};
     expect(() => codec.fromJson(invalid), throwsFormatException);
   });
 
@@ -710,7 +710,7 @@ void main() {
       final a = registry.valueController('a', fallback: initial);
       final b = registry.valueController('b');
       a.value = input;
-      expect(appearance.value.valueComponents['a'], input);
+      expect(appearance.value.components['a'], input);
       expect(b.value, const SuperValueConfig());
       history.undo();
       expect(a.value, initial);
@@ -720,9 +720,9 @@ void main() {
       expect(a.value, initial);
       registry.unbindAppearance();
       a.value = input;
-      expect(appearance.value.valueComponents, isEmpty);
+      expect(appearance.value.components, isEmpty);
       final second = ValueNotifier<Appearance>(
-        Appearance(valueComponents: {'a': initial}),
+        Appearance(components: {'a': initial}),
       );
       registry.bindAppearance(second);
       expect(a.value, initial);

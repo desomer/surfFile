@@ -387,7 +387,7 @@ void main() {
       final decoded = const AppearanceCodec().decode(
         const AppearanceCodec().encode(appearance),
       );
-      expect(decoded.valueComponents['app']!.binding, binding);
+      expect(decoded.valueComponent('app').binding, binding);
       expect(tester.takeException(), isNull);
     },
   );

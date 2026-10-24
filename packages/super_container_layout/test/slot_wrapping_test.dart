@@ -189,12 +189,11 @@ void main() {
       layouts: owner == 'layout' || owner == 'grid'
           ? {'root': layout}
           : const {},
-      nativeComponents: owner == 'native' || owner == 'surface'
-          ? {'root': native}
-          : const {},
-      valueComponents: provided
-          ? const {}
-          : {sourceId: const SuperValueConfig(initialText: 'Saved target')},
+      components: {
+        if (owner == 'native' || owner == 'surface') 'root': native,
+        if (!provided)
+          sourceId: const SuperValueConfig(initialText: 'Saved target'),
+      },
     );
     await tester.pumpAndSettle();
     StyleEditScope.controllerOf(context)!.value = editing;
@@ -241,7 +240,7 @@ void main() {
             final id = inLayout
                 ? after.layouts['root']!.placedSlotIds.single
                 : after
-                      .nativeComponents['root']!
+                      .nativeComponent('root')
                       .placements
                       .values
                       .single
@@ -250,13 +249,13 @@ void main() {
             expect(
               inLayout
                   ? after.layouts['root']!.slotTypeOf(id)
-                  : after.nativeComponents['root']!.slotTypeOf(id),
+                  : after.nativeComponent('root').slotTypeOf(id),
               'registry:$wrapper',
             );
             expect(
               inLayout
                   ? after.layouts['root']!.slotSizeConstraints[id]
-                  : after.nativeComponents['root']!.slotSizeConstraints[id],
+                  : after.nativeComponent('root').slotSizeConstraints[id],
               same(dimensions),
             );
             if (owner == 'grid') {
@@ -265,9 +264,9 @@ void main() {
               });
             }
             if (wrapper == 'Card') {
-              expect(after.nativeComponents[id]!.slotsOf('child'), [sourceId]);
+              expect(after.nativeComponent(id).slotsOf('child'), [sourceId]);
               expect(
-                after.nativeComponents[id]!.slotLabels[sourceId],
+                after.nativeComponent(id).slotLabels[sourceId],
                 'My child',
               );
             } else {
@@ -280,7 +279,10 @@ void main() {
               provided ? find.text('Provided target') : find.byType(SuperValue),
               findsOneWidget,
             );
-            expect(after.valueComponents, before.valueComponents);
+            expect(
+              after.componentsOfType<SuperValueConfig>(),
+              before.componentsOfType<SuperValueConfig>(),
+            );
             const codec = AppearanceCodec();
             final decoded = codec.fromJson(codec.toJson(after));
             expect(codec.toJson(decoded), codec.toJson(after));
@@ -321,10 +323,11 @@ void main() {
       await chooseWrapper(tester, 'Card');
       final outer = owner == 'layout'
           ? appearance.value.layouts['root']!.placedSlotIds.single
-          : appearance.value.nativeComponents['root']!.slotsOf('child').single;
+          : appearance.value.nativeComponent('root').slotsOf('child').single;
       await openMenu(tester, true);
       await chooseWrapper(tester, 'Layout');
-      final inner = appearance.value.nativeComponents[outer]!
+      final inner = appearance.value
+          .nativeComponent(outer)
           .slotsOf('child')
           .single;
       expect(
@@ -347,7 +350,8 @@ void main() {
       );
       await openMenu(tester, true);
       await chooseWrapper(tester, 'Layout');
-      final wrapper = appearance.value.nativeComponents['root']!
+      final wrapper = appearance.value
+          .nativeComponent('root')
           .slotsOf('body')
           .single;
       expect(appearance.value.layouts[wrapper]!.placedSlotIds.single, 'source');
@@ -382,7 +386,7 @@ void main() {
         sourcePageId: 'root',
         targetPageId: 'copy',
       );
-      final wrapper = copy.nativeComponents['copy']!.slotsOf('body').single;
+      final wrapper = copy.nativeComponent('copy').slotsOf('body').single;
       final source = copy.layouts[wrapper]!.placedSlotIds.single;
       expect(source, isNot('source'));
       expect(copy.layouts[wrapper]!.slotTypeOf(source), type);
@@ -409,12 +413,12 @@ void main() {
           sourcePageId: 'root',
           targetPageId: 'copy',
         );
-        final wrapper = copy.nativeComponents['copy']!.slotsOf('body').single;
+        final wrapper = copy.nativeComponent('copy').slotsOf('body').single;
         final source = wrapperType == 'Card'
-            ? copy.nativeComponents[wrapper]!.slotsOf('child').single
+            ? copy.nativeComponent(wrapper).slotsOf('child').single
             : copy.layouts[wrapper]!.placedSlotIds.single;
         expect(source, isNot('source'));
-        expect(copy.valueComponents[source]!.initialText, 'Saved target');
+        expect(copy.valueComponent(source).initialText, 'Saved target');
         expect(tester.takeException(), isNull);
       },
     );
@@ -437,8 +441,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(appearance.value.layouts['root']!.placedSlotIds, isEmpty);
       expect(appearance.value.layouts.containsKey(wrapper), isFalse);
-      expect(appearance.value.nativeComponents.containsKey(wrapper), isFalse);
-      expect(appearance.value.valueComponents.containsKey('source'), isFalse);
+      expect(appearance.value.components.containsKey(wrapper), isFalse);
+      expect(appearance.value.components.containsKey('source'), isFalse);
       final history = EditorHistoryScope.controllerOf(
         tester.element(find.byKey(hostKey)),
       )!;
