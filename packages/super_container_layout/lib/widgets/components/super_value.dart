@@ -21,6 +21,7 @@ import '../editing/history/editor_history.dart';
 import '../editing/components/super_value_editor.dart';
 import 'super_text_field.dart';
 import '../editing/slots/editor_slot.dart';
+import '../super_layout/slot_implementation.dart';
 
 Object _parseBoundProperty(SuperValueProperty property, Object? value) {
   switch (property) {
@@ -989,16 +990,21 @@ class _SuperValueState extends State<SuperValue> {
                         );
                 }
 
+                final fit = SlotContentFitScope.maybeOf(context);
+                final fitWidth = fit?.fitWidth ?? false;
+                final fitHeight = fit?.fitHeight ?? false;
                 return LayoutBuilder(
                   builder: (context, constraints) => SizedBox(
                     width: constraints.hasBoundedWidth ? null : 240,
-                    height: constraints.hasBoundedHeight
+                    height: !fitHeight && constraints.hasBoundedHeight
                         ? constraints.maxHeight
                         : null,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      crossAxisAlignment: fitWidth
+                          ? CrossAxisAlignment.start
+                          : CrossAxisAlignment.stretch,
                       children: [
                         Flexible(child: content),
                         if ((config.mode == SuperValueMode.display ||

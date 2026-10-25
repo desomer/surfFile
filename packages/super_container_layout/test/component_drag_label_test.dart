@@ -298,6 +298,7 @@ void main() {
           .withValues(alpha: tester.widget<ComponentDragLabel>(label).opacity),
     );
     final bounds = tester.getRect(label);
+    expect(bounds.topRight, const Offset(316, 4));
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: const Offset(700, 500));
     await mouse.moveTo(bounds.center);

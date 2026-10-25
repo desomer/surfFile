@@ -87,7 +87,8 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         result.maxHeight == null &&
         result.preferredWidth == null &&
         result.preferredHeight == null &&
-        !result.hasPadding) {
+        !result.hasPadding &&
+        result.fitContent == null) {
       _update(
         current
             .withSlotPreferredSize(slot.id, null)
@@ -101,6 +102,7 @@ extension _SuperLayoutSlotSizeEditor on SuperLayoutState {
         result.maxWidth == null &&
         result.maxHeight == null &&
         !result.hasPadding &&
+        result.fitContent == null &&
         (useLegacyPixels ||
             (result.percentBasis == SlotPercentBasis.zone &&
                 current.slotSizeConstraints[slot.id] == null)) &&

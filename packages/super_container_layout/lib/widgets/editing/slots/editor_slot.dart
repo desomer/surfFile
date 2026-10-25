@@ -12,6 +12,7 @@ import 'editor_selection_region.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_overlay.dart';
+import '../overlay/editor_zoom.dart';
 
 export 'editor_context_menu.dart'
     show
@@ -444,7 +445,10 @@ class EditorSlotState extends State<EditorSlot> {
     Offset globalPosition, {
     List<EditorSlotAction>? actions,
   }) async {
-    if (!mounted || !(StyleEditScope.controllerOf(context)?.value ?? true)) {
+    if (!mounted ||
+        !(StyleEditScope.controllerOf(context)?.value ?? true) ||
+        EditorZoom.suppressContextMenu ||
+        (EditorZoomScope.controllerOf(context)?.suppressContextMenu ?? false)) {
       return;
     }
     final chain = editableChain;
@@ -701,7 +705,7 @@ class EditorSlotState extends State<EditorSlot> {
                         if ((StyleEditScope.controllerOf(state.context)
                                     ?.value ??
                                 false) &&
-                            state.widget.axisAction != null)
+                            state.widget.axisAction != null) ...[
                           ZoneAxisButton(
                             key: ValueKey('style-menu-axis-${state.label}'),
                             action: LayoutAxisAction(
@@ -716,6 +720,25 @@ class EditorSlotState extends State<EditorSlot> {
                                       }),
                             ),
                           ),
+                          if (state.widget.axisAction!().onEditFlow
+                              case final editFlow?)
+                            IconButton(
+                              key: ValueKey(
+                                'style-menu-zone-flow-${state.label}',
+                              ),
+                              tooltip:
+                                  'Flux de la zone ${state.widget.axisAction!().zoneLabel}',
+                              icon: const Icon(Icons.tune_rounded),
+                              style: _menuIconButtonStyle(context),
+                              onPressed: () =>
+                                  Navigator.of(context)
+                                      .pop<Future<void> Function()>(() async {
+                                        if (state.mounted) {
+                                          await editFlow();
+                                        }
+                                      }),
+                            ),
+                        ],
                         if ((StyleEditScope.controllerOf(state.context)
                                     ?.value ??
                                 false) &&

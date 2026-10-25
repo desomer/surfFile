@@ -1,13 +1,33 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/services/appearance/appearance_codec.dart';
+import 'package:super_container_layout/services/appearance/appearance_store.dart';
+import 'package:super_container_layout/super_app.dart';
+import 'package:super_container_layout/super_page.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
+
+class _PresetAppearanceStore extends AppearanceStore {
+  _PresetAppearanceStore(this._initial);
+
+  final Appearance _initial;
+
+  @override
+  Future<Appearance> load() async => _initial;
+
+  @override
+  Future<void> save(Appearance appearance) async {}
+}
 
 Widget _box(String id, {double? width, double? height}) =>
     SizedBox(key: ValueKey('box-$id'), width: width, height: height);
@@ -45,14 +65,8 @@ void main() {
     test('saved fixed sides and legacy layouts remain fixed', () {
       const fixed = SuperLayoutConfig(autoSides: {});
       expect(SuperLayoutConfig.fromJson(fixed.toJson()).autoSides, isEmpty);
-      expect(
-        SuperLayoutConfig.fromJson({'northSize': 72}).autoSides,
-        isEmpty,
-      );
-      expect(
-        SuperLayoutConfig.fromJson({'northSize': 72}).northSize,
-        72,
-      );
+      expect(SuperLayoutConfig.fromJson({'northSize': 72}).autoSides, isEmpty);
+      expect(SuperLayoutConfig.fromJson({'northSize': 72}).northSize, 72);
     });
 
     test('placement types and instance IDs survive JSON and moves', () {
@@ -307,7 +321,9 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
-          placements: {SuperLayoutZone.center: ['content']},
+          placements: {
+            SuperLayoutZone.center: ['content'],
+          },
         ),
         slots: [_slot('content', sizing: SlotSizing.fill)],
       );
@@ -1743,6 +1759,531 @@ void main() {
       await tester.pump();
       expect(created, 1);
     });
+  });
+
+  group('ZoneFlowConfig per-zone flow layout', () {
+    test('serializes and restores zoneFlows in SuperLayoutConfig JSON', () {
+      final flow = const ZoneFlowConfig(
+        scrollable: true,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        spacing: 12,
+        padding: 8,
+        paddingInsets: EdgeInsets.fromLTRB(4, 8, 12, 16),
+      );
+      final config = const SuperLayoutConfig().withZoneFlow(
+        SuperLayoutZone.center,
+        flow,
+      );
+      expect(config.flowOf(SuperLayoutZone.center), flow);
+      expect(config.flowOf(SuperLayoutZone.north), const ZoneFlowConfig());
+      final json = config.toJson();
+      expect(json['zoneFlows'], {
+        'center': {
+          'scrollable': true,
+          'mainAxisAlignment': 'spaceBetween',
+          'crossAxisAlignment': 'center',
+          'spacing': 12.0,
+          'padding': 8.0,
+          'paddingInsets': [8.0, 12.0, 16.0, 4.0],
+        },
+      });
+      final restored = SuperLayoutConfig.fromJson(json);
+      expect(restored, config);
+      expect(restored.hashCode, config.hashCode);
+
+      final reset = restored.withZoneFlow(
+        SuperLayoutZone.center,
+        const ZoneFlowConfig(),
+      );
+      expect(reset.zoneFlows, isEmpty);
+      expect(reset.toJson().containsKey('zoneFlows'), isFalse);
+    });
+
+    testWidgets(
+      'applies mainAxisAlignment, crossAxisAlignment, spacing and padding per zone',
+      (tester) async {
+        const config = SuperLayoutConfig(
+          north: false,
+          south: false,
+          west: false,
+          east: false,
+          zoneFlows: {
+            SuperLayoutZone.center: ZoneFlowConfig(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              spacing: 20,
+              padding: 10,
+            ),
+          },
+          placements: {
+            SuperLayoutZone.center: ['a', 'b'],
+          },
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: SuperLayout(
+                  config: config,
+                  slots: [
+                    _slot('a', width: 200, height: 60),
+                    _slot('b', width: 100, height: 80),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        // Zone inner size after 10px padding: 580 x 380.
+        // Total height = 60 + 20 + 80 = 160 -> freeSpace = 380 - 160 = 220 -> leading = 110.
+        // Offset Y with 10px top padding = 10 + 110 = 120.
+        final rectA = tester.getRect(find.byKey(const ValueKey('box-a')));
+        final rectB = tester.getRect(find.byKey(const ValueKey('box-b')));
+        expect(rectA, const Rect.fromLTWH(200, 120, 200, 60));
+        expect(rectB, const Rect.fromLTWH(250, 200, 100, 80));
+      },
+    );
+
+    testWidgets(
+      'scrolls vertically or horizontally when scrollable is enabled and content overflows',
+      (tester) async {
+        const config = SuperLayoutConfig(
+          north: false,
+          south: false,
+          west: false,
+          east: false,
+          zoneFlows: {
+            SuperLayoutZone.center: ZoneFlowConfig(
+              scrollable: true,
+              spacing: 10,
+            ),
+          },
+          placements: {
+            SuperLayoutZone.center: ['s1', 's2', 's3'],
+          },
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 300,
+                child: SuperLayout(
+                  config: config,
+                  slots: [
+                    _slot('s1', height: 150),
+                    _slot('s2', height: 150),
+                    _slot('s3', height: 150),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        // Each slot keeps its 150px height without being compressed into 300px.
+        expect(
+          tester.getSize(find.byKey(const ValueKey('box-s1'))).height,
+          150,
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('box-s2'))).height,
+          150,
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('box-s3'))).height,
+          150,
+        );
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-s1'))).dy, 0);
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-s2'))).dy, 160);
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-s3'))).dy, 320);
+
+        await tester.drag(
+          find.byType(SingleChildScrollView),
+          const Offset(0, -100),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-s3'))).dy, 220);
+      },
+    );
+
+    testWidgets(
+      'edits zone flow parameters from SuperLayoutEditor and quick zone badge dialog',
+      (tester) async {
+        final editMode = ValueNotifier(true);
+        addTearDown(editMode.dispose);
+        SuperLayoutConfig current = const SuperLayoutConfig(
+          north: false,
+          south: false,
+          west: false,
+          east: false,
+          placements: {
+            SuperLayoutZone.center: ['a', 'b'],
+          },
+        );
+        await tester.pumpWidget(
+          StatefulBuilder(
+            builder: (context, setState) => StyleEditScope(
+              controller: editMode,
+              child: MaterialApp(
+                home: Scaffold(
+                  body: SizedBox(
+                    width: 600,
+                    height: 400,
+                    child: SuperLayout(
+                      config: current,
+                      onChanged: (next) => setState(() => current = next),
+                      slots: [
+                        _slot('a', width: 120, height: 50),
+                        _slot('b', width: 120, height: 50),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tapAt(const Offset(300, 200));
+        await tester.pumpAndSettle();
+
+        // Open quick zone flow dialog from the zone badge button.
+        await tester.tap(
+          find.byKey(const ValueKey('super-layout-flow-center')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Flux de la zone : Centre'), findsOneWidget);
+
+        await tester.tap(
+          find.byKey(const ValueKey('zone-flow-dialog-center-scrollable')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Appliquer'));
+        await tester.pumpAndSettle();
+
+        expect(current.flowOf(SuperLayoutZone.center).scrollable, isTrue);
+
+        // Also edit zone flow parameters inside SuperLayoutEditor.
+        await tester.tapAt(
+          const Offset(300, 200),
+          buttons: kSecondaryMouseButton,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('style-menu-Layout')));
+        await tester.pumpAndSettle();
+
+        final toggleCenter = find.byKey(
+          const ValueKey('super-layout-zone-flow-toggle-center'),
+        );
+        await tester.ensureVisible(toggleCenter);
+        await tester.pumpAndSettle();
+        await tester.tap(toggleCenter);
+        await tester.pumpAndSettle();
+        final mainAlignDropdown = find.byKey(
+          const ValueKey('super-layout-flow-center-main-alignment'),
+        );
+        await tester.ensureVisible(mainAlignDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(mainAlignDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Espace entre').last);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Appliquer'));
+        await tester.pumpAndSettle();
+
+        expect(
+          current.flowOf(SuperLayoutZone.center).mainAxisAlignment,
+          MainAxisAlignment.spaceBetween,
+        );
+      },
+    );
+
+    testWidgets(
+      'two Cards with a button in center take content height when flex: 0 is enabled per zone or per slot',
+      (tester) async {
+        SlotImplementation cardWithButton(String id) => BuilderSlot(
+          id: id,
+          label: id,
+          // Default SlotSizing.fill, just like registry:Card and registry:Layout
+          builder: (_) => EditableSurface(
+            key: ValueKey('card-$id'),
+            padding: const EdgeInsets.all(8),
+            child: SuperLayout(
+              config: const SuperLayoutConfig(
+                placements: {
+                  SuperLayoutZone.center: ['btn'],
+                },
+              ),
+              slots: [
+                BuilderSlot(
+                  id: 'btn',
+                  label: 'btn',
+                  builder: (_) => const SizedBox(height: 40, width: 120),
+                ),
+              ],
+            ),
+          ),
+        );
+
+        // 1. Default (flex: 1): both cards split the 400px center height -> 200px each.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: SuperLayout(
+                  config: const SuperLayoutConfig(
+                    placements: {
+                      SuperLayoutZone.center: ['c1', 'c2'],
+                    },
+                  ),
+                  slots: [cardWithButton('c1'), cardWithButton('c2')],
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('card-c1'))).height,
+          200,
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('card-c2'))).height,
+          200,
+        );
+
+        // 2. Zone expandSlots: false (flex: 0 at zone level): each card takes 40 + 16 = 56px.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: SuperLayout(
+                  config: const SuperLayoutConfig(
+                    zoneFlows: {
+                      SuperLayoutZone.center: ZoneFlowConfig(
+                        expandSlots: false,
+                        spacing: 10,
+                      ),
+                    },
+                    placements: {
+                      SuperLayoutZone.center: ['c1', 'c2'],
+                    },
+                  ),
+                  slots: [cardWithButton('c1'), cardWithButton('c2')],
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('card-c1'))).height,
+          56,
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('card-c2'))).height,
+          56,
+        );
+        expect(tester.getTopLeft(find.byKey(const ValueKey('card-c2'))).dy, 66);
+
+        // 3. Per-slot fitContent: true (flex: 0) on c1, while c2 keeps flex: 1.
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 600,
+                height: 400,
+                child: SuperLayout(
+                  config: const SuperLayoutConfig(
+                    slotSizeConstraints: {
+                      'c1': SlotSizeConstraints(fitContent: true),
+                    },
+                    placements: {
+                      SuperLayoutZone.center: ['c1', 'c2'],
+                    },
+                  ),
+                  slots: [cardWithButton('c1'), cardWithButton('c2')],
+                ),
+              ),
+            ),
+          ),
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('card-c1'))).height,
+          56,
+        );
+        expect(
+          tester.getSize(find.byKey(const ValueKey('card-c2'))).height,
+          344,
+        );
+      },
+    );
+
+    testWidgets(
+      'exported JSON with factory:Card containing factory:Action shrinks to button size when flex: 0',
+      (tester) async {
+        final exported = <String, dynamic>{
+          'version': 1,
+          'mode': 'light',
+          'accent': 4283590873,
+          'backgroundOpacity': 1.0,
+          'windowOpacity': 1.0,
+          'windowEffect': 'transparent',
+          'styles': {
+            'Cq8MqISDSf': {
+              'color': null,
+              'fill': {
+                'type': 'solid',
+                'start': 4283590873,
+                'end': 4290221300,
+                'angle': 45.0,
+                'radius': 0.8,
+              },
+              'radius': 21.0,
+              'borderWidth': 2.0,
+              'borderColor': null,
+              'elevation': 10.0,
+              'shadowOpacity': 0.2,
+              'neon': null,
+              'padding': 17.0,
+              'margin': 18.0,
+              'designSystem': 'material',
+              'interactionEffect': 'ripple',
+              'hoverEffect': false,
+              'hoverTint': 'material',
+              'hoverColor': null,
+            },
+          },
+          'components': {
+            'contA': {
+              'type': 'layout',
+              'north': false,
+              'south': false,
+              'west': false,
+              'east': false,
+              'nw': 'none',
+              'ne': 'none',
+              'sw': 'none',
+              'se': 'none',
+              'northSize': 50.0,
+              'southSize': 50.0,
+              'westSize': 100.0,
+              'eastSize': 100.0,
+              'resizeSides': false,
+              'sideResizing': <String, dynamic>{},
+              'collapsedSides': <String, dynamic>{},
+              'swaps': <String>[],
+              'autoSides': ['north', 'south', 'east', 'west'],
+              'zoneAxes': {'center': 'column'},
+              'zoneFlows': {
+                'center': {
+                  'scrollable': true,
+                  'expandSlots': false,
+                  'crossAxisAlignment': 'start',
+                  'spacing': 7.0,
+                  'padding': 13.0,
+                },
+              },
+              'slotPreferredSizes': <String, dynamic>{},
+              'slotSizeConstraints': {
+                'Cq8MqISDSf': {'percentBasis': 'layout', 'fitContent': true},
+              },
+              'positioning': 'zones',
+              'placements': {
+                'center': [
+                  {'type': 'factory:Card', 'id': 'Cq8MqISDSf'},
+                ],
+              },
+            },
+            '2YVex1GrS7': {
+              'type': 'action',
+              'kind': 'text',
+              'variant': 'elevated',
+              'label': 'cvcvcvv',
+              'tooltip': '',
+              'icon': 'touch_app',
+              'iconPosition': 'leading',
+              'iconSize': null,
+              'iconSpacing': 8.0,
+              'enabled': true,
+              'backgroundColor': 3741303047,
+              'textAlign': 'center',
+            },
+            'Cq8MqISDSf': {
+              'type': 'native',
+              'regions': {'child': true},
+              'placements': {
+                'child': [
+                  {'id': '2YVex1GrS7', 'type': 'factory:Action'},
+                ],
+              },
+            },
+            'root': {
+              'type': 'native',
+              'regions': <String, dynamic>{},
+              'placements': {
+                'body': [
+                  {'id': 'scaffold:body', 'type': 'scaffold:body'},
+                ],
+              },
+              'slotSizeConstraints': {
+                'scaffold:body': {'percentBasis': 'layout', 'fitContent': true},
+              },
+            },
+          },
+          'pageCatalog': {'pages': <Object>[], 'homePageId': null},
+        };
+
+        final appearance = const AppearanceCodec().fromJson(exported);
+        final registry = Registry()..bootstrap();
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (context, _) {
+                final layout = SuperApp.of(context).getLayoutConfigById('contA');
+                return SuperPage(
+                  child: ValueListenableBuilder<SuperLayoutConfig>(
+                    valueListenable: layout,
+                    builder: (context, config, _) =>
+                        SuperLayout(config: config),
+                  ),
+                );
+              },
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(
+          SuperApp(
+            router: router,
+            registry: registry,
+            appearanceStore: _PresetAppearanceStore(appearance),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final buttonRect = tester.getRect(
+          find.byKey(const ValueKey('super-action-button-2YVex1GrS7')),
+        );
+        final cardFinder = find.byWidgetPredicate(
+          (w) => w is EditableSurface && w.id == 'Cq8MqISDSf',
+        );
+        final cardRect = tester.getRect(cardFinder);
+        // Card size = button size + 2 * 17 (padding) + 2 * 18 (margin) + 2 * 2 (border) = button + 74
+        expect(cardRect.height, closeTo(buttonRect.height + 74, 1.0));
+        expect(cardRect.height, lessThan(200));
+        // Card width also wraps the button because crossAxisAlignment == start
+        expect(cardRect.width, closeTo(buttonRect.width + 74, 1.0));
+        expect(cardRect.width, lessThan(300));
+      },
+    );
   });
 }
 

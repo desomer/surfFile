@@ -67,6 +67,7 @@ Future<void> showSlotSizeEditor({
   final sliderGroup = ValueNotifier('preferred');
   final padding = ValueNotifier(saved?.padding ?? 0.0);
   final paddingInsets = ValueNotifier(saved?.paddingInsets);
+  final fitContent = ValueNotifier<bool?>(saved?.fitContent);
   var percentBasisChanged = false;
   final form = GlobalKey<FormState>();
   String? validate(String? text) {
@@ -97,6 +98,7 @@ Future<void> showSlotSizeEditor({
       padding: padding.value,
       paddingInsets: paddingInsets.value,
       percentBasis: percentBasis.value,
+      fitContent: fitContent.value,
     );
   }
 
@@ -149,6 +151,7 @@ Future<void> showSlotSizeEditor({
   padding.addListener(preview);
   paddingInsets.addListener(preview);
   percentBasis.addListener(preview);
+  fitContent.addListener(preview);
   final layoutSize = context.size ?? Size.zero;
 
   try {
@@ -182,12 +185,38 @@ Future<void> showSlotSizeEditor({
                   padding,
                   paddingInsets,
                   percentBasis,
+                  fitContent,
                   sliderGroup,
                   changes,
                 ]),
                 builder: (context, _) => Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    const Text(' Occupation sur l’axe principal (flex)'),
+                    ValueListenableBuilder<bool?>(
+                      valueListenable: fitContent,
+                      builder: (context, value, _) => DropdownButton<bool?>(
+                        key: const ValueKey('slot-fit-content'),
+                        isExpanded: true,
+                        value: value,
+                        onChanged: (next) => fitContent.value = next,
+                        items: const [
+                          DropdownMenuItem<bool?>(
+                            value: null,
+                            child: Text('Auto (selon le flux de la zone)'),
+                          ),
+                          DropdownMenuItem<bool?>(
+                            value: true,
+                            child: Text('Taille du contenu (flex : 0)'),
+                          ),
+                          DropdownMenuItem<bool?>(
+                            value: false,
+                            child: Text('Remplir l’espace (flex : 1)'),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     const Text('Base de calcul des pourcentages'),
                     ValueListenableBuilder<SlotPercentBasis>(
                       valueListenable: percentBasis,
@@ -409,6 +438,7 @@ Future<void> showSlotSizeEditor({
     percentBasis.removeListener(preview);
     padding.removeListener(preview);
     paddingInsets.removeListener(preview);
+    fitContent.removeListener(preview);
     // Le dialogue peut encore terminer son animation de fermeture.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (final controller in controllers.values) {
@@ -420,6 +450,7 @@ Future<void> showSlotSizeEditor({
       percentBasis.dispose();
       padding.dispose();
       paddingInsets.dispose();
+      fitContent.dispose();
       sliderGroup.dispose();
       label.dispose();
     });

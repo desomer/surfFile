@@ -137,6 +137,7 @@ class SuperLayout extends StatefulWidget {
           percentBasis: dimension.unit == SlotSizeUnit.percent
               ? basis
               : saved?.percentBasis ?? SlotPercentBasis.zone,
+          fitContent: saved?.fitContent,
         ),
       },
     );
@@ -255,6 +256,7 @@ class SuperLayoutState extends State<SuperLayout> {
         ),
       );
     },
+    onEditFlow: widget.editable ? () => _openZoneFlowEditor(zone) : null,
   );
 
   /// Déclare le chemin des zones sélectionnées à la bannière du mode édition.

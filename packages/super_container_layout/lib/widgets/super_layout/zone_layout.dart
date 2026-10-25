@@ -55,20 +55,27 @@ class _ZoneEntry extends ParentDataWidget<_ZoneParentData> {
 class _ZoneLayout extends MultiChildRenderObjectWidget {
   const _ZoneLayout({
     required this.config,
-    required this.shrinkWrap,
+    required this.shrinkWidth,
+    required this.shrinkHeight,
     required this.autoSides,
     required this.emptyAutoSides,
     required super.children,
   });
 
   final SuperLayoutConfig config;
-  final bool shrinkWrap;
+  final bool shrinkWidth;
+  final bool shrinkHeight;
   final Set<SuperLayoutZone> autoSides;
   final Set<SuperLayoutZone> emptyAutoSides;
 
   @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderZoneLayout(config, autoSides, emptyAutoSides, shrinkWrap);
+  RenderObject createRenderObject(BuildContext context) => _RenderZoneLayout(
+    config,
+    autoSides,
+    emptyAutoSides,
+    shrinkWidth,
+    shrinkHeight,
+  );
 
   @override
   void updateRenderObject(
@@ -76,7 +83,8 @@ class _ZoneLayout extends MultiChildRenderObjectWidget {
     covariant _RenderZoneLayout renderObject,
   ) => renderObject
     ..config = config
-    ..shrinkWrap = shrinkWrap
+    ..shrinkWidth = shrinkWidth
+    ..shrinkHeight = shrinkHeight
     ..autoSides = autoSides
     ..emptyAutoSides = emptyAutoSides;
 }
@@ -89,15 +97,25 @@ class _RenderZoneLayout extends RenderBox
     this._config,
     this._autoSides,
     this._emptyAutoSides,
-    this._shrinkWrap,
+    this._shrinkWidth,
+    this._shrinkHeight,
   );
 
-  bool _shrinkWrap;
-  set shrinkWrap(bool value) {
-    if (_shrinkWrap == value) return;
-    _shrinkWrap = value;
+  bool _shrinkWidth;
+  set shrinkWidth(bool value) {
+    if (_shrinkWidth == value) return;
+    _shrinkWidth = value;
     markNeedsLayoutForSizedByParentChange();
   }
+
+  bool _shrinkHeight;
+  set shrinkHeight(bool value) {
+    if (_shrinkHeight == value) return;
+    _shrinkHeight = value;
+    markNeedsLayoutForSizedByParentChange();
+  }
+
+  bool get _shrinkAny => _shrinkWidth || _shrinkHeight;
 
   Map<SuperLayoutZone, Rect> rects = const {};
 
@@ -130,15 +148,21 @@ class _RenderZoneLayout extends RenderBox
   }
 
   @override
-  bool get sizedByParent => !_shrinkWrap;
+  bool get sizedByParent => !_shrinkAny;
 
   @override
   Size computeDryLayout(BoxConstraints constraints) {
-    if (!_shrinkWrap) return constraints.biggest;
-    return _measureContent(
+    if (!_shrinkAny) return constraints.biggest;
+    final measured = _measureContent(
       constraints,
       (child, limits) => child.getDryLayout(limits),
     ).size;
+    return constraints.constrain(
+      Size(
+        _shrinkWidth ? measured.width : constraints.maxWidth,
+        _shrinkHeight ? measured.height : constraints.maxHeight,
+      ),
+    );
   }
 
   BoxConstraints _naturalLimits(SuperLayoutZone zone, BoxConstraints limits) {
@@ -272,13 +296,20 @@ class _RenderZoneLayout extends RenderBox
 
   @override
   void performLayout() {
-    final natural = _shrinkWrap
+    final natural = _shrinkAny
         ? _measureContent(constraints, (child, limits) {
             child.layout(limits, parentUsesSize: true);
             return child.size;
           })
         : null;
-    if (natural != null) size = natural.size;
+    if (natural != null) {
+      size = constraints.constrain(
+        Size(
+          _shrinkWidth ? natural.size.width : constraints.maxWidth,
+          _shrinkHeight ? natural.size.height : constraints.maxHeight,
+        ),
+      );
+    }
     final content = <SuperLayoutZone, RenderBox>{};
     final overlays = <(SuperLayoutZone, RenderBox)>[];
     for (var child = firstChild; child != null; child = childAfter(child)) {
@@ -297,7 +328,7 @@ class _RenderZoneLayout extends RenderBox
     };
     for (final side in const [SuperLayoutZone.west, SuperLayoutZone.east]) {
       final child = content[side];
-      if (_shrinkWrap || child == null || !_autoSides.contains(side)) continue;
+      if (_shrinkAny || child == null || !_autoSides.contains(side)) continue;
       child.layout(
         BoxConstraints(maxWidth: size.width, maxHeight: size.height),
         parentUsesSize: true,
@@ -309,7 +340,7 @@ class _RenderZoneLayout extends RenderBox
     for (final side in const [SuperLayoutZone.north, SuperLayoutZone.south]) {
       final child = content[side];
       final rect = widths[side];
-      if (_shrinkWrap ||
+      if (_shrinkAny ||
           child == null ||
           rect == null ||
           !_autoSides.contains(side)) {
@@ -375,9 +406,17 @@ class _RenderZoneLayout extends RenderBox
       // changerait la taille mesurée.
       // Keep natural content on its measurement constraints so size changes
       // propagate back to the wrapping parent, including asynchronous bindings.
+      final naturalLimits = _naturalLimits(zone, constraints);
       child.layout(
-        _shrinkWrap && !overlay
-            ? _naturalLimits(zone, constraints)
+        _shrinkAny && !overlay
+            ? BoxConstraints(
+                minWidth: _shrinkWidth ? 0 : rect.width,
+                maxWidth: _shrinkWidth ? naturalLimits.maxWidth : rect.width,
+                minHeight: _shrinkHeight ? 0 : rect.height,
+                maxHeight: _shrinkHeight
+                    ? naturalLimits.maxHeight
+                    : rect.height,
+              )
             : switch (autoAxis) {
                 null => BoxConstraints.tight(rect.size),
                 Axis.vertical => BoxConstraints(
@@ -391,7 +430,7 @@ class _RenderZoneLayout extends RenderBox
                   maxWidth: size.width,
                 ),
               },
-        parentUsesSize: _shrinkWrap || autoAxis != null,
+        parentUsesSize: _shrinkAny || autoAxis != null,
       );
       (child.parentData! as _ZoneParentData).offset = rect.topLeft;
     }

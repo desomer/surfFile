@@ -33,11 +33,13 @@ class LayoutAxisAction {
     required this.zoneLabel,
     required this.axis,
     required this.onToggle,
+    this.onEditFlow,
   });
 
   final String zoneLabel;
   final Axis axis;
   final VoidCallback onToggle;
+  final Future<void> Function()? onEditFlow;
 }
 
 /// Chemin des zones sélectionnées (parent > ... > enfant) dans les dispositions

@@ -64,6 +64,71 @@ extension _SuperLayoutDialogs on SuperLayoutState {
     }
   }
 
+  Future<void> _openZoneFlowEditor(SuperLayoutZone zone) async {
+    final initial = _config.value;
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    var confirmed = false;
+    try {
+      confirmed =
+          await showEditorDialog<bool>(
+            context: context,
+            target: _zoneFocusKeys[zone]?.currentContext ?? context,
+            barrierDismissible: true,
+            barrierColor: Colors.transparent,
+            builder: (context) => AlertDialog(
+              title: Text('Flux de la zone : ${widget.zoneLabel(zone)}'),
+              content: SizedBox(
+                width: 400,
+                child: SingleChildScrollView(
+                  child: ListenableBuilder(
+                    listenable: _config,
+                    builder: (context, _) {
+                      final current = _config.value;
+                      return ZoneFlowSettingsEditor(
+                        keyPrefix: 'zone-flow-dialog-${zone.name}',
+                        axis: current.axisOf(zone),
+                        flow: current.flowOf(zone),
+                        onAxisChanged: (axis) =>
+                            _update(current.withAxis(zone, axis)),
+                        onFlowChanged: (flow) =>
+                            _update(current.withZoneFlow(zone, flow)),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => _update(
+                    _config.value
+                        .withAxis(zone, Axis.vertical)
+                        .withZoneFlow(zone, const ZoneFlowConfig()),
+                  ),
+                  child: const Text('Réinitialiser'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Appliquer'),
+                ),
+              ],
+            ),
+          ) ==
+          true;
+    } finally {
+      if (!confirmed && mounted) _update(initial, validateTags: false);
+      if (confirmed) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
+    }
+  }
+
   Future<void> _addSlot(SuperLayoutZone zone) async {
     final grid = _config.value.positioning == SuperLayoutPositioning.grid;
     if (grid) zone = SuperLayoutZone.center;

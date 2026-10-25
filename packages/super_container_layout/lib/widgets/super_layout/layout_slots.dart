@@ -409,8 +409,16 @@ extension _SuperLayoutSlots on SuperLayoutState {
   ) {
     final content = config.contentZone(zone);
     final slots = _slotsOf(config, content);
+    final fitScope = SlotContentFitScope.maybeOf(context);
+    final shrinkWidth = widget.shrinkWrap || (fitScope?.fitWidth ?? false);
+    final shrinkHeight = widget.shrinkWrap || (fitScope?.fitHeight ?? false);
     if (slots.isEmpty) {
-      if (widget.shrinkWrap) return const SizedBox(width: 16, height: 16);
+      if (shrinkWidth || shrinkHeight) {
+        return SizedBox(
+          width: shrinkWidth ? 16 : double.infinity,
+          height: shrinkHeight ? 16 : double.infinity,
+        );
+      }
       return _ZonePlaceholder(
         zone: zone,
         label: widget.zoneLabel(zone),
@@ -431,6 +439,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       slots: slots,
       focusKeys: _slotFocusKeys,
       axis: axis,
+      flow: config.flowOf(zone),
       preferredSizes: config.slotPreferredSizes,
       sizeConstraints: config.slotSizeConstraints,
       layoutSize: layoutSize,
@@ -470,11 +479,13 @@ extension _SuperLayoutSlots on SuperLayoutState {
             )
           : null,
       expand:
-          !widget.shrinkWrap &&
-          !(axis == Axis.vertical ? autoHeight : autoWidth),
+          !(axis == Axis.vertical
+              ? (shrinkHeight || autoHeight)
+              : (shrinkWidth || autoWidth)),
       stretch:
-          !widget.shrinkWrap &&
-          !(axis == Axis.vertical ? autoWidth : autoHeight),
+          !(axis == Axis.vertical
+              ? (shrinkWidth || autoWidth)
+              : (shrinkHeight || autoHeight)),
     );
   }
 }

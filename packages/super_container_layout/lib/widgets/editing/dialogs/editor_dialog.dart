@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../../super_layout/layout_selection.dart';
@@ -143,6 +144,7 @@ class _EditorDialogState extends State<_EditorDialog> {
   final _viewport = GlobalKey();
   bool _left = false;
   Rect? _targetBounds;
+  Offset? _toolbarPosition;
 
   @override
   void initState() {
@@ -207,6 +209,37 @@ class _EditorDialogState extends State<_EditorDialog> {
       });
       return Stack(
         children: [
+          Positioned.fromRect(
+            rect: available,
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (event) {
+                if ((event.buttons & kSecondaryMouseButton) != 0) {
+                  widget.controller.handlePointerDown(event);
+                }
+              },
+              onPointerMove: (event) {
+                if ((event.buttons & kSecondaryMouseButton) != 0) {
+                  widget.controller.handlePointerMove(event);
+                }
+              },
+              onPointerUp: (event) => widget.controller.handlePointerUp(event),
+              onPointerCancel: (event) =>
+                  widget.controller.handlePointerCancel(event),
+              onPointerSignal: (event) =>
+                  widget.controller.handlePointerSignal(event),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  final route = ModalRoute.of(context);
+                  if (route != null && route.barrierDismissible) {
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ),
           Positioned(
             key: const ValueKey('editor-dialog-panel'),
             left: bottom || _left ? 0 : null,
@@ -236,6 +269,39 @@ class _EditorDialogState extends State<_EditorDialog> {
                   ),
                 Expanded(child: Builder(builder: widget.builder)),
               ],
+            ),
+          ),
+          Positioned.fill(
+            child: CustomSingleChildLayout(
+              delegate: ZoomToolbarLayout(
+                _toolbarPosition,
+                available: available,
+              ),
+              child: Material(
+                key: const ValueKey('editor-zoom-toolbar'),
+                type: MaterialType.card,
+                elevation: 8,
+                borderRadius: BorderRadius.circular(8),
+                child: ValueListenableBuilder<double>(
+                  valueListenable: widget.controller.scale,
+                  builder: (context, currentScale, _) => SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: EditorZoomToolbarContent(
+                      scale: currentScale,
+                      onScaleChanged: widget.controller.setScale,
+                      onDrag: (details) => setState(() {
+                        final bounds = available;
+                        final currentPos = _toolbarPosition ??
+                            Offset(
+                              bounds.right - 220 - 16,
+                              bounds.bottom - 36 - 12,
+                            );
+                        _toolbarPosition = currentPos + details.delta;
+                      }),
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ],

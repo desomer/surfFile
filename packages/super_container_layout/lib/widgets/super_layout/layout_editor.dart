@@ -2,7 +2,7 @@ part of 'super_layout.dart';
 
 /// Formulaire d'édition d'un [SuperLayoutConfig] : aperçu, présence des côtés,
 /// fusion des coins et tailles.
-class SuperLayoutEditor extends StatelessWidget {
+class SuperLayoutEditor extends StatefulWidget {
   const SuperLayoutEditor({
     required this.config,
     required this.onChanged,
@@ -13,8 +13,6 @@ class SuperLayoutEditor extends StatelessWidget {
   final SuperLayoutConfig config;
   final ValueChanged<SuperLayoutConfig> onChanged;
   final Map<SuperLayoutZone, String> zoneLabels;
-
-  String _zoneLabel(SuperLayoutZone zone) => zoneLabels[zone] ?? zone.label;
 
   static const _sides = [
     SuperLayoutZone.north,
@@ -37,9 +35,6 @@ class SuperLayoutEditor extends StatelessWidget {
         _ => config.eastSize,
       };
 
-  SuperLayoutConfig _withSize(SuperLayoutZone side, double value) =>
-      config.withSize(side, value);
-
   /// Voisins d'un coin : (zone de sa ligne, zone de sa colonne).
   static (SuperLayoutZone, SuperLayoutZone) _neighbors(
     SuperLayoutZone corner,
@@ -50,8 +45,24 @@ class SuperLayoutEditor extends StatelessWidget {
     _ => (SuperLayoutZone.south, SuperLayoutZone.east),
   };
 
+  @override
+  State<SuperLayoutEditor> createState() => _SuperLayoutEditorState();
+}
+
+class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
+  final _expandedFlowZones = <SuperLayoutZone>{};
+
+  SuperLayoutConfig get config => widget.config;
+  ValueChanged<SuperLayoutConfig> get onChanged => widget.onChanged;
+
+  String _zoneLabel(SuperLayoutZone zone) =>
+      widget.zoneLabels[zone] ?? zone.label;
+
+  SuperLayoutConfig _withSize(SuperLayoutZone side, double value) =>
+      config.withSize(side, value);
+
   String _mergeLabel(SuperLayoutZone corner, CornerMerge merge) {
-    final (row, column) = _neighbors(corner);
+    final (row, column) = SuperLayoutEditor._neighbors(corner);
     return switch (merge) {
       CornerMerge.none => 'Case propre',
       CornerMerge.row => 'Fusionné avec ${_zoneLabel(row)}',
@@ -132,12 +143,12 @@ class SuperLayoutEditor extends StatelessWidget {
               'Bord intérieur de 5 px, même hors du mode édition. '
               'Le glisser désactive la taille automatique du côté.',
             ),
-            value: _sides.every(config.canResize),
+            value: SuperLayoutEditor._sides.every(config.canResize),
             onChanged: (value) => onChanged(
               config.copyWith(resizeSides: value, sideResizing: {}),
             ),
           ),
-          for (final side in _sides) ...[
+          for (final side in SuperLayoutEditor._sides) ...[
             SwitchListTile(
               key: ValueKey('super-layout-side-${side.name}'),
               dense: true,
@@ -170,16 +181,16 @@ class SuperLayoutEditor extends StatelessWidget {
                 key: ValueKey('super-layout-size-${side.name}'),
                 min: SuperLayoutConfig.minSize,
                 max: SuperLayoutConfig.maxSize,
-                value: _size(
+                value: SuperLayoutEditor._size(
                   config,
                   side,
                 ).clamp(SuperLayoutConfig.minSize, SuperLayoutConfig.maxSize),
-                label: '${_size(config, side).round()}',
+                label: '${SuperLayoutEditor._size(config, side).round()}',
                 onChanged: (v) => onChanged(_withSize(side, v)),
               ),
           ],
           const Divider(),
-          for (final corner in _corners)
+          for (final corner in SuperLayoutEditor._corners)
             Row(
               children: [
                 Expanded(child: Text(_zoneLabel(corner))),
@@ -200,11 +211,32 @@ class SuperLayoutEditor extends StatelessWidget {
               ],
             ),
           const Divider(),
-          const Text('Axe d’affichage des zones'),
-          for (final zone in SuperLayoutZone.values)
+          const Text('Axe et flux d’affichage des zones'),
+          for (final zone in SuperLayoutZone.values) ...[
             Row(
               children: [
                 Expanded(child: Text(_zoneLabel(zone))),
+                IconButton(
+                  key: ValueKey('super-layout-zone-flow-toggle-${zone.name}'),
+                  tooltip: 'Paramètres de flux (${_zoneLabel(zone)})',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    _expandedFlowZones.contains(zone)
+                        ? Icons.expand_less
+                        : Icons.tune_outlined,
+                    size: 18,
+                    color: !config.flowOf(zone).isDefault
+                        ? colors.primary
+                        : null,
+                  ),
+                  onPressed: config.visibleZones.contains(zone)
+                      ? () => setState(() {
+                          if (!_expandedFlowZones.remove(zone)) {
+                            _expandedFlowZones.add(zone);
+                          }
+                        })
+                      : null,
+                ),
                 DropdownButton<Axis>(
                   key: ValueKey('super-layout-axis-${zone.name}'),
                   value: config.axisOf(zone),
@@ -228,6 +260,32 @@ class SuperLayoutEditor extends StatelessWidget {
                 ),
               ],
             ),
+            if (_expandedFlowZones.contains(zone) &&
+                config.visibleZones.contains(zone))
+              Padding(
+                padding: const EdgeInsets.only(left: 12, bottom: 8),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    border: Border(
+                      left: BorderSide(color: colors.outlineVariant, width: 2),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: ZoneFlowSettingsEditor(
+                      keyPrefix: 'super-layout-flow-${zone.name}',
+                      axis: config.axisOf(zone),
+                      flow: config.flowOf(zone),
+                      showAxis: false,
+                      onAxisChanged: (axis) =>
+                          onChanged(config.withAxis(zone, axis)),
+                      onFlowChanged: (flow) =>
+                          onChanged(config.withZoneFlow(zone, flow)),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ],
         TextButton(
           onPressed: () => onChanged(config.positioning == SuperLayoutPositioning.grid
@@ -318,4 +376,158 @@ class SuperLayoutEditor extends StatelessWidget {
       ),
     ];
   }
+}
+
+/// Éditeur des paramètres de flux d'une zone (direction, scroll, alignements,
+/// espacement entre éléments et marge intérieure).
+class ZoneFlowSettingsEditor extends StatelessWidget {
+  const ZoneFlowSettingsEditor({
+    required this.keyPrefix,
+    required this.axis,
+    required this.flow,
+    required this.onAxisChanged,
+    required this.onFlowChanged,
+    this.showAxis = true,
+    super.key,
+  });
+
+  final String keyPrefix;
+  final Axis axis;
+  final ZoneFlowConfig flow;
+  final ValueChanged<Axis> onAxisChanged;
+  final ValueChanged<ZoneFlowConfig> onFlowChanged;
+  final bool showAxis;
+
+  static const _mainAlignments = [
+    (MainAxisAlignment.start, 'Début'),
+    (MainAxisAlignment.center, 'Centre'),
+    (MainAxisAlignment.end, 'Fin'),
+    (MainAxisAlignment.spaceBetween, 'Espace entre'),
+    (MainAxisAlignment.spaceAround, 'Espace autour'),
+    (MainAxisAlignment.spaceEvenly, 'Espace uniforme'),
+  ];
+
+  static const _crossAlignments = [
+    (CrossAxisAlignment.stretch, 'Étirer'),
+    (CrossAxisAlignment.start, 'Début'),
+    (CrossAxisAlignment.center, 'Centre'),
+    (CrossAxisAlignment.end, 'Fin'),
+  ];
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      if (showAxis)
+        Row(
+          children: [
+            const Expanded(child: Text('Direction du flux')),
+            DropdownButton<Axis>(
+              key: ValueKey('$keyPrefix-axis'),
+              value: axis,
+              onChanged: (next) {
+                if (next != null) onAxisChanged(next);
+              },
+              items: const [
+                DropdownMenuItem(value: Axis.horizontal, child: Text('Row')),
+                DropdownMenuItem(value: Axis.vertical, child: Text('Column')),
+              ],
+            ),
+          ],
+        ),
+      SwitchListTile(
+        key: ValueKey('$keyPrefix-fit-content'),
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Taille du contenu (flex : 0)'),
+        subtitle: const Text(
+          'Chaque élément prend la hauteur/largeur de son contenu au lieu de s’étirer.',
+        ),
+        value: !flow.expandSlots,
+        onChanged: (fitContent) =>
+            onFlowChanged(flow.copyWith(expandSlots: !fitContent)),
+      ),
+      SwitchListTile(
+        key: ValueKey('$keyPrefix-scrollable'),
+        dense: true,
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Défilement automatique (scroll)'),
+        subtitle: const Text(
+          'Empile les éléments sans les compresser et active le scroll si besoin.',
+        ),
+        value: flow.scrollable,
+        onChanged: (value) =>
+            onFlowChanged(flow.copyWith(scrollable: value)),
+      ),
+      Row(
+        children: [
+          const Expanded(child: Text('Alignement principal')),
+          DropdownButton<MainAxisAlignment>(
+            key: ValueKey('$keyPrefix-main-alignment'),
+            value: flow.mainAxisAlignment,
+            onChanged: (next) {
+              if (next != null) {
+                onFlowChanged(flow.copyWith(mainAxisAlignment: next));
+              }
+            },
+            items: [
+              for (final (value, label) in _mainAlignments)
+                DropdownMenuItem(value: value, child: Text(label)),
+            ],
+          ),
+        ],
+      ),
+      Row(
+        children: [
+          const Expanded(child: Text('Alignement transversal')),
+          DropdownButton<CrossAxisAlignment>(
+            key: ValueKey('$keyPrefix-cross-alignment'),
+            value: flow.crossAxisAlignment,
+            onChanged: (next) {
+              if (next != null) {
+                onFlowChanged(flow.copyWith(crossAxisAlignment: next));
+              }
+            },
+            items: [
+              for (final (value, label) in _crossAlignments)
+                DropdownMenuItem(value: value, child: Text(label)),
+            ],
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      Text('Espacement entre éléments : ${flow.spacing.round()} px'),
+      EditorHistorySlider(
+        key: ValueKey('$keyPrefix-spacing'),
+        min: 0,
+        max: ZoneFlowConfig.maxSpacing,
+        value: flow.spacing.clamp(0, ZoneFlowConfig.maxSpacing),
+        label: '${flow.spacing.round()}',
+        onChanged: (next) =>
+            onFlowChanged(flow.copyWith(spacing: next.roundToDouble())),
+      ),
+      IndependentSpacingEditor(
+        label: 'Marge intérieure',
+        value: flow.padding,
+        sides: flow.paddingInsets,
+        max: ZoneFlowConfig.maxPadding,
+        keyPrefix: '$keyPrefix-padding',
+        onChanged: (padding, sides) => onFlowChanged(
+          flow.copyWith(
+            padding: padding.roundToDouble(),
+            paddingInsets: sides == null
+                ? null
+                : EdgeInsets.fromLTRB(
+                    sides.left.roundToDouble(),
+                    sides.top.roundToDouble(),
+                    sides.right.roundToDouble(),
+                    sides.bottom.roundToDouble(),
+                  ),
+            clearPaddingInsets: sides == null,
+          ),
+        ),
+      ),
+    ],
+  );
 }

@@ -69,10 +69,13 @@ class _EditorOverlayState extends State<EditorOverlay> {
           info.childPaintTransform,
           Offset.zero & info.childSize,
         );
+        final zoomController = EditorZoomScope.controllerOf(this.context);
         final controls = Listener(
-          onPointerSignal: (event) =>
-              EditorZoomScope.controllerOf(this.context)
-                  ?.handlePointerSignal(event),
+          onPointerDown: (event) => zoomController?.handlePointerDown(event),
+          onPointerMove: (event) => zoomController?.handlePointerMove(event),
+          onPointerUp: (event) => zoomController?.handlePointerUp(event),
+          onPointerCancel: (event) => zoomController?.handlePointerCancel(event),
+          onPointerSignal: (event) => zoomController?.handlePointerSignal(event),
           child: GestureDetector(
             excludeFromSemantics: true,
             onSecondaryTapUp:

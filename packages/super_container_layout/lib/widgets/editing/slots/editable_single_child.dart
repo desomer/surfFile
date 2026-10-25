@@ -130,8 +130,12 @@ class EditableSingleChildState extends State<EditableSingleChild> {
         ],
         builder: (context, editor) {
           final children = editor.slotsFor('child');
+          final fit = SlotContentFitScope.maybeOf(context);
           final child = children.isEmpty
-              ? const SizedBox.expand()
+              ? SizedBox(
+                  width: (fit?.fitWidth ?? false) ? 48 : double.infinity,
+                  height: (fit?.fitHeight ?? false) ? 48 : double.infinity,
+                )
               : children.single;
           return widget.builder(
             context,

@@ -217,7 +217,7 @@ class _GridSurfaceState extends State<_GridSurface> {
           ),
         Positioned.fill(
           child: Align(
-            alignment: Alignment.topCenter,
+            alignment: slot.labelAlignment,
             child: Padding(
               padding: const EdgeInsets.only(top: 36, left: 32, right: 32),
               child: GestureDetector(

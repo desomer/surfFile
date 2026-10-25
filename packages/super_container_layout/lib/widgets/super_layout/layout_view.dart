@@ -140,9 +140,15 @@ extension _SuperLayoutView on SuperLayoutState {
           return LayoutBuilder(
             builder: (context, constraints) {
               final layoutSize = constraints.biggest;
+              final fitScope = SlotContentFitScope.maybeOf(context);
+              final shrinkWidth =
+                  widget.shrinkWrap || (fitScope?.fitWidth ?? false);
+              final shrinkHeight =
+                  widget.shrinkWrap || (fitScope?.fitHeight ?? false);
               return _ZoneLayout(
                 config: config,
-                shrinkWrap: widget.shrinkWrap,
+                shrinkWidth: shrinkWidth,
+                shrinkHeight: shrinkHeight,
                 autoSides: autoSides,
                 emptyAutoSides: emptyAutoSides,
                 children: [

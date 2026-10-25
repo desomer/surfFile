@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/dialogs/editor_dialog.dart';
@@ -420,12 +421,14 @@ void main() {
         'Component',
       ], focusContext: key.currentContext);
       await tester.pumpAndSettle();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendEventToBinding(
         const PointerScrollEvent(
           position: Offset(600, 400),
           scrollDelta: Offset(0, 2000),
         ),
       );
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       final target = find.byKey(key);
       expect(screenRect(tester, target).width, 160);
@@ -437,12 +440,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(screenRect(tester, target).width, 448);
       expect(screenRect(tester, target).center, const Offset(320, 400));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendEventToBinding(
         const PointerScrollEvent(
           position: Offset(300, 400),
           scrollDelta: Offset(0, 2000),
         ),
       );
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       expect(screenRect(tester, target).center, const Offset(320, 400));
       await tester.tap(find.text('Close'));

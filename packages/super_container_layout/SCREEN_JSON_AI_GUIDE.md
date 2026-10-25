@@ -105,8 +105,17 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
     },
     "layout-form": {
       "type": "layout",
+      "zoneFlows": {
+        "center": {
+          "expandSlots": false,
+          "scrollable": true,
+          "crossAxisAlignment": "stretch",
+          "spacing": 12
+        }
+      },
       "slotSizeConstraints": {
-        "input-nom": { "preferredHeight": "64px", "padding": 8 }
+        "input-nom": { "preferredHeight": "64px", "padding": 8 },
+        "btn-save": { "fitContent": true }
       },
       "placements": {
         "center": [
@@ -189,8 +198,27 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
     - **Bonne pratique (fortement recommandé)** : utilise **`"row"`** (le coin est absorbé par la bande `north` ou `south`, qui s'étend alors sur toute la largeur) ou **`"column"`** (le coin est absorbé par le panneau latéral `west` ou `east`, qui s'étend alors sur toute la hauteur).
     - **À éviter** : laisser `"none"` (case propre) sans placer de composant dans ce coin crée une case vide disgracieuse dans l'angle de l'écran. N'utilise `"none"` que si tu places explicitement un composant dédié dans la zone de coin correspondante (`placements.nw`, `ne`, `sw`, `se`).
   - `zoneAxes` (`Map<Zone, "row" | "column">`) : axe d'empilement des composants par zone (`"column"` par défaut).
+  - `zoneFlows` (`Map<Zone, ZoneFlowConfig>`) : paramètres de flux, d'alignement et de défilement par zone :
+    - `expandSlots` (`bool`, défaut `true`) :
+      - `true` (`flex: 1`) : les slots sans taille préférée se partagent tout l'espace disponible de la zone.
+      - `false` (`flex: 0` / taille du contenu) : chaque slot (y compris une `Card`, un `Layout` imbriqué, un `Action` ou un `Value`) prend uniquement la hauteur/largeur naturelle de son contenu au lieu de s'étirer sur toute la zone.
+    - `scrollable` (`bool`, défaut `false`) : active le défilement automatique (`SingleChildScrollView`) sur l'axe de la zone si les éléments dépassent, sans compresser leurs tailles préférées.
+    - `mainAxisAlignment` : `"start"` (défaut), `"center"`, `"end"`, `"spaceBetween"`, `"spaceAround"`, `"spaceEvenly"`.
+    - `crossAxisAlignment` : `"stretch"` (défaut, occupe toute la largeur en Column / toute la hauteur en Row), `"start"`, `"center"`, `"end"`.
+    - `spacing` (`number`, **bornes : `0` à `100`**, défaut `0`) : espacement en pixels entre les composants de la zone.
+    - `padding` (`number`, **bornes : `0` à `200`**, défaut `0`) ou `paddingInsets` (`[top, right, bottom, left]`) : marge intérieure de la zone.
   - `resizeSides` (`bool`) et `sideResizing` (`Map<Side, bool>`) : poignées de redimensionnement utilisateur.
-  - `slotSizeConstraints` (`Map<slotId, SlotSizeConstraints>`) : contraintes de taille et marges par slot enfant.
+  - `slotSizeConstraints` (`Map<slotId, SlotSizeConstraints>`) : contraintes de taille, marges et mode d'occupation par slot enfant :
+    - `minWidth`, `minHeight`, `preferredWidth`, `preferredHeight`, `maxWidth`, `maxHeight` : dimensions en `"px"` ou `"%"` (ex: `"240px"`, `"50%"`).
+    - `percentBasis` : `"zone"` (défaut) ou `"layout"`.
+    - `padding` (`0`..`200`) ou `paddingInsets` (`[top, right, bottom, left]`).
+    - `fitContent` (`bool?`, ou alias `"flex": 0 | 1`) : surcharge par slot l'occupation sur l'axe principal :
+      - `true` (ou `"flex": 0`) : le slot prend uniquement la taille de son contenu (ne s'étire pas).
+      - `false` (ou `"flex": 1`) : le slot s'étire pour remplir l'espace restant de la zone (même si la zone a `expandSlots: false`).
+      - `null` (omis) : suit le comportement de la zone (`zoneFlows[zone].expandSlots`).
+  - **Bonne pratique (empilement de `Card`, boutons ou champs sans occuper toute la hauteur)** :
+    - Par défaut dans `center`, les composants sans `preferredHeight` se partagent toute la hauteur (`expandSlots: true`). Pour empiler des cartes (`Card`) ou contrôles qui s'adaptent à la hauteur de leur contenu, configure `zoneFlows.center` avec `"expandSlots": false` (et `"scrollable": true` si la liste de composants peut dépasser l'écran), ou mets `"fitContent": true` sur les slots concernés dans `slotSizeConstraints`.
+    - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"contA"` (ou le layout de la page).
   - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots.
   - `placements` (`Map<Zone, List<{"id": string, "type": string}>>`) : composants placés dans chaque zone.
 - **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` de `16` à `400`, `gap` de `0` à `64`).

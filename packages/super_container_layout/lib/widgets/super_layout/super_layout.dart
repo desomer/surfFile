@@ -22,6 +22,7 @@ import '../editing/overlay/editor_resize_handle.dart';
 import '../editing/overlay/editor_zone_badge.dart';
 import '../editing/overlay/editor_zoom.dart';
 import '../editing/slots/slot_size_editor.dart';
+import '../editing/styles/independent_spacing_editor.dart';
 
 import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';

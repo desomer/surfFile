@@ -118,13 +118,29 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
       addKey: ValueKey('super-layout-add-${widget.zone.name}'),
       addTooltip: 'Ajouter un slot dans ${widget.label}',
       actions: [
-        if (widget.axisAction case final action?)
+        if (widget.axisAction case final action?) ...[
           ZoneAxisButton(
             key: ValueKey('super-layout-toggle-axis-${widget.zone.name}'),
             action: action,
             compact: true,
             color: colors.onSurface,
           ),
+          if (action.onEditFlow case final editFlow?)
+            IconButton(
+              key: ValueKey('super-layout-flow-${widget.zone.name}'),
+              tooltip: '${widget.label} : Paramètres de flux',
+              visualDensity: VisualDensity.compact,
+              iconSize: 14,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              color: colors.onSurface,
+              icon: const Icon(Icons.tune_outlined),
+              onPressed: editFlow,
+            ),
+        ],
         if (_open && target != null)
           IconButton(
             key: ValueKey('super-layout-swap-${widget.zone.name}'),

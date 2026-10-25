@@ -19,6 +19,7 @@ import '../../theme/style_extras.dart';
 import '../editing/components/super_action_editor.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
+import '../super_layout/slot_implementation.dart';
 import '../surfaces/styled_surface.dart';
 
 Object _parseBoundActionProperty(SuperActionProperty property, Object? value) {
@@ -27,7 +28,8 @@ Object _parseBoundActionProperty(SuperActionProperty property, Object? value) {
     case SuperActionProperty.tooltip:
     case SuperActionProperty.fontFamily:
       if (value is! String ||
-          (property == SuperActionProperty.fontFamily && value.trim().isEmpty)) {
+          (property == SuperActionProperty.fontFamily &&
+              value.trim().isEmpty)) {
         throw FormatException(
           'La valeur liée à ${property.name} doit être un texte valide.',
         );
@@ -779,6 +781,10 @@ class _SuperActionState extends State<SuperAction> {
             letterSpacing: config.letterSpacing,
           );
 
+          final fit = SlotContentFitScope.maybeOf(context);
+          final fitWidth = fit?.fitWidth ?? false;
+          final fitHeight = fit?.fitHeight ?? false;
+
           return EditorSlot(
             key: _surface,
             label: 'Action',
@@ -824,10 +830,14 @@ class _SuperActionState extends State<SuperAction> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+              crossAxisAlignment: fitWidth
+                  ? CrossAxisAlignment.center
+                  : CrossAxisAlignment.stretch,
               children: [
                 Flexible(
                   child: Center(
+                    widthFactor: fitWidth ? 1 : null,
+                    heightFactor: fitHeight ? 1 : null,
                     child: buildSuperActionVisual(
                       context: context,
                       config: config,

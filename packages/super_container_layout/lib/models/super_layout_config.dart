@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:flutter/painting.dart' show Axis, EdgeInsets;
+import 'package:flutter/rendering.dart'
+    show CrossAxisAlignment, MainAxisAlignment;
 
 import 'component_config.dart';
 import 'grid_layout_config.dart';
@@ -110,6 +112,7 @@ class SlotSizeConstraints {
     this.padding = 0,
     this.paddingInsets,
     this.percentBasis = SlotPercentBasis.zone,
+    this.fitContent,
   }) : assert(padding >= 0 && padding <= maxPadding);
 
   final SlotDimension? minWidth;
@@ -121,6 +124,10 @@ class SlotSizeConstraints {
   final double padding;
   final EdgeInsets? paddingInsets;
   final SlotPercentBasis percentBasis;
+
+  /// `true` pour prendre la taille du contenu (`flex: 0`), `false` pour
+  /// remplir l'espace disponible (`flex: 1`), `null` pour suivre la zone.
+  final bool? fitContent;
 
   EdgeInsets get contentPadding => paddingInsets ?? EdgeInsets.all(padding);
   bool get hasPadding => padding != 0 || paddingInsets != null;
@@ -135,6 +142,7 @@ class SlotSizeConstraints {
 
   Map<String, Object?> toJson() => {
     'percentBasis': percentBasis.name,
+    if (fitContent != null) 'fitContent': fitContent,
     if (padding != 0) 'padding': padding,
     if (paddingInsets != null)
       'paddingInsets': [
@@ -176,6 +184,13 @@ class SlotSizeConstraints {
     final paddingInsets = rawPaddingInsets == null
         ? null
         : _readPaddingInsets(rawPaddingInsets);
+    final bool? fitContent = switch ((value['fitContent'], value['flex'])) {
+      (final bool fit, _) => fit,
+      (null, 0) => true,
+      (null, 1) => false,
+      (null, null) => null,
+      _ => throw const FormatException('Mode flex/fitContent de slot invalide.'),
+    };
     return SlotSizeConstraints(
       minWidth: dimension('minWidth'),
       minHeight: dimension('minHeight'),
@@ -186,6 +201,7 @@ class SlotSizeConstraints {
       padding: padding.toDouble(),
       paddingInsets: paddingInsets,
       percentBasis: basis,
+      fitContent: fitContent,
     );
   }
 
@@ -214,7 +230,8 @@ class SlotSizeConstraints {
       other.preferredHeight == preferredHeight &&
       other.padding == padding &&
       other.paddingInsets == paddingInsets &&
-      other.percentBasis == percentBasis;
+      other.percentBasis == percentBasis &&
+      other.fitContent == fitContent;
 
   @override
   int get hashCode => Object.hash(
@@ -227,6 +244,163 @@ class SlotSizeConstraints {
     padding,
     paddingInsets,
     percentBasis,
+    fitContent,
+  );
+}
+
+/// Paramètres de flux (scroll, alignements, espacement, marge) d'une zone.
+class ZoneFlowConfig {
+  static const maxSpacing = 100.0;
+  static const maxPadding = 200.0;
+
+  const ZoneFlowConfig({
+    this.scrollable = false,
+    this.expandSlots = true,
+    this.mainAxisAlignment = MainAxisAlignment.start,
+    this.crossAxisAlignment = CrossAxisAlignment.stretch,
+    this.spacing = 0,
+    this.padding = 0,
+    this.paddingInsets,
+  }) : assert(spacing >= 0 && spacing <= maxSpacing),
+       assert(padding >= 0 && padding <= maxPadding);
+
+  final bool scrollable;
+
+  /// Si `true` (défaut), les slots sans taille fixe se partagent l'espace
+  /// (`flex: 1`). Si `false`, ils prennent la taille de leur contenu (`flex: 0`).
+  final bool expandSlots;
+  final MainAxisAlignment mainAxisAlignment;
+  final CrossAxisAlignment crossAxisAlignment;
+  final double spacing;
+  final double padding;
+  final EdgeInsets? paddingInsets;
+
+  EdgeInsets get contentPadding => paddingInsets ?? EdgeInsets.all(padding);
+  bool get hasPadding => padding != 0 || paddingInsets != null;
+
+  bool get isDefault =>
+      !scrollable &&
+      expandSlots &&
+      mainAxisAlignment == MainAxisAlignment.start &&
+      crossAxisAlignment == CrossAxisAlignment.stretch &&
+      spacing == 0 &&
+      !hasPadding;
+
+  ZoneFlowConfig copyWith({
+    bool? scrollable,
+    bool? expandSlots,
+    MainAxisAlignment? mainAxisAlignment,
+    CrossAxisAlignment? crossAxisAlignment,
+    double? spacing,
+    double? padding,
+    EdgeInsets? paddingInsets,
+    bool clearPaddingInsets = false,
+  }) => ZoneFlowConfig(
+    scrollable: scrollable ?? this.scrollable,
+    expandSlots: expandSlots ?? this.expandSlots,
+    mainAxisAlignment: mainAxisAlignment ?? this.mainAxisAlignment,
+    crossAxisAlignment: crossAxisAlignment ?? this.crossAxisAlignment,
+    spacing: spacing ?? this.spacing,
+    padding: padding ?? this.padding,
+    paddingInsets: clearPaddingInsets
+        ? null
+        : (paddingInsets ?? this.paddingInsets),
+  );
+
+  Map<String, Object?> toJson() => {
+    if (scrollable) 'scrollable': scrollable,
+    if (!expandSlots) 'expandSlots': expandSlots,
+    if (mainAxisAlignment != MainAxisAlignment.start)
+      'mainAxisAlignment': mainAxisAlignment.name,
+    if (crossAxisAlignment != CrossAxisAlignment.stretch)
+      'crossAxisAlignment': crossAxisAlignment.name,
+    if (spacing != 0) 'spacing': spacing,
+    if (padding != 0) 'padding': padding,
+    if (paddingInsets != null)
+      'paddingInsets': [
+        paddingInsets!.top,
+        paddingInsets!.right,
+        paddingInsets!.bottom,
+        paddingInsets!.left,
+      ],
+  };
+
+  static ZoneFlowConfig fromJson(Object? value) {
+    if (value is! Map) {
+      throw const FormatException('Paramètres de flux de zone invalides.');
+    }
+    final scrollable = value['scrollable'] ?? false;
+    if (scrollable is! bool) {
+      throw const FormatException('Valeur invalide pour "scrollable".');
+    }
+    final expandSlots = value['expandSlots'] ?? true;
+    if (expandSlots is! bool) {
+      throw const FormatException('Valeur invalide pour "expandSlots".');
+    }
+    final rawMain = value['mainAxisAlignment'] ?? MainAxisAlignment.start.name;
+    final mainAxisAlignment =
+        MainAxisAlignment.values.where((m) => m.name == rawMain).firstOrNull ??
+        (throw const FormatException('Alignement principal de zone invalide.'));
+    final rawCross =
+        value['crossAxisAlignment'] ?? CrossAxisAlignment.stretch.name;
+    final crossAxisAlignment =
+        CrossAxisAlignment.values
+            .where(
+              (c) => c != CrossAxisAlignment.baseline && c.name == rawCross,
+            )
+            .firstOrNull ??
+        (throw const FormatException(
+          'Alignement transversal de zone invalide.',
+        ));
+    final spacing = value['spacing'] ?? 0;
+    if (spacing is! num ||
+        !spacing.isFinite ||
+        spacing < 0 ||
+        spacing > maxSpacing) {
+      throw const FormatException('Espacement de zone invalide.');
+    }
+    final padding = value['padding'] ?? 0;
+    if (padding is! num ||
+        !padding.isFinite ||
+        padding < 0 ||
+        padding > maxPadding) {
+      throw const FormatException('Marge de zone invalide.');
+    }
+    final rawPaddingInsets = value['paddingInsets'];
+    final paddingInsets = rawPaddingInsets == null
+        ? null
+        : SlotSizeConstraints._readPaddingInsets(rawPaddingInsets);
+    return ZoneFlowConfig(
+      scrollable: scrollable,
+      expandSlots: expandSlots,
+      mainAxisAlignment: mainAxisAlignment,
+      crossAxisAlignment: crossAxisAlignment,
+      spacing: spacing.toDouble(),
+      padding: padding.toDouble(),
+      paddingInsets: paddingInsets,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is ZoneFlowConfig &&
+      other.scrollable == scrollable &&
+      other.expandSlots == expandSlots &&
+      other.mainAxisAlignment == mainAxisAlignment &&
+      other.crossAxisAlignment == crossAxisAlignment &&
+      other.spacing == spacing &&
+      other.padding == padding &&
+      other.paddingInsets == paddingInsets;
+
+  @override
+  int get hashCode => Object.hash(
+    scrollable,
+    expandSlots,
+    mainAxisAlignment,
+    crossAxisAlignment,
+    spacing,
+    padding,
+    paddingInsets,
   );
 }
 
@@ -264,6 +438,7 @@ class SuperLayoutConfig extends ComponentConfig {
     this.slotPreferredSizes = const {},
     this.slotSizeConstraints = const {},
     this.zoneAxes = const {},
+    this.zoneFlows = const {},
     this.label,
     this.slotLabels = const {},
     this.positioning = SuperLayoutPositioning.zones,
@@ -457,11 +632,29 @@ class SuperLayoutConfig extends ComponentConfig {
   /// Axe des slots par zone de contenu ; une zone absente utilise Column.
   final Map<SuperLayoutZone, Axis> zoneAxes;
 
+  /// Paramètres de flux (scroll, alignements, espacement, marge) par zone de
+  /// contenu.
+  final Map<SuperLayoutZone, ZoneFlowConfig> zoneFlows;
+
   Axis axisOf(SuperLayoutZone zone) =>
       zoneAxes[contentZone(zone)] ?? Axis.vertical;
 
   SuperLayoutConfig withAxis(SuperLayoutZone zone, Axis axis) =>
       copyWith(zoneAxes: {...zoneAxes, contentZone(zone): axis});
+
+  ZoneFlowConfig flowOf(SuperLayoutZone zone) =>
+      zoneFlows[contentZone(zone)] ?? const ZoneFlowConfig();
+
+  SuperLayoutConfig withZoneFlow(SuperLayoutZone zone, ZoneFlowConfig flow) {
+    final target = contentZone(zone);
+    final next = {...zoneFlows};
+    if (flow.isDefault) {
+      next.remove(target);
+    } else {
+      next[target] = flow;
+    }
+    return copyWith(zoneFlows: next);
+  }
 
   SuperLayoutConfig withSlotPreferredSize(String id, Size? size) {
     if (size != null &&
@@ -699,6 +892,7 @@ class SuperLayoutConfig extends ComponentConfig {
     Map<String, Size?>? slotPreferredSizes,
     Map<String, SlotSizeConstraints>? slotSizeConstraints,
     Map<SuperLayoutZone, Axis>? zoneAxes,
+    Map<SuperLayoutZone, ZoneFlowConfig>? zoneFlows,
     String? label,
     Map<String, String>? slotLabels,
     SuperLayoutPositioning? positioning,
@@ -726,6 +920,7 @@ class SuperLayoutConfig extends ComponentConfig {
     slotPreferredSizes: slotPreferredSizes ?? this.slotPreferredSizes,
     slotSizeConstraints: slotSizeConstraints ?? this.slotSizeConstraints,
     zoneAxes: zoneAxes ?? this.zoneAxes,
+    zoneFlows: zoneFlows ?? this.zoneFlows,
     label: label ?? this.label,
     slotLabels: slotLabels ?? this.slotLabels,
     positioning: positioning ?? this.positioning,
@@ -784,6 +979,11 @@ class SuperLayoutConfig extends ComponentConfig {
       for (final entry in zoneAxes.entries)
         entry.key.name: entry.value == Axis.horizontal ? 'row' : 'column',
     },
+    if (zoneFlows.values.any((flow) => !flow.isDefault))
+      'zoneFlows': {
+        for (final entry in zoneFlows.entries)
+          if (!entry.value.isDefault) entry.key.name: entry.value.toJson(),
+      },
     'slotPreferredSizes': {
       for (final entry in slotPreferredSizes.entries)
         entry.key: entry.value == null
@@ -1049,6 +1249,25 @@ class SuperLayoutConfig extends ComponentConfig {
       };
     }
 
+    Map<SuperLayoutZone, ZoneFlowConfig> flows() {
+      final raw = value['zoneFlows'];
+      if (raw == null) return fallback.zoneFlows;
+      if (raw is! Map) {
+        throw const FormatException('Paramètres de flux des zones invalides.');
+      }
+      final result = <SuperLayoutZone, ZoneFlowConfig>{};
+      for (final entry in raw.entries) {
+        final zone =
+            SuperLayoutZone.values
+                .where((zone) => zone.name == entry.key)
+                .firstOrNull ??
+            (throw const FormatException('Zone invalide pour "zoneFlows".'));
+        final parsed = ZoneFlowConfig.fromJson(entry.value);
+        if (!parsed.isDefault) result[zone] = parsed;
+      }
+      return result;
+    }
+
     final parsedPlacements = placementMap();
     final inferSidesFromZones = value.containsKey('zones');
     bool hasZoneContent(List<SuperLayoutZone> zones) => zones.any(
@@ -1103,6 +1322,7 @@ class SuperLayoutConfig extends ComponentConfig {
       slotPreferredSizes: preferredSizes(),
       slotSizeConstraints: slotConstraints(),
       zoneAxes: axes(),
+      zoneFlows: flows(),
       label: displayLabel(value['label']) ?? fallback.label,
       slotLabels: labels(),
       positioning:
@@ -1238,6 +1458,11 @@ class SuperLayoutConfig extends ComponentConfig {
       zoneAxes.entries.every(
         (entry) => other.zoneAxes[entry.key] == entry.value,
       ) &&
+      SuperLayoutZone.values.every(
+        (zone) =>
+            (zoneFlows[zone] ?? const ZoneFlowConfig()) ==
+            (other.zoneFlows[zone] ?? const ZoneFlowConfig()),
+      ) &&
       other.slotPreferredSizes.length == slotPreferredSizes.length &&
       slotPreferredSizes.entries.every(
         (entry) =>
@@ -1302,6 +1527,10 @@ class SuperLayoutConfig extends ComponentConfig {
     Object.hashAllUnordered(autoSides),
     Object.hashAllUnordered([
       for (final entry in zoneAxes.entries) Object.hash(entry.key, entry.value),
+    ]),
+    Object.hashAllUnordered([
+      for (final entry in zoneFlows.entries)
+        if (!entry.value.isDefault) Object.hash(entry.key, entry.value),
     ]),
     Object.hashAllUnordered([
       for (final entry in slotPreferredSizes.entries)

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/rendering.dart';
@@ -92,6 +94,28 @@ enum SlotSizing {
   intrinsic,
 }
 
+/// Indique aux composants imbriqués (comme un `SuperLayout` ou une `Card` dans
+/// un slot en mode `flex: 0`) sur quels axes ils doivent mesurer leur contenu
+/// au lieu d'occuper tout l'espace disponible.
+class SlotContentFitScope extends InheritedWidget {
+  const SlotContentFitScope({
+    required this.fitWidth,
+    required this.fitHeight,
+    required super.child,
+    super.key,
+  });
+
+  final bool fitWidth;
+  final bool fitHeight;
+
+  static SlotContentFitScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SlotContentFitScope>();
+
+  @override
+  bool updateShouldNotify(SlotContentFitScope oldWidget) =>
+      fitWidth != oldWidget.fitWidth || fitHeight != oldWidget.fitHeight;
+}
+
 /// Bloc majeur d'une page, rangé dans une zone d'un `SuperLayout` (le
 /// récepteur de slots) grâce à son [id].
 ///
@@ -106,7 +130,7 @@ abstract class SlotImplementation extends StatelessWidget {
     this.preferredSize,
     this.visible = true,
     this.showLabel = true,
-    this.labelAlignment = Alignment.topLeft,
+    this.labelAlignment = Alignment.topRight,
     this.tags = const {},
     this.menuIcon,
     super.key,
@@ -207,6 +231,7 @@ class SlotStack extends StatelessWidget {
   const SlotStack({
     required this.slots,
     this.axis = Axis.vertical,
+    this.flow = const ZoneFlowConfig(),
     this.expand = true,
     this.stretch = true,
     this.showLabels = false,
@@ -232,6 +257,7 @@ class SlotStack extends StatelessWidget {
   final List<SlotImplementation> slots;
   final Map<String, GlobalKey>? focusKeys;
   final Axis axis;
+  final ZoneFlowConfig flow;
 
   /// Les slots [SlotSizing.fill] se partagent l'espace sur l'axe principal.
   /// Desactive dans une zone automatique sur cet axe.
@@ -281,10 +307,16 @@ class SlotStack extends StatelessWidget {
         if (slot.visible) slot,
     ];
     final ids = [for (final slot in visible) slot.id];
-    return _SlotFlex(
+    final padding = flow.contentPadding;
+    Widget flex = _SlotFlex(
       axis: axis,
       expand: expand,
       stretch: stretch,
+      scrollable: flow.scrollable,
+      expandSlots: flow.expandSlots,
+      mainAxisAlignment: flow.mainAxisAlignment,
+      crossAxisAlignment: flow.crossAxisAlignment,
+      spacing: flow.spacing,
       preferredSizes: [
         for (final slot in visible)
           (sizeConstraints[slot.id]?.hasSizeConstraints ?? false)
@@ -298,61 +330,165 @@ class SlotStack extends StatelessWidget {
       sizing: [for (final slot in visible) slot.sizing],
       children: [
         for (final (index, slot) in visible.indexed)
-          _labeled(slot, index, visible.length, ids),
+          _labeled(context, slot, index, visible.length, ids),
       ],
     );
+    if (flow.scrollable) {
+      flex = _ScrollViewportHost(
+        padding: padding,
+        child: SingleChildScrollView(
+          scrollDirection: axis,
+          padding: padding == EdgeInsets.zero ? null : padding,
+          child: flex,
+        ),
+      );
+    } else if (padding != EdgeInsets.zero) {
+      flex = Padding(padding: padding, child: flex);
+    }
+    return flex;
+  }
+
+  bool _slotFitsMain(SlotImplementation slot, {required bool parentFitMain}) {
+    final constraints = sizeConstraints[slot.id];
+    final hasExplicitMain = (constraints?.hasSizeConstraints ?? false)
+        ? (axis == Axis.horizontal
+              ? constraints!.preferredWidth != null
+              : constraints!.preferredHeight != null)
+        : (preferredSizes.containsKey(slot.id)
+              ? preferredSizes[slot.id] != null
+              : slot.preferredSize != null);
+    if (hasExplicitMain) return false;
+    final fitOverride = constraints?.fitContent;
+    if (fitOverride != null) return fitOverride;
+    if (parentFitMain) return true;
+    return !flow.expandSlots ||
+        flow.scrollable ||
+        flow.mainAxisAlignment != MainAxisAlignment.start;
+  }
+
+  bool _slotFitsCross(
+    SlotImplementation slot, {
+    required bool parentFitCross,
+  }) {
+    final constraints = sizeConstraints[slot.id];
+    final hasExplicitCross = (constraints?.hasSizeConstraints ?? false)
+        ? (axis == Axis.horizontal
+              ? constraints!.preferredHeight != null
+              : constraints!.preferredWidth != null)
+        : (preferredSizes.containsKey(slot.id)
+              ? preferredSizes[slot.id] != null
+              : slot.preferredSize != null);
+    if (hasExplicitCross) return false;
+    return parentFitCross ||
+        flow.crossAxisAlignment != CrossAxisAlignment.stretch;
   }
 
   Widget _labeled(
+    BuildContext context,
     SlotImplementation slot,
     int index,
     int count,
     List<String> ids,
-  ) => EditorSlotAction(
-    key: ValueKey('slot-item-${slot.id}'),
-    label: 'Taille et marge préférées : ${slot.label}',
-    inline: true,
-    enabled:
-        onEditPreferredSize != null ||
-        onRemoveSlot != null ||
-        wrapActionsForSlot != null ||
-        insertionForSlot != null,
-    showEdit: onEditPreferredSize != null,
-    onEdit: () async => onEditPreferredSize?.call(slot),
-    onRemove: onRemoveSlot != null
-        ? () async => onRemoveSlot?.call(slot)
-        : null,
-    wrapActions: wrapActionsForSlot?.call(slot) ?? const [],
-    insertion: insertionForSlot?.call(slot),
-    child: KeyedSubtree(
-      key: focusKeys?.putIfAbsent(slot.id, GlobalKey.new),
-      child: _LabeledSlot(
-        slot: slot,
-        axis: axis,
-        showLabel: showLabels,
-        mover: mover,
-        emphasis: emphasis,
-        zoneLabel: zoneLabel,
-        ids: ids,
-        onSelect: onSelectSlot == null ? null : () => onSelectSlot!(slot),
-        onTapContent: onTapSlot == null
-            ? null
-            : (event) => onTapSlot!(slot, event),
-        onSelectContent: onSelectContent == null
-            ? null
-            : () => onSelectContent!(slot),
-        selected: selectedSlotId == slot.id,
-        onResize: onResizeSlot == null
-            ? null
-            : (dimensions) => onResizeSlot!(slot, dimensions),
-        sizeConstraints: sizeConstraints[slot.id],
-        padding: sizeConstraints[slot.id]?.contentPadding ?? EdgeInsets.zero,
-        caption: zoneLabel == null
-            ? slot.label
-            : '${slot.label} · $zoneLabel ${index + 1}/$count',
+  ) {
+    final parentFit = SlotContentFitScope.maybeOf(context);
+    final parentFitMain = axis == Axis.horizontal
+        ? (parentFit?.fitWidth ?? false)
+        : (parentFit?.fitHeight ?? false);
+    final parentFitCross = axis == Axis.horizontal
+        ? (parentFit?.fitHeight ?? false)
+        : (parentFit?.fitWidth ?? false);
+    final fitMain = _slotFitsMain(slot, parentFitMain: parentFitMain);
+    final fitCross = _slotFitsCross(slot, parentFitCross: parentFitCross);
+    final fitWidth = axis == Axis.horizontal ? fitMain : fitCross;
+    final fitHeight = axis == Axis.vertical ? fitMain : fitCross;
+    return EditorSlotAction(
+      key: ValueKey('slot-item-${slot.id}'),
+      label: 'Taille et marge préférées : ${slot.label}',
+      inline: true,
+      enabled:
+          onEditPreferredSize != null ||
+          onRemoveSlot != null ||
+          wrapActionsForSlot != null ||
+          insertionForSlot != null,
+      showEdit: onEditPreferredSize != null,
+      onEdit: () async => onEditPreferredSize?.call(slot),
+      onRemove: onRemoveSlot != null
+          ? () async => onRemoveSlot?.call(slot)
+          : null,
+      wrapActions: wrapActionsForSlot?.call(slot) ?? const [],
+      insertion: insertionForSlot?.call(slot),
+      child: KeyedSubtree(
+        key: focusKeys?.putIfAbsent(slot.id, GlobalKey.new),
+        child: SlotContentFitScope(
+          fitWidth: fitWidth,
+          fitHeight: fitHeight,
+          child: _LabeledSlot(
+            slot: slot,
+            axis: axis,
+            showLabel: showLabels,
+            mover: mover,
+            emphasis: emphasis,
+            zoneLabel: zoneLabel,
+            ids: ids,
+            onSelect: onSelectSlot == null ? null : () => onSelectSlot!(slot),
+            onTapContent: onTapSlot == null
+                ? null
+                : (event) => onTapSlot!(slot, event),
+            onSelectContent: onSelectContent == null
+                ? null
+                : () => onSelectContent!(slot),
+            selected: selectedSlotId == slot.id,
+            onResize: onResizeSlot == null
+                ? null
+                : (dimensions) => onResizeSlot!(slot, dimensions),
+            sizeConstraints: sizeConstraints[slot.id],
+            padding: sizeConstraints[slot.id]?.contentPadding ?? EdgeInsets.zero,
+            caption: zoneLabel == null
+                ? slot.label
+                : '${slot.label} · $zoneLabel ${index + 1}/$count',
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
+}
+
+class _ScrollViewportHost extends SingleChildRenderObjectWidget {
+  const _ScrollViewportHost({
+    required this.padding,
+    required super.child,
+  });
+
+  final EdgeInsets padding;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderScrollViewportHost(padding);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderScrollViewportHost renderObject,
+  ) => renderObject.padding = padding;
+}
+
+class _RenderScrollViewportHost extends RenderProxyBox {
+  _RenderScrollViewportHost(this._padding);
+
+  EdgeInsets _padding;
+  set padding(EdgeInsets value) {
+    if (_padding == value) return;
+    _padding = value;
+    markNeedsLayout();
+  }
+
+  Size viewportSize = Size.zero;
+
+  @override
+  void performLayout() {
+    viewportSize = constraints.deflate(_padding).biggest;
+    super.performLayout();
+  }
 }
 
 class _SlotFlex extends MultiChildRenderObjectWidget {
@@ -360,6 +496,11 @@ class _SlotFlex extends MultiChildRenderObjectWidget {
     required this.axis,
     required this.expand,
     required this.stretch,
+    required this.scrollable,
+    required this.expandSlots,
+    required this.mainAxisAlignment,
+    required this.crossAxisAlignment,
+    required this.spacing,
     required this.preferredSizes,
     required this.sizeConstraints,
     required this.layoutSize,
@@ -370,6 +511,11 @@ class _SlotFlex extends MultiChildRenderObjectWidget {
   final bool expand;
   final Axis axis;
   final bool stretch;
+  final bool scrollable;
+  final bool expandSlots;
+  final MainAxisAlignment mainAxisAlignment;
+  final CrossAxisAlignment crossAxisAlignment;
+  final double spacing;
   final List<Size?> preferredSizes;
   final List<SlotSizeConstraints?> sizeConstraints;
   final Size layoutSize;
@@ -393,37 +539,70 @@ class _RenderSlotFlex extends RenderBox
   late _SlotFlex _configuration;
   List<(double, double, double?, double, double, double?)> _bounds = const [];
 
+  Size? _viewportSize() {
+    RenderObject? current = parent;
+    while (current != null) {
+      if (current is _RenderScrollViewportHost) return current.viewportSize;
+      current = current.parent;
+    }
+    return null;
+  }
+
   ({Size min, Size max}) resizeBounds(int index) {
     final horizontal = _configuration.axis == Axis.horizontal;
     final bound = _bounds[index];
-    final available = constraints.biggest;
+    final available = resizeBasis;
     var maxMain = horizontal ? available.width : available.height;
-    final children = getChildrenAsList();
-    for (final (other, child) in children.indexed) {
-      if (other == index) continue;
-      final flexible =
-          _configuration.expand &&
-          _bounds[other].$3 == null &&
-          _configuration.sizing[other] == SlotSizing.fill;
-      maxMain -= flexible
-          ? _bounds[other].$1
-          : _bounds[other].$3 != null
-          ? _bounds[other].$3!.clamp(_bounds[other].$1, _bounds[other].$2)
-          : horizontal
-          ? child.size.width
-          : child.size.height;
+    if (_configuration.scrollable) {
+      maxMain = bound.$2;
+    } else {
+      final children = getChildrenAsList();
+      if (children.length > 1) {
+        maxMain -= _configuration.spacing * (children.length - 1);
+      }
+      for (final (other, child) in children.indexed) {
+        if (other == index) continue;
+        final fitOverride = _configuration.sizeConstraints[other]?.fitContent;
+        final flexible =
+            _configuration.expand &&
+            _bounds[other].$3 == null &&
+            (fitOverride != null
+                ? !fitOverride
+                : (_configuration.sizing[other] == SlotSizing.fill &&
+                      _configuration.expandSlots &&
+                      _configuration.mainAxisAlignment ==
+                          MainAxisAlignment.start));
+        maxMain -= flexible
+            ? _bounds[other].$1
+            : _bounds[other].$3 != null
+            ? _bounds[other].$3!.clamp(_bounds[other].$1, _bounds[other].$2)
+            : horizontal
+            ? child.size.width
+            : child.size.height;
+      }
+      if (bound.$2 < maxMain) maxMain = bound.$2;
     }
-    if (bound.$2 < maxMain) maxMain = bound.$2;
     return (
       min: horizontal ? Size(bound.$1, bound.$4) : Size(bound.$4, bound.$1),
       max: horizontal ? Size(maxMain, bound.$5) : Size(bound.$5, maxMain),
     );
   }
 
-  Size get resizeBasis => Size(
-    constraints.maxWidth.isFinite ? constraints.maxWidth : size.width,
-    constraints.maxHeight.isFinite ? constraints.maxHeight : size.height,
-  );
+  Size get resizeBasis {
+    final viewport = _viewportSize();
+    return Size(
+      constraints.maxWidth.isFinite
+          ? constraints.maxWidth
+          : (viewport != null && viewport.width.isFinite
+                ? viewport.width
+                : size.width),
+      constraints.maxHeight.isFinite
+          ? constraints.maxHeight
+          : (viewport != null && viewport.height.isFinite
+                ? viewport.height
+                : size.height),
+    );
+  }
 
   void configure(_SlotFlex value) {
     _configuration = value;
@@ -447,12 +626,23 @@ class _RenderSlotFlex extends RenderBox
     double crossExtent(Size size) => horizontal ? size.height : size.width;
     Size dimensions(double main, double cross) =>
         horizontal ? Size(main, cross) : Size(cross, main);
-    final maxMain = mainExtent(constraints.biggest);
-    final maxCross = crossExtent(constraints.biggest);
+    final viewport = _viewportSize();
+    final rawMaxMain = mainExtent(constraints.biggest);
+    final rawMaxCross = crossExtent(constraints.biggest);
+    final maxMain = rawMaxMain.isFinite
+        ? rawMaxMain
+        : (viewport != null ? mainExtent(viewport) : double.infinity);
+    final maxCross = rawMaxCross.isFinite
+        ? rawMaxCross
+        : (viewport != null ? crossExtent(viewport) : double.infinity);
     final layoutMain = mainExtent(_configuration.layoutSize);
     final layoutCross = crossExtent(_configuration.layoutSize);
+    final scrollable = _configuration.scrollable;
     final expand = _configuration.expand && maxMain.isFinite;
     final stretch = _configuration.stretch && maxCross.isFinite;
+    final stretchCross =
+        stretch &&
+        _configuration.crossAxisAlignment == CrossAxisAlignment.stretch;
     final bounds = <(double, double, double?, double, double, double?)>[];
     for (final (index, _) in children.indexed) {
       final legacy = preferences[index];
@@ -494,11 +684,13 @@ class _RenderSlotFlex extends RenderBox
         SlotDimension? dimension,
         double available,
         double wholeLayout,
-        double fallback,
-      ) => (value(dimension, available, wholeLayout) ?? fallback).clamp(
+        double fallback, {
+        double? limit,
+      }) => (value(dimension, available, wholeLayout) ?? fallback).clamp(
         0.0,
-        available.isFinite ? available : double.infinity,
+        limit ?? (available.isFinite ? available : double.infinity),
       );
+      final mainCap = scrollable ? double.infinity : null;
       final minMain = bound(
         configured == null
             ? null
@@ -508,7 +700,13 @@ class _RenderSlotFlex extends RenderBox
         maxMain,
         layoutMain,
         0,
+        limit: mainCap,
       );
+      final hasConfiguredMaxMain =
+          configured != null &&
+          (horizontal
+              ? configured.maxWidth != null
+              : configured.maxHeight != null);
       final maxConfiguredMain = bound(
         configured == null
             ? null
@@ -518,6 +716,7 @@ class _RenderSlotFlex extends RenderBox
         maxMain,
         layoutMain,
         maxMain,
+        limit: mainCap,
       );
       final minCross = bound(
         configured == null
@@ -539,22 +738,20 @@ class _RenderSlotFlex extends RenderBox
         layoutCross,
         maxCross,
       );
-      final effectiveMaxMain = maxConfiguredMain < minMain
+      var effectiveMaxMain = maxConfiguredMain < minMain
           ? minMain
           : maxConfiguredMain;
       final effectiveMaxCross = maxConfiguredCross < minCross
           ? minCross
           : maxConfiguredCross;
       if (preferredMain != null) {
-        final hasConfiguredMax =
-            configured != null &&
-            (horizontal
-                ? configured.maxWidth != null
-                : configured.maxHeight != null);
         preferredMain = preferredMain.clamp(
           minMain,
-          hasConfiguredMax ? effectiveMaxMain : double.infinity,
+          hasConfiguredMaxMain ? effectiveMaxMain : double.infinity,
         );
+        if (!hasConfiguredMaxMain && preferredMain > effectiveMaxMain) {
+          effectiveMaxMain = preferredMain;
+        }
       }
       if (preferredCross != null) {
         preferredCross = preferredCross.clamp(minCross, effectiveMaxCross);
@@ -569,18 +766,26 @@ class _RenderSlotFlex extends RenderBox
       ));
     }
     _bounds = bounds;
+    final count = children.length;
+    final spacing = _configuration.spacing;
+    final totalSpacing = count > 1 ? spacing * (count - 1) : 0.0;
     var naturalExtent = 0.0;
     var preferredExtent = 0.0;
     var fills = 0;
-    bool fillsSpace(int index) =>
-        expand &&
-        bounds[index].$3 == null &&
-        _configuration.sizing[index] == SlotSizing.fill;
+    bool fillsSpace(int index) {
+      if (!expand || bounds[index].$3 != null) return false;
+      final fitOverride = sizeConstraints[index]?.fitContent;
+      if (fitOverride != null) return !fitOverride;
+      if (_configuration.sizing[index] != SlotSizing.fill) return false;
+      return _configuration.expandSlots &&
+          !scrollable &&
+          _configuration.mainAxisAlignment == MainAxisAlignment.start;
+    }
     BoxConstraints childConstraints(int index, {double? main, double? cross}) {
       final bound = bounds[index];
       final min = dimensions(
         main ?? bound.$1,
-        cross ?? (stretch ? bound.$5 : bound.$4),
+        cross ?? (stretchCross ? bound.$5 : bound.$4),
       );
       final max = dimensions(main ?? bound.$2, cross ?? bound.$5);
       return BoxConstraints(
@@ -607,15 +812,18 @@ class _RenderSlotFlex extends RenderBox
         naturalExtent += mainExtent(child.size);
       }
     }
-    final available = (maxMain - naturalExtent).clamp(0.0, double.infinity);
-    final scale = preferredExtent > available
+    final available = (maxMain - naturalExtent - totalSpacing).clamp(
+      0.0,
+      double.infinity,
+    );
+    final scale = !scrollable && preferredExtent > available
         ? available / preferredExtent
         : 1.0;
     final fillExtent = fills == 0
         ? 0.0
         : (available - preferredExtent * scale).clamp(0.0, double.infinity) /
               fills;
-    var main = 0.0;
+    var childrenMain = 0.0;
     var cross = 0.0;
     for (final (index, child) in children.indexed) {
       final bound = bounds[index];
@@ -629,15 +837,54 @@ class _RenderSlotFlex extends RenderBox
           parentUsesSize: true,
         );
       }
-      (child.parentData! as _SlotParentData).offset = horizontal
-          ? Offset(main, 0)
-          : Offset(0, main);
-      main += mainExtent(child.size);
+      childrenMain += mainExtent(child.size);
       if (crossExtent(child.size) > cross) cross = crossExtent(child.size);
     }
-    size = constraints.constrain(
-      dimensions(expand ? maxMain : main, stretch ? maxCross : cross),
-    );
+    final contentMain = childrenMain + totalSpacing;
+    final targetMain = expand
+        ? (scrollable ? math.max(maxMain, contentMain) : maxMain)
+        : contentMain;
+    final freeSpace = math.max(0.0, targetMain - contentMain);
+    final (double leading, double stepSpacing) = switch (
+      _configuration.mainAxisAlignment
+    ) {
+      MainAxisAlignment.start => (0.0, spacing),
+      MainAxisAlignment.end => (freeSpace, spacing),
+      MainAxisAlignment.center => (freeSpace / 2.0, spacing),
+      MainAxisAlignment.spaceBetween => (
+        0.0,
+        count > 1 ? spacing + freeSpace / (count - 1) : 0.0,
+      ),
+      MainAxisAlignment.spaceAround => (
+        count > 0 ? freeSpace / count / 2.0 : 0.0,
+        count > 0 ? spacing + freeSpace / count : spacing,
+      ),
+      MainAxisAlignment.spaceEvenly => (
+        count > 0 ? freeSpace / (count + 1) : 0.0,
+        count > 0 ? spacing + freeSpace / (count + 1) : spacing,
+      ),
+    };
+    final containerCross = stretch ? maxCross : cross;
+    var main = leading;
+    for (final (index, child) in children.indexed) {
+      final childCross = crossExtent(child.size);
+      final crossOffset = switch (_configuration.crossAxisAlignment) {
+        CrossAxisAlignment.start ||
+        CrossAxisAlignment.stretch ||
+        CrossAxisAlignment.baseline => 0.0,
+        CrossAxisAlignment.end => math.max(0.0, containerCross - childCross),
+        CrossAxisAlignment.center => math.max(
+          0.0,
+          (containerCross - childCross) / 2.0,
+        ),
+      };
+      (child.parentData! as _SlotParentData).offset = horizontal
+          ? Offset(main, crossOffset)
+          : Offset(crossOffset, main);
+      main += mainExtent(child.size);
+      if (index < count - 1) main += stepSpacing;
+    }
+    size = constraints.constrain(dimensions(targetMain, containerCross));
   }
 
   @override
@@ -1028,6 +1275,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         padding: saved?.padding ?? 0,
         paddingInsets: saved?.paddingInsets,
         percentBasis: saved?.percentBasis ?? SlotPercentBasis.zone,
+        fitContent: saved?.fitContent,
       ),
     );
   }
