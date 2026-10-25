@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/automatic_state.dart';
+import '../../models/component_behavior.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_action_config.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -14,6 +15,7 @@ import '../../services/repositories/json_repository_store.dart';
 import '../../services/states/content_hover_scope.dart';
 import '../../services/states/surface_state_binding.dart';
 import '../../super_app.dart';
+import '../../theme/appearance.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/style_extras.dart';
 import '../editing/components/super_action_editor.dart';
@@ -787,6 +789,7 @@ class _SuperActionState extends State<SuperAction> {
 
           return EditorSlot(
             key: _surface,
+            id: widget.id,
             label: 'Action',
             menuType: 'Action',
             onEdit: () async {
@@ -848,7 +851,20 @@ class _SuperActionState extends State<SuperAction> {
                       iconKey: ValueKey('super-action-icon-${widget.id}'),
                       onPressed: _editorConfig != null
                           ? () {}
-                          : widget.onPressed ?? () {},
+                          : () {
+                              widget.onPressed?.call();
+                              final appearance =
+                                  AppearanceScope.controllerOf(context)?.value;
+                              final behaviors =
+                                  appearance?.behaviorsFor(widget.id) ??
+                                  const [];
+                              for (final b in behaviors) {
+                                if (b.enabled &&
+                                    b.trigger == BehaviorTrigger.click) {
+                                  b.execute(context);
+                                }
+                              }
+                            },
                     ),
                   ),
                 ),

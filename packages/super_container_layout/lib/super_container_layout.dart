@@ -1,5 +1,7 @@
 export 'models/registry.dart';
 export 'models/component_config.dart';
+export 'models/component_behavior.dart';
+export 'widgets/editing/behaviors/component_behavior_editor.dart';
 export 'models/json_syntax.dart';
 export 'models/super_value_config.dart';
 export 'models/super_action_config.dart';

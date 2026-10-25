@@ -30,9 +30,12 @@ class RegisteredSuperLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
-    
-    Widget layout(SuperLayoutConfig value,
-        ValueChanged<SuperLayoutConfig>? onChanged) => SuperLayout(
+
+    Widget layout(
+      SuperLayoutConfig value,
+      ValueChanged<SuperLayoutConfig>? onChanged,
+    ) => SuperLayout(
+      id: id,
       config: value,
       slots: slots,
       label: label,

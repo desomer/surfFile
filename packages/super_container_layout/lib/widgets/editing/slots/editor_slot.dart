@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
+import '../../../models/component_behavior.dart';
 import '../../super_layout/layout_selection.dart';
 import '../../super_layout/zone_axis_button.dart';
 import '../addition/contextual_add.dart';
 import '../addition/insertion_plan.dart';
+import '../behaviors/component_behavior_editor.dart';
 import 'editor_context_menu.dart';
 import 'editor_selection_region.dart';
 import '../dialogs/editor_dialog.dart';
@@ -59,6 +61,7 @@ EditorComponentLabel? editorComponentLabelOf(BuildContext context) {
 /// An editor interaction target that can wrap any widget.
 class EditorSlot extends StatefulWidget {
   const EditorSlot({
+    this.id,
     this.child,
     this.label,
     this.menuTitle,
@@ -101,6 +104,9 @@ class EditorSlot extends StatefulWidget {
   /// Fallback child-removal affordance when the child has no editable target.
   final Future<void> Function()? onRemoveChild;
 
+  /// Stable technical identity for the component or slot.
+  final String? id;
+
   @override
   EditorSlotState createState() => EditorSlotState();
 }
@@ -111,6 +117,20 @@ class EditorSlotState extends State<EditorSlot> {
   EditorComponentLabel? get _instance => editorComponentLabelOf(context);
 
   bool get _canRename => _instance != null || widget.onLabelChanged != null;
+
+  String get effectiveComponentId {
+    if (widget.id != null && widget.id!.isNotEmpty) return widget.id!;
+    final instId = _instance?.id;
+    if (instId != null && instId.isNotEmpty) return instId;
+    if (widget.identity is String && (widget.identity as String).isNotEmpty) {
+      return widget.identity as String;
+    }
+    final inst = _instance?.label;
+    if (inst != null && inst.isNotEmpty) return inst;
+    final l = widget.label;
+    if (l != null && l.isNotEmpty) return l;
+    return 'component';
+  }
 
   String get label {
     final instance = _instance;
@@ -440,6 +460,57 @@ class EditorSlotState extends State<EditorSlot> {
     return levels;
   }
 
+  List<BehaviorTargetElement> _behaviorTargets(List<(int, Object)> entries) {
+    final targets = <BehaviorTargetElement>[];
+    final titles = <String, int>{};
+    String unique(String title) {
+      final count = titles[title] = (titles[title] ?? 0) + 1;
+      return switch (count) {
+        1 => title,
+        2 => '$title (parent)',
+        _ => '$title (parent ${count - 1})',
+      };
+    }
+
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+
+    for (final (index, entry) in entries) {
+      if (entry is EditorSlotState) {
+        final id = entry.effectiveComponentId;
+        final existing = appearance?.behaviorsFor(id) ?? const [];
+        targets.add(
+          BehaviorTargetElement(
+            id: id,
+            label: unique(entry.label),
+            icon: entry.widget.menuIcon ??
+                entry.componentLabel?.menuIcon ??
+                (index == 0 ? Icons.widgets_outlined : Icons.folder_outlined),
+            depth: index,
+            existingBehaviors: existing,
+          ),
+        );
+      }
+    }
+
+    if (targets.isEmpty) {
+      final id = effectiveComponentId;
+      final existing = appearance?.behaviorsFor(id) ?? const [];
+      targets.add(
+        BehaviorTargetElement(
+          id: id,
+          label: label,
+          icon: widget.menuIcon ??
+              componentLabel?.menuIcon ??
+              Icons.widgets_outlined,
+          depth: 0,
+          existingBehaviors: existing,
+        ),
+      );
+    }
+
+    return targets;
+  }
+
   /// Opens this slot's menu at a global pointer position.
   Future<void> openMenu(
     Offset globalPosition, {
@@ -479,6 +550,7 @@ class EditorSlotState extends State<EditorSlot> {
     });
     final hasMenuActions = extraActions.any((action) => !action.inline);
     final insertions = _insertionLevels(actions);
+    final behaviorTargets = _behaviorTargets(entries);
     // Inline actions only render inside an editable entry, never on their own.
     if (entries.isEmpty && !hasMenuActions && insertions.isEmpty) return;
     final overlay =
@@ -507,34 +579,135 @@ class EditorSlotState extends State<EditorSlot> {
           overlay.size.height - position.dy,
         ),
         items: [
-          if (insertions.isNotEmpty) ...[
+          if (insertions.isNotEmpty || canEdit) ...[
             PopupMenuItem<Future<void> Function()>(
               height: 28,
               key: const ValueKey('style-menu-insert'),
-              value: () =>
-                  showContextualAddWizard(context, insertions, target: context),
+              value: insertions.isNotEmpty
+                  ? () => showContextualAddWizard(
+                      context,
+                      insertions,
+                      target: context,
+                    )
+                  : () => showComponentBehaviorWizard(
+                      context: context,
+                      targets: behaviorTargets,
+                      target: context,
+                    ),
               padding: EdgeInsets.zero,
               child: _menuHover(
                 this,
                 minHeight: 28,
                 Row(
                   children: [
-                    Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: colors.primary,
-                        borderRadius: BorderRadius.circular(6),
+                    if (insertions.isNotEmpty) ...[
+                      Expanded(
+                        flex: 5,
+                        child: Tooltip(
+                          message: 'Ajouter un composant',
+                          child: InkWell(
+                            key: const ValueKey('style-menu-insert-component'),
+                            borderRadius: BorderRadius.circular(6),
+                            onTap: () => Navigator.of(context)
+                                .pop<Future<void> Function()>(
+                                  () => showContextualAddWizard(
+                                    context,
+                                    insertions,
+                                    target: context,
+                                  ),
+                                ),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 3,
+                                horizontal: 2,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 22,
+                                    height: 22,
+                                    decoration: BoxDecoration(
+                                      color: colors.primary,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.add,
+                                      size: 14,
+                                      color: colors.onPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Flexible(
+                                    child: _menuTitle(
+                                      'Composant…',
+                                      destination: null,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelLarge,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                      alignment: Alignment.center,
-                      child: Icon(Icons.add, size: 14, color: colors.onPrimary),
-                    ),
-                    const SizedBox(width: 8),
+                      const SizedBox(width: 6),
+                    ],
                     Expanded(
-                      child: _menuTitle(
-                        'Ajouter…',
-                        destination: null,
-                        style: Theme.of(context).textTheme.labelLarge,
+                      flex: 5,
+                      child: Tooltip(
+                        message: 'Ajouter un comportement',
+                        child: InkWell(
+                          key: const ValueKey('style-menu-behavior'),
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: () =>
+                              Navigator.of(context)
+                                  .pop<Future<void> Function()>(
+                                    () => showComponentBehaviorWizard(
+                                      context: context,
+                                      targets: behaviorTargets,
+                                      target: context,
+                                    ),
+                                  ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 3,
+                              horizontal: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 22,
+                                  height: 22,
+                                  decoration: BoxDecoration(
+                                    color: colors.tertiary,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.bolt,
+                                    size: 14,
+                                    color: colors.onTertiary,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: _menuTitle(
+                                    'Comportement…',
+                                    destination: null,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -915,12 +1088,32 @@ class EditorSlotState extends State<EditorSlot> {
     } else if (_hovered.contains(this)) {
       _removeHoveredSafely();
     }
-    content = GestureDetector(
-      excludeFromSemantics: true,
-      onSecondaryTapUp: canEdit
-          ? (details) => openMenu(details.globalPosition)
-          : null,
-      child: content,
+    final inEditMode = editMode?.value ?? false;
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    final behaviors =
+        appearance?.behaviorsFor(effectiveComponentId) ?? const [];
+    final clickBehaviors = behaviors
+        .where((b) => b.enabled && b.trigger == BehaviorTrigger.click)
+        .toList();
+    final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
+
+    content = MouseRegion(
+      cursor: hasClickBehaviors ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        excludeFromSemantics: true,
+        behavior: HitTestBehavior.translucent,
+        onTap: hasClickBehaviors
+            ? () async {
+                for (final b in clickBehaviors) {
+                  await b.execute(context);
+                }
+              }
+            : null,
+        onSecondaryTapUp: canEdit
+            ? (details) => openMenu(details.globalPosition)
+            : null,
+        child: content,
+      ),
     );
     return content;
   }

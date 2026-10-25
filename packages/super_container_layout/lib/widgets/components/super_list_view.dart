@@ -530,6 +530,7 @@ class _SuperListViewState extends State<SuperListView> {
       builder: (context, value, _) => ValueListenableBuilder<ContainerStyle>(
         valueListenable: style,
         builder: (context, rowStyle, _) => IterableContent(
+          id: widget.id,
           label: 'Iterable Content',
           slots: widget.slots,
           config: value,
@@ -756,6 +757,7 @@ class _SuperListViewState extends State<SuperListView> {
         final vertical = config.wrap || config.axis == Axis.vertical;
 
         return EditorSlot(
+          id: widget.id,
           label: 'Liste',
           menuType: 'ListView',
           onEdit: () => _edit(configuration),

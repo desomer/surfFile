@@ -1,6 +1,7 @@
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
+import '../models/component_behavior.dart';
 import '../models/component_config.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
@@ -31,6 +32,7 @@ class DefaultAppearance extends Appearance {
     super.styles,
     super.layouts,
     super.components,
+    super.behaviors,
     super.pageCatalog,
     this.cardHeight = 142,
     this.cardWidth = 180,
@@ -131,6 +133,7 @@ class DefaultAppearance extends Appearance {
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ComponentConfig>? components,
+    Map<String, List<ComponentBehavior>>? behaviors,
     EditorPageCatalog? pageCatalog,
     ThemeMode? mode,
     Color? accent,
@@ -159,6 +162,7 @@ class DefaultAppearance extends Appearance {
       styles: {...styles ?? this.styles, 'background': ?backgroundStyle},
       layouts: layouts ?? const {},
       components: baseComponents,
+      behaviors: behaviors ?? this.behaviors,
       pageCatalog: pageCatalog ?? this.pageCatalog,
       mode: mode ?? this.mode,
       accent: accent ?? this.accent,

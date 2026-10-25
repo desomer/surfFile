@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/component_config.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:super_container_layout/models/json_syntax.dart';
@@ -47,6 +48,10 @@ class AppearanceCodec {
       for (final entry in a.components.entries)
         entry.key: entry.value.toTypedJson(),
     },
+    'behaviors': {
+      for (final entry in a.behaviors.entries)
+        entry.key: [for (final b in entry.value) b.toJson()],
+    },
     'pageCatalog': a.pageCatalog.toJson(),
   };
 
@@ -63,6 +68,7 @@ class AppearanceCodec {
       'windowEffect',
       'styles',
       'components',
+      'behaviors',
       'pageCatalog',
       ...additionalKeys,
     };
@@ -118,6 +124,16 @@ class AppearanceCodec {
         for (final entry in entries('components', optional: true).entries)
           entry.key: ComponentConfig.fromJson(entry.value),
       },
+      behaviors: {
+        if (json['behaviors'] case final Map<String, dynamic> bMap)
+          for (final entry in bMap.entries)
+            if (entry.value is List)
+              entry.key: [
+                for (final item in entry.value as List)
+                  if (item is Map<String, dynamic>)
+                    ComponentBehavior.fromJson(item),
+              ],
+      },
       pageCatalog: json.containsKey('pageCatalog')
           ? EditorPageCatalog.fromJson(json['pageCatalog'])
           : const EditorPageCatalog.empty(),
@@ -141,6 +157,7 @@ class AppearanceCodec {
       'windowEffect',
       'styles',
       'components',
+      'behaviors',
       'pageCatalog',
       'vibe',
       'merge',

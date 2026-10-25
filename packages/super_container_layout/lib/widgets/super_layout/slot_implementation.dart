@@ -217,6 +217,7 @@ class InstanceSlot extends SlotImplementation {
 
   @override
   Widget buildSlot(BuildContext context) => EditorComponentLabel(
+    id: id,
     label: label,
     onChanged: onRename,
     onRestore: onRestore,
@@ -366,10 +367,7 @@ class SlotStack extends StatelessWidget {
         flow.mainAxisAlignment != MainAxisAlignment.start;
   }
 
-  bool _slotFitsCross(
-    SlotImplementation slot, {
-    required bool parentFitCross,
-  }) {
+  bool _slotFitsCross(SlotImplementation slot, {required bool parentFitCross}) {
     final constraints = sizeConstraints[slot.id];
     final hasExplicitCross = (constraints?.hasSizeConstraints ?? false)
         ? (axis == Axis.horizontal
@@ -442,7 +440,8 @@ class SlotStack extends StatelessWidget {
                 ? null
                 : (dimensions) => onResizeSlot!(slot, dimensions),
             sizeConstraints: sizeConstraints[slot.id],
-            padding: sizeConstraints[slot.id]?.contentPadding ?? EdgeInsets.zero,
+            padding:
+                sizeConstraints[slot.id]?.contentPadding ?? EdgeInsets.zero,
             caption: zoneLabel == null
                 ? slot.label
                 : '${slot.label} · $zoneLabel ${index + 1}/$count',
@@ -454,10 +453,7 @@ class SlotStack extends StatelessWidget {
 }
 
 class _ScrollViewportHost extends SingleChildRenderObjectWidget {
-  const _ScrollViewportHost({
-    required this.padding,
-    required super.child,
-  });
+  const _ScrollViewportHost({required this.padding, required super.child});
 
   final EdgeInsets padding;
 
@@ -781,6 +777,7 @@ class _RenderSlotFlex extends RenderBox
           !scrollable &&
           _configuration.mainAxisAlignment == MainAxisAlignment.start;
     }
+
     BoxConstraints childConstraints(int index, {double? main, double? cross}) {
       final bound = bounds[index];
       final min = dimensions(
@@ -845,9 +842,10 @@ class _RenderSlotFlex extends RenderBox
         ? (scrollable ? math.max(maxMain, contentMain) : maxMain)
         : contentMain;
     final freeSpace = math.max(0.0, targetMain - contentMain);
-    final (double leading, double stepSpacing) = switch (
-      _configuration.mainAxisAlignment
-    ) {
+    final (
+      double leading,
+      double stepSpacing,
+    ) = switch (_configuration.mainAxisAlignment) {
       MainAxisAlignment.start => (0.0, spacing),
       MainAxisAlignment.end => (freeSpace, spacing),
       MainAxisAlignment.center => (freeSpace / 2.0, spacing),

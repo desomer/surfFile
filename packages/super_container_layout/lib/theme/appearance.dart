@@ -2,6 +2,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/component_config.dart';
+import '../models/component_behavior.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
@@ -25,9 +26,14 @@ class Appearance {
     Map<String, ContainerStyle> styles = const {},
     Map<String, SuperLayoutConfig> layouts = const {},
     Map<String, ComponentConfig> components = const {},
+    Map<String, List<ComponentBehavior>> behaviors = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
-       components = Map.unmodifiable(_mergeComponents(components, layouts));
+       components = Map.unmodifiable(_mergeComponents(components, layouts)),
+       behaviors = Map.unmodifiable({
+         for (final entry in behaviors.entries)
+           entry.key: List<ComponentBehavior>.unmodifiable(entry.value),
+       });
 
   static SuperLayoutConfig _freezeLayout(SuperLayoutConfig l) => l.copyWith(
     swaps: Set.unmodifiable(l.swaps),
@@ -79,7 +85,34 @@ class Appearance {
   final WindowEffect windowEffect;
   final Map<String, ContainerStyle> styles;
   final Map<String, ComponentConfig> components;
+  final Map<String, List<ComponentBehavior>> behaviors;
   final EditorPageCatalog pageCatalog;
+
+  List<ComponentBehavior> behaviorsFor(String id) =>
+      behaviors[id] ?? const [];
+
+  Appearance withBehaviors(String id, List<ComponentBehavior> list) {
+    final next = Map<String, List<ComponentBehavior>>.from(behaviors);
+    if (list.isEmpty) {
+      next.remove(id);
+    } else {
+      next[id] = List<ComponentBehavior>.unmodifiable(list);
+    }
+    return copyWith(behaviors: next);
+  }
+
+  Appearance withAddedBehavior(String id, ComponentBehavior behavior) {
+    final current = behaviorsFor(id);
+    return withBehaviors(id, [...current, behavior]);
+  }
+
+  Appearance withRemovedBehavior(String componentId, String behaviorId) {
+    final current = behaviorsFor(componentId);
+    return withBehaviors(
+      componentId,
+      current.where((b) => b.id != behaviorId).toList(),
+    );
+  }
 
   Map<String, SuperLayoutConfig> get layouts => Map.unmodifiable({
     for (final entry in components.entries)
@@ -216,6 +249,7 @@ class Appearance {
     Map<String, ContainerStyle>? styles,
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ComponentConfig>? components,
+    Map<String, List<ComponentBehavior>>? behaviors,
     EditorPageCatalog? pageCatalog,
   }) {
     final baseComponents =
@@ -237,6 +271,7 @@ class Appearance {
           : {...styles ?? this.styles, 'background': backgroundStyle},
       layouts: layouts ?? const {},
       components: baseComponents,
+      behaviors: behaviors ?? this.behaviors,
       pageCatalog: pageCatalog ?? this.pageCatalog,
     );
   }

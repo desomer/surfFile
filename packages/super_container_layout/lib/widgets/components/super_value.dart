@@ -766,6 +766,7 @@ class _SuperValueState extends State<SuperValue> {
           );
           return EditorSlot(
             key: _surface,
+            id: widget.id,
             label: 'Valeur',
             menuType: 'Value',
             onEdit: () async {

@@ -94,7 +94,7 @@ class _TestAppState extends State<TestApp> {
     return Builder(
       builder: (context) {
         final superapp = SuperApp.of(context);
-        var superLayoutConfig = superapp.getLayoutConfigById('contA');
+        var superLayoutConfig = superapp.getLayoutConfigById('mainLayout');
 
         return EditableSurface(
           slot: AppearanceSlot(

@@ -101,6 +101,7 @@ class _EditorDialogHeaderState extends State<EditorDialogHeader> {
 /// Identity and rename callback of a slot instance, inherited by its content.
 class EditorComponentLabel extends InheritedWidget {
   const EditorComponentLabel({
+    this.id,
     required this.label,
     required this.onChanged,
     required this.onRestore,
@@ -110,6 +111,8 @@ class EditorComponentLabel extends InheritedWidget {
     super.key,
   });
 
+  /// Stable technical identifier of the slot.
+  final String? id;
   final String label;
   final ValueChanged<String> onChanged;
   final VoidCallback onRestore;

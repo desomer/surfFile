@@ -264,7 +264,7 @@ void main() {
   EditorHistoryController historyOf(WidgetTester tester) =>
       EditorHistoryScope.controllerOf(tester.element(find.byKey(hostKey)))!;
 
-  testWidgets('« Ajouter… » is the first context menu entry', (tester) async {
+  testWidgets('« Composant… » and « Comportement… » are in the first context menu entry', (tester) async {
     await mount(tester);
     await tester.tap(valueOf('source'), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
@@ -274,7 +274,8 @@ void main() {
       tester.widget<PopupMenuItem<Object?>>(items.first).key,
       const ValueKey('style-menu-insert'),
     );
-    expect(find.text('Ajouter…'), findsOneWidget);
+    expect(find.text('Composant…'), findsOneWidget);
+    expect(find.text('Comportement…'), findsOneWidget);
   });
 
   testWidgets('switches a single-slot zone to a row without wrapper', (

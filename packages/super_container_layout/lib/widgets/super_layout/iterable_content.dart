@@ -66,6 +66,7 @@ class _IterableContentState extends State<IterableContent> {
     final style = id == null
         ? _style
         : registry?.styleController(id, fallback: widget.style) ?? _style;
+
     final surface = ValueListenableBuilder<ContainerStyle>(
       valueListenable: style,
       builder: (context, value, _) => EditableSurface(
@@ -82,7 +83,8 @@ class _IterableContentState extends State<IterableContent> {
         child: ValueListenableBuilder<SuperLayoutConfig>(
           valueListenable: layout,
           builder: (context, config, _) => SuperLayout(
-            label: 'Layout',
+            label: 'Layout-item',
+            id: '${widget.id}-Layout-item',
             config: config,
             slots: widget.slots,
             editable: widget.editable,

@@ -316,6 +316,7 @@ class EditableSurfaceState extends State<EditableSurface> {
                 onExit: (_) => _setHovered(false),
                 child: EditorSlot(
                   key: _editorKey,
+                  id: widget.id,
                   label: _label,
                   menuTitle: widget.menuTitle,
                   onLabelChanged: widget.onLabelChanged == null

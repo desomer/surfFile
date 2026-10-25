@@ -1037,7 +1037,7 @@ class _ComponentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return SizedBox(
-      width: 200,
+      width: 240,
       child: Card(
         key: ValueKey('$keyPrefix-add-card-${candidate.id}'),
         margin: EdgeInsets.zero,

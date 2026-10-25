@@ -72,6 +72,7 @@ class DefaultAppearanceCodec extends AppearanceCodec {
       windowEffect: base.windowEffect,
       styles: base.styles,
       components: base.components,
+      behaviors: base.behaviors,
       pageCatalog: base.pageCatalog,
       cardHeight: number('cardHeight', initial.cardHeight),
       cardWidth: number('cardWidth', initial.cardWidth),

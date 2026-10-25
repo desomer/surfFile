@@ -35,6 +35,7 @@ class SlotAddition {
 /// taille de son contenu ; le centre reçoit le reste.
 class SuperLayout extends StatefulWidget {
   const SuperLayout({
+    this.id,
     this.slots = const [],
     this.config = const SuperLayoutConfig(),
     this.onChanged,
@@ -142,6 +143,9 @@ class SuperLayout extends StatefulWidget {
       },
     );
   }
+
+  /// Identifiant technique optionnel du layout pour le stockage dans les JSON d'apparence.
+  final String? id;
 
   final String label;
 

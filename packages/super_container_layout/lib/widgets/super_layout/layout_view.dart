@@ -4,6 +4,7 @@ extension _SuperLayoutView on SuperLayoutState {
   Widget _buildLayout(BuildContext context) => Listener(
     behavior: HitTestBehavior.translucent,
     child: EditorSlot(
+      id: widget.id,
       label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,
