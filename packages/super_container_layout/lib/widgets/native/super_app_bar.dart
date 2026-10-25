@@ -2,7 +2,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
-import '../../models/super_layout_config.dart';
 import '../../super_app.dart';
 import '../../theme/appearance.dart';
 import 'native_component_editor.dart';
@@ -26,8 +25,6 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
     this.toolbarHeight = kToolbarHeight,
     this.slots = const [],
     this.nativeConfig,
-    @Deprecated('Use nativeConfig with native region names.') this.config,
-    @Deprecated('Use onNativeSlotAdded.') this.onSlotAdded,
     this.onNativeSlotAdded,
     super.key,
   });
@@ -47,13 +44,27 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   final double toolbarHeight;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
-  final SuperLayoutConfig? config;
-  final SlotAddedCallback? onSlotAdded;
   final NativeSlotAddedCallback? onNativeSlotAdded;
+
+  NativeComponentConfig get _initialConfig =>
+      nativeConfig ??
+      NativeComponentConfig(
+        placements: {
+          if (leading != null) 'leading': ['leading'],
+          if (title != null) 'title': ['title'],
+          if (action != null || actions.isNotEmpty)
+            'actions': [
+              if (action != null) 'action',
+              for (var i = 0; i < actions.length; i++) 'action:$i',
+            ],
+          if (bottom != null) 'bottom': ['bottom'],
+          if (flexibleSpace != null) 'flexibleSpace': ['flexibleSpace'],
+        },
+      );
 
   @override
   Size get preferredSize => Size.fromHeight(
-    toolbarHeight + _bottomHeight(nativeConfig ?? _fromLegacy(config)),
+    toolbarHeight + _bottomHeight(_initialConfig),
   );
 
   double _bottomHeight(
@@ -88,19 +99,11 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
     return height != null && height.isFinite ? height : kToolbarHeight;
   }
 
-  NativeComponentConfig _fallback(BuildContext context) {
-    return nativeConfig ?? _fromLegacy(config);
-  }
-
   ValueNotifier<NativeComponentConfig>? _controller(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
     return registry?.nativeComponentController(
       id,
-      fallback: _fallback(context),
-      legacy: (appearance) {
-        final saved = appearance.layouts[id];
-        return saved == null ? null : _fromLegacy(saved, registry);
-      },
+      fallback: _initialConfig,
     );
   }
 
@@ -112,7 +115,7 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
     final config =
         _controller(context)?.value ??
         AppearanceScope.of(context)
-            .nativeComponent(id, fallback: _fallback(context));
+            .nativeComponent(id, fallback: _initialConfig);
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     return Size.fromHeight(
       toolbarHeight +
@@ -124,73 +127,12 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
     );
   }
 
-  NativeComponentConfig _fromLegacy(
-    SuperLayoutConfig? legacy, [
-    Registry? registry,
-  ]) {
-    if (legacy == null) {
-      return NativeComponentConfig(
-        placements: {
-          if (leading != null) 'leading': ['leading'],
-          if (title != null) 'title': ['title'],
-          if (action != null || actions.isNotEmpty)
-            'actions': [
-              if (action != null) 'action',
-              for (var i = 0; i < actions.length; i++) 'action:$i',
-            ],
-          if (bottom != null) 'bottom': ['bottom'],
-          if (flexibleSpace != null) 'flexibleSpace': ['flexibleSpace'],
-        },
-      );
-    }
-    final unsupported = legacy.placements.entries.where(
-      (entry) =>
-          entry.value.isNotEmpty &&
-          entry.key != SuperLayoutZone.center &&
-          entry.key != SuperLayoutZone.east,
-    );
-    if (unsupported.isNotEmpty) {
-      throw StateError(
-        'Cannot migrate AppBar layout "$id": unsupported regions ${unsupported.map((entry) => entry.key.name).join(', ')}.',
-      );
-    }
-    return NativeComponentConfig(
-      placements: {
-        if (leading != null) 'leading': ['leading'],
-        'title': legacy.placementsOf(SuperLayoutZone.center),
-        'actions': legacy.placementsOf(SuperLayoutZone.east),
-        if (bottom != null) 'bottom': ['bottom'],
-        if (flexibleSpace != null) 'flexibleSpace': ['flexibleSpace'],
-      },
-      regions: {'actions': legacy.east},
-      slotTypes: {
-        for (final entry in legacy.slotTypes.entries)
-          entry.key: entry.value.startsWith('registry:')
-              ? _legacyType(entry.value, registry)
-              : entry.value,
-      },
-      slotPreferredSizes: legacy.slotPreferredSizes,
-      slotSizeConstraints: legacy.slotSizeConstraints,
-      slotLabels: legacy.slotLabels,
-    );
-  }
-
-  String _legacyType(String value, Registry? registry) {
-    final key = Uri.decodeComponent(value.substring('registry:'.length));
-    final component = registry?.components[key];
-    return component == null
-        ? 'factory:$key'
-        : 'component:${component.slotId ?? key}';
-  }
-
   @override
   State<SuperAppBar> createState() => _SuperAppBarState();
 }
 
 class _SuperAppBarState extends State<SuperAppBar> {
-  late final _localConfig = ValueNotifier(
-    widget.nativeConfig ?? widget._fromLegacy(widget.config),
-  );
+  late final _localConfig = ValueNotifier(widget._initialConfig);
 
   bool _usesDefaultNavigation(NativeComponentConfig config) =>
       config.useDefaultNavigation ??
@@ -205,48 +147,14 @@ class _SuperAppBarState extends State<SuperAppBar> {
     SlotImplementation slot,
     List<SlotImplementation> siblings,
   ) {
-    if (widget.onNativeSlotAdded != null) {
-      return widget.onNativeSlotAdded!(config, region, id, slot, siblings);
-    }
-    final callback = widget.onSlotAdded;
-    if (callback == null || (region != 'title' && region != 'actions')) {
-      return config;
-    }
-    final zone = region == 'title'
-        ? SuperLayoutZone.center
-        : SuperLayoutZone.east;
-    final legacy = callback(
-      SlotAddition(
-        slotId: id,
-        component: slot,
-        zone: zone,
-        contentZone: zone,
-        config: SuperLayoutConfig(
-          placements: {
-            SuperLayoutZone.center: config.slotsOf('title'),
-            SuperLayoutZone.east: config.slotsOf('actions'),
-          },
-          slotTypes: config.slotTypes,
-          slotPreferredSizes: config.slotPreferredSizes,
-          slotSizeConstraints: config.slotSizeConstraints,
-          slotLabels: config.slotLabels,
-        ),
-        existingSlots: siblings,
-      ),
-    );
-    return NativeComponentConfig(
-      useDefaultNavigation: config.useDefaultNavigation,
-      placements: {
-        ...config.placements,
-        'title': legacy.placementsOf(SuperLayoutZone.center),
-        'actions': legacy.placementsOf(SuperLayoutZone.east),
-      },
-      slotTypes: legacy.slotTypes,
-      regions: config.regions,
-      slotPreferredSizes: legacy.slotPreferredSizes,
-      slotSizeConstraints: legacy.slotSizeConstraints,
-      slotLabels: legacy.slotLabels,
-    );
+    return widget.onNativeSlotAdded?.call(
+          config,
+          region,
+          id,
+          slot,
+          siblings,
+        ) ??
+        config;
   }
 
   List<NativeRegion> get _regions => [

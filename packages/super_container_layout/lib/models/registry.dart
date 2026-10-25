@@ -134,19 +134,13 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
   ];
-  static List<EditorConfigRef> _appBar(String id) => [
-    EditorConfigRef.nativeComponent(id),
-    // Legacy SuperLayoutConfig still migrated by SuperAppBar.
-    EditorConfigRef.layout(id),
-  ];
-
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
   static const superAction = ComponentDuplicationContract(
     ownedConfigs: _action,
   );
   static const superAppBar = ComponentDuplicationContract(
-    ownedConfigs: _appBar,
+    ownedConfigs: _native,
   );
   static const superBottomNavigationBar = ComponentDuplicationContract(
     ownedConfigs: _native,
