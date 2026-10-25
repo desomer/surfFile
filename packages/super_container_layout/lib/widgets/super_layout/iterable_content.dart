@@ -70,6 +70,8 @@ class _IterableContentState extends State<IterableContent> {
     final surface = ValueListenableBuilder<ContainerStyle>(
       valueListenable: style,
       builder: (context, value, _) => EditableSurface(
+        id: widget.id,
+        singleChild: false,
         label: widget.label,
         menuType: 'IterableContent',
         menuIcon: Icons.loop,
@@ -84,7 +86,11 @@ class _IterableContentState extends State<IterableContent> {
           valueListenable: layout,
           builder: (context, config, _) => SuperLayout(
             label: 'Layout-item',
-            id: '${widget.id}-Layout-item',
+            id: widget.id == null
+                ? null
+                : (widget.id!.endsWith(':item')
+                    ? '${widget.id!.substring(0, widget.id!.length - 5)}:layout'
+                    : '${widget.id}:layout'),
             config: config,
             slots: widget.slots,
             editable: widget.editable,

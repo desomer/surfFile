@@ -223,8 +223,8 @@ void main() {
       const ContainerStyle(radius: 16, color: Colors.orange),
     );
     await tester.pumpAndSettle();
-    expect(appearance.value.styles.keys, ['list']);
-    expect(appearance.value.styles['list']!.radius, 16);
+    expect(appearance.value.styles.keys, ['list:item']);
+    expect(appearance.value.styles['list:item']!.radius, 16);
     history.undo();
     await tester.pumpAndSettle();
     expect(appearance.value, same(before));

@@ -197,20 +197,32 @@ void main() {
 
       // Behavior wizard should be open
       expect(find.byKey(const ValueKey('behavior-add-wizard')), findsOneWidget);
-      expect(find.byKey(const ValueKey('behavior-add-stepper')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('behavior-add-stepper')),
+        findsOneWidget,
+      );
 
       // Step 0: Élément
-      expect(find.byKey(const ValueKey('behavior-target-btn-target')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('behavior-target-btn-target')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
 
       // Step 1: Comportement
-      expect(find.byKey(const ValueKey('behavior-catalog-go_to_page')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('behavior-catalog-go_to_page')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
 
       // Step 2: Configuration
-      expect(find.byKey(const ValueKey('behavior-page-dropdown')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('behavior-page-dropdown')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
       await tester.pumpAndSettle();
 
@@ -358,9 +370,8 @@ void main() {
             ),
             GoRoute(
               path: '/details',
-              builder: (context, _) => const Scaffold(
-                body: Center(child: Text('Details Screen')),
-              ),
+              builder: (context, _) =>
+                  const Scaffold(body: Center(child: Text('Details Screen'))),
             ),
           ],
         );
@@ -423,6 +434,94 @@ void main() {
         // Behavior should be attached to parent-card, NOT child-text!
         expect(appearance.value.behaviorsFor('child-text'), isEmpty);
         expect(appearance.value.behaviorsFor('parent-card'), hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'SuperListView row IterableContent has a distinct ID from the ListView',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 900));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        final editing = ValueNotifier(true);
+        addTearDown(editing.dispose);
+
+        final appearance = ValueNotifier(
+          Appearance(
+            pageCatalog: EditorPageCatalog(
+              pages: [
+                EditorPageConfig(
+                  id: 'item-details',
+                  name: 'Détails Élément',
+                  path: '/item-details',
+                ),
+              ],
+            ),
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        final router = GoRouter(
+          initialLocation: '/home',
+          routes: [
+            GoRoute(
+              path: '/home',
+              builder: (context, _) => const Scaffold(
+                body: Center(
+                  child: SuperListView(
+                    id: 'clients-list',
+                    itemId: 'clients-row-item',
+                    config: SuperListViewConfig(emptyText: 'Aucun client'),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(
+          AppearanceScope(
+            controller: appearance,
+            child: StyleEditScope(
+              controller: editing,
+              child: MaterialApp.router(routerConfig: router),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Check that IterableContent widget has the distinct id 'clients-row-item'
+        final iterable = tester.widget<IterableContent>(
+          find.byType(IterableContent),
+        );
+        expect(iterable.id, 'clients-row-item');
+        expect(iterable.id, isNot('clients-list'));
+
+        // Right-click on the IterableContent row
+        await tester.tap(
+          find.byType(IterableContent),
+          buttons: kSecondaryMouseButton,
+        );
+        await tester.pumpAndSettle();
+
+        // Tap on Comportement…
+        await tester.tap(find.byKey(const ValueKey('style-menu-behavior')));
+        await tester.pumpAndSettle();
+
+        // Check that the wizard offers IterableContent with the exact id 'clients-row-item'
+        expect(
+          find.byKey(const ValueKey('behavior-target-clients-row-item')),
+          findsOneWidget,
+        );
+        expect(find.text('ID : clients-row-item'), findsOneWidget);
+
+        // Check that the parent list is offered with id 'clients-list'
+        expect(
+          find.byKey(const ValueKey('behavior-target-clients-list')),
+          findsOneWidget,
+        );
+        expect(find.text('ID : clients-list'), findsOneWidget);
       },
     );
   });

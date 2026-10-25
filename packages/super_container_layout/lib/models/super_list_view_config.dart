@@ -42,6 +42,7 @@ class SuperListViewConfig extends ComponentConfig {
     this.allowRemove = false,
     this.emptyText = 'Aucun élément',
     this.template = const SuperLayoutConfig(),
+    this.itemId,
   });
 
   /// Tableau JSON affiché, ou `null` pour une liste non liée.
@@ -84,6 +85,9 @@ class SuperListViewConfig extends ComponentConfig {
 
   /// Disposition du gabarit de ligne répétée pour chaque élément.
   final SuperLayoutConfig template;
+
+  /// ID technique distinct pour l'[IterableContent] des lignes.
+  final String? itemId;
 
   /// Bornes de [itemExtent].
   static const minItemExtent = 16.0;
@@ -134,6 +138,7 @@ class SuperListViewConfig extends ComponentConfig {
     bool? allowRemove,
     String? emptyText,
     SuperLayoutConfig? template,
+    String? itemId,
   }) => SuperListViewConfig(
     binding: clearBinding ? null : binding ?? this.binding,
     axis: axis ?? this.axis,
@@ -147,6 +152,7 @@ class SuperListViewConfig extends ComponentConfig {
     allowRemove: allowRemove ?? this.allowRemove,
     emptyText: emptyText ?? this.emptyText,
     template: template ?? this.template,
+    itemId: itemId ?? this.itemId,
   );
 
   /// Forme JSON persistée dans l'apparence.
@@ -166,6 +172,7 @@ class SuperListViewConfig extends ComponentConfig {
       'allowRemove': allowRemove,
       'emptyText': emptyText,
       if (template != const SuperLayoutConfig()) 'template': template.toJson(),
+      if (itemId != null) 'itemId': itemId,
     };
   }
 
@@ -187,6 +194,7 @@ class SuperListViewConfig extends ComponentConfig {
       if (allowRemove != d.allowRemove) 'allowRemove': allowRemove,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
       if (template != d.template) 'template': template.toCompactJson(),
+      if (itemId != null) 'itemId': itemId,
     };
   }
 
@@ -208,6 +216,7 @@ class SuperListViewConfig extends ComponentConfig {
     'emptyText',
     'template',
     'row',
+    'itemId',
   };
 
   /// Lecture stricte : les clés inconnues ou les types invalides lèvent une
@@ -276,6 +285,9 @@ class SuperListViewConfig extends ComponentConfig {
       allowRemove: read<bool>('allowRemove', fallback.allowRemove),
       emptyText: read<String>('emptyText', fallback.emptyText),
       template: resolvedTemplate,
+      itemId: value.containsKey('itemId')
+          ? value['itemId'] as String?
+          : fallback.itemId,
     );
     result.validate();
     return result;
@@ -295,7 +307,8 @@ class SuperListViewConfig extends ComponentConfig {
       allowAdd == other.allowAdd &&
       allowRemove == other.allowRemove &&
       emptyText == other.emptyText &&
-      template == other.template;
+      template == other.template &&
+      itemId == other.itemId;
 
   @override
   int get hashCode => Object.hash(
@@ -311,5 +324,6 @@ class SuperListViewConfig extends ComponentConfig {
     allowRemove,
     emptyText,
     template,
+    itemId,
   );
 }

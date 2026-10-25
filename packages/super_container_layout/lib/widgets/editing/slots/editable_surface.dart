@@ -45,6 +45,7 @@ class EditableSurface extends StatefulWidget {
     this.onContextMenu,
     this.menuIcon,
     this.menuDestination,
+    this.singleChild = true,
     super.key,
   }) : assert(id == null || id != '');
 
@@ -52,6 +53,9 @@ class EditableSurface extends StatefulWidget {
 
   /// Stable registry identity for an optional single catalog child.
   final String? id;
+
+  /// Whether [id] manages an optional single catalog child via [EditableSingleChild].
+  final bool singleChild;
   final AppearanceSlot? slot;
   final ContainerStyle style;
   final ValueChanged<ContainerStyle>? onStyleChanged;
@@ -363,7 +367,8 @@ class EditableSurfaceState extends State<EditableSurface> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.id case final id?) {
+    if (widget.singleChild && widget.id != null) {
+      final id = widget.id!;
       return EditableSingleChild(
         key: _singleChildKey,
         id: id,

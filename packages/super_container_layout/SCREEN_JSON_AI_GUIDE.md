@@ -29,8 +29,9 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"value"` (`SuperValueConfig`)
    - `"action"` (`SuperActionConfig`)
    - `"list"` (`SuperListViewConfig`, qui embarque directement son `"template"` de ligne)
-2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView`, `IterableContent`).
-3. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
+2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, `IterableContent`).
+3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
+4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
 
 ### Exemple complet d'écran
 
@@ -42,7 +43,16 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
   "styles": {
     "background": { "color": "#F5F7FA", "padding": 12 },
     "card-detail": { "color": "#FFFFFF", "radius": 16, "padding": 20, "elevation": 3 },
-    "list-clients": { "color": "#FFFFFF", "radius": 10, "hoverEffect": true }
+    "list-clients:item": { "color": "#FFFFFF", "radius": 10, "hoverEffect": true }
+  },
+  "behaviors": {
+    "list-clients:item": [
+      {
+        "id": "b-view-client",
+        "trigger": "click",
+        "action": { "type": "goToPage", "pagePath": "/details" }
+      }
+    ]
   },
   "components": {
     "root": {
@@ -280,9 +290,16 @@ Affiche un bouton interactif :
 
 ### 4.5. `"list"` (`SuperListViewConfig`) — Embarque un `IterableContent` par défaut
 Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
+
+- **Convention essentielle des identifiants (IDs)** :
+  Pour toute liste déclarée avec un identifiant `<listId>` (ex: `"list-clients"`) :
+  1. **`<listId>`** (ex: `"list-clients"`) : identifiant du composant liste lui-même (`type: "list"` dans `components`).
+  2. **`<listId>:item`** (ex: `"list-clients:item"`) : identifiant technique de la surface **`IterableContent`** qui enveloppe chaque ligne.
+     - C'est sous la clé **`styles["<listId>:item"]`** que l'on configure le style de la ligne (fond, rayon, bordure, padding, ainsi que les surcharges `states.hover` et `states.selected`). Pour rétro-compatibilité, `styles["<listId>"]` est également lu comme repli.
+     - C'est sous la clé **`behaviors["<listId>:item"]`** que l'on configure les comportements interactifs de la ligne entière (ex: clic pour naviguer vers une page détaillée).
+  3. **`<listId>:layout`** (ex: `"list-clients:layout"`) : identifiant technique du **`SuperLayout`** inclus dans chaque ligne.
+     - C'est ce layout qui organise les cellules et zones de la ligne. Sa configuration structurelle est persistée dans l'attribut `"template"` (alias `"row"`) de la liste.
 - **Important (`IterableContent` déjà intégré par défaut)** : chaque ligne d'une `ListView` **est déjà enveloppée automatiquement dans un `IterableContent`** par le framework !
-  - Le `SuperLayout` de cet `IterableContent` implicite est directement l'objet **`template`** (alias `"row"`) de `components[listId]`.
-  - Le `ContainerStyle` de cet `IterableContent` implicite (couleur de fond de la ligne, rayon, bordure, padding, survol, état sélectionné `states.selected`) est directement stocké sous le **même `listId`** dans **`styles[listId]`**.
   - **À ne JAMAIS faire** : n'ajoute pas de `"registry:Card"` ni de `"registry:IterableContent"` dans `template.placements.center` pour styliser la ligne elle-même, cela créerait une double boîte inutile. Place directement tes composants feuilles (`Value`, `Action`, etc.) dans les zones de `template.placements` !
 - Propriétés de `components[listId]` (`type: "list"`) :
   - `binding` : `"clients"` (si imbriquée) ou `{"repositoryId": "<32hex>", "path": "clients"}`.
@@ -294,6 +311,7 @@ Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
   - `allowAdd` (`false`), `allowRemove` (`false`) : `bool` (génère automatiquement le bouton `+` d'ajout et l'icône de suppression sur chaque ligne : inutile de créer des boutons `Action` manuels pour ajouter/supprimer une ligne).
   - `emptyText` : `string` (`"Aucun élément"`).
   - `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes.
+  - `itemId` : identifiant personnalisé optionnel pour l'élément de ligne (si non renseigné, vaut par défaut `"<listId>:item"`).
 
 ### 4.6. `styles` (`ContainerStyle`) et ses bornes
 - `color`, `borderColor`, `hoverColor` : `"#RRGGBB"` ou `"#AARRGGBB"`.
@@ -475,6 +493,48 @@ Plusieurs états peuvent être actifs simultanément. Ils sont appliqués dans l
 
 Pour personnaliser la priorité, `states.order` accepte les noms métier et les clés automatiques préfixées par un caractère nul échappé JSON : par exemple `["\u0000selected", "\u0000hover"]` donne priorité au survol sur la sélection. Utilise `"\u0000contentHover"`, `"\u0000focused"`, etc. pour les autres états automatiques, et conserve l'ordre existant lors d'un patch si tu ne souhaites pas changer les priorités.
 
+### 4.8. Comportements (`behaviors`) : Actions et navigation au clic
+
+Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des comportements interactifs à n'importe quel composant par son ID technique :
+- **Déclencheurs (`trigger`)** :
+  - `"click"` : Déclenché lors d'un clic (ou tap) sur le composant lorsque le mode édition est désactivé. Le curseur passe automatiquement en pointeur (`click`).
+- **Actions polymorphes (`action`)** :
+  - `"goToPage"` (`GoToPageAction`) : Navigation vers une page ou une URL.
+    - `pagePath` : Chemin absolu vers lequel naviguer (ex. `"/details"`, `"/clients"`).
+    - `pageId` (optionnel) : Identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
+    - `pageName` (optionnel) : Nom lisible de la page cible (ex. `"Détails"`).
+
+#### Exemple : Action de navigation sur un bouton ou sur une ligne de liste
+
+```json
+{
+  "behaviors": {
+    "btn-home": [
+      {
+        "id": "b-home",
+        "trigger": "click",
+        "action": {
+          "type": "goToPage",
+          "pagePath": "/home",
+          "pageName": "Accueil"
+        }
+      }
+    ],
+    "list-clients:item": [
+      {
+        "id": "b-client-details",
+        "trigger": "click",
+        "action": {
+          "type": "goToPage",
+          "pagePath": "/clients/details",
+          "pageName": "Fiche Client"
+        }
+      }
+    ]
+  }
+}
+```
+
 ---
 
 ## 5. Composants implicites déjà fournis par défaut (À ne JAMAIS dupliquer)
@@ -484,7 +544,7 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 | Contexte | Ce qui est déjà fourni par défaut | Comment le configurer (sans le recréer) |
 | :--- | :--- | :--- |
 | **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"contA"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["contA"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
-| **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** complet (surface stylisée + `SuperLayout` + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template` et le style de la carte de ligne dans `styles["<listId>"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
+| **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** d'ID **`<listId>:item`** (surface stylisée + `SuperLayout` d'ID **`<listId>:layout`** + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template`, le style de la carte de ligne dans `styles["<listId>:item"]` (ou `styles["<listId>"]`), et les comportements au clic de la ligne dans `behaviors["<listId>:item"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
 | **`ApplicationBar`** | Tant que `useDefaultNavigation` vaut `true` (défaut), Flutter affiche automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`) à gauche, ainsi que les boutons système à droite. | N'ajoute pas de bouton menu/retour dans `leading` sauf si tu passes explicitement `"useDefaultNavigation": false`. |
 
 ---

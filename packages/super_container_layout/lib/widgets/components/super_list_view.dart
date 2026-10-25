@@ -72,6 +72,7 @@ import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
+import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/components/super_list_view_editor.dart';
@@ -95,6 +96,7 @@ import '../editing/slots/slot_size_editor.dart';
 class SuperListView extends StatefulWidget {
   const SuperListView({
     required this.id,
+    this.itemId,
     this.config = const SuperListViewConfig(),
     this.template = const SuperLayoutConfig(),
     this.templateStyle = const ContainerStyle(),
@@ -105,6 +107,10 @@ class SuperListView extends StatefulWidget {
 
   /// ID sous lequel sont persistés les réglages et la disposition des lignes.
   final String id;
+
+  /// ID technique distinct pour l'[IterableContent] des lignes.
+  /// Si non spécifié, utilise [SuperListViewConfig.itemId] ou `'${id}-item'`.
+  final String? itemId;
 
   /// Réglages initiaux, avant ceux enregistrés dans l'apparence.
   final SuperListViewConfig config;
@@ -175,6 +181,9 @@ class _Source {
 }
 
 class _SuperListViewState extends State<SuperListView> {
+  String get effectiveItemId =>
+      widget.itemId ?? widget.config.itemId ?? '${widget.id}:item';
+
   late final ValueNotifier<SuperListViewConfig> _localConfig;
   late final ValueNotifier<SuperLayoutConfig> _localLayout;
   late final ValueNotifier<ContainerStyle> _localStyle;
@@ -530,7 +539,7 @@ class _SuperListViewState extends State<SuperListView> {
       builder: (context, value, _) => ValueListenableBuilder<ContainerStyle>(
         valueListenable: style,
         builder: (context, rowStyle, _) => IterableContent(
-          id: widget.id,
+          id: effectiveItemId,
           label: 'Iterable Content',
           slots: widget.slots,
           config: value,
@@ -715,6 +724,14 @@ class _SuperListViewState extends State<SuperListView> {
   Widget build(BuildContext context) {
     final app = SuperApp.maybeOf(context);
     final registry = app?.registry;
+    final rowId = effectiveItemId;
+    final rowStyleFallback = app == null
+        ? widget.templateStyle
+        : (app.registry?.containerStyleById[rowId]?.value ??
+              app.registry?.containerStyleById[widget.id]?.value ??
+              AppearanceScope.controllerOf(context)?.value.styles[rowId] ??
+              AppearanceScope.controllerOf(context)?.value.styles[widget.id] ??
+              widget.templateStyle);
     final configuration =
         registry?.listController(widget.id, fallback: widget.config) ??
         _localConfig;
@@ -722,7 +739,7 @@ class _SuperListViewState extends State<SuperListView> {
         registry?.layoutController(widget.id, fallback: widget.template) ??
         _localLayout;
     final style =
-        registry?.styleController(widget.id, fallback: widget.templateStyle) ??
+        registry?.styleController(rowId, fallback: rowStyleFallback) ??
         _localStyle;
     final scope = JsonListScope.maybeOf(context);
     final store = JsonRepositoryScope.maybeOf(context);
