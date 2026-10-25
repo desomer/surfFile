@@ -253,14 +253,15 @@ void main() {
                             return jsonEncode({
                               'message': 'Créer une page.',
                               'vibe': {
-                                'ops': [
-                                  {
-                                    'op': 'upsertPage',
-                                    'id': 'page-vibe',
-                                    'name': 'Page Vibe',
-                                    'path': '/bad route',
-                                  },
-                                ],
+                                'pageCatalog': {
+                                  'pages': [
+                                    {
+                                      'id': 'page-vibe',
+                                      'name': 'Page Vibe',
+                                      'path': '/bad route',
+                                    },
+                                  ],
+                                },
                               },
                             });
                           }
@@ -268,14 +269,15 @@ void main() {
                           return jsonEncode({
                             'message': 'La route a été corrigée.',
                             'vibe': {
-                              'ops': [
-                                {
-                                  'op': 'upsertPage',
-                                  'id': 'page-vibe',
-                                  'name': 'Page Vibe',
-                                  'path': '/bad-route',
-                                },
-                              ],
+                              'pageCatalog': {
+                                'pages': [
+                                  {
+                                    'id': 'page-vibe',
+                                    'name': 'Page Vibe',
+                                    'path': '/bad-route',
+                                  },
+                                ],
+                              },
                             },
                           });
                         },

@@ -76,7 +76,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
       "fontSize": 18,
       "fontWeight": "semibold"
     },
-    "contA": {
+    "mainLayout": {
       "type": "layout",
       "west": true,
       "westSize": 260,
@@ -228,7 +228,7 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
       - `null` (omis) : suit le comportement de la zone (`zoneFlows[zone].expandSlots`).
   - **Bonne pratique (empilement de `Card`, boutons ou champs sans occuper toute la hauteur)** :
     - Par défaut dans `center`, les composants sans `preferredHeight` se partagent toute la hauteur (`expandSlots: true`). Pour empiler des cartes (`Card`) ou contrôles qui s'adaptent à la hauteur de leur contenu, configure `zoneFlows.center` avec `"expandSlots": false` (et `"scrollable": true` si la liste de composants peut dépasser l'écran), ou mets `"fitContent": true` sur les slots concernés dans `slotSizeConstraints`.
-    - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"contA"` (ou le layout de la page).
+    - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"mainLayout"` (ou le layout de la page).
   - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots.
   - `placements` (`Map<Zone, List<{"id": string, "type": string}>>`) : composants placés dans chaque zone.
 - **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` de `16` à `400`, `gap` de `0` à `64`).
@@ -238,7 +238,7 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
 
 - **Page / Écran (`"root"` ou `<pageId>` du `pageCatalog`) $\rightarrow$ `Scaffold` de Flutter** (`type: "native"` ou `"scaffold"`) :
   - `appBar` (1 slot max, dédié au composant `"registry:ApplicationBar"`) : barre supérieure du `Scaffold`.
-  - `body` (empilement vertical, toujours actif) : contenu principal de la page. Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"contA"`.
+  - `body` (empilement vertical, toujours actif) : contenu principal de la page. Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"mainLayout"`.
   - `drawer` / `endDrawer` (empilement vertical) : panneaux latéraux coulissants gauche / droite (`Drawer` Flutter).
   - `bottomNavigationBar` (1 slot max, dédié au composant `"registry:BottomNavigationBar"`) : barre de navigation inférieure.
   - `floatingActionButton` (1 slot max) : bouton d'action flottant en bas à droite.
@@ -543,7 +543,7 @@ Certains widgets structurels sont instanciés automatiquement par le framework. 
 
 | Contexte | Ce qui est déjà fourni par défaut | Comment le configurer (sans le recréer) |
 | :--- | :--- | :--- |
-| **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"contA"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["contA"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
+| **Page principale (`"root"`)** | Sa région `body` contient déjà `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte un `SuperLayout` d'ID **`"mainLayout"`**, et le fond de page utilise **`styles["background"]`**. | Modifie directement `components["mainLayout"]` (`type: "layout"`) et `styles["background"]`. Ne remplace pas `"scaffold:body"` par un autre Layout. |
 | **Chaque ligne d'une `ListView` (`<listId>`)** | Chaque ligne est déjà un **`IterableContent`** d'ID **`<listId>:item`** (surface stylisée + `SuperLayout` d'ID **`<listId>:layout`** + `ContentHoverScope`), plus les boutons natifs d'ajout (`allowAdd`) et de suppression (`allowRemove`). | Configure la grille de la ligne dans `components["<listId>"].template`, le style de la carte de ligne dans `styles["<listId>:item"]` (ou `styles["<listId>"]`), et les comportements au clic de la ligne dans `behaviors["<listId>:item"]`. N'enveloppe pas la ligne dans un `Card` ou un `IterableContent` supplémentaire. |
 | **`ApplicationBar`** | Tant que `useDefaultNavigation` vaut `true` (défaut), Flutter affiche automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`) à gauche, ainsi que les boutons système à droite. | N'ajoute pas de bouton menu/retour dans `leading` sauf si tu passes explicitement `"useDefaultNavigation": false`. |
 

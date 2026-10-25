@@ -2,6 +2,11 @@ import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/native_component_config.dart';
+import '../../models/registry.dart';
+import '../../models/scaffold_page_config.dart';
+import '../../models/super_layout_config.dart';
+import '../../models/super_list_view_config.dart';
 import '../../services/appearance/appearance_codec.dart';
 import '../../services/appearance/appearance_transfer.dart';
 import '../../theme/appearance.dart';
@@ -14,6 +19,7 @@ class VibeChatDialog extends StatefulWidget {
     required this.onDrag,
     required this.generate,
     this.validateAppearance,
+    this.registry,
     super.key,
   });
 
@@ -23,6 +29,7 @@ class VibeChatDialog extends StatefulWidget {
   final ValueChanged<Offset> onDrag;
   final Future<String> Function(String prompt) generate;
   final void Function(Appearance appearance)? validateAppearance;
+  final Registry? registry;
 
   @override
   State<VibeChatDialog> createState() => _VibeChatDialogState();
@@ -42,6 +49,10 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     ),
   ];
   bool _sending = false;
+
+  Appearance get _currentAppearance =>
+      widget.registry?.appearanceSnapshot(widget.controller.value) ??
+      widget.controller.value;
 
   @override
   void dispose() {
@@ -101,23 +112,30 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         final patch = vibe is Map<String, dynamic> ? vibe : result;
         debugPrint('[Vibe IA] Patch à appliquer :');
         debugPrint(const JsonEncoder.withIndent('  ').convert(patch));
+        final current = _currentAppearance;
         final appearance = AppearanceTransfer.applyVibe(
-          widget.controller.value,
+          current,
           jsonEncode(patch),
           codec: widget.codec,
         );
         widget.validateAppearance?.call(appearance);
+        _validatePatchedComponents(current, appearance, patch);
         return (appearance: appearance, result: result);
       } on FormatException catch (error) {
-        if (attempt != 0 || !_isInvalidPagePath(error)) rethrow;
+        if (attempt != 0 ||
+            (!_isInvalidPagePath(error) &&
+                !error.message.startsWith('Composants non rattachés'))) {
+          rethrow;
+        }
         prompt =
             '''
 $prompt
 
 CORRECTION REQUISE :
-La réponse précédente a échoué car un chemin de page n'est pas valide :
+La réponse précédente a été refusée :
 ${error.message}
-Corrige la réponse en respectant strictement les règles de chemin.
+Corrige la réponse en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
+Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
 Si tu crées une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
 Tu peux aussi éviter de créer une page si la demande ne le nécessite pas.
 Réponse précédente invalide :
@@ -131,6 +149,51 @@ $response
   bool _isInvalidPagePath(FormatException error) => error.message.contains(
     'Chemin absolu requis, différent de /, sans espace ni fragment.',
   );
+
+  void _validatePatchedComponents(
+    Appearance current,
+    Appearance next,
+    Map<String, dynamic> patch,
+  ) {
+    final reachable = <String>{};
+    final pending = [
+      ...?widget.registry?.instantiatedComponentIds,
+      if (widget.registry == null) ...current.components.keys,
+      for (final page in next.pageCatalog.pages) page.id,
+    ];
+    while (pending.isNotEmpty) {
+      final id = pending.removeLast();
+      if (!reachable.add(id)) continue;
+      final component = next.components[id];
+      final children = switch (component) {
+        final SuperLayoutConfig layout => layout.placedSlotIds,
+        final SuperListViewConfig list => list.template.placedSlotIds,
+        final NativeComponentConfig native => native.placements.values.expand(
+          (ids) => ids,
+        ),
+        final ScaffoldPageConfig scaffold =>
+          scaffold.native.placements.values.expand((ids) => ids),
+        _ => const <String>[],
+      };
+      pending.addAll(children);
+    }
+    final payload = patch['data'] is Map ? patch['data'] as Map : patch;
+    final patchedComponents = payload['components'];
+    final affected = patchedComponents is Map
+        ? patchedComponents.keys.whereType<String>()
+        : next.components.keys.where(
+            (id) => !current.components.containsKey(id),
+          );
+    final detached = affected.where(
+      (id) => next.components.containsKey(id) && !reachable.contains(id),
+    );
+    if (detached.isNotEmpty) {
+      throw FormatException(
+        'Composants non rattachés à l’écran : ${detached.join(', ')}. '
+        'Modifie les placements d’un conteneur existant ou déclare une page.',
+      );
+    }
+  }
 
   Future<String> _loadGuide(BuildContext context) async {
     final bundle = DefaultAssetBundle.of(context);
@@ -159,14 +222,18 @@ $response
         )
         .join('\n');
     final current = AppearanceTransfer.exportAi(
-      widget.controller.value,
+      _currentAppearance,
       codec: widget.codec,
     );
+    final instantiated = widget.registry?.instantiatedComponentIds;
     return '''
 Tu es l’assistant de création d’écrans de super_container_layout. Réponds en français.
 Utilise exclusivement le guide ci-dessous et l’état actuel de l’application.
 Renvoie uniquement un objet JSON de la forme {"message":"résumé bref en français","vibe":{...}}.
 Le champ "vibe" doit contenir un patch JSON plat (modèle GenUI : "components", "styles", "pageCatalog") accepté par AppearanceTransfer.applyVibe.
+Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux dont la configuration est encore celle par défaut. Les identifiants du guide (comme "contA") sont des exemples, pas des racines d'écran implicites.
+Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
+${instantiated == null ? '' : 'Les composants instanciés sont : ${jsonEncode(instantiated.toList())}. Rattache les modifications à ces composants ou aux pages déclarées ; une configuration sauvegardée mais isolée ne suffit pas.'}
 Si une opération crée une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
 Ne renvoie aucun Markdown ni texte hors du JSON. Si une information manque, fais une hypothèse raisonnable et indique-la dans "message".
 

@@ -118,6 +118,7 @@ class _TestAppState extends State<TestApp> {
                   child: ValueListenableBuilder<SuperLayoutConfig>(
                     valueListenable: superLayoutConfig,
                     builder: (context, config, _) => SuperLayout(
+                      label: 'Main Layout',
                       config: config,
                       onChanged: (value) => superLayoutConfig.value = value,
                       menuIcon: Icons.dashboard_outlined,

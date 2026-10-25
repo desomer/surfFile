@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
 import 'package:super_container_layout/widgets/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
@@ -290,6 +291,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
         CustomSingleChildLayout(
           delegate: _chatLayout,
           child: VibeChatDialog(
+            registry: SuperApp.maybeOf(context)?.registry,
             controller: appearance,
             codec: codec,
             onClose: () => setState(() => _chatOpen = false),

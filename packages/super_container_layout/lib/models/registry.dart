@@ -238,6 +238,49 @@ class Registry {
   final Set<String> _scaffoldBridges = {};
   final Map<Listenable, VoidCallback> _listeners = {};
 
+  Set<String> get instantiatedComponentIds => {
+    ...superLayoutConfigById.keys,
+    ...componentConfigById.keys,
+    ...nativeComponentConfigById.keys,
+    ...valueConfigById.keys,
+    ...actionConfigById.keys,
+    ...listConfigById.keys,
+  };
+
+  /// Includes runtime defaults that have not yet been persisted.
+  /// Reading this snapshot does not notify controllers or save preferences.
+  Appearance appearanceSnapshot(Appearance current) {
+    final components = <String, ComponentConfig>{
+      for (final entry in superLayoutConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in componentConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in nativeComponentConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in valueConfigById.entries) entry.key: entry.value.value,
+      for (final entry in actionConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in listConfigById.entries) entry.key: entry.value.value,
+      ...current.components,
+    };
+    // A list and its row layout share an ID.
+    for (final entry in superLayoutConfigById.entries) {
+      final component = components[entry.key];
+      if (component is SuperListViewConfig &&
+          !current.components.containsKey(entry.key)) {
+        components[entry.key] = component.copyWith(template: entry.value.value);
+      }
+    }
+    return current.copyWith(
+      components: components,
+      styles: {
+        for (final entry in containerStyleById.entries)
+          entry.key: entry.value.value,
+        ...current.styles,
+      },
+    );
+  }
+
   void bindAppearance(ValueNotifier<Appearance> controller) {
     unbindAppearance();
     _appearance = controller;
