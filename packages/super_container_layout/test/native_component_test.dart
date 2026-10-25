@@ -680,56 +680,43 @@ void main() {
     },
   );
 
-  testWidgets(
-    'saved AppBar layout migrates title/actions and resets to source defaults',
-    (tester) async {
-      final store = AppearanceStore();
-      await store.save(
-        Appearance(
-          layouts: {
-            'bar': const SuperLayoutConfig(
-              east: true,
-              placements: {
-                SuperLayoutZone.center: ['heading'],
-                SuperLayoutZone.east: ['refresh'],
-              },
-              slotTypes: {'heading': 'title', 'refresh': 'action'},
-            ),
-          },
-        ),
-      );
-      final registry = Registry();
-      await mount(
-        const SuperPage(
-          appBar: SuperAppBar(
-            id: 'bar',
-            title: Text('Migrated heading'),
-            action: Text('Migrated action'),
+  testWidgets('saved AppBar layout is ignored in favor of source defaults', (
+    tester,
+  ) async {
+    final store = AppearanceStore();
+    await store.save(
+      Appearance(
+        layouts: {
+          'bar': const SuperLayoutConfig(
+            east: true,
+            placements: {
+              SuperLayoutZone.center: ['heading'],
+              SuperLayoutZone.east: ['refresh'],
+            },
+            slotTypes: {'heading': 'title', 'refresh': 'action'},
           ),
+        },
+      ),
+    );
+    final registry = Registry();
+    await mount(
+      const SuperPage(
+        appBar: SuperAppBar(
+          id: 'bar',
+          title: Text('Migrated heading'),
+          action: Text('Migrated action'),
         ),
-        tester,
-        registry,
-        store: store,
-      );
-      final controller = registry.nativeComponentController('bar');
-      expect(controller.value.slotsOf('title'), ['heading']);
-      expect(controller.value.slotsOf('actions'), ['refresh']);
-      expect(find.text('Migrated heading'), findsOneWidget);
-      expect(find.text('Migrated action'), findsOneWidget);
-      controller.value = controller.value.withRegionEnabled('actions', false);
-      await tester.pumpAndSettle();
-      expect(find.text('Migrated action'), findsNothing);
-      final appearance = AppearanceScope.controllerOf(
-        tester.element(find.byType(SuperAppBar)),
-      )!;
-      appearance.value = appearance.value.resetLayouts();
-      await tester.pumpAndSettle();
-      expect(controller.value.slotsOf('title'), ['title']);
-      expect(controller.value.slotsOf('actions'), ['action']);
-      expect(find.text('Migrated action'), findsOneWidget);
-      expect(tester.takeException(), isNull);
-    },
-  );
+      ),
+      tester,
+      registry,
+      store: store,
+    );
+    final controller = registry.nativeComponentController('bar');
+    expect(controller.value.slotsOf('title'), ['title']);
+    expect(controller.value.slotsOf('actions'), ['action']);
+    expect(find.text('Migrated action'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'AppBar context config, hierarchy and overlays use the shared editor',
