@@ -134,6 +134,7 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
   ];
+
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
   static const superAction = ComponentDuplicationContract(

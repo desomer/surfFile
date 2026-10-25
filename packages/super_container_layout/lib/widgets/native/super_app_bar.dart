@@ -6,7 +6,6 @@ import '../../super_app.dart';
 import '../../theme/appearance.dart';
 import 'native_component_editor.dart';
 import '../super_layout/slot_implementation.dart';
-import '../super_layout/super_layout.dart';
 import '../editing/slots/editor_slot.dart';
 
 /// AppBar regions map to Flutter properties, never to a SuperLayout.
@@ -63,9 +62,8 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
       );
 
   @override
-  Size get preferredSize => Size.fromHeight(
-    toolbarHeight + _bottomHeight(_initialConfig),
-  );
+  Size get preferredSize =>
+      Size.fromHeight(toolbarHeight + _bottomHeight(_initialConfig));
 
   double _bottomHeight(
     NativeComponentConfig config, {
@@ -101,10 +99,7 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
 
   ValueNotifier<NativeComponentConfig>? _controller(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
-    return registry?.nativeComponentController(
-      id,
-      fallback: _initialConfig,
-    );
+    return registry?.nativeComponentController(id, fallback: _initialConfig);
   }
 
   @override
@@ -147,13 +142,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
     SlotImplementation slot,
     List<SlotImplementation> siblings,
   ) {
-    return widget.onNativeSlotAdded?.call(
-          config,
-          region,
-          id,
-          slot,
-          siblings,
-        ) ??
+    return widget.onNativeSlotAdded?.call(config, region, id, slot, siblings) ??
         config;
   }
 
