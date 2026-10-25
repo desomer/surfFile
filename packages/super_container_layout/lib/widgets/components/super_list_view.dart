@@ -182,7 +182,7 @@ class _Source {
 
 class _SuperListViewState extends State<SuperListView> {
   String get effectiveItemId =>
-      widget.itemId ?? widget.config.itemId ?? '${widget.id}:item';
+      widget.itemId ?? widget.config.itemId ?? widget.id;
 
   late final ValueNotifier<SuperListViewConfig> _localConfig;
   late final ValueNotifier<SuperLayoutConfig> _localLayout;
@@ -681,7 +681,9 @@ class _SuperListViewState extends State<SuperListView> {
             mainAxisSize: rowHeight == null
                 ? MainAxisSize.min
                 : MainAxisSize.max,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: (!config.wrap && config.axis == Axis.vertical)
+                ? CrossAxisAlignment.stretch
+                : CrossAxisAlignment.start,
             children: [
               Flexible(
                 fit: natural && rowHeight == null

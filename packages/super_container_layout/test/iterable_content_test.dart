@@ -206,4 +206,76 @@ void main() {
     expect(changes.last.padding, 0);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'empty zone with stretch cross axis alignment stretches across available space',
+    (tester) async {
+      // 1. Column axis (vertical): cross axis is horizontal (width stretches to 500)
+      const stretchColumn = SuperLayoutConfig(
+        zoneFlows: {
+          SuperLayoutZone.center: ZoneFlowConfig(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+          ),
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 500,
+              height: 400,
+              child: SingleChildScrollView(
+                child: Wrap(
+                  children: [
+                    IterableContent(
+                      shrinkWrap: true,
+                      config: stretchColumn,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final sizeCol = tester.getSize(find.byType(IterableContent));
+      expect(sizeCol.width, 500);
+      expect(sizeCol.height, 16);
+
+      // 2. Row axis (horizontal): cross axis is vertical (height stretches to 300)
+      const stretchRow = SuperLayoutConfig(
+        zoneAxes: {
+          SuperLayoutZone.center: Axis.horizontal,
+        },
+        zoneFlows: {
+          SuperLayoutZone.center: ZoneFlowConfig(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+          ),
+        },
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 500,
+              height: 300,
+              child: IterableContent(
+                shrinkWrap: true,
+                config: stretchRow,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final sizeRow = tester.getSize(find.byType(IterableContent));
+      expect(sizeRow.height, 300);
+      expect(sizeRow.width, 500);
+    },
+  );
 }

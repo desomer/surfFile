@@ -85,7 +85,7 @@ class _IterableContentState extends State<IterableContent> {
         child: ValueListenableBuilder<SuperLayoutConfig>(
           valueListenable: layout,
           builder: (context, config, _) => SuperLayout(
-            label: 'Layout-item',
+            label: 'Layout',
             id: widget.id == null
                 ? null
                 : (widget.id!.endsWith(':item')

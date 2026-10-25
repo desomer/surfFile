@@ -413,10 +413,18 @@ extension _SuperLayoutSlots on SuperLayoutState {
     final shrinkWidth = widget.shrinkWrap || (fitScope?.fitWidth ?? false);
     final shrinkHeight = widget.shrinkWrap || (fitScope?.fitHeight ?? false);
     if (slots.isEmpty) {
+      final flow = config.flowOf(zone);
+      final axis = config.axisOf(zone);
+      final hasFlow = config.zoneFlows.containsKey(content) ||
+          config.zoneFlows.containsKey(zone);
+      final stretchCross =
+          hasFlow && flow.crossAxisAlignment == CrossAxisAlignment.stretch;
+      final stretchWidth = stretchCross && axis == Axis.vertical;
+      final stretchHeight = stretchCross && axis == Axis.horizontal;
       if (shrinkWidth || shrinkHeight) {
         return SizedBox(
-          width: shrinkWidth ? 16 : double.infinity,
-          height: shrinkHeight ? 16 : double.infinity,
+          width: (shrinkWidth && !stretchWidth) ? 16 : double.infinity,
+          height: (shrinkHeight && !stretchHeight) ? 16 : double.infinity,
         );
       }
       return _ZonePlaceholder(
