@@ -14,7 +14,6 @@ import '../dialogs/editor_dialog.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/container_style_editor.dart';
 import '../styles/style_editor_panel.dart';
-import '../styles/style_extras_controls.dart' show StyleSliderField;
 
 /// Ouvre la fenêtre simple des propriétés générales d'un composant [SuperTab]
 /// (utilisée sur le menu contextuel du composant `Tab` et de ses zones de contenu).
