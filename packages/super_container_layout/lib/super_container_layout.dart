@@ -32,6 +32,7 @@ export 'services/appearance/appearance_transfer.dart';
 export 'services/window/window_transparency.dart';
 export 'super_app.dart';
 export 'widgets/components/native/super_app_bar.dart';
+export 'widgets/components/native/super_bottom_app_bar.dart';
 export 'widgets/components/native/super_bottom_navigation_bar.dart';
 export 'widgets/components/native/super_navigation_rail.dart';
 export 'super_page.dart';

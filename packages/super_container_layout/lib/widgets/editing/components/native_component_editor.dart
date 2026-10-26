@@ -1075,6 +1075,69 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     },
   );
 
+  /// Wraps a single [slot] of region [id] with its slot editing actions,
+  /// selection, and drag-and-drop reordering without duplicating the region's
+  /// outer [EditorSlot] or zone badge.
+  Widget slotItem(String id, SlotImplementation slot) {
+    final spec = definition(id);
+    final overlay = _showOverlay();
+    final selected = _selected == id;
+    final emphasis = LabelEmphasis(
+      scopes: _hoveredRegionScopes,
+      scope: id,
+      onHover: (_, _, value) => _setRegionHovered(id, value),
+    );
+    return SlotStack(
+      slots: [slot],
+      regionSlotIds: [for (final item in slotsFor(id)) item.id],
+      axis: spec.axis,
+      expand: false,
+      stretch: false,
+      emphasis: emphasis,
+      preferredSizes: {
+        if (slot case NativePreferredSizeWidget native)
+          slot.id: native.preferredSizeIn(context),
+        ...widget.config.slotPreferredSizes,
+      },
+      sizeConstraints: widget.config.slotSizeConstraints,
+      layoutSize: _layoutSize,
+      showLabels: overlay,
+      zoneLabel: spec.label,
+      selectedSlotId: selected ? _selectedSlot : null,
+      onSelectSlot: editing && widget.editSurface
+          ? (slot) => _selectSlot(id, slot)
+          : null,
+      onSelectContent: editing ? (slot) => _selectSlot(id, slot) : null,
+      onResizeSlot: editing && widget.editSurface
+          ? (slot, dimensions) => _update(
+              _config.value.withSlotSizeConstraints(slot.id, dimensions),
+            )
+          : null,
+      mover: editing
+          ? SlotMover(
+              owner: this,
+              canMove: (slotId) => _canMoveSlot(slotId, id),
+              onMove: (slotId, {beforeId, afterId}) =>
+                  _moveSlot(slotId, id, beforeId: beforeId, afterId: afterId),
+            )
+          : null,
+      onRemoveSlot: editing
+          ? (slot) async => removeSlotInstance(
+              context,
+              id: slot.id,
+              type: _config.value.slotTypeOf(slot.id),
+              containerKind: EditorConfigKind.nativeComponent,
+              unplace: () => _update(_config.value.withoutSlot(slot.id)),
+            )
+          : null,
+      onEditPreferredSize: editing ? _editSize : null,
+      wrapActionsForSlot: editing
+          ? (slot) => wrapActionsForSlot(id, slot)
+          : null,
+      insertionForSlot: editing ? (slot) => insertionForSlot(id, slot) : null,
+    );
+  }
+
   /// Decorates a native property without changing the adapter's composition.
   Widget region(
     String id, {

@@ -62,63 +62,73 @@ class _EditorOverlayState extends State<EditorOverlay> {
   @override
   Widget build(BuildContext context) {
     if (!_enabled) return EditorOverlayVisibility(child: widget.child);
-    return OverlayPortal.overlayChildLayoutBuilder(
-      controller: _controller,
-      overlayChildBuilder: (context, info) {
-        final rect = MatrixUtils.transformRect(
-          info.childPaintTransform,
-          Offset.zero & info.childSize,
-        );
-        final zoomController = EditorZoomScope.controllerOf(this.context);
-        final controls = Listener(
-          onPointerDown: (event) => zoomController?.handlePointerDown(event),
-          onPointerMove: (event) => zoomController?.handlePointerMove(event),
-          onPointerUp: (event) => zoomController?.handlePointerUp(event),
-          onPointerCancel: (event) => zoomController?.handlePointerCancel(event),
-          onPointerSignal: (event) => zoomController?.handlePointerSignal(event),
-          child: GestureDetector(
-            excludeFromSemantics: true,
-            onSecondaryTapUp:
-                (StyleEditScope.controllerOf(this.context)?.value ?? false)
-                ? (details) => this.context
-                      .findAncestorStateOfType<EditorSlotState>()
-                      ?.openMenu(
-                        details.globalPosition,
-                        actions: EditorSlotAction.of(this.context),
-                      )
-                : null,
-            child: EditorOverlayVisibility(child: widget.child),
-          ),
-        );
-        final viewport = widget.clipKey?.currentContext?.findRenderObject();
-        final overlay = Overlay.of(this.context).context.findRenderObject();
-        if (viewport is RenderBox && viewport.hasSize && overlay is RenderBox) {
-          final clip = MatrixUtils.transformRect(
-            viewport.getTransformTo(overlay),
-            Offset.zero & viewport.size,
+    return ExcludeSemantics(
+      child: OverlayPortal.overlayChildLayoutBuilder(
+        controller: _controller,
+        overlayChildBuilder: (context, info) {
+          final rect = MatrixUtils.transformRect(
+            info.childPaintTransform,
+            Offset.zero & info.childSize,
           );
-          final visible = rect.intersect(clip);
-          if (visible.isEmpty) return const SizedBox.shrink();
-          return Positioned.fromRect(
-            rect: visible,
-            child: ClipRect(
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: rect.left - visible.left,
-                    top: rect.top - visible.top,
-                    width: rect.width,
-                    height: rect.height,
-                    child: controls,
-                  ),
-                ],
+          final zoomController = EditorZoomScope.controllerOf(this.context);
+          final controls = ExcludeSemantics(
+            child: Listener(
+              onPointerDown: (event) =>
+                  zoomController?.handlePointerDown(event),
+              onPointerMove: (event) =>
+                  zoomController?.handlePointerMove(event),
+              onPointerUp: (event) => zoomController?.handlePointerUp(event),
+              onPointerCancel: (event) =>
+                  zoomController?.handlePointerCancel(event),
+              onPointerSignal: (event) =>
+                  zoomController?.handlePointerSignal(event),
+              child: GestureDetector(
+                excludeFromSemantics: true,
+                onSecondaryTapUp:
+                    (StyleEditScope.controllerOf(this.context)?.value ?? false)
+                    ? (details) => this.context
+                          .findAncestorStateOfType<EditorSlotState>()
+                          ?.openMenu(
+                            details.globalPosition,
+                            actions: EditorSlotAction.of(this.context),
+                          )
+                    : null,
+                child: EditorOverlayVisibility(child: widget.child),
               ),
             ),
           );
-        }
-        return Positioned.fromRect(rect: rect, child: controls);
-      },
-      child: const SizedBox.expand(),
+          final viewport = widget.clipKey?.currentContext?.findRenderObject();
+          final overlay = Overlay.of(this.context).context.findRenderObject();
+          if (viewport is RenderBox &&
+              viewport.hasSize &&
+              overlay is RenderBox) {
+            final clip = MatrixUtils.transformRect(
+              viewport.getTransformTo(overlay),
+              Offset.zero & viewport.size,
+            );
+            final visible = rect.intersect(clip);
+            if (visible.isEmpty) return const SizedBox.shrink();
+            return Positioned.fromRect(
+              rect: visible,
+              child: ClipRect(
+                child: Stack(
+                  children: [
+                    Positioned(
+                      left: rect.left - visible.left,
+                      top: rect.top - visible.top,
+                      width: rect.width,
+                      height: rect.height,
+                      child: controls,
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          return Positioned.fromRect(rect: rect, child: controls);
+        },
+        child: const SizedBox.expand(),
+      ),
     );
   }
 }

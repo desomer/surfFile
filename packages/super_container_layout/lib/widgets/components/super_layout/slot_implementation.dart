@@ -59,26 +59,28 @@ class ComponentDragLabel extends StatelessWidget {
       borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (draggable) ...[
-              Icon(
-                Icons.drag_indicator,
-                size: 12,
-                color: highlighted
-                    ? Theme.of(context).colorScheme.onTertiary
-                    : null,
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (draggable && constraints.maxWidth >= 16) ...[
+                Icon(
+                  Icons.drag_indicator,
+                  size: 12,
+                  color: highlighted
+                      ? Theme.of(context).colorScheme.onTertiary
+                      : null,
+                ),
+                const SizedBox(width: 2),
+              ],
+              Flexible(
+                child: DefaultTextStyle.merge(
+                  overflow: TextOverflow.ellipsis,
+                  child: child,
+                ),
               ),
-              const SizedBox(width: 2),
             ],
-            Flexible(
-              child: DefaultTextStyle.merge(
-                overflow: TextOverflow.ellipsis,
-                child: child,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     ),
@@ -252,10 +254,12 @@ class SlotStack extends StatelessWidget {
     this.selectedSlotId,
     this.onResizeSlot,
     this.focusKeys,
+    this.regionSlotIds,
     super.key,
   });
 
   final List<SlotImplementation> slots;
+  final List<String>? regionSlotIds;
   final Map<String, GlobalKey>? focusKeys;
   final Axis axis;
   final ZoneFlowConfig flow;
@@ -307,7 +311,7 @@ class SlotStack extends StatelessWidget {
       for (final slot in slots)
         if (slot.visible) slot,
     ];
-    final ids = [for (final slot in visible) slot.id];
+    final ids = regionSlotIds ?? [for (final slot in visible) slot.id];
     final padding = flow.contentPadding;
     Widget flex = _SlotFlex(
       axis: axis,
@@ -331,7 +335,16 @@ class SlotStack extends StatelessWidget {
       sizing: [for (final slot in visible) slot.sizing],
       children: [
         for (final (index, slot) in visible.indexed)
-          _labeled(context, slot, index, visible.length, ids),
+          () {
+            final idx = regionSlotIds != null ? ids.indexOf(slot.id) : index;
+            return _labeled(
+              context,
+              slot,
+              idx >= 0 ? idx : index,
+              ids.length,
+              ids,
+            );
+          }(),
       ],
     );
     if (flow.scrollable) {
@@ -1554,7 +1567,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
               if (_hover || _dragging || (widget.showLabel && widget.selected))
                 Positioned.fill(
                   key: ValueKey('slot-highlight-${slot.id}'),
-                  child: EditorOverlay(
+                  child: EditorOverlayVisibility(
                     child: IgnorePointer(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -1567,7 +1580,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                 ),
               if (candidates.any((data) => data != null && data.id != slot.id))
                 Positioned.fill(
-                  child: EditorOverlay(
+                  child: EditorOverlayVisibility(
                     child: Align(
                       alignment: widget.axis == Axis.horizontal
                           ? (_after

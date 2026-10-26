@@ -15,6 +15,7 @@ import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/components/native/super_app_bar.dart';
 
+import '../widgets/components/native/super_bottom_app_bar.dart';
 import '../widgets/components/native/super_bottom_navigation_bar.dart';
 import '../widgets/components/native/super_navigation_rail.dart';
 import '../services/pages/editor_page_graph.dart';
@@ -145,6 +146,9 @@ class ComponentDuplicationContract {
     ownedConfigs: _native,
   );
   static const superBottomNavigationBar = ComponentDuplicationContract(
+    ownedConfigs: _native,
+  );
+  static const superBottomAppBar = ComponentDuplicationContract(
     ownedConfigs: _native,
   );
   static const superNavigationRail = ComponentDuplicationContract(
@@ -685,11 +689,18 @@ class Registry {
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
+    registry['BottomAppBar'] = ComponentBuilderDynamic(
+      menuIcon: Icons.call_to_action_outlined,
+      duplication: ComponentDuplicationContract.superBottomAppBar,
+      tags: const {'bottomNavigationBar', 'bottomAppBar'},
+      placementTags: const {'bottomNavigationBar'},
+      dynamicBuilder: (ctx) => SuperBottomAppBar(id: ctx.id),
+    );
+
     registry['NavigationRail'] = ComponentBuilderDynamic(
       menuIcon: Icons.view_sidebar_outlined,
       duplication: ComponentDuplicationContract.superNavigationRail,
       tags: const {'navigationRail'},
-      //placementTags: const {'navigationRail'},
       dynamicBuilder: (ctx) => SuperNavigationRail(id: ctx.id),
     );
 

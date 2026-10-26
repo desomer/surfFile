@@ -143,7 +143,7 @@ void main() {
                   appBar: SuperAppBar(id: 'size-bar', nativeConfig: initial),
                 )
               : SuperPage(
-                  bottomNavigationBar: SuperBottomNavigationBar(
+                  bottomNavigationBar: SuperBottomAppBar(
                     id: 'size-bar',
                     nativeConfig: initial,
                   ),
@@ -152,7 +152,7 @@ void main() {
           registry,
         );
         final context = tester.element(
-          find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+          find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
         );
         StyleEditScope.controllerOf(context)!.value = true;
         final history = EditorHistoryScope.controllerOf(context)!;
@@ -278,7 +278,7 @@ void main() {
                   appBar: SuperAppBar(id: 'resize-bar', nativeConfig: initial),
                 )
               : SuperPage(
-                  bottomNavigationBar: SuperBottomNavigationBar(
+                  bottomNavigationBar: SuperBottomAppBar(
                     id: 'resize-bar',
                     nativeConfig: initial,
                   ),
@@ -287,7 +287,7 @@ void main() {
           registry,
         );
         final context = tester.element(
-          find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+          find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
         );
         final mode = StyleEditScope.controllerOf(context)!;
         final history = EditorHistoryScope.controllerOf(context)!;
@@ -303,7 +303,7 @@ void main() {
         await tester.pumpAndSettle();
         final editor = tester.state<NativeComponentEditorState>(
           find.descendant(
-            of: find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+            of: find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
             matching: find.byType(NativeComponentEditor),
           ),
         );
@@ -409,7 +409,7 @@ void main() {
                   appBar: SuperAppBar(id: 'drag-bar', nativeConfig: initial),
                 )
               : SuperPage(
-                  bottomNavigationBar: SuperBottomNavigationBar(
+                  bottomNavigationBar: SuperBottomAppBar(
                     id: 'drag-bar',
                     nativeConfig: initial,
                   ),
@@ -418,7 +418,7 @@ void main() {
           registry,
         );
         final context = tester.element(
-          find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+          find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
         );
         final history = EditorHistoryScope.controllerOf(context)!;
         final appearance =
@@ -431,12 +431,12 @@ void main() {
           const Offset(0, 200),
         );
         await tester.pumpAndSettle();
-        final prefix = appBar ? 'super-app-bar' : 'super-bottom-navigation-bar';
+        final prefix = appBar ? 'super-app-bar' : 'super-bottom-app-bar';
         final sourceRegion = appBar ? 'title' : 'left';
         final targetRegion = appBar ? 'actions' : 'right';
         final editor = tester.state<NativeComponentEditorState>(
           find.descendant(
-            of: find.byType(appBar ? SuperAppBar : SuperBottomNavigationBar),
+            of: find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
             matching: find.byType(NativeComponentEditor),
           ),
         );
@@ -489,9 +489,7 @@ void main() {
         tester
             .state<NativeComponentEditorState>(
               find.descendant(
-                of: find.byType(
-                  appBar ? SuperAppBar : SuperBottomNavigationBar,
-                ),
+                of: find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
                 matching: find.byType(NativeComponentEditor),
               ),
             )
@@ -1391,7 +1389,7 @@ void main() {
       var taps = 0;
       await mount(
         SuperPage(
-          bottomNavigationBar: SuperBottomNavigationBar(
+          bottomNavigationBar: SuperBottomAppBar(
             left: TextButton(
               onPressed: () => taps++,
               child: const Text('Home'),
@@ -1414,7 +1412,7 @@ void main() {
       await tester.tap(find.text('Home'));
       expect(taps, 1);
       final controller = registry.nativeComponentController(
-        'root-bottomNavigationBar',
+        'root-bottomAppBar',
       );
       controller.value = controller.value.withRegionEnabled('center', false);
       await tester.pumpAndSettle();
@@ -1422,15 +1420,11 @@ void main() {
       expect(controller.value.slotsOf('center'), ['center']);
       final restored = AppearanceStore.decode(
         AppearanceStore.encode(
-          AppearanceScope.of(
-            tester.element(find.byType(SuperBottomNavigationBar)),
-          ),
+          AppearanceScope.of(tester.element(find.byType(SuperBottomAppBar))),
         ),
       );
       expect(
-        restored
-            .nativeComponent('root-bottomNavigationBar')
-            .isEnabled('center'),
+        restored.nativeComponent('root-bottomAppBar').isEnabled('center'),
         isFalse,
       );
       controller.value = controller.value.withRegionEnabled('center', true);
@@ -1451,7 +1445,7 @@ void main() {
               ScaffoldPageRegion.body: ['scaffold:body'],
               ScaffoldPageRegion.bottomNavigationBar: ['free-bar'],
             },
-            slotTypes: {'free-bar': 'factory:BottomNavigationBar'},
+            slotTypes: {'free-bar': 'factory:BottomAppBar'},
           ),
         ),
         tester,
@@ -1493,7 +1487,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(SwitchListTile), findsNWidgets(3));
       final toggle = find.byKey(
-        const ValueKey('super-bottom-navigation-bar-switch-right'),
+        const ValueKey('super-bottom-app-bar-switch-right'),
       );
       await tester.ensureVisible(toggle);
       await tester.pumpAndSettle();
@@ -1502,16 +1496,16 @@ void main() {
       await tester.tap(find.text('Fermer'));
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('super-bottom-navigation-bar-add-right')),
+        find.byKey(const ValueKey('super-bottom-app-bar-add-right')),
         findsNothing,
       );
       await tester.tap(
-        find.byKey(const ValueKey('super-bottom-navigation-bar-add-left')),
+        find.byKey(const ValueKey('super-bottom-app-bar-add-left')),
       );
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
-          const ValueKey('super-bottom-navigation-bar-add-slot-factory:Card'),
+          const ValueKey('super-bottom-app-bar-add-slot-factory:Card'),
         ),
       );
       await tester.pumpAndSettle();
@@ -1520,7 +1514,7 @@ void main() {
       expect(ids, hasLength(1));
       expect(ids.toSet(), hasLength(1));
       expect(
-        find.byKey(const ValueKey('super-bottom-navigation-bar-add-left')),
+        find.byKey(const ValueKey('super-bottom-app-bar-add-left')),
         findsNothing,
       );
       expect(tester.getSize(find.byType(BottomAppBar)).height, 56);
@@ -1546,7 +1540,7 @@ void main() {
       LayoutSelection.select(['Page']);
       await tester.pumpAndSettle();
       expect(
-        find.byKey(const ValueKey('super-bottom-navigation-bar-add-left')),
+        find.byKey(const ValueKey('super-bottom-app-bar-add-left')),
         findsNothing,
       );
       expect(
@@ -1573,7 +1567,7 @@ void main() {
               ScaffoldPageRegion.body: ['scaffold:body'],
               ScaffoldPageRegion.bottomNavigationBar: ['safe-bar'],
             },
-            slotTypes: {'safe-bar': 'factory:BottomNavigationBar'},
+            slotTypes: {'safe-bar': 'factory:BottomAppBar'},
           ),
           child: const SizedBox.expand(key: ValueKey('safe-body')),
         ),

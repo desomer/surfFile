@@ -419,6 +419,48 @@ Widget buildSuperActionVisual({
   return button;
 }
 
+/// Part of a native navigation destination rendered by a [SuperAction].
+enum SuperActionNavigationPart { icon, label }
+
+/// Scope instructing a descendant [SuperAction] to render as the icon or label
+/// of a native navigation destination (`NavigationRailDestination` or
+/// `BottomNavigationBarItem`) while preserving its editor interactions.
+class SuperActionNavigationScope extends InheritedWidget {
+  const SuperActionNavigationScope({
+    required this.part,
+    required super.child,
+    super.key,
+  });
+
+  final SuperActionNavigationPart part;
+
+  static SuperActionNavigationScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<SuperActionNavigationScope>();
+
+  @override
+  bool updateShouldNotify(SuperActionNavigationScope oldWidget) =>
+      part != oldWidget.part;
+}
+
+/// Executes [onPressed] and all enabled click [ComponentBehavior]s registered
+/// for action [id].
+void executeSuperActionClick(
+  BuildContext context,
+  String id, {
+  VoidCallback? onPressed,
+}) {
+  onPressed?.call();
+  final appearance =
+      AppearanceScope.controllerOf(context)?.value ??
+      AppearanceScope.of(context);
+  final behaviors = appearance.behaviorsFor(id);
+  for (final behavior in behaviors) {
+    if (behavior.enabled && behavior.trigger == BehaviorTrigger.click) {
+      behavior.execute(context);
+    }
+  }
+}
+
 /// Interactive button component supporting text, icon, or text+icon content,
 /// Material/surface variants, repository property bindings, and automatic/named states.
 class SuperAction extends StatefulWidget {
@@ -783,53 +825,91 @@ class _SuperActionState extends State<SuperAction> {
             letterSpacing: config.letterSpacing,
           );
 
+          final navScope = SuperActionNavigationScope.maybeOf(context);
+          if (navScope?.part == SuperActionNavigationPart.label) {
+            return Text(
+              config.label,
+              key: ValueKey('super-action-label-${widget.id}'),
+              style: textStyle,
+              textAlign: config.textAlign,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+          }
+
           final fit = SlotContentFitScope.maybeOf(context);
           final fitWidth = fit?.fitWidth ?? false;
           final fitHeight = fit?.fitHeight ?? false;
+
+          Future<void> editAction() async {
+            final initial = configuration.value;
+            SuperActionConfig? result;
+            try {
+              result = await showSuperActionEditor(
+                context: context,
+                config: initial,
+                availableFontFamilies: widget.availableFontFamilies,
+                activeState: _stateReader?.stateName,
+                stateError: _stateError,
+                isHovered: _hovered,
+                isSelected: listScope?.selected ?? false,
+                allowContentHover: ContentHoverScope.maybeOf(context) != null,
+                activeAutomatic: _automaticActive,
+                onPreviewChanged: (draft) {
+                  if (!mounted) return;
+                  setState(() => _editorConfig = draft);
+                },
+              );
+            } finally {
+              if (mounted) {
+                setState(() => _editorConfig = null);
+              }
+            }
+            if (result == null ||
+                !context.mounted ||
+                result == configuration.value) {
+              return;
+            }
+            final history = EditorHistoryScope.controllerOf(context);
+            history?.beginTransaction();
+            try {
+              configuration.value = result;
+            } finally {
+              history?.commitTransaction();
+            }
+            widget.onConfigChanged?.call(result);
+          }
+
+          if (navScope?.part == SuperActionNavigationPart.icon) {
+            Widget iconVisual = Icon(
+              SuperActionIcons.resolve(config.icon),
+              key: ValueKey('super-action-icon-${widget.id}'),
+              size: config.iconSize,
+              color: config.iconColor ?? config.color,
+            );
+            if (config.tooltip.trim().isNotEmpty) {
+              iconVisual = Tooltip(message: config.tooltip, child: iconVisual);
+            }
+            return EditorSlot(
+              key: _surface,
+              id: widget.id,
+              label: 'Action',
+              menuType: 'Action',
+              onEdit: editAction,
+              child: SizedBox(
+                width: 56,
+                height: 24,
+                child: Center(child: iconVisual),
+              ),
+            );
+          }
 
           return EditorSlot(
             key: _surface,
             id: widget.id,
             label: 'Action',
             menuType: 'Action',
-            onEdit: () async {
-              final initial = configuration.value;
-              SuperActionConfig? result;
-              try {
-                result = await showSuperActionEditor(
-                  context: context,
-                  config: initial,
-                  availableFontFamilies: widget.availableFontFamilies,
-                  activeState: _stateReader?.stateName,
-                  stateError: _stateError,
-                  isHovered: _hovered,
-                  isSelected: listScope?.selected ?? false,
-                  allowContentHover: ContentHoverScope.maybeOf(context) != null,
-                  activeAutomatic: _automaticActive,
-                  onPreviewChanged: (draft) {
-                    if (!mounted) return;
-                    setState(() => _editorConfig = draft);
-                  },
-                );
-              } finally {
-                if (mounted) {
-                  setState(() => _editorConfig = null);
-                }
-              }
-              if (result == null ||
-                  !context.mounted ||
-                  result == configuration.value) {
-                return;
-              }
-              final history = EditorHistoryScope.controllerOf(context);
-              history?.beginTransaction();
-              try {
-                configuration.value = result;
-              } finally {
-                history?.commitTransaction();
-              }
-              widget.onConfigChanged?.call(result);
-            },
+            onEdit: editAction,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -851,20 +931,11 @@ class _SuperActionState extends State<SuperAction> {
                       iconKey: ValueKey('super-action-icon-${widget.id}'),
                       onPressed: _editorConfig != null
                           ? () {}
-                          : () {
-                              widget.onPressed?.call();
-                              final appearance =
-                                  AppearanceScope.controllerOf(context)?.value;
-                              final behaviors =
-                                  appearance?.behaviorsFor(widget.id) ??
-                                  const [];
-                              for (final b in behaviors) {
-                                if (b.enabled &&
-                                    b.trigger == BehaviorTrigger.click) {
-                                  b.execute(context);
-                                }
-                              }
-                            },
+                          : () => executeSuperActionClick(
+                              context,
+                              widget.id,
+                              onPressed: widget.onPressed,
+                            ),
                     ),
                   ),
                 ),

@@ -9,7 +9,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() {
@@ -95,7 +94,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Valeur'));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('super-value-settings')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-value-settings')),
+        findsOneWidget,
+      );
       await tester.enterText(
         find.byKey(const ValueKey('super-value-setting-initialText')),
         'Saved design',
@@ -176,7 +178,7 @@ void main() {
               slotTypes: {'bar-text': 'factory:Value'},
             ),
           ),
-          bottomNavigationBar: SuperBottomNavigationBar(
+          bottomNavigationBar: SuperBottomAppBar(
             id: 'bottom',
             nativeConfig: NativeComponentConfig(
               placements: {
@@ -313,9 +315,7 @@ void main() {
   );
 
   for (final mode in SuperValueMode.values) {
-    testWidgets('$mode inherits the native AppBar title style', (
-      tester,
-    ) async {
+    testWidgets('$mode inherits the native AppBar title style', (tester) async {
       const titleStyle = TextStyle(
         fontSize: 27,
         fontWeight: FontWeight.w800,
@@ -1233,7 +1233,9 @@ void main() {
           ),
         ),
       );
-      final live = find.byKey(const ValueKey('super-value-input-live-password'));
+      final live = find.byKey(
+        const ValueKey('super-value-input-live-password'),
+      );
       await tester.tap(live, buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('style-menu-Valeur')));

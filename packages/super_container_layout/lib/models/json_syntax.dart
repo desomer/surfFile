@@ -85,9 +85,10 @@ abstract final class JsonComponentType {
     'IterableContent': 'IterableContent',
     'ApplicationBar': 'ApplicationBar',
     'BottomNavigationBar': 'BottomNavigationBar',
+    'BottomAppBar': 'BottomAppBar',
     'NavigationRail': 'NavigationRail',
     'AppBar': 'ApplicationBar',
-    'BottomBar': 'BottomNavigationBar',
+    'BottomBar': 'BottomAppBar',
     'Rail': 'NavigationRail',
     'List': 'ListView',
   };
