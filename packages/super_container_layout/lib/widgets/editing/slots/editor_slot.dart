@@ -141,6 +141,16 @@ class EditorSlotState extends State<EditorSlot> {
         : _localLabel ?? widget.label ?? 'Editable component';
   }
 
+  String get titleLabel {
+    final instance = _instance;
+    return (instance?.overridden ?? false)
+        ? instance!.label
+        : _localLabel ??
+              widget.menuTitle ??
+              widget.label ??
+              'Editable component';
+  }
+
   bool get canEdit {
     final editMode = StyleEditScope.controllerOf(context);
     return widget.editable && (editMode?.value ?? true);
@@ -164,7 +174,8 @@ class EditorSlotState extends State<EditorSlot> {
   void restoreLabel(String value) => _renameLabel(value);
 
   Future<void> _promptRename() async {
-    final text = TextEditingController(text: label);
+    final currentLabel = titleLabel;
+    final text = TextEditingController(text: currentLabel);
     final form = GlobalKey<FormState>();
     try {
       final value = await showEditorDialog<String>(
@@ -206,7 +217,9 @@ class EditorSlotState extends State<EditorSlot> {
           );
         },
       );
-      if (value != null && value != label && mounted) _renameLabel(value);
+      if (value != null && value != currentLabel && mounted) {
+        _renameLabel(value);
+      }
     } finally {
       WidgetsBinding.instance.addPostFrameCallback((_) => text.dispose());
     }
@@ -824,7 +837,7 @@ class EditorSlotState extends State<EditorSlot> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _menuTitle(
-                                state.widget.menuTitle ?? state.label,
+                                state.titleLabel,
                                 destination: state.widget.onEdit == null
                                     ? null
                                     : state.widget.menuDestination,
@@ -841,10 +854,13 @@ class EditorSlotState extends State<EditorSlot> {
                                           : state.widget.menuType ??
                                                 (state.widget.menuTitle == null
                                                     ? null
-                                                    : state.label)))
+                                                    : state.widget.label)))
                                   case final subtitle?
-                                  when subtitle !=
-                                      (state.widget.menuTitle ?? state.label))
+                                  when subtitle != state.titleLabel &&
+                                      !(state.widget.menuSubtitle == null &&
+                                          state.widget.menuType != null &&
+                                          state.widget.menuTitle != null &&
+                                          subtitle == state.widget.label))
                                 Text(
                                   subtitle,
                                   key:
@@ -864,9 +880,11 @@ class EditorSlotState extends State<EditorSlot> {
                                 ),
                               if (state.widget.menuSubtitle == null &&
                                   state.widget.menuType != null &&
-                                  state.widget.menuTitle != null)
+                                  state.widget.menuTitle != null &&
+                                  state.widget.label != null &&
+                                  state.widget.label != state.titleLabel)
                                 Text(
-                                  state.label,
+                                  state.widget.label!,
                                   style: Theme.of(context).textTheme.labelSmall
                                       ?.copyWith(
                                         color: colors.onSurfaceVariant,

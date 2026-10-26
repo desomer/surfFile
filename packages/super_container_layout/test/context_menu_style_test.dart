@@ -396,4 +396,81 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'overridden component instance shows label on line 1, type on line 2 only when distinct, and settingsTitle on line 3',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      for (final (instanceLabel, expectsTypeLine) in [
+        ('NavigationRail', false),
+        ('Mon rail', true),
+      ]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StyleEditScope(
+              controller: editing,
+              child: Scaffold(
+                body: Center(
+                  child: InstanceSlot(
+                    BuilderSlot(
+                      id: 'rail-1',
+                      label: 'NavigationRail',
+                      builder: (_) => EditorSlot(
+                        label: 'Configurer le rail de navigation',
+                        menuTitle: 'Rail de navigation',
+                        menuType: 'NavigationRail',
+                        onEdit: () async {},
+                        child: const SizedBox(
+                          width: 160,
+                          height: 80,
+                          child: Text('Cible'),
+                        ),
+                      ),
+                    ),
+                    label: instanceLabel,
+                    overridden: true,
+                    onRename: (_) {},
+                    onRestore: () {},
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.text('Cible'), buttons: kSecondaryMouseButton);
+        await tester.pumpAndSettle();
+
+        final row = find.byKey(ValueKey('style-menu-$instanceLabel'));
+        expect(row, findsOneWidget);
+        expect(
+          find.descendant(of: row, matching: find.text('Rail de navigation')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: row, matching: find.text(instanceLabel)),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: row, matching: find.text('NavigationRail')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: row, matching: find.byType(Text)),
+          findsNWidgets(expectsTypeLine ? 3 : 2),
+        );
+        expect(
+          find.descendant(
+            of: row,
+            matching: find.text('Configurer le rail de navigation'),
+          ),
+          findsOneWidget,
+        );
+        await tester.tapAt(const Offset(10, 10));
+        await tester.pumpAndSettle();
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

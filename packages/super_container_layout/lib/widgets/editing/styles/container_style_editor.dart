@@ -505,28 +505,6 @@ class ContainerStyleEditor extends StatelessWidget {
           half: true,
           child: _stack(border),
         ),
-      if (onElevationChanged != null || onShadowOpacityChanged != null)
-        StyleEditorSection(
-          id: 'shadow',
-          title: 'Ombre portée',
-          tag: 'boxShadow',
-          icon: Icons.layers_outlined,
-          count: 2,
-          child: _stack(
-            extras == null
-                ? _shadowControls()
-                : extras.dropShadow(_shadowControls()),
-          ),
-        ),
-      if (extras != null)
-        StyleEditorSection(
-          id: 'inner',
-          title: 'Ombre intérieure',
-          tag: 'innerShadow',
-          icon: Icons.brightness_low,
-          count: 1,
-          child: _stack(extras.innerShadow()),
-        ),
       if (onMarginChanged != null)
         StyleEditorSection(
           id: 'margin',
@@ -551,7 +529,42 @@ class ContainerStyleEditor extends StatelessWidget {
             extras == null ? _paddingControls() : extras.spacing(padding: true),
           ),
         ),
+      if (onElevationChanged != null || onShadowOpacityChanged != null)
+        StyleEditorSection(
+          id: 'shadow',
+          title: 'Ombre portée',
+          tag: 'boxShadow',
+          icon: Icons.layers_outlined,
+          count: 2,
+          child: _stack(
+            extras == null
+                ? _shadowControls()
+                : extras.dropShadow(_shadowControls()),
+          ),
+        ),
+      if (onNeonChanged != null)
+        StyleEditorSection(
+          id: 'neon',
+          title: 'Effet néon',
+          tag: 'NeonStyle',
+          icon: Icons.flare,
+          count: 3,
+          child: NeonStyleEditor(
+            label: label,
+            value: neon,
+            accent: accent,
+            onChanged: onNeonChanged!,
+          ),
+        ),
       if (extras != null) ...[
+        StyleEditorSection(
+          id: 'inner',
+          title: 'Ombre intérieure',
+          tag: 'innerShadow',
+          icon: Icons.brightness_low,
+          count: 1,
+          child: _stack(extras.innerShadow()),
+        ),
         StyleEditorSection(
           id: 'opacity',
           title: 'Opacité & flou',
@@ -585,20 +598,6 @@ class ContainerStyleEditor extends StatelessWidget {
           icon: Icons.touch_app_outlined,
           count: 3,
           child: _stack(interaction),
-        ),
-      if (onNeonChanged != null)
-        StyleEditorSection(
-          id: 'neon',
-          title: 'Effet néon',
-          tag: 'NeonStyle',
-          icon: Icons.flare,
-          count: 3,
-          child: NeonStyleEditor(
-            label: label,
-            value: neon,
-            accent: accent,
-            onChanged: onNeonChanged!,
-          ),
         ),
     ];
     return StyleEditorPanel(
