@@ -192,8 +192,12 @@ class SuperLayoutState extends State<SuperLayout> {
   SuperLayoutConfig? _reportedConfig;
 
   void _select(SuperLayoutZone zone) {
-    _selectedSlot.value = null;
-    _selected.value = _selected.value == zone ? null : zone;
+    if (_selectedSlot.value != null) {
+      _selectedSlot.value = null;
+      _selected.value = zone;
+    } else {
+      _selected.value = _selected.value == zone ? null : zone;
+    }
   }
 
   void _selectZone(SuperLayoutZone zone) {

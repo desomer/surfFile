@@ -117,6 +117,7 @@ class LayoutSelection {
       <Object, List<LayoutSelectionNode> Function()>{};
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
+  static bool _activating = false;
 
   /// The container currently owning the deepest reported selection path.
   static Object? get activeOwner => _activeOwner;
@@ -394,28 +395,34 @@ class LayoutSelection {
   /// active non-ancestor containers and removing stale ancestor reports.
   static void activate(Object owner) {
     _leafSuffix = const [];
+    _activeOwner = owner;
     var changed = false;
-    for (final entry in _targets.entries.toList()) {
-      final other = entry.key;
-      if (identical(other, owner)) continue;
-      if (_isAncestor(owner, other)) {
-        if (_reported.containsKey(other)) {
-          _removeReported(other);
-          changed = true;
-        }
-        _deselects[other]?.call();
-      } else if (!_isAncestor(other, owner)) {
-        if (_reported.containsKey(other)) {
-          _removeReported(other);
-          changed = true;
+    _activating = true;
+    try {
+      for (final entry in _targets.entries.toList()) {
+        final other = entry.key;
+        if (identical(other, owner)) continue;
+        if (_isAncestor(owner, other)) {
+          if (_reported.containsKey(other)) {
+            _removeReported(other);
+            changed = true;
+          }
           _deselects[other]?.call();
+        } else if (!_isAncestor(other, owner)) {
+          if (_reported.containsKey(other)) {
+            _removeReported(other);
+            changed = true;
+            _deselects[other]?.call();
+          }
+        } else if (_reported.containsKey(other)) {
+          _removeReported(other);
+          changed = true;
         }
-      } else if (_reported.containsKey(other)) {
-        _removeReported(other);
-        changed = true;
       }
+    } finally {
+      _activating = false;
     }
-    if (changed) _syncReported();
+    if (changed && _reported.isNotEmpty) _syncReported();
   }
 
   static bool _canParentHandlePrefix(Object? parent, List<String> prefix) {
@@ -543,6 +550,7 @@ class LayoutSelection {
       _focusTargets.remove(owner);
       if (_reported.remove(owner) == null) return;
       if (identical(_activeOwner, owner)) _leafSuffix = const [];
+      if (_activating) return;
     } else {
       if (!listEquals(previous, value)) _leafSuffix = const [];
       if (clear != null) _clears[owner] = clear;

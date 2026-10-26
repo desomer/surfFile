@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'json_syntax.dart';
+import 'material_icon_catalog.dart';
 
 enum TextFieldVariant { theme, filled, outlined, underline, borderless }
 
@@ -44,10 +45,40 @@ enum TextFieldIcon {
   home(Icons.home_outlined),
   calendar(Icons.calendar_today_outlined),
   info(Icons.info_outline),
-  check(Icons.check);
+  check(Icons.check),
+  edit(Icons.edit_outlined),
+  location_on(Icons.location_on_outlined),
+  credit_card(Icons.credit_card_outlined),
+  payments(Icons.payments_outlined),
+  work(Icons.work_outline),
+  folder(Icons.folder_outlined),
+  description(Icons.description_outlined),
+  attach_file(Icons.attach_file),
+  schedule(Icons.schedule),
+  label(Icons.label_outline),
+  star(Icons.star_border),
+  favorite(Icons.favorite_border),
+  warning(Icons.warning_amber_outlined),
+  error(Icons.error_outline),
+  help(Icons.help_outline),
+  key(Icons.key_outlined),
+  shield(Icons.shield_outlined),
+  badge(Icons.badge_outlined),
+  group(Icons.group_outlined),
+  language(Icons.language),
+  alternate_email(Icons.alternate_email),
+  qr_code(Icons.qr_code_2),
+  code(Icons.code),
+  filter_list(Icons.filter_list),
+  tune(Icons.tune),
+  shopping_cart(Icons.shopping_cart_outlined),
+  inventory(Icons.inventory_2_outlined),
+  local_shipping(Icons.local_shipping_outlined);
 
   const TextFieldIcon(this.data);
   final IconData data;
+
+  String get displayLabel => MaterialIconCatalog.labelOf(name);
 }
 
 @immutable

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_action_config.dart';
 import '../../components/super_action_editor.dart';
+import '../../icons/material_icon_picker.dart';
 
 double? _parse(String text) =>
     double.tryParse(text.trim().replaceAll(',', '.'));
@@ -115,35 +116,14 @@ class _SuperActionAddFormState extends State<SuperActionAddForm> {
                   widget.onChanged(draft.copyWith(label: value)),
             ),
           if (draft.kind.hasIcon)
-            DropdownButtonFormField<String>(
+            MaterialIconPickerField(
               key: const ValueKey('add-action-icon'),
-              isExpanded: true,
-              initialValue: SuperActionIcons.isKnown(draft.icon)
+              label: 'Icône',
+              isDense: true,
+              showId: false,
+              value: SuperActionIcons.isKnown(draft.icon)
                   ? draft.icon
                   : 'touch_app',
-              decoration: const InputDecoration(
-                isDense: true,
-                labelText: 'Icône',
-              ),
-              items: [
-                for (final entry in SuperActionIcons.catalog.entries)
-                  DropdownMenuItem(
-                    value: entry.key,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(entry.value.icon, size: 18),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            entry.value.label,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
               onChanged: (icon) {
                 if (icon != null) {
                   widget.onChanged(draft.copyWith(icon: icon));

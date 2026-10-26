@@ -135,6 +135,10 @@ void main() {
         layout('Nested', layout('Grandchild', const SizedBox.expand())),
       ),
     );
+    final history = <List<String>>[];
+    void record() => history.add(List.of(LayoutSelection.path.value));
+    LayoutSelection.path.addListener(record);
+    addTearDown(() => LayoutSelection.path.removeListener(record));
     const point = Offset(600, 400);
     await doubleClick(tester, point);
     expect(LayoutSelection.path.value, ['Root', 'Centre', 'Root child']);
@@ -156,6 +160,13 @@ void main() {
       'Centre',
       'Grandchild',
       'Centre',
+    ]);
+    expect(history, [
+      ['Root', 'Centre'],
+      ['Root', 'Centre', 'Root child'],
+      ['Root', 'Centre', 'Nested', 'Centre'],
+      ['Root', 'Centre', 'Nested', 'Centre', 'Nested child'],
+      ['Root', 'Centre', 'Nested', 'Centre', 'Grandchild', 'Centre'],
     ]);
     expect(tester.takeException(), isNull);
   });

@@ -6,6 +6,7 @@ import 'automatic_state.dart';
 import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
+import 'material_icon_catalog.dart';
 
 part 'super_action_states.dart';
 
@@ -52,46 +53,16 @@ enum SuperActionProperty {
 
 /// Catalogue d'icônes Material sérialisables par nom pour [SuperActionConfig].
 abstract final class SuperActionIcons {
-  static const Map<String, ({IconData icon, String label})> catalog = {
-    'touch_app': (icon: Icons.touch_app_outlined, label: 'Action'),
-    'smart_button': (icon: Icons.smart_button_outlined, label: 'Bouton'),
-    'add': (icon: Icons.add, label: 'Ajouter'),
-    'edit': (icon: Icons.edit_outlined, label: 'Modifier'),
-    'delete': (icon: Icons.delete_outline, label: 'Supprimer'),
-    'check': (icon: Icons.check, label: 'Valider'),
-    'close': (icon: Icons.close, label: 'Fermer'),
-    'search': (icon: Icons.search, label: 'Rechercher'),
-    'settings': (icon: Icons.settings_outlined, label: 'Paramètres'),
-    'refresh': (icon: Icons.refresh, label: 'Actualiser'),
-    'save': (icon: Icons.save_outlined, label: 'Enregistrer'),
-    'share': (icon: Icons.share_outlined, label: 'Partager'),
-    'download': (icon: Icons.download_outlined, label: 'Télécharger'),
-    'upload': (icon: Icons.upload_outlined, label: 'Importer'),
-    'arrow_back': (icon: Icons.arrow_back, label: 'Retour'),
-    'arrow_forward': (icon: Icons.arrow_forward, label: 'Suivant'),
-    'home': (icon: Icons.home_outlined, label: 'Accueil'),
-    'person': (icon: Icons.person_outline, label: 'Profil'),
-    'favorite': (icon: Icons.favorite_border, label: 'Favori'),
-    'star': (icon: Icons.star_border, label: 'Étoile'),
-    'info': (icon: Icons.info_outline, label: 'Information'),
-    'warning': (icon: Icons.warning_amber_outlined, label: 'Alerte'),
-    'play_arrow': (icon: Icons.play_arrow_outlined, label: 'Lecture'),
-    'send': (icon: Icons.send_outlined, label: 'Envoyer'),
-    'more_vert': (icon: Icons.more_vert, label: 'Plus'),
-    'open_in_new': (icon: Icons.open_in_new, label: 'Ouvrir'),
-    'copy': (icon: Icons.content_copy_outlined, label: 'Copier'),
-    'filter_list': (icon: Icons.filter_list, label: 'Filtrer'),
-    'visibility': (icon: Icons.visibility_outlined, label: 'Afficher'),
-    'lock': (icon: Icons.lock_outline, label: 'Verrouiller'),
+  static final Map<String, ({IconData icon, String label})> catalog = {
+    for (final entry in MaterialIconCatalog.entries)
+      entry.id: (icon: entry.icon, label: entry.label),
   };
 
-  static bool isKnown(String name) => catalog.containsKey(name.trim());
+  static bool isKnown(String name) => MaterialIconCatalog.isKnown(name);
 
-  static IconData resolve(String name) =>
-      catalog[name.trim()]?.icon ?? Icons.touch_app_outlined;
+  static IconData resolve(String name) => MaterialIconCatalog.resolve(name);
 
-  static String labelOf(String name) =>
-      catalog[name.trim()]?.label ?? name.trim();
+  static String labelOf(String name) => MaterialIconCatalog.labelOf(name);
 }
 
 @immutable

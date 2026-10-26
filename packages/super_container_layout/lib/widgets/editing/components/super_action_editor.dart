@@ -15,6 +15,7 @@ import '../../../theme/interaction_effect.dart';
 import '../../../theme/neon_style.dart';
 import '../../components/super_action.dart';
 import '../dialogs/editor_dialog.dart';
+import '../icons/material_icon_picker.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../states/editor_state_controls.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
@@ -1010,32 +1011,12 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                     _withBinding(
                       SuperActionProperty.icon,
                       'l’icône',
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
+                      MaterialIconPickerField(
                         key: const ValueKey('super-action-setting-icon'),
-                        initialValue: SuperActionIcons.isKnown(_draft.icon)
+                        label: 'Icône',
+                        value: SuperActionIcons.isKnown(_draft.icon)
                             ? _draft.icon
                             : 'touch_app',
-                        decoration: const InputDecoration(labelText: 'Icône'),
-                        items: [
-                          for (final entry in SuperActionIcons.catalog.entries)
-                            DropdownMenuItem(
-                              value: entry.key,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(entry.value.icon, size: 18),
-                                  const SizedBox(width: 8),
-                                  Flexible(
-                                    child: Text(
-                                      '${entry.value.label} (${entry.key})',
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
                         onChanged: (icon) {
                           if (icon != null) {
                             setState(

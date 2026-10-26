@@ -76,6 +76,9 @@ void main() {
       expect(handle, findsOneWidget);
       await tester.tap(first);
       await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, 'First');
+      await tester.tap(second);
+      await tester.pumpAndSettle();
       expect(LayoutSelection.path.value.last, 'Centre');
       await tester.drag(second, const Offset(50, 0));
       await tester.pumpAndSettle();

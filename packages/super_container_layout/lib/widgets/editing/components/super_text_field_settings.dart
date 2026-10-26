@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_text_field_config.dart';
+import '../icons/material_icon_picker.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../styles/style_editor_panel.dart';
 
@@ -251,11 +252,15 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
       tag: 'prefix · suffix',
       child: _group([
         _text('prefixText', 'Texte de préfixe'),
-        _choice(
-          'prefixIcon',
-          'Icône de préfixe',
-          TextFieldIcon.values,
+        MaterialIconPickerField(
+          key: ValueKey(
+            'text-field-setting-prefixIcon-${_values['prefixIcon']}',
+          ),
+          label: 'Icône de préfixe',
+          value: _values['prefixIcon'] as String?,
           nullable: true,
+          allowedIds: [for (final icon in TextFieldIcon.values) icon.name],
+          onChanged: (value) => _update('prefixIcon', value),
         ),
         _text('suffixText', 'Texte de suffixe'),
         _choice(
@@ -269,11 +274,15 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
           },
         ),
         if (_values['suffix'] == 'decoration')
-          _choice(
-            'suffixIcon',
-            'Icône de suffixe',
-            TextFieldIcon.values,
+          MaterialIconPickerField(
+            key: ValueKey(
+              'text-field-setting-suffixIcon-${_values['suffixIcon']}',
+            ),
+            label: 'Icône de suffixe',
+            value: _values['suffixIcon'] as String?,
             nullable: true,
+            allowedIds: [for (final icon in TextFieldIcon.values) icon.name],
+            onChanged: (value) => _update('suffixIcon', value),
           ),
         if (_values['suffix'] == 'visibility')
           const Text(

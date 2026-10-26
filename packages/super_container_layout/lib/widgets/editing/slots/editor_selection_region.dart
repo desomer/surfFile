@@ -69,18 +69,39 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     return chain.reversed.toList();
   }
 
+  static _EditorSelectionRegionState? _resolveCurrent(
+    List<_EditorSelectionRegionState> chain,
+  ) {
+    final current = _selected;
+    if (current != null &&
+        current.mounted &&
+        current.widget.enabled &&
+        current.widget.selected) {
+      return current;
+    }
+    for (final state in chain.reversed) {
+      if (state.mounted && state.widget.enabled && state.widget.selected) {
+        return _selected = state;
+      }
+    }
+    if (current != null && current.mounted && current.widget.enabled) {
+      return current;
+    }
+    return null;
+  }
+
   static _EditorSelectionRegionState _zone(
     List<_EditorSelectionRegionState> chain,
   ) {
-    final index = _selected == null ? -1 : chain.indexOf(_selected!);
+    final current = _resolveCurrent(chain);
+    final index = current == null ? -1 : chain.indexOf(current);
     if (index >= 0) {
       for (var i = index; i >= 0; i--) {
         if (chain[i].widget.isZone) return chain[i];
       }
     }
-    final previous = _selected;
-    if (previous != null && previous.mounted) {
-      for (final state in previous._ancestry.reversed) {
+    if (current != null && current.mounted) {
+      for (final state in current._ancestry.reversed) {
         if (state.widget.isZone && chain.contains(state)) return state;
       }
     }
@@ -106,7 +127,8 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
       return;
     }
     final chain = leaf._ancestry;
-    final index = _selected == null ? -1 : chain.indexOf(_selected!);
+    final current = _resolveCurrent(chain);
+    final index = current == null ? -1 : chain.indexOf(current);
     _hoverTarget.value = index < 0
         ? _zone(chain)
         : chain[(index + 1).clamp(0, chain.length - 1)];
@@ -136,23 +158,29 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
       return;
     }
     final chain = _ancestry;
+    final current = _resolveCurrent(chain);
+    final currentIndex = current == null ? -1 : chain.indexOf(current);
     final doubleClick =
         identical(_lastLeaf, this) &&
         (_doubleTapTimer?.isActive ?? false) &&
         !(_minimumTapTimer?.isActive ?? false) &&
         (event.position - _lastPosition!).distance <= kDoubleTapSlop;
-    final base = doubleClick ? _lastBase : _selected;
-    var target = _zone(chain);
+    final _EditorSelectionRegionState target;
     if (doubleClick) {
-      final index = base == null ? -1 : chain.indexOf(base);
-      final zoneIndex = chain.indexOf(target);
-      target =
-          chain[((index < 0 ? zoneIndex : index) + 1).clamp(
-            0,
-            chain.length - 1,
-          )];
+      final base = _lastBase ?? current;
+      final baseIndex = base == null ? -1 : chain.indexOf(base);
+      final fromIndex = baseIndex >= 0
+          ? baseIndex
+          : (currentIndex >= 0 ? currentIndex : chain.indexOf(_zone(chain)));
+      target = chain[(fromIndex + 1).clamp(0, chain.length - 1)];
+    } else if (currentIndex >= 0) {
+      // Clicking inside the already-selected region/slot keeps it selected
+      // instead of resetting back to the parent zone on the first click.
+      target = current!;
+    } else {
+      target = _zone(chain);
     }
-    _lastBase = _selected;
+    _lastBase = target;
     _doubleTapTimer?.cancel();
     _minimumTapTimer?.cancel();
     if (!doubleClick) {
@@ -161,8 +189,11 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     }
     _lastPosition = event.position;
     _lastLeaf = this;
+    final changed = !identical(target, current) || !target.widget.selected;
     _selected = target;
-    target.widget.onSelect();
+    if (changed) {
+      target.widget.onSelect();
+    }
     _refreshHover();
   }
 
@@ -180,9 +211,24 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
       scheduleMicrotask(_refreshHover);
     } else if (widget.enabled && widget.selected != oldWidget.selected) {
       if (widget.selected) {
-        _selected = this;
+        final current = _selected;
+        if (current == null ||
+            !current.mounted ||
+            !current.widget.enabled ||
+            !current.widget.selected ||
+            !current._ancestry.contains(this)) {
+          _selected = this;
+        }
       } else if (identical(_selected, this)) {
-        _selected = null;
+        _selected = _ancestry
+            .where(
+              (s) =>
+                  !identical(s, this) &&
+                  s.mounted &&
+                  s.widget.enabled &&
+                  s.widget.selected,
+            )
+            .lastOrNull;
       }
       scheduleMicrotask(_refreshHover);
     }

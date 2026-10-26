@@ -1297,6 +1297,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, isEmpty);
 
+      final history = <List<String>>[];
+      void record() => history.add(List.of(LayoutSelection.path.value));
+      LayoutSelection.path.addListener(record);
+      addTearDown(() => LayoutSelection.path.removeListener(record));
+
       final actionPoint = tester.getCenter(find.text('Action'));
       await tester.tapAt(actionPoint);
       await tester.pumpAndSettle();
@@ -1319,6 +1324,22 @@ void main() {
         'Centre',
         'Ma Carte',
         'Mon Bouton',
+      ]);
+      // Subsequent single click or double click on the deepest selected
+      // component keeps it selected without flickering back to the zone.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(actionPoint);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, [
+        'Main',
+        'Centre',
+        'Ma Carte',
+        'Mon Bouton',
+      ]);
+      expect(history, [
+        ['Main', 'Centre'],
+        ['Main', 'Centre', 'Ma Carte'],
+        ['Main', 'Centre', 'Ma Carte', 'Mon Bouton'],
       ]);
       expect(tester.takeException(), isNull);
     },
