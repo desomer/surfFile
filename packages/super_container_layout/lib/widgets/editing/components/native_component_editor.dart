@@ -129,6 +129,7 @@ class NativeComponentEditor extends StatefulWidget {
     this.showRegionInPath = true,
     this.resolveSlotLabel,
     this.isSlotSelectable,
+    this.slotContextFor,
     this.menuIcon,
     this.menuType,
     this.settingsControls,
@@ -152,6 +153,7 @@ class NativeComponentEditor extends StatefulWidget {
   final bool showRegionInPath;
   final String? Function(SlotImplementation slot)? resolveSlotLabel;
   final bool Function(SlotImplementation slot)? isSlotSelectable;
+  final BuildContext? Function(SlotImplementation slot)? slotContextFor;
   final IconData? menuIcon;
   final String? menuType;
   final List<Widget> Function(
@@ -299,6 +301,86 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             }
           : null,
       onDeselect: _clear,
+      treeBuilder: () {
+        if (!widget.showRegionInPath) {
+          final regionId = widget.regions.first.id;
+          final currentSlots = slotsFor(regionId);
+          return [
+            for (final slot in currentSlots)
+              if (_canSelectSlot(slot))
+                () {
+                  final sLabel = _resolvedSlotLabel(slot);
+                  final slotPath = [..._path, sLabel];
+                  void selectThisSlot() => selectSlot(regionId, slot);
+                  return LayoutSelectionNode(
+                    label: sLabel,
+                    path: slotPath,
+                    icon: slot.menuIcon,
+                    onSelect: selectThisSlot,
+                    children: LayoutSelection.childrenFromContext(
+                      widget.slotContextFor?.call(slot) ??
+                          _slotKeys[slot.id]?.currentContext ??
+                          _keys['$regionId:${slot.id}']?.currentContext ??
+                          _keys[regionId]?.currentContext,
+                      slotPath,
+                      selectThisSlot,
+                      ignoreOwner: this,
+                    ),
+                  );
+                }(),
+          ];
+        }
+        return [
+          for (final region in widget.regions)
+            if (visible(region.id))
+              () {
+                final regionPath = [..._path, region.label];
+                final currentSlots = slotsFor(region.id);
+                final slotNodes = <LayoutSelectionNode>[];
+                for (final slot in currentSlots) {
+                  final slotCtx =
+                      widget.slotContextFor?.call(slot) ??
+                      _slotKeys[slot.id]?.currentContext ??
+                      _keys['${region.id}:${slot.id}']?.currentContext;
+                  if (_canSelectSlot(slot)) {
+                    final sLabel = _resolvedSlotLabel(slot);
+                    final slotPath = [...regionPath, sLabel];
+                    void selectThisSlot() => selectSlot(region.id, slot);
+                    slotNodes.add(
+                      LayoutSelectionNode(
+                        label: sLabel,
+                        path: slotPath,
+                        icon: slot.menuIcon,
+                        onSelect: selectThisSlot,
+                        children: LayoutSelection.childrenFromContext(
+                          slotCtx,
+                          slotPath,
+                          selectThisSlot,
+                          ignoreOwner: this,
+                        ),
+                      ),
+                    );
+                  } else {
+                    slotNodes.addAll(
+                      LayoutSelection.childrenFromContext(
+                        slotCtx ?? _keys[region.id]?.currentContext,
+                        regionPath,
+                        () => select(region.id),
+                        ignoreOwner: this,
+                      ),
+                    );
+                  }
+                }
+                return LayoutSelectionNode(
+                  label: region.label,
+                  path: regionPath,
+                  icon: EditorSlot.zoneMenuIcon,
+                  onSelect: () => select(region.id),
+                  children: slotNodes,
+                );
+              }(),
+        ];
+      },
     );
   }
 

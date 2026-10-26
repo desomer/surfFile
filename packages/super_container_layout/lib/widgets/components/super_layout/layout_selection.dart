@@ -1,6 +1,17 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Axis, Rect;
-import 'package:flutter/widgets.dart' show BuildContext, InheritedWidget, PointerDownEvent, PointerEvent;
+import 'package:flutter/widgets.dart'
+    show
+        BuildContext,
+        Element,
+        IconData,
+        InheritedWidget,
+        PointerDownEvent,
+        PointerEvent,
+        StatefulElement,
+        WidgetsBinding;
+
+import '../../editing/slots/editor_slot.dart' show EditorSlotState;
 
 /// Selection ancestry shared by native page regions and nested layouts.
 class LayoutSelectionScope extends InheritedWidget {
@@ -46,6 +57,23 @@ class LayoutAxisAction {
   final Future<void> Function()? onEditFlow;
 }
 
+/// Node in the hierarchy tree under a breadcrumb segment in `StyleEditBanner`.
+class LayoutSelectionNode {
+  const LayoutSelectionNode({
+    required this.label,
+    required this.path,
+    this.icon,
+    this.children = const [],
+    this.onSelect,
+  });
+
+  final String label;
+  final List<String> path;
+  final IconData? icon;
+  final List<LayoutSelectionNode> children;
+  final VoidCallback? onSelect;
+}
+
 /// Chemin des zones sélectionnées (parent > ... > enfant) dans les dispositions
 /// imbriquées, affiché par la bannière du mode édition.
 ///
@@ -85,6 +113,8 @@ class LayoutSelection {
       >{};
   static final _slotSelectors = <Object, ValueChanged<String>>{};
   static final _deselects = <Object, VoidCallback>{};
+  static final _treeBuilders =
+      <Object, List<LayoutSelectionNode> Function()>{};
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
 
@@ -143,6 +173,7 @@ class LayoutSelection {
     ValueChanged<String>? selectSlot,
     VoidCallback? onDeselect,
     bool delegateToParent = false,
+    List<LayoutSelectionNode> Function()? treeBuilder,
   }) {
     if (onDeselect == null) {
       _deselects.remove(owner);
@@ -153,6 +184,11 @@ class LayoutSelection {
       _slotSelectors.remove(owner);
     } else {
       _slotSelectors[owner] = selectSlot;
+    }
+    if (treeBuilder == null) {
+      _treeBuilders.remove(owner);
+    } else {
+      _treeBuilders[owner] = treeBuilder;
     }
     _targets[owner] = (
       path: List.unmodifiable(path),
@@ -166,6 +202,175 @@ class LayoutSelection {
     _targets.remove(owner);
     _slotSelectors.remove(owner);
     _deselects.remove(owner);
+    _treeBuilders.remove(owner);
+  }
+
+  /// Extracts nested selectable `LayoutSelectionNode`s from a slot's widget
+  /// subtree (nested layouts, native editors, or deeper `EditorSlot`s).
+  static List<LayoutSelectionNode> childrenFromContext(
+    BuildContext? slotContext,
+    List<String> slotPath,
+    VoidCallback selectSlot, {
+    Object? ignoreOwner,
+  }) {
+    if (slotContext is! Element || !slotContext.mounted) return const [];
+    final result = <LayoutSelectionNode>[];
+    EditorSlotState? rootSlotState;
+
+    List<LayoutSelectionNode> visitElement(
+      Element element,
+      List<String> parentPath,
+    ) {
+      if (element is StatefulElement) {
+        final state = element.state;
+        if (!identical(state, ignoreOwner) && _targets.containsKey(state)) {
+          final target = _targets[state]!;
+          final builder = _treeBuilders[state];
+          final children = builder != null
+              ? builder()
+              : const <LayoutSelectionNode>[];
+          if (listEquals(target.path, parentPath) ||
+              (parentPath.isNotEmpty &&
+                  target.path.isNotEmpty &&
+                  target.path.last == parentPath.last &&
+                  target.path.length == parentPath.length)) {
+            return children;
+          }
+          return [
+            LayoutSelectionNode(
+              label: target.path.isNotEmpty ? target.path.last : 'Layout',
+              path: target.path,
+              children: children,
+              onSelect: () => target.select(null),
+            ),
+          ];
+        }
+        if (state is EditorSlotState &&
+            state.canEdit &&
+            state.widget.onContextMenu == null) {
+          if (rootSlotState == null) {
+            rootSlotState = state;
+          } else {
+            final nodePath = List<String>.unmodifiable([
+              ...parentPath,
+              state.label,
+            ]);
+            final leafLabels = nodePath.sublist(slotPath.length);
+            final grandChildren = <LayoutSelectionNode>[];
+            element.visitChildElements((child) {
+              grandChildren.addAll(visitElement(child, nodePath));
+            });
+            return [
+              LayoutSelectionNode(
+                label: state.label,
+                path: nodePath,
+                icon: state.widget.menuIcon ?? state.componentLabel?.menuIcon,
+                children: grandChildren,
+                onSelect: () {
+                  selectSlot();
+                  setLeafSuffix(leafLabels);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    setLeafSuffix(leafLabels);
+                  });
+                },
+              ),
+            ];
+          }
+        }
+      }
+      final nodes = <LayoutSelectionNode>[];
+      element.visitChildElements((child) {
+        nodes.addAll(visitElement(child, parentPath));
+      });
+      return nodes;
+    }
+
+    slotContext.visitChildElements((child) {
+      result.addAll(visitElement(child, slotPath));
+    });
+    return result;
+  }
+
+  static LayoutSelectionNode? _findNode(
+    List<LayoutSelectionNode> nodes,
+    List<String> targetPath,
+  ) {
+    for (final node in nodes) {
+      if (listEquals(node.path, targetPath)) return node;
+      if (_findNode(node.children, targetPath) case final found?) {
+        return found;
+      }
+    }
+    return null;
+  }
+
+  /// Returns the complete tree of selectable children under [prefix].
+  static List<LayoutSelectionNode> childrenOf(List<String> prefix) {
+    if (prefix.isEmpty) return const [];
+
+    List<Object> candidateOwners() {
+      final result = <Object>[];
+      var current = _activeOwner;
+      while (current != null) {
+        result.add(current);
+        current = _targets[current]?.parent;
+      }
+      for (final owner in _targets.keys.toList().reversed) {
+        if (!result.contains(owner)) result.add(owner);
+      }
+      return result;
+    }
+
+    final owners = candidateOwners();
+
+    // 1. Direct match on a registered container's root path.
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final builder = _treeBuilders[owner];
+      if (target != null &&
+          builder != null &&
+          listEquals(target.path, prefix)) {
+        final built = builder();
+        if (built.isNotEmpty) return built;
+      }
+    }
+
+    // 2. Match a zone, region, or slot inside an ancestor container's tree.
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final builder = _treeBuilders[owner];
+      if (target == null || builder == null) continue;
+      if (prefix.length > target.path.length &&
+          listEquals(prefix.take(target.path.length).toList(), target.path)) {
+        final roots = builder();
+        if (_findNode(roots, prefix) case final node?) {
+          return node.children;
+        }
+      }
+    }
+
+    // 3. Fallback from reported path segments (e.g. standalone registered paths).
+    final currentPath = path.value;
+    if (currentPath.length > prefix.length &&
+        listEquals(currentPath.take(prefix.length).toList(), prefix)) {
+      LayoutSelectionNode buildChain(int index) {
+        final segmentPath = List<String>.unmodifiable(
+          currentPath.sublist(0, index + 1),
+        );
+        return LayoutSelectionNode(
+          label: currentPath[index],
+          path: segmentPath,
+          onSelect: () => select(segmentPath),
+          children: index + 1 < currentPath.length
+              ? [buildChain(index + 1)]
+              : const [],
+        );
+      }
+
+      return [buildChain(prefix.length)];
+    }
+
+    return const [];
   }
 
   /// Clears descendants by identity, including inactive layouts with saved

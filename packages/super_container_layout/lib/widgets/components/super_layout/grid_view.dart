@@ -47,6 +47,37 @@ extension _SuperLayoutGrid on SuperLayoutState {
         }
         LayoutSelection.report(this, const []);
       },
+      treeBuilder: () {
+        final layoutPath = [...parentPath, name];
+        final currentSlots = [
+          for (final id in _config.value.placedSlotIds)
+            if (searchSlot(id) case final slot? when slot.visible) slot,
+        ];
+        return [
+          for (final slot in currentSlots)
+            () {
+              final slotPath = [...layoutPath, slot.label];
+              void selectThisSlot() {
+                _selected.value = null;
+                _selectedSlot.value = slot.id;
+                _LayoutEditSelection.activate(this);
+              }
+
+              return LayoutSelectionNode(
+                label: slot.label,
+                path: slotPath,
+                icon: slot.menuIcon,
+                onSelect: selectThisSlot,
+                children: LayoutSelection.childrenFromContext(
+                  _slotFocusKeys[slot.id]?.currentContext,
+                  slotPath,
+                  selectThisSlot,
+                  ignoreOwner: this,
+                ),
+              );
+            }(),
+        ];
+      },
     );
     _reportPath(
       editing

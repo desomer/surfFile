@@ -1323,4 +1323,135 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'clicking a path chevron opens the complete children tree dialog near the chevron and selects any descendant',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(
+        tester,
+        mode,
+        Stack(
+          children: [
+            Positioned.fill(
+              child: SuperLayout(
+                name: 'Main',
+                config: config.copyWith(
+                  placements: {
+                    SuperLayoutZone.center: ['card-slot'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'card-slot',
+                    label: 'Ma Carte',
+                    builder: (_) => EditableSurface(
+                      id: 'card-slot',
+                      label: 'Ma Carte',
+                      child: Align(
+                        alignment: Alignment.bottomRight,
+                        child: SizedBox(
+                          width: 120,
+                          height: 48,
+                          child: EditorSlot(
+                            label: 'Mon Bouton',
+                            onEdit: () async {},
+                            child: const Center(child: Text('Action')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Positioned.fill(child: StyleEditBanner()),
+          ],
+        ),
+      );
+
+      // Select 'Main > Centre' with a single click.
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre']);
+
+      // Click chevron 0 (between 'Main' and 'Centre') to open the full children tree of 'Main'.
+      final chevron0 = find.byKey(const ValueKey('style-edit-banner-chevron-0'));
+      expect(chevron0, findsOneWidget);
+      final chevronRect = tester.getRect(chevron0);
+      await tester.tap(chevron0);
+      await tester.pumpAndSettle();
+
+      final dialog = find.byKey(const ValueKey('style-edit-banner-tree-dialog'));
+      expect(dialog, findsOneWidget);
+      final dialogRect = tester.getRect(dialog);
+      // Positioned right below and aligned with the clicked chevron.
+      expect(dialogRect.top, closeTo(chevronRect.bottom + 6, 2));
+      expect(dialogRect.left, closeTo(chevronRect.left, 2));
+
+      // Complete tree of 'Main' is displayed: zones, Card slot, and inner button.
+      final nordNode = find.byKey(
+        const ValueKey('style-edit-banner-tree-node-Main/Nord'),
+      );
+      final centreNode = find.byKey(
+        const ValueKey('style-edit-banner-tree-node-Main/Centre'),
+      );
+      final cardNode = find.byKey(
+        const ValueKey('style-edit-banner-tree-node-Main/Centre/Ma Carte'),
+      );
+      final buttonNode = find.byKey(
+        const ValueKey(
+          'style-edit-banner-tree-node-Main/Centre/Ma Carte/Mon Bouton',
+        ),
+      );
+      expect(nordNode, findsOneWidget);
+      expect(centreNode, findsOneWidget);
+      expect(cardNode, findsOneWidget);
+      expect(buttonNode, findsOneWidget);
+
+      // Select the deepest descendant ('Mon Bouton') directly from the tree dialog.
+      await tester.tap(buttonNode);
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
+      expect(LayoutSelection.path.value, [
+        'Main',
+        'Centre',
+        'Ma Carte',
+        'Mon Bouton',
+      ]);
+
+      // Click chevron 2 (after 'Ma Carte') while 'Mon Bouton' is selected to open 'Ma Carte' subtree.
+      final chevron2 = find.byKey(const ValueKey('style-edit-banner-chevron-2'));
+      expect(chevron2, findsOneWidget);
+      await tester.tap(chevron2);
+      await tester.pumpAndSettle();
+      expect(dialog, findsOneWidget);
+      expect(buttonNode, findsOneWidget);
+      expect(cardNode, findsNothing);
+
+      // Click chevron 1 (after 'Centre') to open the subtree under 'Main > Centre'.
+      final chevron1 = find.byKey(const ValueKey('style-edit-banner-chevron-1'));
+      await tester.tap(chevron1);
+      await tester.pumpAndSettle();
+      expect(dialog, findsOneWidget);
+      expect(nordNode, findsNothing);
+      expect(cardNode, findsOneWidget);
+      expect(buttonNode, findsOneWidget);
+
+      // Select 'Ma Carte' from the subtree dialog.
+      await tester.tap(cardNode);
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
+      expect(LayoutSelection.path.value, ['Main', 'Centre', 'Ma Carte']);
+
+      // Selecting 'Nord' via chevron 0 switches zone.
+      await tester.tap(chevron0);
+      await tester.pumpAndSettle();
+      await tester.tap(nordNode);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Nord']);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

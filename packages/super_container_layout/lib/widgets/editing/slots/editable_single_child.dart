@@ -66,16 +66,14 @@ class EditableSingleChildState extends State<EditableSingleChild> {
   }
 
   String _resolveSlotLabel(SlotImplementation slot) {
-    if (slot.id == _providedId &&
-        !(slot is InstanceSlot && slot.overridden)) {
+    if (slot.id == _providedId && !(slot is InstanceSlot && slot.overridden)) {
       return _childEditorLabel() ?? slot.label;
     }
     return slot.label;
   }
 
   bool _isSlotSelectable(SlotImplementation slot) {
-    if (slot.id == _providedId &&
-        !(slot is InstanceSlot && slot.overridden)) {
+    if (slot.id == _providedId && !(slot is InstanceSlot && slot.overridden)) {
       return _childEditorLabel() != null;
     }
     return true;
@@ -156,6 +154,7 @@ class EditableSingleChildState extends State<EditableSingleChild> {
         showRegionInPath: false,
         resolveSlotLabel: _resolveSlotLabel,
         isSlotSelectable: _isSlotSelectable,
+        slotContextFor: (_) => _childKey.currentContext,
         config: config,
         onChanged: (value) => controller.value = value,
         registry: registry,

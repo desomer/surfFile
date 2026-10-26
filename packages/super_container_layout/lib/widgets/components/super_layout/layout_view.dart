@@ -91,6 +91,51 @@ extension _SuperLayoutView on SuperLayoutState {
               }
               LayoutSelection.report(this, const []);
             },
+            treeBuilder: () {
+              final currentConfig = _config.value;
+              final layoutPath = [...parentPath, name];
+              return [
+                for (final zone in currentConfig.visibleZones)
+                  () {
+                    final zLabel = widget.zoneLabel(zone);
+                    final zonePath = [...layoutPath, zLabel];
+                    final slots = _slotsOf(
+                      currentConfig,
+                      currentConfig.contentZone(zone),
+                    );
+                    return LayoutSelectionNode(
+                      label: zLabel,
+                      path: zonePath,
+                      icon: EditorSlot.zoneMenuIcon,
+                      onSelect: () => _selectZone(zone),
+                      children: [
+                        for (final slot in slots)
+                          () {
+                            final slotPath = [...zonePath, slot.label];
+                            void selectThisSlot() {
+                              _selectedSlot.value = slot.id;
+                              _selected.value = zone;
+                              _LayoutEditSelection.activate(this);
+                            }
+
+                            return LayoutSelectionNode(
+                              label: slot.label,
+                              path: slotPath,
+                              icon: slot.menuIcon,
+                              onSelect: selectThisSlot,
+                              children: LayoutSelection.childrenFromContext(
+                                _slotFocusKeys[slot.id]?.currentContext,
+                                slotPath,
+                                selectThisSlot,
+                                ignoreOwner: this,
+                              ),
+                            );
+                          }(),
+                      ],
+                    );
+                  }(),
+              ];
+            },
           );
           _reportPath(
             editMode
