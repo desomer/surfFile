@@ -237,7 +237,7 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                   minExtendedWidth: widget.minExtendedWidth,
                   groupAlignment: widget.groupAlignment,
                   labelType: effectiveLabelType,
-                  backgroundColor: widget.color,
+                  backgroundColor: widget.color ?? Colors.transparent,
                   elevation: widget.elevation,
                   destinations: railDestinations,
                   onDestinationSelected: (index) {

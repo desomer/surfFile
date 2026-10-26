@@ -10,7 +10,8 @@ import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
-Widget _menuContent(BuildContext context) => const ColoredBox(color: Colors.blue);
+Widget _menuContent(BuildContext context) =>
+    const ColoredBox(color: Colors.blue);
 
 void main() {
   const config = SuperLayoutConfig(
@@ -58,55 +59,65 @@ void main() {
     matching: find.byKey(ValueKey(key)),
   );
 
-  testWidgets('right click selects actual zones in nested layout menu entries', (
-    tester,
-  ) async {
-    final mode = ValueNotifier(true);
-    addTearDown(mode.dispose);
-    await pump(tester, mode, layout('parent', child: layout('child')));
-    await tester.tapAt(const Offset(600, 400));
-    await tester.pumpAndSettle();
-    LayoutSelection.select(['parent', 'Centre', 'child', 'Centre', 'child']);
-    await tester.pumpAndSettle();
-    final north = tester.getRect(inside('child', 'super-layout-north'));
-    await tester.tapAt(
-      Offset(north.left + 30, north.center.dy),
-      buttons: kSecondaryMouseButton,
-    );
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value,
-        ['parent', 'Centre', 'child', 'Nord']);
-    expect(tester.widget<Text>(
-      find.byKey(const ValueKey('style-menu-zone-Layout')).first,
-    ).data, 'Nord');
-    final selectedLayoutRow = find.byKey(const ValueKey('style-menu-Layout')).first;
-    final selectedZoneLabel = find.byKey(const ValueKey('style-menu-zone-Layout')).first;
-    expect(
-      tester.getCenter(selectedZoneLabel).dy,
-      greaterThan(tester.getCenter(selectedLayoutRow).dy),
-    );
-    final labels = find.byWidgetPredicate(
-      (widget) => widget is Text &&
-          widget.key == const ValueKey('style-menu-zone-Layout'),
-    );
-    expect(labels, findsNWidgets(2));
-    expect(tester.widgetList<Text>(labels).map((text) => text.data),
-        ['Nord', 'Centre']);
-    await tester.tapAt(const Offset(10, 590));
-    await tester.pumpAndSettle();
-    await tester.tapAt(const Offset(600, 20), buttons: kSecondaryMouseButton);
-    await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['parent', 'Nord']);
-    expect(tester.widget<Text>(labels).data, 'Nord');
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'right click selects actual zones in nested layout menu entries',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(tester, mode, layout('parent', child: layout('child')));
+      await tester.tapAt(const Offset(600, 400));
+      await tester.pumpAndSettle();
+      LayoutSelection.select(['parent', 'Centre', 'child', 'Centre', 'child']);
+      await tester.pumpAndSettle();
+      final north = tester.getRect(inside('child', 'super-layout-north'));
+      await tester.tapAt(
+        Offset(north.left + 30, north.center.dy),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['parent', 'Centre', 'child', 'Nord']);
+      final selectedZoneRow = find.byKey(const ValueKey('style-menu-Nord'));
+      final selectedLayoutRow = find
+          .byKey(const ValueKey('style-menu-Layout'))
+          .first;
+      final parentZoneRow = find.byKey(const ValueKey('style-menu-Centre'));
+      final parentLayoutRow = find
+          .byKey(const ValueKey('style-menu-Layout'))
+          .last;
+      expect(selectedZoneRow, findsOneWidget);
+      expect(parentZoneRow, findsOneWidget);
+      expect(
+        tester.getCenter(selectedZoneRow).dy,
+        lessThan(tester.getCenter(selectedLayoutRow).dy),
+      );
+      expect(
+        tester.getCenter(selectedLayoutRow).dy,
+        lessThan(tester.getCenter(parentZoneRow).dy),
+      );
+      expect(
+        tester.getCenter(parentZoneRow).dy,
+        lessThan(tester.getCenter(parentLayoutRow).dy),
+      );
+      await tester.tapAt(const Offset(10, 590));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(600, 20), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['parent', 'Nord']);
+      expect(find.byKey(const ValueKey('style-menu-Nord')), findsOneWidget);
+      expect(find.byKey(const ValueKey('style-menu-Centre')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('right click targets transformed zones with custom labels', (
     tester,
   ) async {
     final mode = ValueNotifier(true);
     addTearDown(mode.dispose);
-    await pump(tester, mode, EditorZoom(
+    await pump(
+      tester,
+      mode,
+      EditorZoom(
         child: Align(
           alignment: Alignment.topLeft,
           child: SizedBox(
@@ -116,15 +127,18 @@ void main() {
               label: 'Zoom menu',
               config: config.copyWith(autoSides: {}, northSize: 80),
               zoneLabels: const {SuperLayoutZone.north: 'En haut'},
-            slots: const [BuilderSlot(
+              slots: const [
+                BuilderSlot(
                   id: 'content',
                   label: 'Content',
                   builder: _menuContent,
-            )],
+                ),
+              ],
             ),
           ),
         ),
-    ));
+      ),
+    );
     await tester.tapAt(const Offset(300, 200));
     await tester.pumpAndSettle();
     Offset screenPoint(Finder finder, Offset local) {
@@ -132,23 +146,25 @@ void main() {
     }
 
     final north = find.byKey(const ValueKey('super-layout-north'));
-    await tester.tapAt(screenPoint(north, const Offset(30, 20)),
-        buttons: kSecondaryMouseButton);
+    await tester.tapAt(
+      screenPoint(north, const Offset(30, 20)),
+      buttons: kSecondaryMouseButton,
+    );
     await tester.pumpAndSettle();
     expect(LayoutSelection.path.value, ['Zoom menu', 'En haut']);
-    expect(tester.widget<Text>(
-      find.byKey(const ValueKey('style-menu-zone-Zoom menu')),
-    ).data, 'En haut');
+    expect(find.byKey(const ValueKey('style-menu-En haut')), findsOneWidget);
+    expect(find.byKey(const ValueKey('style-menu-Zoom menu')), findsOneWidget);
     await tester.tapAt(const Offset(790, 590));
     await tester.pumpAndSettle();
     final center = find.byKey(const ValueKey('super-layout-center'));
-    await tester.tapAt(screenPoint(center, const Offset(120, 25)),
-        buttons: kSecondaryMouseButton);
+    await tester.tapAt(
+      screenPoint(center, const Offset(120, 25)),
+      buttons: kSecondaryMouseButton,
+    );
     await tester.pumpAndSettle();
     expect(LayoutSelection.path.value, ['Zoom menu', 'Centre']);
-    expect(tester.widget<Text>(
-      find.byKey(const ValueKey('style-menu-zone-Zoom menu')),
-    ).data, 'Centre');
+    expect(find.byKey(const ValueKey('style-menu-Centre')), findsOneWidget);
+    expect(find.byKey(const ValueKey('style-menu-Zoom menu')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -166,7 +182,11 @@ void main() {
         await tester.tapAt(const Offset(600, 400));
         await tester.pumpAndSettle();
         LayoutSelection.select([
-          'parent', 'Centre', 'child', 'Centre', 'grandchild',
+          'parent',
+          'Centre',
+          'child',
+          'Centre',
+          'grandchild',
         ]);
         await tester.pumpAndSettle();
         await tester.tap(inside('grandchild', 'slot-label-select-content'));
@@ -190,13 +210,19 @@ void main() {
           await tester.tapAt(const Offset(600, 20));
         }
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value,
-            breadcrumb ? ['parent'] : ['parent', 'Nord']);
+        expect(
+          LayoutSelection.path.value,
+          breadcrumb ? ['parent'] : ['parent', 'Nord'],
+        );
         await tester.tapAt(const Offset(600, 80));
         await tester.pumpAndSettle();
         expect(inside('child', 'slot-resize-content-se'), findsNothing);
         LayoutSelection.select([
-          'parent', 'Centre', 'child', 'Centre', 'grandchild',
+          'parent',
+          'Centre',
+          'child',
+          'Centre',
+          'grandchild',
         ]);
         await tester.pumpAndSettle();
         expect(LayoutSelection.path.value, [
@@ -240,14 +266,22 @@ void main() {
     expect(cleared, [child, grandchild]);
   });
 
-  testWidgets('switching layouts by content click clears the previous zone and slot', (tester) async {
-    final mode = ValueNotifier(true);
-    addTearDown(mode.dispose);
-    await pump(tester, mode, Row(children: [
+  testWidgets(
+    'switching layouts by content click clears the previous zone and slot',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(
+        tester,
+        mode,
+        Row(
+          children: [
             Expanded(child: layout('first')),
             Expanded(child: layout('second')),
-    ]));
-    await tester.tapAt(const Offset(300, 350));
+          ],
+        ),
+      );
+      await tester.tapAt(const Offset(300, 350));
       await tester.pumpAndSettle();
       LayoutSelection.select(['first', 'Centre', 'first']);
       await tester.pumpAndSettle();
@@ -260,7 +294,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['first', 'Centre']);
       expect(inside('first', 'slot-resize-content-se'), findsNothing);
-    expect(inside('first', 'super-layout-zone-selected-center'), findsOneWidget);
+      expect(
+        inside('first', 'super-layout-zone-selected-center'),
+        findsOneWidget,
+      );
 
       LayoutSelection.select(['first', 'Centre']);
       await tester.pumpAndSettle();
@@ -277,7 +314,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['first', 'Centre', 'first']);
       expect(tester.takeException(), isNull);
-  });
+    },
+  );
 
   testWidgets(
     'clicking slot labels selects their banner path without changing layout',
@@ -449,29 +487,30 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byTooltip('Nord : Column - Passer en Row'), findsNWidgets(2));
-    await tester.tap(a, buttons: kSecondaryMouseButton);
-    await tester.pumpAndSettle();
-    final menuZone = find.byKey(const ValueKey('style-menu-zone-Super layout'));
-    expect(tester.widget<Text>(menuZone).data, 'Nord');
-    final menuRow = find.byKey(const ValueKey('style-menu-Super layout'));
-    final menuLabel = find.descendant(
-      of: menuRow,
-      matching: find.text('Super layout'),
+    await tester.tap(
+      find.byKey(const ValueKey('axis-content-n')),
+      buttons: kSecondaryMouseButton,
     );
-    final menuAxis = find.byKey(const ValueKey('style-menu-axis-Super layout'));
+    await tester.pumpAndSettle();
+    final menuZone = find.byKey(const ValueKey('style-menu-Nord'));
+    expect(menuZone, findsOneWidget);
+    final menuRow = find.byKey(const ValueKey('style-menu-Layout'));
+    final menuLabel = find.descendant(
+      of: menuZone,
+      matching: find.text('zone Nord'),
+    );
+    final menuAxis = find.byKey(const ValueKey('style-menu-axis-Nord'));
     expect(
-      tester.getCenter(menuZone).dy,
-      greaterThan(tester.getCenter(menuLabel).dy),
+      tester.getCenter(menuRow).dy,
+      greaterThan(tester.getCenter(menuZone).dy),
     );
     expect(
       tester.getRect(menuLabel).right,
       lessThan(tester.getRect(menuAxis).left),
     );
-    await tester.tap(
-      find.byKey(const ValueKey('style-menu-axis-Super layout')),
-    );
+    await tester.tap(find.byKey(const ValueKey('style-menu-axis-Nord')));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('style-menu-Super layout')), findsNothing);
+    expect(find.byKey(const ValueKey('style-menu-Layout')), findsNothing);
     expect(find.byType(SuperLayoutEditor), findsNothing);
     expect(
       key.currentState!.config.axisOf(SuperLayoutZone.north),
@@ -641,7 +680,11 @@ void main() {
       find.byKey(const ValueKey('style-menu-add-Nested container')),
       findsNothing,
     );
-    await tester.tap(find.byKey(const ValueKey('style-menu-add-Menu layout')));
+    expect(
+      find.byKey(const ValueKey('style-menu-add-Menu layout')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('style-menu-add-Centre')));
     await tester.pumpAndSettle();
     expect(find.text('Ajouter un slot dans Centre'), findsOneWidget);
     expect(find.byKey(const ValueKey('style-menu-Menu layout')), findsNothing);
@@ -669,7 +712,7 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('style-menu-add-Menu layout')));
+    await tester.tap(find.byKey(const ValueKey('style-menu-add-Nord')));
     await tester.pumpAndSettle();
     expect(find.text('Ajouter un slot dans Nord'), findsOneWidget);
     await tester.tap(
@@ -683,6 +726,13 @@ void main() {
     expect(changes.last.placementsOf(SuperLayoutZone.center), ['content']);
 
     await openMenu();
+    await tester.tap(find.byKey(const ValueKey('style-menu-Centre')));
+    await tester.pumpAndSettle();
+    expect(find.text('Flux de la zone : Centre'), findsOneWidget);
+    await tester.tap(find.text('Annuler'));
+    await tester.pumpAndSettle();
+
+    await openMenu();
     await tester.tap(find.text('Menu layout'));
     await tester.pumpAndSettle();
     expect(find.byType(SuperLayoutEditor), findsOneWidget);
@@ -691,10 +741,7 @@ void main() {
     mode.value = false;
     await tester.pumpAndSettle();
     await openMenu();
-    expect(
-      find.byKey(const ValueKey('style-menu-add-Menu layout')),
-      findsNothing,
-    );
+    expect(find.byKey(const ValueKey('style-menu-add-Centre')), findsNothing);
     expect(find.byKey(const ValueKey('style-menu-Menu layout')), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -794,6 +841,7 @@ void main() {
       await tester.tap(finder);
       await tester.pumpAndSettle();
     }
+
     Future<void> selectChild() async {
       LayoutSelection.select(['parent', 'Centre', 'child', 'Nord']);
       await tester.pumpAndSettle();
@@ -1004,14 +1052,157 @@ void main() {
       expect(inside('layout', 'super-layout-add-north'), findsOneWidget);
       expect(LayoutSelection.path.value, ['layout', 'Centre']);
       expect(
-        find.byKey(const ValueKey('style-menu-add-Super layout')),
+        find.byKey(const ValueKey('style-menu-add-Centre')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('style-menu-Layout')), findsOneWidget);
       await tester.tapAt(const Offset(10, 590));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('layout-content')));
       await tester.pumpAndSettle();
       expect(find.byIcon(Icons.add), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'dedicated zone context menu entry separates zone actions from layout config',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(tester, mode, layout('layout'));
+      await tester.tapAt(const Offset(300, 350));
+      await tester.pumpAndSettle();
+
+      // Right-click on the zone name badge opens the menu with the dedicated zone entry.
+      await tester.tap(
+        find.byKey(const ValueKey('super-layout-name-center')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final zoneRow = find.byKey(const ValueKey('style-menu-Centre'));
+      final layoutRow = find.byKey(const ValueKey('style-menu-Layout'));
+      expect(zoneRow, findsOneWidget);
+      expect(layoutRow, findsOneWidget);
+      final zoneTitle = find.descendant(
+        of: zoneRow,
+        matching: find.text('zone Centre'),
+      );
+      final zoneSubtitle = find.byKey(const ValueKey('style-menu-zone-Centre'));
+      final layoutSubtitle = find.byKey(
+        const ValueKey('style-menu-zone-Layout'),
+      );
+      expect(zoneTitle, findsOneWidget);
+      expect(zoneSubtitle, findsOneWidget);
+      expect(tester.widget<Text>(zoneSubtitle).data, 'Layout');
+      expect(layoutSubtitle, findsOneWidget);
+      expect(tester.widget<Text>(layoutSubtitle).data, 'Zones');
+      expect(
+        find.descendant(
+          of: zoneRow,
+          matching: find.byIcon(EditorSlot.zoneMenuIcon),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getCenter(zoneSubtitle).dy,
+        greaterThan(tester.getCenter(zoneTitle).dy),
+      );
+      expect(
+        tester.getCenter(zoneRow).dy,
+        lessThan(tester.getCenter(layoutRow).dy),
+      );
+
+      // Zone actions are exclusively on the zone row, with the ruler icon.
+      expect(
+        find.byKey(const ValueKey('style-menu-axis-Centre')),
+        findsOneWidget,
+      );
+      final zoneRuler = find.byKey(
+        const ValueKey('style-menu-zone-flow-Centre'),
+      );
+      expect(zoneRuler, findsOneWidget);
+      expect(
+        find.descendant(of: zoneRuler, matching: find.byIcon(Icons.straighten)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-add-Centre')),
+        findsOneWidget,
+      );
+
+      // Layout row does not duplicate zone actions.
+      expect(
+        find.byKey(const ValueKey('style-menu-axis-Layout')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-zone-flow-Layout')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('style-menu-add-Layout')), findsNothing);
+
+      // Clicking the zone row opens the zone flow editor (no side size card for center).
+      await tester.tap(
+        find.descendant(of: zoneRow, matching: find.text('zone Centre')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Flux de la zone : Centre'), findsOneWidget);
+      expect(find.text('Taille de la zone'), findsNothing);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      // Right-click on the North side zone and click the ruler icon to edit side size.
+      await tester.tapAt(const Offset(300, 20), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-zone-flow-Nord')));
+      await tester.pumpAndSettle();
+      expect(find.text('Flux de la zone : Nord'), findsOneWidget);
+      expect(find.text('Taille de la zone'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('zone-flow-dialog-north-auto-size')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zone-flow-dialog-north-resizable')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('zone-flow-dialog-north-auto-size')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('zone-flow-dialog-north-size')),
+        findsWidgets,
+      );
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      // Clicking the layout row opens the simplified SuperLayoutEditor.
+      await tester.tapAt(
+        const Offset(300, 350),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(of: layoutRow, matching: find.text('Layout')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SuperLayoutEditor), findsOneWidget);
+      expect(find.text('Axe et flux d’affichage des zones'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('super-layout-corner-nw')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('super-layout-side-west')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-layout-corner-nw')),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
     },
   );
 }

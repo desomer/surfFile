@@ -159,7 +159,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.tap(find.text('Contenu'), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
+    await tester.tap(find.byKey(const ValueKey('style-menu-Layout')));
     await tester.pumpAndSettle();
   }
 

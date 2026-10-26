@@ -1966,28 +1966,29 @@ void main() {
 
         expect(current.flowOf(SuperLayoutZone.center).scrollable, isTrue);
 
-        // Also edit zone flow parameters inside SuperLayoutEditor.
+        // Also edit zone flow parameters from the zone context menu ruler action.
         await tester.tapAt(
           const Offset(300, 200),
           buttons: kSecondaryMouseButton,
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('style-menu-Layout')));
+        final rulerButton = find.byKey(
+          const ValueKey('style-menu-zone-flow-Centre'),
+        );
+        expect(
+          find.descendant(
+            of: rulerButton,
+            matching: find.byIcon(Icons.straighten),
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(rulerButton);
         await tester.pumpAndSettle();
 
-        final toggleCenter = find.byKey(
-          const ValueKey('super-layout-zone-flow-toggle-center'),
-        );
-        await tester.ensureVisible(toggleCenter);
-        await tester.pumpAndSettle();
-        await tester.tap(toggleCenter);
-        await tester.pumpAndSettle();
         final mainAlignDropdown = find.byKey(
-          const ValueKey('super-layout-flow-center-main-alignment'),
+          const ValueKey('zone-flow-dialog-center-main-alignment'),
         );
         await tester.ensureVisible(mainAlignDropdown);
-        await tester.pumpAndSettle();
-        await tester.tap(mainAlignDropdown);
         await tester.pumpAndSettle();
         await tester.tap(find.text('Espace entre').last);
         await tester.pumpAndSettle();

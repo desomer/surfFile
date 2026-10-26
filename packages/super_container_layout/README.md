@@ -466,7 +466,7 @@ texte, barre d'application, navigation inferieure, conteneur, liste et dispositi
 ### Envelopper un composant
 
 En mode edition, les trois points verticaux en fin de ligne du menu contextuel
-ouvrent **Envelopper dans…**, avec **Card**, **Layout** et **IterableContent**.
+ouvrent **Envelopper dans…**, avec **Card**, **Layout**.
 Ces choix utilisent les factories de meme nom installees par
 `Registry.bootstrap()` ; seuls les parents compatibles avec les tags de la zone
 sont proposes.

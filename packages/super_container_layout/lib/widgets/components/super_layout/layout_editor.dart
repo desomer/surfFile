@@ -27,14 +27,6 @@ class SuperLayoutEditor extends StatefulWidget {
     SuperLayoutZone.se,
   ];
 
-  static double _size(SuperLayoutConfig config, SuperLayoutZone side) =>
-      switch (side) {
-        SuperLayoutZone.north => config.northSize,
-        SuperLayoutZone.south => config.southSize,
-        SuperLayoutZone.west => config.westSize,
-        _ => config.eastSize,
-      };
-
   /// Voisins d'un coin : (zone de sa ligne, zone de sa colonne).
   static (SuperLayoutZone, SuperLayoutZone) _neighbors(
     SuperLayoutZone corner,
@@ -50,16 +42,11 @@ class SuperLayoutEditor extends StatefulWidget {
 }
 
 class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
-  final _expandedFlowZones = <SuperLayoutZone>{};
-
   SuperLayoutConfig get config => widget.config;
   ValueChanged<SuperLayoutConfig> get onChanged => widget.onChanged;
 
   String _zoneLabel(SuperLayoutZone zone) =>
       widget.zoneLabels[zone] ?? zone.label;
-
-  SuperLayoutConfig _withSize(SuperLayoutZone side, double value) =>
-      config.withSize(side, value);
 
   String _mergeLabel(SuperLayoutZone corner, CornerMerge merge) {
     final (row, column) = SuperLayoutEditor._neighbors(corner);
@@ -79,6 +66,10 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
       westSize: 70,
       eastSize: 70,
     );
+    final activeCorners = [
+      for (final corner in SuperLayoutEditor._corners)
+        if (config.cornerExists(corner)) corner,
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -134,6 +125,26 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
             ),
           ),
           const SizedBox(height: 8),
+          for (final pair in const [
+            (SuperLayoutZone.north, SuperLayoutZone.south),
+            (SuperLayoutZone.west, SuperLayoutZone.east),
+          ])
+            Row(
+              children: [
+                for (final side in [pair.$1, pair.$2])
+                  Expanded(
+                    child: SwitchListTile(
+                      key: ValueKey('super-layout-side-${side.name}'),
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      title: Text(_zoneLabel(side)),
+                      value: config.hasSide(side),
+                      onChanged: (v) => onChanged(config.withSide(side, v)),
+                    ),
+                  ),
+              ],
+            ),
           SwitchListTile(
             key: const ValueKey('super-layout-resize-sides'),
             dense: true,
@@ -148,142 +159,25 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
               config.copyWith(resizeSides: value, sideResizing: {}),
             ),
           ),
-          for (final side in SuperLayoutEditor._sides) ...[
-            SwitchListTile(
-              key: ValueKey('super-layout-side-${side.name}'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(_zoneLabel(side)),
-              value: config.hasSide(side),
-              onChanged: (v) => onChanged(config.withSide(side, v)),
-            ),
-            if (config.hasSide(side))
-              SwitchListTile(
-                key: ValueKey('super-layout-resize-side-${side.name}'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: Text('Redimensionner ${_zoneLabel(side)} par glisser'),
-                value: config.canResize(side),
-                onChanged: (value) =>
-                    onChanged(config.withSideResizing(side, value)),
-              ),
-            if (config.hasSide(side))
-              SwitchListTile(
-                key: ValueKey('super-layout-auto-${side.name}'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Taille automatique'),
-                value: config.isAuto(side),
-                onChanged: (v) => onChanged(config.withAuto(side, v)),
-              ),
-            if (config.hasSide(side) && !config.isAuto(side))
-              EditorHistorySlider(
-                key: ValueKey('super-layout-size-${side.name}'),
-                min: SuperLayoutConfig.minSize,
-                max: SuperLayoutConfig.maxSize,
-                value: SuperLayoutEditor._size(
-                  config,
-                  side,
-                ).clamp(SuperLayoutConfig.minSize, SuperLayoutConfig.maxSize),
-                label: '${SuperLayoutEditor._size(config, side).round()}',
-                onChanged: (v) => onChanged(_withSize(side, v)),
-              ),
-          ],
-          const Divider(),
-          for (final corner in SuperLayoutEditor._corners)
-            Row(
-              children: [
-                Expanded(child: Text(_zoneLabel(corner))),
-                DropdownButton<CornerMerge>(
-                  key: ValueKey('super-layout-corner-${corner.name}'),
-                  value: config.mergeOf(corner),
-                  onChanged: config.cornerExists(corner)
-                      ? (v) => onChanged(config.withCorner(corner, v!))
-                      : null,
-                  items: [
-                    for (final merge in CornerMerge.values)
-                      DropdownMenuItem(
-                        value: merge,
-                        child: Text(_mergeLabel(corner, merge)),
-                      ),
-                  ],
-                ),
-              ],
-            ),
-          const Divider(),
-          const Text('Axe et flux d’affichage des zones'),
-          for (final zone in SuperLayoutZone.values) ...[
-            Row(
-              children: [
-                Expanded(child: Text(_zoneLabel(zone))),
-                IconButton(
-                  key: ValueKey('super-layout-zone-flow-toggle-${zone.name}'),
-                  tooltip: 'Paramètres de flux (${_zoneLabel(zone)})',
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    _expandedFlowZones.contains(zone)
-                        ? Icons.expand_less
-                        : Icons.tune_outlined,
-                    size: 18,
-                    color: !config.flowOf(zone).isDefault
-                        ? colors.primary
-                        : null,
+          if (activeCorners.isNotEmpty) ...[
+            const Divider(),
+            for (final corner in activeCorners)
+              Row(
+                children: [
+                  Expanded(child: Text(_zoneLabel(corner))),
+                  DropdownButton<CornerMerge>(
+                    key: ValueKey('super-layout-corner-${corner.name}'),
+                    value: config.mergeOf(corner),
+                    onChanged: (v) => onChanged(config.withCorner(corner, v!)),
+                    items: [
+                      for (final merge in CornerMerge.values)
+                        DropdownMenuItem(
+                          value: merge,
+                          child: Text(_mergeLabel(corner, merge)),
+                        ),
+                    ],
                   ),
-                  onPressed: config.visibleZones.contains(zone)
-                      ? () => setState(() {
-                          if (!_expandedFlowZones.remove(zone)) {
-                            _expandedFlowZones.add(zone);
-                          }
-                        })
-                      : null,
-                ),
-                DropdownButton<Axis>(
-                  key: ValueKey('super-layout-axis-${zone.name}'),
-                  value: config.axisOf(zone),
-                  onChanged: config.visibleZones.contains(zone)
-                      ? (axis) {
-                          if (axis != null) {
-                            onChanged(config.withAxis(zone, axis));
-                          }
-                        }
-                      : null,
-                  items: const [
-                    DropdownMenuItem(
-                      value: Axis.horizontal,
-                      child: Text('Row'),
-                    ),
-                    DropdownMenuItem(
-                      value: Axis.vertical,
-                      child: Text('Column'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            if (_expandedFlowZones.contains(zone) &&
-                config.visibleZones.contains(zone))
-              Padding(
-                padding: const EdgeInsets.only(left: 12, bottom: 8),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border(
-                      left: BorderSide(color: colors.outlineVariant, width: 2),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 12),
-                    child: ZoneFlowSettingsEditor(
-                      keyPrefix: 'super-layout-flow-${zone.name}',
-                      axis: config.axisOf(zone),
-                      flow: config.flowOf(zone),
-                      showAxis: false,
-                      onAxisChanged: (axis) =>
-                          onChanged(config.withAxis(zone, axis)),
-                      onFlowChanged: (flow) =>
-                          onChanged(config.withZoneFlow(zone, flow)),
-                    ),
-                  ),
-                ),
+                ],
               ),
           ],
         ],
@@ -379,8 +273,8 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
   }
 }
 
-/// Éditeur des paramètres de flux d'une zone (direction, scroll, alignements,
-/// espacement entre éléments et marge intérieure).
+/// Éditeur des paramètres d'une zone (taille pour un côté, direction, scroll,
+/// alignements, espacement entre éléments et marge intérieure).
 class ZoneFlowSettingsEditor extends StatelessWidget {
   const ZoneFlowSettingsEditor({
     required this.keyPrefix,
@@ -389,6 +283,13 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
     required this.onAxisChanged,
     required this.onFlowChanged,
     this.showAxis = true,
+    this.isSide = false,
+    this.autoSize = true,
+    this.size = 100,
+    this.canResize = false,
+    this.onAutoSizeChanged,
+    this.onSizeChanged,
+    this.onResizeChanged,
     super.key,
   });
 
@@ -398,6 +299,13 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
   final ValueChanged<Axis> onAxisChanged;
   final ValueChanged<ZoneFlowConfig> onFlowChanged;
   final bool showAxis;
+  final bool isSide;
+  final bool autoSize;
+  final double size;
+  final bool canResize;
+  final ValueChanged<bool>? onAutoSizeChanged;
+  final ValueChanged<double>? onSizeChanged;
+  final ValueChanged<bool>? onResizeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -407,6 +315,93 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (isSide)
+          _FlowSectionCard(
+            title: 'Taille de la zone',
+            icon: Icons.straighten,
+            subtitle: 'Dimensions et redimensionnement de ce côté',
+            children: [
+              SwitchListTile(
+                key: ValueKey('$keyPrefix-auto-size'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Taille automatique',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                subtitle: const Text(
+                  'S’adapte à la taille naturelle de son contenu.',
+                  style: TextStyle(fontSize: 11),
+                ),
+                value: autoSize,
+                onChanged: onAutoSizeChanged,
+              ),
+              if (!autoSize)
+                if (onSizeChanged case final changeSize?) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Taille fixe',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.secondaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${size.round()} px',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: colors.onSecondaryContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  EditorHistorySlider(
+                    key: ValueKey('$keyPrefix-size'),
+                    min: SuperLayoutConfig.minSize,
+                    max: SuperLayoutConfig.maxSize,
+                    value: size.clamp(
+                      SuperLayoutConfig.minSize,
+                      SuperLayoutConfig.maxSize,
+                    ),
+                    label: '${size.round()}',
+                    onChanged: changeSize,
+                  ),
+                ],
+              Divider(
+                height: 12,
+                color: colors.outlineVariant.withValues(alpha: 0.4),
+              ),
+              SwitchListTile(
+                key: ValueKey('$keyPrefix-resizable'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text(
+                  'Redimensionner par glisser',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                subtitle: const Text(
+                  'Poignée sur le bord intérieur de la zone.',
+                  style: TextStyle(fontSize: 11),
+                ),
+                value: canResize,
+                onChanged: onResizeChanged,
+              ),
+            ],
+          ),
         if (showAxis)
           _FlowSectionCard(
             title: 'Direction du flux',
@@ -596,157 +591,140 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
 
   SizedBox getSegmentedCrossAlign() {
     return SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<CrossAxisAlignment>(
-              key: ValueKey('$keyPrefix-cross-alignment'),
-              showSelectedIcon: false,
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                padding: WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(horizontal: 4),
-                ),
-              ),
-              segments: const [
-                ButtonSegment(
-                  value: CrossAxisAlignment.start,
-                  label: Text('Début', style: TextStyle(fontSize: 12)),
-                  tooltip: 'Début (Start)',
-                ),
-                ButtonSegment(
-                  value: CrossAxisAlignment.center,
-                  label: Text('Centre', style: TextStyle(fontSize: 12)),
-                  tooltip: 'Centre (Center)',
-                ),
-                ButtonSegment(
-                  value: CrossAxisAlignment.end,
-                  label: Text('Fin', style: TextStyle(fontSize: 12)),
-                  tooltip: 'Fin (End)',
-                ),
-                ButtonSegment(
-                  value: CrossAxisAlignment.stretch,
-                  label: Text('Étirer', style: TextStyle(fontSize: 12)),
-                  tooltip: 'Étirer (Stretch)',
-                ),
-              ],
-              selected: {flow.crossAxisAlignment},
-              onSelectionChanged: (selected) {
-                if (selected.isNotEmpty) {
-                  onFlowChanged(
-                    flow.copyWith(crossAxisAlignment: selected.first),
-                  );
-                }
-              },
-            ),
-          );
+      width: double.infinity,
+      child: SegmentedButton<CrossAxisAlignment>(
+        key: ValueKey('$keyPrefix-cross-alignment'),
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: CrossAxisAlignment.start,
+            label: Text('Début', style: TextStyle(fontSize: 12)),
+            tooltip: 'Début (Start)',
+          ),
+          ButtonSegment(
+            value: CrossAxisAlignment.center,
+            label: Text('Centre', style: TextStyle(fontSize: 12)),
+            tooltip: 'Centre (Center)',
+          ),
+          ButtonSegment(
+            value: CrossAxisAlignment.end,
+            label: Text('Fin', style: TextStyle(fontSize: 12)),
+            tooltip: 'Fin (End)',
+          ),
+          ButtonSegment(
+            value: CrossAxisAlignment.stretch,
+            label: Text('Étirer', style: TextStyle(fontSize: 12)),
+            tooltip: 'Étirer (Stretch)',
+          ),
+        ],
+        selected: {flow.crossAxisAlignment},
+        onSelectionChanged: (selected) {
+          if (selected.isNotEmpty) {
+            onFlowChanged(flow.copyWith(crossAxisAlignment: selected.first));
+          }
+        },
+      ),
+    );
   }
 
   Container getSegmentedMainAlign() {
     return Container(
-            key: ValueKey('$keyPrefix-main-alignment'),
-            color: Colors.transparent,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SegmentedButton<MainAxisAlignment>(
-                  showSelectedIcon: false,
-                  emptySelectionAllowed: true,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: WidgetStatePropertyAll(
-                      EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: MainAxisAlignment.start,
-                      label: Text('Début', style: TextStyle(fontSize: 11)),
-                      tooltip: 'Début (Start)',
-                    ),
-                    ButtonSegment(
-                      value: MainAxisAlignment.center,
-                      label: Text('Centre', style: TextStyle(fontSize: 11)),
-                      tooltip: 'Centre (Center)',
-                    ),
-                    ButtonSegment(
-                      value: MainAxisAlignment.end,
-                      label: Text('Fin', style: TextStyle(fontSize: 11)),
-                      tooltip: 'Fin (End)',
-                    ),
-                  ],
-                  selected: {
-                    if (const [
-                      MainAxisAlignment.start,
-                      MainAxisAlignment.center,
-                      MainAxisAlignment.end,
-                    ].contains(flow.mainAxisAlignment))
-                      flow.mainAxisAlignment,
-                  },
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      onFlowChanged(
-                        flow.copyWith(mainAxisAlignment: selected.first),
-                      );
-                    }
-                  },
-                ),
-                const SizedBox(height: 6),
-                SegmentedButton<MainAxisAlignment>(
-                  showSelectedIcon: false,
-                  emptySelectionAllowed: true,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: WidgetStatePropertyAll(
-                      EdgeInsets.symmetric(horizontal: 4),
-                    ),
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: MainAxisAlignment.spaceBetween,
-                      label: Text(
-                        'Espace entre',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      tooltip: 'Espace entre (Space Between)',
-                    ),
-                    ButtonSegment(
-                      value: MainAxisAlignment.spaceAround,
-                      label: Text(
-                        'Espace autour',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      tooltip: 'Espace autour (Space Around)',
-                    ),
-                    ButtonSegment(
-                      value: MainAxisAlignment.spaceEvenly,
-                      label: Text(
-                        'Espace uniforme',
-                        style: TextStyle(fontSize: 11),
-                      ),
-                      tooltip: 'Espace uniforme (Space Evenly)',
-                    ),
-                  ],
-                  selected: {
-                    if (const [
-                      MainAxisAlignment.spaceBetween,
-                      MainAxisAlignment.spaceAround,
-                      MainAxisAlignment.spaceEvenly,
-                    ].contains(flow.mainAxisAlignment))
-                      flow.mainAxisAlignment,
-                  },
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      onFlowChanged(
-                        flow.copyWith(mainAxisAlignment: selected.first),
-                      );
-                    }
-                  },
-                ),
-              ],
+      key: ValueKey('$keyPrefix-main-alignment'),
+      color: Colors.transparent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SegmentedButton<MainAxisAlignment>(
+            showSelectedIcon: false,
+            emptySelectionAllowed: true,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 4),
+              ),
             ),
-          );
+            segments: const [
+              ButtonSegment(
+                value: MainAxisAlignment.start,
+                label: Text('Début', style: TextStyle(fontSize: 11)),
+                tooltip: 'Début (Start)',
+              ),
+              ButtonSegment(
+                value: MainAxisAlignment.center,
+                label: Text('Centre', style: TextStyle(fontSize: 11)),
+                tooltip: 'Centre (Center)',
+              ),
+              ButtonSegment(
+                value: MainAxisAlignment.end,
+                label: Text('Fin', style: TextStyle(fontSize: 11)),
+                tooltip: 'Fin (End)',
+              ),
+            ],
+            selected: {
+              if (const [
+                MainAxisAlignment.start,
+                MainAxisAlignment.center,
+                MainAxisAlignment.end,
+              ].contains(flow.mainAxisAlignment))
+                flow.mainAxisAlignment,
+            },
+            onSelectionChanged: (selected) {
+              if (selected.isNotEmpty) {
+                onFlowChanged(flow.copyWith(mainAxisAlignment: selected.first));
+              }
+            },
+          ),
+          const SizedBox(height: 6),
+          SegmentedButton<MainAxisAlignment>(
+            showSelectedIcon: false,
+            emptySelectionAllowed: true,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 4),
+              ),
+            ),
+            segments: const [
+              ButtonSegment(
+                value: MainAxisAlignment.spaceBetween,
+                label: Text('Espace entre', style: TextStyle(fontSize: 11)),
+                tooltip: 'Espace entre (Space Between)',
+              ),
+              ButtonSegment(
+                value: MainAxisAlignment.spaceAround,
+                label: Text('Espace autour', style: TextStyle(fontSize: 11)),
+                tooltip: 'Espace autour (Space Around)',
+              ),
+              ButtonSegment(
+                value: MainAxisAlignment.spaceEvenly,
+                label: Text('Espace uniforme', style: TextStyle(fontSize: 11)),
+                tooltip: 'Espace uniforme (Space Evenly)',
+              ),
+            ],
+            selected: {
+              if (const [
+                MainAxisAlignment.spaceBetween,
+                MainAxisAlignment.spaceAround,
+                MainAxisAlignment.spaceEvenly,
+              ].contains(flow.mainAxisAlignment))
+                flow.mainAxisAlignment,
+            },
+            onSelectionChanged: (selected) {
+              if (selected.isNotEmpty) {
+                onFlowChanged(flow.copyWith(mainAxisAlignment: selected.first));
+              }
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 

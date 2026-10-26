@@ -60,6 +60,8 @@ EditorComponentLabel? editorComponentLabelOf(BuildContext context) {
 
 /// An editor interaction target that can wrap any widget.
 class EditorSlot extends StatefulWidget {
+  static const IconData zoneMenuIcon = Icons.view_quilt_outlined;
+
   const EditorSlot({
     this.id,
     this.child,
@@ -900,8 +902,8 @@ class EditorSlotState extends State<EditorSlot> {
                                 'style-menu-zone-flow-${state.label}',
                               ),
                               tooltip:
-                                  'Flux de la zone ${state.widget.axisAction!().zoneLabel}',
-                              icon: const Icon(Icons.tune_rounded),
+                                  'Taille et flux de la zone ${state.widget.axisAction!().zoneLabel}',
+                              icon: const Icon(Icons.straighten),
                               style: _menuIconButtonStyle(context),
                               onPressed: () =>
                                   Navigator.of(context)

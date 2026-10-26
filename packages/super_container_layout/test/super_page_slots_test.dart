@@ -64,76 +64,110 @@ void main() {
     (ScaffoldPageRegion.appBar, 'AppBar'),
     (ScaffoldPageRegion.bottomNavigationBar, 'BottomNavigationBar'),
   ]) {
-    testWidgets('${region.name} catalog accepts only its category',
-        (tester) async {
+    testWidgets('${region.name} catalog accepts only its category', (
+      tester,
+    ) async {
       final registry = Registry()..bootstrap();
-      await pumpPage(tester, SuperPage(
-        appBar: AppBar(title: const Text('Provided header')),
-        bottomNavigationBar: const SizedBox(height: 40),
-      ), registry: registry);
+      await pumpPage(
+        tester,
+        SuperPage(
+          appBar: AppBar(title: const Text('Provided header')),
+          bottomNavigationBar: const SizedBox(height: 40),
+        ),
+        registry: registry,
+      );
       final editor = tester.state<NativeComponentEditorState>(
-          find.byType(NativeComponentEditor));
+        find.byType(NativeComponentEditor),
+      );
       unawaited(editor.add(region.name));
       await tester.pumpAndSettle();
-      expect(find.byKey(ValueKey('scaffold-page-add-slot-factory:$factory')),
-          findsOneWidget);
-      expect(find.byKey(ValueKey(
-          'scaffold-page-add-slot-scaffold:${region.name}')), findsOneWidget);
-      expect(find.byKey(const ValueKey('scaffold-page-add-slot-scaffold:body')),
-          findsNothing);
-      expect(find.byKey(const ValueKey('scaffold-page-add-slot-factory:Layout')),
-          findsNothing);
+      expect(
+        find.byKey(ValueKey('scaffold-page-add-slot-factory:$factory')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey('scaffold-page-add-slot-scaffold:${region.name}')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-slot-scaffold:body')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('scaffold-page-add-slot-factory:Layout')),
+        findsNothing,
+      );
       final other = region == ScaffoldPageRegion.appBar
-          ? 'BottomNavigationBar' : 'AppBar';
-      expect(find.byKey(ValueKey('scaffold-page-add-slot-factory:$other')),
-          findsNothing);
+          ? 'BottomNavigationBar'
+          : 'AppBar';
+      expect(
+        find.byKey(ValueKey('scaffold-page-add-slot-factory:$other')),
+        findsNothing,
+      );
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('layout registry catalog and instances retain their tags',
-      (tester) async {
+  testWidgets('layout registry catalog and instances retain their tags', (
+    tester,
+  ) async {
     final registry = Registry()..bootstrap();
-    registry.registerComponent('tagged', const RegisteredComponent(
-      label: 'Tagged',
-      slotId: 'legacy-tagged',
-      tags: {'appBar', 'text'},
-      builder: _title,
-    ));
-    await pumpPage(tester, const SuperPage(
-      child: SuperLayout(
-        config: SuperLayoutConfig(
-          slotTypes: {
-            'factory-instance': 'registry:AppBar',
-            'registered-instance': 'legacy-tagged',
+    registry.registerComponent(
+      'tagged',
+      const RegisteredComponent(
+        label: 'Tagged',
+        slotId: 'legacy-tagged',
+        tags: {'appBar', 'text'},
+        builder: _title,
+      ),
+    );
+    await pumpPage(
+      tester,
+      const SuperPage(
+        child: SuperLayout(
+          config: SuperLayoutConfig(
+            slotTypes: {
+              'factory-instance': 'registry:AppBar',
+              'registered-instance': 'legacy-tagged',
+            },
+          ),
+          zoneTagFilters: {
+            SuperLayoutZone.center: ComponentTagFilter(include: {'appBar'}),
           },
         ),
-        zoneTagFilters: {
-          SuperLayoutZone.center: ComponentTagFilter(include: {'appBar'}),
-        },
       ),
-    ), registry: registry);
+      registry: registry,
+    );
     final layout = tester.state<SuperLayoutState>(find.byType(SuperLayout));
     expect(layout.searchSlot('factory-instance')!.tags, {'appBar'});
     expect(layout.searchSlot('registered-instance')!.tags, {'appBar', 'text'});
-    final surface = tester.widget<EditorSlot>(find.descendant(
-      of: find.byType(SuperLayout),
-      matching: find.byType(EditorSlot),
-    ).first);
+    final surface = tester.widget<EditorSlot>(
+      find
+          .descendant(
+            of: find.byType(SuperLayout),
+            matching: find.byType(EditorSlot),
+          )
+          .first,
+    );
     unawaited(surface.onAdd!());
     await tester.pumpAndSettle();
-    expect(find.byKey(
-        const ValueKey('super-layout-add-slot-registry:AppBar')),
-        findsOneWidget);
-    expect(find.byKey(const ValueKey('super-layout-add-slot-legacy-tagged')),
-        findsOneWidget);
-    expect(find.byKey(
-        const ValueKey('super-layout-add-slot-registry:Card')),
-        findsNothing);
-    await tester.tap(find.byKey(
-        const ValueKey('super-layout-add-slot-legacy-tagged')));
+    expect(
+      find.byKey(const ValueKey('super-layout-add-slot-registry:AppBar')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('super-layout-add-slot-legacy-tagged')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('super-layout-add-slot-registry:Card')),
+      findsNothing,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-add-slot-legacy-tagged')),
+    );
     await tester.pumpAndSettle();
     final id = layout.config.placedSlotIds.single;
     expect(id, isNot('legacy-tagged'));
@@ -142,34 +176,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('history preserves legacy incompatible native placements',
-      (tester) async {
+  testWidgets('history preserves legacy incompatible native placements', (
+    tester,
+  ) async {
     final registry = Registry()..bootstrap();
-    registry.registerFactory('compatible', const SizedBox(height: 24),
-        tags: {'appBar'});
-    registry.registerComponent('legacy', const RegisteredComponent(
-      label: 'Legacy title', builder: _title,
-    ));
-    await pumpPage(tester, SuperPage(
-      pageConfig: ScaffoldPageConfig(
-        placements: {
-          ScaffoldPageRegion.appBar: ['old'],
-          ScaffoldPageRegion.body: ['scaffold:body'],
-        },
-        slotTypes: {'old': 'component:legacy'},
+    registry.registerFactory(
+      'compatible',
+      const SizedBox(height: 24),
+      tags: {'appBar'},
+    );
+    registry.registerComponent(
+      'legacy',
+      const RegisteredComponent(label: 'Legacy title', builder: _title),
+    );
+    await pumpPage(
+      tester,
+      SuperPage(
+        pageConfig: ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.appBar: ['old'],
+            ScaffoldPageRegion.body: ['scaffold:body'],
+          },
+          slotTypes: {'old': 'component:legacy'},
+        ),
       ),
-    ), registry: registry);
+      registry: registry,
+    );
     expect(find.text('Registered title'), findsOneWidget);
     final context = tester.element(find.byType(SuperPage));
     StyleEditScope.controllerOf(context)!.value = true;
     await tester.pumpAndSettle();
     final history = EditorHistoryScope.controllerOf(context)!;
     final editor = tester.state<NativeComponentEditorState>(
-        find.byType(NativeComponentEditor));
+      find.byType(NativeComponentEditor),
+    );
     unawaited(editor.add('appBar'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(
-        const ValueKey('scaffold-page-add-slot-factory:compatible')));
+    await tester.tap(
+      find.byKey(const ValueKey('scaffold-page-add-slot-factory:compatible')),
+    );
     await tester.pumpAndSettle();
     final controller = registry.scaffoldPageController('root');
     expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), hasLength(2));
@@ -249,10 +294,20 @@ void main() {
       );
       await tester.tapAt(const Offset(40, 120), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
+      final bodySubtitle = find.byKey(const ValueKey('style-menu-zone-Corps'));
+      expect(bodySubtitle, findsOneWidget);
+      expect(tester.widget<Text>(bodySubtitle).data, 'Page');
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Corps')),
+          matching: find.byIcon(EditorSlot.zoneMenuIcon),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(
         find.descendant(
           of: find.byKey(const ValueKey('style-menu-Corps')),
-          matching: find.text('Corps'),
+          matching: find.text('zone Corps'),
         ),
       );
       await tester.pumpAndSettle();
@@ -351,7 +406,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byKey(const ValueKey('style-menu-Corps')),
-          matching: find.text('Corps'),
+          matching: find.text('zone Corps'),
         ),
       );
       await tester.pumpAndSettle();
@@ -382,7 +437,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byKey(ValueKey('style-menu-$label')),
-          matching: find.text(label),
+          matching: find.text('zone $label'),
         ),
       );
       await tester.pumpAndSettle();
@@ -412,7 +467,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: find.byKey(const ValueKey('style-menu-Corps')),
-          matching: find.text('Corps'),
+          matching: find.text('zone Corps'),
         ),
       );
       await tester.pumpAndSettle();
@@ -482,27 +537,29 @@ void main() {
       );
       await tester.pumpAndSettle();
       final menu = find.byKey(ValueKey('style-menu-${entry.value}'));
-      final title = find.descendant(of: menu, matching: find.text('Workspace'));
+      final title = find.descendant(
+        of: menu,
+        matching: find.text('zone ${entry.value}'),
+      );
+      final subtitle = find.descendant(
+        of: menu,
+        matching: find.text('Workspace'),
+      );
       expect(title, findsOneWidget);
-      expect(tester.widget<Text>(title).style?.fontWeight, FontWeight.bold);
+      expect(subtitle, findsOneWidget);
       expect(
-        tester.getTopLeft(title).dx,
-        lessThan(
-          tester
-              .getTopLeft(
-                find.descendant(of: menu, matching: find.text(entry.value)),
-              )
-              .dx,
+        find.descendant(
+          of: menu,
+          matching: find.byIcon(EditorSlot.zoneMenuIcon),
         ),
+        findsOneWidget,
       );
       expect(
         find.byKey(ValueKey('style-menu-add-${entry.value}')),
         findsOneWidget,
       );
       expect(find.text('Configurer la page…'), findsNothing);
-      await tester.tap(
-        find.descendant(of: menu, matching: find.text(entry.value)),
-      );
+      await tester.tap(title);
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('scaffold-page-settings')),

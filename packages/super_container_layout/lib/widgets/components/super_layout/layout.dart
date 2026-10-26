@@ -186,6 +186,7 @@ class SuperLayoutState extends State<SuperLayout> {
   final _selected = ValueNotifier<SuperLayoutZone?>(null);
   final _selectedSlot = ValueNotifier<String?>(null);
   final _zoneFocusKeys = <SuperLayoutZone, GlobalKey>{};
+  final _zoneSlotKeys = <SuperLayoutZone, GlobalKey<EditorSlotState>>{};
   final _slotFocusKeys = <String, GlobalKey>{};
   final _gridSlotSizeKeys = <String, GlobalKey>{};
   SuperLayoutConfig? _reportedConfig;
@@ -193,6 +194,12 @@ class SuperLayoutState extends State<SuperLayout> {
   void _select(SuperLayoutZone zone) {
     _selectedSlot.value = null;
     _selected.value = _selected.value == zone ? null : zone;
+  }
+
+  void _selectZone(SuperLayoutZone zone) {
+    _selectedSlot.value = null;
+    _selected.value = zone;
+    _LayoutEditSelection.activate(this);
   }
 
   void _selectSlot(SuperLayoutZone zone, SlotImplementation slot) {
@@ -238,9 +245,7 @@ class SuperLayoutState extends State<SuperLayout> {
           !(Offset.zero & box.size).contains(box.globalToLocal(position))) {
         continue;
       }
-      _selectedSlot.value = null;
-      _selected.value = zone;
-      _LayoutEditSelection.activate(this);
+      _selectZone(zone);
       return;
     }
   }

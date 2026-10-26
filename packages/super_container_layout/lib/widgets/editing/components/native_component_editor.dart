@@ -173,6 +173,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   final _config = ValueNotifier<NativeComponentConfig>(NativeComponentConfig());
 
   bool get editing => _editMode?.value ?? false;
+  String get _componentLabel {
+    final instance = editorComponentLabelOf(context);
+    return (instance?.overridden ?? false) ? instance!.label : widget.label;
+  }
+
   NativeRegion definition(String id) =>
       widget.regions.firstWhere((region) => region.id == id);
   bool enabled(String id) =>
@@ -1233,9 +1238,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           onSelect: () => select(id, regionContext),
           child: EditorSlot(
             label: spec.label,
-            menuTitle: widget.label,
-            menuSubtitle: () => spec.label,
-            menuIcon: widget.menuIcon,
+            menuTitle: 'zone ${spec.label}',
+            menuSubtitle: () => _componentLabel,
+            menuIcon: EditorSlot.zoneMenuIcon,
             editable: true,
             onEdit: configure,
             onAdd: () => add(id),

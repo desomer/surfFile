@@ -89,6 +89,19 @@ extension _SuperLayoutDialogs on SuperLayoutState {
                         keyPrefix: 'zone-flow-dialog-${zone.name}',
                         axis: current.axisOf(zone),
                         flow: current.flowOf(zone),
+                        isSide: zone.isSide,
+                        autoSize: zone.isSide && current.isAuto(zone),
+                        size: zone.isSide ? current.sizeOf(zone) : 100,
+                        canResize: zone.isSide && current.canResize(zone),
+                        onAutoSizeChanged: zone.isSide
+                            ? (v) => _update(current.withAuto(zone, v))
+                            : null,
+                        onSizeChanged: zone.isSide
+                            ? (v) => _update(current.withSize(zone, v))
+                            : null,
+                        onResizeChanged: zone.isSide
+                            ? (v) => _update(current.withSideResizing(zone, v))
+                            : null,
                         onAxisChanged: (axis) =>
                             _update(current.withAxis(zone, axis)),
                         onFlowChanged: (flow) =>
@@ -100,11 +113,24 @@ extension _SuperLayoutDialogs on SuperLayoutState {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => _update(
-                    _config.value
+                  onPressed: () {
+                    var next = _config.value
                         .withAxis(zone, Axis.vertical)
-                        .withZoneFlow(zone, const ZoneFlowConfig()),
-                  ),
+                        .withZoneFlow(zone, const ZoneFlowConfig());
+                    if (zone.isSide) {
+                      next = next
+                          .withAuto(zone, true)
+                          .withSize(
+                            zone,
+                            zone == SuperLayoutZone.north ||
+                                    zone == SuperLayoutZone.south
+                                ? 50
+                                : 100,
+                          )
+                          .withSideResizing(zone, next.resizeSides);
+                    }
+                    _update(next);
+                  },
                   child: const Text('Réinitialiser'),
                 ),
                 TextButton(

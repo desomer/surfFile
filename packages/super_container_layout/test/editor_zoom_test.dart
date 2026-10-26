@@ -704,7 +704,7 @@ void main() {
       expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
       expect(find.text('Propriétés du composant'), findsOneWidget);
 
-      final initialRect = screenRect(tester, target);
+      screenRect(tester, target);
 
       // 1. Zoom toolbar and slider are available and working in dialog.
       expect(find.byKey(const ValueKey('editor-zoom-toolbar')), findsOneWidget);

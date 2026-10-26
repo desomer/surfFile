@@ -744,7 +744,19 @@ void main() {
         findsNothing,
       );
       final row = find.byKey(const ValueKey('style-menu-Titre'));
-      await tester.tap(find.descendant(of: row, matching: find.text('Titre')));
+      final subtitle = find.byKey(const ValueKey('style-menu-zone-Titre'));
+      expect(subtitle, findsOneWidget);
+      expect(tester.widget<Text>(subtitle).data, 'ApplicationBar');
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byIcon(EditorSlot.zoneMenuIcon),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.descendant(of: row, matching: find.text('zone Titre')),
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('super-app-bar-settings')),

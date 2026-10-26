@@ -701,15 +701,50 @@ void main() {
   });
 
   testWidgets('editor can enable and reset resizing', (tester) async {
-    var config = const SuperLayoutConfig();
+    var config = const SuperLayoutConfig(north: true, south: true);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: SingleChildScrollView(
             child: StatefulBuilder(
-              builder: (context, setState) => SuperLayoutEditor(
-                config: config,
-                onChanged: (value) => setState(() => config = value),
+              builder: (context, setState) => Column(
+                children: [
+                  SuperLayoutEditor(
+                    config: config,
+                    onChanged: (value) => setState(() => config = value),
+                  ),
+                  ZoneFlowSettingsEditor(
+                    keyPrefix: 'zone-north',
+                    axis: config.axisOf(SuperLayoutZone.north),
+                    flow: config.flowOf(SuperLayoutZone.north),
+                    isSide: true,
+                    autoSize: config.isAuto(SuperLayoutZone.north),
+                    size: config.sizeOf(SuperLayoutZone.north),
+                    canResize: config.canResize(SuperLayoutZone.north),
+                    onAutoSizeChanged: (v) => setState(
+                      () => config = config.withAuto(SuperLayoutZone.north, v),
+                    ),
+                    onSizeChanged: (v) => setState(
+                      () => config = config.withSize(SuperLayoutZone.north, v),
+                    ),
+                    onResizeChanged: (v) => setState(
+                      () => config = config.withSideResizing(
+                        SuperLayoutZone.north,
+                        v,
+                      ),
+                    ),
+                    onAxisChanged: (axis) => setState(
+                      () =>
+                          config = config.withAxis(SuperLayoutZone.north, axis),
+                    ),
+                    onFlowChanged: (flow) => setState(
+                      () => config = config.withZoneFlow(
+                        SuperLayoutZone.north,
+                        flow,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -719,9 +754,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('super-layout-resize-sides')));
     await tester.pump();
     expect(config.resizeSides, isTrue);
-    final northSwitch = find.byKey(
-      const ValueKey('super-layout-resize-side-north'),
-    );
+    final northSwitch = find.byKey(const ValueKey('zone-north-resizable'));
     await tester.ensureVisible(northSwitch);
     await tester.tap(northSwitch);
     await tester.pump();

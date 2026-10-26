@@ -161,7 +161,7 @@ void main() {
       expect(surface.style.elevation, 3);
       await tester.tap(find.text('Target'), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      for (final label in ['Iterable Content', 'Layout']) {
+      for (final label in ['Iterable Content', 'Centre', 'Layout']) {
         expect(find.byKey(ValueKey('style-menu-$label')), findsOneWidget);
       }
       expect(
@@ -170,6 +170,10 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('style-menu-add-Layout')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-add-Centre')),
         findsOneWidget,
       );
       expect(

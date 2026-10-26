@@ -19,6 +19,7 @@ class _ZoneNameBadge extends StatefulWidget {
     this.moves = false,
     this.axisAction,
     this.onAdd,
+    this.onContextMenu,
   });
 
   final SuperLayoutZone zone;
@@ -38,6 +39,7 @@ class _ZoneNameBadge extends StatefulWidget {
   final VoidCallback onSelect;
   final LayoutAxisAction? axisAction;
   final VoidCallback? onAdd;
+  final ValueChanged<Offset>? onContextMenu;
 
   @override
   State<_ZoneNameBadge> createState() => _ZoneNameBadgeState();
@@ -128,7 +130,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
           if (action.onEditFlow case final editFlow?)
             IconButton(
               key: ValueKey('super-layout-flow-${widget.zone.name}'),
-              tooltip: '${widget.label} : Paramètres de flux',
+              tooltip: '${widget.label} : Taille et paramètres de flux',
               visualDensity: VisualDensity.compact,
               iconSize: 14,
               padding: EdgeInsets.zero,
@@ -137,7 +139,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               color: colors.onSurface,
-              icon: const Icon(Icons.tune_outlined),
+              icon: const Icon(Icons.straighten),
               onPressed: editFlow,
             ),
         ],
@@ -190,9 +192,15 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
             allScopes: true,
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Listener(
+              child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onPointerDown: EditorSelectionRegion.ignorePointer,
+                excludeFromSemantics: true,
+                onSecondaryTapUp: widget.onContextMenu == null
+                    ? null
+                    : (details) => widget.onContextMenu!(details.globalPosition),
+                child: Listener(
+                  behavior: HitTestBehavior.translucent,
+                  onPointerDown: EditorSelectionRegion.ignorePointer,
                 child: MouseRegion(
                   cursor: target == null
                       ? SystemMouseCursors.click
@@ -237,6 +245,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                           ),
                           child: badge,
                         ),
+                  ),
                 ),
               ),
             ),

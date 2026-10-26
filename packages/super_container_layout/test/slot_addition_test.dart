@@ -290,7 +290,7 @@ void main() {
       await tester.tapAt(const Offset(790, 500), buttons: 2);
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byKey(const ValueKey('style-menu-add-Super layout')),
+        find.byKey(const ValueKey('style-menu-add-Est')),
       );
       await tester.pumpAndSettle();
       await tester.tap(

@@ -980,7 +980,7 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('style-menu-add-Super layout')));
+    await tester.tap(find.byKey(const ValueKey('style-menu-add-Centre')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-slot-first')));
     await tester.pumpAndSettle();
@@ -1201,36 +1201,28 @@ void main() {
       editMode: editMode,
       onChanged: (value) => changed = value,
     );
-    Future<void> openLayoutEditor() async {
+    Future<void> openZoneEditor() async {
       await tester.tap(
         find.byKey(const ValueKey('content-first')),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Super layout'));
+      await tester.tap(
+        find.byKey(const ValueKey('style-menu-zone-flow-Centre')),
+      );
       await tester.pumpAndSettle();
     }
 
     Future<void> chooseRow() async {
-      final selector = find.byKey(const ValueKey('super-layout-axis-center'));
+      final selector = find.byKey(
+        const ValueKey('zone-flow-dialog-center-axis'),
+      );
       await tester.ensureVisible(selector);
-      await tester.tap(selector);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Row').last);
+      await tester.tap(find.text('Ligne (Row)'));
       await tester.pumpAndSettle();
     }
 
-    await openLayoutEditor();
-    for (final zone in SuperLayoutZone.values) {
-      final dropdown = tester.widget<DropdownButton<Axis>>(
-        find.byKey(ValueKey('super-layout-axis-${zone.name}')),
-      );
-      expect(dropdown.value, Axis.vertical);
-      expect(
-        dropdown.onChanged,
-        zone == SuperLayoutZone.center ? isNotNull : isNull,
-      );
-    }
+    await openZoneEditor();
     await chooseRow();
     expect(changed!.axisOf(SuperLayoutZone.center), Axis.horizontal);
     expect(
@@ -1240,16 +1232,16 @@ void main() {
     await tester.tap(find.text('Annuler'));
     await tester.pumpAndSettle();
     expect(changed!.axisOf(SuperLayoutZone.center), Axis.vertical);
-    await openLayoutEditor();
+    await openZoneEditor();
     await chooseRow();
     await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();
     expect(changed!.axisOf(SuperLayoutZone.center), Axis.horizontal);
-    await openLayoutEditor();
+    await openZoneEditor();
     await tester.ensureVisible(find.text('Réinitialiser'));
     await tester.tap(find.text('Réinitialiser'));
     await tester.pumpAndSettle();
-    expect(changed!.zoneAxes, isEmpty);
+    expect(changed!.axisOf(SuperLayoutZone.center), Axis.vertical);
     expect(changed!.placements, base.placements);
     await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();

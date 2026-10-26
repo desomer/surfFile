@@ -8,15 +8,14 @@ extension _SuperLayoutView on SuperLayoutState {
       label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,
-      onAdd: () => _addSlot(_actionZone),
+      onAdd: _config.value.positioning == SuperLayoutPositioning.grid
+          ? () => _addSlot(_actionZone)
+          : null,
       menuIcon: widget.menuIcon,
       menuSubtitle: () =>
           _config.value.positioning == SuperLayoutPositioning.grid
           ? 'Grille'
-          : widget.zoneLabel(_actionZone),
-      axisAction: _config.value.positioning == SuperLayoutPositioning.grid
-          ? null
-          : () => _axisAction(_actionZone),
+          : 'Zones',
       onContextMenu: _selectContextZone,
       child: ListenableBuilder(
         listenable: Listenable.merge([
@@ -202,17 +201,28 @@ extension _SuperLayoutView on SuperLayoutState {
                                   editMode &&
                                   selected == zone &&
                                   selectedSlot == null,
-                              onSelect: () {
-                                _selectedSlot.value = null;
-                                _selected.value = zone;
-                                _LayoutEditSelection.activate(this);
-                              },
-                              child: _contentOf(
-                                config,
-                                zone,
-                                autoSides,
-                                editMode,
-                                layoutSize,
+                              onSelect: () => _selectZone(zone),
+                              child: EditorSlot(
+                                key: _zoneSlotKeys.putIfAbsent(
+                                  zone,
+                                  GlobalKey<EditorSlotState>.new,
+                                ),
+                                label: widget.zoneLabel(zone),
+                                menuTitle: 'zone ${widget.zoneLabel(zone)}',
+                                menuSubtitle: () => _displayLabel,
+                                menuIcon: EditorSlot.zoneMenuIcon,
+                                editable: widget.editable,
+                                onEdit: () => _openZoneFlowEditor(zone),
+                                onAdd: () => _addSlot(zone),
+                                axisAction: () => _axisAction(zone),
+                                onContextMenu: (_) => _selectZone(zone),
+                                child: _contentOf(
+                                  config,
+                                  zone,
+                                  autoSides,
+                                  editMode,
+                                  layoutSize,
+                                ),
                               ),
                             ),
                           ),
@@ -283,6 +293,11 @@ extension _SuperLayoutView on SuperLayoutState {
                             emphasis: _emphasisFor(zone),
                             selected: selected == zone,
                             onSelect: () => _select(zone),
+                            onContextMenu: widget.editable
+                                ? (position) => _zoneSlotKeys[zone]
+                                      ?.currentState
+                                      ?.openMenu(position)
+                                : null,
                             onAdd:
                                 widget.editable &&
                                     !_hasContent(
