@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
+import '../../../models/native_component_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_value_config.dart';
@@ -9,6 +10,7 @@ import '../../../theme/container_style.dart';
 import '../../components/super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
 import 'forms/container_add_form.dart';
+import 'forms/expansible_add_form.dart';
 import 'forms/list_view_add_form.dart';
 import 'forms/super_action_add_form.dart';
 import 'forms/super_value_add_form.dart';
@@ -16,6 +18,7 @@ import 'forms/super_value_add_form.dart';
 export '../repositories/repository_binding_fields.dart'
     show RepositoryBindingFields;
 export 'forms/container_add_form.dart' show ContainerAddForm;
+export 'forms/expansible_add_form.dart' show ExpansibleAddForm;
 export 'forms/list_view_add_form.dart' show ListViewAddForm;
 export 'forms/super_action_add_form.dart' show SuperActionAddForm;
 export 'forms/super_value_add_form.dart' show SuperValueAddForm;
@@ -197,6 +200,42 @@ final containerAddConfigurator = ComponentAddConfigurator<ContainerStyle>(
   ],
   apply: (registry, id, draft) => registry.styleController(id).value = draft,
 );
+
+/// Add wizard settings of a `SuperExpansible`, written to `Registry.nativeComponentController`.
+final expansibleAddConfigurator =
+    ComponentAddConfigurator<NativeComponentConfig>(
+      initial: (_) =>
+          NativeComponentConfig(regions: const {'header': true, 'body': true}),
+      builder: (context, draft, onChanged) =>
+          ExpansibleAddForm(draft: draft, onChanged: onChanged),
+      validate: (draft) {
+        if (draft.binding?.path.trim().isEmpty ?? false) {
+          return 'Chemin de liaison requis.';
+        }
+        try {
+          draft.validate();
+          return null;
+        } on FormatException catch (error) {
+          return error.message;
+        } on Object {
+          return 'Configuration de l’expansible invalide.';
+        }
+      },
+      summary: (draft) => [
+        ('Ouvert par défaut', _yes(draft.initiallyExpanded ?? false)),
+        ('Clic sur l’en-tête', _yes(draft.headerClickToggles ?? true)),
+        ('Maintenir l’état', _yes(draft.maintainState ?? true)),
+        ('Liaison', _bindingLabel(draft.binding)),
+      ],
+      apply: (registry, id, draft) =>
+          registry.nativeComponentController(id).value = draft,
+      readBinding: (draft) => draft.binding,
+      writeBinding: (draft, binding) => draft.withBinding(binding),
+      bindingKeyPrefix: 'add-expansible',
+      bindingPathHint: 'ui.ouvert ou clients[?].ouvert',
+      bindingHelp:
+          'Le repository fournit et persiste l’état ouvert/fermé (booléen).',
+    );
 
 String _yes(bool value) => value ? 'oui' : 'non';
 

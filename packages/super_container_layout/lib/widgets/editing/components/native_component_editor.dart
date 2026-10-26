@@ -17,6 +17,9 @@ import '../overlay/editor_zone_badge.dart';
 import '../slots/slot_size_editor.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../../components/super_layout/slot_implementation.dart';
+import '../../components/super_layout/super_layout.dart'
+    show ZoneFlowSettingsEditor;
+import '../../components/super_layout/zone_axis_button.dart';
 import '../slots/editor_slot.dart';
 import '../slots/editor_selection_region.dart';
 
@@ -93,6 +96,7 @@ class NativeRegion {
     this.axis = Axis.vertical,
     this.expand = true,
     this.stretch = true,
+    this.editableFlow = false,
     this.emptySize = const Size(double.infinity, kToolbarHeight),
     this.fillSize,
     this.tagFilter = const ComponentTagFilter(),
@@ -105,6 +109,7 @@ class NativeRegion {
   final Axis axis;
   final bool expand;
   final bool stretch;
+  final bool editableFlow;
   final Size emptySize;
   final Size? fillSize;
   final ComponentTagFilter tagFilter;
@@ -199,6 +204,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
 
   NativeRegion definition(String id) =>
       widget.regions.firstWhere((region) => region.id == id);
+  Axis axisOf(String id) =>
+      widget.config.regionAxisOf(id) ?? definition(id).axis;
+  ZoneFlowConfig flowOf(String id) => widget.config.regionFlowOf(id);
+  double? sizeOf(String id) => widget.config.regionSizeOf(id);
   bool enabled(String id) =>
       (widget.isRegionAvailable?.call(widget.config, id) ?? true) &&
       (definition(id).required || widget.config.isEnabled(id));
@@ -434,9 +443,121 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         ..._path,
         if (id != null && widget.showRegionInPath) definition(id).label,
       ],
+      axis: id != null && definition(id).editableFlow
+          ? _axisActionFor(id)
+          : null,
       clear: _clear,
       focusContext: target ?? _keys[id]?.currentContext ?? context,
     );
+  }
+
+  LayoutAxisAction _axisActionFor(String id) {
+    final spec = definition(id);
+    final currentAxis = axisOf(id);
+    return LayoutAxisAction(
+      zoneLabel: spec.label,
+      axis: currentAxis,
+      onToggle: () {
+        select(id);
+        _update(
+          _config.value.withRegionAxis(
+            id,
+            currentAxis == Axis.horizontal ? Axis.vertical : Axis.horizontal,
+            defaultAxis: spec.axis,
+          ),
+        );
+      },
+      onEditFlow: () => _openRegionFlowEditor(id),
+    );
+  }
+
+  Future<void> _openRegionFlowEditor(String id) async {
+    final spec = definition(id);
+    final initial = _config.value;
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    var confirmed = false;
+    try {
+      confirmed =
+          await showEditorDialog<bool>(
+            context: context,
+            target: _keys[id]?.currentContext ?? context,
+            barrierDismissible: true,
+            barrierColor: Colors.transparent,
+            builder: (context) => AlertDialog(
+              title: Text('Flux de la zone : ${spec.label}'),
+              content: SizedBox(
+                width: 400,
+                child: SingleChildScrollView(
+                  child: ListenableBuilder(
+                    listenable: _config,
+                    builder: (context, _) {
+                      final current = _config.value;
+                      final defaultSize = spec.emptySize.height.isFinite
+                          ? spec.emptySize.height
+                          : 100.0;
+                      final fixedSize = current.regionSizeOf(id);
+                      return ZoneFlowSettingsEditor(
+                        keyPrefix: '${widget.keyPrefix}-flow-dialog-$id',
+                        axis: current.regionAxisOf(id) ?? spec.axis,
+                        flow: current.regionFlowOf(id),
+                        isSide: true,
+                        autoSize: fixedSize == null,
+                        size: fixedSize ?? defaultSize,
+                        onAutoSizeChanged: (auto) => _update(
+                          current.withRegionSize(
+                            id,
+                            auto ? null : (fixedSize ?? defaultSize),
+                          ),
+                        ),
+                        onSizeChanged: (value) =>
+                            _update(current.withRegionSize(id, value)),
+                        onAxisChanged: (axis) => _update(
+                          current.withRegionAxis(
+                            id,
+                            axis,
+                            defaultAxis: spec.axis,
+                          ),
+                        ),
+                        onFlowChanged: (flow) =>
+                            _update(current.withRegionFlow(id, flow)),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    _update(
+                      _config.value
+                          .withRegionAxis(id, spec.axis, defaultAxis: spec.axis)
+                          .withRegionFlow(id, const ZoneFlowConfig())
+                          .withRegionSize(id, null),
+                    );
+                  },
+                  child: const Text('Réinitialiser'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Appliquer'),
+                ),
+              ],
+            ),
+          ) ==
+          true;
+    } finally {
+      if (!confirmed && mounted) _update(initial);
+      if (confirmed) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
+    }
   }
 
   void selectSlot(
@@ -515,7 +636,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   void _validate(NativeComponentConfig config) {
     final ids = widget.regions.map((region) => region.id).toSet();
     if (config.placements.keys.any((id) => !ids.contains(id)) ||
-        config.regions.keys.any((id) => !ids.contains(id))) {
+        config.regions.keys.any((id) => !ids.contains(id)) ||
+        config.regionAxes.keys.any((id) => !ids.contains(id)) ||
+        config.regionFlows.keys.any((id) => !ids.contains(id)) ||
+        config.regionSizes.keys.any((id) => !ids.contains(id))) {
       throw StateError('Unknown region in ${widget.label}.');
     }
     for (final region in widget.regions) {
@@ -961,14 +1085,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           if (constraints.remove(slot.id) case final saved?) {
             constraints[id] = saved;
           }
-          next = NativeComponentConfig(
-            useDefaultNavigation: next.useDefaultNavigation,
-            placements: next.placements,
-            slotTypes: next.slotTypes,
-            regions: next.regions,
+          next = next.copyWith(
             slotPreferredSizes: preferred,
             slotSizeConstraints: constraints,
-            slotLabels: next.slotLabels,
           );
         }
         _commitAddition(next, region, id, component);
@@ -1166,11 +1285,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       onRestore: () {
         final current = _config.value;
         _update(
-          NativeComponentConfig(
-            useDefaultNavigation: current.useDefaultNavigation,
-            placements: current.placements,
-            slotTypes: current.slotTypes,
-            regions: current.regions,
+          current.copyWith(
             slotPreferredSizes: {...current.slotPreferredSizes}
               ..remove(slot.id)
               ..addAll({
@@ -1180,7 +1295,6 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             slotSizeConstraints: {...current.slotSizeConstraints}
               ..remove(slot.id)
               ..addAll({slot.id: ?initial.slotSizeConstraints[slot.id]}),
-            slotLabels: current.slotLabels,
           ),
         );
       },
@@ -1309,7 +1423,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             for (final id in childIds)
               if (current.slotSizeConstraints[id] case final size?) id: size,
           },
-          axis: definition(region).axis,
+          axis: axisOf(region),
+          flow: flowOf(region),
           occupiedIds: {
             for (final ids in current.placements.values) ...ids,
             ...widget.slots.map((s) => s.id),
@@ -1320,33 +1435,27 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 if (entry.key != region) ...entry.value,
             };
             final removedOnly = movedSet.difference(stillReferenced);
-            final next = NativeComponentConfig(
-              useDefaultNavigation: current.useDefaultNavigation,
+            final next = current.copyWith(
               placements: {
                 ...current.placements,
                 region: [cardId],
               },
               slotTypes: {
                 for (final entry in current.slotTypes.entries)
-                  if (!removedOnly.contains(entry.key))
-                    entry.key: entry.value,
+                  if (!removedOnly.contains(entry.key)) entry.key: entry.value,
                 cardId: cardType,
               },
-              regions: current.regions,
               slotPreferredSizes: {
                 for (final entry in current.slotPreferredSizes.entries)
-                  if (!removedOnly.contains(entry.key))
-                    entry.key: entry.value,
+                  if (!removedOnly.contains(entry.key)) entry.key: entry.value,
               },
               slotSizeConstraints: {
                 for (final entry in current.slotSizeConstraints.entries)
-                  if (!removedOnly.contains(entry.key))
-                    entry.key: entry.value,
+                  if (!removedOnly.contains(entry.key)) entry.key: entry.value,
               },
               slotLabels: {
                 for (final entry in current.slotLabels.entries)
-                  if (!removedOnly.contains(entry.key))
-                    entry.key: entry.value,
+                  if (!removedOnly.contains(entry.key)) entry.key: entry.value,
               },
             );
             _update(next);
@@ -1430,6 +1539,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     bool showBadge = true,
   }) {
     final spec = definition(id);
+    final regionAxis = axisOf(id);
+    final regionFlow = flowOf(id);
+    final fixedSize = sizeOf(id);
     final slots = item == null ? slotsFor(id) : [item];
     final overlay = _showOverlay();
     final selected = _selected == id;
@@ -1439,13 +1551,14 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       onHover: (_, _, value) => _setRegionHovered(id, value),
     );
     final colors = Theme.of(context).colorScheme;
-    final content =
+    Widget content =
         child ??
         SlotStack(
           slots: slots,
           focusKeys: _slotKeys,
-          axis: spec.axis,
-          expand: spec.expand,
+          axis: regionAxis,
+          flow: regionFlow,
+          expand: fixedSize != null ? regionFlow.expandSlots : spec.expand,
           stretch: spec.stretch,
           preferredSizes: {
             for (final slot in slots)
@@ -1503,6 +1616,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               ? (slot) => insertionForSlot(id, slot)
               : null,
         );
+    if (fixedSize != null) {
+      content = SizedBox(height: fixedSize, child: content);
+    }
     return LayoutSelectionScope(
       owner: this,
       path: [..._path, spec.label],
@@ -1522,6 +1638,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             menuSubtitle: () => _componentLabel,
             menuIcon: EditorSlot.zoneMenuIcon,
             editable: true,
+            axisAction: spec.editableFlow ? () => _axisActionFor(id) : null,
             onEdit: configure,
             onAdd: () => add(id),
             wrapChildrenActions: wrapActionsForRegion(id),
@@ -1538,11 +1655,36 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               child: Stack(
                 children: [
                   if (slots.isEmpty && editing)
-                    SizedBox(
-                      width: spec.emptySize.width,
-                      height: spec.expand
-                          ? double.infinity
-                          : spec.emptySize.height,
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final fillWidth =
+                            (regionAxis == Axis.horizontal
+                                ? spec.expand
+                                : spec.stretch) &&
+                            constraints.hasBoundedWidth;
+                        final fillHeight =
+                            fixedSize == null &&
+                            (regionAxis == Axis.vertical
+                                ? spec.expand
+                                : spec.stretch) &&
+                            constraints.hasBoundedHeight;
+                        return SizedBox(
+                          width: fillWidth
+                              ? double.infinity
+                              : (spec.emptySize.width.isFinite
+                                    ? spec.emptySize.width
+                                    : (constraints.hasBoundedWidth
+                                          ? double.infinity
+                                          : 120)),
+                          height:
+                              fixedSize ??
+                              (fillHeight
+                                  ? double.infinity
+                                  : (spec.emptySize.height.isFinite
+                                        ? spec.emptySize.height
+                                        : kToolbarHeight)),
+                        );
+                      },
                     )
                   else
                     content,
@@ -1610,8 +1752,34 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                                     : null,
                                 addKey: ValueKey('${widget.keyPrefix}-add-$id'),
                                 addTooltip: 'Ajouter dans ${spec.label}',
-                                actions:
-                                    widget.regionActions?.call(id) ?? const [],
+                                actions: [
+                                  if (spec.editableFlow && selected) ...[
+                                    ZoneAxisButton(
+                                      key: ValueKey(
+                                        '${widget.keyPrefix}-toggle-axis-$id',
+                                      ),
+                                      action: _axisActionFor(id),
+                                      compact: true,
+                                      color: colors.onSurface,
+                                    ),
+                                    IconButton(
+                                      key: ValueKey(
+                                        '${widget.keyPrefix}-flow-$id',
+                                      ),
+                                      tooltip:
+                                          '${spec.label} : Taille et paramètres de flux',
+                                      visualDensity: VisualDensity.compact,
+                                      iconSize: 14,
+                                      padding: const EdgeInsets.all(2),
+                                      constraints: const BoxConstraints(),
+                                      color: colors.onSurface,
+                                      onPressed: () =>
+                                          _openRegionFlowEditor(id),
+                                      icon: const Icon(Icons.straighten),
+                                    ),
+                                  ],
+                                  ...?widget.regionActions?.call(id),
+                                ],
                               ),
                             ),
                           ),

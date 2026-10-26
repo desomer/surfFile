@@ -545,8 +545,7 @@ Object _copy(Object value, String Function(String) remap) {
     );
   }
   if (value is NativeComponentConfig) {
-    return NativeComponentConfig(
-      useDefaultNavigation: value.useDefaultNavigation,
+    return value.copyWith(
       placements: {
         for (final entry in value.placements.entries)
           entry.key: [for (final id in entry.value) remap(id)],

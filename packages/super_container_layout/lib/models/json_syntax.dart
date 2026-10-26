@@ -87,6 +87,7 @@ abstract final class JsonComponentType {
     'BottomNavigationBar': 'BottomNavigationBar',
     'BottomAppBar': 'BottomAppBar',
     'NavigationRail': 'NavigationRail',
+    'Expansible': 'Expansible',
     'AppBar': 'ApplicationBar',
     'BottomBar': 'BottomAppBar',
     'Rail': 'NavigationRail',

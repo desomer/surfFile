@@ -36,6 +36,7 @@ export 'super_app.dart';
 export 'widgets/components/native/super_app_bar.dart';
 export 'widgets/components/native/super_bottom_app_bar.dart';
 export 'widgets/components/native/super_bottom_navigation_bar.dart';
+export 'widgets/components/native/super_expansible.dart';
 export 'widgets/components/native/super_navigation_rail.dart';
 export 'super_page.dart';
 export 'theme/appearance.dart';

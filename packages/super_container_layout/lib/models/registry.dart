@@ -17,6 +17,7 @@ import 'package:super_container_layout/widgets/components/native/super_app_bar.d
 
 import '../widgets/components/native/super_bottom_app_bar.dart';
 import '../widgets/components/native/super_bottom_navigation_bar.dart';
+import '../widgets/components/native/super_expansible.dart';
 import '../widgets/components/native/super_navigation_rail.dart';
 import '../services/pages/editor_page_graph.dart';
 import '../widgets/editing/addition/component_add_configurators.dart';
@@ -152,6 +153,9 @@ class ComponentDuplicationContract {
     ownedConfigs: _native,
   );
   static const superNavigationRail = ComponentDuplicationContract(
+    ownedConfigs: _native,
+  );
+  static const superExpansible = ComponentDuplicationContract(
     ownedConfigs: _native,
   );
   static const newContainer = ComponentDuplicationContract(
@@ -702,6 +706,14 @@ class Registry {
       duplication: ComponentDuplicationContract.superNavigationRail,
       tags: const {'navigationRail'},
       dynamicBuilder: (ctx) => SuperNavigationRail(id: ctx.id),
+    );
+
+    registry['Expansible'] = ComponentBuilderDynamic(
+      menuIcon: Icons.unfold_more_outlined,
+      duplication: ComponentDuplicationContract.superExpansible,
+      tags: const {'container', 'layout', 'expansible'},
+      addConfigurator: expansibleAddConfigurator,
+      dynamicBuilder: (ctx) => SuperExpansible(id: ctx.id),
     );
 
     registry['Card'] = ComponentBuilderDynamic(

@@ -1533,7 +1533,7 @@ void main() {
       expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Centre']);
 
       // Single click in Nord zone inside Corps switches to 'Main > Nord'.
-      await tester.tapAt(const Offset(400, 20));
+      await tester.tapAt(const Offset(50, 10));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Nord']);
 
@@ -1551,7 +1551,7 @@ void main() {
       ]);
 
       // Single click in Nord zone switches cleanly from slot 'Ma Carte' to 'Main > Nord'.
-      await tester.tapAt(const Offset(400, 20));
+      await tester.tapAt(const Offset(50, 10));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Nord']);
 

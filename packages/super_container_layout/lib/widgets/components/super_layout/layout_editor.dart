@@ -381,25 +381,27 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                     onChanged: changeSize,
                   ),
                 ],
-              Divider(
-                height: 12,
-                color: colors.outlineVariant.withValues(alpha: 0.4),
-              ),
-              SwitchListTile(
-                key: ValueKey('$keyPrefix-resizable'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Redimensionner par glisser',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              if (onResizeChanged != null) ...[
+                Divider(
+                  height: 12,
+                  color: colors.outlineVariant.withValues(alpha: 0.4),
                 ),
-                subtitle: const Text(
-                  'Poignée sur le bord intérieur de la zone.',
-                  style: TextStyle(fontSize: 11),
+                SwitchListTile(
+                  key: ValueKey('$keyPrefix-resizable'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Redimensionner par glisser',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: const Text(
+                    'Poignée sur le bord intérieur de la zone.',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  value: canResize,
+                  onChanged: onResizeChanged,
                 ),
-                value: canResize,
-                onChanged: onResizeChanged,
-              ),
+              ],
             ],
           ),
         if (showAxis)

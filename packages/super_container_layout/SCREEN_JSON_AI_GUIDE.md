@@ -15,7 +15,7 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
 | **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` |
-| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"` | `"Layout"`, `"Card"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"AppBar"`, `"BottomBar"` |
+| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"AppBar"`, `"BottomBar"` |
 
 ---
 
@@ -254,6 +254,10 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
   - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).
 - **`"registry:Card"` $\rightarrow$ `Card` / `Container` de Flutter** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
   - `child` (1 slot unique max) : composant enfant contenu dans la carte (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants).
+- **`"registry:Expansible"` $\rightarrow$ `Expansible` de Flutter** (`type: "native"`) :
+  - `header` (liste horizontale) : en-tête toujours visible. Un clic sur `header` bascule l'état ouvert/fermé lorsque `headerClickToggles` vaut `true` (défaut).
+  - `body` (liste verticale) : contenu dépliable animé.
+  - Options propres à `Expansible` dans `components[id]` (`type: "native"`) : `initiallyExpanded` (`bool`, défaut `false`), `maintainState` (`bool`, défaut `true`), `headerClickToggles` (`bool`, défaut `true`), `binding` (`"clients[?].ouvert"` ou `{"repositoryId": "...", "path": "..."}` — liaison bidirectionnelle vers un attribut booléen JSON).
 - **`"registry:IterableContent"` $\rightarrow$ Surface stylisée + `SuperLayout` intégré (alternative compacte à `Card` + `Layout`)** :
   - Contrairement à `Card` (qui n'accepte qu'un seul `child` dans une config `"native"` et nécessite un second composant `"layout"` enfant), `IterableContent` fusionne directement **une surface stylisée** (`styles[id]`) et **une grille `SuperLayout`** (`components[id]` avec `"type": "layout"`) sous **le même `id`** !
   - De plus, `IterableContent` fournit automatiquement un `ContentHoverScope` à tous ses composants enfants, ce qui permet aux `Value`, `Action` et `styles` placés à l'intérieur de réagir à l'état automatique `contentHover` dès que le curseur survole la carte.
