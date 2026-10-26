@@ -4,7 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../super_layout/layout_selection.dart';
+import '../../components/super_layout/layout_selection.dart';
 import '../slots/editor_slot.dart';
 import 'editor_overlay.dart';
 

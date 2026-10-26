@@ -2,14 +2,14 @@ import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/native_component_config.dart';
-import '../../models/registry.dart';
-import '../../models/scaffold_page_config.dart';
-import '../../models/super_layout_config.dart';
-import '../../models/super_list_view_config.dart';
-import '../../services/appearance/appearance_codec.dart';
-import '../../services/appearance/appearance_transfer.dart';
-import '../../theme/appearance.dart';
+import '../../../models/native_component_config.dart';
+import '../../../models/registry.dart';
+import '../../../models/scaffold_page_config.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../models/super_list_view_config.dart';
+import '../../../services/appearance/appearance_codec.dart';
+import '../../../services/appearance/appearance_transfer.dart';
+import '../../../theme/appearance.dart';
 
 class VibeChatDialog extends StatefulWidget {
   const VibeChatDialog({

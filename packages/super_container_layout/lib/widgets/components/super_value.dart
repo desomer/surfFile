@@ -21,7 +21,7 @@ import '../editing/history/editor_history.dart';
 import '../editing/components/super_value_editor.dart';
 import 'super_text_field.dart';
 import '../editing/slots/editor_slot.dart';
-import '../super_layout/slot_implementation.dart';
+import 'super_layout/slot_implementation.dart';
 
 Object _parseBoundProperty(SuperValueProperty property, Object? value) {
   switch (property) {

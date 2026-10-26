@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/dialogs/editor_dialog.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_overlay.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';

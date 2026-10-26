@@ -4,11 +4,11 @@ import 'package:super_container_layout/services/appearance/appearance_store.dart
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_transfer_dialog.dart';
-import 'package:super_container_layout/widgets/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 
 /// Pastille deplacable, initialement en haut au centre du mode edition.
 ///

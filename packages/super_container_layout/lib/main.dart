@@ -12,7 +12,7 @@ import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
 export 'package:super_container_layout/models/registry.dart';
 

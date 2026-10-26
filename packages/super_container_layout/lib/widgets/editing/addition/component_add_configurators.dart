@@ -6,7 +6,7 @@ import '../../../models/super_list_view_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../models/super_action_config.dart';
 import '../../../theme/container_style.dart';
-import '../../super_layout/super_layout.dart';
+import '../../components/super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
 import 'forms/container_add_form.dart';
 import 'forms/list_view_add_form.dart';

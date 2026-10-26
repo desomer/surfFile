@@ -1,7 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart';
-import '../../super_layout/slot_implementation.dart';
+import '../../components/super_layout/slot_implementation.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../history/editor_history.dart';

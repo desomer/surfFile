@@ -8,7 +8,7 @@ import 'package:super_container_layout/services/appearance/appearance_codec.dart
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 

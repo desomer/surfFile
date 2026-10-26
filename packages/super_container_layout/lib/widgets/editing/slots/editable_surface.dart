@@ -10,7 +10,7 @@ import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/states/surface_state_binding.dart';
 import '../../surfaces/super_container.dart';
-import '../../super_layout/layout_selection.dart';
+import '../../components/super_layout/layout_selection.dart';
 import '../styles/container_style_dialog.dart';
 import '../history/editor_history.dart';
 import 'editor_slot.dart';

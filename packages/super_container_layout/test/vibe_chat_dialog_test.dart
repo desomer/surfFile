@@ -11,9 +11,9 @@ import 'package:super_container_layout/services/appearance/appearance_codec.dart
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/widgets/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
 import 'package:super_container_layout/widgets/components/super_list_view.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
 Map<String, Object?> _fileListPatch(String layoutId) => {
   'styles': {

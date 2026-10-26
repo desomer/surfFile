@@ -7,15 +7,15 @@ import 'package:flutter/gestures.dart'
     show PointerDownEvent, kPrimaryButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/super_layout_config.dart';
-import '../editing/history/editor_history.dart';
-import '../editing/overlay/editor_overlay.dart';
-import '../editing/overlay/editor_zoom.dart';
-import '../editing/dialogs/editor_dialog_header.dart';
-import '../editing/overlay/editor_resize_handle.dart';
-import '../editing/addition/insertion_plan.dart';
-import '../editing/slots/editor_slot.dart';
-import '../editing/slots/editor_selection_region.dart';
+import '../../../models/super_layout_config.dart';
+import '../../editing/history/editor_history.dart';
+import '../../editing/overlay/editor_overlay.dart';
+import '../../editing/overlay/editor_zoom.dart';
+import '../../editing/dialogs/editor_dialog_header.dart';
+import '../../editing/overlay/editor_resize_handle.dart';
+import '../../editing/addition/insertion_plan.dart';
+import '../../editing/slots/editor_slot.dart';
+import '../../editing/slots/editor_selection_region.dart';
 
 MouseCursor editorDragCursor({required bool dragging}) {
   // Flutter's Windows cursor map does not implement grab or grabbing.

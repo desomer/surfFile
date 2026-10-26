@@ -8,12 +8,12 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/super_page.dart';
-import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import '../theme/surffile_appearance_slots.dart';
 import 'package:surf_file/theme/folder_transition.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 
 import '../models/explorer_filter.dart';
 import '../models/explorer_entry.dart';

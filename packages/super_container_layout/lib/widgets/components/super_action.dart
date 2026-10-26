@@ -21,7 +21,7 @@ import '../../theme/style_extras.dart';
 import '../editing/components/super_action_editor.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
-import '../super_layout/slot_implementation.dart';
+import 'super_layout/slot_implementation.dart';
 import '../surfaces/styled_surface.dart';
 
 Object _parseBoundActionProperty(SuperActionProperty property, Object? value) {

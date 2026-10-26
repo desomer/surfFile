@@ -1,24 +1,24 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
-import '../../models/native_component_config.dart';
-import '../../models/super_layout_config.dart';
-import '../../models/component_tag_filter.dart';
-import '../../models/registry.dart';
-import '../editing/dialogs/editor_dialog.dart';
-import '../editing/addition/component_add_wizard.dart';
-import '../editing/addition/insertion_plan.dart';
-import '../editing/history/editor_history.dart';
-import '../editing/slots/slot_removal.dart';
-import '../editing/slots/slot_wrapping.dart';
-import '../editing/slots/provided_slot_scope.dart';
-import '../editing/overlay/editor_overlay.dart';
-import '../editing/overlay/editor_zone_badge.dart';
-import '../editing/slots/slot_size_editor.dart';
-import '../super_layout/layout_selection.dart';
-import '../super_layout/slot_implementation.dart';
-import '../editing/slots/editor_slot.dart';
-import '../editing/slots/editor_selection_region.dart';
+import '../../../models/native_component_config.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../models/component_tag_filter.dart';
+import '../../../models/registry.dart';
+import '../dialogs/editor_dialog.dart';
+import '../addition/component_add_wizard.dart';
+import '../addition/insertion_plan.dart';
+import '../history/editor_history.dart';
+import '../slots/slot_removal.dart';
+import '../slots/slot_wrapping.dart';
+import '../slots/provided_slot_scope.dart';
+import '../overlay/editor_overlay.dart';
+import '../overlay/editor_zone_badge.dart';
+import '../slots/slot_size_editor.dart';
+import '../../components/super_layout/layout_selection.dart';
+import '../../components/super_layout/slot_implementation.dart';
+import '../slots/editor_slot.dart';
+import '../slots/editor_selection_region.dart';
 
 /// Lets a native parent track a child's edited preferred height.
 abstract interface class NativePreferredSizeWidget

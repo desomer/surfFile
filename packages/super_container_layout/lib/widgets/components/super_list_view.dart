@@ -76,9 +76,9 @@ import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/components/super_list_view_editor.dart';
-import '../super_layout/slot_implementation.dart';
-import '../super_layout/super_layout.dart';
-import '../super_layout/iterable_content.dart';
+import 'super_layout/slot_implementation.dart';
+import 'super_layout/super_layout.dart';
+import 'super_layout/iterable_content.dart';
 import '../editing/slots/editor_slot.dart';
 import '../editing/slots/slot_size_editor.dart';
 

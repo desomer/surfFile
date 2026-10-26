@@ -1,13 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
 Widget _menuContent(BuildContext context) => const ColoredBox(color: Colors.blue);

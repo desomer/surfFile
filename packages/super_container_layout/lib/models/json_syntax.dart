@@ -85,8 +85,10 @@ abstract final class JsonComponentType {
     'IterableContent': 'IterableContent',
     'ApplicationBar': 'ApplicationBar',
     'BottomNavigationBar': 'BottomNavigationBar',
+    'NavigationRail': 'NavigationRail',
     'AppBar': 'ApplicationBar',
     'BottomBar': 'BottomNavigationBar',
+    'Rail': 'NavigationRail',
     'List': 'ListView',
   };
 
@@ -262,10 +264,7 @@ abstract final class JsonDimension {
 
   /// Lit un `EdgeInsets` depuis un nombre uniforme, `[v, h]` ou `[t, r, b, l]`.
   static EdgeInsets parsePaddingInsets(Object? value, double maxPadding) {
-    if (value is num &&
-        value.isFinite &&
-        value >= 0 &&
-        value <= maxPadding) {
+    if (value is num && value.isFinite && value >= 0 && value <= maxPadding) {
       return EdgeInsets.all(value.toDouble());
     }
     if (value is List) {
@@ -288,10 +287,7 @@ abstract final class JsonDimension {
       } else if (value.length == 4) {
         final sides = <double>[];
         for (final side in value) {
-          if (side is! num ||
-              !side.isFinite ||
-              side < 0 ||
-              side > maxPadding) {
+          if (side is! num || !side.isFinite || side < 0 || side > maxPadding) {
             throw const FormatException('Marge de slot invalide.');
           }
           sides.add(side.toDouble());

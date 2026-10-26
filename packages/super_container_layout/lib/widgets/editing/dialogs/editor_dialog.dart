@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
-import '../../super_layout/layout_selection.dart';
+import '../../components/super_layout/layout_selection.dart';
 import '../overlay/editor_zoom.dart';
 import '../overlay/editor_overlay.dart';
 

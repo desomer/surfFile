@@ -9,11 +9,11 @@ import 'package:super_container_layout/services/appearance/appearance_store.dart
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/theme/appearance.dart';
-import 'package:super_container_layout/widgets/super_layout/layout_selection.dart';
-import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
+import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 

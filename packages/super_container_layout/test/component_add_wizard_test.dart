@@ -3,8 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/editing/addition/component_add_wizard.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
-import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
+import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
 final _textConfigurator = ComponentAddConfigurator<String>(
   initial: (_) => 'Bonjour',

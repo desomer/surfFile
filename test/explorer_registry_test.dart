@@ -4,7 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:super_container_layout/widgets/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
+import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 // The existing video_player dependency supplies its platform test interface.
 // ignore: depend_on_referenced_packages
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
@@ -13,7 +14,6 @@ import 'package:surf_file/widgets/explorer/explorer_components.dart';
 import 'package:surf_file/widgets/explorer/explorer_scope.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_breadcrumbs.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_toolbar.dart';
-import 'package:super_container_layout/widgets/super_layout/super_layout.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:surf_file/models/explorer_entry.dart';
 import 'package:surf_file/models/explorer_filter.dart';

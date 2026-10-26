@@ -4,8 +4,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
 import '../../../models/component_behavior.dart';
-import '../../super_layout/layout_selection.dart';
-import '../../super_layout/zone_axis_button.dart';
+import '../../components/super_layout/layout_selection.dart';
+import '../../components/super_layout/zone_axis_button.dart';
 import '../addition/contextual_add.dart';
 import '../addition/insertion_plan.dart';
 import '../behaviors/component_behavior_editor.dart';

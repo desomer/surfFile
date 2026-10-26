@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import '../../super_layout/slot_implementation.dart';
+import '../../components/super_layout/slot_implementation.dart';
 
 /// Keeps code-provided slots reachable after an editor inserts a parent.
 class ProvidedSlotScope extends InheritedWidget {

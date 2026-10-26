@@ -1,8 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/super_layout_config.dart';
-import '../../models/component_tag_filter.dart';
-import '../../super_app.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../models/component_tag_filter.dart';
+import '../../../super_app.dart';
 import 'slot_implementation.dart';
 import 'super_layout.dart';
 
