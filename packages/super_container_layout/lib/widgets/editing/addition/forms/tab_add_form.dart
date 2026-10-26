@@ -57,6 +57,30 @@ class TabAddForm extends StatelessWidget {
             if (pos != null) onChanged(draft.copyWith(tabBarPosition: pos));
           },
         ),
+        DropdownButtonFormField<SuperTabIndicatorKind>(
+          key: const ValueKey('add-tab-indicator-kind'),
+          initialValue: draft.indicatorKind,
+          decoration: const InputDecoration(
+            labelText: 'Style de l’indicateur',
+          ),
+          items: const [
+            DropdownMenuItem(
+              value: SuperTabIndicatorKind.underline,
+              child: Text('Soulignement (Underline)'),
+            ),
+            DropdownMenuItem(
+              value: SuperTabIndicatorKind.box,
+              child: Text('Pilule / Boîte remplie (Box)'),
+            ),
+            DropdownMenuItem(
+              value: SuperTabIndicatorKind.none,
+              child: Text('Aucun indicateur'),
+            ),
+          ],
+          onChanged: (kind) {
+            if (kind != null) onChanged(draft.copyWith(indicatorKind: kind));
+          },
+        ),
         SwitchListTile(
           key: const ValueKey('add-tab-scrollable'),
           contentPadding: EdgeInsets.zero,

@@ -1567,4 +1567,64 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'chevron tree dialog deduplicates keys when multiple slots share the same label',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: mode,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: SuperLayout(
+                    name: 'Main',
+                    config: config.copyWith(
+                      placements: {
+                        SuperLayoutZone.center: ['action-1', 'action-2'],
+                      },
+                    ),
+                    slots: [
+                      BuilderSlot(
+                        id: 'action-1',
+                        label: 'Action',
+                        builder: (_) => const SizedBox(height: 40),
+                      ),
+                      BuilderSlot(
+                        id: 'action-2',
+                        label: 'Action',
+                        builder: (_) => const SizedBox(height: 40),
+                      ),
+                    ],
+                  ),
+                ),
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre']);
+
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-chevron-0')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-tree-node-Main/Centre/Action')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-tree-node-Main/Centre/Action#1')),
+        findsOneWidget,
+      );
+    },
+  );
 }

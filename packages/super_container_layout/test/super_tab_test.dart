@@ -88,6 +88,29 @@ void main() {
       isScrollable: true,
       initialIndex: 1,
       binding: JsonTextBinding(repositoryId: repositoryId, path: 'ui.tab'),
+      tabBarStyle: const ContainerStyle(
+        color: Color(0xFF1E293B),
+        radius: 16,
+        borderWidth: 2,
+        borderColor: Color(0xFF38BDF8),
+        elevation: 6,
+        padding: 4,
+        margin: 8,
+      ),
+      indicatorKind: SuperTabIndicatorKind.box,
+      indicatorSize: TabBarIndicatorSize.label,
+      indicatorColor: const Color(0xFF0EA5E9),
+      indicatorWeight: 3,
+      indicatorRadius: 12,
+      indicatorHorizontalPadding: 6,
+      indicatorVerticalPadding: 4,
+      labelColor: const Color(0xFFFFFFFF),
+      unselectedLabelColor: const Color(0xFF94A3B8),
+      overlayColor: const Color(0x3338BDF8),
+      labelHorizontalPadding: 20,
+      dividerColor: const Color(0xFF334155),
+      dividerHeight: 2,
+      tabAlignment: TabAlignment.start,
       placements: const {
         'tabs': ['tab-1', 'tab-2'],
         'content:tab-1': ['val-1'],
@@ -472,6 +495,140 @@ void main() {
         () => repositoryStore.readAttribute(indexBinding),
       );
       expect(stored?.text, '0');
+    },
+  );
+
+  testWidgets(
+    'SuperTab renders full TabBar styles (StyledSurface, box/underline/none indicator, colors, divider) and opens full style editor from zone Onglets',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final registry = Registry()..bootstrap();
+      const customStyle = ContainerStyle(
+        color: Color(0xFF0F172A),
+        radius: 18,
+        borderWidth: 2,
+        borderColor: Color(0xFF6366F1),
+        padding: 6,
+      );
+
+      await mount(
+        SuperPage(
+          child: SuperTab(
+            id: 'styled-tabs',
+            config: SuperTabConfig(
+              tabBarStyle: customStyle,
+              indicatorKind: SuperTabIndicatorKind.box,
+              indicatorSize: TabBarIndicatorSize.tab,
+              indicatorColor: const Color(0xFF4F46E5),
+              indicatorRadius: 12,
+              indicatorHorizontalPadding: 8,
+              indicatorVerticalPadding: 4,
+              labelColor: const Color(0xFFFFFFFF),
+              unselectedLabelColor: const Color(0xFF94A3B8),
+              dividerColor: const Color(0xFF334155),
+              dividerHeight: 0,
+              placements: const {
+                'tabs': ['st-1', 'st-2'],
+                'content:st-1': ['sc-1'],
+                'content:st-2': ['sc-2'],
+              },
+            ),
+            tabs: const [
+              SuperAction(
+                id: 'st-1',
+                config: SuperActionConfig(label: 'Design'),
+              ),
+              SuperAction(
+                id: 'st-2',
+                config: SuperActionConfig(label: 'Code'),
+              ),
+            ],
+            slots: [
+              BuilderSlot(
+                id: 'sc-1',
+                label: 'SC1',
+                builder: (_) => const Text('Vue Design'),
+              ),
+              BuilderSlot(
+                id: 'sc-2',
+                label: 'SC2',
+                builder: (_) => const Text('Vue Code'),
+              ),
+            ],
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      final surfaceFinder = find.byKey(
+        const ValueKey('super-tab-surface-styled-tabs'),
+      );
+      expect(surfaceFinder, findsOneWidget);
+      final styledSurface = tester.widget<StyledSurface>(surfaceFinder);
+      expect(styledSurface.style.color, const Color(0xFF0F172A));
+      expect(styledSurface.style.radius, 18);
+
+      final tabBar = tester.widget<TabBar>(
+        find.byKey(const ValueKey('super-tab-bar-styled-tabs')),
+      );
+      expect(tabBar.indicator, isA<BoxDecoration>());
+      final boxIndicator = tabBar.indicator! as BoxDecoration;
+      expect(boxIndicator.color, const Color(0xFF4F46E5));
+      expect(boxIndicator.borderRadius, BorderRadius.circular(12));
+      expect(tabBar.labelColor, const Color(0xFFFFFFFF));
+      expect(tabBar.unselectedLabelColor, const Color(0xFF94A3B8));
+      expect(tabBar.dividerHeight, 0);
+
+      final editorState = tester.state<NativeComponentEditorState>(
+        find.descendant(
+          of: find.byType(SuperTab),
+          matching: find.byType(NativeComponentEditor),
+        ),
+      );
+
+      // 1) Component Tab & content zones open the simple properties dialog (showSuperTabEditor)
+      expect(
+        editorState.definition(SuperTabConfig.contentZoneFor('st-1')).menuDestination,
+        EditorMenuDestination.configuration,
+      );
+      final simpleFuture = editorState.configure();
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('super-tab-settings')), findsOneWidget);
+      expect(find.byType(ContainerStyleEditor), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('super-tab-apply')));
+      await tester.pumpAndSettle();
+      await simpleFuture;
+
+      // 2) Only zone Onglets uses EditorMenuDestination.style and opens the full ContainerStyleEditor panel
+      expect(
+        editorState.definition(SuperTabConfig.tabsZone).menuDestination,
+        EditorMenuDestination.style,
+      );
+
+      final styleFuture = editorState.widget.onEditRegion!(
+        SuperTabConfig.tabsZone,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('super-tab-bar-style-settings')),
+        findsOneWidget,
+      );
+      expect(find.byType(ContainerStyleEditor), findsOneWidget);
+      expect(find.byType(StyleEditorPanel), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-tab-indicator-kind')),
+        findsOneWidget,
+      );
+
+      // Apply the style editor dialog
+      await tester.tap(find.byKey(const ValueKey('super-tab-bar-style-apply')));
+      await tester.pumpAndSettle();
+      await styleFuture;
     },
   );
 }

@@ -1,8 +1,10 @@
-import 'dart:ui' show Size;
+import 'dart:ui' show Color, Size;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart' show Axis;
+import 'package:material_ui/material_ui.dart'
+    show Axis, TabAlignment, TabBarIndicatorSize;
 
+import '../theme/container_style.dart';
 import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
@@ -19,6 +21,9 @@ enum SuperTabMode { static, dynamic }
 /// Position de la barre d'onglets (`TabBar`) par rapport au contenu (`TabBarView`).
 enum SuperTabBarPosition { top, bottom }
 
+/// Style visuel de l'indicateur d'onglet actif dans la `TabBar`.
+enum SuperTabIndicatorKind { underline, box, none }
+
 /// Configuration persistée d'un composant spécifique [SuperTab].
 @immutable
 class SuperTabConfig extends ComponentConfig {
@@ -31,6 +36,21 @@ class SuperTabConfig extends ComponentConfig {
     this.allowAdd = false,
     this.allowRemove = false,
     this.emptyText = 'Aucun onglet',
+    this.tabBarStyle = const ContainerStyle(),
+    this.indicatorKind = SuperTabIndicatorKind.underline,
+    this.indicatorSize = TabBarIndicatorSize.tab,
+    this.indicatorColor,
+    this.indicatorWeight = 2.0,
+    this.indicatorRadius = 0.0,
+    this.indicatorHorizontalPadding = 0.0,
+    this.indicatorVerticalPadding = 0.0,
+    this.labelColor,
+    this.unselectedLabelColor,
+    this.overlayColor,
+    this.labelHorizontalPadding,
+    this.dividerColor,
+    this.dividerHeight,
+    this.tabAlignment,
     Map<String, List<String>> placements = const {},
     Map<String, String> slotTypes = const {},
     Map<String, Axis> zoneAxes = const {},
@@ -105,6 +125,51 @@ class SuperTabConfig extends ComponentConfig {
   /// Message affiché quand le tableau dynamique est vide.
   final String emptyText;
 
+  /// Style complet de surface (`StyledSurface`) de la zone « Onglets » (`TabBar`).
+  final ContainerStyle tabBarStyle;
+
+  /// Forme de l'indicateur d'onglet sélectionné.
+  final SuperTabIndicatorKind indicatorKind;
+
+  /// Étendue horizontale de l'indicateur (`tab` ou `label`).
+  final TabBarIndicatorSize indicatorSize;
+
+  /// Couleur de l'indicateur d'onglet actif.
+  final Color? indicatorColor;
+
+  /// Épaisseur du trait d'indicateur (mode `underline` ou bordure).
+  final double indicatorWeight;
+
+  /// Rayon de courbure de l'indicateur (`underline` ou `box`).
+  final double indicatorRadius;
+
+  /// Marge intérieure horizontale de l'indicateur.
+  final double indicatorHorizontalPadding;
+
+  /// Marge intérieure verticale de l'indicateur.
+  final double indicatorVerticalPadding;
+
+  /// Couleur du texte et de l'icône de l'onglet actif.
+  final Color? labelColor;
+
+  /// Couleur du texte et de l'icône des onglets inactifs.
+  final Color? unselectedLabelColor;
+
+  /// Couleur d'effet au survol / clic sur un onglet.
+  final Color? overlayColor;
+
+  /// Marge intérieure horizontale de chaque onglet.
+  final double? labelHorizontalPadding;
+
+  /// Couleur du trait de séparation sous la `TabBar`.
+  final Color? dividerColor;
+
+  /// Hauteur du trait de séparation (`0` pour masquer).
+  final double? dividerHeight;
+
+  /// Alignement des onglets dans la `TabBar`.
+  final TabAlignment? tabAlignment;
+
   final Map<String, List<String>> placements;
   final Map<String, String> slotTypes;
   final Map<String, Axis> zoneAxes;
@@ -121,6 +186,26 @@ class SuperTabConfig extends ComponentConfig {
     binding?.validate();
     if (initialIndex < 0) {
       throw const FormatException('Index initial d’onglet invalide.');
+    }
+    if (!indicatorWeight.isFinite || indicatorWeight < 0) {
+      throw const FormatException('Épaisseur d’indicateur invalide.');
+    }
+    if (!indicatorRadius.isFinite || indicatorRadius < 0) {
+      throw const FormatException('Rayon d’indicateur invalide.');
+    }
+    if (!indicatorHorizontalPadding.isFinite ||
+        indicatorHorizontalPadding < 0 ||
+        !indicatorVerticalPadding.isFinite ||
+        indicatorVerticalPadding < 0) {
+      throw const FormatException('Marge d’indicateur invalide.');
+    }
+    if (labelHorizontalPadding != null &&
+        (!labelHorizontalPadding!.isFinite || labelHorizontalPadding! < 0)) {
+      throw const FormatException('Marge d’onglet invalide.');
+    }
+    if (dividerHeight != null &&
+        (!dividerHeight!.isFinite || dividerHeight! < 0)) {
+      throw const FormatException('Hauteur de séparateur invalide.');
     }
     for (final constraint in slotSizeConstraints.values) {
       SlotSizeConstraints.fromJson(constraint.toJson());
@@ -158,6 +243,29 @@ class SuperTabConfig extends ComponentConfig {
     bool? allowAdd,
     bool? allowRemove,
     String? emptyText,
+    ContainerStyle? tabBarStyle,
+    SuperTabIndicatorKind? indicatorKind,
+    TabBarIndicatorSize? indicatorSize,
+    Color? indicatorColor,
+    bool clearIndicatorColor = false,
+    double? indicatorWeight,
+    double? indicatorRadius,
+    double? indicatorHorizontalPadding,
+    double? indicatorVerticalPadding,
+    Color? labelColor,
+    bool clearLabelColor = false,
+    Color? unselectedLabelColor,
+    bool clearUnselectedLabelColor = false,
+    Color? overlayColor,
+    bool clearOverlayColor = false,
+    double? labelHorizontalPadding,
+    bool clearLabelHorizontalPadding = false,
+    Color? dividerColor,
+    bool clearDividerColor = false,
+    double? dividerHeight,
+    bool clearDividerHeight = false,
+    TabAlignment? tabAlignment,
+    bool clearTabAlignment = false,
     Map<String, List<String>>? placements,
     Map<String, String>? slotTypes,
     Map<String, Axis>? zoneAxes,
@@ -174,6 +282,31 @@ class SuperTabConfig extends ComponentConfig {
     allowAdd: allowAdd ?? this.allowAdd,
     allowRemove: allowRemove ?? this.allowRemove,
     emptyText: emptyText ?? this.emptyText,
+    tabBarStyle: tabBarStyle ?? this.tabBarStyle,
+    indicatorKind: indicatorKind ?? this.indicatorKind,
+    indicatorSize: indicatorSize ?? this.indicatorSize,
+    indicatorColor: clearIndicatorColor
+        ? null
+        : indicatorColor ?? this.indicatorColor,
+    indicatorWeight: indicatorWeight ?? this.indicatorWeight,
+    indicatorRadius: indicatorRadius ?? this.indicatorRadius,
+    indicatorHorizontalPadding:
+        indicatorHorizontalPadding ?? this.indicatorHorizontalPadding,
+    indicatorVerticalPadding:
+        indicatorVerticalPadding ?? this.indicatorVerticalPadding,
+    labelColor: clearLabelColor ? null : labelColor ?? this.labelColor,
+    unselectedLabelColor: clearUnselectedLabelColor
+        ? null
+        : unselectedLabelColor ?? this.unselectedLabelColor,
+    overlayColor: clearOverlayColor ? null : overlayColor ?? this.overlayColor,
+    labelHorizontalPadding: clearLabelHorizontalPadding
+        ? null
+        : labelHorizontalPadding ?? this.labelHorizontalPadding,
+    dividerColor: clearDividerColor ? null : dividerColor ?? this.dividerColor,
+    dividerHeight: clearDividerHeight
+        ? null
+        : dividerHeight ?? this.dividerHeight,
+    tabAlignment: clearTabAlignment ? null : tabAlignment ?? this.tabAlignment,
     placements: placements ?? this.placements,
     slotTypes: slotTypes ?? this.slotTypes,
     zoneAxes: zoneAxes ?? this.zoneAxes,
@@ -365,6 +498,25 @@ class SuperTabConfig extends ComponentConfig {
       'allowAdd': allowAdd,
       'allowRemove': allowRemove,
       'emptyText': emptyText,
+      if (tabBarStyle != const ContainerStyle())
+        'tabBarStyle': tabBarStyle.toJson(),
+      'indicatorKind': indicatorKind.name,
+      'indicatorSize': indicatorSize.name,
+      if (indicatorColor != null)
+        'indicatorColor': JsonColor.toHex(indicatorColor!),
+      'indicatorWeight': indicatorWeight,
+      'indicatorRadius': indicatorRadius,
+      'indicatorHorizontalPadding': indicatorHorizontalPadding,
+      'indicatorVerticalPadding': indicatorVerticalPadding,
+      if (labelColor != null) 'labelColor': JsonColor.toHex(labelColor!),
+      if (unselectedLabelColor != null)
+        'unselectedLabelColor': JsonColor.toHex(unselectedLabelColor!),
+      if (overlayColor != null) 'overlayColor': JsonColor.toHex(overlayColor!),
+      if (labelHorizontalPadding != null)
+        'labelHorizontalPadding': labelHorizontalPadding,
+      if (dividerColor != null) 'dividerColor': JsonColor.toHex(dividerColor!),
+      if (dividerHeight != null) 'dividerHeight': dividerHeight,
+      if (tabAlignment != null) 'tabAlignment': tabAlignment!.name,
       'placements': {
         for (final entry in placements.entries)
           if (entry.value.isNotEmpty)
@@ -414,6 +566,31 @@ class SuperTabConfig extends ComponentConfig {
       if (allowAdd != d.allowAdd) 'allowAdd': allowAdd,
       if (allowRemove != d.allowRemove) 'allowRemove': allowRemove,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
+      if (tabBarStyle != d.tabBarStyle)
+        'tabBarStyle': tabBarStyle.toCompactJson(),
+      if (indicatorKind != d.indicatorKind)
+        'indicatorKind': indicatorKind.name,
+      if (indicatorSize != d.indicatorSize)
+        'indicatorSize': indicatorSize.name,
+      if (indicatorColor != null)
+        'indicatorColor': JsonColor.toHex(indicatorColor!),
+      if (indicatorWeight != d.indicatorWeight)
+        'indicatorWeight': indicatorWeight,
+      if (indicatorRadius != d.indicatorRadius)
+        'indicatorRadius': indicatorRadius,
+      if (indicatorHorizontalPadding != d.indicatorHorizontalPadding)
+        'indicatorHorizontalPadding': indicatorHorizontalPadding,
+      if (indicatorVerticalPadding != d.indicatorVerticalPadding)
+        'indicatorVerticalPadding': indicatorVerticalPadding,
+      if (labelColor != null) 'labelColor': JsonColor.toHex(labelColor!),
+      if (unselectedLabelColor != null)
+        'unselectedLabelColor': JsonColor.toHex(unselectedLabelColor!),
+      if (overlayColor != null) 'overlayColor': JsonColor.toHex(overlayColor!),
+      if (labelHorizontalPadding != null)
+        'labelHorizontalPadding': labelHorizontalPadding,
+      if (dividerColor != null) 'dividerColor': JsonColor.toHex(dividerColor!),
+      if (dividerHeight != null) 'dividerHeight': dividerHeight,
+      if (tabAlignment != null) 'tabAlignment': tabAlignment!.name,
       if (placements.isNotEmpty)
         'placements': {
           for (final entry in placements.entries)
@@ -492,6 +669,93 @@ class SuperTabConfig extends ComponentConfig {
     final emptyText = value['emptyText'] ?? 'Aucun onglet';
     if (allowAdd is! bool || allowRemove is! bool || emptyText is! String) {
       throw const FormatException('Options dynamiques d’onglets invalides.');
+    }
+
+    final rawTabBarStyle = value['tabBarStyle'];
+    final tabBarStyle = rawTabBarStyle == null
+        ? const ContainerStyle()
+        : rawTabBarStyle is Map
+        ? const ContainerStyle().patchFromJson(rawTabBarStyle)
+        : (throw const FormatException('Style de barre d’onglets invalide.'));
+
+    final rawIndicatorKind =
+        value['indicatorKind'] ?? SuperTabIndicatorKind.underline.name;
+    final indicatorKind = SuperTabIndicatorKind.values
+        .where((candidate) => candidate.name == rawIndicatorKind)
+        .firstOrNull;
+    if (indicatorKind == null) {
+      throw const FormatException('Type d’indicateur invalide.');
+    }
+    final rawIndicatorSize =
+        value['indicatorSize'] ?? TabBarIndicatorSize.tab.name;
+    final indicatorSize = TabBarIndicatorSize.values
+        .where((candidate) => candidate.name == rawIndicatorSize)
+        .firstOrNull;
+    if (indicatorSize == null) {
+      throw const FormatException('Taille d’indicateur invalide.');
+    }
+    double readNonNegativeDouble(String key, double fallback) {
+      final raw = value[key];
+      if (raw == null) return fallback;
+      if (raw is! num || !raw.isFinite || raw < 0) {
+        throw FormatException('Valeur numérique invalide pour $key.');
+      }
+      return raw.toDouble();
+    }
+
+    double? readNullableNonNegativeDouble(String key) {
+      final raw = value[key];
+      if (raw == null) return null;
+      if (raw is! num || !raw.isFinite || raw < 0) {
+        throw FormatException('Valeur numérique invalide pour $key.');
+      }
+      return raw.toDouble();
+    }
+
+    final indicatorColor = JsonColor.parseNullable(
+      value['indicatorColor'],
+      'indicatorColor',
+    );
+    final indicatorWeight = readNonNegativeDouble('indicatorWeight', 2.0);
+    final indicatorRadius = readNonNegativeDouble('indicatorRadius', 0.0);
+    final indicatorHorizontalPadding = readNonNegativeDouble(
+      'indicatorHorizontalPadding',
+      0.0,
+    );
+    final indicatorVerticalPadding = readNonNegativeDouble(
+      'indicatorVerticalPadding',
+      0.0,
+    );
+    final labelColor = JsonColor.parseNullable(
+      value['labelColor'],
+      'labelColor',
+    );
+    final unselectedLabelColor = JsonColor.parseNullable(
+      value['unselectedLabelColor'],
+      'unselectedLabelColor',
+    );
+    final overlayColor = JsonColor.parseNullable(
+      value['overlayColor'],
+      'overlayColor',
+    );
+    final labelHorizontalPadding = readNullableNonNegativeDouble(
+      'labelHorizontalPadding',
+    );
+    final dividerColor = JsonColor.parseNullable(
+      value['dividerColor'],
+      'dividerColor',
+    );
+    final dividerHeight = readNullableNonNegativeDouble('dividerHeight');
+
+    final rawTabAlignment = value['tabAlignment'];
+    TabAlignment? tabAlignment;
+    if (rawTabAlignment != null) {
+      tabAlignment = TabAlignment.values
+          .where((candidate) => candidate.name == rawTabAlignment)
+          .firstOrNull;
+      if (tabAlignment == null) {
+        throw const FormatException('Alignement d’onglets invalide.');
+      }
     }
 
     final rawPlacements = value['placements'] ?? const {};
@@ -581,6 +845,21 @@ class SuperTabConfig extends ComponentConfig {
         allowAdd: allowAdd,
         allowRemove: allowRemove,
         emptyText: emptyText,
+        tabBarStyle: tabBarStyle,
+        indicatorKind: indicatorKind,
+        indicatorSize: indicatorSize,
+        indicatorColor: indicatorColor,
+        indicatorWeight: indicatorWeight,
+        indicatorRadius: indicatorRadius,
+        indicatorHorizontalPadding: indicatorHorizontalPadding,
+        indicatorVerticalPadding: indicatorVerticalPadding,
+        labelColor: labelColor,
+        unselectedLabelColor: unselectedLabelColor,
+        overlayColor: overlayColor,
+        labelHorizontalPadding: labelHorizontalPadding,
+        dividerColor: dividerColor,
+        dividerHeight: dividerHeight,
+        tabAlignment: tabAlignment,
         placements: placements,
         slotTypes: types,
         zoneAxes: parsedAxes,
@@ -597,6 +876,40 @@ class SuperTabConfig extends ComponentConfig {
     }
   }
 
+  static bool _sameJsonValue(Object? a, Object? b) {
+    if (identical(a, b)) return true;
+    if (a is List && b is List) {
+      if (a.length != b.length) return false;
+      for (var i = 0; i < a.length; i++) {
+        if (!_sameJsonValue(a[i], b[i])) return false;
+      }
+      return true;
+    }
+    if (a is Map && b is Map) {
+      if (a.length != b.length) return false;
+      for (final entry in a.entries) {
+        if (!b.containsKey(entry.key) ||
+            !_sameJsonValue(entry.value, b[entry.key])) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return a == b;
+  }
+
+  static int _hashJsonValue(Object? value) {
+    if (value is List) return Object.hashAll(value.map(_hashJsonValue));
+    if (value is Map) {
+      return Object.hashAllUnordered(
+        value.entries.map(
+          (e) => Object.hash(e.key, _hashJsonValue(e.value)),
+        ),
+      );
+    }
+    return value.hashCode;
+  }
+
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -609,6 +922,21 @@ class SuperTabConfig extends ComponentConfig {
         allowAdd != other.allowAdd ||
         allowRemove != other.allowRemove ||
         emptyText != other.emptyText ||
+        !_sameJsonValue(tabBarStyle.toJson(), other.tabBarStyle.toJson()) ||
+        indicatorKind != other.indicatorKind ||
+        indicatorSize != other.indicatorSize ||
+        indicatorColor != other.indicatorColor ||
+        indicatorWeight != other.indicatorWeight ||
+        indicatorRadius != other.indicatorRadius ||
+        indicatorHorizontalPadding != other.indicatorHorizontalPadding ||
+        indicatorVerticalPadding != other.indicatorVerticalPadding ||
+        labelColor != other.labelColor ||
+        unselectedLabelColor != other.unselectedLabelColor ||
+        overlayColor != other.overlayColor ||
+        labelHorizontalPadding != other.labelHorizontalPadding ||
+        dividerColor != other.dividerColor ||
+        dividerHeight != other.dividerHeight ||
+        tabAlignment != other.tabAlignment ||
         placements.length != other.placements.length ||
         !mapEquals(slotTypes, other.slotTypes) ||
         !mapEquals(zoneAxes, other.zoneAxes) ||
@@ -625,7 +953,7 @@ class SuperTabConfig extends ComponentConfig {
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     mode,
     tabBarPosition,
     isScrollable,
@@ -634,6 +962,21 @@ class SuperTabConfig extends ComponentConfig {
     allowAdd,
     allowRemove,
     emptyText,
+    _hashJsonValue(tabBarStyle.toJson()),
+    indicatorKind,
+    indicatorSize,
+    indicatorColor,
+    indicatorWeight,
+    indicatorRadius,
+    indicatorHorizontalPadding,
+    indicatorVerticalPadding,
+    labelColor,
+    unselectedLabelColor,
+    overlayColor,
+    labelHorizontalPadding,
+    dividerColor,
+    dividerHeight,
+    tabAlignment,
     Object.hashAllUnordered(
       placements.entries.map((e) => Object.hash(e.key, Object.hashAll(e.value))),
     ),
@@ -655,5 +998,5 @@ class SuperTabConfig extends ComponentConfig {
     Object.hashAllUnordered(
       slotLabels.entries.map((e) => Object.hash(e.key, e.value)),
     ),
-  );
+  ]);
 }

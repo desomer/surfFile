@@ -267,6 +267,7 @@ final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
       'Position de la barre',
       draft.tabBarPosition == SuperTabBarPosition.bottom ? 'En bas' : 'En haut',
     ),
+    ('Indicateur', draft.indicatorKind.name),
     ('Onglets défilables', _yes(draft.isScrollable)),
     if (draft.mode == SuperTabMode.dynamic)
       (

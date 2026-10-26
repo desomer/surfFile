@@ -100,6 +100,7 @@ class NativeRegion {
     this.emptySize = const Size(double.infinity, kToolbarHeight),
     this.fillSize,
     this.tagFilter = const ComponentTagFilter(),
+    this.menuDestination = EditorMenuDestination.configuration,
   });
 
   final String id;
@@ -113,6 +114,7 @@ class NativeRegion {
   final Size emptySize;
   final Size? fillSize;
   final ComponentTagFilter tagFilter;
+  final EditorMenuDestination menuDestination;
 }
 
 /// Shared selection, menus, switches and slot catalog for native adapters.
@@ -129,6 +131,7 @@ class NativeComponentEditor extends StatefulWidget {
     this.registry,
     this.onConfigured,
     this.onConfigure,
+    this.onEditRegion,
     this.onRegionSelected,
     this.regionActions,
     this.onSlotAdded,
@@ -156,6 +159,7 @@ class NativeComponentEditor extends StatefulWidget {
   final Registry? registry;
   final ValueChanged<Set<String>>? onConfigured;
   final Future<void> Function()? onConfigure;
+  final Future<void> Function(String region)? onEditRegion;
   final ValueChanged<String?>? onRegionSelected;
   final List<Widget> Function(String region)? regionActions;
   final NativeSlotAddedCallback? onSlotAdded;
@@ -1662,9 +1666,12 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             menuTitle: 'zone ${spec.label}',
             menuSubtitle: () => _componentLabel,
             menuIcon: EditorSlot.zoneMenuIcon,
+            menuDestination: spec.menuDestination,
             editable: true,
             axisAction: spec.editableFlow ? () => _axisActionFor(id) : null,
-            onEdit: configure,
+            onEdit: widget.onEditRegion != null
+                ? () => widget.onEditRegion!(id)
+                : configure,
             onAdd: () => add(id),
             wrapChildrenActions: wrapActionsForRegion(id),
             onContextMenu: (_) => select(id, regionContext),

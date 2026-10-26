@@ -606,8 +606,10 @@ class _PathTreeDialog extends StatelessWidget {
   List<Widget> _buildNodes(
     BuildContext context,
     List<LayoutSelectionNode> items,
-    int depth,
-  ) {
+    int depth, [
+    Map<String, int>? keyCounts,
+  ]) {
+    final counts = keyCounts ?? <String, int>{};
     final scheme = Theme.of(context).colorScheme;
     final widgets = <Widget>[];
     for (final node in items) {
@@ -615,9 +617,17 @@ class _PathTreeDialog extends StatelessWidget {
       final isActiveBranch =
           currentPath.length >= node.path.length &&
           listEquals(currentPath.take(node.path.length).toList(), node.path);
+      final baseKey = 'style-edit-banner-tree-node-${node.path.join("/")}';
+      final occurrence = counts.update(
+        baseKey,
+        (value) => value + 1,
+        ifAbsent: () => 0,
+      );
       widgets.add(
         InkWell(
-          key: ValueKey('style-edit-banner-tree-node-${node.path.join("/")}'),
+          key: occurrence == 0
+              ? ValueKey(baseKey)
+              : ValueKey('$baseKey#$occurrence'),
           onTap: () => onSelectNode(node),
           child: ColoredBox(
             color: isSelected
@@ -670,7 +680,7 @@ class _PathTreeDialog extends StatelessWidget {
         ),
       );
       if (node.children.isNotEmpty) {
-        widgets.addAll(_buildNodes(context, node.children, depth + 1));
+        widgets.addAll(_buildNodes(context, node.children, depth + 1, counts));
       }
     }
     return widgets;

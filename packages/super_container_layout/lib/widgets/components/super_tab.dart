@@ -19,6 +19,8 @@ import '../../super_app.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tab_editor.dart';
 import '../editing/history/editor_history.dart';
+import '../editing/slots/editor_slot.dart';
+import '../surfaces/styled_surface.dart';
 import 'super_action.dart';
 import 'super_layout/slot_implementation.dart';
 
@@ -149,6 +151,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   );
 
   TabController? _tabController;
+  SuperTabConfig? _previewConfig;
   late int _selectedIndex = widget._initialConfig.initialIndex;
   int _lastValidIndex = 0;
 
@@ -703,6 +706,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           stretch: false,
           emptySize: Size(double.infinity, kTextTabBarHeight),
           tagFilter: ComponentTagFilter(include: {'action'}),
+          menuDestination: EditorMenuDestination.style,
         ),
         NativeRegion(
           SuperTabConfig.dynamicContentZone,
@@ -727,6 +731,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         stretch: false,
         emptySize: Size(double.infinity, kTextTabBarHeight),
         tagFilter: ComponentTagFilter(include: {'action'}),
+        menuDestination: EditorMenuDestination.style,
       ),
       for (final tabId in tabIds)
         NativeRegion(
@@ -885,6 +890,121 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     widget.onConfigChanged?.call(result);
   }
 
+  Future<void> _openTabBarStyleEditor(
+    ValueNotifier<SuperTabConfig> controller,
+  ) async {
+    SuperTabConfig? result;
+    try {
+      result = await showSuperTabBarStyleEditor(
+        context: context,
+        config: controller.value,
+        label: configLabelForTabBar(controller.value),
+        onPreviewChanged: (draft) {
+          if (!mounted) return;
+          setState(() => _previewConfig = draft);
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _previewConfig = null);
+      }
+    }
+    if (result == null || !mounted || result == controller.value) return;
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    try {
+      controller.value = result;
+      _selectedIndex = result.initialIndex;
+      _lastValidIndex = result.initialIndex;
+    } finally {
+      history?.commitTransaction();
+    }
+    widget.onConfigChanged?.call(result);
+  }
+
+  String configLabelForTabBar(SuperTabConfig config) =>
+      config.mode == SuperTabMode.dynamic ? 'Onglet gabarit' : 'Onglets';
+
+  Decoration? _buildTabIndicator(BuildContext context, SuperTabConfig config) {
+    final scheme = Theme.of(context).colorScheme;
+    final color = config.indicatorColor ?? scheme.primary;
+    return switch (config.indicatorKind) {
+      SuperTabIndicatorKind.none => const BoxDecoration(),
+      SuperTabIndicatorKind.box => BoxDecoration(
+        color: config.indicatorColor ?? scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(config.indicatorRadius),
+      ),
+      SuperTabIndicatorKind.underline =>
+        config.indicatorRadius > 0
+            ? UnderlineTabIndicator(
+                borderRadius: BorderRadius.circular(config.indicatorRadius),
+                borderSide: BorderSide(
+                  width: config.indicatorWeight,
+                  color: color,
+                ),
+              )
+            : null,
+    };
+  }
+
+  Widget _wrapTabBarSurface(
+    BuildContext context,
+    SuperTabConfig config,
+    Widget child,
+  ) {
+    final colors = Theme.of(context).colorScheme;
+    final style = config.tabBarStyle;
+    final renderStyle = style.copyWith(margin: 0, marginInsets: null);
+    return Padding(
+      padding: style.outerMargin,
+      child: StyledSurface(
+        key: ValueKey('super-tab-surface-${widget.id}'),
+        style: renderStyle,
+        fallbackColor: colors.surface,
+        borderColor: colors.outlineVariant,
+        child: Padding(
+          padding: style.contentPadding,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  TabBar _buildTabBarWidget({
+    required BuildContext context,
+    required SuperTabConfig config,
+    required TabController tabController,
+    required List<Widget> tabs,
+    required ValueChanged<int> onTap,
+  }) => TabBar(
+    key: ValueKey('super-tab-bar-${widget.id}'),
+    controller: tabController,
+    isScrollable: config.isScrollable,
+    tabAlignment: config.tabAlignment,
+    indicator: _buildTabIndicator(context, config),
+    indicatorSize: config.indicatorSize,
+    indicatorColor: config.indicatorColor,
+    indicatorWeight: config.indicatorKind == SuperTabIndicatorKind.none
+        ? 0
+        : config.indicatorWeight,
+    indicatorPadding: EdgeInsets.symmetric(
+      horizontal: config.indicatorHorizontalPadding,
+      vertical: config.indicatorVerticalPadding,
+    ),
+    labelColor: config.labelColor,
+    unselectedLabelColor: config.unselectedLabelColor,
+    overlayColor: config.overlayColor != null
+        ? WidgetStatePropertyAll(config.overlayColor)
+        : null,
+    labelPadding: config.labelHorizontalPadding != null
+        ? EdgeInsets.symmetric(horizontal: config.labelHorizontalPadding!)
+        : null,
+    dividerColor: config.dividerColor,
+    dividerHeight: config.dividerHeight,
+    tabs: tabs,
+    onTap: onTap,
+  );
+
   void _handleRegionSelected(String? regionId, SuperTabConfig config) {
     if (regionId == null || config.mode != SuperTabMode.static) return;
     final tabId = SuperTabConfig.tabSlotIdOfZone(regionId);
@@ -912,9 +1032,10 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
     if (tabSlots.isEmpty) {
       _ensureTabController(0, 0);
-      final barPlaceholder = Material(
-        color: Theme.of(context).colorScheme.surface,
-        child: SizedBox(
+      final barPlaceholder = _wrapTabBarSurface(
+        context,
+        config,
+        SizedBox(
           height: kTextTabBarHeight,
           child: editor.region(SuperTabConfig.tabsZone),
         ),
@@ -961,14 +1082,15 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             ),
         ];
 
-        final tabBar = Material(
-          color: Theme.of(context).colorScheme.surface,
-          child: editor.region(
+        final tabBar = _wrapTabBarSurface(
+          context,
+          config,
+          editor.region(
             SuperTabConfig.tabsZone,
-            child: TabBar(
-              key: ValueKey('super-tab-bar-${widget.id}'),
-              controller: tabController,
-              isScrollable: config.isScrollable,
+            child: _buildTabBarWidget(
+              context: context,
+              config: config,
+              tabController: tabController,
               tabs: tabs,
               onTap: (index) {
                 final slot = tabSlots[index];
@@ -1088,9 +1210,10 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
     if (templateSlot == null || count == 0) {
       _ensureTabController(0, 0);
-      final barArea = Material(
-        color: Theme.of(context).colorScheme.surface,
-        child: Row(
+      final barArea = _wrapTabBarSurface(
+        context,
+        config,
+        Row(
           children: [
             Expanded(
               child: SizedBox(
@@ -1197,17 +1320,18 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         ),
     ];
 
-    final tabBarRow = Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Row(
+    final tabBarRow = _wrapTabBarSurface(
+      context,
+      config,
+      Row(
         children: [
           Expanded(
             child: editor.region(
               SuperTabConfig.tabsZone,
-              child: TabBar(
-                key: ValueKey('super-tab-bar-${widget.id}'),
-                controller: tabController,
-                isScrollable: config.isScrollable,
+              child: _buildTabBarWidget(
+                context: context,
+                config: config,
+                tabController: tabController,
                 tabs: tabs,
                 onTap: (index) {
                   setState(() {
@@ -1288,7 +1412,8 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
     return ValueListenableBuilder<SuperTabConfig>(
       valueListenable: controller,
-      builder: (context, config, _) {
+      builder: (context, savedConfig, _) {
+        final config = _previewConfig ?? savedConfig;
         _observeStaticBinding(config, listScope, repositoryStore);
         _observeDynamic(config, listScope, repositoryStore);
 
@@ -1312,6 +1437,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             );
           },
           onConfigure: () => _openSettings(controller),
+          onEditRegion: (region) => region == SuperTabConfig.tabsZone
+              ? _openTabBarStyleEditor(controller)
+              : _openSettings(controller),
           onRegionSelected: (regionId) =>
               _handleRegionSelected(regionId, controller.value),
           onSlotRemoved: (region, slot) =>
