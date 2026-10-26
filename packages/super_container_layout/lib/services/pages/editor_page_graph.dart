@@ -8,6 +8,7 @@ import '../../models/super_layout_config.dart';
 import '../../models/super_value_config.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_list_view_config.dart';
+import '../../models/super_tab_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 
@@ -450,6 +451,7 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.value => appearance.tryComponent<SuperValueConfig>(ref.id),
   EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
+  EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
 };
 
 bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
@@ -461,6 +463,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.value => value is SuperValueConfig,
   EditorConfigKind.action => value is SuperActionConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
+  EditorConfigKind.tab => value is SuperTabConfig,
 };
 
 Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
@@ -472,6 +475,7 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       ScaffoldPageConfig() => [EditorConfigRef.scaffoldPage(entry.key)],
       SuperValueConfig() => [EditorConfigRef.value(entry.key)],
       SuperActionConfig() => [EditorConfigRef.action(entry.key)],
+      SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
       SuperListViewConfig() => [
         EditorConfigRef.layout(entry.key),
         EditorConfigRef.list(entry.key),
@@ -493,6 +497,18 @@ Set<String> _usedIds(Appearance appearance) => {
 Map<String, String> _slots(EditorConfigKind kind, Object value) {
   if (value is ScaffoldPageConfig) return _slots(kind, value.native);
   if (value is NativeComponentConfig) {
+    return {
+      for (final id in {
+        ...value.placements.values.expand((ids) => ids),
+        ...value.slotTypes.keys,
+        ...value.slotPreferredSizes.keys,
+        ...value.slotSizeConstraints.keys,
+        ...value.slotLabels.keys,
+      })
+        id: value.slotTypeOf(id),
+    };
+  }
+  if (value is SuperTabConfig) {
     return {
       for (final id in {
         ...value.placements.values.expand((ids) => ids),
@@ -556,6 +572,37 @@ Object _copy(Object value, String Function(String) remap) {
         remap,
       ),
       regions: {...value.regions},
+      slotPreferredSizes: _remapKeys(value.slotPreferredSizes, remap),
+      slotSizeConstraints: _remapKeys(value.slotSizeConstraints, remap),
+      slotLabels: _remapKeys(value.slotLabels, remap),
+    );
+  }
+  if (value is SuperTabConfig) {
+    String remapZone(String zone) {
+      final tabId = SuperTabConfig.tabSlotIdOfZone(zone);
+      return tabId == null
+          ? zone
+          : SuperTabConfig.contentZoneFor(remap(tabId));
+    }
+
+    return value.copyWith(
+      placements: {
+        for (final entry in value.placements.entries)
+          remapZone(entry.key): [for (final id in entry.value) remap(id)],
+      },
+      slotTypes: _remapTypes(
+        _slots(EditorConfigKind.tab, value),
+        value.slotTypes,
+        remap,
+      ),
+      zoneAxes: {
+        for (final entry in value.zoneAxes.entries)
+          remapZone(entry.key): entry.value,
+      },
+      zoneFlows: {
+        for (final entry in value.zoneFlows.entries)
+          remapZone(entry.key): entry.value,
+      },
       slotPreferredSizes: _remapKeys(value.slotPreferredSizes, remap),
       slotSizeConstraints: _remapKeys(value.slotSizeConstraints, remap),
       slotLabels: _remapKeys(value.slotLabels, remap),

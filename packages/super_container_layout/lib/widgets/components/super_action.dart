@@ -419,8 +419,8 @@ Widget buildSuperActionVisual({
   return button;
 }
 
-/// Part of a native navigation destination rendered by a [SuperAction].
-enum SuperActionNavigationPart { icon, label }
+/// Part of a native navigation destination or tab rendered by a [SuperAction].
+enum SuperActionNavigationPart { icon, label, tab }
 
 /// Scope instructing a descendant [SuperAction] to render as the icon or label
 /// of a native navigation destination (`NavigationRailDestination` or
@@ -900,6 +900,59 @@ class _SuperActionState extends State<SuperAction> {
                 width: 56,
                 height: 24,
                 child: Center(child: iconVisual),
+              ),
+            );
+          }
+
+          if (navScope?.part == SuperActionNavigationPart.tab) {
+            final iconWidget = Icon(
+              SuperActionIcons.resolve(config.icon),
+              key: ValueKey('super-action-icon-${widget.id}'),
+              size: config.iconSize ?? 18,
+              color: config.iconColor ?? config.color,
+            );
+            final textWidget = Text(
+              config.label,
+              key: ValueKey('super-action-label-${widget.id}'),
+              style: textStyle,
+              textAlign: config.textAlign,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            );
+            Widget tabVisual = switch (config.kind) {
+              SuperActionKind.icon => iconWidget,
+              SuperActionKind.text => textWidget,
+              SuperActionKind.textAndIcon => Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: config.iconPosition == SuperActionIconPosition.leading
+                    ? [
+                        iconWidget,
+                        SizedBox(width: config.iconSpacing),
+                        Flexible(child: textWidget),
+                      ]
+                    : [
+                        Flexible(child: textWidget),
+                        SizedBox(width: config.iconSpacing),
+                        iconWidget,
+                      ],
+              ),
+            };
+            if (!config.enabled) {
+              tabVisual = Opacity(opacity: 0.45, child: tabVisual);
+            }
+            if (config.tooltip.trim().isNotEmpty) {
+              tabVisual = Tooltip(message: config.tooltip, child: tabVisual);
+            }
+            return EditorSlot(
+              key: _surface,
+              id: widget.id,
+              label: 'Action',
+              menuType: 'Action',
+              onEdit: editAction,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Center(widthFactor: 1, child: tabVisual),
               ),
             );
           }

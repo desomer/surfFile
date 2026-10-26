@@ -4,6 +4,7 @@ import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
+import '../../../models/super_tab_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../models/super_action_config.dart';
 import '../../../theme/container_style.dart';
@@ -14,6 +15,7 @@ import 'forms/expansible_add_form.dart';
 import 'forms/list_view_add_form.dart';
 import 'forms/super_action_add_form.dart';
 import 'forms/super_value_add_form.dart';
+import 'forms/tab_add_form.dart';
 
 export '../repositories/repository_binding_fields.dart'
     show RepositoryBindingFields;
@@ -22,6 +24,7 @@ export 'forms/expansible_add_form.dart' show ExpansibleAddForm;
 export 'forms/list_view_add_form.dart' show ListViewAddForm;
 export 'forms/super_action_add_form.dart' show SuperActionAddForm;
 export 'forms/super_value_add_form.dart' show SuperValueAddForm;
+export 'forms/tab_add_form.dart' show TabAddForm;
 
 /// Add wizard settings of a `SuperValue`, written to `Registry.valueController`.
 ComponentAddConfigurator<SuperValueConfig> superValueAddConfigurator(
@@ -236,6 +239,51 @@ final expansibleAddConfigurator =
       bindingHelp:
           'Le repository fournit et persiste l’état ouvert/fermé (booléen).',
     );
+
+/// Add wizard settings of a `SuperTab`, written to `Registry.tabController`.
+final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
+  initial: (_) => SuperTabConfig(),
+  builder: (context, draft, onChanged) =>
+      TabAddForm(draft: draft, onChanged: onChanged),
+  validate: (draft) {
+    if (draft.binding?.path.trim().isEmpty ?? false) {
+      return 'Chemin de liaison requis.';
+    }
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration des onglets invalide.';
+    }
+  },
+  summary: (draft) => [
+    (
+      'Mode',
+      draft.mode == SuperTabMode.dynamic ? 'Dynamique' : 'Statique',
+    ),
+    (
+      'Position de la barre',
+      draft.tabBarPosition == SuperTabBarPosition.bottom ? 'En bas' : 'En haut',
+    ),
+    ('Onglets défilables', _yes(draft.isScrollable)),
+    if (draft.mode == SuperTabMode.dynamic)
+      (
+        'Ajout / suppression',
+        '${_yes(draft.allowAdd)} / ${_yes(draft.allowRemove)}',
+      ),
+    ('Liaison', _bindingLabel(draft.binding)),
+  ],
+  apply: (registry, id, draft) => registry.tabController(id).value = draft,
+  readBinding: (draft) => draft.binding,
+  writeBinding: (draft, binding) =>
+      draft.copyWith(binding: binding, clearBinding: binding == null),
+  bindingKeyPrefix: 'add-tab',
+  bindingPathHint: 'categories ou ui.ongletActif',
+  bindingHelp:
+      'En mode dynamique : tableau JSON générant les onglets. En mode statique : index actif.',
+);
 
 String _yes(bool value) => value ? 'oui' : 'non';
 

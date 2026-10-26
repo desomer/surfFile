@@ -128,8 +128,11 @@ class NativeComponentEditor extends StatefulWidget {
     required this.settingsTitle,
     this.registry,
     this.onConfigured,
+    this.onConfigure,
+    this.onRegionSelected,
     this.regionActions,
     this.onSlotAdded,
+    this.onSlotRemoved,
     this.editSurface = false,
     this.showRegionInPath = true,
     this.resolveSlotLabel,
@@ -152,8 +155,12 @@ class NativeComponentEditor extends StatefulWidget {
   final String settingsTitle;
   final Registry? registry;
   final ValueChanged<Set<String>>? onConfigured;
+  final Future<void> Function()? onConfigure;
+  final ValueChanged<String?>? onRegionSelected;
   final List<Widget> Function(String region)? regionActions;
   final NativeSlotAddedCallback? onSlotAdded;
+  final Future<void> Function(String region, SlotImplementation slot)?
+  onSlotRemoved;
   final bool editSurface;
   final bool showRegionInPath;
   final String? Function(SlotImplementation slot)? resolveSlotLabel;
@@ -437,6 +444,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       _selected = id;
       _selectedSlot = null;
     });
+    widget.onRegionSelected?.call(id);
     LayoutSelection.report(
       this,
       [
@@ -576,6 +584,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       _selected = region;
       _selectedSlot = slot.id;
     });
+    widget.onRegionSelected?.call(region);
     LayoutSelection.report(
       this,
       [
@@ -651,8 +660,12 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   }
 
   Future<void> configure() async {
-    final activated = <String>{};
     select(null);
+    if (widget.onConfigure != null) {
+      await widget.onConfigure!();
+      return;
+    }
+    final activated = <String>{};
     await showEditorDialog<void>(
       context: context,
       target: context,
@@ -1515,13 +1528,19 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             )
           : null,
       onRemoveSlot: editing
-          ? (slot) async => removeSlotInstance(
-              context,
-              id: slot.id,
-              type: _config.value.slotTypeOf(slot.id),
-              containerKind: EditorConfigKind.nativeComponent,
-              unplace: () => _update(_config.value.withoutSlot(slot.id)),
-            )
+          ? (slot) async {
+              if (widget.onSlotRemoved != null) {
+                await widget.onSlotRemoved!(id, slot);
+                return;
+              }
+              removeSlotInstance(
+                context,
+                id: slot.id,
+                type: _config.value.slotTypeOf(slot.id),
+                containerKind: EditorConfigKind.nativeComponent,
+                unplace: () => _update(_config.value.withoutSlot(slot.id)),
+              );
+            }
           : null,
       onEditPreferredSize: editing ? _editSize : null,
       wrapActionsForSlot: editing
@@ -1600,13 +1619,19 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 )
               : null,
           onRemoveSlot: editing
-              ? (slot) async => removeSlotInstance(
-                  context,
-                  id: slot.id,
-                  type: _config.value.slotTypeOf(slot.id),
-                  containerKind: EditorConfigKind.nativeComponent,
-                  unplace: () => _update(_config.value.withoutSlot(slot.id)),
-                )
+              ? (slot) async {
+                  if (widget.onSlotRemoved != null) {
+                    await widget.onSlotRemoved!(id, slot);
+                    return;
+                  }
+                  removeSlotInstance(
+                    context,
+                    id: slot.id,
+                    type: _config.value.slotTypeOf(slot.id),
+                    containerKind: EditorConfigKind.nativeComponent,
+                    unplace: () => _update(_config.value.withoutSlot(slot.id)),
+                  );
+                }
               : null,
           onEditPreferredSize: editing ? _editSize : null,
           wrapActionsForSlot: editing

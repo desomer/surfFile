@@ -5,6 +5,7 @@ import 'scaffold_page_config.dart';
 import 'super_action_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
+import 'super_tab_config.dart';
 import 'super_value_config.dart';
 
 /// Declarative codec entry for a [ComponentConfig] subtype (GenUI CatalogItem pattern).
@@ -46,6 +47,10 @@ abstract final class ComponentConfigCatalog {
     'list': ComponentConfigCodec<SuperListViewConfig>(
       type: 'list',
       fromJson: SuperListViewConfig.fromJson,
+    ),
+    'tab': ComponentConfigCodec<SuperTabConfig>(
+      type: 'tab',
+      fromJson: SuperTabConfig.fromJson,
     ),
   };
 

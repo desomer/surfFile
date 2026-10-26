@@ -3,9 +3,11 @@ import 'package:material_ui/material_ui.dart';
 import 'component_config.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
+import 'super_tab_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
 import '../widgets/components/super_list_view.dart';
+import '../widgets/components/super_tab.dart';
 import '../widgets/components/super_value.dart';
 import '../widgets/components/super_action.dart';
 import '../widgets/components/super_layout/iterable_content.dart';
@@ -45,6 +47,7 @@ enum EditorConfigKind {
   value,
   action,
   list,
+  tab,
 }
 
 /// Key of one persisted configuration entry, e.g. `layouts[id]`.
@@ -62,6 +65,7 @@ class EditorConfigRef {
   const EditorConfigRef.value(this.id) : kind = EditorConfigKind.value;
   const EditorConfigRef.action(this.id) : kind = EditorConfigKind.action;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
+  const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
 
   final EditorConfigKind kind;
   final String id;
@@ -137,11 +141,17 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
   ];
+  static List<EditorConfigRef> _tab(String id) => [
+    EditorConfigRef.tab(id),
+  ];
 
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
   static const superAction = ComponentDuplicationContract(
     ownedConfigs: _action,
+  );
+  static const superTab = ComponentDuplicationContract(
+    ownedConfigs: _tab,
   );
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _native,
@@ -239,6 +249,8 @@ class Registry {
   final Map<String, SuperActionConfig> _actionDefaults = {};
   final Map<String, ValueNotifier<SuperListViewConfig>> listConfigById = {};
   final Map<String, SuperListViewConfig> _listDefaults = {};
+  final Map<String, ValueNotifier<SuperTabConfig>> tabConfigById = {};
+  final Map<String, SuperTabConfig> _tabDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
   final Map<String, NativeComponentConfig? Function(Appearance)>
   _nativeMigrations = {};
@@ -252,6 +264,7 @@ class Registry {
     ...valueConfigById.keys,
     ...actionConfigById.keys,
     ...listConfigById.keys,
+    ...tabConfigById.keys,
   };
 
   /// Includes runtime defaults that have not yet been persisted.
@@ -268,6 +281,7 @@ class Registry {
       for (final entry in actionConfigById.entries)
         entry.key: entry.value.value,
       for (final entry in listConfigById.entries) entry.key: entry.value.value,
+      for (final entry in tabConfigById.entries) entry.key: entry.value.value,
       ...current.components,
     };
     // A list and its row layout share an ID.
@@ -318,6 +332,10 @@ class Registry {
     }
     for (final entry in listConfigById.entries.toList()) {
       listController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in tabConfigById.entries.toList()) {
+      _tabDefaults[entry.key] = entry.value.value;
+      tabController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -470,6 +488,12 @@ class Registry {
           fallback: _listDefaults[entry.key]!,
         );
       }
+      for (final entry in tabConfigById.entries) {
+        entry.value.value = appearance.tabComponent(
+          entry.key,
+          fallback: _tabDefaults[entry.key]!,
+        );
+      }
     } finally {
       _syncing = false;
     }
@@ -608,6 +632,36 @@ class Registry {
     return notifier;
   }
 
+  ValueNotifier<SuperTabConfig> tabController(
+    String id, {
+    SuperTabConfig? fallback,
+  }) {
+    final initial = fallback ?? SuperTabConfig();
+    initial.validate();
+    _tabDefaults.putIfAbsent(id, () => initial);
+    final notifier = tabConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.tabComponent(id, fallback: initial) ?? initial,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withTabComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
   ValueNotifier<NativeComponentConfig> nativeComponentController(
     String id, {
     NativeComponentConfig? fallback,
@@ -714,6 +768,14 @@ class Registry {
       tags: const {'container', 'layout', 'expansible'},
       addConfigurator: expansibleAddConfigurator,
       dynamicBuilder: (ctx) => SuperExpansible(id: ctx.id),
+    );
+
+    registry['Tab'] = ComponentBuilderDynamic(
+      menuIcon: Icons.tab_outlined,
+      duplication: ComponentDuplicationContract.superTab,
+      tags: const {'container', 'layout', 'tab'},
+      addConfigurator: tabAddConfigurator,
+      dynamicBuilder: (ctx) => SuperTab(id: ctx.id),
     );
 
     registry['Card'] = ComponentBuilderDynamic(
