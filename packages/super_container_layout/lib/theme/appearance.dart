@@ -331,7 +331,9 @@ class Appearance {
         primary: generated.primary.withValues(alpha: accent.a),
         onSurface: foreground(surface),
       ),
-      scaffoldBackgroundColor: backgroundStyle.fill.type == FillType.solid
+      scaffoldBackgroundColor:
+          backgroundStyle.fill.type == FillType.solid &&
+              !backgroundStyle.fill.hasImage
           ? surface.withValues(alpha: surface.a * backgroundOpacity)
           : Colors.transparent,
       fontFamily: 'Segoe UI',

@@ -319,7 +319,7 @@ Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
 
 ### 4.6. `styles` (`ContainerStyle`) et ses bornes
 - `color`, `borderColor`, `hoverColor` : `"#RRGGBB"` ou `"#AARRGGBB"`.
-- `fill` : `{"type": "solid" | "linear" | "radial" | "sweep", "start": "#5268D9", "end": "#B794F4", "angle": 0..360, "radius": 0.1..2.0}`.
+- `fill` : `{"type": "solid" | "linear" | "radial" | "sweep", "start": "#5268D9", "end": "#B794F4", "angle": 0..360, "radius": 0.1..2.0, "imageUrl": "https://...", "imageFit": "cover" | "contain" | "fill" | "fitWidth" | "fitHeight" | "none" | "scaleDown", "imageOpacity": 0..1}`.
 - `radius` : **`0` à `36`** (ou `radii`: `[topLeft, topRight, bottomRight, bottomLeft]` de `0` à `36`).
 - `borderWidth` : **`0` à `4`** (ou `borderWidths`: `[top, right, bottom, left]` de `0` à `4`), `borderLine`: `"solid"` | `"dashed"` | `"dotted"`.
 - `elevation` : **`0` à `16`**, `shadowOpacity` : **`0` à `1`**.

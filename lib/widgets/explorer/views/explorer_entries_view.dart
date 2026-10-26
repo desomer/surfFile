@@ -225,6 +225,9 @@ class ExplorerEntriesView extends StatelessWidget {
         final gradient = selected
             ? style.fill.gradient()
             : cardStyle.fill.gradient();
+        final image = selected
+            ? style.fill.decorationImage()
+            : cardStyle.fill.decorationImage();
         return ExternalDropDestination(
           path: entry.isDirectory ? entry.entity.path : null,
           child: ExternalFileDragSource(
@@ -283,6 +286,7 @@ class ExplorerEntriesView extends StatelessWidget {
                       child: Ink(
                         decoration: BoxDecoration(
                           gradient: gradient,
+                          image: image,
                           borderRadius: BorderRadius.circular(radius),
                         ),
                         child: PressFeedback(

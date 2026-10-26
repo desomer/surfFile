@@ -104,11 +104,11 @@ void wrapZoneChildrenInCard(
       },
       slotTypes: {
         for (final id in childIds)
-          if (slotTypes[id] case final type?) id: type,
+          id: ?slotTypes[id],
       },
       slotLabels: {
         for (final id in childIds)
-          if (slotLabels[id] case final label?) id: label,
+          id: ?slotLabels[id],
       },
       slotPreferredSizes: {
         for (final id in childIds)
@@ -116,7 +116,7 @@ void wrapZoneChildrenInCard(
       },
       slotSizeConstraints: {
         for (final id in childIds)
-          if (slotSizeConstraints[id] case final size?) id: size,
+          id: ?slotSizeConstraints[id],
       },
       zoneAxes: {
         if (axis != Axis.vertical) SuperLayoutZone.center: axis,

@@ -1434,7 +1434,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           },
           slotSizeConstraints: {
             for (final id in childIds)
-              if (current.slotSizeConstraints[id] case final size?) id: size,
+              id: ?current.slotSizeConstraints[id],
           },
           axis: axisOf(region),
           flow: flowOf(region),

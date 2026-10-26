@@ -58,6 +58,10 @@ void main() {
       const ContainerFill().toJson()..['angle'] = 361,
       const ContainerFill().toJson()..['radius'] = 0,
       const ContainerFill().toJson()..['start'] = -1,
+      const ContainerFill().toJson()..['imageUrl'] = 123,
+      const ContainerFill().toJson()..['imageFit'] = 'invalidFit',
+      const ContainerFill().toJson()..['imageOpacity'] = 1.5,
+      const ContainerFill().toJson()..['imageOpacity'] = -0.1,
     ]) {
       json['cardStyle'] = SurfFileAppearanceDefaults.defaultCardStyle.toJson()
         ..['fill'] = invalid;
@@ -66,6 +70,40 @@ void main() {
         throwsFormatException,
       );
     }
+  });
+
+  test('background image settings survive persistence and compact JSON', () {
+    const fill = ContainerFill(
+      type: FillType.linear,
+      imageUrl: 'https://example.com/surface.jpg',
+      imageFit: BoxFit.contain,
+      imageOpacity: .75,
+    );
+    final saved = AppearanceStore.decode(
+      AppearanceStore.encode(
+        Appearance(
+          styles: {
+            'card': const ContainerStyle(fill: fill),
+            'background': const ContainerStyle(fill: fill),
+          },
+        ),
+      ),
+    );
+    expect(saved.style('card').fill, fill);
+    expect(saved.style('background').fill.toJson(), fill.toJson());
+    final compact = fill.toCompactJson();
+    expect(compact['imageUrl'], 'https://example.com/surface.jpg');
+    expect(compact['imageFit'], 'contain');
+    expect(compact['imageOpacity'], .75);
+    expect(ContainerFill.fromJson(compact), fill);
+    final image = saved.style('background').fill.decorationImage(opacity: .5);
+    expect(image, isNotNull);
+    expect(
+      (image!.image as NetworkImage).url,
+      'https://example.com/surface.jpg',
+    );
+    expect(image.fit, BoxFit.contain);
+    expect(image.opacity, closeTo(.375, .005));
   });
 
   testWidgets('editor changes type and renders a matching gradient preview', (
@@ -110,6 +148,21 @@ void main() {
         .onColorChanged(const Color(0x40112233));
     await tester.pumpAndSettle();
     expect(fill.start, const Color(0x40112233));
+    await tester.enterText(
+      find.byKey(const ValueKey('image-url-field-Test')),
+      'https://example.com/preview.png',
+    );
+    await tester.pumpAndSettle();
+    expect(fill.imageUrl, 'https://example.com/preview.png');
+    final updatedPreview = tester.widget<Container>(
+      find.byKey(const ValueKey('preview-Test')),
+    );
+    final updatedDecoration = updatedPreview.decoration! as BoxDecoration;
+    expect(updatedDecoration.image, isNotNull);
+    expect(
+      (updatedDecoration.image!.image as NetworkImage).url,
+      'https://example.com/preview.png',
+    );
     expect(tester.takeException(), isNull);
   });
 

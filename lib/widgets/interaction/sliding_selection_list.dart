@@ -202,6 +202,9 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                               ? selectedCardStyle.fill
                                     .gradient()
                               : cardStyle.fill.gradient(),
+                          image: selected
+                              ? selectedCardStyle.fill.decorationImage()
+                              : cardStyle.fill.decorationImage(),
                           borderRadius: BorderRadius.circular(
                             selected
                                 ? selectedCardStyle.radius

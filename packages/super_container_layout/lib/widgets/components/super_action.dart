@@ -220,6 +220,7 @@ Widget buildSuperActionVisual({
   final hasCustomSurface =
       config.variant == SuperActionVariant.surface ||
       config.style.fill.type != FillType.solid ||
+      config.style.fill.hasImage ||
       config.style.neon != null ||
       config.style.shadow != null ||
       config.style.hasInnerShadow ||

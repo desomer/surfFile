@@ -2,6 +2,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/style_extras.dart';
 import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
@@ -417,8 +418,7 @@ void main() {
       expect(current(tester).radii, isNotNull);
       final corner = find.byWidgetPredicate(
         (widget) =>
-            widget is Slider &&
-            widget.key == const ValueKey('radii-1-Card'),
+            widget is Slider && widget.key == const ValueKey('radii-1-Card'),
       );
       await tester.ensureVisible(corner);
       tester.widget<Slider>(corner).onChanged!(20);
@@ -462,9 +462,7 @@ void main() {
       expect(current(tester).hasInnerShadow, isTrue);
 
       await toggle(tester, 'transform-switch');
-      final rotation = find.byKey(
-        const ValueKey('transform-rotation-Card'),
-      );
+      final rotation = find.byKey(const ValueKey('transform-rotation-Card'));
       await tester.ensureVisible(rotation);
       tester.widget<Slider>(rotation).onChanged!(45);
       await tester.pump();
@@ -501,5 +499,65 @@ void main() {
       expect(current(tester).pattern, SurfacePattern.lines);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets(
+      'background image URL, fit and opacity edit the style and render in StyledSurface',
+      (tester) async {
+        await open(tester);
+        final urlField = find.byKey(const ValueKey('image-url-field-Card'));
+        expect(urlField, findsOneWidget);
+        expect(find.byKey(const ValueKey('image-opacity-Card')), findsNothing);
+
+        await tester.enterText(urlField, 'https://example.com/bg.png');
+        await tester.pumpAndSettle();
+        expect(current(tester).fill.imageUrl, 'https://example.com/bg.png');
+        expect(current(tester).fill.hasImage, isTrue);
+
+        final fitDropdown = find.byKey(const ValueKey('image-fit-Card-cover'));
+        expect(fitDropdown, findsOneWidget);
+        await tester.ensureVisible(fitDropdown);
+        await tester.tap(fitDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Contenir (Contain)').last);
+        await tester.pumpAndSettle();
+        expect(current(tester).fill.imageFit, BoxFit.contain);
+
+        final imageOpacity = find.byWidgetPredicate(
+          (widget) =>
+              widget is Slider &&
+              widget.key == const ValueKey('image-opacity-Card'),
+        );
+        await tester.ensureVisible(imageOpacity);
+        tester.widget<Slider>(imageOpacity).onChanged!(.65);
+        await tester.pump();
+        expect(current(tester).fill.imageOpacity, closeTo(.65, 1e-9));
+
+        // Verify the preview StyledSurface has the DecorationImage configured.
+        final previewInk = tester.widget<Ink>(
+          find.descendant(
+            of: find.byKey(const ValueKey('preview-Card')),
+            matching: find.byType(Ink),
+          ),
+        );
+        final decoration = previewInk.decoration! as BoxDecoration;
+        expect(decoration.image, isNotNull);
+        expect(
+          (decoration.image!.image as NetworkImage).url,
+          'https://example.com/bg.png',
+        );
+        expect(decoration.image!.fit, BoxFit.contain);
+        expect(decoration.image!.opacity, closeTo(.65, 1e-9));
+
+        // Clear button removes the image URL and hides image sub-controls.
+        final clearBtn = find.byKey(const ValueKey('image-url-clear-Card'));
+        await tester.ensureVisible(clearBtn);
+        await tester.tap(clearBtn);
+        await tester.pumpAndSettle();
+        expect(current(tester).fill.imageUrl, isEmpty);
+        expect(current(tester).fill.hasImage, isFalse);
+        expect(find.byKey(const ValueKey('image-opacity-Card')), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
   });
 }

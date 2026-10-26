@@ -278,6 +278,63 @@ class ContainerStyleEditor extends StatelessWidget {
           unit: '',
         ),
     ],
+    _BackgroundImageUrlField(
+      key: ValueKey('image-url-$label'),
+      fieldKey: ValueKey('image-url-field-$label'),
+      clearKey: ValueKey('image-url-clear-$label'),
+      value: value.imageUrl,
+      onChanged: (url) => onChanged(value.copyWith(imageUrl: url)),
+    ),
+    if (value.hasImage) ...[
+      DropdownButtonFormField<BoxFit>(
+        key: ValueKey('image-fit-$label-${value.imageFit.name}'),
+        initialValue: value.imageFit,
+        isExpanded: true,
+        decoration: const InputDecoration(labelText: 'Ajustement de l’image'),
+        items: const [
+          DropdownMenuItem(
+            value: BoxFit.cover,
+            child: Text('Remplir (Cover)'),
+          ),
+          DropdownMenuItem(
+            value: BoxFit.contain,
+            child: Text('Contenir (Contain)'),
+          ),
+          DropdownMenuItem(
+            value: BoxFit.fill,
+            child: Text('Étirer (Fill)'),
+          ),
+          DropdownMenuItem(
+            value: BoxFit.fitWidth,
+            child: Text('Ajuster à la largeur'),
+          ),
+          DropdownMenuItem(
+            value: BoxFit.fitHeight,
+            child: Text('Ajuster à la hauteur'),
+          ),
+          DropdownMenuItem(
+            value: BoxFit.none,
+            child: Text('Taille originale'),
+          ),
+          DropdownMenuItem(
+            value: BoxFit.scaleDown,
+            child: Text('Réduire si nécessaire'),
+          ),
+        ],
+        onChanged: (fit) {
+          if (fit != null) onChanged(value.copyWith(imageFit: fit));
+        },
+      ),
+      _slider(
+        'Opacité de l’image',
+        value.imageOpacity,
+        0,
+        1,
+        (imageOpacity) => onChanged(value.copyWith(imageOpacity: imageOpacity)),
+        key: ValueKey('image-opacity-$label'),
+        unit: '',
+      ),
+    ],
   ];
 
   List<Widget> _radiusControls() => [
@@ -360,6 +417,7 @@ class ContainerStyleEditor extends StatelessWidget {
         ? solidColor.withValues(alpha: solidColor.a * opacity)
         : null,
     gradient: value.gradient(opacity: opacity),
+    image: value.decorationImage(opacity: opacity),
     borderRadius: BorderRadius.circular(radius),
     border: Border.all(
       color: borderColor ?? Theme.of(context).colorScheme.outlineVariant,
@@ -950,3 +1008,69 @@ class _DashedRectPainter extends CustomPainter {
   bool shouldRepaint(_DashedRectPainter oldDelegate) =>
       oldDelegate.color != color || oldDelegate.radius != radius;
 }
+
+class _BackgroundImageUrlField extends StatefulWidget {
+  const _BackgroundImageUrlField({
+    required this.value,
+    required this.onChanged,
+    this.fieldKey,
+    this.clearKey,
+    super.key,
+  });
+
+  final String value;
+  final ValueChanged<String> onChanged;
+  final Key? fieldKey;
+  final Key? clearKey;
+
+  @override
+  State<_BackgroundImageUrlField> createState() =>
+      _BackgroundImageUrlFieldState();
+}
+
+class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.value,
+  );
+
+  @override
+  void didUpdateWidget(_BackgroundImageUrlField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != _controller.text) {
+      _controller.value = TextEditingValue(
+        text: widget.value,
+        selection: TextSelection.collapsed(offset: widget.value.length),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => TextFormField(
+    key: widget.fieldKey,
+    controller: _controller,
+    keyboardType: TextInputType.url,
+    decoration: InputDecoration(
+      labelText: 'Image de fond (URL)',
+      hintText: 'https://...',
+      suffixIcon: widget.value.isEmpty
+          ? null
+          : IconButton(
+              key: widget.clearKey,
+              tooltip: 'Effacer l’image',
+              icon: const Icon(Icons.clear, size: 18),
+              onPressed: () {
+                _controller.clear();
+                widget.onChanged('');
+              },
+            ),
+    ),
+    onChanged: widget.onChanged,
+  );
+}
+

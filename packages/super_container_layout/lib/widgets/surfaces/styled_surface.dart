@@ -43,6 +43,7 @@ class StyledSurface extends StatelessWidget {
         ? 0.0
         : (style.elevation + elevationBoost).clamp(0.0, double.infinity);
     final gradient = style.fill.gradient();
+    final image = style.fill.decorationImage();
     final borderSide = BorderSide(
       color: style.borderColor ?? borderColor,
       width: style.borderWidth,
@@ -89,6 +90,7 @@ class StyledSurface extends StatelessWidget {
       child: Ink(
         decoration: BoxDecoration(
           gradient: gradient,
+          image: image,
           borderRadius: radius,
           border: !plain
               ? null

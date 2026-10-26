@@ -405,6 +405,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                 gradient: value.backgroundStyle.fill.gradient(
                   opacity: value.backgroundOpacity,
                 ),
+                image: value.backgroundStyle.fill.decorationImage(
+                  opacity: value.backgroundOpacity,
+                ),
               ),
               child: child,
             ),

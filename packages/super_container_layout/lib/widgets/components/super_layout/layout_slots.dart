@@ -216,7 +216,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
           },
           slotSizeConstraints: {
             for (final id in childIds)
-              if (config.slotSizeConstraints[id] case final size?) id: size,
+              id: ?config.slotSizeConstraints[id],
           },
           axis: config.axisOf(zone),
           flow: config.flowOf(zone),

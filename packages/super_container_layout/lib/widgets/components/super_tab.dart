@@ -19,7 +19,6 @@ import '../../super_app.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tab_editor.dart';
 import '../editing/history/editor_history.dart';
-import '../editing/slots/editor_slot.dart';
 import 'super_action.dart';
 import 'super_layout/slot_implementation.dart';
 
