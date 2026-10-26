@@ -6,6 +6,7 @@ import 'package:super_container_layout/widgets/editing/slots/editable_surface.da
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
@@ -1277,7 +1278,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-2')));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Main', 'Centre', 'Ma Carte']);
-      expect(find.byKey(const ValueKey('slot-resize-card-slot-se')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('slot-resize-card-slot-se')),
+        findsOneWidget,
+      );
 
       // Right-clicking directly on the Card outside the button selects the Card.
       await tester.tapAt(
@@ -1398,13 +1402,17 @@ void main() {
       expect(LayoutSelection.path.value, ['Main', 'Centre']);
 
       // Click chevron 0 (between 'Main' and 'Centre') to open the full children tree of 'Main'.
-      final chevron0 = find.byKey(const ValueKey('style-edit-banner-chevron-0'));
+      final chevron0 = find.byKey(
+        const ValueKey('style-edit-banner-chevron-0'),
+      );
       expect(chevron0, findsOneWidget);
       final chevronRect = tester.getRect(chevron0);
       await tester.tap(chevron0);
       await tester.pumpAndSettle();
 
-      final dialog = find.byKey(const ValueKey('style-edit-banner-tree-dialog'));
+      final dialog = find.byKey(
+        const ValueKey('style-edit-banner-tree-dialog'),
+      );
       expect(dialog, findsOneWidget);
       final dialogRect = tester.getRect(dialog);
       // Positioned right below and aligned with the clicked chevron.
@@ -1443,7 +1451,9 @@ void main() {
       ]);
 
       // Click chevron 2 (after 'Ma Carte') while 'Mon Bouton' is selected to open 'Ma Carte' subtree.
-      final chevron2 = find.byKey(const ValueKey('style-edit-banner-chevron-2'));
+      final chevron2 = find.byKey(
+        const ValueKey('style-edit-banner-chevron-2'),
+      );
       expect(chevron2, findsOneWidget);
       await tester.tap(chevron2);
       await tester.pumpAndSettle();
@@ -1452,7 +1462,9 @@ void main() {
       expect(cardNode, findsNothing);
 
       // Click chevron 1 (after 'Centre') to open the subtree under 'Main > Centre'.
-      final chevron1 = find.byKey(const ValueKey('style-edit-banner-chevron-1'));
+      final chevron1 = find.byKey(
+        const ValueKey('style-edit-banner-chevron-1'),
+      );
       await tester.tap(chevron1);
       await tester.pumpAndSettle();
       expect(dialog, findsOneWidget);
@@ -1472,6 +1484,86 @@ void main() {
       await tester.tap(nordNode);
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Main', 'Nord']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'left click selects zones inside SuperPage body and switches between zones cleanly',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: mode,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: SuperPage(
+                    child: SuperLayout(
+                      name: 'Main',
+                      config: config.copyWith(
+                        placements: {
+                          SuperLayoutZone.center: ['card-slot'],
+                        },
+                      ),
+                      slots: [
+                        BuilderSlot(
+                          id: 'card-slot',
+                          label: 'Ma Carte',
+                          builder: (_) => const SizedBox.expand(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page']);
+
+      // Single click in Centre zone inside Corps selects 'Main > Centre'.
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Centre']);
+
+      // Single click in Nord zone inside Corps switches to 'Main > Nord'.
+      await tester.tapAt(const Offset(400, 20));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Nord']);
+
+      // Double click in Centre zone selects the slot 'Ma Carte'.
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, [
+        'Page',
+        'Corps',
+        'Main',
+        'Centre',
+        'Ma Carte',
+      ]);
+
+      // Single click in Nord zone switches cleanly from slot 'Ma Carte' to 'Main > Nord'.
+      await tester.tapAt(const Offset(400, 20));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Nord']);
+
+      // Even after selecting 'Page > Corps' via breadcrumb, a single click inside
+      // the body selects the clicked zone of 'Main'.
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-1')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page', 'Corps']);
+
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Centre']);
       expect(tester.takeException(), isNull);
     },
   );

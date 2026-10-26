@@ -251,6 +251,7 @@ class SlotStack extends StatelessWidget {
     this.onSelectSlot,
     this.onTapSlot,
     this.onSelectContent,
+    this.canSelectSlot,
     this.selectedSlotId,
     this.onResizeSlot,
     this.focusKeys,
@@ -302,6 +303,7 @@ class SlotStack extends StatelessWidget {
   /// Content clicks, distinct from the label's selection toggle.
   final void Function(SlotImplementation, PointerDownEvent)? onTapSlot;
   final ValueChanged<SlotImplementation>? onSelectContent;
+  final bool Function(SlotImplementation)? canSelectSlot;
   final String? selectedSlotId;
   final void Function(SlotImplementation, SlotSizeConstraints)? onResizeSlot;
 
@@ -412,6 +414,8 @@ class SlotStack extends StatelessWidget {
     final fitCross = _slotFitsCross(slot, parentFitCross: parentFitCross);
     final fitWidth = axis == Axis.horizontal ? fitMain : fitCross;
     final fitHeight = axis == Axis.vertical ? fitMain : fitCross;
+    final selectable =
+        onSelectContent != null && (canSelectSlot?.call(slot) ?? true);
     return EditorSlotAction(
       key: ValueKey('slot-item-${slot.id}'),
       label: 'Taille et marge préférées : ${slot.label}',
@@ -421,9 +425,9 @@ class SlotStack extends StatelessWidget {
           onRemoveSlot != null ||
           wrapActionsForSlot != null ||
           insertionForSlot != null ||
-          onSelectContent != null,
+          selectable,
       showEdit: onEditPreferredSize != null,
-      onSelect: onSelectContent == null ? null : () => onSelectContent!(slot),
+      onSelect: selectable ? () => onSelectContent!(slot) : null,
       onEdit: () async => onEditPreferredSize?.call(slot),
       onRemove: onRemoveSlot != null
           ? () async => onRemoveSlot?.call(slot)
@@ -447,9 +451,7 @@ class SlotStack extends StatelessWidget {
             onTapContent: onTapSlot == null
                 ? null
                 : (event) => onTapSlot!(slot, event),
-            onSelectContent: onSelectContent == null
-                ? null
-                : () => onSelectContent!(slot),
+            onSelectContent: selectable ? () => onSelectContent!(slot) : null,
             selected: selectedSlotId == slot.id,
             onResize: onResizeSlot == null
                 ? null

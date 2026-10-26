@@ -246,7 +246,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         ? scope!.path
         : [...?scope?.path, label];
     final mode = StyleEditScope.controllerOf(context);
-    if (mode != _editMode) {
+    final modeChanged = mode != _editMode;
+    if (modeChanged) {
       _editMode?.removeListener(_editingChanged);
       _editMode = mode;
       _editMode?.addListener(_editingChanged);
@@ -382,6 +383,20 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         ];
       },
     );
+    if (modeChanged &&
+        editing &&
+        widget.showRegionInPath &&
+        scope == null &&
+        !_active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            editing &&
+            !_active &&
+            LayoutSelection.path.value.isEmpty) {
+          select(null);
+        }
+      });
+    }
   }
 
   void _editingChanged() {
@@ -1376,6 +1391,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           ? (slot) => _toggleSlot(id, slot)
           : null,
       onSelectContent: editing ? (slot) => _selectSlot(id, slot) : null,
+      canSelectSlot: _canSelectSlot,
       onResizeSlot: editing && widget.editSurface
           ? (slot, dimensions) => _update(
               _config.value.withSlotSizeConstraints(slot.id, dimensions),
@@ -1452,6 +1468,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               ? (slot) => _toggleSlot(id, slot)
               : null,
           onSelectContent: editing ? (slot) => _selectSlot(id, slot) : null,
+          canSelectSlot: _canSelectSlot,
           onResizeSlot: editing && widget.editSurface
               ? (slot, dimensions) => _update(
                   _config.value.withSlotSizeConstraints(slot.id, dimensions),

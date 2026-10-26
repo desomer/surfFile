@@ -90,6 +90,19 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     return null;
   }
 
+  static _EditorSelectionRegionState _skipPassThroughZones(
+    List<_EditorSelectionRegionState> chain,
+    int index,
+  ) {
+    var i = index.clamp(0, chain.length - 1);
+    while (i + 1 < chain.length &&
+        chain[i].widget.isZone &&
+        chain[i + 1].widget.isZone) {
+      i++;
+    }
+    return chain[i];
+  }
+
   static _EditorSelectionRegionState _zone(
     List<_EditorSelectionRegionState> chain,
   ) {
@@ -97,18 +110,34 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     final index = current == null ? -1 : chain.indexOf(current);
     if (index >= 0) {
       for (var i = index; i >= 0; i--) {
-        if (chain[i].widget.isZone) return chain[i];
+        if (chain[i].widget.isZone) {
+          return _skipPassThroughZones(chain, i);
+        }
       }
     }
     if (current != null && current.mounted) {
-      for (final state in current._ancestry.reversed) {
-        if (state.widget.isZone && chain.contains(state)) return state;
+      final ancestry = current._ancestry;
+      var commonIndex = -1;
+      for (var i = chain.length - 1; i >= 0; i--) {
+        if (ancestry.contains(chain[i])) {
+          commonIndex = i;
+          break;
+        }
+      }
+      if (commonIndex >= 0) {
+        if (commonIndex + 1 < chain.length &&
+            chain[commonIndex + 1].widget.isZone) {
+          return _skipPassThroughZones(chain, commonIndex + 1);
+        }
+        for (var i = commonIndex; i >= 0; i--) {
+          if (chain[i].widget.isZone) {
+            return _skipPassThroughZones(chain, i);
+          }
+        }
       }
     }
-    return chain.firstWhere(
-      (state) => state.widget.isZone,
-      orElse: () => chain.first,
-    );
+    final firstZone = chain.indexWhere((state) => state.widget.isZone);
+    return _skipPassThroughZones(chain, firstZone < 0 ? 0 : firstZone);
   }
 
   static void _refreshHover() {
@@ -129,7 +158,12 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     final chain = leaf._ancestry;
     final current = _resolveCurrent(chain);
     final index = current == null ? -1 : chain.indexOf(current);
-    _hoverTarget.value = index < 0
+    final isPassThrough =
+        index >= 0 &&
+        chain[index].widget.isZone &&
+        index + 1 < chain.length &&
+        chain[index + 1].widget.isZone;
+    _hoverTarget.value = index < 0 || isPassThrough
         ? _zone(chain)
         : chain[(index + 1).clamp(0, chain.length - 1)];
   }
@@ -160,6 +194,11 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     final chain = _ancestry;
     final current = _resolveCurrent(chain);
     final currentIndex = current == null ? -1 : chain.indexOf(current);
+    final isPassThrough =
+        currentIndex >= 0 &&
+        chain[currentIndex].widget.isZone &&
+        currentIndex + 1 < chain.length &&
+        chain[currentIndex + 1].widget.isZone;
     final doubleClick =
         identical(_lastLeaf, this) &&
         (_doubleTapTimer?.isActive ?? false) &&
@@ -173,7 +212,7 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
           ? baseIndex
           : (currentIndex >= 0 ? currentIndex : chain.indexOf(_zone(chain)));
       target = chain[(fromIndex + 1).clamp(0, chain.length - 1)];
-    } else if (currentIndex >= 0) {
+    } else if (currentIndex >= 0 && !isPassThrough) {
       // Clicking inside the already-selected region/slot keeps it selected
       // instead of resetting back to the parent zone on the first click.
       target = current!;
