@@ -179,6 +179,95 @@ extension _SuperLayoutSlots on SuperLayoutState {
     );
   }
 
+  List<EditorSlotWrapAction> _wrapActionsForZone(SuperLayoutZone zone) {
+    final current = _config.value;
+    final contentZone = current.contentZone(zone);
+    final slots = _slotsOf(current, contentZone);
+    return zoneChildrenWrapActions(
+      registry: SuperApp.maybeOf(context)?.registry,
+      hasChildren: slots.isNotEmpty,
+      acceptsTags: (tags) => widget.zoneTagFilters[zone]?.accepts(tags) ?? true,
+      onWrapInCard: () async {
+        if (!mounted) return;
+        final config = _config.value;
+        final content = config.contentZone(zone);
+        final children = _slotsOf(config, content);
+        if (children.isEmpty) return;
+        final registry = SuperApp.maybeOf(context)?.registry;
+        if (registry == null) return;
+        final childIds = [for (final slot in children) slot.id];
+        final movedSet = childIds.toSet();
+        wrapZoneChildrenInCard(
+          context,
+          registry: registry,
+          childIds: childIds,
+          slotTypes: {for (final id in childIds) id: config.slotTypeOf(id)},
+          slotLabels: {
+            for (final slot in children)
+              slot.id: config.slotLabels[slot.id] ?? slot.label,
+          },
+          slotPreferredSizes: {
+            for (final slot in children)
+              if (config.slotPreferredSizes.containsKey(slot.id))
+                slot.id: config.slotPreferredSizes[slot.id]
+              else if (!config.slotSizeConstraints.containsKey(slot.id) &&
+                  slot.preferredSize != null)
+                slot.id: slot.preferredSize,
+          },
+          slotSizeConstraints: {
+            for (final id in childIds)
+              if (config.slotSizeConstraints[id] case final size?) id: size,
+          },
+          axis: config.axisOf(zone),
+          flow: config.flowOf(zone),
+          occupiedIds: {
+            ...config.placedSlotIds,
+            ...widget.slots.map((s) => s.id),
+          },
+          replaceChildren: (cardId, cardType) {
+            final stillReferenced = <String>{
+              for (final entry in config.placements.entries)
+                if (entry.key != content) ...entry.value,
+            };
+            final removedOnly = movedSet.difference(stillReferenced);
+            final next = config
+                .copyWith(
+                  placements: {
+                    ...config.placements,
+                    content: [cardId],
+                  },
+                  slotTypes: {
+                    for (final entry in config.slotTypes.entries)
+                      if (!removedOnly.contains(entry.key))
+                        entry.key: entry.value,
+                    cardId: cardType,
+                  },
+                  slotLabels: {
+                    for (final entry in config.slotLabels.entries)
+                      if (!removedOnly.contains(entry.key))
+                        entry.key: entry.value,
+                  },
+                  slotPreferredSizes: {
+                    for (final entry in config.slotPreferredSizes.entries)
+                      if (!removedOnly.contains(entry.key))
+                        entry.key: entry.value,
+                  },
+                  slotSizeConstraints: {
+                    for (final entry in config.slotSizeConstraints.entries)
+                      if (!removedOnly.contains(entry.key))
+                        entry.key: entry.value,
+                  },
+                )
+                .withAxis(zone, Axis.vertical)
+                .withZoneFlow(zone, const ZoneFlowConfig());
+            _update(next);
+            _selectedSlot.value = cardId;
+          },
+        );
+      },
+    );
+  }
+
   /// Contextual addition around [slot]: in its zone stack, after switching a
   /// single-slot zone's axis, or by wrapping it in a new `Layout`.
   EditorSlotInsertion? _insertionForSlot(SlotImplementation slot) {

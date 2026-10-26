@@ -215,6 +215,7 @@ extension _SuperLayoutView on SuperLayoutState {
                                 onEdit: () => _openZoneFlowEditor(zone),
                                 onAdd: () => _addSlot(zone),
                                 axisAction: () => _axisAction(zone),
+                                wrapChildrenActions: _wrapActionsForZone(zone),
                                 onContextMenu: (_) => _selectZone(zone),
                                 child: _contentOf(
                                   config,

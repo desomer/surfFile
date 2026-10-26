@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channels = [
@@ -238,12 +237,7 @@ void main() {
             final inLayout = owner == 'layout' || owner == 'grid';
             final id = inLayout
                 ? after.layouts['root']!.placedSlotIds.single
-                : after
-                      .nativeComponent('root')
-                      .placements
-                      .values
-                      .single
-                      .single;
+                : after.nativeComponent('root').placements.values.single.single;
             expect(id, isNot(sourceId));
             expect(
               inLayout
@@ -492,6 +486,175 @@ void main() {
     expect(find.text('Envelopper dans…'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'SuperLayout zone wraps all children into a Card containing a SuperLayout with inherited zone parameters and resets origin zone flow',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final registry = Registry()..bootstrap();
+      const customFlow = ZoneFlowConfig(
+        scrollable: true,
+        expandSlots: false,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        spacing: 16,
+        padding: 12,
+      );
+      const initialLayout = SuperLayoutConfig(
+        north: true,
+        south: false,
+        west: false,
+        east: false,
+        placements: {
+          SuperLayoutZone.center: ['c1', 'c2'],
+        },
+        slotTypes: {'c1': 'factory:Value', 'c2': 'factory:Value'},
+        slotLabels: {'c1': 'Premier', 'c2': 'Second'},
+        slotSizeConstraints: {'c1': dimensions},
+        zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+        zoneFlows: {SuperLayoutZone.center: customFlow},
+      );
+      final layoutController = registry.layoutController(
+        'root',
+        fallback: initialLayout,
+      );
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(
+              body: Center(
+                child: SizedBox(
+                  key: hostKey,
+                  width: 700,
+                  height: 500,
+                  child: ValueListenableBuilder<SuperLayoutConfig>(
+                    valueListenable: layoutController,
+                    builder: (_, config, _) => SuperLayout(
+                      label: 'Root',
+                      config: config,
+                      onChanged: (value) => layoutController.value = value,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byKey(hostKey));
+      final appearance = AppearanceScope.controllerOf(context)!;
+      appearance.value = appearance.value.copyWith(
+        layouts: {'root': initialLayout},
+        components: const {
+          'c1': SuperValueConfig(initialText: 'Un'),
+          'c2': SuperValueConfig(initialText: 'Deux'),
+        },
+      );
+      await tester.pumpAndSettle();
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.clear();
+      final before = appearance.value;
+
+      // Empty North zone does not expose the zone children wrap menu.
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(hostKey)) + const Offset(100, 15),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-more-Nord')), findsNothing);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      // Right-click on the first child in Center zone and open the zone's "Autres options" menu.
+      await tester.tap(find.text('Un'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-more-Centre')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Envelopper les enfants dans…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Card'));
+      await tester.pumpAndSettle();
+
+      final after = appearance.value;
+      final rootAfter = after.layouts['root']!;
+      expect(rootAfter.placementsOf(SuperLayoutZone.center), hasLength(1));
+      final cardId = rootAfter.placementsOf(SuperLayoutZone.center).single;
+      expect(rootAfter.slotTypeOf(cardId), 'registry:Card');
+      expect(rootAfter.axisOf(SuperLayoutZone.center), Axis.vertical);
+      expect(rootAfter.flowOf(SuperLayoutZone.center).isDefault, isTrue);
+
+      final cardConfig = after.nativeComponent(cardId);
+      expect(cardConfig.slotsOf('child'), hasLength(1));
+      final innerLayoutId = cardConfig.slotsOf('child').single;
+      expect(cardConfig.slotTypeOf(innerLayoutId), 'registry:Layout');
+
+      final innerLayout = after.layouts[innerLayoutId]!;
+      expect(innerLayout.placementsOf(SuperLayoutZone.center), ['c1', 'c2']);
+      expect(innerLayout.slotLabels['c1'], 'Premier');
+      expect(innerLayout.slotLabels['c2'], 'Second');
+      expect(innerLayout.slotSizeConstraints['c1'], same(dimensions));
+      expect(innerLayout.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      expect(innerLayout.flowOf(SuperLayoutZone.center), customFlow);
+      expect(find.text('Un'), findsOneWidget);
+      expect(find.text('Deux'), findsOneWidget);
+
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(appearance.value, same(before));
+      history.redo();
+      await tester.pumpAndSettle();
+      expect(appearance.value, same(after));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'NativeComponentEditor region wraps all children into a Card containing a SuperLayout with the region axis',
+    (tester) async {
+      final appearance = await mount(tester, owner: 'native', provided: false);
+      final before = appearance.value;
+      await openMenu(tester, false);
+      await tester.tap(find.byKey(const ValueKey('style-menu-more-Body')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Envelopper les enfants dans…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Card'));
+      await tester.pumpAndSettle();
+
+      final after = appearance.value;
+      final rootAfter = after.nativeComponent('root');
+      final cardId = rootAfter.slotsOf('body').single;
+      expect(rootAfter.slotTypeOf(cardId), 'registry:Card');
+      final innerLayoutId = after
+          .nativeComponent(cardId)
+          .slotsOf('child')
+          .single;
+      expect(
+        after.nativeComponent(cardId).slotTypeOf(innerLayoutId),
+        'registry:Layout',
+      );
+      final innerLayout = after.layouts[innerLayoutId]!;
+      expect(innerLayout.placementsOf(SuperLayoutZone.center), ['source']);
+      expect(innerLayout.slotLabels['source'], 'My child');
+      expect(innerLayout.slotSizeConstraints['source'], same(dimensions));
+      expect(find.byType(SuperValue), findsOneWidget);
+
+      final history = EditorHistoryScope.controllerOf(
+        tester.element(find.byKey(hostKey)),
+      )!;
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(appearance.value, same(before));
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Widget _providedContent(BuildContext context) => const EditorSlot(

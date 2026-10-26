@@ -1080,6 +1080,88 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     },
   );
 
+  List<EditorSlotWrapAction> wrapActionsForRegion(String region) {
+    final children = slotsFor(region);
+    return zoneChildrenWrapActions(
+      registry: widget.registry,
+      hasChildren: children.isNotEmpty,
+      acceptsTags: definition(region).tagFilter.accepts,
+      onWrapInCard: () async {
+        if (!mounted) return;
+        final current = _config.value;
+        final slots = slotsFor(region);
+        if (slots.isEmpty || widget.registry == null) return;
+        final childIds = [for (final slot in slots) slot.id];
+        final movedSet = childIds.toSet();
+        wrapZoneChildrenInCard(
+          context,
+          registry: widget.registry!,
+          childIds: childIds,
+          slotTypes: {for (final id in childIds) id: current.slotTypeOf(id)},
+          slotLabels: {
+            for (final slot in slots)
+              slot.id: current.slotLabels[slot.id] ?? slot.label,
+          },
+          slotPreferredSizes: {
+            for (final slot in slots)
+              if (current.slotPreferredSizes.containsKey(slot.id))
+                slot.id: current.slotPreferredSizes[slot.id]
+              else if (!current.slotSizeConstraints.containsKey(slot.id) &&
+                  preferredSizeFor(slot) != null)
+                slot.id: preferredSizeFor(slot),
+          },
+          slotSizeConstraints: {
+            for (final id in childIds)
+              if (current.slotSizeConstraints[id] case final size?) id: size,
+          },
+          axis: definition(region).axis,
+          occupiedIds: {
+            for (final ids in current.placements.values) ...ids,
+            ...widget.slots.map((s) => s.id),
+          },
+          replaceChildren: (cardId, cardType) {
+            final stillReferenced = <String>{
+              for (final entry in current.placements.entries)
+                if (entry.key != region) ...entry.value,
+            };
+            final removedOnly = movedSet.difference(stillReferenced);
+            final next = NativeComponentConfig(
+              useDefaultNavigation: current.useDefaultNavigation,
+              placements: {
+                ...current.placements,
+                region: [cardId],
+              },
+              slotTypes: {
+                for (final entry in current.slotTypes.entries)
+                  if (!removedOnly.contains(entry.key))
+                    entry.key: entry.value,
+                cardId: cardType,
+              },
+              regions: current.regions,
+              slotPreferredSizes: {
+                for (final entry in current.slotPreferredSizes.entries)
+                  if (!removedOnly.contains(entry.key))
+                    entry.key: entry.value,
+              },
+              slotSizeConstraints: {
+                for (final entry in current.slotSizeConstraints.entries)
+                  if (!removedOnly.contains(entry.key))
+                    entry.key: entry.value,
+              },
+              slotLabels: {
+                for (final entry in current.slotLabels.entries)
+                  if (!removedOnly.contains(entry.key))
+                    entry.key: entry.value,
+              },
+            );
+            _update(next);
+            _selectedSlot = cardId;
+          },
+        );
+      },
+    );
+  }
+
   /// Wraps a single [slot] of region [id] with its slot editing actions,
   /// selection, and drag-and-drop reordering without duplicating the region's
   /// outer [EditorSlot] or zone badge.
@@ -1244,6 +1326,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             editable: true,
             onEdit: configure,
             onAdd: () => add(id),
+            wrapChildrenActions: wrapActionsForRegion(id),
             onContextMenu: (_) => select(id, regionContext),
             child: SlotZoneTarget(
               key: ValueKey(

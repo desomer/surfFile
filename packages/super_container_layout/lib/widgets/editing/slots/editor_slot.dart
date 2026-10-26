@@ -80,6 +80,7 @@ class EditorSlot extends StatefulWidget {
     this.identity,
     this.outlineRadius = 0,
     this.onRemoveChild,
+    this.wrapChildrenActions = const [],
     super.key,
   });
 
@@ -105,6 +106,9 @@ class EditorSlot extends StatefulWidget {
 
   /// Fallback child-removal affordance when the child has no editable target.
   final Future<void> Function()? onRemoveChild;
+
+  /// Actions that wrap all children of this zone or container.
+  final List<EditorSlotWrapAction> wrapChildrenActions;
 
   /// Stable technical identity for the component or slot.
   final String? id;
@@ -1008,31 +1012,62 @@ class EditorSlotState extends State<EditorSlot> {
                             onPressed: () =>
                                 Navigator.of(context).pop(state.widget.onAdd),
                           ),
-                        if ([
-                              for (final action
-                                  in inlineActions[state] ??
-                                      const <EditorSlotAction>[])
-                                ...action.wrapActions,
-                            ]
-                            case final wrapActions when wrapActions.isNotEmpty)
+                        if ((
+                              [
+                                for (final action
+                                    in inlineActions[state] ??
+                                        const <EditorSlotAction>[])
+                                  ...action.wrapActions,
+                              ],
+                              (StyleEditScope.controllerOf(state.context)
+                                          ?.value ??
+                                      false)
+                                  ? state.widget.wrapChildrenActions
+                                  : const <EditorSlotWrapAction>[],
+                            )
+                            case (
+                              final wrapActions,
+                              final wrapChildrenActions,
+                            )
+                            when wrapActions.isNotEmpty ||
+                                wrapChildrenActions.isNotEmpty)
                           MenuAnchor(
                             consumeOutsideTap: true,
                             menuChildren: [
-                              SubmenuButton(
-                                leadingIcon: const Icon(Icons.wrap_text),
-                                menuChildren: [
-                                  for (final action in wrapActions)
-                                    MenuItemButton(
-                                      leadingIcon: Icon(action.icon),
-                                      onPressed: () => Navigator.of(context)
-                                          .pop<Future<void> Function()>(
-                                            action.onSelected,
-                                          ),
-                                      child: Text(action.label),
-                                    ),
-                                ],
-                                child: const Text('Envelopper dans…'),
-                              ),
+                              if (wrapActions.isNotEmpty)
+                                SubmenuButton(
+                                  leadingIcon: const Icon(Icons.wrap_text),
+                                  menuChildren: [
+                                    for (final action in wrapActions)
+                                      MenuItemButton(
+                                        leadingIcon: Icon(action.icon),
+                                        onPressed: () => Navigator.of(context)
+                                            .pop<Future<void> Function()>(
+                                              action.onSelected,
+                                            ),
+                                        child: Text(action.label),
+                                      ),
+                                  ],
+                                  child: const Text('Envelopper dans…'),
+                                ),
+                              if (wrapChildrenActions.isNotEmpty)
+                                SubmenuButton(
+                                  leadingIcon: const Icon(Icons.wrap_text),
+                                  menuChildren: [
+                                    for (final action in wrapChildrenActions)
+                                      MenuItemButton(
+                                        leadingIcon: Icon(action.icon),
+                                        onPressed: () => Navigator.of(context)
+                                            .pop<Future<void> Function()>(
+                                              action.onSelected,
+                                            ),
+                                        child: Text(action.label),
+                                      ),
+                                  ],
+                                  child: const Text(
+                                    'Envelopper les enfants dans…',
+                                  ),
+                                ),
                             ],
                             builder: (context, controller, child) => IconButton(
                               key: ValueKey('style-menu-more-${state.label}'),

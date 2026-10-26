@@ -38,6 +38,99 @@ List<EditorSlotWrapAction> slotWrapActions({
           ),
 ];
 
+List<EditorSlotWrapAction> zoneChildrenWrapActions({
+  required Registry? registry,
+  required bool hasChildren,
+  required bool Function(Set<String>) acceptsTags,
+  required Future<void> Function() onWrapInCard,
+}) {
+  if (!hasChildren || registry == null) return const [];
+  final card = registry.registry[EditorSlotWrapper.container.factory];
+  final layout = registry.registry[EditorSlotWrapper.layout.factory];
+  if (card == null || layout == null || !acceptsTags(card.tags)) {
+    return const [];
+  }
+  return [
+    EditorSlotWrapAction(
+      label: EditorSlotWrapper.container.label,
+      icon: EditorSlotWrapper.container.icon,
+      onSelected: onWrapInCard,
+    ),
+  ];
+}
+
+/// Wraps all children of a zone or native region into a `Card` containing a
+/// `SuperLayout` whose center zone inherits the origin zone's axis and flow.
+void wrapZoneChildrenInCard(
+  BuildContext context, {
+  required Registry registry,
+  required List<String> childIds,
+  required Map<String, String> slotTypes,
+  required Map<String, String> slotLabels,
+  required Map<String, Size?> slotPreferredSizes,
+  required Map<String, SlotSizeConstraints> slotSizeConstraints,
+  required Axis axis,
+  ZoneFlowConfig flow = const ZoneFlowConfig(),
+  required Set<String> occupiedIds,
+  required void Function(String cardId, String cardType) replaceChildren,
+}) {
+  final cardId = uniqueInstanceId(
+    context,
+    registry: registry,
+    occupiedIds: occupiedIds,
+  );
+  final layoutId = uniqueInstanceId(
+    context,
+    registry: registry,
+    occupiedIds: {...occupiedIds, cardId},
+  );
+  final history = EditorHistoryScope.controllerOf(context);
+  history?.beginTransaction();
+  try {
+    registry.nativeComponentController(cardId).value = NativeComponentConfig(
+      placements: {
+        'child': [layoutId],
+      },
+      slotTypes: {layoutId: EditorSlotWrapper.layout.type},
+      slotLabels: {layoutId: EditorSlotWrapper.layout.label},
+    );
+    registry.layoutController(layoutId).value = SuperLayoutConfig(
+      north: false,
+      south: false,
+      west: false,
+      east: false,
+      placements: {
+        SuperLayoutZone.center: List.of(childIds),
+      },
+      slotTypes: {
+        for (final id in childIds)
+          if (slotTypes[id] case final type?) id: type,
+      },
+      slotLabels: {
+        for (final id in childIds)
+          if (slotLabels[id] case final label?) id: label,
+      },
+      slotPreferredSizes: {
+        for (final id in childIds)
+          if (slotPreferredSizes.containsKey(id)) id: slotPreferredSizes[id],
+      },
+      slotSizeConstraints: {
+        for (final id in childIds)
+          if (slotSizeConstraints[id] case final size?) id: size,
+      },
+      zoneAxes: {
+        if (axis != Axis.vertical) SuperLayoutZone.center: axis,
+      },
+      zoneFlows: {
+        if (!flow.isDefault) SuperLayoutZone.center: flow,
+      },
+    );
+    replaceChildren(cardId, EditorSlotWrapper.container.type);
+  } finally {
+    history?.commitTransaction();
+  }
+}
+
 /// A new component placed next to the wrapped child, inside a `Layout`
 /// wrapper's center zone.
 class WrapSibling {
