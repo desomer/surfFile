@@ -481,9 +481,7 @@ void main() {
       );
       await tester.tapAt(const Offset(790, 590));
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value.last, 'Centre');
-      await tester.tap(find.byKey(const ValueKey('slot-label-select-target')));
-      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, 'Target');
 
       await tester.binding.setSurfaceSize(const Size(1000, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));

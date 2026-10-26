@@ -534,6 +534,7 @@ class EditorSlotState extends State<EditorSlot> {
   Future<void> openMenu(
     Offset globalPosition, {
     List<EditorSlotAction>? actions,
+    BuildContext? targetContext,
   }) async {
     if (!mounted ||
         !(StyleEditScope.controllerOf(context)?.value ?? true) ||
@@ -542,9 +543,85 @@ class EditorSlotState extends State<EditorSlot> {
       return;
     }
     final chain = editableChain;
-    for (final state in chain.reversed) {
-      if (StyleEditScope.controllerOf(state.context)?.value ?? false) {
-        state.widget.onContextMenu?.call(globalPosition);
+    final callbacks = <VoidCallback>[];
+    final origin = targetContext ?? context;
+    if (origin is Element) {
+      void collectElement(Element element) {
+        if (element is StatefulElement) {
+          final state = element.state;
+          if (state is EditorSlotState &&
+              chain.contains(state) &&
+              (StyleEditScope.controllerOf(state.context)?.value ?? false) &&
+              state.widget.onContextMenu != null) {
+            final onContextMenu = state.widget.onContextMenu!;
+            callbacks.add(() => onContextMenu(globalPosition));
+          }
+        } else {
+          final widget = element.widget;
+          if (widget is EditorSlotAction &&
+              widget.enabled &&
+              widget.onSelect != null &&
+              (StyleEditScope.controllerOf(element)?.value ?? false)) {
+            callbacks.add(widget.onSelect!);
+          }
+        }
+      }
+
+      collectElement(origin);
+      origin.visitAncestorElements((element) {
+        collectElement(element);
+        return true;
+      });
+    } else {
+      for (final state in chain) {
+        if ((StyleEditScope.controllerOf(state.context)?.value ?? false) &&
+            state.widget.onContextMenu != null) {
+          final onContextMenu = state.widget.onContextMenu!;
+          callbacks.add(() => onContextMenu(globalPosition));
+        }
+      }
+    }
+    for (final callback in callbacks.reversed) {
+      callback();
+    }
+    if (origin is Element) {
+      final slotStates = <EditorSlotState>[];
+      var foundSlotBoundary = false;
+      void collectLeaf(Element element) {
+        if (foundSlotBoundary) return;
+        if (element is StatefulElement) {
+          final state = element.state;
+          if (state is EditorSlotState && chain.contains(state)) {
+            if (state.widget.onContextMenu != null) {
+              foundSlotBoundary = true;
+              return;
+            }
+            slotStates.add(state);
+          }
+        } else {
+          final widget = element.widget;
+          if ((widget is EditorSlotAction &&
+                  widget.enabled &&
+                  widget.onSelect != null) ||
+              widget is LayoutSelectionScope) {
+            foundSlotBoundary = true;
+          }
+        }
+      }
+
+      collectLeaf(origin);
+      origin.visitAncestorElements((element) {
+        collectLeaf(element);
+        return !foundSlotBoundary;
+      });
+      if (slotStates.length > 1) {
+        final leaves = [
+          for (final state in slotStates.reversed.skip(1)) state.label,
+        ];
+        LayoutSelection.setLeafSuffix(leaves);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) LayoutSelection.setLeafSuffix(leaves);
+        });
       }
     }
     final extraActions = [

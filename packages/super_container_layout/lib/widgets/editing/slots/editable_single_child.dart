@@ -4,7 +4,9 @@ import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart' show EditorConfigKind;
 import '../../../super_app.dart';
 import '../components/native_component_editor.dart';
+import '../../components/super_layout/layout_selection.dart';
 import '../../components/super_layout/slot_implementation.dart';
+import 'editor_selection_region.dart';
 import 'editor_slot.dart';
 import '../dialogs/editor_dialog.dart';
 import 'slot_removal.dart';
@@ -39,8 +41,45 @@ class EditableSingleChild extends StatefulWidget {
 
 class EditableSingleChildState extends State<EditableSingleChild> {
   final _editor = GlobalKey<NativeComponentEditorState>();
+  final _childKey = GlobalKey();
   late final _local = ValueNotifier(_initial);
   static const _providedId = '__provided-child';
+
+  String? _childEditorLabel() {
+    final root = _childKey.currentContext;
+    if (root == null) return null;
+    EditorSlotState? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element is StatefulElement && element.state is EditorSlotState) {
+        final state = element.state as EditorSlotState;
+        if (state.canEdit) {
+          found = state;
+          return;
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    root.visitChildElements(visit);
+    return found?.label;
+  }
+
+  String _resolveSlotLabel(SlotImplementation slot) {
+    if (slot.id == _providedId &&
+        !(slot is InstanceSlot && slot.overridden)) {
+      return _childEditorLabel() ?? slot.label;
+    }
+    return slot.label;
+  }
+
+  bool _isSlotSelectable(SlotImplementation slot) {
+    if (slot.id == _providedId &&
+        !(slot is InstanceSlot && slot.overridden)) {
+      return _childEditorLabel() != null;
+    }
+    return true;
+  }
 
   NativeComponentConfig get _initial => NativeComponentConfig(
     placements: {
@@ -114,6 +153,9 @@ class EditableSingleChildState extends State<EditableSingleChild> {
         menuType: 'Card',
         keyPrefix: 'super-container-${widget.id}',
         settingsTitle: 'Configurer le contenu',
+        showRegionInPath: false,
+        resolveSlotLabel: _resolveSlotLabel,
+        isSlotSelectable: _isSlotSelectable,
         config: config,
         onChanged: (value) => controller.value = value,
         registry: registry,
@@ -131,30 +173,46 @@ class EditableSingleChildState extends State<EditableSingleChild> {
         builder: (context, editor) {
           final children = editor.slotsFor('child');
           final fit = SlotContentFitScope.maybeOf(context);
-          final child = children.isEmpty
+          final slot = children.firstOrNull;
+          final child = slot == null
               ? SizedBox(
                   width: (fit?.fitWidth ?? false) ? 48 : double.infinity,
                   height: (fit?.fitHeight ?? false) ? 48 : double.infinity,
                 )
-              : children.single;
+              : KeyedSubtree(
+                  key: _childKey,
+                  child: EditorSelectionRegion(
+                    enabled: editor.editing,
+                    selected: editor.isSlotSelected('child', slot.id),
+                    onSelect: () => editor.selectSlot('child', slot),
+                    child: slot,
+                  ),
+                );
           return widget.builder(
             context,
-            EditorSlotAction(
-              label: 'Composant enfant : ${widget.label}',
-              inline: true,
-              showEdit: false,
-              enabled: children.isNotEmpty,
-              onEdit: () async {},
-              onRemove: children.isEmpty ? null : () async => remove(),
-              wrapActions: children.isEmpty
-                  ? const []
-                  : editor.wrapActionsForSlot('child', children.single),
-              insertion: children.isEmpty
-                  ? null
-                  : editor.insertionForSlot('child', children.single),
-              child: child,
+            LayoutSelectionScope(
+              owner: editor,
+              path: editor.componentPath,
+              child: EditorSlotAction(
+                label: 'Composant enfant : ${widget.label}',
+                inline: true,
+                showEdit: false,
+                enabled: slot != null,
+                onSelect: slot == null
+                    ? null
+                    : () => editor.selectSlot('child', slot),
+                onEdit: () async {},
+                onRemove: slot == null ? null : () async => remove(),
+                wrapActions: slot == null
+                    ? const []
+                    : editor.wrapActionsForSlot('child', slot),
+                insertion: slot == null
+                    ? null
+                    : editor.insertionForSlot('child', slot),
+                child: child,
+              ),
             ),
-            children.isNotEmpty,
+            slot != null,
             () async => remove(),
           );
         },

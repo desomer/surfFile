@@ -126,6 +126,9 @@ class NativeComponentEditor extends StatefulWidget {
     this.regionActions,
     this.onSlotAdded,
     this.editSurface = false,
+    this.showRegionInPath = true,
+    this.resolveSlotLabel,
+    this.isSlotSelectable,
     this.menuIcon,
     this.menuType,
     this.settingsControls,
@@ -146,6 +149,9 @@ class NativeComponentEditor extends StatefulWidget {
   final List<Widget> Function(String region)? regionActions;
   final NativeSlotAddedCallback? onSlotAdded;
   final bool editSurface;
+  final bool showRegionInPath;
+  final String? Function(SlotImplementation slot)? resolveSlotLabel;
+  final bool Function(SlotImplementation slot)? isSlotSelectable;
   final IconData? menuIcon;
   final String? menuType;
   final List<Widget> Function(
@@ -173,10 +179,21 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   final _config = ValueNotifier<NativeComponentConfig>(NativeComponentConfig());
 
   bool get editing => _editMode?.value ?? false;
+  List<String> get componentPath => _path;
+  bool isSlotSelected(String region, String slotId) =>
+      _active && _selected == region && _selectedSlot == slotId;
+
   String get _componentLabel {
     final instance = editorComponentLabelOf(context);
     return (instance?.overridden ?? false) ? instance!.label : widget.label;
   }
+
+  String _resolvedSlotLabel(SlotImplementation slot) =>
+      widget.resolveSlotLabel?.call(slot) ?? slot.label;
+
+  bool _canSelectSlot(SlotImplementation slot) =>
+      !slot.id.startsWith('scaffold:') &&
+      (widget.isSlotSelectable?.call(slot) ?? true);
 
   NativeRegion definition(String id) =>
       widget.regions.firstWhere((region) => region.id == id);
@@ -222,7 +239,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final scope = LayoutSelectionScope.of(context);
-    _path = [...?scope?.path, widget.label];
+    final label = _componentLabel;
+    _path = !widget.showRegionInPath && (scope?.isSlotScope ?? false)
+        ? scope!.path
+        : [...?scope?.path, label];
     final mode = StyleEditScope.controllerOf(context);
     if (mode != _editMode) {
       _editMode?.removeListener(_editingChanged);
@@ -232,16 +252,60 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     LayoutSelection.register(
       this,
       _path,
-      (label) => select(
-        widget.regions.where((region) => region.label == label).firstOrNull?.id,
-      ),
+      (targetLabel) {
+        if (!widget.showRegionInPath) {
+          if (targetLabel == null) {
+            select(null);
+            return;
+          }
+          final region = widget.regions.first.id;
+          final slots = slotsFor(region);
+          final slot = slots
+              .where((s) => _resolvedSlotLabel(s) == targetLabel)
+              .firstOrNull;
+          if (slot != null) {
+            selectSlot(region, slot);
+          } else {
+            select(null);
+          }
+          return;
+        }
+        select(
+          widget.regions
+              .where((region) => region.label == targetLabel)
+              .firstOrNull
+              ?.id,
+        );
+      },
       parent: scope?.owner,
+      delegateToParent: !widget.showRegionInPath && scope != null,
+      selectSlot: widget.showRegionInPath
+          ? (slotLabel) {
+              final region = _selected;
+              if (!mounted || region == null) return;
+              final slots = slotsFor(region);
+              final slot =
+                  slots
+                      .where(
+                        (s) =>
+                            s.id == _selectedSlot &&
+                            _resolvedSlotLabel(s) == slotLabel,
+                      )
+                      .firstOrNull ??
+                  slots
+                      .where((s) => _resolvedSlotLabel(s) == slotLabel)
+                      .firstOrNull;
+              if (slot != null) selectSlot(region, slot);
+            }
+          : null,
       onDeselect: _clear,
     );
   }
 
   void _editingChanged() {
-    if (editing && LayoutSelectionScope.of(context) == null) {
+    if (editing &&
+        widget.showRegionInPath &&
+        LayoutSelectionScope.of(context) == null) {
       select(null);
     } else {
       _clear();
@@ -261,7 +325,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
 
   void select(String? id, [BuildContext? target]) {
     if (!mounted) return;
-    LayoutSelection.deselectDescendants(this);
+    LayoutSelection.activate(this);
     setState(() {
       _active = true;
       _selected = id;
@@ -269,15 +333,58 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     });
     LayoutSelection.report(
       this,
-      [..._path, if (id != null) definition(id).label],
+      [
+        ..._path,
+        if (id != null && widget.showRegionInPath) definition(id).label,
+      ],
       clear: _clear,
       focusContext: target ?? _keys[id]?.currentContext ?? context,
     );
   }
 
+  void selectSlot(
+    String region,
+    SlotImplementation slot, [
+    BuildContext? target,
+  ]) {
+    if (!mounted) return;
+    if (!_canSelectSlot(slot)) {
+      if (widget.showRegionInPath) select(region, target);
+      return;
+    }
+    LayoutSelection.activate(this);
+    setState(() {
+      _active = true;
+      _selected = region;
+      _selectedSlot = slot.id;
+    });
+    LayoutSelection.report(
+      this,
+      [
+        ..._path,
+        if (widget.showRegionInPath) definition(region).label,
+        _resolvedSlotLabel(slot),
+      ],
+      clear: _clear,
+      focusContext:
+          target ??
+          _slotKeys[slot.id]?.currentContext ??
+          _keys['$region:${slot.id}']?.currentContext ??
+          _keys[region]?.currentContext ??
+          context,
+    );
+  }
+
+  void _toggleSlot(String region, SlotImplementation slot) {
+    if (_active && _selected == region && _selectedSlot == slot.id) {
+      select(region);
+    } else {
+      selectSlot(region, slot);
+    }
+  }
+
   void _selectSlot(String region, SlotImplementation slot) {
-    select(region);
-    setState(() => _selectedSlot = slot.id);
+    selectSlot(region, slot);
   }
 
   void _update(NativeComponentConfig config) {
@@ -983,17 +1090,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     );
   }
 
-  bool _showOverlay() {
-    final path = LayoutSelection.path.value;
-    return editing &&
-        _active &&
-        path.length >= _path.length &&
-        path.length <= _path.length + 1 &&
-        List.generate(
-          _path.length,
-          (index) => path[index] == _path[index],
-        ).every((value) => value);
-  }
+  bool _showOverlay() =>
+      editing && _active && identical(LayoutSelection.activeOwner, this);
 
   void _setRegionHovered(String id, bool hovered) {
     if (!mounted) return;
@@ -1176,6 +1274,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     );
     return SlotStack(
       slots: [slot],
+      focusKeys: _slotKeys,
       regionSlotIds: [for (final item in slotsFor(id)) item.id],
       axis: spec.axis,
       expand: false,
@@ -1192,7 +1291,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       zoneLabel: spec.label,
       selectedSlotId: selected ? _selectedSlot : null,
       onSelectSlot: editing && widget.editSurface
-          ? (slot) => _selectSlot(id, slot)
+          ? (slot) => _toggleSlot(id, slot)
           : null,
       onSelectContent: editing ? (slot) => _selectSlot(id, slot) : null,
       onResizeSlot: editing && widget.editSurface
@@ -1268,7 +1367,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           zoneLabel: spec.label,
           selectedSlotId: selected ? _selectedSlot : null,
           onSelectSlot: editing && widget.editSurface
-              ? (slot) => _selectSlot(id, slot)
+              ? (slot) => _toggleSlot(id, slot)
               : null,
           onSelectContent: editing ? (slot) => _selectSlot(id, slot) : null,
           onResizeSlot: editing && widget.editSurface

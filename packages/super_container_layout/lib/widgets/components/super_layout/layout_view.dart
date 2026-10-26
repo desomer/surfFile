@@ -62,8 +62,8 @@ extension _SuperLayoutView on SuperLayoutState {
               _LayoutEditSelection.activate(this);
             },
             parent:
-                this.context.findAncestorStateOfType<SuperLayoutState>() ??
-                LayoutSelectionScope.of(context)?.owner,
+                LayoutSelectionScope.of(context)?.owner ??
+                this.context.findAncestorStateOfType<SuperLayoutState>(),
             selectSlot: (label) {
               final zone = _selected.value;
               if (!mounted || zone == null) return;
@@ -85,9 +85,11 @@ extension _SuperLayoutView on SuperLayoutState {
               if (!mounted) return;
               _selectedSlot.value = null;
               _selected.value = null;
+              _reportedPath = const [];
               if (identical(_LayoutEditSelection.selected.value, this)) {
                 _LayoutEditSelection.selected.value = null;
               }
+              LayoutSelection.report(this, const []);
             },
           );
           _reportPath(
@@ -158,9 +160,12 @@ extension _SuperLayoutView on SuperLayoutState {
                       zone: zone,
                       child: KeyedSubtree(
                         key: _zoneFocusKeys.putIfAbsent(zone, GlobalKey.new),
-                        child: _LabelScope(
+                        child: LayoutSelectionScope(
+                          owner: this,
                           path: [...parentPath, name, widget.zoneLabel(zone)],
-                          child: Offstage(
+                          child: _LabelScope(
+                            path: [...parentPath, name, widget.zoneLabel(zone)],
+                            child: Offstage(
                             offstage:
                                 config.collapsedSides.containsKey(zone) ||
                                 switch (zone) {
@@ -224,6 +229,7 @@ extension _SuperLayoutView on SuperLayoutState {
                                   editMode,
                                   layoutSize,
                                 ),
+                              ),
                               ),
                             ),
                           ),

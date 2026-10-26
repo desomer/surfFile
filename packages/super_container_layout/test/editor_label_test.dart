@@ -137,6 +137,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('kept'), findsOneWidget);
       expect(config.value.placements, initial.placements);
+      expect(LayoutSelection.path.value.last, 'Renamed');
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-a')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, 'Centre');
       await tester.tap(find.byKey(const ValueKey('slot-label-select-a')));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value.last, 'Renamed');

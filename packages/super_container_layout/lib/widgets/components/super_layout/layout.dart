@@ -281,6 +281,7 @@ class SuperLayoutState extends State<SuperLayout> {
     _reportedAxis = axis;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && listEquals(_reportedPath, path)) {
+        if (path.isEmpty && !LayoutSelection.isReported(this)) return;
         LayoutSelection.report(
           this,
           path,

@@ -4,7 +4,7 @@ class _LayoutEditSelection {
   static final selected = ValueNotifier<SuperLayoutState?>(null);
 
   static void activate(SuperLayoutState layout) {
-    LayoutSelection.deselectDescendants(layout);
+    LayoutSelection.activate(layout);
     selected.value = layout;
   }
 }
@@ -18,8 +18,8 @@ class _LabelScope extends InheritedWidget {
   final List<String> path;
 
   static List<String> pathOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<_LabelScope>()?.path ??
       LayoutSelectionScope.of(context)?.path ??
+      context.dependOnInheritedWidgetOfExactType<_LabelScope>()?.path ??
       const [];
 
   @override

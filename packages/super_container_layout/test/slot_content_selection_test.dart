@@ -82,9 +82,12 @@ void main() {
       expect(LayoutSelection.path.value.last, 'Centre');
       await tester.tap(second, buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value.last, SuperLayoutZone.center.label);
+      expect(LayoutSelection.path.value.last, 'Second');
       await tester.tapAt(const Offset(10, 590));
       await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('slot-label-select-second')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value.last, SuperLayoutZone.center.label);
       await tester.tap(second);
       await tester.pump(const Duration(milliseconds: 80));
       await tester.tap(second);

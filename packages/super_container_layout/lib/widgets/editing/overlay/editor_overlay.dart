@@ -91,6 +91,7 @@ class _EditorOverlayState extends State<EditorOverlay> {
                           ?.openMenu(
                             details.globalPosition,
                             actions: EditorSlotAction.of(this.context),
+                            targetContext: this.context,
                           )
                     : null,
                 child: EditorOverlayVisibility(child: widget.child),

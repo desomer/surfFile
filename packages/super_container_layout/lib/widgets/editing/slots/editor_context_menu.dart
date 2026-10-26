@@ -23,6 +23,7 @@ class EditorSlotAction extends InheritedWidget {
     required this.onEdit,
     required this.enabled,
     this.onRemove,
+    this.onSelect,
     this.inline = false,
     this.showEdit = true,
     this.wrapActions = const [],
@@ -36,6 +37,7 @@ class EditorSlotAction extends InheritedWidget {
   final Future<void> Function() onEdit;
   final bool enabled;
   final Future<void> Function()? onRemove;
+  final VoidCallback? onSelect;
   final bool inline;
   final bool showEdit;
   final List<EditorSlotWrapAction> wrapActions;
@@ -64,6 +66,7 @@ class EditorSlotAction extends InheritedWidget {
       enabled != oldWidget.enabled ||
       onEdit != oldWidget.onEdit ||
       onRemove != oldWidget.onRemove ||
+      onSelect != oldWidget.onSelect ||
       wrapActions != oldWidget.wrapActions ||
       insertion != oldWidget.insertion ||
       inline != oldWidget.inline ||

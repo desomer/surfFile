@@ -162,7 +162,7 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    expect(LayoutSelection.path.value, ['Zoom menu', 'Centre']);
+    expect(LayoutSelection.path.value, ['Zoom menu', 'Centre', 'Content']);
     expect(find.byKey(const ValueKey('style-menu-Centre')), findsOneWidget);
     expect(find.byKey(const ValueKey('style-menu-Zoom menu')), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -1050,7 +1050,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(inside('layout', 'super-layout-add-north'), findsOneWidget);
-      expect(LayoutSelection.path.value, ['layout', 'Centre']);
+      expect(LayoutSelection.path.value, ['layout', 'Centre', 'layout']);
       expect(
         find.byKey(const ValueKey('style-menu-add-Centre')),
         findsOneWidget,
@@ -1202,6 +1202,124 @@ void main() {
       );
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'right click displays deepest component in EditBanner including inside a Card',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(
+        tester,
+        mode,
+        Stack(
+          children: [
+            Positioned.fill(
+              child: SuperLayout(
+                name: 'Main',
+                config: config.copyWith(
+                  placements: {
+                    SuperLayoutZone.center: ['card-slot'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'card-slot',
+                    label: 'Ma Carte',
+                    builder: (_) => EditableSurface(
+                      id: 'card-slot',
+                      label: 'Ma Carte',
+                      child: Align(
+                        alignment: Alignment.bottomRight,
+                        child: SizedBox(
+                          width: 120,
+                          height: 48,
+                          child: EditorSlot(
+                            label: 'Mon Bouton',
+                            onEdit: () async {},
+                            child: const Center(child: Text('Action')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Positioned.fill(child: StyleEditBanner()),
+          ],
+        ),
+      );
+
+      // Right-click on the inner button inside the Card: banner shows full path to button.
+      await tester.tap(find.text('Action'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, [
+        'Main',
+        'Centre',
+        'Ma Carte',
+        'Mon Bouton',
+      ]);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-edit-banner-path')),
+          matching: find.text('Mon Bouton'),
+        ),
+        findsOneWidget,
+      );
+      // Dismiss context menu.
+      await tester.tapAt(const Offset(10, 590));
+      await tester.pumpAndSettle();
+
+      // Clicking 'Ma Carte' in the banner steps up to the Card slot in SuperLayout.
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-2')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre', 'Ma Carte']);
+      expect(find.byKey(const ValueKey('slot-resize-card-slot-se')), findsOneWidget);
+
+      // Right-clicking directly on the Card outside the button selects the Card.
+      await tester.tapAt(
+        const Offset(100, 200),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre', 'Ma Carte']);
+      await tester.tapAt(const Offset(10, 590));
+      await tester.pumpAndSettle();
+
+      // Clicking segment 0 ('Main') twice clears selection, then 1 click = zone,
+      // double-click = Card, second double-click = inner button.
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, isEmpty);
+
+      final actionPoint = tester.getCenter(find.text('Action'));
+      await tester.tapAt(actionPoint);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre']);
+
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(actionPoint);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(actionPoint);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Main', 'Centre', 'Ma Carte']);
+
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(actionPoint);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(actionPoint);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, [
+        'Main',
+        'Centre',
+        'Ma Carte',
+        'Mon Bouton',
+      ]);
       expect(tester.takeException(), isNull);
     },
   );

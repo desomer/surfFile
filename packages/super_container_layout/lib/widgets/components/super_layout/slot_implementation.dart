@@ -420,8 +420,10 @@ class SlotStack extends StatelessWidget {
           onEditPreferredSize != null ||
           onRemoveSlot != null ||
           wrapActionsForSlot != null ||
-          insertionForSlot != null,
+          insertionForSlot != null ||
+          onSelectContent != null,
       showEdit: onEditPreferredSize != null,
+      onSelect: onSelectContent == null ? null : () => onSelectContent!(slot),
       onEdit: () async => onEditPreferredSize?.call(slot),
       onRemove: onRemoveSlot != null
           ? () async => onRemoveSlot?.call(slot)
@@ -1478,6 +1480,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                   context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
                     details.globalPosition,
                     actions: EditorSlotAction.of(context),
+                    targetContext: context,
                   )
             : null,
         child: DragTarget<SlotDragData>(

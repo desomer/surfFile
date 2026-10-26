@@ -36,14 +36,16 @@ extension _SuperLayoutGrid on SuperLayoutState {
         _LayoutEditSelection.activate(this);
       },
       parent:
-          this.context.findAncestorStateOfType<SuperLayoutState>() ??
-          LayoutSelectionScope.of(context)?.owner,
+          LayoutSelectionScope.of(context)?.owner ??
+          this.context.findAncestorStateOfType<SuperLayoutState>(),
       onDeselect: () {
         _selectedSlot.value = null;
         _selected.value = null;
+        _reportedPath = const [];
         if (identical(_LayoutEditSelection.selected.value, this)) {
           _LayoutEditSelection.selected.value = null;
         }
+        LayoutSelection.report(this, const []);
       },
     );
     _reportPath(
@@ -346,38 +348,45 @@ class _GridSurfaceState extends State<_GridSurface> {
                               (StyleEditScope.controllerOf(context)?.value ??
                                   false),
                           inline: true,
+                          onSelect: () => _select(slot.id),
                           onEdit: () => widget.owner._editGridSlot(slot),
                           onRemove: () async =>
                               widget.owner._removeSlot(slot.id),
                           wrapActions: widget.owner._wrapActionsForSlot(slot),
                           insertion: widget.owner._insertionForSlot(slot),
                           child: Builder(
-                            builder: (context) => _LabelScope(
+                            builder: (context) => LayoutSelectionScope(
+                              owner: widget.owner,
                               path: [...widget.path, slot.label],
-                              child: KeyedSubtree(
-                                key: widget.owner._slotFocusKeys.putIfAbsent(
-                                  slot.id,
-                                  GlobalKey.new,
-                                ),
-                                child: GestureDetector(
-                                  behavior: HitTestBehavior.translucent,
-                                  excludeFromSemantics: true,
-                                  onSecondaryTapUp:
-                                      widget.owner.widget.editable &&
-                                          (StyleEditScope.controllerOf(context)
-                                                  ?.value ??
-                                              false)
-                                      ? (d) => context
-                                            .findAncestorStateOfType<
-                                              EditorSlotState
-                                            >()
-                                            ?.openMenu(
-                                              d.globalPosition,
-                                              actions: EditorSlotAction.of(
-                                                context,
-                                              ),
-                                            )
-                                      : null,
+                              isSlotScope: true,
+                              child: _LabelScope(
+                                path: [...widget.path, slot.label],
+                                child: KeyedSubtree(
+                                  key: widget.owner._slotFocusKeys.putIfAbsent(
+                                    slot.id,
+                                    GlobalKey.new,
+                                  ),
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.translucent,
+                                    excludeFromSemantics: true,
+                                    onSecondaryTapUp:
+                                        widget.owner.widget.editable &&
+                                            (StyleEditScope.controllerOf(
+                                                  context,
+                                                )?.value ??
+                                                false)
+                                        ? (d) => context
+                                              .findAncestorStateOfType<
+                                                EditorSlotState
+                                              >()
+                                              ?.openMenu(
+                                                d.globalPosition,
+                                                actions: EditorSlotAction.of(
+                                                  context,
+                                                ),
+                                                targetContext: context,
+                                              )
+                                        : null,
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
@@ -424,6 +433,7 @@ class _GridSurfaceState extends State<_GridSurface> {
                           ),
                         ),
                       ),
+                    ),
                   ],
                 ),
               ),

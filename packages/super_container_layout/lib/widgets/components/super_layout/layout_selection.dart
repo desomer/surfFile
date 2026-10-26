@@ -7,19 +7,23 @@ class LayoutSelectionScope extends InheritedWidget {
   const LayoutSelectionScope({
     required this.path,
     required this.owner,
+    this.isSlotScope = false,
     required super.child,
     super.key,
   });
 
   final List<String> path;
   final Object owner;
+  final bool isSlotScope;
 
   static LayoutSelectionScope? of(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<LayoutSelectionScope>();
 
   @override
   bool updateShouldNotify(LayoutSelectionScope oldWidget) =>
-      !listEquals(path, oldWidget.path) || owner != oldWidget.owner;
+      !listEquals(path, oldWidget.path) ||
+      owner != oldWidget.owner ||
+      isSlotScope != oldWidget.isSlotScope;
 }
 
 class LayoutFocus {
@@ -72,10 +76,64 @@ class LayoutSelection {
   static final _targets =
       <
         Object,
-        ({List<String> path, ValueChanged<String?> select, Object? parent})
+        ({
+          List<String> path,
+          ValueChanged<String?> select,
+          Object? parent,
+          bool delegateToParent,
+        })
       >{};
   static final _slotSelectors = <Object, ValueChanged<String>>{};
   static final _deselects = <Object, VoidCallback>{};
+  static Object? _activeOwner;
+  static List<String> _leafSuffix = const [];
+
+  /// The container currently owning the deepest reported selection path.
+  static Object? get activeOwner => _activeOwner;
+
+  /// Whether [owner] currently has a non-empty reported path.
+  static bool isReported(Object owner) => _reported.containsKey(owner);
+
+  static bool _isAncestor(Object candidate, Object ofOwner) {
+    var parent = _targets[ofOwner]?.parent;
+    while (parent != null) {
+      if (identical(parent, candidate)) return true;
+      parent = _targets[parent]?.parent;
+    }
+    return false;
+  }
+
+  static void _removeReported(Object owner) {
+    _clears.remove(owner);
+    _axisActions.remove(owner);
+    _focusTargets.remove(owner);
+    _reported.remove(owner);
+  }
+
+  static void _syncReported() {
+    var best = const <String>[];
+    Object? bestOwner;
+    for (final entry in _reported.entries) {
+      if (entry.value.length >= best.length) {
+        best = entry.value;
+        bestOwner = entry.key;
+      }
+    }
+    _activeOwner = bestOwner;
+    final fullPath = best.isEmpty || _leafSuffix.isEmpty
+        ? best
+        : List<String>.unmodifiable([...best, ..._leafSuffix]);
+    if (!listEquals(path.value, fullPath)) path.value = fullPath;
+    axisAction.value = _axisActions[bestOwner];
+    focus.value = _focusTargets[bestOwner];
+  }
+
+  /// Appends deeper leaf `EditorSlot` labels below the active container's slot.
+  static void setLeafSuffix(List<String> labels) {
+    if (listEquals(_leafSuffix, labels)) return;
+    _leafSuffix = labels.isEmpty ? const [] : List.unmodifiable(labels);
+    _syncReported();
+  }
 
   static void register(
     Object owner,
@@ -84,6 +142,7 @@ class LayoutSelection {
     Object? parent,
     ValueChanged<String>? selectSlot,
     VoidCallback? onDeselect,
+    bool delegateToParent = false,
   }) {
     if (onDeselect == null) {
       _deselects.remove(owner);
@@ -99,6 +158,7 @@ class LayoutSelection {
       path: List.unmodifiable(path),
       select: select,
       parent: parent,
+      delegateToParent: delegateToParent,
     );
   }
 
@@ -111,22 +171,72 @@ class LayoutSelection {
   /// Clears descendants by identity, including inactive layouts with saved
   /// zone or slot selections.
   static void deselectDescendants(Object owner) {
+    _leafSuffix = const [];
+    var removedReported = false;
     for (final entry in _targets.entries.toList()) {
-      var parent = entry.value.parent;
-      while (parent != null) {
-        if (identical(parent, owner)) {
-          _deselects[entry.key]?.call();
-          break;
+      if (_isAncestor(owner, entry.key)) {
+        if (_reported.containsKey(entry.key)) {
+          _removeReported(entry.key);
+          removedReported = true;
         }
-        parent = _targets[parent]?.parent;
+        _deselects[entry.key]?.call();
       }
     }
+    if (removedReported) _syncReported();
+  }
+
+  /// Activates [owner], clearing its descendants as well as any previously
+  /// active non-ancestor containers and removing stale ancestor reports.
+  static void activate(Object owner) {
+    _leafSuffix = const [];
+    var changed = false;
+    for (final entry in _targets.entries.toList()) {
+      final other = entry.key;
+      if (identical(other, owner)) continue;
+      if (_isAncestor(owner, other)) {
+        if (_reported.containsKey(other)) {
+          _removeReported(other);
+          changed = true;
+        }
+        _deselects[other]?.call();
+      } else if (!_isAncestor(other, owner)) {
+        if (_reported.containsKey(other)) {
+          _removeReported(other);
+          changed = true;
+          _deselects[other]?.call();
+        }
+      } else if (_reported.containsKey(other)) {
+        _removeReported(other);
+        changed = true;
+      }
+    }
+    if (changed) _syncReported();
+  }
+
+  static bool _canParentHandlePrefix(Object? parent, List<String> prefix) {
+    if (parent == null) return false;
+    final target = _targets[parent];
+    if (target == null) return false;
+    final length = target.path.length;
+    if (!listEquals(prefix.take(length).toList(), target.path)) return false;
+    if (prefix.length == length + 2 && _slotSelectors.containsKey(parent)) {
+      return true;
+    }
+    if (prefix.length == length || prefix.length == length + 1) {
+      return true;
+    }
+    return false;
   }
 
   /// Bascule le segment courant, ou selectionne un segment parent.
   static void toggle(List<String> prefix) {
     if (!listEquals(prefix, path.value)) {
       select(prefix);
+      return;
+    }
+    if (_leafSuffix.isNotEmpty && prefix.length > 1) {
+      _leafSuffix = _leafSuffix.sublist(0, _leafSuffix.length - 1);
+      _syncReported();
       return;
     }
     Object? active;
@@ -137,6 +247,10 @@ class LayoutSelection {
     if (target == null) return;
     if (prefix.length > target.path.length) {
       select(prefix.sublist(0, prefix.length - 1));
+    } else if (target.delegateToParent &&
+        target.parent != null &&
+        prefix.length > 1) {
+      select(prefix.sublist(0, prefix.length - 1));
     } else {
       _deselects[active]?.call();
     }
@@ -144,6 +258,7 @@ class LayoutSelection {
 
   /// Active la disposition du segment, et sa zone si le segment en est une.
   static void select(List<String> prefix) {
+    _leafSuffix = const [];
     Object? active;
     var depth = -1;
     for (final entry in _reported.entries) {
@@ -166,6 +281,9 @@ class LayoutSelection {
         return;
       }
       if ((prefix.length == length || prefix.length == length + 1) &&
+          !(prefix.length == length &&
+              target.delegateToParent &&
+              _canParentHandlePrefix(target.parent, prefix)) &&
           listEquals(prefix.take(length).toList(), target.path)) {
         target.select(prefix.length == length ? null : prefix.last);
         return;
@@ -183,6 +301,9 @@ class LayoutSelection {
         return;
       }
       if ((prefix.length == length || prefix.length == length + 1) &&
+          !(prefix.length == length &&
+              target.delegateToParent &&
+              _canParentHandlePrefix(target.parent, prefix)) &&
           listEquals(prefix.take(length).toList(), target.path)) {
         target.select(prefix.length == length ? null : prefix.last);
         return;
@@ -216,7 +337,9 @@ class LayoutSelection {
       _axisActions.remove(owner);
       _focusTargets.remove(owner);
       if (_reported.remove(owner) == null) return;
+      if (identical(_activeOwner, owner)) _leafSuffix = const [];
     } else {
+      if (!listEquals(previous, value)) _leafSuffix = const [];
       if (clear != null) _clears[owner] = clear;
       if (focusContext == null) {
         _focusTargets.remove(owner);
@@ -232,16 +355,6 @@ class LayoutSelection {
       if (!listEquals(previous, value)) _reported.remove(owner);
       _reported[owner] = value;
     }
-    var best = const <String>[];
-    Object? bestOwner;
-    for (final entry in _reported.entries) {
-      if (entry.value.length >= best.length) {
-        best = entry.value;
-        bestOwner = entry.key;
-      }
-    }
-    if (!listEquals(path.value, best)) path.value = best;
-    axisAction.value = _axisActions[bestOwner];
-    focus.value = _focusTargets[bestOwner];
+    _syncReported();
   }
 }
