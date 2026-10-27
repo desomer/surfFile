@@ -7,6 +7,7 @@ import '../../../models/registry.dart';
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
+import '../../../models/super_tab_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_transfer.dart';
 import '../../../theme/appearance.dart';
@@ -168,6 +169,7 @@ $response
       final children = switch (component) {
         final SuperLayoutConfig layout => layout.placedSlotIds,
         final SuperListViewConfig list => list.template.placedSlotIds,
+        final SuperTabConfig tab => tab.placedSlotIds,
         final NativeComponentConfig native => native.placements.values.expand(
           (ids) => ids,
         ),

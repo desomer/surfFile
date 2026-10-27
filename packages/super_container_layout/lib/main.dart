@@ -57,13 +57,13 @@ class _TestAppState extends State<TestApp> {
   @override
   void initState() {
     super.initState();
-    _registry.registerFactory(
-      'A',
-      const EditableSurface(
-        label: "AB",
-        child: Center(child: Text('A')),
-      ),
-    );
+    // _registry.registerFactory(
+    //   'A',
+    //   const EditableSurface(
+    //     label: "AB",
+    //     child: Center(child: Text('A')),
+    //   ),
+    // );
     _pageRouting = EditorPageRouter(
       baseConfig: RoutingConfig(
         routes: [
