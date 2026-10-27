@@ -2,6 +2,10 @@
 
 Ce document est la spécification technique destinée à une Intelligence Artificielle. Il décrit le format JSON plat et polymorphe inspiré de **Flutter GenUI** utilisé par `super_container_layout` pour le stockage, l'import/export et les mises à jour incrémentales (`applyVibe`).
 
+> **Moteur d'exécution cible : Application Flutter (Material 3)**
+> Ce JSON est interprété dynamiquement par une application **Flutter**. Appuie-toi sur ta connaissance de Flutter pour comprendre le comportement physique des layouts (`Flex`, `MainAxisAlignment`, `CrossAxisAlignment`, contraintes de taille, défilement `SingleChildScrollView`), l'anatomie des écrans (`Scaffold`, `AppBar`, `Drawer`, `BottomAppBar`, `TabBar` / `TabBarView`) et les conventions Material 3 (variantes de boutons `filled` / `tonal` / `elevated` / `outlined` / `text`, identifiants d'icônes Material en `snake_case`).
+> **Règle stricte (zéro hallucination Flutter)** : ce format **n'est pas** un arbre de widgets Flutter sérialisé. N'invente **aucun** nom de widget ou paramètre Flutter (`Row`, `Column`, `Container`, `SizedBox`, `children`, `mainAxisSize`, `EdgeInsets`, `BoxDecoration`, etc.) qui ne figure pas dans ce guide ; utilise exclusivement le dictionnaire plat par ID (`components`, `styles`, `behaviors`) et les propriétés documentées ci-dessous.
+
 ---
 
 ## 1. Primitives et raccourcis "AI-friendly"
@@ -256,9 +260,10 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
 - **`"registry:BottomNavigationBar"` $\rightarrow$ `BottomAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
   - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).
 
-- **`"registry:Card"` $\rightarrow$ `Card` / `Container` de Flutter** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
-  - `child` (1 slot unique max) : composant enfant contenu dans la carte (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants).
-  - **Style visuel de la carte** : se configure intégralement dans **`styles["<cardId>"]`** (système de design Material / Neumorphism / Liquid Glass, couleur unie, dégradés `linear` / `radial` / `sweep`, image de fond, coins uniformes ou par angle, bordures pleines / tiretées / pointillées par côté, ombre portée ou intérieure, halo néon, flou `backdropBlur`, motif `grain` / `lines` / `dots`, transformation 2D, effets de clic/survol et états `states` — voir § 4.7).
+- **`"registry:Card"` $\rightarrow$ Conteneur monoenfant (`Card` / `Container` Flutter) + surface `ContainerStyle` enrichie** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
+  - `child` (1 slot unique max, région obligatoire toujours active) : comme un `Card` ou `Container` Flutter, ne prend qu'un seul composant enfant `child` (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants, ou utilise `"registry:IterableContent"` si tu veux fusionner carte et grille sous le même ID).
+  - **Carte vide / purement visuelle (ex. affiche, miniature, séparateur ou bloc avec `fill.imageUrl`)** : si une `Card` ne contient aucun composant enfant, **ne mets jamais `"regions": { "child": false }`** (la région `child` d'une `Card` est requise et ne peut pas être désactivée). Utilise `"regions": {}, "placements": {}` (ou `"regions": { "child": true }, "placements": {}`), ou omet simplement l'entrée de `components["<cardId>"]` et définis uniquement son style dans `styles["<cardId>"]`.
+  - **Style visuel de la carte (bien plus riche qu'un `Card` Flutter natif)** : se configure intégralement dans **`styles["<cardId>"]`** (système de design Material / Neumorphism / Liquid Glass, couleur unie, dégradés `linear` / `radial` / `sweep`, image de fond, coins uniformes ou par angle, bordures pleines / tiretées / pointillées par côté, ombre portée ou intérieure, halo néon, flou `backdropBlur`, motif `grain` / `lines` / `dots`, transformation 2D, effets de clic/survol et états `states` — voir § 4.7).
 
 - **`"registry:Expansible"` $\rightarrow$ `Expansible` de Flutter** (`type: "native"`) :
   - `header` (liste horizontale) : en-tête toujours visible. Un clic sur `header` bascule l'état ouvert/fermé lorsque `headerClickToggles` vaut `true` (défaut).

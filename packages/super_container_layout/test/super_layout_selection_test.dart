@@ -1160,10 +1160,20 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Flux de la zone : Nord'), findsOneWidget);
       expect(find.text('Taille de la zone'), findsOneWidget);
+      expect(find.text('Taille automatique (hauteur)'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('zone-flow-dialog-north-auto-size')),
         findsOneWidget,
       );
+      final fitContentFinder = find.byKey(
+        const ValueKey('zone-flow-dialog-north-fit-content'),
+      );
+      expect(
+        find.text('Étirer les éléments sur la colonne (flex : 1)'),
+        findsOneWidget,
+      );
+      expect(tester.widget<SwitchListTile>(fitContentFinder).value, isFalse);
+      expect(tester.widget<SwitchListTile>(fitContentFinder).onChanged, isNull);
       expect(
         find.byKey(const ValueKey('zone-flow-dialog-north-resizable')),
         findsOneWidget,
@@ -1172,6 +1182,11 @@ void main() {
         find.byKey(const ValueKey('zone-flow-dialog-north-auto-size')),
       );
       await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(fitContentFinder).value, isTrue);
+      expect(
+        tester.widget<SwitchListTile>(fitContentFinder).onChanged,
+        isNotNull,
+      );
       expect(
         find.byKey(const ValueKey('zone-flow-dialog-north-size')),
         findsWidgets,
@@ -1613,16 +1628,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Main', 'Centre']);
 
-      await tester.tap(find.byKey(const ValueKey('style-edit-banner-chevron-0')));
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-0')),
+      );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
       expect(
-        find.byKey(const ValueKey('style-edit-banner-tree-node-Main/Centre/Action')),
+        find.byKey(
+          const ValueKey('style-edit-banner-tree-node-Main/Centre/Action'),
+        ),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('style-edit-banner-tree-node-Main/Centre/Action#1')),
+        find.byKey(
+          const ValueKey('style-edit-banner-tree-node-Main/Centre/Action#1'),
+        ),
         findsOneWidget,
       );
     },

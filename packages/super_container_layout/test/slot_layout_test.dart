@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/registry.dart';
+import 'package:super_container_layout/models/super_action_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
 import 'package:super_container_layout/super_app.dart';
@@ -2247,7 +2249,8 @@ void main() {
             GoRoute(
               path: '/',
               builder: (context, _) {
-                final layout = SuperApp.of(context).getLayoutConfigById('contA');
+                final layout = SuperApp.of(context)
+                    .getLayoutConfigById('contA');
                 return SuperPage(
                   child: ValueListenableBuilder<SuperLayoutConfig>(
                     valueListenable: layout,
@@ -2283,6 +2286,83 @@ void main() {
         // Card width also wraps the button because crossAxisAlignment == start
         expect(cardRect.width, closeTo(buttonRect.width + 74, 1.0));
         expect(cardRect.width, lessThan(300));
+      },
+    );
+
+    testWidgets(
+      'auto-sized north and west sides wrap catalog components without expandSlots false',
+      (tester) async {
+        final registry = Registry()..bootstrap();
+        final config = const SuperLayoutConfig(
+          north: true,
+          west: true,
+          south: false,
+          east: false,
+          autoSides: {SuperLayoutZone.north, SuperLayoutZone.west},
+          placements: {
+            SuperLayoutZone.north: ['nav-btn'],
+            SuperLayoutZone.west: ['west-input'],
+            SuperLayoutZone.center: ['center-text'],
+          },
+          slotTypes: {
+            'nav-btn': 'factory:Action',
+            'west-input': 'factory:Value',
+            'center-text': 'factory:Value',
+          },
+        );
+        final appearance = Appearance(
+          components: {
+            'nav-btn': const SuperActionConfig(label: 'Menu'),
+            'west-input': const SuperValueConfig(
+              mode: SuperValueMode.input,
+              label: 'Recherche',
+            ),
+            'center-text': const SuperValueConfig(
+              initialText: 'Contenu principal',
+            ),
+          },
+        );
+        final router = GoRouter(
+          routes: [
+            GoRoute(
+              path: '/',
+              builder: (_, _) => Scaffold(
+                body: SizedBox(
+                  width: 800,
+                  height: 600,
+                  child: SuperLayout(config: config),
+                ),
+              ),
+            ),
+          ],
+        );
+        addTearDown(router.dispose);
+
+        await tester.pumpWidget(
+          SuperApp(
+            router: router,
+            registry: registry,
+            appearanceStore: _PresetAppearanceStore(appearance),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final northRect = tester.getRect(
+          find.byKey(const ValueKey('super-layout-north')),
+        );
+        final westRect = tester.getRect(
+          find.byKey(const ValueKey('super-layout-west')),
+        );
+        final centerRect = tester.getRect(
+          find.byKey(const ValueKey('super-layout-center')),
+        );
+
+        expect(northRect.height, lessThan(100));
+        expect(westRect.width, closeTo(240, 1.0));
+        expect(centerRect.left, closeTo(westRect.width, 1.0));
+        expect(centerRect.top, closeTo(northRect.height, 1.0));
+        expect(centerRect.width, greaterThan(500));
+        expect(centerRect.height, greaterThan(450));
       },
     );
   });

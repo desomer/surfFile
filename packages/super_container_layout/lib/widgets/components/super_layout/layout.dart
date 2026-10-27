@@ -67,6 +67,11 @@ class SuperLayout extends StatefulWidget {
   static SuperLayoutConfig defaultSlotAddition(SlotAddition addition) {
     final zone = addition.zone;
     if (!zone.isSide) return addition.config;
+    if (addition.component.tags
+        .intersection(const {'action', 'button', 'text', 'input'})
+        .isNotEmpty) {
+      return addition.config;
+    }
     final width = zone == SuperLayoutZone.west || zone == SuperLayoutZone.east;
     final config = addition.config;
     final saved = config.slotSizeConstraints[addition.slotId];

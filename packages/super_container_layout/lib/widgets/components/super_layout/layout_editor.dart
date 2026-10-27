@@ -284,6 +284,7 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
     required this.onFlowChanged,
     this.showAxis = true,
     this.isSide = false,
+    this.sizeAxis,
     this.autoSize = true,
     this.size = 100,
     this.canResize = false,
@@ -300,6 +301,7 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
   final ValueChanged<ZoneFlowConfig> onFlowChanged;
   final bool showAxis;
   final bool isSide;
+  final Axis? sizeAxis;
   final bool autoSize;
   final double size;
   final bool canResize;
@@ -310,6 +312,25 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final autoOnFlowAxis = isSide && autoSize && sizeAxis == axis;
+    final autoSizeTitle = switch (sizeAxis) {
+      Axis.vertical => 'Taille automatique (hauteur)',
+      Axis.horizontal => 'Taille automatique (largeur)',
+      null => 'Taille automatique',
+    };
+    final autoSizeSubtitle = switch (sizeAxis) {
+      Axis.vertical => 'La hauteur de la zone s’adapte à son contenu.',
+      Axis.horizontal => 'La largeur de la zone s’adapte à son contenu.',
+      null => 'S’adapte à la taille naturelle de son contenu.',
+    };
+    final expandTitle = axis == Axis.horizontal
+        ? 'Étirer les éléments sur la ligne (flex : 1)'
+        : 'Étirer les éléments sur la colonne (flex : 1)';
+    final expandSubtitle = autoOnFlowAxis
+        ? 'Désactivé : la zone s’adapte déjà à la taille des éléments sur cet axe.'
+        : axis == Axis.horizontal
+        ? 'Les éléments se partagent toute la largeur de la ligne (décochez pour garder leur largeur naturelle).'
+        : 'Les éléments se partagent toute la hauteur de la colonne (décochez pour garder leur hauteur naturelle).';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -325,13 +346,16 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                 key: ValueKey('$keyPrefix-auto-size'),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
-                title: const Text(
-                  'Taille automatique',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                title: Text(
+                  autoSizeTitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-                subtitle: const Text(
-                  'S’adapte à la taille naturelle de son contenu.',
-                  style: TextStyle(fontSize: 11),
+                subtitle: Text(
+                  autoSizeSubtitle,
+                  style: const TextStyle(fontSize: 11),
                 ),
                 value: autoSize,
                 onChanged: onAutoSizeChanged,
@@ -354,7 +378,7 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                           horizontal: 8,
                           vertical: 2,
                         ),
-                        decoration: BoxDecoration(
+                      decoration: BoxDecoration(
                           color: colors.secondaryContainer,
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -446,21 +470,26 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
               dense: true,
               contentPadding: EdgeInsets.zero,
               secondary: Icon(
-                Icons.fit_screen_outlined,
+                Icons.open_in_full_rounded,
                 size: 20,
                 color: colors.onSurfaceVariant,
               ),
-              title: const Text(
-                'Taille du contenu (flex : 0)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              title: Text(
+                expandTitle,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-              subtitle: const Text(
-                'Chaque élément s’ajuste à sa taille naturelle au lieu de s’étirer.',
-                style: TextStyle(fontSize: 11),
+              subtitle: Text(
+                expandSubtitle,
+                style: const TextStyle(fontSize: 11),
               ),
-              value: !flow.expandSlots,
-              onChanged: (fitContent) =>
-                  onFlowChanged(flow.copyWith(expandSlots: !fitContent)),
+              value: !autoOnFlowAxis && flow.expandSlots,
+              onChanged: autoOnFlowAxis
+                  ? null
+                  : (expand) =>
+                        onFlowChanged(flow.copyWith(expandSlots: expand)),
             ),
             Divider(
               height: 12,

@@ -1591,4 +1591,71 @@ void main() {
     expect(tester.getSize(find.byKey(const ValueKey('safe-body'))).height, 520);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Action button in AppBar actions keeps its natural text width', (
+    tester,
+  ) async {
+    const exportedJson = '''
+{
+  "format": "super_container_layout.appearance",
+  "version": 1,
+  "groups": ["styles", "layouts"],
+  "data": {
+    "mode": "light",
+    "accent": 4283590873,
+    "backgroundOpacity": 1.0,
+    "windowOpacity": 1.0,
+    "windowEffect": "transparent",
+    "styles": {},
+    "components": {
+      "root": {
+        "type": "native",
+        "regions": {"appBar": true},
+        "placements": {
+          "body": [{"id": "scaffold:body", "type": "scaffold:body"}],
+          "appBar": [{"id": "ErYewU1iY5", "type": "factory:ApplicationBar"}]
+        }
+      },
+      "ErYewU1iY5": {
+        "type": "native",
+        "regions": {"actions": true},
+        "placements": {
+          "actions": [{"id": "HjcJAptQol", "type": "factory:Action"}]
+        }
+      }
+    },
+    "behaviors": {},
+    "pageCatalog": {"pages": [], "homePageId": null}
+  }
+}
+''';
+    final imported = AppearanceTransfer.import(Appearance(), exportedJson, {
+      TransferGroup.styles,
+      TransferGroup.layouts,
+    });
+    final store = AppearanceStore();
+    await store.save(imported);
+    final registry = Registry()..bootstrap();
+    await mount(
+      const SuperPage(child: Text('Body')),
+      tester,
+      registry,
+      store: store,
+    );
+    final buttonFinder = find.byKey(
+      const ValueKey('super-action-button-HjcJAptQol'),
+    );
+    final labelFinder = find.byKey(
+      const ValueKey('super-action-label-HjcJAptQol'),
+    );
+    expect(buttonFinder, findsOneWidget);
+    expect(labelFinder, findsOneWidget);
+    expect(tester.getSize(buttonFinder).width, greaterThan(80));
+    expect(tester.getSize(labelFinder).width, greaterThan(30));
+    expect(
+      tester.getCenter(buttonFinder).dy,
+      closeTo(tester.getCenter(find.byType(AppBar)).dy, 1.0),
+    );
+    expect(tester.takeException(), isNull);
+  });
 }

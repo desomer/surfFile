@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -127,10 +126,7 @@ void main() {
       expect(saved.nativeComponent('box').toJson(), config.toJson());
       final encoded = const AppearanceCodec().encode(saved);
       expect(
-        const AppearanceCodec()
-            .decode(encoded)
-            .nativeComponent('box')
-            .toJson(),
+        const AppearanceCodec().decode(encoded).nativeComponent('box').toJson(),
         config.toJson(),
       );
       final exported = AppearanceTransfer.export(saved, {
@@ -251,9 +247,7 @@ void main() {
     await tester.tap(target(), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('style-menu-rename-Box')), findsNothing);
-    await tester.tap(
-      find.byKey(const ValueKey('style-menu-rename-Card')),
-    );
+    await tester.tap(find.byKey(const ValueKey('style-menu-rename-Card')));
     await tester.pumpAndSettle();
     await tester.enterText(
       find.byKey(const ValueKey('style-menu-rename-input')),
@@ -283,9 +277,7 @@ void main() {
     await tester.tap(find.text('Remplacer'));
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(
-        const ValueKey('super-container-box-add-card-factory:Card'),
-      ),
+      find.byKey(const ValueKey('super-container-box-add-card-factory:Card')),
     );
     await tester.pumpAndSettle();
     await tester.tap(
@@ -416,4 +408,22 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('empty Card tolerates child: false in regions from AI JSON', (
+    tester,
+  ) async {
+    final parsed = NativeComponentConfig.fromJson({
+      'type': 'native',
+      'regions': {'child': false},
+      'placements': <String, Object?>{},
+    });
+    expect(parsed.regions.containsKey('child'), isFalse);
+
+    final components = registry();
+    components.nativeComponentController('box').value = NativeComponentConfig(
+      regions: const {'child': false},
+    );
+    await mount(tester, components, fromCatalog: true);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -516,7 +516,11 @@ class NativeComponentConfig extends ComponentConfig {
         binding: binding,
         placements: placements,
         slotTypes: types,
-        regions: Map<String, bool>.from(rawRegions),
+        regions: {
+          for (final entry in rawRegions.entries)
+            if (!(entry.key == 'child' && entry.value == false))
+              entry.key as String: entry.value as bool,
+        },
         regionAxes: parsedAxes,
         regionFlows: parsedFlows,
         regionSizes: parsedRegionSizes,

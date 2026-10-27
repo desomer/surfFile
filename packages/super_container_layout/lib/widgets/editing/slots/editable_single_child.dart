@@ -145,77 +145,87 @@ class EditableSingleChildState extends State<EditableSingleChild> {
     final controller = _config;
     return ValueListenableBuilder<NativeComponentConfig>(
       valueListenable: controller,
-      builder: (context, config, _) => NativeComponentEditor(
-        key: _editor,
-        label: widget.label,
-        menuType: 'Card',
-        keyPrefix: 'super-container-${widget.id}',
-        settingsTitle: 'Configurer le contenu',
-        showRegionInPath: false,
-        resolveSlotLabel: _resolveSlotLabel,
-        isSlotSelectable: _isSlotSelectable,
-        slotContextFor: (_) => _childKey.currentContext,
-        config: config,
-        onChanged: (value) => controller.value = value,
-        registry: registry,
-        regions: const [
-          NativeRegion('child', 'Enfant', required: true, single: true),
-        ],
-        slots: [
-          if (widget.child case final child?)
-            BuilderSlot(
-              id: _providedId,
-              label: 'Contenu initial',
-              builder: (_) => child,
-            ),
-        ],
-        builder: (context, editor) {
-          final children = editor.slotsFor('child');
-          final fit = SlotContentFitScope.maybeOf(context);
-          final slot = children.firstOrNull;
-          final child = slot == null
-              ? SizedBox(
-                  width: (fit?.fitWidth ?? false) ? 48 : double.infinity,
-                  height: (fit?.fitHeight ?? false) ? 48 : double.infinity,
-                )
-              : KeyedSubtree(
-                  key: _childKey,
-                  child: EditorSelectionRegion(
-                    enabled: editor.editing,
-                    selected: editor.isSlotSelected('child', slot.id),
-                    onSelect: () => editor.selectSlot('child', slot),
-                    child: slot,
-                  ),
-                );
-          return widget.builder(
-            context,
-            LayoutSelectionScope(
-              owner: editor,
-              path: editor.componentPath,
-              child: EditorSlotAction(
-                label: 'Composant enfant : ${widget.label}',
-                inline: true,
-                showEdit: false,
-                enabled: slot != null,
-                onSelect: slot == null
-                    ? null
-                    : () => editor.selectSlot('child', slot),
-                onEdit: () async {},
-                onRemove: slot == null ? null : () async => remove(),
-                wrapActions: slot == null
-                    ? const []
-                    : editor.wrapActionsForSlot('child', slot),
-                insertion: slot == null
-                    ? null
-                    : editor.insertionForSlot('child', slot),
-                child: child,
+      builder: (context, rawConfig, _) {
+        final config = rawConfig.regions['child'] == false
+            ? rawConfig.copyWith(
+                regions: {
+                  for (final entry in rawConfig.regions.entries)
+                    if (entry.key != 'child') entry.key: entry.value,
+                },
+              )
+            : rawConfig;
+        return NativeComponentEditor(
+          key: _editor,
+          label: widget.label,
+          menuType: 'Card',
+          keyPrefix: 'super-container-${widget.id}',
+          settingsTitle: 'Configurer le contenu',
+          showRegionInPath: false,
+          resolveSlotLabel: _resolveSlotLabel,
+          isSlotSelectable: _isSlotSelectable,
+          slotContextFor: (_) => _childKey.currentContext,
+          config: config,
+          onChanged: (value) => controller.value = value,
+          registry: registry,
+          regions: const [
+            NativeRegion('child', 'Enfant', required: true, single: true),
+          ],
+          slots: [
+            if (widget.child case final child?)
+              BuilderSlot(
+                id: _providedId,
+                label: 'Contenu initial',
+                builder: (_) => child,
               ),
-            ),
-            slot != null,
-            () async => remove(),
-          );
-        },
-      ),
+          ],
+          builder: (context, editor) {
+            final children = editor.slotsFor('child');
+            final fit = SlotContentFitScope.maybeOf(context);
+            final slot = children.firstOrNull;
+            final child = slot == null
+                ? SizedBox(
+                    width: (fit?.fitWidth ?? false) ? 48 : double.infinity,
+                    height: (fit?.fitHeight ?? false) ? 48 : double.infinity,
+                  )
+                : KeyedSubtree(
+                    key: _childKey,
+                    child: EditorSelectionRegion(
+                      enabled: editor.editing,
+                      selected: editor.isSlotSelected('child', slot.id),
+                      onSelect: () => editor.selectSlot('child', slot),
+                      child: slot,
+                    ),
+                  );
+            return widget.builder(
+              context,
+              LayoutSelectionScope(
+                owner: editor,
+                path: editor.componentPath,
+                child: EditorSlotAction(
+                  label: 'Composant enfant : ${widget.label}',
+                  inline: true,
+                  showEdit: false,
+                  enabled: slot != null,
+                  onSelect: slot == null
+                      ? null
+                      : () => editor.selectSlot('child', slot),
+                  onEdit: () async {},
+                  onRemove: slot == null ? null : () async => remove(),
+                  wrapActions: slot == null
+                      ? const []
+                      : editor.wrapActionsForSlot('child', slot),
+                  insertion: slot == null
+                      ? null
+                      : editor.insertionForSlot('child', slot),
+                  child: child,
+                ),
+              ),
+              slot != null,
+              () async => remove(),
+            );
+          },
+        );
+      },
     );
   }
 

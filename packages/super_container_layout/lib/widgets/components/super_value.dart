@@ -994,9 +994,22 @@ class _SuperValueState extends State<SuperValue> {
                 final fit = SlotContentFitScope.maybeOf(context);
                 final fitWidth = fit?.fitWidth ?? false;
                 final fitHeight = fit?.fitHeight ?? false;
+                final needsFallbackWidth =
+                    !config.kind.isBoolean &&
+                    (config.mode == SuperValueMode.input ||
+                        config.label.isNotEmpty);
                 return LayoutBuilder(
                   builder: (context, constraints) => SizedBox(
-                    width: constraints.hasBoundedWidth ? null : 240,
+                    width: !constraints.hasBoundedWidth
+                        ? 240
+                        : fitWidth &&
+                              needsFallbackWidth &&
+                              !constraints.hasTightWidth
+                        ? 240.0.clamp(
+                            constraints.minWidth,
+                            constraints.maxWidth,
+                          )
+                        : null,
                     height: !fitHeight && constraints.hasBoundedHeight
                         ? constraints.maxHeight
                         : null,

@@ -90,6 +90,12 @@ extension _SuperLayoutDialogs on SuperLayoutState {
                         axis: current.axisOf(zone),
                         flow: current.flowOf(zone),
                         isSide: zone.isSide,
+                        sizeAxis: !zone.isSide
+                            ? null
+                            : (zone == SuperLayoutZone.north ||
+                                  zone == SuperLayoutZone.south)
+                            ? Axis.vertical
+                            : Axis.horizontal,
                         autoSize: zone.isSide && current.isAuto(zone),
                         size: zone.isSide ? current.sizeOf(zone) : 100,
                         canResize: zone.isSide && current.canResize(zone),

@@ -167,7 +167,6 @@ class _SuperAppBarState extends State<SuperAppBar> {
       expand: false,
       stretch: false,
       emptySize: Size(96, kToolbarHeight),
-      fillSize: Size.square(48),
     ),
     const NativeRegion('bottom', 'Bas', single: true),
     const NativeRegion('flexibleSpace', 'Espace flexible', single: true),

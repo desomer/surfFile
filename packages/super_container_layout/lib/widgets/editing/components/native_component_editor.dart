@@ -509,11 +509,17 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                           ? spec.emptySize.height
                           : 100.0;
                       final fixedSize = current.regionSizeOf(id);
+                      final effectiveAxis =
+                          current.regionAxisOf(id) ?? spec.axis;
+                      final hasNaturalHeight = effectiveAxis == Axis.vertical
+                          ? !spec.expand
+                          : !spec.stretch;
                       return ZoneFlowSettingsEditor(
                         keyPrefix: '${widget.keyPrefix}-flow-dialog-$id',
-                        axis: current.regionAxisOf(id) ?? spec.axis,
+                        axis: effectiveAxis,
                         flow: current.regionFlowOf(id),
                         isSide: true,
+                        sizeAxis: hasNaturalHeight ? Axis.vertical : null,
                         autoSize: fixedSize == null,
                         size: fixedSize ?? defaultSize,
                         onAutoSizeChanged: (auto) => _update(
@@ -1437,8 +1443,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 slot.id: preferredSizeFor(slot),
           },
           slotSizeConstraints: {
-            for (final id in childIds)
-              id: ?current.slotSizeConstraints[id],
+            for (final id in childIds) id: ?current.slotSizeConstraints[id],
           },
           axis: axisOf(region),
           flow: flowOf(region),
@@ -1581,8 +1586,12 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           focusKeys: _slotKeys,
           axis: regionAxis,
           flow: regionFlow,
-          expand: fixedSize != null ? regionFlow.expandSlots : spec.expand,
-          stretch: spec.stretch,
+          expand: fixedSize != null && regionAxis == Axis.vertical
+              ? true
+              : spec.expand,
+          stretch: fixedSize != null && regionAxis == Axis.horizontal
+              ? true
+              : spec.stretch,
           preferredSizes: {
             for (final slot in slots)
               if (slot case NativePreferredSizeWidget native)
@@ -1591,6 +1600,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             if (spec.fillSize != null)
               for (final slot in slots)
                 if (slot.sizing == SlotSizing.fill &&
+                    slot.tags.intersection(const {
+                      'action',
+                      'button',
+                      'text',
+                    }).isEmpty &&
                     slot.preferredSize == null &&
                     !widget.config.slotPreferredSizes.containsKey(slot.id))
                   slot.id: spec.fillSize,
@@ -1684,7 +1698,13 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               ids: _config.value.slotsOf(id),
               canMove: (slotId) => _canMoveSlot(slotId, id),
               onMove: (slotId) => _moveSlot(slotId, id),
+              alignment: regionAxis == Axis.horizontal && !spec.stretch
+                  ? AlignmentDirectional.centerStart
+                  : AlignmentDirectional.topStart,
               child: Stack(
+                alignment: regionAxis == Axis.horizontal && !spec.stretch
+                    ? AlignmentDirectional.centerStart
+                    : AlignmentDirectional.topStart,
                 children: [
                   if (slots.isEmpty && editing)
                     LayoutBuilder(

@@ -154,37 +154,40 @@ void main() {
     }
   });
 
-  test('fallback uses whole-layout basis when sibling bases are incompatible', () {
-    const config = SuperLayoutConfig(
-      slotSizeConstraints: {
-        'first': SlotSizeConstraints(
-          preferredWidth: SlotDimension(30, SlotSizeUnit.percent),
+  test(
+    'fallback uses whole-layout basis when sibling bases are incompatible',
+    () {
+      const config = SuperLayoutConfig(
+        slotSizeConstraints: {
+          'first': SlotSizeConstraints(
+            preferredWidth: SlotDimension(30, SlotSizeUnit.percent),
+            percentBasis: SlotPercentBasis.layout,
+          ),
+          'second': SlotSizeConstraints(
+            minHeight: SlotDimension(10, SlotSizeUnit.percent),
+          ),
+        },
+      );
+      final result = SuperLayout.defaultSlotAddition(
+        const SlotAddition(
+          slotId: 'second',
+          component: _second,
+          zone: SuperLayoutZone.east,
+          contentZone: SuperLayoutZone.east,
+          config: config,
+          existingSlots: [_first],
+        ),
+      );
+      expect(
+        result.slotSizeConstraints['second'],
+        const SlotSizeConstraints(
+          preferredWidth: SlotDimension(20, SlotSizeUnit.percent),
+          minHeight: SlotDimension(10, SlotSizeUnit.percent),
           percentBasis: SlotPercentBasis.layout,
         ),
-        'second': SlotSizeConstraints(
-          minHeight: SlotDimension(10, SlotSizeUnit.percent),
-        ),
-      },
-    );
-    final result = SuperLayout.defaultSlotAddition(
-      const SlotAddition(
-        slotId: 'second',
-        component: _second,
-        zone: SuperLayoutZone.east,
-        contentZone: SuperLayoutZone.east,
-        config: config,
-        existingSlots: [_first],
-      ),
-    );
-    expect(
-      result.slotSizeConstraints['second'],
-      const SlotSizeConstraints(
-        preferredWidth: SlotDimension(20, SlotSizeUnit.percent),
-        minHeight: SlotDimension(10, SlotSizeUnit.percent),
-        percentBasis: SlotPercentBasis.layout,
-      ),
-    );
-  });
+      );
+    },
+  );
 
   Future<void> pumpLayout(
     WidgetTester tester,
@@ -255,8 +258,10 @@ void main() {
       changes.single.slotSizeConstraints['first']?.preferredWidth,
       const SlotDimension(20, SlotSizeUnit.percent),
     );
-    expect(changes.single.slotSizeConstraints['first']?.percentBasis,
-        SlotPercentBasis.layout);
+    expect(
+      changes.single.slotSizeConstraints['first']?.percentBasis,
+      SlotPercentBasis.layout,
+    );
     expect(tester.getSize(find.byKey(const ValueKey('slot-first'))).width, 160);
   });
 
@@ -289,9 +294,7 @@ void main() {
       // The occupied zone exposes its add action in the context menu.
       await tester.tapAt(const Offset(790, 500), buttons: 2);
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(const ValueKey('style-menu-add-Est')),
-      );
+      await tester.tap(find.byKey(const ValueKey('style-menu-add-Est')));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('super-layout-add-slot-second')),
@@ -313,4 +316,34 @@ void main() {
       );
     },
   );
+
+  test('Action and Value slots do not receive automatic 20% side sizing', () {
+    for (final tags in const [
+      {'action', 'button', 'input'},
+      {'text', 'input'},
+    ]) {
+      final slot = BuilderSlot(
+        id: 'ctrl',
+        label: 'Control',
+        tags: tags,
+        builder: _content,
+      );
+      final config = const SuperLayoutConfig().withSlotMoved(
+        'ctrl',
+        SuperLayoutZone.north,
+      );
+      final result = SuperLayout.defaultSlotAddition(
+        SlotAddition(
+          slotId: 'ctrl',
+          component: slot,
+          zone: SuperLayoutZone.north,
+          contentZone: SuperLayoutZone.north,
+          config: config,
+          existingSlots: const [],
+        ),
+      );
+      expect(result, same(config));
+      expect(result.slotSizeConstraints.containsKey('ctrl'), isFalse);
+    }
+  });
 }

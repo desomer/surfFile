@@ -73,7 +73,9 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     try {
       final guide = await _loadGuide(context);
       final generated = await _generateAndApply(_buildPrompt(guide));
-      widget.controller.value = generated.appearance;
+      if (generated.appearance case final appearance?) {
+        widget.controller.value = appearance;
+      }
       final summary = generated.result['message'];
       _appendMessage(
         summary is String && summary.trim().isNotEmpty
@@ -97,7 +99,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     }
   }
 
-  Future<({Appearance appearance, Map<String, dynamic> result})>
+  Future<({Appearance? appearance, Map<String, dynamic> result})>
   _generateAndApply(String prompt) async {
     for (var attempt = 0; attempt < 2; attempt++) {
       final response = await widget.generate(prompt);
@@ -109,8 +111,16 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
         if (result is! Map<String, dynamic>) {
           throw const FormatException('La réponse doit être un objet JSON.');
         }
-        final vibe = result['vibe'];
-        final patch = vibe is Map<String, dynamic> ? vibe : result;
+        final patch = _extractPatch(result);
+        if (patch == null) {
+          final message = result['message'];
+          if (message is! String || message.trim().isEmpty) {
+            throw const FormatException(
+              'La réponse ne contient ni message ni modification.',
+            );
+          }
+          return (appearance: null, result: result);
+        }
         debugPrint('[Vibe IA] Patch à appliquer :');
         debugPrint(const JsonEncoder.withIndent('  ').convert(patch));
         final current = _currentAppearance;
@@ -150,6 +160,36 @@ $response
   bool _isInvalidPagePath(FormatException error) => error.message.contains(
     'Chemin absolu requis, différent de /, sans espace ni fragment.',
   );
+
+  Map<String, dynamic>? _extractPatch(Map<String, dynamic> result) {
+    if (result.containsKey('vibe') && result['vibe'] is! bool) {
+      final vibe = result['vibe'];
+      if (vibe == null) return null;
+      if (vibe is! Map<String, dynamic>) {
+        throw const FormatException(
+          'Le champ "vibe" doit être un objet JSON ou null.',
+        );
+      }
+      return _hasPatchChanges(vibe) ? vibe : null;
+    }
+    final candidate = Map<String, dynamic>.of(result)..remove('message');
+    return _hasPatchChanges(candidate) ? candidate : null;
+  }
+
+  bool _hasPatchChanges(Map<String, dynamic> patch) {
+    final payload = patch['data'] is Map<String, dynamic>
+        ? patch['data'] as Map<String, dynamic>
+        : patch;
+    const metaKeys = {'version', 'vibe', 'merge', 'format', 'groups'};
+    for (final entry in payload.entries) {
+      if (metaKeys.contains(entry.key)) continue;
+      final value = entry.value;
+      if (value == null) continue;
+      if (value is Map && value.isEmpty) continue;
+      return true;
+    }
+    return false;
+  }
 
   void _validatePatchedComponents(
     Appearance current,
@@ -231,8 +271,9 @@ $response
     return '''
 Tu es l’assistant de création d’écrans de super_container_layout. Réponds en français.
 Utilise exclusivement le guide ci-dessous et l’état actuel de l’application.
-Renvoie uniquement un objet JSON de la forme {"message":"résumé bref en français","vibe":{...}}.
-Le champ "vibe" doit contenir un patch JSON plat (modèle GenUI : "components", "styles", "pageCatalog") accepté par AppearanceTransfer.applyVibe.
+Renvoie uniquement un objet JSON :
+- Si l'utilisateur demande de créer ou modifier l'écran, renvoie {"message":"résumé bref en français","vibe":{...}}. Le champ "vibe" doit contenir un patch JSON plat (modèle GenUI : "components", "styles", "pageCatalog") accepté par AppearanceTransfer.applyVibe.
+- Si l'utilisateur pose une question ou demande une information sans demander de modification de l'écran, renvoie {"message":"réponse claire en français","vibe":null} (ou omets le champ "vibe") sans modifier l'écran.
 Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux dont la configuration est encore celle par défaut. Les identifiants du guide (comme "contA") sont des exemples, pas des racines d'écran implicites.
 Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
 ${instantiated == null ? '' : 'Les composants instanciés sont : ${jsonEncode(instantiated.toList())}. Rattache les modifications à ces composants ou aux pages déclarées ; une configuration sauvegardée mais isolée ne suffit pas.'}

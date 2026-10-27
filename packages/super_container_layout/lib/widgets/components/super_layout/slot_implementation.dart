@@ -404,12 +404,14 @@ class SlotStack extends StatelessWidget {
     List<String> ids,
   ) {
     final parentFit = SlotContentFitScope.maybeOf(context);
-    final parentFitMain = axis == Axis.horizontal
-        ? (parentFit?.fitWidth ?? false)
-        : (parentFit?.fitHeight ?? false);
-    final parentFitCross = axis == Axis.horizontal
-        ? (parentFit?.fitHeight ?? false)
-        : (parentFit?.fitWidth ?? false);
+    final parentFitMain = !expand ||
+        (axis == Axis.horizontal
+            ? (parentFit?.fitWidth ?? false)
+            : (parentFit?.fitHeight ?? false));
+    final parentFitCross = !stretch ||
+        (axis == Axis.horizontal
+            ? (parentFit?.fitHeight ?? false)
+            : (parentFit?.fitWidth ?? false));
     final fitMain = _slotFitsMain(slot, parentFitMain: parentFitMain);
     final fitCross = _slotFitsCross(slot, parentFitCross: parentFitCross);
     final fitWidth = axis == Axis.horizontal ? fitMain : fitCross;
@@ -879,14 +881,17 @@ class _RenderSlotFlex extends RenderBox
         count > 0 ? spacing + freeSpace / (count + 1) : spacing,
       ),
     };
-    final containerCross = stretch ? maxCross : cross;
+    final resolvedSize = constraints.constrain(
+      dimensions(targetMain, stretch ? maxCross : cross),
+    );
+    final containerCross = crossExtent(resolvedSize);
     var main = leading;
     for (final (index, child) in children.indexed) {
       final childCross = crossExtent(child.size);
       final crossOffset = switch (_configuration.crossAxisAlignment) {
-        CrossAxisAlignment.start ||
-        CrossAxisAlignment.stretch ||
-        CrossAxisAlignment.baseline => 0.0,
+        CrossAxisAlignment.start || CrossAxisAlignment.baseline => 0.0,
+        CrossAxisAlignment.stretch =>
+          stretch ? 0.0 : math.max(0.0, (containerCross - childCross) / 2.0),
         CrossAxisAlignment.end => math.max(0.0, containerCross - childCross),
         CrossAxisAlignment.center => math.max(
           0.0,
@@ -899,7 +904,7 @@ class _RenderSlotFlex extends RenderBox
       main += mainExtent(child.size);
       if (index < count - 1) main += stepSpacing;
     }
-    size = constraints.constrain(dimensions(targetMain, containerCross));
+    size = resolvedSize;
   }
 
   @override
@@ -1055,6 +1060,7 @@ class SlotZoneTarget extends StatelessWidget {
     required this.ids,
     required this.onMove,
     required this.canMove,
+    this.alignment = AlignmentDirectional.topStart,
     this.child,
     super.key,
   });
@@ -1064,6 +1070,7 @@ class SlotZoneTarget extends StatelessWidget {
   final String zoneLabel;
   final List<String> ids;
   final ValueChanged<String> onMove;
+  final AlignmentGeometry alignment;
   final Widget? child;
 
   @override
@@ -1099,6 +1106,7 @@ class SlotZoneTarget extends StatelessWidget {
         );
         if (child == null) return highlight;
         return Stack(
+          alignment: alignment,
           children: [
             child!,
             Positioned.fill(child: highlight),

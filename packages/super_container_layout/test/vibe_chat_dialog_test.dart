@@ -280,6 +280,78 @@ void main() {
     expect(appearance.value.pageCatalog.pages.single.id, 'files-page');
     expect(tester.takeException(), isNull);
   });
+
+  for (final payload in <Map<String, Object?>>[
+    {'message': 'Cet écran contient un conteneur principal.'},
+    {'message': 'Cet écran contient un conteneur principal.', 'vibe': null},
+    {
+      'message': 'Cet écran contient un conteneur principal.',
+      'vibe': <String, Object?>{},
+    },
+    {
+      'message': 'Cet écran contient un conteneur principal.',
+      'vibe': {
+        'components': <String, Object?>{},
+        'styles': <String, Object?>{},
+      },
+    },
+  ]) {
+    testWidgets(
+      'question responses display answer without mutating appearance ($payload)',
+      (tester) async {
+        final registry = Registry();
+        final initial = Appearance();
+        final appearance = ValueNotifier(initial);
+        registry.bindAppearance(appearance);
+        registry.layoutController('mainLayout');
+        addTearDown(appearance.dispose);
+        addTearDown(registry.unbindAppearance);
+        var notifications = 0;
+        appearance.addListener(() => notifications++);
+        var validations = 0;
+        String? sentPrompt;
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DefaultAssetBundle(
+                bundle: _GuideBundle(),
+                child: VibeChatDialog(
+                  controller: appearance,
+                  registry: registry,
+                  codec: const AppearanceCodec(),
+                  onClose: () {},
+                  onDrag: (_) {},
+                  validateAppearance: (_) => validations++,
+                  generate: (prompt) async {
+                    sentPrompt = prompt;
+                    return jsonEncode(payload);
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+
+        await tester.enterText(
+          find.byKey(const ValueKey('vibe-chat-input')),
+          'Quels composants sont sur la page ?',
+        );
+        await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+        await tester.pumpAndSettle();
+
+        expect(sentPrompt, contains('"vibe":null'));
+        expect(
+          find.text('Cet écran contient un conteneur principal.'),
+          findsOneWidget,
+        );
+        expect(appearance.value, same(initial));
+        expect(notifications, 0);
+        expect(validations, 0);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }
 
 class _GuideBundle extends CachingAssetBundle {
