@@ -1510,6 +1510,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         final nativeConfig = _toNativeConfig(config, activeRegionIds);
 
         return NativeComponentEditor(
+          id: widget.id,
           label: widget.label,
           menuType: 'Tab',
           menuIcon: Icons.tab_outlined,

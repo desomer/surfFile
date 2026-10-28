@@ -11,11 +11,13 @@ import '../../components/super_layout/layout_selection.dart';
 import '../../components/super_layout/zone_axis_button.dart';
 import '../addition/contextual_add.dart';
 import '../addition/insertion_plan.dart';
+import '../ai/vibe_chat_dialog.dart';
 import '../behaviors/component_behavior_editor.dart';
 import 'editor_context_menu.dart';
 import 'editor_selection_region.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/super_value_json_extract_dialog.dart';
 import '../overlay/editor_overlay.dart';
 import '../overlay/editor_zoom.dart';
 
@@ -24,7 +26,8 @@ export 'editor_context_menu.dart'
         EditorContextMenuEntry,
         EditorSlotAction,
         EditorSlotWrapAction,
-        EditorMenuDestination;
+        EditorMenuDestination,
+        VibeChatScope;
 
 /// Enables/disables editor gestures below this scope.
 ///
@@ -67,6 +70,7 @@ class EditorSlot extends StatefulWidget {
 
   const EditorSlot({
     this.id,
+    this.zoneId,
     this.child,
     this.label,
     this.menuTitle,
@@ -118,6 +122,10 @@ class EditorSlot extends StatefulWidget {
   /// Stable technical identity for the component or slot.
   final String? id;
 
+  /// Optional technical zone/region identity when this slot represents a zone
+  /// of a container (`id`).
+  final String? zoneId;
+
   @override
   EditorSlotState createState() => EditorSlotState();
 }
@@ -168,6 +176,38 @@ class EditorSlotState extends State<EditorSlot> {
   /// The directly associated component instance label, if this is its
   /// outermost editor target.
   EditorComponentLabel? get componentLabel => _instance;
+
+  /// Scope descriptor targeting this component or container zone for AI edits.
+  VibeChatScope get aiScope {
+    final zId = widget.zoneId;
+    if (zId != null && zId.isNotEmpty) {
+      final parentLabel = widget.menuSubtitle?.call()?.trim();
+      return VibeChatScope(
+        componentId: effectiveComponentId,
+        label: (parentLabel != null && parentLabel.isNotEmpty)
+            ? parentLabel
+            : titleLabel,
+        zoneId: zId,
+        zoneLabel: label,
+      );
+    }
+    return VibeChatScope(
+      componentId: effectiveComponentId,
+      label: titleLabel,
+    );
+  }
+
+  bool get _canEditWithAi =>
+      canEdit && AppearanceScope.controllerOf(context) != null;
+
+  Future<void> _openAiWithScope() async {
+    if (!mounted) return;
+    await VibeChatDialog.showScoped(context, aiScope);
+  }
+
+  /// Whether this slot's label has been customized by the user.
+  bool get hasCustomLabel =>
+      (_instance?.overridden ?? false) || _localLabel != null;
 
   void _renameLabel(String value) {
     final instance = _instance;
@@ -1233,13 +1273,21 @@ class EditorSlotState extends State<EditorSlot> {
                                       false)
                                   ? state.widget.wrapChildrenActions
                                   : const <EditorSlotWrapAction>[],
+                              state.canEdit
+                                  ? collectExtractableTargetsFromSlot(state)
+                                  : const <ExtractableComponentTarget>[],
+                              state._canEditWithAi,
                             )
                             case (
                               final wrapActions,
                               final wrapChildrenActions,
+                              final extractableTargets,
+                              final canEditWithAi,
                             )
                             when wrapActions.isNotEmpty ||
-                                wrapChildrenActions.isNotEmpty)
+                                wrapChildrenActions.isNotEmpty ||
+                                extractableTargets.isNotEmpty ||
+                                canEditWithAi)
                           MenuAnchor(
                             consumeOutsideTap: true,
                             menuChildren: [
@@ -1276,6 +1324,45 @@ class EditorSlotState extends State<EditorSlot> {
                                   child: const Text(
                                     'Envelopper les enfants dans…',
                                   ),
+                                ),
+                              if (extractableTargets.isNotEmpty)
+                                MenuItemButton(
+                                  key: ValueKey(
+                                    'style-menu-extract-super-values-${state.label}',
+                                  ),
+                                  leadingIcon: const Icon(Icons.data_object),
+                                  onPressed: () => Navigator.of(context)
+                                      .pop<Future<void> Function()>(() async {
+                                        if (!state.mounted) return;
+                                        final latest =
+                                            collectExtractableTargetsFromSlot(
+                                              state,
+                                            );
+                                        if (latest.isEmpty) return;
+                                        await SuperValueJsonExtractDialog.show(
+                                          state.context,
+                                          targets: latest,
+                                          sourceLabel: state.titleLabel,
+                                          target: state.context,
+                                        );
+                                      }),
+                                  child: const Text(
+                                    'Extraire les SuperValue en JSON…',
+                                  ),
+                                ),
+                              if (canEditWithAi)
+                                MenuItemButton(
+                                  key: ValueKey(
+                                    'style-menu-ai-${state.label}',
+                                  ),
+                                  leadingIcon: const Icon(
+                                    Icons.auto_awesome_outlined,
+                                  ),
+                                  onPressed: () => Navigator.of(context)
+                                      .pop<Future<void> Function()>(
+                                        state._openAiWithScope,
+                                      ),
+                                  child: const Text('Modifier avec l’IA…'),
                                 ),
                             ],
                             builder: (context, controller, child) => IconButton(

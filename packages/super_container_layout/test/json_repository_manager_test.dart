@@ -167,4 +167,45 @@ void main() {
     expect(await tester.runAsync(() => store.read('A')), '[99]');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('delete repository with confirmation', (tester) async {
+    await tester.runAsync(() async {
+      await store.create('Clients');
+      await store.create('Articles');
+    });
+    await open(tester);
+    await tap(tester, find.byKey(const ValueKey('repository-entry-Clients')));
+    await settle(tester);
+    expect(find.byKey(const ValueKey('repository-json')), findsOneWidget);
+
+    // Cancel deletion first
+    await tap(tester, find.byKey(const ValueKey('repository-delete')));
+    await tester.pumpAndSettle();
+    expect(find.text('Supprimer le repository ?'), findsOneWidget);
+    await tap(tester, find.text('Annuler'));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('repository-entry-Clients')),
+      findsOneWidget,
+    );
+
+    // Confirm deletion
+    await tap(tester, find.byKey(const ValueKey('repository-delete')));
+    await tester.pumpAndSettle();
+    await tap(tester, find.byKey(const ValueKey('repository-confirm-delete')));
+    await settle(tester);
+
+    expect(
+      find.byKey(const ValueKey('repository-entry-Clients')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey('repository-entry-Articles')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('repository-json')), findsNothing);
+    expect(find.text('Repository supprimé.'), findsOneWidget);
+    expect(await tester.runAsync(() => store.list()), ['Articles']);
+    expect(tester.takeException(), isNull);
+  });
 }

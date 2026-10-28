@@ -734,6 +734,10 @@ void main() {
         XuiBuildCtx(id: 'y'),
       );
       expect((firstWidget as SuperValue).id, 'x');
+      expect(
+        firstWidget.availableFontFamilies,
+        Registry.defaultAvailableFontFamilies,
+      );
       expect((secondWidget as SuperValue).id, 'y');
       registry.unbindAppearance();
       history.dispose();
@@ -1278,6 +1282,16 @@ void main() {
       );
       await tester.tap(find.text('Open'));
       await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-value-setting-obscureText')),
+        findsNothing,
+      );
+      final modeField = find.byKey(const ValueKey('super-value-setting-mode'));
+      await tester.ensureVisible(modeField);
+      await tester.tap(modeField);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Saisie').last);
+      await tester.pumpAndSettle();
       await tester.ensureVisible(
         find.byKey(const ValueKey('super-value-setting-obscureText')),
       );
@@ -1305,6 +1319,59 @@ void main() {
       expect(result!.maxLines, 1);
       expect(result!.fontSize, 18);
       expect(result!.toJson().containsKey('initialText'), isFalse);
+    },
+  );
+
+  testWidgets(
+    'multiline initialText auto-expands maxLines and display mode resets obscureText',
+    (tester) async {
+      SuperValueConfig? result;
+      await tester.pumpWidget(
+        host(
+          Builder(
+            builder: (context) => TextButton(
+              onPressed: () async => result = await showSuperValueEditor(
+                context: context,
+                config: const SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  obscureText: true,
+                ),
+                availableFontFamilies: const [],
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Open'));
+      await tester.pumpAndSettle();
+      final modeField = find.byKey(const ValueKey('super-value-setting-mode'));
+      await tester.ensureVisible(modeField);
+      await tester.tap(modeField);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Affichage').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-value-setting-obscureText')),
+        findsNothing,
+      );
+      final initialField = find.byKey(
+        const ValueKey('super-value-setting-initialText'),
+      );
+      expect(initialField, findsOneWidget);
+      await tester.ensureVisible(initialField);
+      await tester.enterText(initialField, 'Ligne 1\nLigne 2\nLigne 3');
+      await tester.pumpAndSettle();
+      final maxLinesField = find.byKey(
+        const ValueKey('super-value-setting-maxLines'),
+      );
+      expect(tester.widget<TextFormField>(maxLinesField).controller!.text, '3');
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(result!.mode, SuperValueMode.display);
+      expect(result!.obscureText, isFalse);
+      expect(result!.initialText, 'Ligne 1\nLigne 2\nLigne 3');
+      expect(result!.maxLines, 3);
     },
   );
 

@@ -4,6 +4,76 @@ import '../addition/insertion_plan.dart';
 
 enum EditorMenuDestination { style, configuration }
 
+/// Target scope when launching or filtering the Vibe AI assistant from a
+/// context menu entry (either a whole component or a specific zone/region of a
+/// container).
+@immutable
+class VibeChatScope {
+  const VibeChatScope({
+    required this.componentId,
+    required this.label,
+    this.zoneId,
+    this.zoneLabel,
+  });
+
+  /// Technical identifier of the target component (e.g. layout, card, list,
+  /// native component, value, action).
+  final String componentId;
+
+  /// Human-readable label of the target component.
+  final String label;
+
+  /// Optional technical zone/region identifier within [componentId] (e.g.
+  /// `'center'`, `'west'`, `'body'`, `'appBar'`).
+  final String? zoneId;
+
+  /// Optional human-readable label for [zoneId].
+  final String? zoneLabel;
+
+  /// Registered callback by the active `StyleEditBanner` to open its floating
+  /// `VibeChatDialog` focused on the requested scope.
+  static bool Function(VibeChatScope scope)? onOpenRequested;
+
+  /// Canonical component ID in `Appearance.components`.
+  String get canonicalComponentId {
+    if (componentId.endsWith(':layout')) {
+      return componentId.substring(0, componentId.length - ':layout'.length);
+    }
+    if (componentId.endsWith(':item')) {
+      return componentId.substring(0, componentId.length - ':item'.length);
+    }
+    return componentId;
+  }
+
+  /// Concise human-readable description of this scope.
+  String get displayLabel {
+    final z = zoneLabel?.trim();
+    if (z != null && z.isNotEmpty) {
+      if (label.toLowerCase().contains(z.toLowerCase())) return label;
+      return '$label — zone $z';
+    }
+    if (zoneId != null && zoneId!.isNotEmpty) {
+      return '$label — zone $zoneId';
+    }
+    return label;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is VibeChatScope &&
+      other.componentId == componentId &&
+      other.label == label &&
+      other.zoneId == zoneId &&
+      other.zoneLabel == zoneLabel;
+
+  @override
+  int get hashCode => Object.hash(componentId, label, zoneId, zoneLabel);
+
+  @override
+  String toString() =>
+      'VibeChatScope(componentId: $componentId, zoneId: $zoneId, label: $displayLabel)';
+}
+
 class EditorSlotWrapAction {
   const EditorSlotWrapAction({
     required this.label,

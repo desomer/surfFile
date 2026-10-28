@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_value_config.dart';
 import '../../models/automatic_state.dart';
+import '../../models/json_syntax.dart';
 import '../../services/states/content_hover_scope.dart';
 import '../../models/json_text_binding.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -17,6 +18,7 @@ import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
 import '../../services/states/surface_state_binding.dart';
 import '../../super_app.dart';
+import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/components/super_value_editor.dart';
 import 'super_text_field.dart';
@@ -153,7 +155,8 @@ class SuperValue extends StatefulWidget {
   State<SuperValue> createState() => _SuperValueState();
 }
 
-class _SuperValueState extends State<SuperValue> {
+class _SuperValueState extends State<SuperValue>
+    implements JsonExtractableState {
   final _surface = GlobalKey<EditorSlotState>();
   late final TextEditingController _internal;
   late final ValueNotifier<SuperValueConfig> _local;
@@ -1109,4 +1112,204 @@ class _SuperValueState extends State<SuperValue> {
       ),
     );
   }
+
+  SuperValueConfig get _currentEffectiveConfig {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final saved =
+        (registry?.valueController(widget.id, fallback: widget.config) ??
+                _local)
+            .value;
+    return _withBoundProperties(_effectiveConfig ?? saved);
+  }
+
+  String get extractedKey {
+    final surface = _surface.currentState;
+    if (surface != null && surface.mounted && surface.hasCustomLabel) {
+      final renamed = surface.titleLabel.trim();
+      if (renamed.isNotEmpty) return renamed;
+    }
+    final config = _currentEffectiveConfig;
+    final configLabel = config.label.trim();
+    if (configLabel.isNotEmpty) return configLabel;
+    final instanceLabel = surface?.componentLabel?.label.trim();
+    if (instanceLabel != null &&
+        instanceLabel.isNotEmpty &&
+        instanceLabel != 'Value' &&
+        instanceLabel != 'Valeur') {
+      return instanceLabel;
+    }
+    return widget.id;
+  }
+
+  Object get extractedValue {
+    final config = _currentEffectiveConfig;
+    final text = _controlledText ?? _text.text;
+    if (config.kind.isBoolean) {
+      return text.trim().toLowerCase() == 'true';
+    }
+    return text;
+  }
+
+  @override
+  String get extractableId => widget.id;
+
+  @override
+  ExtractableComponentKind get extractableKind =>
+      ExtractableComponentKind.superValue;
+
+  @override
+  EditorSlotState? get extractableSurface => _surface.currentState;
+
+  @override
+  BuildContext get extractableContext => context;
+
+  @override
+  bool get isExtractableMounted => mounted;
+
+  @override
+  String get preferredExtractableKey => extractedKey;
+
+  @override
+  ExtractableComponentTarget buildExtractableTarget(String assignedBaseKey) {
+    final config = _currentEffectiveConfig;
+    final options = <ExtractablePropertyOption>[
+      ExtractablePropertyOption(
+        id: 'value',
+        label: 'Valeur',
+        value: extractedValue,
+        defaultSelected: true,
+      ),
+      if (config.label.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.label.name,
+          label: 'Libellé',
+          value: config.label,
+        ),
+      if (config.placeholder.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.placeholder.name,
+          label: 'Placeholder',
+          value: config.placeholder,
+        ),
+      if (config.fontFamily != null && config.fontFamily!.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.fontFamily.name,
+          label: 'Police',
+          value: config.fontFamily!,
+        ),
+      if (config.color != null)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.color.name,
+          label: 'Couleur',
+          value: JsonColor.toHex(config.color!),
+        ),
+      if (config.fontSize != null)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.fontSize.name,
+          label: 'Taille de police',
+          value: config.fontSize!,
+        ),
+      if (config.fontWeight != null)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.fontWeight.name,
+          label: 'Graisse',
+          value: config.fontWeight!.value,
+        ),
+      if (config.italic != null)
+        ExtractablePropertyOption(
+          id: SuperValueProperty.italic.name,
+          label: 'Italique',
+          value: config.italic!,
+        ),
+      if (config.textAlign != const SuperValueConfig().textAlign ||
+          config.propertyBindings.containsKey(SuperValueProperty.textAlign))
+        ExtractablePropertyOption(
+          id: SuperValueProperty.textAlign.name,
+          label: 'Alignement',
+          value: config.textAlign.name,
+        ),
+    ];
+
+    return ExtractableComponentTarget(
+      id: widget.id,
+      kind: ExtractableComponentKind.superValue,
+      displayName: extractedKey,
+      baseJsonKey: assignedBaseKey,
+      properties: options,
+      applyBindings: (bindings) {
+        if (!mounted || bindings.isEmpty) return;
+        final registry = SuperApp.maybeOf(context)?.registry;
+        final controller =
+            registry?.valueController(widget.id, fallback: widget.config) ??
+            _local;
+        final current = controller.value;
+        final valueBinding = bindings['value'];
+        final updatedProps = <SuperValueProperty, JsonTextBinding>{
+          ...current.propertyBindings,
+          for (final prop in SuperValueProperty.values)
+            if (bindings[prop.name] case final propBinding?) prop: propBinding,
+        };
+        final next = current.copyWith(
+          binding: valueBinding ?? current.binding,
+          propertyBindings: updatedProps,
+        );
+        if (next == current) return;
+        controller.value = next;
+        widget.onConfigChanged?.call(next);
+      },
+    );
+  }
+}
+
+/// Extracts a `{ key: currentValue }` map for the [SuperValue] owned by [slot]
+/// or all [SuperValue] components mounted inside [slot]'s subtree.
+Map<String, Object?> extractSuperValuesFromSlot(EditorSlotState slot) {
+  if (!slot.mounted) return const {};
+  final statesById = <String, _SuperValueState>{};
+  final direct = slot.context.findAncestorStateOfType<_SuperValueState>();
+  if (direct != null &&
+      direct.mounted &&
+      identical(direct._surface.currentState, slot)) {
+    statesById[direct.widget.id] = direct;
+  } else {
+    void visit(Element element) {
+      if (element is StatefulElement) {
+        final state = element.state;
+        if (state is _SuperValueState && state.mounted) {
+          final existing = statesById[state.widget.id];
+          final scope = JsonListScope.maybeOf(state.context);
+          final isPlaceholder = scope?.placeholder ?? false;
+          final isSelected = scope?.selected ?? false;
+          if (existing == null) {
+            statesById[state.widget.id] = state;
+          } else {
+            final existingScope = JsonListScope.maybeOf(existing.context);
+            final existingPlaceholder = existingScope?.placeholder ?? false;
+            final existingSelected = existingScope?.selected ?? false;
+            if ((existingPlaceholder && !isPlaceholder) ||
+                (!existingSelected && isSelected && !isPlaceholder)) {
+              statesById[state.widget.id] = state;
+            }
+          }
+          return;
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    slot.context.visitChildElements(visit);
+  }
+  if (statesById.isEmpty) return const {};
+  final result = <String, Object?>{};
+  for (final state in statesById.values) {
+    final baseKey = state.extractedKey;
+    var key = baseKey;
+    var suffix = 2;
+    while (result.containsKey(key)) {
+      key = '${baseKey}_$suffix';
+      suffix++;
+    }
+    result[key] = state.extractedValue;
+  }
+  return result;
 }

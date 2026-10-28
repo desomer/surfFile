@@ -233,6 +233,49 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
   }
 
+  Future<void> _delete([String? target]) async {
+    final name = target ?? _selected;
+    if (name == null || _busy || _confirming) return;
+    _confirming = true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer le repository ?'),
+        content: Text('Supprimer définitivement « $name » ($name.json) ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            key: const ValueKey('repository-confirm-delete'),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    _confirming = false;
+    if (confirmed != true || !mounted) return;
+    await _run(() async {
+      await _store!.delete(name);
+      final names = await _store!.list();
+      if (!mounted) return;
+      final removedSelected =
+          _selected != null && _selected!.toLowerCase() == name.toLowerCase();
+      setState(() {
+        _names = names;
+        if (removedSelected) {
+          _selected = null;
+          _selectedId = null;
+          _savedText = '';
+          _text.clear();
+        }
+        _notice = 'Repository supprimé.';
+      });
+    });
+  }
+
   Future<void> _save() => _run(() async {
     final text = _text.text;
     await _store!.save(_selected!, text, expectedText: _savedText);
@@ -287,6 +330,12 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
                       selected: name == _selected,
                       enabled: !_busy,
                       onTap: () => _select(name),
+                      trailing: IconButton(
+                        key: ValueKey('repository-delete-$name'),
+                        tooltip: 'Supprimer',
+                        onPressed: _busy ? null : () => _delete(name),
+                        icon: const Icon(Icons.delete_outline),
+                      ),
                     ),
                 ],
               ),
@@ -314,6 +363,11 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
             TextButton(
               onPressed: _busy ? null : _format,
               child: const Text('Formater'),
+            ),
+            TextButton(
+              key: const ValueKey('repository-delete'),
+              onPressed: _busy ? null : () => _delete(_selected!),
+              child: const Text('Supprimer'),
             ),
           ],
         ),

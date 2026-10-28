@@ -130,6 +130,7 @@ class NativeRegion {
 /// Shared selection, menus, switches and slot catalog for native adapters.
 class NativeComponentEditor extends StatefulWidget {
   const NativeComponentEditor({
+    this.id,
     required this.label,
     required this.config,
     required this.onChanged,
@@ -162,6 +163,7 @@ class NativeComponentEditor extends StatefulWidget {
     super.key,
   });
 
+  final String? id;
   final String label;
   final NativeComponentConfig config;
   final ValueChanged<NativeComponentConfig> onChanged;
@@ -227,6 +229,26 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   String get _componentLabel {
     final instance = editorComponentLabelOf(context);
     return (instance?.overridden ?? false) ? instance!.label : widget.label;
+  }
+
+  String? get _effectiveComponentId {
+    if (widget.id != null && widget.id!.isNotEmpty) return widget.id!;
+    final fromLabel = editorComponentLabelOf(context)?.id;
+    if (fromLabel != null && fromLabel.isNotEmpty) return fromLabel;
+    final registry = widget.registry;
+    if (registry != null) {
+      final current = _config.value;
+      for (final entry in registry.nativeComponentConfigById.entries) {
+        if (identical(entry.value.value, current) ||
+            entry.value.value == current) {
+          return entry.key;
+        }
+      }
+      if (registry.nativeComponentConfigById.length == 1) {
+        return registry.nativeComponentConfigById.keys.single;
+      }
+    }
+    return null;
   }
 
   String _resolvedSlotLabel(SlotImplementation slot) =>
@@ -2100,6 +2122,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             selected: selected && _selectedSlot == null,
             onSelect: () => select(id, regionContext),
             child: EditorSlot(
+              id: _effectiveComponentId,
+              zoneId: id,
               label: spec.label,
               menuTitle: 'zone ${spec.label}',
               menuSubtitle: () => _componentLabel,
@@ -2377,6 +2401,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           selected: selected && _selectedSlot == null,
           onSelect: () => select(id, regionContext),
           child: EditorSlot(
+            id: _effectiveComponentId,
+            zoneId: id,
             label: spec.label,
             menuTitle: 'zone ${spec.label}',
             menuSubtitle: () => _componentLabel,
@@ -2562,6 +2588,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         selected: _active && _selected == null,
         onSelect: () => select(null),
         child: EditorSlot(
+          id: _effectiveComponentId,
           label: widget.settingsTitle,
           menuTitle: widget.label,
           menuType: widget.menuType,

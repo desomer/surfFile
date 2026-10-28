@@ -144,6 +144,7 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
     return ValueListenableBuilder<NativeComponentConfig>(
       valueListenable: controller,
       builder: (context, config, _) => NativeComponentEditor(
+        id: widget.id,
         label: widget.label,
         menuType: 'NavigationRail',
         keyPrefix: 'super-navigation-rail',

@@ -271,6 +271,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
       builder: (context, _) {
         final config = controller.value;
         return NativeComponentEditor(
+          id: widget.id,
           label: widget.label,
           menuType: 'Page',
           menuIcon: widget.menuIcon,

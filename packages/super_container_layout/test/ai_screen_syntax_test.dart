@@ -471,5 +471,225 @@ void main() {
         const SlotDimension(40, SlotSizeUnit.pixels),
       );
     });
+
+    test(
+      'filterPatchToScope restricts edits to a target component subtree and strips out-of-scope changes',
+      () {
+        final initial = AppearanceTransfer.applyVibe(
+          Appearance(),
+          jsonEncode({
+            'styles': {
+              'background': {'color': '#101418'},
+              'card-left': {'color': '#FFFFFF', 'radius': 8},
+              'card-right': {'color': '#FFFFFF', 'radius': 8},
+            },
+            'components': {
+              'root-layout': {
+                'type': 'layout',
+                'west': true,
+                'westSize': 220,
+                'placements': {
+                  'west': [
+                    {'id': 'card-left', 'type': 'registry:Card'},
+                  ],
+                  'center': [
+                    {'id': 'card-right', 'type': 'registry:Card'},
+                  ],
+                },
+              },
+              'card-left': {
+                'type': 'native',
+                'regions': {'child': true},
+                'placements': {
+                  'child': [
+                    {'id': 'left-title', 'type': 'registry:Value'},
+                  ],
+                },
+              },
+              'left-title': {'type': 'value', 'text': 'Menu gauche'},
+              'card-right': {
+                'type': 'native',
+                'regions': {'child': true},
+                'placements': {
+                  'child': [
+                    {'id': 'right-title', 'type': 'registry:Value'},
+                  ],
+                },
+              },
+              'right-title': {'type': 'value', 'text': 'Contenu principal'},
+            },
+          }),
+        );
+
+        const scope = VibeChatScope(
+          componentId: 'card-right',
+          label: 'Card',
+        );
+
+        final aiPatch = <String, dynamic>{
+          'mode': 'dark',
+          'accent': '#FF0000',
+          'pageCatalog': {
+            'pages': [
+              {'id': 'rogue-page', 'name': 'Rogue', 'path': '/rogue'},
+            ],
+          },
+          'styles': {
+            'background': {'color': '#FF00FF'},
+            'card-left': {'radius': 30},
+            'card-right': {'radius': 20, 'padding': 16},
+          },
+          'components': {
+            'left-title': {'text': 'Piraté'},
+            'card-right': {
+              'type': 'native',
+              'regions': {'child': true},
+              'placements': {
+                'child': [
+                  {'id': 'right-layout', 'type': 'registry:Layout'},
+                ],
+              },
+            },
+            'right-layout': {
+              'type': 'layout',
+              'placements': {
+                'center': [
+                  {'id': 'right-title', 'type': 'registry:Value'},
+                  {'id': 'right-sub', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'right-title': {'text': 'Contenu mis à jour'},
+            'right-sub': {'type': 'value', 'text': 'Sous-titre ajouté'},
+          },
+        };
+
+        final filtered = VibeChatDialog.filterPatchToScope(
+          initial,
+          aiPatch,
+          scope,
+        );
+        final updated = AppearanceTransfer.applyVibe(
+          initial,
+          jsonEncode(filtered),
+        );
+
+        // Out-of-scope global properties, sibling card, and parent layout stay untouched
+        expect(updated.mode, initial.mode);
+        expect(updated.accent, initial.accent);
+        expect(updated.pageCatalog.pages, isEmpty);
+        expect(updated.backgroundStyle.color, const Color(0xFF101418));
+        expect(updated.style('card-left').radius, 8);
+        expect(updated.valueComponent('left-title').initialText, 'Menu gauche');
+        expect(
+          updated.layout('root-layout').placementsOf(SuperLayoutZone.west),
+          ['card-left'],
+        );
+
+        // In-scope component (card-right) and its new/existing children are updated
+        expect(updated.style('card-right').radius, 20);
+        expect(updated.style('card-right').padding, 16);
+        expect(updated.nativeComponent('card-right').slotsOf('child'), [
+          'right-layout',
+        ]);
+        expect(
+          updated.layout('right-layout').placementsOf(SuperLayoutZone.center),
+          ['right-title', 'right-sub'],
+        );
+        expect(
+          updated.valueComponent('right-title').initialText,
+          'Contenu mis à jour',
+        );
+        expect(
+          updated.valueComponent('right-sub').initialText,
+          'Sous-titre ajouté',
+        );
+      },
+    );
+
+    test(
+      'filterPatchToScope on a specific layout zone preserves all other zones of the same container',
+      () {
+        final initial = AppearanceTransfer.applyVibe(
+          Appearance(),
+          jsonEncode({
+            'components': {
+              'mainLayout': {
+                'type': 'layout',
+                'north': true,
+                'northSize': 70,
+                'placements': {
+                  'north': [
+                    {'id': 'header-val', 'type': 'registry:Value'},
+                  ],
+                  'center': [
+                    {'id': 'center-val', 'type': 'registry:Value'},
+                  ],
+                },
+              },
+              'header-val': {'type': 'value', 'text': 'En-tête'},
+              'center-val': {'type': 'value', 'text': 'Centre intact'},
+            },
+          }),
+        );
+
+        const westScope = VibeChatScope(
+          componentId: 'mainLayout',
+          label: 'Layout',
+          zoneId: 'west',
+          zoneLabel: 'Ouest',
+        );
+
+        final aiPatch = <String, dynamic>{
+          'components': {
+            'mainLayout': {
+              'northSize': 200,
+              'west': true,
+              'westSize': 260,
+              'placements': {
+                'north': <Object?>[],
+                'center': <Object?>[],
+                'west': [
+                  {'id': 'west-nav', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'header-val': {'text': 'Modifié hors zone'},
+            'west-nav': {'type': 'value', 'text': 'Navigation Ouest'},
+          },
+        };
+
+        final filtered = VibeChatDialog.filterPatchToScope(
+          initial,
+          aiPatch,
+          westScope,
+        );
+        final updated = AppearanceTransfer.applyVibe(
+          initial,
+          jsonEncode(filtered),
+        );
+
+        final layout = updated.layout('mainLayout');
+        // North and Center zones are preserved intact
+        expect(layout.north, isTrue);
+        expect(layout.northSize, 70);
+        expect(layout.placementsOf(SuperLayoutZone.north), ['header-val']);
+        expect(layout.placementsOf(SuperLayoutZone.center), ['center-val']);
+        expect(updated.valueComponent('header-val').initialText, 'En-tête');
+        expect(
+          updated.valueComponent('center-val').initialText,
+          'Centre intact',
+        );
+
+        // West zone is enabled, sized, and populated
+        expect(layout.west, isTrue);
+        expect(layout.westSize, 260);
+        expect(layout.placementsOf(SuperLayoutZone.west), ['west-nav']);
+        expect(
+          updated.valueComponent('west-nav').initialText,
+          'Navigation Ouest',
+        );
+      },
+    );
   });
 }

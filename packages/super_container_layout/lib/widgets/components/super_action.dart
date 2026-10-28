@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models/automatic_state.dart';
 import '../../models/component_behavior.dart';
+import '../../models/json_syntax.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_action_config.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -19,6 +20,7 @@ import '../../theme/appearance.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/style_extras.dart';
 import '../editing/components/super_action_editor.dart';
+import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
 import 'super_layout/slot_implementation.dart';
@@ -484,7 +486,8 @@ class SuperAction extends StatefulWidget {
   State<SuperAction> createState() => _SuperActionState();
 }
 
-class _SuperActionState extends State<SuperAction> {
+class _SuperActionState extends State<SuperAction>
+    implements JsonExtractableState {
   final _surface = GlobalKey<EditorSlotState>();
   late final ValueNotifier<SuperActionConfig> _local;
   Map<SuperActionProperty, Object> _boundPropertyValues = const {};
@@ -1029,6 +1032,201 @@ class _SuperActionState extends State<SuperAction> {
           );
         },
       ),
+    );
+  }
+
+  SuperActionConfig get _currentEffectiveConfig {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final saved =
+        (registry?.actionController(widget.id, fallback: widget.config) ??
+                _local)
+            .value;
+    final listScope = JsonListScope.maybeOf(context);
+    final repositories = JsonRepositoryScope.maybeOf(context);
+    final effective = _resolveStates(
+      saved,
+      listScope,
+      repositories,
+      ContentHoverScope.maybeOf(context)?.hovered == true,
+    );
+    return _withBoundProperties(effective);
+  }
+
+  @override
+  String get extractableId => widget.id;
+
+  @override
+  ExtractableComponentKind get extractableKind =>
+      ExtractableComponentKind.superAction;
+
+  @override
+  EditorSlotState? get extractableSurface => _surface.currentState;
+
+  @override
+  BuildContext get extractableContext => context;
+
+  @override
+  bool get isExtractableMounted => mounted;
+
+  @override
+  String get preferredExtractableKey {
+    final surface = _surface.currentState;
+    if (surface != null && surface.mounted && surface.hasCustomLabel) {
+      final renamed = surface.titleLabel.trim();
+      if (renamed.isNotEmpty) return renamed;
+    }
+    final instanceLabel = surface?.componentLabel?.label.trim();
+    if (instanceLabel != null &&
+        instanceLabel.isNotEmpty &&
+        instanceLabel != 'Action') {
+      return instanceLabel;
+    }
+    final config = _currentEffectiveConfig;
+    final configLabel = config.label.trim();
+    if (configLabel.isNotEmpty && configLabel != 'Action') {
+      return configLabel;
+    }
+    return widget.id;
+  }
+
+  @override
+  ExtractableComponentTarget buildExtractableTarget(String assignedBaseKey) {
+    final config = _currentEffectiveConfig;
+    final hasTextLabel = config.kind.hasText && config.label.trim().isNotEmpty;
+    final hasTooltip = config.tooltip.trim().isNotEmpty;
+    final options = <ExtractablePropertyOption>[
+      if (hasTextLabel)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.label.name,
+          label: 'Texte',
+          value: config.label,
+          defaultSelected: true,
+        ),
+      if (hasTooltip)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.tooltip.name,
+          label: 'Info-bulle',
+          value: config.tooltip,
+          defaultSelected: !hasTextLabel,
+        ),
+      if (config.kind.hasIcon && config.icon.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.icon.name,
+          label: 'Icône',
+          value: config.icon,
+          defaultSelected: !hasTextLabel && !hasTooltip,
+        ),
+      if (!config.enabled ||
+          config.propertyBindings.containsKey(SuperActionProperty.enabled))
+        ExtractablePropertyOption(
+          id: SuperActionProperty.enabled.name,
+          label: 'Activé',
+          value: config.enabled,
+        ),
+      if (config.fontFamily != null && config.fontFamily!.trim().isNotEmpty)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.fontFamily.name,
+          label: 'Police',
+          value: config.fontFamily!,
+        ),
+      if (config.color != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.color.name,
+          label: 'Couleur du texte',
+          value: JsonColor.toHex(config.color!),
+        ),
+      if (config.iconColor != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.iconColor.name,
+          label: 'Couleur de l’icône',
+          value: JsonColor.toHex(config.iconColor!),
+        ),
+      if (config.backgroundColor != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.backgroundColor.name,
+          label: 'Couleur de fond',
+          value: JsonColor.toHex(config.backgroundColor!),
+        ),
+      if (config.borderColor != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.borderColor.name,
+          label: 'Couleur de bordure',
+          value: JsonColor.toHex(config.borderColor!),
+        ),
+      if (config.fontSize != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.fontSize.name,
+          label: 'Taille de police',
+          value: config.fontSize!,
+        ),
+      if (config.iconSize != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.iconSize.name,
+          label: 'Taille de l’icône',
+          value: config.iconSize!,
+        ),
+      if (config.fontWeight != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.fontWeight.name,
+          label: 'Graisse',
+          value: config.fontWeight!.value,
+        ),
+      if (config.italic != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.italic.name,
+          label: 'Italique',
+          value: config.italic!,
+        ),
+      if (config.textAlign != const SuperActionConfig().textAlign ||
+          config.propertyBindings.containsKey(SuperActionProperty.textAlign))
+        ExtractablePropertyOption(
+          id: SuperActionProperty.textAlign.name,
+          label: 'Alignement',
+          value: config.textAlign.name,
+        ),
+      if (config.radius != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.radius.name,
+          label: 'Rayon',
+          value: config.radius!,
+        ),
+      if (config.borderWidth != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.borderWidth.name,
+          label: 'Épaisseur de bordure',
+          value: config.borderWidth!,
+        ),
+      if (config.elevation != null)
+        ExtractablePropertyOption(
+          id: SuperActionProperty.elevation.name,
+          label: 'Élévation',
+          value: config.elevation!,
+        ),
+    ];
+
+    return ExtractableComponentTarget(
+      id: widget.id,
+      kind: ExtractableComponentKind.superAction,
+      displayName: preferredExtractableKey,
+      baseJsonKey: assignedBaseKey,
+      properties: options,
+      applyBindings: (bindings) {
+        if (!mounted || bindings.isEmpty) return;
+        final registry = SuperApp.maybeOf(context)?.registry;
+        final controller =
+            registry?.actionController(widget.id, fallback: widget.config) ??
+            _local;
+        final current = controller.value;
+        final updatedProps = <SuperActionProperty, JsonTextBinding>{
+          ...current.propertyBindings,
+          for (final prop in SuperActionProperty.values)
+            if (bindings[prop.name] case final propBinding?) prop: propBinding,
+        };
+        final next = current.copyWith(propertyBindings: updatedProps);
+        if (next == current) return;
+        controller.value = next;
+        widget.onConfigChanged?.call(next);
+      },
     );
   }
 }

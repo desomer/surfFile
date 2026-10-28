@@ -351,6 +351,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
 
         Widget buildEditor(double effectiveToolbarHeight) =>
             NativeComponentEditor(
+              id: widget.id,
               label: widget.label,
               menuType: 'AppBar',
               keyPrefix: 'super-app-bar',

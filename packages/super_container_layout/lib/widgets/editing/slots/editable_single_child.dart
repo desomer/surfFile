@@ -156,6 +156,7 @@ class EditableSingleChildState extends State<EditableSingleChild> {
             : rawConfig;
         return NativeComponentEditor(
           key: _editor,
+          id: widget.id,
           label: widget.label,
           menuType: 'Card',
           keyPrefix: 'super-container-${widget.id}',

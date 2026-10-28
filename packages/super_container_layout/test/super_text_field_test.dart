@@ -745,7 +745,7 @@ void main() {
         panel.sections.where((section) => section.id.startsWith('text-field-')),
         hasLength(input ? 6 : 0),
       );
-      for (final key in ['readOnly', 'enabled', 'minLines']) {
+      for (final key in ['readOnly', 'enabled', 'minLines', 'obscureText']) {
         expect(
           find.byKey(ValueKey('super-value-setting-$key')),
           input ? findsOneWidget : findsNothing,
@@ -753,10 +753,6 @@ void main() {
       }
       expect(
         find.byKey(const ValueKey('super-value-setting-maxLines')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('super-value-setting-obscureText')),
         findsOneWidget,
       );
     }

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_value_config.dart';
@@ -83,8 +85,17 @@ class _SuperValueAddFormState extends State<SuperValueAddForm> {
               ButtonSegment(value: SuperValueMode.input, label: Text('Saisie')),
             ],
             selected: {draft.mode},
-            onSelectionChanged: (value) =>
-                widget.onChanged(draft.copyWith(mode: value.single)),
+            onSelectionChanged: (value) {
+              final mode = value.single;
+              widget.onChanged(
+                draft.copyWith(
+                  mode: mode,
+                  obscureText: mode == SuperValueMode.display
+                      ? false
+                      : draft.obscureText,
+                ),
+              );
+            },
           ),
           if (draft.kind.isBoolean)
             SwitchListTile(
@@ -100,12 +111,22 @@ class _SuperValueAddFormState extends State<SuperValueAddForm> {
             TextFormField(
               key: const ValueKey('add-value-initial'),
               initialValue: draft.initialText,
+              minLines: 1,
+              maxLines: 3,
+              keyboardType: TextInputType.multiline,
               decoration: const InputDecoration(
                 isDense: true,
                 labelText: 'Texte initial',
               ),
-              onChanged: (value) =>
-                  widget.onChanged(draft.copyWith(initialText: value)),
+              onChanged: (value) {
+                final lines = '\n'.allMatches(value).length + 1;
+                widget.onChanged(
+                  draft.copyWith(
+                    initialText: value,
+                    maxLines: math.max(draft.maxLines, lines),
+                  ),
+                );
+              },
             ),
           if (input || draft.kind.isBoolean) ...[
             TextFormField(

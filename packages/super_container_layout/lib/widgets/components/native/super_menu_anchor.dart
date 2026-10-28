@@ -551,6 +551,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
         final activeError = _bindingError ?? _binding?.error;
 
         return NativeComponentEditor(
+          id: widget.id,
           label: widget.label,
           menuType: 'Menu',
           menuIcon: Icons.menu_open_outlined,

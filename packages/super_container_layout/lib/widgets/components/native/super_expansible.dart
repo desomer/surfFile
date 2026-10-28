@@ -465,6 +465,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
         final activeError = _bindingError ?? _binding?.error;
 
         return NativeComponentEditor(
+          id: widget.id,
           label: widget.label,
           menuType: 'Expansible',
           menuIcon: Icons.unfold_more_outlined,

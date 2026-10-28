@@ -562,13 +562,18 @@ void main() {
       history.clear();
       final before = appearance.value;
 
-      // Empty North zone does not expose the zone children wrap menu.
+      // Empty North zone does not expose the zone children wrap menu (only AI edit).
       await tester.tapAt(
         tester.getTopLeft(find.byKey(hostKey)) + const Offset(100, 15),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('style-menu-more-Nord')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('style-menu-more-Nord')));
+      await tester.pumpAndSettle();
+      expect(find.text('Envelopper les enfants dans…'), findsNothing);
+      expect(find.text('Modifier avec l’IA…'), findsOneWidget);
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
       await tester.tapAt(const Offset(10, 10));
       await tester.pumpAndSettle();
 

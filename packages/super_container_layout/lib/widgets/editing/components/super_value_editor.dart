@@ -838,11 +838,25 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
       TextFormField(
         key: ValueKey('super-value-setting-$key'),
         controller: _fields[key],
+        minLines: key == 'initialText' ? 1 : null,
         maxLines: key == 'initialText' ? 3 : 1,
         decoration: InputDecoration(labelText: label, isDense: true),
-        onChanged: (_) => setState(() {}),
+        onChanged: (value) {
+          if (key == 'initialText' &&
+              !_draft.obscureText &&
+              !_draft.kind.isBoolean) {
+            final lines = '\n'.allMatches(value).length + 1;
+            final currentMax = int.tryParse(_fields['maxLines']!.text) ?? 1;
+            if (lines > currentMax) {
+              _fields['maxLines']!.text = '$lines';
+            }
+          }
+          setState(() {});
+        },
         keyboardType: numeric
             ? const TextInputType.numberWithOptions(decimal: true, signed: true)
+            : key == 'initialText'
+            ? TextInputType.multiline
             : TextInputType.text,
         validator: (text) {
           final value = (text ?? '').trim();
@@ -1206,7 +1220,14 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                       ],
                       onChanged: (mode) {
                         if (mode != null) {
-                          setState(() => _draft = _draft.copyWith(mode: mode));
+                          setState(
+                            () => _draft = _draft.copyWith(
+                              mode: mode,
+                              obscureText: mode == SuperValueMode.display
+                                  ? false
+                                  : _draft.obscureText,
+                            ),
+                          );
                         }
                       },
                     ),
@@ -1248,30 +1269,33 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                   icon: Icons.tune,
                   tag: _draft.mode == SuperValueMode.input
                       ? 'enabled · readOnly'
-                      : 'obscureText · maxLines',
+                      : 'maxLines',
                   child: _group([
                     if (!_draft.kind.isBoolean) ...[
-                      SwitchListTile(
-                        key: const ValueKey('super-value-setting-obscureText'),
-                        title: const Text('Mot de passe'),
-                        value: _draft.obscureText,
-                        onChanged: (value) => setState(() {
-                          _draft = _draft.copyWith(obscureText: value);
-                          if (value) {
-                            _fields['initialText']!.clear();
-                            _fields['minLines']!.text = '1';
-                            _fields['maxLines']!.text = '1';
-                          }
-                        }),
-                      ),
+                      if (_draft.mode == SuperValueMode.input)
+                        SwitchListTile(
+                          key: const ValueKey(
+                            'super-value-setting-obscureText',
+                          ),
+                          title: const Text('Mot de passe'),
+                          value: _draft.obscureText,
+                          onChanged: (value) => setState(() {
+                            _draft = _draft.copyWith(obscureText: value);
+                            if (value) {
+                              _fields['initialText']!.clear();
+                              _fields['minLines']!.text = '1';
+                              _fields['maxLines']!.text = '1';
+                            }
+                          }),
+                        ),
                       if (_draft.obscureText)
                         const Text(
-                          'Texte masqué dans les deux modes. Une seule ligne, sans texte initial sauvegardé.',
+                          'Texte masqué. Une seule ligne, sans texte initial sauvegardé.',
                         )
                       else ...[
                         if (_draft.mode == SuperValueMode.input)
-                          _field('minLines', 'Lignes minimales', numeric: true),
-                        _field('maxLines', 'Lignes maximales', numeric: true),
+                          _field('minLines', 'Nb lignes minimales', numeric: true),
+                        _field('maxLines', 'Nb lignes maximales', numeric: true),
                       ],
                     ],
                     if (_draft.mode == SuperValueMode.input)

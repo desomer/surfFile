@@ -1,4 +1,5 @@
 export 'ai/vibe_chat_attachment.dart';
+export 'widgets/editing/ai/vibe_chat_dialog.dart';
 export 'models/registry.dart';
 export 'models/component_config.dart';
 export 'models/component_behavior.dart';
@@ -68,6 +69,7 @@ export 'widgets/editing/addition/insertion_plan.dart';
 export 'widgets/editing/history/editor_history.dart';
 export 'widgets/editing/repositories/json_repository_manager.dart';
 export 'widgets/editing/repositories/repository_binding_fields.dart';
+export 'widgets/editing/dialogs/super_value_json_extract_dialog.dart';
 export 'widgets/surfaces/interaction_effect_box.dart';
 export 'widgets/components/super_layout/layout_selection.dart';
 export 'widgets/surfaces/neon_surface.dart';

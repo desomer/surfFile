@@ -242,6 +242,20 @@ class RegisteredComponentImpl extends ComponentBuilder {
 }
 
 class Registry {
+  static const List<String> defaultAvailableFontFamilies = [
+    'Segoe UI',
+    'Roboto',
+    'Arial',
+    'Verdana',
+    'Tahoma',
+    'Trebuchet MS',
+    'Georgia',
+    'Times New Roman',
+    'Consolas',
+    'Courier New',
+    'monospace',
+  ];
+
   final Map<String, ComponentBuilder> registry = {};
   final Map<String, RegisteredComponent> components = {};
   final Map<String, ValueNotifier<SuperLayoutConfig>> superLayoutConfigById =
@@ -730,7 +744,9 @@ class Registry {
     return result;
   }
 
-  void bootstrap({List<String> availableFontFamilies = const []}) {
+  void bootstrap({
+    List<String> availableFontFamilies = defaultAvailableFontFamilies,
+  }) {
     registry['Layout'] = ComponentBuilderDynamic(
       menuIcon: Icons.dashboard_outlined,
       duplication: ComponentDuplicationContract.newLayout,
@@ -750,6 +766,7 @@ class Registry {
               return ValueListenableBuilder<SuperLayoutConfig>(
                 valueListenable: superLayoutConfig,
                 builder: (context, config, _) => SuperLayout(
+                  id: id,
                   config: config,
                   onChanged: (value) => superLayoutConfig.value = value,
                 ),

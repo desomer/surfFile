@@ -9,9 +9,11 @@ import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
+import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/editing/ai/vibe_chat_dialog.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_list_view.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
@@ -407,39 +409,36 @@ void main() {
     },
   );
 
-  test(
-    'VibeChatAttachment detects image and text files and rejects unknown binary',
-    () {
-      final pngBytes = Uint8List.fromList([
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
-        0x00, 0x00, 0x00, 0x0D,
-      ]);
-      final imageAttachment = VibeChatAttachment.fromBytes(
-        pngBytes,
-        name: 'maquette.png',
-      );
-      expect(imageAttachment.isImage, isTrue);
-      expect(imageAttachment.isText, isFalse);
-      expect(imageAttachment.mimeType, 'image/png');
+  test('VibeChatAttachment detects image and text files and rejects unknown binary', () {
+    final pngBytes = Uint8List.fromList([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+      0x00, 0x00, 0x00, 0x0D,
+    ]);
+    final imageAttachment = VibeChatAttachment.fromBytes(
+      pngBytes,
+      name: 'maquette.png',
+    );
+    expect(imageAttachment.isImage, isTrue);
+    expect(imageAttachment.isText, isFalse);
+    expect(imageAttachment.mimeType, 'image/png');
 
-      final textAttachment = VibeChatAttachment.fromBytes(
-        Uint8List.fromList(utf8.encode('# Cahier des charges\nListe de tâches')),
-        name: 'spec.md',
-      );
-      expect(textAttachment.isImage, isFalse);
-      expect(textAttachment.isText, isTrue);
-      expect(textAttachment.mimeType, 'text/markdown');
-      expect(textAttachment.textContent, contains('Cahier des charges'));
+    final textAttachment = VibeChatAttachment.fromBytes(
+      Uint8List.fromList(utf8.encode('# Cahier des charges\nListe de tâches')),
+      name: 'spec.md',
+    );
+    expect(textAttachment.isImage, isFalse);
+    expect(textAttachment.isText, isTrue);
+    expect(textAttachment.mimeType, 'text/markdown');
+    expect(textAttachment.textContent, contains('Cahier des charges'));
 
-      expect(
-        () => VibeChatAttachment.fromBytes(
-          Uint8List.fromList([0x00, 0x01, 0x02, 0xFF]),
-          name: 'archive.bin',
-        ),
-        throwsFormatException,
-      );
-    },
-  );
+    expect(
+      () => VibeChatAttachment.fromBytes(
+        Uint8List.fromList([0x00, 0x01, 0x02, 0xFF]),
+        name: 'archive.bin',
+      ),
+      throwsFormatException,
+    );
+  });
 
   testWidgets(
     'attaching image and text files previews them, allows removal, and sends them to AI without requiring text input',
@@ -630,6 +629,208 @@ void main() {
       expect(sentPrompt, contains('presse-papiers.json'));
       expect(sentPrompt, contains('{"titre":"Mon écran"}'));
       expect(find.text('Collage bien reçu.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    '3-dot context menu exposes "Modifier avec l’IA…", opens VibeChatDialog with scope, and restricts AI changes to that scope',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final initialAppearance = AppearanceTransfer.applyVibe(
+        Appearance(),
+        jsonEncode({
+          'components': {
+            'mainLayout': {
+              'type': 'layout',
+              'west': true,
+              'westSize': 200,
+              'placements': {
+                'west': [
+                  {'id': 'west-label', 'type': 'registry:Value'},
+                ],
+                'center': [
+                  {'id': 'center-label', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'west-label': {'type': 'value', 'text': 'Menu Ouest'},
+            'center-label': {'type': 'value', 'text': 'Zone Centrale'},
+          },
+        }),
+      );
+      final layout = registry.layoutController(
+        'mainLayout',
+        fallback: initialAppearance.layout('mainLayout'),
+      );
+      final store = _MemoryAppearanceStore(initialAppearance);
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => ValueListenableBuilder<SuperLayoutConfig>(
+              valueListenable: layout,
+              builder: (_, config, _) => SuperLayout(
+                id: 'mainLayout',
+                label: 'Principal',
+                config: config,
+                onChanged: (next) => layout.value = next,
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        DefaultAssetBundle(
+          bundle: _GuideBundle(),
+          child: SuperApp(
+            router: router,
+            registry: registry,
+            appearanceStore: store,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final targetElement = tester.element(find.text('Zone Centrale'));
+      StyleEditScope.controllerOf(targetElement)!.value = true;
+      await tester.pumpAndSettle();
+
+      // Right-click on 'Zone Centrale' to open the context menu.
+      await tester.tap(
+        find.text('Zone Centrale'),
+        buttons: 2, // kSecondaryMouseButton
+      );
+      await tester.pumpAndSettle();
+
+      // Open the 3-dot vertical menu on the 'Centre' zone entry.
+      final moreCentre = find.byKey(const ValueKey('style-menu-more-Centre'));
+      expect(moreCentre, findsOneWidget);
+      await tester.tap(moreCentre);
+      await tester.pumpAndSettle();
+
+      final aiItem = find.byKey(const ValueKey('style-menu-ai-Centre'));
+      expect(aiItem, findsOneWidget);
+      expect(find.text('Modifier avec l’IA…'), findsOneWidget);
+
+      await tester.tap(aiItem);
+      await tester.pumpAndSettle();
+
+      // VibeChatDialog is now open in StyleEditBanner with the 'Principal — zone Centre' scope banner.
+      expect(find.byKey(const ValueKey('vibe-chat-dialog')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('vibe-chat-scope-banner')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Principal — zone Centre'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'scoped VibeChatDialog instructs AI about the scope, retries if AI only edits outside scope, and applies only in-scope changes',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final initial = AppearanceTransfer.applyVibe(
+        Appearance(),
+        jsonEncode({
+          'components': {
+            'mainLayout': {
+              'type': 'layout',
+              'west': true,
+              'westSize': 200,
+              'placements': {
+                'west': [
+                  {'id': 'west-label', 'type': 'registry:Value'},
+                ],
+                'center': [
+                  {'id': 'center-label', 'type': 'registry:Value'},
+                ],
+              },
+            },
+            'west-label': {'type': 'value', 'text': 'Menu Ouest'},
+            'center-label': {'type': 'value', 'text': 'Zone Centrale'},
+          },
+        }),
+      );
+      final appearance = ValueNotifier(initial);
+      registry.bindAppearance(appearance);
+      registry.layoutController(
+        'mainLayout',
+        fallback: initial.layout('mainLayout'),
+      );
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      final prompts = <String>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                codec: const AppearanceCodec(),
+                scope: const VibeChatScope(
+                  componentId: 'mainLayout',
+                  label: 'Principal',
+                  zoneId: 'center',
+                  zoneLabel: 'Centre',
+                ),
+                onClose: () {},
+                onDrag: (_) {},
+                generate: (prompt) async {
+                  prompts.add(prompt);
+                  if (prompts.length == 1) {
+                    // Attempt 1 only tries to edit out-of-scope 'west-label' -> rejected!
+                    return jsonEncode({
+                      'message': 'Hors scope.',
+                      'vibe': {
+                        'components': {
+                          'west-label': {'text': 'Interdit'},
+                        },
+                      },
+                    });
+                  }
+                  // Attempt 2 edits both in-scope 'center-label' and out-of-scope 'west-label':
+                  // 'west-label' is stripped and 'center-label' is applied!
+                  return jsonEncode({
+                    'message': 'Zone centrale mise à jour.',
+                    'vibe': {
+                      'components': {
+                        'west-label': {'text': 'Toujours interdit'},
+                        'center-label': {'text': 'Centre modifié par IA'},
+                      },
+                    },
+                  });
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await send(tester);
+
+      expect(prompts.length, 2);
+      expect(prompts[0], contains('RESTRICTION STRICTE DE SCOPE'));
+      expect(prompts[0], contains('"mainLayout"'));
+      expect(prompts[0], contains('"center"'));
+      expect(prompts[1], contains('CORRECTION REQUISE'));
+      expect(prompts[1], contains('Modifications hors du scope autorisé'));
+
+      expect(find.text('Zone centrale mise à jour.'), findsOneWidget);
+      expect(
+        appearance.value.valueComponent('west-label').initialText,
+        'Menu Ouest',
+      );
+      expect(
+        appearance.value.valueComponent('center-label').initialText,
+        'Centre modifié par IA',
+      );
       expect(tester.takeException(), isNull);
     },
   );

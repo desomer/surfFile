@@ -37,6 +37,34 @@ void main() {
     expect(await File('${directory.path}\\Clients.json.id').exists(), isFalse);
   });
 
+  test('delete removes JSON and ID files and clears array selection', () async {
+    await store.create('Clients');
+    await store.create('Articles');
+    final id = await store.idOf('Clients');
+    final array = store.bindingOf(id).array('items')..select(const [], 0);
+    expect(array.indexFor(const []), 0);
+
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    await store.delete('Clients');
+
+    expect(notified, 1);
+    expect(await store.list(), ['Articles']);
+    expect(await File('${directory.path}\\Clients.json').exists(), isFalse);
+    expect(await File('${directory.path}\\Clients.json.id').exists(), isFalse);
+    expect(array.indexFor(const []), isNull);
+
+    // Can recreate a repository with the same name after deletion.
+    await store.create('Clients');
+    expect(await store.list(), ['Articles', 'Clients']);
+
+    await expectLater(
+      store.delete('Missing'),
+      throwsA(isA<FileSystemException>()),
+    );
+  });
+
   test('invalid JSON and duplicate names never overwrite documents', () async {
     await store.create('Clients');
     final original = await store.read('Clients');

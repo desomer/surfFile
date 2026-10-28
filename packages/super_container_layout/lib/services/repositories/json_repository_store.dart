@@ -378,4 +378,36 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
     _changed();
   });
+
+  Future<void> delete(String name) => _exclusive(() async {
+    final file = _file(name);
+    if (await FileSystemEntity.type(file.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw FileSystemException(
+        'Fichier JSON introuvable ou lien refusé.',
+        file.path,
+      );
+    }
+    final idFile = _idFile(name);
+    final idType = await FileSystemEntity.type(idFile.path, followLinks: false);
+    if (idType != FileSystemEntityType.notFound &&
+        idType != FileSystemEntityType.file) {
+      throw FileSystemException('Fichier d’identifiant invalide.', idFile.path);
+    }
+    String? id;
+    if (idType == FileSystemEntityType.file) {
+      id = (await idFile.readAsString()).trim();
+    }
+    await file.delete();
+    if (idType == FileSystemEntityType.file) {
+      await idFile.delete();
+    }
+    final binding = id == null ? null : _bindings[id];
+    if (binding != null) {
+      for (final array in binding.arrays) {
+        array.clear();
+      }
+    }
+    _changed();
+  });
 }

@@ -180,6 +180,7 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
               ? resolvedHeight
               : baseHeight;
           return NativeComponentEditor(
+            id: widget.id,
             label: widget.label,
             menuType: 'BottomAppBar',
             keyPrefix: 'super-bottom-app-bar',

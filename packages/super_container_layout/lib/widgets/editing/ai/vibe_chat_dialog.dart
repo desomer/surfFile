@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../ai/call_gemini.dart';
 import '../../../ai/vibe_chat_attachment.dart';
+import '../../../models/component_config.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/scaffold_page_config.dart';
@@ -11,10 +13,15 @@ import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
+import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
+import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
+import '../dialogs/editor_dialog.dart';
+import '../slots/editor_context_menu.dart';
 
 export '../../../ai/vibe_chat_attachment.dart';
+export '../slots/editor_context_menu.dart' show VibeChatScope;
 
 class VibeChatDialog extends StatefulWidget {
   const VibeChatDialog({
@@ -23,6 +30,8 @@ class VibeChatDialog extends StatefulWidget {
     required this.onClose,
     required this.onDrag,
     required this.generate,
+    this.scope,
+    this.onScopeChanged,
     this.pickAttachments,
     this.pasteAttachments,
     this.validateAppearance,
@@ -35,10 +44,770 @@ class VibeChatDialog extends StatefulWidget {
   final VoidCallback onClose;
   final ValueChanged<Offset> onDrag;
   final Future<String> Function(String prompt) generate;
+  final VibeChatScope? scope;
+  final ValueChanged<VibeChatScope?>? onScopeChanged;
   final Future<List<VibeChatAttachment>> Function()? pickAttachments;
   final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
   final void Function(Appearance appearance)? validateAppearance;
   final Registry? registry;
+
+  /// Opens the Vibe AI chat targeted at [scope]: reuses the active
+  /// `StyleEditBanner` panel when mounted, or falls back to an editor dialog.
+  static Future<void> showScoped(
+    BuildContext context,
+    VibeChatScope scope,
+  ) async {
+    if (VibeChatScope.onOpenRequested case final handler?
+        when handler(scope)) {
+      return;
+    }
+    final appearance = AppearanceScope.controllerOf(context);
+    if (appearance == null) return;
+    final codec = AppearanceServicesScope.codecOf(context);
+    final registry = SuperApp.maybeOf(context)?.registry;
+    await showEditorDialog<void>(
+      context: context,
+      target: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: SizedBox(
+          width: 440,
+          height: 600,
+          child: VibeChatDialog(
+            controller: appearance,
+            codec: codec,
+            registry: registry,
+            scope: scope,
+            onClose: () => Navigator.of(dialogContext).pop(),
+            onDrag: (_) {},
+            generate: callGemini,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Returns the direct child slot IDs placed inside [component], optionally
+  /// restricted to [onlyZoneId].
+  static Iterable<String> _childrenOfComponent(
+    ComponentConfig? component, {
+    String? onlyZoneId,
+  }) {
+    if (component == null) return const [];
+    if (onlyZoneId != null && onlyZoneId.isNotEmpty) {
+      return switch (component) {
+        final SuperLayoutConfig layout => () {
+          final zone = SuperLayoutZone.values
+              .where((z) => z.name == onlyZoneId)
+              .firstOrNull;
+          return zone == null
+              ? const <String>[]
+              : layout.placementsOf(layout.contentZone(zone));
+        }(),
+        final SuperListViewConfig list => () {
+          final zone = SuperLayoutZone.values
+              .where((z) => z.name == onlyZoneId)
+              .firstOrNull;
+          return zone == null
+              ? const <String>[]
+              : list.template.placementsOf(list.template.contentZone(zone));
+        }(),
+        final SuperTabConfig tab => tab.slotsOf(onlyZoneId),
+        final NativeComponentConfig native => native.slotsOf(onlyZoneId),
+        final ScaffoldPageConfig scaffold =>
+          scaffold.native.slotsOf(onlyZoneId),
+        _ => const <String>[],
+      };
+    }
+    return switch (component) {
+      final SuperLayoutConfig layout => layout.placedSlotIds,
+      final SuperListViewConfig list => list.template.placedSlotIds,
+      final SuperTabConfig tab => tab.placedSlotIds,
+      final NativeComponentConfig native =>
+        native.placements.values.expand((ids) => ids),
+      final ScaffoldPageConfig scaffold =>
+        scaffold.native.placements.values.expand((ids) => ids),
+      _ => const <String>[],
+    };
+  }
+
+  static Iterable<String> _placedIdsInPatchMap(
+    Map<Object?, Object?> map, {
+    String? onlyZoneId,
+  }) sync* {
+    Iterable<String> fromPlacementsMap(Object? placements) sync* {
+      if (placements is! Map) return;
+      for (final entry in placements.entries) {
+        if (onlyZoneId != null && entry.key != onlyZoneId) continue;
+        final list = entry.value;
+        if (list is List) {
+          for (final item in list) {
+            if (item is String && item.trim().isNotEmpty) {
+              yield item.trim();
+            } else if (item is Map && item['id'] is String) {
+              final id = (item['id'] as String).trim();
+              if (id.isNotEmpty) yield id;
+            }
+          }
+        }
+      }
+    }
+
+    yield* fromPlacementsMap(
+      map.containsKey('placements') ? map['placements'] : map['zones'],
+    );
+    if (map['template'] is Map) {
+      final t = map['template'] as Map;
+      yield* fromPlacementsMap(
+        t.containsKey('placements') ? t['placements'] : t['zones'],
+      );
+    }
+    if (map['row'] is Map) {
+      final r = map['row'] as Map;
+      yield* fromPlacementsMap(
+        r.containsKey('placements') ? r['placements'] : r['zones'],
+      );
+    }
+    if (onlyZoneId == null || onlyZoneId == 'tabs') {
+      if (map['tabs'] is List) {
+        for (final item in map['tabs'] as List) {
+          if (item is String && item.trim().isNotEmpty) yield item.trim();
+          if (item is Map && item['id'] is String) {
+            final id = (item['id'] as String).trim();
+            if (id.isNotEmpty) yield id;
+          }
+        }
+      }
+    }
+    if (onlyZoneId == null || onlyZoneId == 'content') {
+      if (map['content'] is List) {
+        for (final item in map['content'] as List) {
+          if (item is String && item.trim().isNotEmpty) yield item.trim();
+          if (item is Map && item['id'] is String) {
+            final id = (item['id'] as String).trim();
+            if (id.isNotEmpty) yield id;
+          }
+        }
+      }
+    }
+    if (map['contents'] is Map) {
+      for (final entry in (map['contents'] as Map).entries) {
+        final regionKey = 'content:${entry.key}';
+        if (onlyZoneId != null &&
+            onlyZoneId != regionKey &&
+            onlyZoneId != entry.key) {
+          continue;
+        }
+        if (entry.value is List) {
+          for (final item in entry.value as List) {
+            if (item is String && item.trim().isNotEmpty) yield item.trim();
+            if (item is Map && item['id'] is String) {
+              final id = (item['id'] as String).trim();
+              if (id.isNotEmpty) yield id;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /// Collects all existing component IDs in [current] belonging to [scope]'s
+  /// modifiable subtree (including [scope.canonicalComponentId] when
+  /// `zoneId == null`, or only the descendants of `zoneId` when `zoneId != null`).
+  static Set<String> _existingSubtreeIds(
+    Appearance current,
+    VibeChatScope scope,
+  ) {
+    final targetId = scope.canonicalComponentId;
+    final zoneId = scope.zoneId;
+    final visited = <String>{};
+    final pending = <String>[
+      if (zoneId == null || zoneId.isEmpty)
+        targetId
+      else
+        ..._childrenOfComponent(
+          current.components[targetId],
+          onlyZoneId: zoneId,
+        ),
+    ];
+    while (pending.isNotEmpty) {
+      final id = pending.removeLast();
+      if (!visited.add(id)) continue;
+      pending.addAll(_childrenOfComponent(current.components[id]));
+    }
+    return visited;
+  }
+
+  static Map<String, Object?> _stringObjectMap(Object? raw) => raw is Map
+      ? <String, Object?>{
+          for (final entry in raw.entries)
+            if (entry.key is String) entry.key as String: entry.value,
+        }
+      : <String, Object?>{};
+
+  static Map<String, Object?>? _filterLayoutMapToZone(
+    SuperLayoutConfig baseLayout,
+    Map<Object?, Object?> rawMap,
+    String zoneId,
+    Set<String> existingZoneSlots,
+    Set<String> allowedSlotIds,
+  ) {
+    final baseJson = Map<String, Object?>.of(baseLayout.toJson());
+    var changed = false;
+    const sides = {'north', 'south', 'west', 'east'};
+    if (sides.contains(zoneId)) {
+      if (rawMap.containsKey(zoneId)) {
+        baseJson[zoneId] = rawMap[zoneId];
+        changed = true;
+      }
+      final sizeKey = '${zoneId}Size';
+      if (rawMap.containsKey(sizeKey)) {
+        baseJson[sizeKey] = rawMap[sizeKey];
+        changed = true;
+      }
+      if (rawMap['autoSides'] is List) {
+        final rawAuto = (rawMap['autoSides'] as List)
+            .whereType<String>()
+            .toSet();
+        final mergedAuto = {for (final z in baseLayout.autoSides) z.name};
+        if (rawAuto.contains(zoneId)) {
+          mergedAuto.add(zoneId);
+        } else {
+          mergedAuto.remove(zoneId);
+        }
+        baseJson['autoSides'] = mergedAuto.toList();
+        changed = true;
+      }
+      if (rawMap['sideResizing'] is Map &&
+          (rawMap['sideResizing'] as Map).containsKey(zoneId)) {
+        final map = _stringObjectMap(baseJson['sideResizing']);
+        map[zoneId] = (rawMap['sideResizing'] as Map)[zoneId];
+        baseJson['sideResizing'] = map;
+        changed = true;
+      }
+      if (rawMap['collapsedSides'] is Map &&
+          (rawMap['collapsedSides'] as Map).containsKey(zoneId)) {
+        final map = _stringObjectMap(baseJson['collapsedSides']);
+        map[zoneId] = (rawMap['collapsedSides'] as Map)[zoneId];
+        baseJson['collapsedSides'] = map;
+        changed = true;
+      }
+    }
+
+    final rawPlacements = rawMap.containsKey('placements')
+        ? rawMap['placements']
+        : rawMap['zones'];
+    if (rawPlacements is Map && rawPlacements.containsKey(zoneId)) {
+      final mergedPlacements = _stringObjectMap(baseJson['placements']);
+      mergedPlacements[zoneId] = rawPlacements[zoneId];
+      baseJson['placements'] = mergedPlacements;
+      if (sides.contains(zoneId) &&
+          !rawMap.containsKey(zoneId) &&
+          rawPlacements[zoneId] is List &&
+          (rawPlacements[zoneId] as List).isNotEmpty) {
+        baseJson[zoneId] = true;
+      }
+      changed = true;
+    }
+
+    if (rawMap['zoneAxes'] is Map &&
+        (rawMap['zoneAxes'] as Map).containsKey(zoneId)) {
+      final mergedAxes = _stringObjectMap(baseJson['zoneAxes']);
+      mergedAxes[zoneId] = (rawMap['zoneAxes'] as Map)[zoneId];
+      baseJson['zoneAxes'] = mergedAxes;
+      changed = true;
+    }
+
+    if (rawMap['zoneFlows'] is Map &&
+        (rawMap['zoneFlows'] as Map).containsKey(zoneId)) {
+      final mergedFlows = _stringObjectMap(baseJson['zoneFlows']);
+      mergedFlows[zoneId] = (rawMap['zoneFlows'] as Map)[zoneId];
+      baseJson['zoneFlows'] = mergedFlows;
+      changed = true;
+    }
+
+    for (final mapKey in const [
+      'slotSizeConstraints',
+      'slotPreferredSizes',
+      'slotLabels',
+    ]) {
+      if (rawMap[mapKey] is Map) {
+        final incoming = rawMap[mapKey] as Map;
+        final merged = <String, Object?>{
+          for (final entry
+              in (baseJson[mapKey] as Map? ?? const {}).entries)
+            if (entry.key is String &&
+                !existingZoneSlots.contains(entry.key as String))
+              entry.key as String: entry.value,
+        };
+        var slotMapChanged = false;
+        for (final entry in incoming.entries) {
+          if (entry.key is String &&
+              allowedSlotIds.contains(entry.key as String)) {
+            merged[entry.key as String] = entry.value;
+            slotMapChanged = true;
+          }
+        }
+        if (slotMapChanged) {
+          baseJson[mapKey] = merged;
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) return null;
+    return {'type': 'layout', ...baseJson};
+  }
+
+  static Map<String, Object?>? _filterNativeMapToZone(
+    NativeComponentConfig baseNative,
+    Map<Object?, Object?> rawMap,
+    String zoneId,
+    Set<String> existingZoneSlots,
+    Set<String> allowedSlotIds, {
+    required String componentType,
+  }) {
+    final baseJson = Map<String, Object?>.of(baseNative.toJson());
+    var changed = false;
+
+    if (rawMap['regions'] is Map &&
+        (rawMap['regions'] as Map).containsKey(zoneId)) {
+      final mergedRegions = _stringObjectMap(baseJson['regions']);
+      mergedRegions[zoneId] = (rawMap['regions'] as Map)[zoneId];
+      baseJson['regions'] = mergedRegions;
+      changed = true;
+    }
+
+    if (rawMap['placements'] is Map &&
+        (rawMap['placements'] as Map).containsKey(zoneId)) {
+      final mergedPlacements = _stringObjectMap(baseJson['placements']);
+      mergedPlacements[zoneId] = (rawMap['placements'] as Map)[zoneId];
+      baseJson['placements'] = mergedPlacements;
+      if ((rawMap['regions'] is! Map ||
+              !(rawMap['regions'] as Map).containsKey(zoneId)) &&
+          (rawMap['placements'] as Map)[zoneId] is List &&
+          ((rawMap['placements'] as Map)[zoneId] as List).isNotEmpty) {
+        final mergedRegions = _stringObjectMap(baseJson['regions']);
+        mergedRegions[zoneId] = true;
+        baseJson['regions'] = mergedRegions;
+      }
+      changed = true;
+    }
+
+    for (final mapKey in const ['regionAxes', 'regionFlows', 'regionSizes']) {
+      if (rawMap[mapKey] is Map &&
+          (rawMap[mapKey] as Map).containsKey(zoneId)) {
+        final merged = _stringObjectMap(baseJson[mapKey]);
+        merged[zoneId] = (rawMap[mapKey] as Map)[zoneId];
+        baseJson[mapKey] = merged;
+        changed = true;
+      }
+    }
+
+    for (final mapKey in const [
+      'slotSizeConstraints',
+      'slotPreferredSizes',
+      'slotLabels',
+    ]) {
+      if (rawMap[mapKey] is Map) {
+        final incoming = rawMap[mapKey] as Map;
+        final merged = <String, Object?>{
+          for (final entry
+              in (baseJson[mapKey] as Map? ?? const {}).entries)
+            if (entry.key is String &&
+                !existingZoneSlots.contains(entry.key as String))
+              entry.key as String: entry.value,
+        };
+        var slotMapChanged = false;
+        for (final entry in incoming.entries) {
+          if (entry.key is String &&
+              allowedSlotIds.contains(entry.key as String)) {
+            merged[entry.key as String] = entry.value;
+            slotMapChanged = true;
+          }
+        }
+        if (slotMapChanged) {
+          baseJson[mapKey] = merged;
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) return null;
+    return {'type': componentType, ...baseJson};
+  }
+
+  static Map<String, Object?>? _filterTabMapToZone(
+    SuperTabConfig baseTab,
+    Map<Object?, Object?> rawMap,
+    String zoneId,
+    Set<String> existingZoneSlots,
+    Set<String> allowedSlotIds,
+  ) {
+    final baseJson = Map<String, Object?>.of(baseTab.toJson());
+    var changed = false;
+
+    final mergedPlacements = _stringObjectMap(baseJson['placements']);
+    if (rawMap['placements'] is Map &&
+        (rawMap['placements'] as Map).containsKey(zoneId)) {
+      mergedPlacements[zoneId] = (rawMap['placements'] as Map)[zoneId];
+      baseJson['placements'] = mergedPlacements;
+      changed = true;
+    } else if (zoneId == 'tabs' && rawMap['tabs'] is List) {
+      mergedPlacements['tabs'] = rawMap['tabs'];
+      baseJson['placements'] = mergedPlacements;
+      changed = true;
+    } else if (zoneId == 'content' && rawMap['content'] is List) {
+      mergedPlacements['content'] = rawMap['content'];
+      baseJson['placements'] = mergedPlacements;
+      changed = true;
+    } else if (zoneId.startsWith('content:') && rawMap['contents'] is Map) {
+      final contents = rawMap['contents'] as Map;
+      final tabId = zoneId.substring('content:'.length);
+      final targetList = contents[tabId] ?? contents[zoneId];
+      if (targetList is List) {
+        mergedPlacements[zoneId] = targetList;
+        baseJson['placements'] = mergedPlacements;
+        changed = true;
+      }
+    }
+
+    for (final mapKey in const ['zoneAxes', 'zoneFlows']) {
+      if (rawMap[mapKey] is Map &&
+          (rawMap[mapKey] as Map).containsKey(zoneId)) {
+        final merged = _stringObjectMap(baseJson[mapKey]);
+        merged[zoneId] = (rawMap[mapKey] as Map)[zoneId];
+        baseJson[mapKey] = merged;
+        changed = true;
+      }
+    }
+
+    for (final mapKey in const [
+      'slotSizeConstraints',
+      'slotPreferredSizes',
+      'slotLabels',
+    ]) {
+      if (rawMap[mapKey] is Map) {
+        final incoming = rawMap[mapKey] as Map;
+        final merged = <String, Object?>{
+          for (final entry
+              in (baseJson[mapKey] as Map? ?? const {}).entries)
+            if (entry.key is String &&
+                !existingZoneSlots.contains(entry.key as String))
+              entry.key as String: entry.value,
+        };
+        var slotMapChanged = false;
+        for (final entry in incoming.entries) {
+          if (entry.key is String &&
+              allowedSlotIds.contains(entry.key as String)) {
+            merged[entry.key as String] = entry.value;
+            slotMapChanged = true;
+          }
+        }
+        if (slotMapChanged) {
+          baseJson[mapKey] = merged;
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) return null;
+    return {'type': 'tab', ...baseJson};
+  }
+
+  static Map<String, Object?>? _filterContainerPatchToZone(
+    ComponentConfig? existing,
+    Map<Object?, Object?> rawMap,
+    String zoneId,
+    Set<String> existingZoneSlots,
+    Set<String> allowedSlotIds,
+  ) {
+    if (existing is SuperLayoutConfig) {
+      return _filterLayoutMapToZone(
+        existing,
+        rawMap,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+      );
+    }
+    if (existing is SuperListViewConfig) {
+      final rawTemplate = rawMap['template'] is Map
+          ? rawMap['template'] as Map
+          : rawMap['row'] is Map
+          ? rawMap['row'] as Map
+          : rawMap;
+      final filteredTemplate = _filterLayoutMapToZone(
+        existing.template,
+        rawTemplate,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+      );
+      if (filteredTemplate == null) return null;
+      final copy = Map<String, Object?>.of(filteredTemplate)..remove('type');
+      return {'type': 'list', 'template': copy};
+    }
+    if (existing is ScaffoldPageConfig) {
+      return _filterNativeMapToZone(
+        existing.native,
+        rawMap,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+        componentType: 'page',
+      );
+    }
+    if (existing is NativeComponentConfig) {
+      return _filterNativeMapToZone(
+        existing,
+        rawMap,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+        componentType: 'native',
+      );
+    }
+    if (existing is SuperTabConfig) {
+      return _filterTabMapToZone(
+        existing,
+        rawMap,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+      );
+    }
+    final rawType = rawMap['type'] ?? rawMap['componentType'];
+    if (rawType == 'native' || rawType == 'page') {
+      return _filterNativeMapToZone(
+        NativeComponentConfig(),
+        rawMap,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+        componentType: rawType as String,
+      );
+    }
+    if (rawType == 'tab') {
+      return _filterTabMapToZone(
+        SuperTabConfig(),
+        rawMap,
+        zoneId,
+        existingZoneSlots,
+        allowedSlotIds,
+      );
+    }
+    return _filterLayoutMapToZone(
+      const SuperLayoutConfig(),
+      rawMap,
+      zoneId,
+      existingZoneSlots,
+      allowedSlotIds,
+    );
+  }
+
+  /// Filters an incoming GenUI [patch] so that only changes belonging to
+  /// [scope] (either the target component and its subtree, or a specific zone
+  /// of the target container and its subtree) are kept.
+  ///
+  /// Out-of-scope edits (other zones, parent/sibling components, global theme
+  /// properties, `pageCatalog`) are stripped automatically.
+  static Map<String, dynamic> filterPatchToScope(
+    Appearance current,
+    Map<String, dynamic> patch,
+    VibeChatScope scope,
+  ) {
+    final payload = patch['data'] is Map<String, dynamic>
+        ? patch['data'] as Map<String, dynamic>
+        : patch;
+    final targetId = scope.canonicalComponentId;
+    final rawTargetId = scope.componentId;
+    final zoneId =
+        scope.zoneId != null && scope.zoneId!.isNotEmpty ? scope.zoneId : null;
+
+    final existingSubtree = _existingSubtreeIds(current, scope);
+    final outsideExistingIds = <String>{
+      for (final id in current.components.keys)
+        if (!existingSubtree.contains(id) && id != targetId) id,
+    };
+
+    final allowedSubtreeIds = <String>{...existingSubtree};
+    final rawComponents = payload['components'];
+    final placedByOutsideIds = <String>{};
+
+    if (rawComponents is Map) {
+      for (final entry in rawComponents.entries) {
+        final cid = entry.key;
+        final cval = entry.value;
+        if (cid is! String || cval is! Map) continue;
+        if (outsideExistingIds.contains(cid)) {
+          placedByOutsideIds.addAll(_placedIdsInPatchMap(cval));
+        } else if (zoneId != null && cid == targetId) {
+          final allInTarget = _placedIdsInPatchMap(cval).toSet();
+          final inAllowedZone = _placedIdsInPatchMap(
+            cval,
+            onlyZoneId: zoneId,
+          ).toSet();
+          placedByOutsideIds.addAll(allInTarget.difference(inAllowedZone));
+        }
+      }
+
+      final queue = <String>[];
+      if (zoneId != null && rawComponents[targetId] is Map) {
+        for (final childId in _placedIdsInPatchMap(
+          rawComponents[targetId] as Map,
+          onlyZoneId: zoneId,
+        )) {
+          if (!outsideExistingIds.contains(childId) &&
+              childId != targetId &&
+              allowedSubtreeIds.add(childId)) {
+            queue.add(childId);
+          }
+        }
+      }
+      queue.addAll(allowedSubtreeIds);
+
+      while (queue.isNotEmpty) {
+        final id = queue.removeLast();
+        for (final childId in _childrenOfComponent(current.components[id])) {
+          if (!outsideExistingIds.contains(childId) &&
+              allowedSubtreeIds.add(childId)) {
+            queue.add(childId);
+          }
+        }
+        if (rawComponents[id] is Map) {
+          for (final childId in _placedIdsInPatchMap(
+            rawComponents[id] as Map,
+          )) {
+            if (!outsideExistingIds.contains(childId) &&
+                allowedSubtreeIds.add(childId)) {
+              queue.add(childId);
+            }
+          }
+        }
+      }
+    }
+
+    final filteredComponents = <String, Object?>{};
+    if (rawComponents is Map) {
+      for (final entry in rawComponents.entries) {
+        final cid = entry.key;
+        final cval = entry.value;
+        if (cid is! String) continue;
+        if (zoneId != null && cid == targetId) {
+          if (cval is Map) {
+            final zonePatch = _filterContainerPatchToZone(
+              current.components[targetId],
+              cval,
+              zoneId,
+              existingSubtree,
+              allowedSubtreeIds,
+            );
+            if (zonePatch != null) {
+              filteredComponents[targetId] = zonePatch;
+            }
+          }
+        } else if (allowedSubtreeIds.contains(cid)) {
+          if (cid == targetId && cval == null) continue;
+          filteredComponents[cid] = cval;
+        } else if (!current.components.containsKey(cid) &&
+            !outsideExistingIds.contains(cid) &&
+            !placedByOutsideIds.contains(cid)) {
+          // Detached newly created component: keep so validation can report it.
+          filteredComponents[cid] = cval;
+        }
+      }
+    }
+
+    bool isStyleAllowed(String styleId) {
+      if (allowedSubtreeIds.contains(styleId)) return true;
+      if (styleId.endsWith(':item')) {
+        final base = styleId.substring(0, styleId.length - 5);
+        if (allowedSubtreeIds.contains(base)) return true;
+      }
+      if (zoneId == null &&
+          (styleId == rawTargetId ||
+              styleId == targetId ||
+              styleId == '$targetId:item')) {
+        return true;
+      }
+      return false;
+    }
+
+    final filteredStyles = <String, Object?>{};
+    if (payload['styles'] case final Map rawStyles) {
+      for (final entry in rawStyles.entries) {
+        if (entry.key is String && isStyleAllowed(entry.key as String)) {
+          filteredStyles[entry.key as String] = entry.value;
+        }
+      }
+    }
+
+    final filteredBehaviors = <String, Object?>{};
+    if (payload['behaviors'] case final Map rawBehaviors) {
+      for (final entry in rawBehaviors.entries) {
+        final bid = entry.key;
+        if (bid is String &&
+            (allowedSubtreeIds.contains(bid) ||
+                (zoneId == null && bid == rawTargetId))) {
+          filteredBehaviors[bid] = entry.value;
+        }
+      }
+    }
+
+    return <String, dynamic>{
+      if (filteredComponents.isNotEmpty) 'components': filteredComponents,
+      if (filteredStyles.isNotEmpty) 'styles': filteredStyles,
+      if (filteredBehaviors.isNotEmpty) 'behaviors': filteredBehaviors,
+    };
+  }
+
+  /// Exports a focused JSON snapshot of [scope]'s subtree from [appearance]
+  /// for inclusion in the AI prompt.
+  static String exportScopedAi(
+    Appearance appearance,
+    VibeChatScope scope, {
+    AppearanceCodec codec = const AppearanceCodec(),
+  }) {
+    final targetId = scope.canonicalComponentId;
+    final rawTargetId = scope.componentId;
+    final subtreeIds = <String>{
+      targetId,
+      ..._existingSubtreeIds(appearance, scope),
+    };
+    final fullJson = codec.toJson(appearance);
+    final allComponents =
+        fullJson['components'] as Map<String, Object?>? ?? const {};
+    final allStyles = fullJson['styles'] as Map<String, Object?>? ?? const {};
+
+    final scopedComponents = <String, Object?>{
+      for (final id in subtreeIds)
+        if (allComponents.containsKey(id)) id: allComponents[id],
+    };
+    final scopedStyles = <String, Object?>{
+      for (final entry in allStyles.entries)
+        if (subtreeIds.contains(entry.key) ||
+            entry.key == rawTargetId ||
+            (entry.key.endsWith(':item') &&
+                subtreeIds.contains(
+                  entry.key.substring(0, entry.key.length - 5),
+                )))
+          entry.key: entry.value,
+    };
+
+    return const JsonEncoder.withIndent('  ').convert({
+      'scope': {
+        'componentId': targetId,
+        if (rawTargetId != targetId) 'surfaceId': rawTargetId,
+        'zoneId': ?scope.zoneId,
+        'label': scope.displayLabel,
+      },
+      'components': scopedComponents,
+      'styles': scopedStyles,
+    });
+  }
 
   @override
   State<VibeChatDialog> createState() => _VibeChatDialogState();
@@ -61,10 +830,24 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   bool _sending = false;
   String? _lastFailedResponse;
   String? _attachmentError;
+  late VibeChatScope? _scope = widget.scope;
 
   Appearance get _currentAppearance =>
       widget.registry?.appearanceSnapshot(widget.controller.value) ??
       widget.controller.value;
+
+  @override
+  void didUpdateWidget(VibeChatDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scope != widget.scope) {
+      _scope = widget.scope;
+    }
+  }
+
+  void _clearScope() {
+    setState(() => _scope = null);
+    widget.onScopeChanged?.call(null);
+  }
 
   @override
   void dispose() {
@@ -377,16 +1160,28 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           _lastFailedResponse = null;
           return (appearance: null, result: result);
         }
+        final current = _currentAppearance;
+        final activeScope = _scope;
+        final effectivePatch = activeScope == null
+            ? patch
+            : VibeChatDialog.filterPatchToScope(current, patch, activeScope);
+        if (activeScope != null && !_hasPatchChanges(effectivePatch)) {
+          throw FormatException(
+            'Modifications hors du scope autorisé (${activeScope.displayLabel}, '
+            'id: "${activeScope.canonicalComponentId}"'
+            '${activeScope.zoneId != null ? ', zone: "${activeScope.zoneId}"' : ''}). '
+            'Modifie uniquement ce scope.',
+          );
+        }
         final formattedPatch = const JsonEncoder.withIndent('  ').convert(
-          patch,
+          effectivePatch,
         );
         _logLong('[Vibe IA] Patch à appliquer', formattedPatch);
-        final current = _currentAppearance;
         final Appearance appearance;
         try {
           appearance = AppearanceTransfer.applyVibe(
             current,
-            jsonEncode(patch),
+            jsonEncode(effectivePatch),
             codec: widget.codec,
           );
         } catch (error, stackTrace) {
@@ -407,7 +1202,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
           );
           rethrow;
         }
-        _validatePatchedComponents(current, appearance, patch);
+        _validatePatchedComponents(current, appearance, effectivePatch);
         _lastFailedResponse = null;
         return (appearance: appearance, result: result);
       } catch (error) {
@@ -482,28 +1277,50 @@ $response
     Appearance next,
     Map<String, dynamic> patch,
   ) {
+    final activeScope = _scope;
     final reachable = <String>{};
-    final pending = [
-      ...?widget.registry?.instantiatedComponentIds,
-      if (widget.registry == null) ...current.components.keys,
-      for (final page in next.pageCatalog.pages) page.id,
-    ];
-    while (pending.isNotEmpty) {
-      final id = pending.removeLast();
-      if (!reachable.add(id)) continue;
-      final component = next.components[id];
-      final children = switch (component) {
-        final SuperLayoutConfig layout => layout.placedSlotIds,
-        final SuperListViewConfig list => list.template.placedSlotIds,
-        final SuperTabConfig tab => tab.placedSlotIds,
-        final NativeComponentConfig native => native.placements.values.expand(
-          (ids) => ids,
-        ),
-        final ScaffoldPageConfig scaffold =>
-          scaffold.native.placements.values.expand((ids) => ids),
-        _ => const <String>[],
-      };
-      pending.addAll(children);
+    if (activeScope != null) {
+      final targetId = activeScope.canonicalComponentId;
+      final zoneId = activeScope.zoneId;
+      reachable.add(targetId);
+      final pending = <String>[
+        if (zoneId != null && zoneId.isNotEmpty)
+          ...VibeChatDialog._childrenOfComponent(
+            next.components[targetId],
+            onlyZoneId: zoneId,
+          )
+        else
+          ...VibeChatDialog._childrenOfComponent(next.components[targetId]),
+      ];
+      while (pending.isNotEmpty) {
+        final id = pending.removeLast();
+        if (!reachable.add(id)) continue;
+        pending.addAll(
+          VibeChatDialog._childrenOfComponent(next.components[id]),
+        );
+      }
+    } else {
+      final pending = [
+        ...?widget.registry?.instantiatedComponentIds,
+        if (widget.registry == null) ...current.components.keys,
+        for (final page in next.pageCatalog.pages) page.id,
+      ];
+      while (pending.isNotEmpty) {
+        final id = pending.removeLast();
+        if (!reachable.add(id)) continue;
+        final component = next.components[id];
+        final children = switch (component) {
+          final SuperLayoutConfig layout => layout.placedSlotIds,
+          final SuperListViewConfig list => list.template.placedSlotIds,
+          final SuperTabConfig tab => tab.placedSlotIds,
+          final NativeComponentConfig native =>
+            native.placements.values.expand((ids) => ids),
+          final ScaffoldPageConfig scaffold =>
+            scaffold.native.placements.values.expand((ids) => ids),
+          _ => const <String>[],
+        };
+        pending.addAll(children);
+      }
     }
     final payload = patch['data'] is Map ? patch['data'] as Map : patch;
     final patchedComponents = payload['components'];
@@ -552,11 +1369,27 @@ $response
     final conversation = _messages
         .map((message) => message.toConversationEntry())
         .join('\n');
+    final appearance = _currentAppearance;
     final current = AppearanceTransfer.exportAi(
-      _currentAppearance,
+      appearance,
       codec: widget.codec,
     );
     final instantiated = widget.registry?.instantiatedComponentIds;
+    final activeScope = _scope;
+    final scopeInstructions = activeScope == null
+        ? ''
+        : '''
+
+RESTRICTION STRICTE DE SCOPE :
+L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${activeScope.displayLabel}" (composant id: "${activeScope.canonicalComponentId}"${activeScope.zoneId != null ? ', zone/région: "${activeScope.zoneId}"' : ''}).
+- Tu dois UNIQUEMENT modifier ce scope ("${activeScope.canonicalComponentId}"${activeScope.zoneId != null ? ' dans sa zone "${activeScope.zoneId}"' : ''}) et ses sous-composants.
+- Ne modifie AUCUN composant parent, frère ou externe à ce scope.
+- Ne modifie PAS les paramètres globaux de thème (mode, accent, background) ni pageCatalog.
+${activeScope.zoneId != null ? '- Dans le conteneur "${activeScope.canonicalComponentId}", modifie exclusivement la zone/région "${activeScope.zoneId}" (ses placements, son activation, son flux/axe/taille) et les composants placés dans "${activeScope.zoneId}". Ne touche à aucune autre zone de "${activeScope.canonicalComponentId}".' : '- Tout nouveau composant créé doit être rattaché dans les placements de "${activeScope.canonicalComponentId}" ou de l’un de ses sous-composants.'}
+
+ÉTAT DU SCOPE CIBLÉ (JSON) :
+${VibeChatDialog.exportScopedAi(appearance, activeScope, codec: widget.codec)}
+''';
     return '''
 Tu es l’assistant de création d’écrans de super_container_layout. Réponds en français.
 Utilise exclusivement le guide ci-dessous et l’état actuel de l’application.
@@ -568,7 +1401,7 @@ Tout nouveau composant doit être rattaché par les placements à un conteneur e
 ${instantiated == null ? '' : 'Les composants instanciés sont : ${jsonEncode(instantiated.toList())}. Rattache les modifications à ces composants ou aux pages déclarées ; une configuration sauvegardée mais isolée ne suffit pas.'}
 Si une opération crée une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
 Si la conversation mentionne une erreur sur une réponse précédente, identifie la cause indiquée et corrige-la sans reproduire la même erreur.
-Ne renvoie aucun Markdown ni texte hors du JSON. Si une information manque, fais une hypothèse raisonnable et indique-la dans "message".
+Ne renvoie aucun Markdown ni texte hors du JSON. Si une information manque, fais une hypothèse raisonnable et indique-la dans "message".$scopeInstructions
 
 GUIDE DE MODÉLISATION :
 $guide
@@ -662,6 +1495,53 @@ $conversation
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
+          if (_scope case final activeScope?)
+            Container(
+              key: const ValueKey('vibe-chat-scope-banner'),
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: scheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.filter_center_focus_outlined,
+                    size: 16,
+                    color: scheme.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Scope : ${activeScope.displayLabel}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('vibe-chat-clear-scope'),
+                    tooltip: 'Retirer la restriction de scope',
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 16,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 24,
+                      height: 24,
+                    ),
+                    color: scheme.onSecondaryContainer,
+                    onPressed: _sending ? null : _clearScope,
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: ListView(
               reverse: true,

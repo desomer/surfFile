@@ -233,6 +233,7 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
               ? resolvedHeight
               : baseHeight;
           return NativeComponentEditor(
+            id: widget.id,
             label: widget.label,
             menuType: 'BottomNavigationBar',
             keyPrefix: 'super-bottom-navigation-bar',

@@ -43,6 +43,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   _BannerLayout _layout = _BannerLayout(null);
   _VibeChatLayout _chatLayout = _VibeChatLayout(null);
   bool _chatOpen = false;
+  VibeChatScope? _chatScope;
   final _chevronKeys = <int, GlobalKey>{};
   ({
     int chevronIndex,
@@ -73,6 +74,21 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     return Offset(position.dx, dy);
   }
 
+  bool _openScopedChat(VibeChatScope scope) {
+    if (!mounted || AppearanceScope.controllerOf(context) == null) return false;
+    setState(() {
+      _chatScope = scope;
+      if (!_chatOpen) {
+        _chatOpen = true;
+        _chatLayout = _VibeChatLayout(
+          null,
+          available: LayoutSelection.editorViewport.value,
+        );
+      }
+    });
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +97,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       available: LayoutSelection.editorViewport.value,
     );
     LayoutSelection.bannerBounds = _bannerRect;
+    VibeChatScope.onOpenRequested = _openScopedChat;
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
   }
@@ -141,6 +158,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   void dispose() {
     if (identical(LayoutSelection.bannerBounds, _bannerRect)) {
       LayoutSelection.bannerBounds = null;
+    }
+    if (identical(VibeChatScope.onOpenRequested, _openScopedChat)) {
+      VibeChatScope.onOpenRequested = null;
     }
     LayoutSelection.editorViewport.removeListener(_reposition);
     LayoutSelection.path.removeListener(_onPathChanged);
@@ -277,6 +297,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                     icon: const Icon(Icons.auto_awesome_outlined),
                     onPressed: () => setState(() {
                       _chatOpen = !_chatOpen;
+                      _chatScope = null;
                       if (_chatOpen) {
                         _chatLayout = _VibeChatLayout(
                           null,
@@ -440,7 +461,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               registry: SuperApp.maybeOf(context)?.registry,
               controller: appearance,
               codec: codec,
-              onClose: () => setState(() => _chatOpen = false),
+              scope: _chatScope,
+              onScopeChanged: (scope) => setState(() => _chatScope = scope),
+              onClose: () => setState(() {
+                _chatOpen = false;
+                _chatScope = null;
+              }),
               onDrag: (delta) => setState(
                 () => _chatLayout = _VibeChatLayout(
                   _chatLayout.resolvedPosition + delta,

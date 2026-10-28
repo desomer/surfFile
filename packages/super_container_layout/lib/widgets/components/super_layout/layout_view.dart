@@ -1,10 +1,32 @@
 part of 'super_layout.dart';
 
 extension _SuperLayoutView on SuperLayoutState {
-  Widget _buildLayout(BuildContext context) => Listener(
+  String? _resolveEffectiveLayoutId(BuildContext context) {
+    if (widget.id != null && widget.id!.isNotEmpty) return widget.id!;
+    final fromLabel = editorComponentLabelOf(context)?.id;
+    if (fromLabel != null && fromLabel.isNotEmpty) return fromLabel;
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry != null) {
+      final current = _config.value;
+      for (final entry in registry.superLayoutConfigById.entries) {
+        if (identical(entry.value.value, current) ||
+            entry.value.value == current) {
+          return entry.key;
+        }
+      }
+      if (registry.superLayoutConfigById.length == 1) {
+        return registry.superLayoutConfigById.keys.single;
+      }
+    }
+    return null;
+  }
+
+  Widget _buildLayout(BuildContext context) {
+    final effectiveId = _resolveEffectiveLayoutId(context);
+    return Listener(
     behavior: HitTestBehavior.translucent,
     child: EditorSlot(
-      id: widget.id,
+      id: effectiveId,
       label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,
@@ -274,6 +296,8 @@ extension _SuperLayoutView on SuperLayoutState {
                                   zone,
                                   GlobalKey<EditorSlotState>.new,
                                 ),
+                                id: effectiveId,
+                                zoneId: config.contentZone(zone).name,
                                 label: widget.zoneLabel(zone),
                                 menuTitle: 'zone ${widget.zoneLabel(zone)}',
                                 menuSubtitle: () => _displayLabel,
@@ -450,4 +474,5 @@ extension _SuperLayoutView on SuperLayoutState {
       ),
     ),
   );
+  }
 }
