@@ -87,6 +87,39 @@ extension _SuperLayoutSlots on SuperLayoutState {
     return const {};
   }
 
+  /// Display label in the add wizard for a slot returned by [_availableSlots].
+  String _addLabelOf(BuildContext context, SlotImplementation slot) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry == null) return slot.label;
+    final ids = {for (final item in widget.slots) item.id};
+    if (ids.contains(slot.id)) return slot.label;
+    for (final entry in registry.registry.entries) {
+      if (_registrySlotId(entry.key, ids) == slot.id) {
+        return entry.value.label ?? slot.label;
+      }
+    }
+    return slot.label;
+  }
+
+  /// Preview builder in the add wizard for a slot returned by [_availableSlots].
+  WidgetBuilder? _previewBuilderOf(BuildContext context, String slotId) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry == null) return null;
+    final ids = {for (final slot in widget.slots) slot.id};
+    if (ids.contains(slotId)) return null;
+    for (final entry in registry.registry.entries) {
+      if (_registrySlotId(entry.key, ids) == slotId) {
+        return entry.value.previewBuilder;
+      }
+    }
+    for (final entry in registry.components.entries) {
+      if ((entry.value.slotId ?? _registrySlotId(entry.key, ids)) == slotId) {
+        return entry.value.previewBuilder;
+      }
+    }
+    return null;
+  }
+
   /// Resout uniquement le slot demande, sans construire les autres slots.
   /// Retourne aussi les slots masques ; un identifiant inconnu renvoie null.
   SlotImplementation? _searchSlot(

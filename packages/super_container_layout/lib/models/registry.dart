@@ -20,6 +20,7 @@ import 'package:super_container_layout/widgets/components/native/super_app_bar.d
 import '../widgets/components/native/super_bottom_app_bar.dart';
 import '../widgets/components/native/super_bottom_navigation_bar.dart';
 import '../widgets/components/native/super_expansible.dart';
+import '../widgets/components/native/super_menu_anchor.dart';
 import '../widgets/components/native/super_navigation_rail.dart';
 import '../services/pages/editor_page_graph.dart';
 import '../widgets/editing/addition/component_add_configurators.dart';
@@ -168,6 +169,9 @@ class ComponentDuplicationContract {
   static const superExpansible = ComponentDuplicationContract(
     ownedConfigs: _native,
   );
+  static const superMenuAnchor = ComponentDuplicationContract(
+    ownedConfigs: _native,
+  );
   static const newContainer = ComponentDuplicationContract(
     ownedConfigs: _container,
   );
@@ -182,12 +186,17 @@ class ComponentDuplicationContract {
 
 class ComponentBuilder {
   ComponentBuilder({
+    this.label,
     this.tags = const {},
     this.placementTags = const {},
     this.menuIcon,
     this.duplication,
     this.addConfigurator,
+    this.previewBuilder,
   });
+
+  /// Optional custom label displayed in the component add popup.
+  final String? label;
 
   final Set<String> tags;
 
@@ -204,6 +213,9 @@ class ComponentBuilder {
   /// Settings proposed by the add wizard; null when there are none.
   final ComponentAddConfigurator<Object>? addConfigurator;
 
+  /// Optional preview widget builder displayed in the component add popup.
+  final WidgetBuilder? previewBuilder;
+
   Widget getWidget(XuiBuildCtx ctx) {
     return SizedBox.shrink();
   }
@@ -212,11 +224,13 @@ class ComponentBuilder {
 class RegisteredComponentImpl extends ComponentBuilder {
   RegisteredComponentImpl({
     required this.widget,
+    super.label,
     super.tags,
     super.placementTags,
     super.menuIcon,
     super.duplication,
     super.addConfigurator,
+    super.previewBuilder,
   });
 
   final Widget widget;
@@ -502,16 +516,20 @@ class Registry {
   void registerFactory(
     String key,
     Widget widget, {
+    String? label,
     Set<String> tags = const {},
     IconData? menuIcon,
     ComponentDuplicationContract? duplication,
     ComponentAddConfigurator<Object>? addConfigurator,
+    WidgetBuilder? previewBuilder,
   }) {
     registry[key] = ComponentBuilderDynamic(
+      label: label,
       tags: tags,
       menuIcon: menuIcon,
       duplication: duplication,
       addConfigurator: addConfigurator,
+      previewBuilder: previewBuilder,
       dynamicBuilder: (xuiCtx) => widget,
     );
   }
@@ -713,11 +731,12 @@ class Registry {
   }
 
   void bootstrap({List<String> availableFontFamilies = const []}) {
-  registry['Layout'] = ComponentBuilderDynamic(
+    registry['Layout'] = ComponentBuilderDynamic(
       menuIcon: Icons.dashboard_outlined,
       duplication: ComponentDuplicationContract.newLayout,
       tags: const {'layout'},
       addConfigurator: layoutAddConfigurator,
+      previewBuilder: _buildLayoutPreview,
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (ctx) {
           final id = xuiCtx.id;
@@ -743,27 +762,33 @@ class Registry {
 
     registry['Value'] = ComponentBuilderDynamic(
       menuIcon: Icons.text_fields,
+      label: 'Text / Input',
       duplication: ComponentDuplicationContract.superValue,
       tags: const {'text', 'input'},
       addConfigurator: superValueAddConfigurator(availableFontFamilies),
+      previewBuilder: _buildValuePreview,
       dynamicBuilder: (ctx) =>
           SuperValue(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
 
     registry['Action'] = ComponentBuilderDynamic(
       menuIcon: Icons.smart_button_outlined,
+      label: 'Button / Action',
       duplication: ComponentDuplicationContract.superAction,
       tags: const {'action', 'button', 'input'},
       addConfigurator: superActionAddConfigurator(availableFontFamilies),
+      previewBuilder: _buildActionPreview,
       dynamicBuilder: (ctx) =>
           SuperAction(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
 
     registry['Card'] = ComponentBuilderDynamic(
       menuIcon: Icons.crop_square,
+      label: 'Card',
       duplication: ComponentDuplicationContract.newContainer,
       tags: const {'container'},
       addConfigurator: containerAddConfigurator,
+      previewBuilder: _buildCardPreview,
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (context) {
           final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
@@ -786,6 +811,7 @@ class Registry {
       duplication: ComponentDuplicationContract.superAppBar,
       tags: const {'appBar'},
       placementTags: const {'appBar'},
+      previewBuilder: _buildApplicationBarPreview,
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
     );
 
@@ -794,6 +820,7 @@ class Registry {
       duplication: ComponentDuplicationContract.superBottomNavigationBar,
       tags: const {'bottomNavigationBar'},
       placementTags: const {'bottomNavigationBar'},
+      previewBuilder: _buildBottomNavigationBarPreview,
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
@@ -802,6 +829,7 @@ class Registry {
       duplication: ComponentDuplicationContract.superBottomAppBar,
       tags: const {'bottomNavigationBar', 'bottomAppBar'},
       placementTags: const {'bottomNavigationBar'},
+      previewBuilder: _buildBottomAppBarPreview,
       dynamicBuilder: (ctx) => SuperBottomAppBar(id: ctx.id),
     );
 
@@ -809,6 +837,7 @@ class Registry {
       menuIcon: Icons.view_sidebar_outlined,
       duplication: ComponentDuplicationContract.superNavigationRail,
       tags: const {'navigationRail'},
+      previewBuilder: _buildNavigationRailPreview,
       dynamicBuilder: (ctx) => SuperNavigationRail(id: ctx.id),
     );
 
@@ -817,7 +846,17 @@ class Registry {
       duplication: ComponentDuplicationContract.superExpansible,
       tags: const {'container', 'layout', 'expansible'},
       addConfigurator: expansibleAddConfigurator,
+      previewBuilder: _buildExpansiblePreview,
       dynamicBuilder: (ctx) => SuperExpansible(id: ctx.id),
+    );
+
+    registry['Menu'] = ComponentBuilderDynamic(
+      menuIcon: Icons.menu_open_outlined,
+      duplication: ComponentDuplicationContract.superMenuAnchor,
+      tags: const {'container', 'layout', 'menu'},
+      addConfigurator: menuAnchorAddConfigurator,
+      previewBuilder: _buildMenuPreview,
+      dynamicBuilder: (ctx) => SuperMenuAnchor(id: ctx.id),
     );
 
     registry['Tab'] = ComponentBuilderDynamic(
@@ -825,6 +864,7 @@ class Registry {
       duplication: ComponentDuplicationContract.superTab,
       tags: const {'container', 'layout', 'tab'},
       addConfigurator: tabAddConfigurator,
+      previewBuilder: _buildTabPreview,
       dynamicBuilder: (ctx) => SuperTab(id: ctx.id),
     );
 
@@ -834,6 +874,7 @@ class Registry {
       tags: const {'container', 'layout'},
       placementTags: const {'list'},
       addConfigurator: containerAddConfigurator,
+      previewBuilder: _buildIterableContentPreview,
       dynamicBuilder: (ctx) => IterableContent(id: ctx.id),
     );
     registry['ListView'] = ComponentBuilderDynamic(
@@ -841,13 +882,13 @@ class Registry {
       duplication: ComponentDuplicationContract.superListView,
       tags: const {'list', 'layout'},
       addConfigurator: listViewAddConfigurator,
+      previewBuilder: _buildListViewPreview,
       dynamicBuilder: (xuiCtx) => BuilderSlot(
         id: xuiCtx.id,
         label: 'Liste',
         builder: (_) => SuperListView(id: xuiCtx.id),
       ),
     );
-  
   }
 
   Widget getWidget(String key, XuiBuildCtx ctx) =>
@@ -859,11 +900,13 @@ class ComponentBuilderDynamic extends ComponentBuilder {
 
   ComponentBuilderDynamic({
     required this.dynamicBuilder,
+    super.label,
     super.tags,
     super.placementTags,
     super.menuIcon,
     super.duplication,
     super.addConfigurator,
+    super.previewBuilder,
   });
 
   @override
@@ -883,6 +926,7 @@ class RegisteredComponent {
     this.menuIcon,
     this.duplication,
     this.addConfigurator,
+    this.previewBuilder,
   });
 
   final String label;
@@ -908,6 +952,9 @@ class RegisteredComponent {
   /// Settings proposed by the add wizard; null when there are none.
   final ComponentAddConfigurator<Object>? addConfigurator;
 
+  /// Optional preview widget builder displayed in the component add popup.
+  final WidgetBuilder? previewBuilder;
+
   BuilderSlot createSlot(String id, {bool visible = true}) => BuilderSlot(
     id: id,
     label: label,
@@ -917,5 +964,520 @@ class RegisteredComponent {
     builder: builder,
     tags: tags,
     menuIcon: menuIcon,
+  );
+}
+
+Widget _previewZoneBox(
+  BuildContext context,
+  String label, {
+  bool highlighted = false,
+}) {
+  final colors = Theme.of(context).colorScheme;
+  return Container(
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+    decoration: BoxDecoration(
+      color: highlighted ? colors.primaryContainer : colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+        color: highlighted ? colors.primary : colors.outlineVariant,
+      ),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: highlighted ? FontWeight.w600 : FontWeight.w400,
+        color: highlighted ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+      ),
+    ),
+  );
+}
+
+Widget _buildLayoutPreview(BuildContext context) => IgnorePointer(
+  child: SizedBox(
+    height: 92,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _previewZoneBox(context, 'Nord'),
+        const SizedBox(height: 4),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: _previewZoneBox(context, 'Ouest')),
+              const SizedBox(width: 4),
+              Expanded(
+                flex: 2,
+                child: _previewZoneBox(context, 'Centre', highlighted: true),
+              ),
+              const SizedBox(width: 4),
+              Expanded(child: _previewZoneBox(context, 'Est')),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        _previewZoneBox(context, 'Sud'),
+      ],
+    ),
+  ),
+);
+
+Widget _buildValuePreview(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = theme.colorScheme;
+  return IgnorePointer(
+    child: Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text('Texte affiché', style: theme.textTheme.bodyMedium),
+        SizedBox(
+          width: 180,
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Champ de saisie',
+              border: OutlineInputBorder(),
+            ),
+            child: Text(
+              'Valeur…',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(value: true, onChanged: (_) {}),
+            Switch(value: true, onChanged: (_) {}),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildActionPreview(BuildContext context) => IgnorePointer(
+  child: Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      FilledButton.icon(
+        onPressed: () {},
+        icon: const Icon(Icons.play_arrow, size: 16),
+        label: const Text('Action principale'),
+      ),
+      OutlinedButton(
+        onPressed: () {},
+        child: const Text('Secondaire'),
+      ),
+      IconButton.filledTonal(
+        onPressed: () {},
+        icon: const Icon(Icons.bolt, size: 18),
+      ),
+    ],
+  ),
+);
+
+Widget _buildCardPreview(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = theme.colorScheme;
+  return IgnorePointer(
+    child: Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
+          BoxShadow(
+            color: colors.shadow.withValues(alpha: 0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.crop_square, color: colors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Card', style: theme.textTheme.titleSmall),
+                Text(
+                  'Surface stylable (couleur, bordure, rayon, marges)',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildApplicationBarPreview(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = theme.colorScheme;
+  return IgnorePointer(
+    child: Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.menu, size: 18, color: colors.onSurface),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text('Barre d’application', style: theme.textTheme.titleSmall),
+          ),
+          Icon(Icons.search, size: 18, color: colors.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Icon(Icons.more_vert, size: 18, color: colors.onSurfaceVariant),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildBottomNavigationBarPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget item(IconData icon, String label, {bool selected = false}) => Expanded(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          decoration: BoxDecoration(
+            color: selected ? colors.secondaryContainer : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: selected
+                ? colors.onSecondaryContainer
+                : colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+            color: selected ? colors.onSurface : colors.onSurfaceVariant,
+          ),
+        ),
+      ],
+    ),
+  );
+  return IgnorePointer(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          item(Icons.home_outlined, 'Accueil', selected: true),
+          item(Icons.search_outlined, 'Recherche'),
+          item(Icons.person_outline, 'Profil'),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildBottomAppBarPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  return IgnorePointer(
+    child: Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.menu, size: 18, color: colors.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Icon(Icons.search, size: 18, color: colors.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Icon(Icons.favorite_border, size: 18, color: colors.onSurfaceVariant),
+          const Spacer(),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: colors.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.add,
+              size: 16,
+              color: colors.onPrimaryContainer,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildNavigationRailPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  return IgnorePointer(
+    child: SizedBox(
+      height: 84,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            width: 56,
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainer,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.secondaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.folder_outlined,
+                    size: 16,
+                    color: colors.onSecondaryContainer,
+                  ),
+                ),
+                Icon(
+                  Icons.analytics_outlined,
+                  size: 16,
+                  color: colors.onSurfaceVariant,
+                ),
+                Icon(
+                  Icons.settings_outlined,
+                  size: 16,
+                  color: colors.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _previewZoneBox(context, 'Contenu de la destination'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildExpansiblePreview(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = theme.colorScheme;
+  return IgnorePointer(
+    child: Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'En-tête repliable',
+                    style: theme.textTheme.labelLarge,
+                  ),
+                ),
+                Icon(
+                  Icons.expand_less,
+                  size: 18,
+                  color: colors.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+          Divider(height: 1, color: colors.outlineVariant),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: _previewZoneBox(context, 'Contenu déplié'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildMenuPreview(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = theme.colorScheme;
+  return IgnorePointer(
+    child: Row(
+      children: [
+        OutlinedButton.icon(
+          onPressed: () {},
+          icon: const Icon(Icons.menu_open_outlined, size: 16),
+          label: const Text('Menu'),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('• Option 1', style: theme.textTheme.bodySmall),
+                Text('• Option 2', style: theme.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildTabPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget tab(String title, {bool selected = false}) => Expanded(
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: selected ? colors.primary : colors.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+        ),
+      ),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+          color: selected ? colors.primary : colors.onSurfaceVariant,
+        ),
+      ),
+    ),
+  );
+  return IgnorePointer(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            tab('Onglet 1', selected: true),
+            tab('Onglet 2'),
+            tab('Onglet 3'),
+          ],
+        ),
+        const SizedBox(height: 6),
+        _previewZoneBox(context, 'Contenu de l’onglet actif', highlighted: true),
+      ],
+    ),
+  );
+}
+
+Widget _buildIterableContentPreview(BuildContext context) {
+  final theme = Theme.of(context);
+  final colors = theme.colorScheme;
+  return IgnorePointer(
+    child: Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.primary.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.repeat, size: 16, color: colors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Modèle d’élément répété (ligne / carte de liste)',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _buildListViewPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget row(String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: colors.outlineVariant),
+    ),
+    child: Row(
+      children: [
+        Icon(Icons.drag_handle, size: 14, color: colors.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Text(label, style: const TextStyle(fontSize: 11)),
+      ],
+    ),
+  );
+  return IgnorePointer(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        row('Élément de liste 1'),
+        const SizedBox(height: 4),
+        row('Élément de liste 2'),
+        const SizedBox(height: 4),
+        row('Élément de liste 3'),
+      ],
+    ),
   );
 }

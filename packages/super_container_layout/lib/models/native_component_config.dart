@@ -38,6 +38,8 @@ class NativeComponentConfig extends ComponentConfig {
       descriptor.id: descriptor,
     for (final descriptor in superExpansiblePropertyDescriptors)
       descriptor.id: descriptor,
+    for (final descriptor in superMenuAnchorPropertyDescriptors)
+      descriptor.id: descriptor,
     for (final descriptor in scaffoldPagePropertyDescriptors)
       descriptor.id: descriptor,
   };
@@ -144,6 +146,17 @@ class NativeComponentConfig extends ComponentConfig {
   bool? get initiallyExpanded => boolProperty('initiallyExpanded');
   bool? get maintainState => boolProperty('maintainState');
   bool? get headerClickToggles => boolProperty('headerClickToggles');
+  bool? get consumeOutsideTap => boolProperty('consumeOutsideTap');
+  String? get toggleIcon => stringProperty('toggleIcon');
+  String? get toggleIconPosition => stringProperty('toggleIconPosition');
+  double? get alignmentOffsetX => doubleProperty('alignmentOffsetX');
+  double? get alignmentOffsetY => doubleProperty('alignmentOffsetY');
+  Offset? get alignmentOffset {
+    final dx = alignmentOffsetX;
+    final dy = alignmentOffsetY;
+    if (dx == null && dy == null) return null;
+    return Offset(dx ?? 0, dy ?? 0);
+  }
 
   @override
   void validate() {
@@ -256,6 +269,24 @@ class NativeComponentConfig extends ComponentConfig {
 
   NativeComponentConfig withHeaderClickToggles(bool? toggles) =>
       withProperty('headerClickToggles', toggles);
+
+  NativeComponentConfig withConsumeOutsideTap(bool? consume) =>
+      withProperty('consumeOutsideTap', consume);
+
+  NativeComponentConfig withToggleIcon(String? style) =>
+      withProperty('toggleIcon', style);
+
+  NativeComponentConfig withToggleIconPosition(String? position) =>
+      withProperty('toggleIconPosition', position);
+
+  NativeComponentConfig withAlignmentOffsetX(double? dx) =>
+      withProperty('alignmentOffsetX', dx);
+
+  NativeComponentConfig withAlignmentOffsetY(double? dy) =>
+      withProperty('alignmentOffsetY', dy);
+
+  NativeComponentConfig withAlignmentOffset(Offset? offset) =>
+      withAlignmentOffsetX(offset?.dx).withAlignmentOffsetY(offset?.dy);
 
   NativeComponentConfig withBinding(JsonTextBinding? value) =>
       copyWith(binding: value, clearBinding: value == null);

@@ -79,6 +79,7 @@ class ComponentAddCandidate {
     this.tags = const {},
     this.placementTags = const {},
     this.configurator,
+    this.previewBuilder,
   });
 
   /// Value identifying the component for the caller (slot ID or type).
@@ -90,6 +91,9 @@ class ComponentAddCandidate {
   /// [ComponentTagFilter.fits].
   final Set<String> placementTags;
   final ComponentAddConfigurator<Object>? configurator;
+
+  /// Optional preview widget builder shown when this candidate is selected.
+  final WidgetBuilder? previewBuilder;
 
   /// Whether the component fits a target dedicated to [zoneTags] whose filter
   /// is [accepts].
@@ -500,66 +504,91 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) =>
-        _buildDialog(context, compact: constraints.maxHeight < 480),
+    builder: (context, constraints) {
+      final availableHeight = constraints.maxHeight.isFinite
+          ? constraints.maxHeight
+          : MediaQuery.sizeOf(context).height;
+      return _buildDialog(
+        context,
+        availableHeight: availableHeight,
+        compact: availableHeight < 480,
+      );
+    },
   );
 
   Widget _buildDialog(
     BuildContext context, {
+    required double availableHeight,
     required bool compact,
-  }) => AlertDialog(
-    key: ValueKey('${widget.keyPrefix}-add-wizard'),
-    insetPadding: compact
-        ? const EdgeInsets.all(4)
-        : const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
-    titlePadding: compact ? const EdgeInsets.fromLTRB(16, 8, 16, 0) : null,
-    actionsPadding: compact ? const EdgeInsets.fromLTRB(16, 0, 16, 8) : null,
-    title: EditorDialogHeader(label: widget.title),
-    contentPadding: EdgeInsets.fromLTRB(8, compact ? 4 : 12, 8, 0),
-    content: SizedBox(
-      width: 640,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 560),
+  }) {
+    final verticalInset = availableHeight * 0.05;
+    final targetHeight = availableHeight * 0.9;
+    return AlertDialog(
+      key: ValueKey('${widget.keyPrefix}-add-wizard'),
+      insetPadding: EdgeInsets.symmetric(
+        horizontal: compact ? 4 : 40,
+        vertical: verticalInset,
+      ),
+      titlePadding: compact ? const EdgeInsets.fromLTRB(16, 8, 16, 0) : null,
+      actionsPadding: compact ? const EdgeInsets.fromLTRB(16, 0, 16, 8) : null,
+      title: EditorDialogHeader(label: widget.title),
+      contentPadding: EdgeInsets.fromLTRB(8, compact ? 4 : 12, 8, 0),
+      content: SizedBox(
+        width: 640,
+        height: targetHeight,
         child: LayoutBuilder(
-          builder: (context, constraints) => Stepper(
-            key: ValueKey('${widget.keyPrefix}-add-stepper'),
-            type: StepperType.horizontal,
-            currentStep: _step,
-            elevation: 0,
-            onStepTapped: (step) {
-              if (!_enabled(_WizardStage.values[step])) return;
-              if (step < _step || (step == _nextStep && _canContinue)) {
-                setState(() => _step = step);
-              }
-            },
-            controlsBuilder: (_, _) => const SizedBox.shrink(),
-            steps: _steps(
-              context,
-              allTitles: _titlesFit(context, constraints.maxWidth),
-            ),
-          ),
+          builder: (context, constraints) {
+            final allTitles = _titlesFit(context, constraints.maxWidth);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Stepper(
+                    key: ValueKey('${widget.keyPrefix}-add-stepper'),
+                    type: StepperType.horizontal,
+                    currentStep: _step,
+                    elevation: 0,
+                    onStepTapped: (step) {
+                      if (!_enabled(_WizardStage.values[step])) return;
+                      if (step < _step || (step == _nextStep && _canContinue)) {
+                        setState(() => _step = step);
+                      }
+                    },
+                    controlsBuilder: (_, _) => const SizedBox.shrink(),
+                    steps: _steps(context, allTitles: allTitles),
+                  ),
+                ),
+                if (_stage == _WizardStage.component &&
+                    _selected?.previewBuilder != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: _buildPreview(context, _selected!),
+                  ),
+              ],
+            );
+          },
         ),
       ),
-    ),
-    actions: [
-      TextButton(
-        key: ValueKey('${widget.keyPrefix}-add-cancel'),
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Annuler'),
-      ),
-      if (_step > 0)
+      actions: [
         TextButton(
-          key: ValueKey('${widget.keyPrefix}-add-back'),
-          onPressed: _back,
-          child: const Text('Précédent'),
+          key: ValueKey('${widget.keyPrefix}-add-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuler'),
         ),
-      FilledButton(
-        key: ValueKey('${widget.keyPrefix}-add-next'),
-        onPressed: _canContinue ? _next : null,
-        child: Text(_stage == _WizardStage.summary ? 'Appliquer' : 'Suivant'),
-      ),
-    ],
-  );
+        if (_step > 0)
+          TextButton(
+            key: ValueKey('${widget.keyPrefix}-add-back'),
+            onPressed: _back,
+            child: const Text('Précédent'),
+          ),
+        FilledButton(
+          key: ValueKey('${widget.keyPrefix}-add-next'),
+          onPressed: _canContinue ? _next : null,
+          child: Text(_stage == _WizardStage.summary ? 'Appliquer' : 'Suivant'),
+        ),
+      ],
+    );
+  }
 
   /// Whether every step title fits in the horizontal Stepper header, whose
   /// titles cannot shrink: 24 px padding per side, then per step a 24 px icon
@@ -665,6 +694,41 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildPreview(BuildContext context, ComponentAddCandidate candidate) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      key: ValueKey('${widget.keyPrefix}-add-preview'),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Aperçu : ${candidate.label}',
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 96,
+            child: Center(
+              child: SingleChildScrollView(
+                child: Builder(builder: candidate.previewBuilder!),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

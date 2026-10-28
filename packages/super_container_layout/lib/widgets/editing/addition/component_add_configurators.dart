@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
+import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
@@ -13,6 +14,7 @@ import 'component_add_wizard.dart';
 import 'forms/container_add_form.dart';
 import 'forms/expansible_add_form.dart';
 import 'forms/list_view_add_form.dart';
+import 'forms/menu_anchor_add_form.dart';
 import 'forms/super_action_add_form.dart';
 import 'forms/super_value_add_form.dart';
 import 'forms/tab_add_form.dart';
@@ -22,6 +24,7 @@ export '../repositories/repository_binding_fields.dart'
 export 'forms/container_add_form.dart' show ContainerAddForm;
 export 'forms/expansible_add_form.dart' show ExpansibleAddForm;
 export 'forms/list_view_add_form.dart' show ListViewAddForm;
+export 'forms/menu_anchor_add_form.dart' show MenuAnchorAddForm;
 export 'forms/super_action_add_form.dart' show SuperActionAddForm;
 export 'forms/super_value_add_form.dart' show SuperValueAddForm;
 export 'forms/tab_add_form.dart' show TabAddForm;
@@ -228,6 +231,13 @@ final expansibleAddConfigurator =
         ('Ouvert par défaut', _yes(draft.initiallyExpanded ?? false)),
         ('Clic sur l’en-tête', _yes(draft.headerClickToggles ?? true)),
         ('Maintenir l’état', _yes(draft.maintainState ?? true)),
+        if (draft.toggleIcon != null && draft.toggleIcon != 'none') ...[
+          ('Icône ouvert/fermé', nativeToggleIconLabel(draft.toggleIcon)),
+          (
+            'Position de l’icône',
+            nativeToggleIconPositionLabel(draft.toggleIconPosition),
+          ),
+        ],
         ('Liaison', _bindingLabel(draft.binding)),
       ],
       apply: (registry, id, draft) =>
@@ -238,6 +248,54 @@ final expansibleAddConfigurator =
       bindingPathHint: 'ui.ouvert ou clients[?].ouvert',
       bindingHelp:
           'Le repository fournit et persiste l’état ouvert/fermé (booléen).',
+    );
+
+/// Add wizard settings of a `SuperMenuAnchor`, written to `Registry.nativeComponentController`.
+final menuAnchorAddConfigurator =
+    ComponentAddConfigurator<NativeComponentConfig>(
+      initial: (_) =>
+          NativeComponentConfig(regions: const {'header': true, 'body': true}),
+      builder: (context, draft, onChanged) =>
+          MenuAnchorAddForm(draft: draft, onChanged: onChanged),
+      validate: (draft) {
+        if (draft.binding?.path.trim().isEmpty ?? false) {
+          return 'Chemin de liaison requis.';
+        }
+        try {
+          draft.validate();
+          return null;
+        } on FormatException catch (error) {
+          return error.message;
+        } on Object {
+          return 'Configuration du menu invalide.';
+        }
+      },
+      summary: (draft) => [
+        ('Ouvert par défaut', _yes(draft.initiallyExpanded ?? false)),
+        ('Clic sur l’en-tête', _yes(draft.headerClickToggles ?? true)),
+        ('Consommer clic extérieur', _yes(draft.consumeOutsideTap ?? false)),
+        if (draft.toggleIcon != null && draft.toggleIcon != 'none') ...[
+          ('Icône ouvert/fermé', nativeToggleIconLabel(draft.toggleIcon)),
+          (
+            'Position de l’icône',
+            nativeToggleIconPositionLabel(draft.toggleIconPosition),
+          ),
+        ],
+        if (draft.alignmentOffset != null)
+          (
+            'Décalage',
+            '(${draft.alignmentOffset!.dx.toStringAsFixed(0)}, ${draft.alignmentOffset!.dy.toStringAsFixed(0)})',
+          ),
+        ('Liaison', _bindingLabel(draft.binding)),
+      ],
+      apply: (registry, id, draft) =>
+          registry.nativeComponentController(id).value = draft,
+      readBinding: (draft) => draft.binding,
+      writeBinding: (draft, binding) => draft.withBinding(binding),
+      bindingKeyPrefix: 'add-menu-anchor',
+      bindingPathHint: 'ui.menuOuvert ou clients[?].menuOuvert',
+      bindingHelp:
+          'Le repository fournit et persiste l’état ouvert/fermé du menu (booléen).',
     );
 
 /// Add wizard settings of a `SuperTab`, written to `Registry.tabController`.

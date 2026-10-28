@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:material_ui/material_ui.dart' show IconData, Icons;
 
 import 'json_syntax.dart';
 import 'native_shape_config.dart';
@@ -630,6 +631,85 @@ superBottomNavigationBarPropertyDescriptors = [
   ),
 ];
 
+/// Descripteur de la propriété `toggleIcon` partagée par [SuperExpansible] et [SuperMenuAnchor].
+const NativePropertyDescriptor toggleIconPropertyDescriptor =
+    NativePropertyDescriptor(
+      id: 'toggleIcon',
+      label: 'Icône ouvert / fermé',
+      subtitle: 'Indicateur visuel de l’état déplié ou replié dans l’en-tête',
+      editorType: NativePropertyEditorType.select,
+      defaultValue: 'none',
+      nullable: false,
+      options: [
+        NativePropertyOption(value: 'none', label: 'Aucune (none)'),
+        NativePropertyOption(
+          value: 'chevron',
+          label: 'Chevron (expand_more / expand_less)',
+        ),
+        NativePropertyOption(
+          value: 'arrow',
+          label: 'Flèche (arrow_downward / arrow_upward)',
+        ),
+        NativePropertyOption(
+          value: 'plusMinus',
+          label: 'Plus / Moins (add / remove)',
+        ),
+        NativePropertyOption(
+          value: 'triangle',
+          label: 'Triangle (arrow_drop_down / arrow_drop_up)',
+        ),
+      ],
+    );
+
+/// Descripteur de la propriété `toggleIconPosition` partagée par [SuperExpansible] et [SuperMenuAnchor].
+const NativePropertyDescriptor toggleIconPositionPropertyDescriptor =
+    NativePropertyDescriptor(
+      id: 'toggleIconPosition',
+      label: 'Position de l’icône',
+      subtitle: 'Emplacement de l’icône ouvert / fermé dans l’en-tête',
+      editorType: NativePropertyEditorType.select,
+      defaultValue: 'trailing',
+      nullable: false,
+      options: [
+        NativePropertyOption(
+          value: 'trailing',
+          label: 'Fin / Droite (trailing)',
+        ),
+        NativePropertyOption(
+          value: 'leading',
+          label: 'Début / Gauche (leading)',
+        ),
+      ],
+    );
+
+/// Résout l’icône Material correspondant au style `toggleIcon` et à l’état [expanded].
+///
+/// Retourne `null` lorsque [style] est `null`, `'none'` ou inconnu.
+IconData? resolveNativeToggleIcon(String? style, {required bool expanded}) =>
+    switch (style?.trim()) {
+      'chevron' => expanded ? Icons.expand_less : Icons.expand_more,
+      'arrow' => expanded ? Icons.arrow_upward : Icons.arrow_downward,
+      'plusMinus' => expanded ? Icons.remove : Icons.add,
+      'triangle' => expanded ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+      _ => null,
+    };
+
+/// Retourne le libellé lisible d’un style `toggleIcon`.
+String nativeToggleIconLabel(String? style) => switch (style?.trim()) {
+  'chevron' => 'Chevron',
+  'arrow' => 'Flèche',
+  'plusMinus' => 'Plus / Moins',
+  'triangle' => 'Triangle',
+  _ => 'Aucune',
+};
+
+/// Retourne le libellé lisible d’une position `toggleIconPosition`.
+String nativeToggleIconPositionLabel(String? position) =>
+    switch (position?.trim()) {
+      'leading' => 'Début / Gauche',
+      _ => 'Fin / Droite',
+    };
+
 /// Catalogue déclaratif des propriétés de comportement de [SuperExpansible].
 const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
   NativePropertyDescriptor(
@@ -650,6 +730,55 @@ const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
     label: 'Maintenir l’état fermé',
     editorType: NativePropertyEditorType.bool,
     defaultValue: true,
+  ),
+  toggleIconPropertyDescriptor,
+  toggleIconPositionPropertyDescriptor,
+];
+
+/// Catalogue déclaratif des propriétés de comportement de [SuperMenuAnchor].
+const List<NativePropertyDescriptor> superMenuAnchorPropertyDescriptors = [
+  NativePropertyDescriptor(
+    id: 'initiallyExpanded',
+    label: 'Ouvert par défaut',
+    subtitle: 'État initial hors liaison repository',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'headerClickToggles',
+    label: 'Basculer au clic sur l’en-tête',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'consumeOutsideTap',
+    label: 'Consommer le clic extérieur',
+    subtitle:
+        'Empêche le clic fermant le menu d’activer l’élément sous-jacent',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  toggleIconPropertyDescriptor,
+  toggleIconPositionPropertyDescriptor,
+  NativePropertyDescriptor(
+    id: 'alignmentOffsetX',
+    label: 'Décalage horizontal (X)',
+    subtitle: 'Décalage en pixels sur l’axe horizontal (alignmentOffset.dx)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 0.0,
+    min: -200,
+    max: 200,
+    divisions: 80,
+  ),
+  NativePropertyDescriptor(
+    id: 'alignmentOffsetY',
+    label: 'Décalage vertical (Y)',
+    subtitle: 'Décalage en pixels sur l’axe vertical (alignmentOffset.dy)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 0.0,
+    min: -200,
+    max: 200,
+    divisions: 80,
   ),
 ];
 

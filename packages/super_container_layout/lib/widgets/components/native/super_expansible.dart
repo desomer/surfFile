@@ -35,6 +35,8 @@ class SuperExpansible extends StatefulWidget {
     this.initiallyExpanded = false,
     this.maintainState = true,
     this.headerClickToggles = true,
+    this.toggleIcon,
+    this.toggleIconPosition = 'trailing',
     this.animationStyle,
     this.expansibleBuilder,
     this.onExpansionChanged,
@@ -68,6 +70,12 @@ class SuperExpansible extends StatefulWidget {
   /// Whether tapping the header region toggles the expansion state at runtime.
   final bool headerClickToggles;
 
+  /// Optional preset toggle icon style (`'none'`, `'chevron'`, `'arrow'`, `'plusMinus'`, `'triangle'`).
+  final String? toggleIcon;
+
+  /// Position of the toggle icon inside the header (`'trailing'` or `'leading'`).
+  final String toggleIconPosition;
+
   /// Optional animation style passed to Flutter's [Expansible].
   final AnimationStyle? animationStyle;
 
@@ -88,6 +96,10 @@ class SuperExpansible extends StatefulWidget {
           if (initiallyExpanded) 'initiallyExpanded': true,
           if (!maintainState) 'maintainState': false,
           if (!headerClickToggles) 'headerClickToggles': false,
+          if (toggleIcon != null && toggleIcon!.trim() != 'none')
+            'toggleIcon': toggleIcon!,
+          if (toggleIconPosition.trim() != 'trailing')
+            'toggleIconPosition': toggleIconPosition,
         },
         regions: const {'header': true, 'body': true},
         placements: {
@@ -447,6 +459,9 @@ class _SuperExpansibleState extends State<SuperExpansible> {
             config.maintainState ?? widget.maintainState;
         final effectiveHeaderToggle =
             config.headerClickToggles ?? widget.headerClickToggles;
+        final effectiveToggleIcon = config.toggleIcon ?? widget.toggleIcon;
+        final effectiveToggleIconPosition =
+            config.toggleIconPosition ?? widget.toggleIconPosition;
         final activeError = _bindingError ?? _binding?.error;
 
         return NativeComponentEditor(
@@ -537,12 +552,45 @@ class _SuperExpansibleState extends State<SuperExpansible> {
                 headerBuilder: (context, animation) {
                   final fixedHeaderSize = editor.sizeOf('header');
                   final headerFlow = editor.flowOf('header');
+                  final toggleIconData = resolveNativeToggleIcon(
+                    effectiveToggleIcon,
+                    expanded: _effectiveController.isExpanded,
+                  );
                   Widget headerWidget = SlotContentFitScope(
                     fitWidth: false,
                     fitHeight:
                         fixedHeaderSize == null || !headerFlow.expandSlots,
                     child: editor.region('header'),
                   );
+                  if (toggleIconData != null) {
+                    final isLeading = effectiveToggleIconPosition == 'leading';
+                    final regionChild = headerWidget;
+                    final iconWidget = Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Icon(
+                        toggleIconData,
+                        key: ValueKey(
+                          'super-expansible-header-toggle-icon-${widget.id}',
+                        ),
+                        size: 20,
+                      ),
+                    );
+                    headerWidget = LayoutBuilder(
+                      builder: (context, constraints) => Row(
+                        mainAxisSize: constraints.hasBoundedWidth
+                            ? MainAxisSize.max
+                            : MainAxisSize.min,
+                        children: [
+                          if (isLeading) iconWidget,
+                          if (constraints.hasBoundedWidth)
+                            Expanded(child: regionChild)
+                          else
+                            Flexible(fit: FlexFit.loose, child: regionChild),
+                          if (!isLeading) iconWidget,
+                        ],
+                      ),
+                    );
+                  }
                   if (canToggleOnHeaderTap) {
                     headerWidget = MouseRegion(
                       cursor: SystemMouseCursors.click,

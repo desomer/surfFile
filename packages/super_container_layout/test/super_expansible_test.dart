@@ -466,6 +466,8 @@ void main() {
           'initiallyExpanded': true,
           'maintainState': false,
           'headerClickToggles': false,
+          'toggleIcon': 'chevron',
+          'toggleIconPosition': 'leading',
         },
         binding: binding,
         regions: const {'header': true, 'body': true},
@@ -489,6 +491,8 @@ void main() {
       expect(decoded.initiallyExpanded, isTrue);
       expect(decoded.maintainState, isFalse);
       expect(decoded.headerClickToggles, isFalse);
+      expect(decoded.toggleIcon, 'chevron');
+      expect(decoded.toggleIconPosition, 'leading');
       expect(decoded.binding, equals(binding));
       expect(decoded.regionAxisOf('header'), Axis.vertical);
       expect(decoded.regionFlowOf('body').spacing, 12);
@@ -534,9 +538,138 @@ void main() {
       expect(copiedExp.initiallyExpanded, isTrue);
       expect(copiedExp.maintainState, isFalse);
       expect(copiedExp.headerClickToggles, isFalse);
+      expect(copiedExp.toggleIcon, 'chevron');
+      expect(copiedExp.toggleIconPosition, 'leading');
       expect(copiedExp.binding, equals(binding));
       expect(copiedExp.slotsOf('header').single, isNot('hdr-val'));
       expect(copiedExp.slotsOf('body').single, isNot('body-val'));
+    },
+  );
+
+  testWidgets(
+    'SuperExpansible renders open/closed toggleIcon with position and ExpansibleAddForm edits toggleIcon',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => const SuperPage(
+              child: Column(
+                children: [
+                  SuperExpansible(
+                    id: 'exp-default',
+                    header: Text('Default Header'),
+                    body: Text('Default Body'),
+                  ),
+                  SuperExpansible(
+                    id: 'exp-icon',
+                    toggleIcon: 'chevron',
+                    toggleIconPosition: 'leading',
+                    header: Text('Icon Header'),
+                    body: Text('Icon Body'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(
+        SuperApp(
+          router: router,
+          registry: registry,
+          appearanceStore: AppearanceStore(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Hidden by default when toggleIcon is not set
+      expect(
+        find.byKey(
+          const ValueKey('super-expansible-header-toggle-icon-exp-default'),
+        ),
+        findsNothing,
+      );
+
+      // Shown when toggleIcon is 'chevron' (collapsed -> Icons.expand_more)
+      final iconFinder = find.byKey(
+        const ValueKey('super-expansible-header-toggle-icon-exp-icon'),
+      );
+      expect(iconFinder, findsOneWidget);
+      expect(tester.widget<Icon>(iconFinder).icon, Icons.expand_more);
+
+      // Leading position: icon is to the left of the header text
+      expect(
+        tester.getTopLeft(iconFinder).dx,
+        lessThan(tester.getTopLeft(find.text('Icon Header')).dx),
+      );
+
+      // Tap the toggle icon to expand -> switches to Icons.expand_less
+      await tester.tap(iconFinder);
+      await tester.pumpAndSettle();
+      expect(find.text('Icon Body'), findsOneWidget);
+      expect(tester.widget<Icon>(iconFinder).icon, Icons.expand_less);
+
+      // Switch to trailing and plusMinus via controller
+      final controller = registry.nativeComponentController('exp-icon');
+      controller.value = controller.value
+          .withToggleIcon('plusMinus')
+          .withToggleIconPosition('trailing');
+      await tester.pumpAndSettle();
+      expect(tester.widget<Icon>(iconFinder).icon, Icons.remove);
+      expect(
+        tester.getTopLeft(iconFinder).dx,
+        greaterThan(tester.getTopLeft(find.text('Icon Header')).dx),
+      );
+
+      // When headerClickToggles is false, tapping the icon does not toggle
+      controller.value = controller.value.withHeaderClickToggles(false);
+      await tester.pumpAndSettle();
+      await tester.tap(iconFinder, warnIfMissed: false);
+      await tester.pumpAndSettle();
+      expect(find.text('Icon Body'), findsOneWidget);
+
+      // Verify ExpansibleAddForm edits toggleIcon and toggleIconPosition
+      var draft = NativeComponentConfig(
+        regions: const {'header': true, 'body': true},
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => ExpansibleAddForm(
+                draft: draft,
+                onChanged: (next) => setState(() => draft = next),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('add-expansible-toggle-icon-position')),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('add-expansible-toggle-icon')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Flèche (arrow_downward / arrow_upward)').last);
+      await tester.pumpAndSettle();
+      expect(draft.toggleIcon, 'arrow');
+      expect(
+        find.byKey(const ValueKey('add-expansible-toggle-icon-position')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('add-expansible-toggle-icon-position')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Début / Gauche (leading)').last);
+      await tester.pumpAndSettle();
+      expect(draft.toggleIconPosition, 'leading');
     },
   );
 }

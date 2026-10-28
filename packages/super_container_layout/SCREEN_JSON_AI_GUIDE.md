@@ -19,7 +19,7 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
 | **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` |
-| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"Tab"`, `"Tabs"`, `"AppBar"`, `"BottomBar"` |
+| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"Tab"`, `"Tabs"`, `"AppBar"`, `"BottomBar"` |
 
 ---
 
@@ -314,7 +314,12 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
 - **`"registry:Expansible"` $\rightarrow$ `Expansible` de Flutter** (`type: "native"`) :
   - `header` (liste horizontale) : en-tête toujours visible. Un clic sur `header` bascule l'état ouvert/fermé lorsque `headerClickToggles` vaut `true` (défaut).
   - `body` (liste verticale) : contenu dépliable animé.
-  - Options propres à `Expansible` dans `components[id]` (`type: "native"`) : `initiallyExpanded` (`bool`, défaut `false`), `maintainState` (`bool`, défaut `true`), `headerClickToggles` (`bool`, défaut `true`), `binding` (`"clients[?].ouvert"` ou `{"repositoryId": "...", "path": "..."}` — liaison bidirectionnelle vers un attribut booléen JSON).
+  - Options propres à `Expansible` dans `components[id]` (`type: "native"`) : `initiallyExpanded` (`bool`, défaut `false`), `maintainState` (`bool`, défaut `true`), `headerClickToggles` (`bool`, défaut `true`), `toggleIcon` (`"none"` | `"chevron"` | `"arrow"` | `"plusMinus"` | `"triangle"`, défaut `"none"`), `toggleIconPosition` (`"trailing"` | `"leading"`, défaut `"trailing"`), `binding` (`"clients[?].ouvert"` ou `{"repositoryId": "...", "path": "..."}` — liaison bidirectionnelle vers un attribut booléen JSON).
+
+- **`"registry:Menu"` $\rightarrow$ `MenuAnchor` de Flutter** (`type: "native"`, alias `"Menu"`, `"MenuAnchor"`) :
+  - `header` (liste horizontale) : ancre toujours visible déclenchant l'ouverture/fermeture du menu lorsque `headerClickToggles` vaut `true` (défaut).
+  - `body` (liste verticale) : zone de contenu affichée dans le popup du `MenuAnchor`.
+  - Options propres à `Menu` dans `components[id]` (`type: "native"`) : `initiallyExpanded` (`bool`, défaut `false`), `headerClickToggles` (`bool`, défaut `true`), `consumeOutsideTap` (`bool`, défaut `false`), `toggleIcon` (`"none"` | `"chevron"` | `"arrow"` | `"plusMinus"` | `"triangle"`, défaut `"none"`), `toggleIconPosition` (`"trailing"` | `"leading"`, défaut `"trailing"`), `alignmentOffsetX` (`number`, `-200`..`200`, défaut `0`), `alignmentOffsetY` (`number`, `-200`..`200`, défaut `0`), `binding` (`"ui.menuOuvert"` ou `{"repositoryId": "...", "path": "..."}` — liaison bidirectionnelle vers un attribut booléen JSON).
 
 - **`"registry:IterableContent"` $\rightarrow$ Surface stylisée + `SuperLayout` intégré (alternative compacte à `Card` + `Layout`)** :
   - Contrairement à `Card` (qui n'accepte qu'un seul `child` dans une config `"native"` et nécessite un second composant `"layout"` enfant), `IterableContent` fusionne directement **une surface stylisée** (`styles[id]`) et **une grille `SuperLayout`** (`components[id]` avec `"type": "layout"`) sous **le même `id`** !
@@ -322,7 +327,7 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
 
 Propriétés communes dans `components[id]` pour `"native"` :
 - `regions` (`Map<string, bool>`), `placements` (`Map<string, List<{"id": string, "type": string}>>`).
-- **Flux et taille par région native** (mêmes clés et options que `zoneAxes` / `zoneFlows` d'un `"layout"`, applicables aux régions de `Page`/`Scaffold` (`body`, `drawer`, `endDrawer`, `bottomSheet`), `ApplicationBar` (`leading`, `title`, `actions`, `bottom`, `flexibleSpace`), `BottomAppBar` (`left`, `center`, `right`) et `Expansible` (`header`, `body`)) :
+- **Flux et taille par région native** (mêmes clés et options que `zoneAxes` / `zoneFlows` d'un `"layout"`, applicables aux régions de `Page`/`Scaffold` (`body`, `drawer`, `endDrawer`, `bottomSheet`), `ApplicationBar` (`leading`, `title`, `actions`, `bottom`, `flexibleSpace`), `BottomAppBar` (`left`, `center`, `right`), `Expansible` (`header`, `body`) et `Menu` (`header`, `body`)) :
   - `regionAxes` (`Map<regionId, "horizontal" | "vertical">`) : direction du flux de la région.
   - `regionFlows` (`Map<regionId, ZoneFlowConfig>`) : `scrollable` (`bool`), `expandSlots` (`bool`), `mainAxisAlignment` (`"start" | "center" | "end" | "spaceBetween" | "spaceAround" | "spaceEvenly"`), `crossAxisAlignment` (`"start" | "center" | "end" | "stretch"`), `spacing` (`0`..`64`), `padding` (`0`..`64` ou `[top, right, bottom, left]`).
   - `regionSizes` (`Map<regionId, number>`) : hauteur/taille fixe en pixels de la région (omettre pour la taille automatique).

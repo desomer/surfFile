@@ -1,10 +1,11 @@
+import 'dart:async';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/models/super_layout_config.dart';
-import 'package:super_container_layout/widgets/editing/addition/component_add_wizard.dart';
-import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
-import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
-import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 
 final _textConfigurator = ComponentAddConfigurator<String>(
   initial: (_) => 'Bonjour',
@@ -24,6 +25,7 @@ final _candidates = [
     label: 'Texte',
     tags: const {'text'},
     configurator: _textConfigurator,
+    previewBuilder: (_) => const Text('Aperçu du texte'),
   ),
   const ComponentAddCandidate(id: 'block', label: 'Bloc', tags: {'container'}),
 ];
@@ -261,9 +263,7 @@ void main() {
     expect(result.value!.component.id, 'block');
   });
 
-  testWidgets('Layout applies wizard label, position and size', (
-    tester,
-  ) async {
+  testWidgets('Layout applies wizard label, position and size', (tester) async {
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
     final changes = <SuperLayoutConfig>[];
@@ -338,5 +338,262 @@ void main() {
     expect(config.slotSizeConstraints['available']!.preferredWidth!.value, 150);
     expect(find.text('Nouveau contenu'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'shows preview widget when a candidate with previewBuilder is selected without shifting cards',
+    (tester) async {
+      await pumpLauncher(tester);
+      expect(find.byKey(const ValueKey('test-add-preview')), findsNothing);
+      final cardFinder = find.byKey(const ValueKey('test-add-card-text'));
+      final initialTopLeft = tester.getTopLeft(cardFinder);
+
+      await tester.tap(cardFinder);
+      await tester.pump();
+      expect(tester.getTopLeft(cardFinder), initialTopLeft);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(tester.getTopLeft(cardFinder), initialTopLeft);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('test-add-preview')), findsOneWidget);
+      expect(find.text('Aperçu : Texte'), findsOneWidget);
+      expect(find.text('Aperçu du texte'), findsOneWidget);
+
+      await tapKey(tester, 'test-add-card-block');
+      expect(find.byKey(const ValueKey('test-add-preview')), findsNothing);
+      expect(find.text('Aperçu du texte'), findsNothing);
+      expect(tester.getTopLeft(cardFinder), initialTopLeft);
+      await tapKey(tester, 'test-add-cancel');
+    },
+  );
+
+  testWidgets(
+    'ComponentBuilderDynamic custom label and previewBuilder apply in add popup while keeping registry key on slot',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      for (final channel in [
+        const MethodChannel('com.alexmercerind/flutter_acrylic'),
+        WindowTransparency.channel,
+      ]) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (_) async => null);
+      }
+      addTearDown(() {
+        for (final channel in [
+          const MethodChannel('com.alexmercerind/flutter_acrylic'),
+          WindowTransparency.channel,
+        ]) {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+        }
+      });
+
+      final registry = Registry();
+      registry.registry['CustomKey'] = ComponentBuilderDynamic(
+        label: 'Mon Composant Perso',
+        tags: const {'custom'},
+        previewBuilder: (_) => const Text('Widget de previsualisation'),
+        dynamicBuilder: (ctx) => BuilderSlot(
+          id: ctx.id,
+          label: 'CustomKey',
+          builder: (_) => Text('Instance ${ctx.id}'),
+        ),
+      );
+
+      final changes = <SuperLayoutConfig>[];
+      final editMode = ValueNotifier(true);
+      addTearDown(editMode.dispose);
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: StyleEditScope(
+                  controller: editMode,
+                  child: SuperLayout(
+                    config: const SuperLayoutConfig(
+                      placements: {SuperLayoutZone.center: []},
+                    ),
+                    onChanged: changes.add,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('super-layout-center')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('super-layout-add-center')));
+      await tester.pumpAndSettle();
+
+      // Custom label is shown in the popup instead of the registry key.
+      expect(find.text('Mon Composant Perso'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-layout-add-preview')),
+        findsNothing,
+      );
+
+      // Selecting the card displays its preview widget.
+      await tapKey(tester, 'super-layout-add-card-registry:CustomKey');
+      expect(
+        find.byKey(const ValueKey('super-layout-add-preview')),
+        findsOneWidget,
+      );
+      expect(find.text('Aperçu : Mon Composant Perso'), findsOneWidget);
+      expect(find.text('Widget de previsualisation'), findsOneWidget);
+
+      // Adding without overriding the instance name keeps the registry key as slot label.
+      await tapKey(tester, 'super-layout-add-slot-registry:CustomKey');
+      final addedConfig = changes.single;
+      final addedId = addedConfig.placementsOf(SuperLayoutZone.center).single;
+      expect(addedConfig.slotLabels.containsKey(addedId), isFalse);
+      expect(addedConfig.slotTypeOf(addedId), 'registry:CustomKey');
+    },
+  );
+
+  testWidgets(
+    'NativeComponentEditor and showContextualAddWizard use ComponentBuilderDynamic custom label and previewBuilder',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      for (final channel in [
+        const MethodChannel('com.alexmercerind/flutter_acrylic'),
+        WindowTransparency.channel,
+      ]) {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (_) async => null);
+      }
+      addTearDown(() {
+        for (final channel in [
+          const MethodChannel('com.alexmercerind/flutter_acrylic'),
+          WindowTransparency.channel,
+        ]) {
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+        }
+      });
+
+      final registry = Registry();
+      registry.registry['CustomNativeKey'] = ComponentBuilderDynamic(
+        label: 'Label Popup Natif',
+        tags: const {'custom'},
+        previewBuilder: (_) => const Text('Aperçu Natif'),
+        dynamicBuilder: (ctx) => Text('Contenu ${ctx.id}'),
+      );
+
+      final config = ValueNotifier(NativeComponentConfig());
+      addTearDown(config.dispose);
+      final editMode = ValueNotifier(true);
+      addTearDown(editMode.dispose);
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: StyleEditScope(
+                  controller: editMode,
+                  child: ValueListenableBuilder<NativeComponentConfig>(
+                    valueListenable: config,
+                    builder: (_, value, _) => NativeComponentEditor(
+                      label: 'TestNative',
+                      keyPrefix: 'test-native',
+                      settingsTitle: 'Settings',
+                      registry: registry,
+                      config: value,
+                      onChanged: (next) => config.value = next,
+                      regions: const [
+                        NativeRegion('body', 'Body', required: true),
+                      ],
+                      slots: const [],
+                      builder: (_, editor) => editor.region('body'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+
+      final editorState = tester.state<NativeComponentEditorState>(
+        find.byType(NativeComponentEditor),
+      );
+      unawaited(editorState.add('body'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Label Popup Natif'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('test-native-add-preview')),
+        findsNothing,
+      );
+
+      await tapKey(tester, 'test-native-add-card-factory:CustomNativeKey');
+      expect(
+        find.byKey(const ValueKey('test-native-add-preview')),
+        findsOneWidget,
+      );
+      expect(find.text('Aperçu : Label Popup Natif'), findsOneWidget);
+      expect(find.text('Aperçu Natif'), findsOneWidget);
+
+      await tapKey(tester, 'test-native-add-slot-factory:CustomNativeKey');
+      final addedId = config.value.slotsOf('body').single;
+      expect(config.value.slotLabels.containsKey(addedId), isFalse);
+      expect(config.value.slotTypeOf(addedId), 'factory:CustomNativeKey');
+      expect(editorState.slotsFor('body').single.label, 'CustomNativeKey');
+    },
+  );
+
+  testWidgets(
+    'every bootstrap registry component has a working previewBuilder',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      expect(registry.registry, isNotEmpty);
+      for (final entry in registry.registry.entries) {
+        expect(
+          entry.value.previewBuilder,
+          isNotNull,
+          reason: 'Missing previewBuilder for ${entry.key}',
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: Builder(builder: entry.value.previewBuilder!)),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
+  testWidgets('wizard takes 90% of available height', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpLauncher(tester);
+
+    final dialogMaterial = find
+        .descendant(
+          of: find.byKey(const ValueKey('test-add-wizard')),
+          matching: find.byType(Material),
+        )
+        .first;
+    final size = tester.getSize(dialogMaterial);
+    expect(size.height, closeTo(800 * 0.9, 0.5));
+    await tapKey(tester, 'test-add-cancel');
   });
 }

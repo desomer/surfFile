@@ -92,14 +92,16 @@ Future<void> showContextualAddWizard(
           tags: entry.value.tags,
           placementTags: entry.value.placementTags,
           configurator: entry.value.addConfigurator,
+          previewBuilder: entry.value.previewBuilder,
         ),
     for (final entry in registry.registry.entries)
       ComponentAddCandidate(
         id: 'factory:${entry.key}',
-        label: entry.key,
+        label: entry.value.label ?? entry.key,
         tags: entry.value.tags,
         placementTags: entry.value.placementTags,
         configurator: entry.value.addConfigurator,
+        previewBuilder: entry.value.previewBuilder,
       ),
   ];
   final first = levels.first;

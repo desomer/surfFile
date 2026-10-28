@@ -231,11 +231,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       !slot.id.startsWith('scaffold:') &&
       (widget.isSlotSelectable?.call(slot) ?? true);
 
-  BuildContext? _regionContext(String? id) =>
-      id == null
-          ? null
-          : (_keys[id]?.currentContext ??
-                _keys['$id:sliver']?.currentContext);
+  BuildContext? _regionContext(String? id) => id == null
+      ? null
+      : (_keys[id]?.currentContext ?? _keys['$id:sliver']?.currentContext);
 
   BuildContext? _slotContext(String slotId, [String? region]) =>
       _slotKeys[slotId]?.currentContext ??
@@ -398,9 +396,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       onDeselect: _clear,
       onContextMenu: (position) => EditorSlotState.openMenuFromContext(
         !widget.editSurface && widget.showRegionInPath
-            ? (_regionContext(_selected) ??
-                  _regionContext('body') ??
-                  context)
+            ? (_regionContext(_selected) ?? _regionContext('body') ?? context)
             : context,
         position,
       ),
@@ -944,8 +940,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         final min = descriptor.min ?? 0.0;
         final max = descriptor.max ?? 100.0;
         final current = config.doubleProperty(descriptor.id);
-        final fallback =
-            (descriptor.defaultValue as num?)?.toDouble() ?? min;
+        final fallback = (descriptor.defaultValue as num?)?.toDouble() ?? min;
         final effective = (current ?? fallback).clamp(min, max);
         final formatted = current == null
             ? 'Auto'
@@ -1036,10 +1031,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           ),
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              ?resetButton(),
-              const Icon(Icons.tune, size: 18),
-            ],
+            children: [?resetButton(), const Icon(Icons.tune, size: 18)],
           ),
           onTap: () => showNativeShapeEditor(
             context: context,
@@ -1248,10 +1240,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         for (final entry in candidates.entries)
           ComponentAddCandidate(
             id: entry.key,
-            label: entry.value,
+            label: _addLabelForType(entry.key, entry.value),
             tags: _tagsForType(entry.key),
             placementTags: _placementTagsForType(entry.key),
             configurator: _addConfiguratorOf(entry.key),
+            previewBuilder: _previewBuilderOf(entry.key),
           ),
       ],
       targets: [
@@ -1571,6 +1564,32 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     for (final entry in registry.components.entries) {
       if (_componentType(entry.key, entry.value) == type) {
         return entry.value.addConfigurator;
+      }
+    }
+    return null;
+  }
+
+  String _addLabelForType(String type, String defaultLabel) {
+    final registry = widget.registry;
+    if (registry == null) return defaultLabel;
+    if (type.startsWith('factory:')) {
+      return registry.registry[type.substring('factory:'.length)]?.label ??
+          defaultLabel;
+    }
+    return defaultLabel;
+  }
+
+  WidgetBuilder? _previewBuilderOf(String type) {
+    final registry = widget.registry;
+    if (registry == null) return null;
+    if (type.startsWith('factory:')) {
+      return registry
+          .registry[type.substring('factory:'.length)]
+          ?.previewBuilder;
+    }
+    for (final entry in registry.components.entries) {
+      if (_componentType(entry.key, entry.value) == type) {
+        return entry.value.previewBuilder;
       }
     }
     return null;
@@ -1918,9 +1937,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           inline: true,
           enabled: editing,
           showEdit: editing,
-          onSelect: editing && selectable
-              ? () => _selectSlot(id, slot)
-              : null,
+          onSelect: editing && selectable ? () => _selectSlot(id, slot) : null,
           onEdit: () async => _editSize(slot),
           onRemove: editing
               ? () async {
@@ -2112,9 +2129,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               builder: (context, hoveredRegions, _) =>
                   hoveredRegions.contains(id)
                   ? EditorZoneHighlight(
-                      key: ValueKey(
-                        '${widget.keyPrefix}-zone-highlight-$id',
-                      ),
+                      key: ValueKey('${widget.keyPrefix}-zone-highlight-$id'),
                     )
                   : const SizedBox.shrink(),
             ),
@@ -2129,13 +2144,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                       emphasis: emphasis,
                       allScopes: true,
                       child: EditorZoneBadge(
-                        key: ValueKey(
-                          '${widget.keyPrefix}-badge-content-$id',
-                        ),
+                        key: ValueKey('${widget.keyPrefix}-badge-content-$id'),
                         label: spec.label,
-                        labelKey: ValueKey(
-                          '${widget.keyPrefix}-select-$id',
-                        ),
+                        labelKey: ValueKey('${widget.keyPrefix}-select-$id'),
                         selected: selected,
                         onHover: (hovered) => emphasis.report(id, hovered),
                         onTap: () => select(

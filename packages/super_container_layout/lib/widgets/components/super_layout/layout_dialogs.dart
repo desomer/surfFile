@@ -191,10 +191,11 @@ extension _SuperLayoutDialogs on SuperLayoutState {
           if (slot.visible)
             ComponentAddCandidate(
               id: slot.id,
-              label: slot.label,
+              label: _addLabelOf(context, slot),
               tags: slot.tags,
               placementTags: _placementTagsOf(context, slot.id),
               configurator: _addConfiguratorOf(context, slot.id),
+              previewBuilder: _previewBuilderOf(context, slot.id),
             ),
       ],
       targets: [
