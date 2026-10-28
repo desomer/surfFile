@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
@@ -164,8 +165,17 @@ class AppearanceCodec {
       'merge',
       ...additionalKeys,
     };
-    if (patch.keys.any((key) => !known.contains(key))) {
-      throw const FormatException('Unknown appearance preference.');
+    final unknownKeys = patch.keys
+        .where((key) => !known.contains(key))
+        .toList();
+    if (unknownKeys.isNotEmpty) {
+      debugPrint(
+        '[AppearanceCodec] Clés de patch inconnues : $unknownKeys '
+        '(attendues : ${known.toList()}).',
+      );
+      throw FormatException(
+        'Unknown appearance preference: ${unknownKeys.join(', ')}.',
+      );
     }
 
     var mode = current.mode;
@@ -224,10 +234,31 @@ class AppearanceCodec {
           styles.remove(id);
         } else if (entry.value is Map) {
           final existing = styles[id];
-          styles[id] = existing != null
-              ? existing.patchFromJson(entry.value as Map)
-              : ContainerStyle.fromJson(entry.value);
+          try {
+            styles[id] = existing != null
+                ? existing.patchFromJson(entry.value as Map)
+                : ContainerStyle.fromJson(entry.value);
+          } on FormatException catch (error) {
+            debugPrint(
+              '[AppearanceCodec] Échec du décodage du style "$id" '
+              '(FormatException) : ${error.message} | JSON: ${jsonEncode(entry.value)}',
+            );
+            throw FormatException(
+              'Style "$id" : ${error.message}',
+              error.source,
+              error.offset,
+            );
+          } catch (error) {
+            debugPrint(
+              '[AppearanceCodec] Échec du décodage du style "$id" '
+              '(${error.runtimeType}) : $error | JSON: ${jsonEncode(entry.value)}',
+            );
+            rethrow;
+          }
         } else {
+          debugPrint(
+            '[AppearanceCodec] Style "$id" invalide (type: ${entry.value.runtimeType}).',
+          );
           throw const FormatException('Invalid "styles" map.');
         }
       }
@@ -253,20 +284,44 @@ class AppearanceCodec {
           final map = entry.value as Map;
           final rawType = map['type'] ?? map['componentType'];
           final existing = components[id];
-          if (existing != null &&
-              (rawType == null || existing.componentType == rawType)) {
-            final payload = <String, Object?>{
-              for (final e in map.entries)
-                if (e.key is String &&
-                    e.key != 'type' &&
-                    e.key != 'componentType')
-                  e.key as String: e.value,
-            };
-            components[id] = existing.patchFromJson(payload);
-          } else {
-            components[id] = ComponentConfig.fromJson(map);
+          final resolvedType = rawType ?? existing?.componentType ?? 'inconnu';
+          try {
+            if (existing != null &&
+                (rawType == null || existing.componentType == rawType)) {
+              final payload = <String, Object?>{
+                for (final e in map.entries)
+                  if (e.key is String &&
+                      e.key != 'type' &&
+                      e.key != 'componentType')
+                    e.key as String: e.value,
+              };
+              components[id] = existing.patchFromJson(payload);
+            } else {
+              components[id] = ComponentConfig.fromJson(map);
+            }
+          } on FormatException catch (error) {
+            debugPrint(
+              '[AppearanceCodec] Échec du décodage du composant "$id" '
+              '(type: $resolvedType, FormatException) : ${error.message} | '
+              'JSON: ${jsonEncode(entry.value)}',
+            );
+            throw FormatException(
+              'Composant "$id" (type: $resolvedType) : ${error.message}',
+              error.source,
+              error.offset,
+            );
+          } catch (error) {
+            debugPrint(
+              '[AppearanceCodec] Échec du décodage du composant "$id" '
+              '(type: $resolvedType, ${error.runtimeType}) : $error | '
+              'JSON: ${jsonEncode(entry.value)}',
+            );
+            rethrow;
           }
         } else {
+          debugPrint(
+            '[AppearanceCodec] Composant "$id" invalide (type: ${entry.value.runtimeType}).',
+          );
           throw const FormatException('Invalid "components" map.');
         }
       }
@@ -289,7 +344,9 @@ class AppearanceCodec {
             comp = comp.withoutSlot(removedId);
           } else if (comp is SuperListViewConfig &&
               comp.template.placedSlotIds.contains(removedId)) {
-            comp = comp.copyWith(template: comp.template.withoutSlot(removedId));
+            comp = comp.copyWith(
+              template: comp.template.withoutSlot(removedId),
+            );
           } else if (comp is SuperTabConfig &&
               comp.placedSlotIds.contains(removedId)) {
             comp = comp.withoutSlot(removedId);
@@ -323,13 +380,17 @@ class AppearanceCodec {
     if (version != schemaVersion) {
       throw const FormatException('Unsupported export version.');
     }
-    final known = {
-      ...toJson(defaults).keys,
-      'vibe',
-      'merge',
-    }..remove('version');
-    if (data.keys.any((key) => !known.contains(key))) {
-      throw const FormatException('Unknown export preference.');
+    final known = {...toJson(defaults).keys, 'vibe', 'merge'}
+      ..remove('version');
+    final unknownKeys = data.keys.where((key) => !known.contains(key)).toList();
+    if (unknownKeys.isNotEmpty) {
+      debugPrint(
+        '[AppearanceCodec] Clés d’export/transfert inconnues : $unknownKeys '
+        '(attendues : ${known.toList()}).',
+      );
+      throw FormatException(
+        'Unknown export preference: ${unknownKeys.join(', ')}.',
+      );
     }
     return Map<String, Object?>.from(data);
   }

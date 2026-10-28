@@ -50,6 +50,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     ),
   ];
   bool _sending = false;
+  String? _lastFailedResponse;
 
   Appearance get _currentAppearance =>
       widget.registry?.appearanceSnapshot(widget.controller.value) ??
@@ -61,20 +62,59 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     super.dispose();
   }
 
+  String _describeErrorCause(Object error) {
+    if (error is FormatException) {
+      final offset = error.offset;
+      final source = error.source;
+      if (offset != null && source is String && source.isNotEmpty) {
+        final start = (offset - 40).clamp(0, source.length);
+        final end = (offset + 40).clamp(0, source.length);
+        final snippet = source.substring(start, end).replaceAll('\n', ' ');
+        return '${error.message} (offset $offset, près de "$snippet")';
+      }
+      return error.message;
+    }
+    if (error is ArgumentError) {
+      final name = error.name;
+      final message = error.message?.toString() ?? error.toString();
+      return name != null && name.isNotEmpty ? '$name : $message' : message;
+    }
+    if (error is StateError) {
+      return error.message;
+    }
+    if (error is FlutterError) {
+      return error.message;
+    }
+    return '$error';
+  }
+
   Future<void> _send() async {
     final request = _input.text.trim();
     if (request.isEmpty || _sending) return;
     _input.clear();
+    _lastFailedResponse = null;
     setState(() {
       _sending = true;
       _messages.add(_ChatMessage(text: request, isUser: true));
     });
 
+    debugPrint('[Vibe IA] Nouvelle demande utilisateur : "$request"');
     try {
       final guide = await _loadGuide(context);
-      final generated = await _generateAndApply(_buildPrompt(guide));
+      final prompt = _buildPrompt(guide);
+      final generated = await _generateAndApply(prompt);
       if (generated.appearance case final appearance?) {
         widget.controller.value = appearance;
+        debugPrint(
+          '[Vibe IA] Apparence mise à jour avec succès '
+          '(composants: ${appearance.components.length}, '
+          'styles: ${appearance.styles.length}, '
+          'pages: ${appearance.pageCatalog.pages.length}).',
+        );
+      } else {
+        debugPrint(
+          '[Vibe IA] Réponse textuelle affichée sans modification d’apparence.',
+        );
       }
       final summary = generated.result['message'];
       _appendMessage(
@@ -82,70 +122,197 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
             ? summary.trim()
             : 'Modifications appliquées.',
       );
-    } on FormatException catch (error) {
-      _appendMessage('Réponse Vibe invalide : ${error.message}');
-    } on ArgumentError catch (error) {
-      _appendMessage('Modification refusée : ${error.message}');
-    } on StateError catch (error) {
-      _appendMessage('Modification impossible : ${error.message}');
-    } on FlutterError catch (error) {
-      debugPrint('AI screen guide could not be loaded: $error');
-      _appendMessage('Guide de génération indisponible : ${error.message}');
-    } on Exception catch (error) {
-      debugPrint('AI screen generation failed: $error');
-      _appendMessage('Génération impossible : $error');
+    } on FormatException catch (error, stackTrace) {
+      final cause = _describeErrorCause(error);
+      debugPrint(
+        'AI screen generation failed (FormatException): $cause\n'
+        'Source: ${error.source ?? "n/a"} (offset: ${error.offset ?? "n/a"})\n'
+        '$stackTrace',
+      );
+      _appendMessage(
+        'Réponse Vibe invalide : $cause',
+        failedResponse: _lastFailedResponse,
+      );
+    } on ArgumentError catch (error, stackTrace) {
+      final cause = _describeErrorCause(error);
+      debugPrint(
+        'AI screen generation failed (ArgumentError): $cause\n$stackTrace',
+      );
+      _appendMessage(
+        'Modification refusée : $cause',
+        failedResponse: _lastFailedResponse,
+      );
+    } on StateError catch (error, stackTrace) {
+      final cause = _describeErrorCause(error);
+      debugPrint(
+        'AI screen generation failed (StateError): $cause\n$stackTrace',
+      );
+      _appendMessage(
+        'Modification impossible : $cause',
+        failedResponse: _lastFailedResponse,
+      );
+    } on FlutterError catch (error, stackTrace) {
+      final cause = _describeErrorCause(error);
+      debugPrint('AI screen guide could not be loaded: $cause\n$stackTrace');
+      _appendMessage(
+        'Guide de génération indisponible : $cause',
+        failedResponse: _lastFailedResponse,
+      );
+    } on Exception catch (error, stackTrace) {
+      final cause = _describeErrorCause(error);
+      debugPrint(
+        'AI screen generation failed (${error.runtimeType}): $cause\n'
+        '$stackTrace',
+      );
+      _appendMessage(
+        'Génération impossible (${error.runtimeType}) : $cause',
+        failedResponse: _lastFailedResponse,
+      );
+    } catch (error, stackTrace) {
+      final cause = _describeErrorCause(error);
+      debugPrint(
+        'AI screen generation failed with unexpected error '
+        '(${error.runtimeType}): $cause\n$stackTrace',
+      );
+      _appendMessage(
+        'Génération impossible (${error.runtimeType}) : $cause',
+        failedResponse: _lastFailedResponse,
+      );
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _logLong(String title, String content) {
+    debugPrint('$title (${content.length} caractères) :');
+    const chunkSize = 800;
+    if (content.length <= chunkSize) {
+      debugPrint(content);
+      return;
+    }
+    for (var start = 0; start < content.length; start += chunkSize) {
+      final end = (start + chunkSize < content.length)
+          ? start + chunkSize
+          : content.length;
+      debugPrint(content.substring(start, end));
     }
   }
 
   Future<({Appearance? appearance, Map<String, dynamic> result})>
   _generateAndApply(String prompt) async {
     for (var attempt = 0; attempt < 2; attempt++) {
-      final response = await widget.generate(prompt);
-      debugPrint('[Vibe IA] Réponse brute (tentative ${attempt + 1}) :');
-      debugPrint(response);
+      debugPrint(
+        '[Vibe IA] Tentative ${attempt + 1}/2 — envoi du prompt '
+        '(${prompt.length} caractères)...',
+      );
+      final String response;
+      try {
+        response = await widget.generate(prompt);
+      } catch (error, stackTrace) {
+        debugPrint(
+          '[Vibe IA] Échec de widget.generate à la tentative ${attempt + 1} '
+          '(${error.runtimeType}) : $error\n$stackTrace',
+        );
+        rethrow;
+      }
+      _lastFailedResponse = response;
+      _logLong(
+        '[Vibe IA] Réponse brute (tentative ${attempt + 1})',
+        response,
+      );
       try {
         final json = _extractJson(response);
-        final result = jsonDecode(json);
+        final Object? result;
+        try {
+          result = jsonDecode(json);
+        } on FormatException catch (error) {
+          debugPrint(
+            '[Vibe IA] Échec de jsonDecode (tentative ${attempt + 1}) : '
+            '${error.message} (offset: ${error.offset})',
+          );
+          rethrow;
+        }
         if (result is! Map<String, dynamic>) {
+          debugPrint(
+            '[Vibe IA] Le JSON décodé n’est pas un Map<String, dynamic> '
+            '(type reçu: ${result.runtimeType}).',
+          );
           throw const FormatException('La réponse doit être un objet JSON.');
         }
         final patch = _extractPatch(result);
         if (patch == null) {
           final message = result['message'];
           if (message is! String || message.trim().isEmpty) {
+            debugPrint(
+              '[Vibe IA] Réponse sans patch ni message valide. '
+              'Clés reçues: ${result.keys.toList()}',
+            );
             throw const FormatException(
               'La réponse ne contient ni message ni modification.',
             );
           }
+          _lastFailedResponse = null;
           return (appearance: null, result: result);
         }
-        debugPrint('[Vibe IA] Patch à appliquer :');
-        debugPrint(const JsonEncoder.withIndent('  ').convert(patch));
-        final current = _currentAppearance;
-        final appearance = AppearanceTransfer.applyVibe(
-          current,
-          jsonEncode(patch),
-          codec: widget.codec,
+        final formattedPatch = const JsonEncoder.withIndent('  ').convert(
+          patch,
         );
-        widget.validateAppearance?.call(appearance);
-        _validatePatchedComponents(current, appearance, patch);
-        return (appearance: appearance, result: result);
-      } on FormatException catch (error) {
-        if (attempt != 0 ||
-            (!_isInvalidPagePath(error) &&
-                !error.message.startsWith('Composants non rattachés'))) {
+        _logLong('[Vibe IA] Patch à appliquer', formattedPatch);
+        final current = _currentAppearance;
+        final Appearance appearance;
+        try {
+          appearance = AppearanceTransfer.applyVibe(
+            current,
+            jsonEncode(patch),
+            codec: widget.codec,
+          );
+        } catch (error, stackTrace) {
+          debugPrint(
+            '[Vibe IA] Échec lors de AppearanceTransfer.applyVibe '
+            '(tentative ${attempt + 1}, ${error.runtimeType}) : $error\n'
+            '$stackTrace',
+          );
           rethrow;
         }
+        try {
+          widget.validateAppearance?.call(appearance);
+        } catch (error, stackTrace) {
+          debugPrint(
+            '[Vibe IA] Échec lors de validateAppearance '
+            '(tentative ${attempt + 1}, ${error.runtimeType}) : $error\n'
+            '$stackTrace',
+          );
+          rethrow;
+        }
+        _validatePatchedComponents(current, appearance, patch);
+        _lastFailedResponse = null;
+        return (appearance: appearance, result: result);
+      } catch (error) {
+        final isValidationError =
+            error is FormatException ||
+            error is ArgumentError ||
+            error is StateError;
+        if (attempt != 0 || !isValidationError) {
+          debugPrint(
+            '[Vibe IA] Tentative ${attempt + 1} échouée sans relance '
+            '(${error.runtimeType}) : ${_describeErrorCause(error)}',
+          );
+          rethrow;
+        }
+        final cause = _describeErrorCause(error);
+        debugPrint(
+          '[Vibe IA] Tentative ${attempt + 1} rejetée ($cause). '
+          'Relance avec prompt de correction...',
+        );
         prompt =
             '''
 $prompt
 
 CORRECTION REQUISE :
-La réponse précédente a été refusée :
-${error.message}
-Corrige la réponse en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
+La réponse précédente a été refusée.
+Cause de l'erreur (${error.runtimeType}) :
+$cause
+Corrige la réponse en respectant strictement le schéma JSON du guide et en rattachant tous les nouveaux composants à un conteneur existant de l'état actuel ou à une page déclarée dans pageCatalog.
 Réutilise les identifiants existants ; les identifiants du guide sont uniquement des exemples.
 Si tu crées une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
 Tu peux aussi éviter de créer une page si la demande ne le nécessite pas.
@@ -156,10 +323,6 @@ $response
     }
     throw StateError('La génération Vibe n’a pas produit de réponse valide.');
   }
-
-  bool _isInvalidPagePath(FormatException error) => error.message.contains(
-    'Chemin absolu requis, différent de /, sans espace ni fragment.',
-  );
 
   Map<String, dynamic>? _extractPatch(Map<String, dynamic> result) {
     if (result.containsKey('vibe') && result['vibe'] is! bool) {
@@ -226,10 +389,16 @@ $response
         : next.components.keys.where(
             (id) => !current.components.containsKey(id),
           );
-    final detached = affected.where(
-      (id) => next.components.containsKey(id) && !reachable.contains(id),
-    );
+    final detached = affected
+        .where(
+          (id) => next.components.containsKey(id) && !reachable.contains(id),
+        )
+        .toList();
     if (detached.isNotEmpty) {
+      debugPrint(
+        '[Vibe IA] Composants détachés détectés : $detached '
+        '(composants accessibles depuis l’écran : ${reachable.toList()}).',
+      );
       throw FormatException(
         'Composants non rattachés à l’écran : ${detached.join(', ')}. '
         'Modifie les placements d’un conteneur existant ou déclare une page.',
@@ -258,10 +427,7 @@ $response
 
   String _buildPrompt(String guide) {
     final conversation = _messages
-        .map(
-          (message) =>
-              '${message.isUser ? 'Utilisateur' : 'Assistant'} : ${message.text}',
-        )
+        .map((message) => message.toConversationEntry())
         .join('\n');
     final current = AppearanceTransfer.exportAi(
       _currentAppearance,
@@ -278,6 +444,7 @@ Réutilise les identifiants des conteneurs de l'état actuel, y compris ceux don
 Tout nouveau composant doit être rattaché par les placements à un conteneur existant ou à une page déclarée dans pageCatalog. Créer un layout isolé ne l'affiche pas.
 ${instantiated == null ? '' : 'Les composants instanciés sont : ${jsonEncode(instantiated.toList())}. Rattache les modifications à ces composants ou aux pages déclarées ; une configuration sauvegardée mais isolée ne suffit pas.'}
 Si une opération crée une page, son chemin doit commencer par un seul "/", être différent de "/" et ne contenir ni espace, ni "?", ni "#"; ne termine pas le chemin par "/".
+Si la conversation mentionne une erreur sur une réponse précédente, identifie la cause indiquée et corrige-la sans reproduire la même erreur.
 Ne renvoie aucun Markdown ni texte hors du JSON. Si une information manque, fais une hypothèse raisonnable et indique-la dans "message".
 
 GUIDE DE MODÉLISATION :
@@ -306,9 +473,17 @@ $conversation
     return value;
   }
 
-  void _appendMessage(String text) {
+  void _appendMessage(String text, {String? failedResponse}) {
     if (!mounted) return;
-    setState(() => _messages.add(_ChatMessage(text: text, isUser: false)));
+    setState(
+      () => _messages.add(
+        _ChatMessage(
+          text: text,
+          isUser: false,
+          failedResponse: failedResponse,
+        ),
+      ),
+    );
   }
 
   @override
@@ -428,10 +603,25 @@ $conversation
 }
 
 class _ChatMessage {
-  const _ChatMessage({required this.text, required this.isUser});
+  const _ChatMessage({
+    required this.text,
+    required this.isUser,
+    this.failedResponse,
+  });
 
   final String text;
   final bool isUser;
+  final String? failedResponse;
+
+  String toConversationEntry() {
+    if (isUser) return 'Utilisateur : $text';
+    final rejected = failedResponse?.trim();
+    if (rejected == null || rejected.isEmpty) {
+      return 'Assistant : $text';
+    }
+    return 'Assistant (ERREUR À CORRIGER) : $text\n'
+        'Réponse précédente invalide :\n$rejected';
+  }
 }
 
 class _MessageBubble extends StatelessWidget {

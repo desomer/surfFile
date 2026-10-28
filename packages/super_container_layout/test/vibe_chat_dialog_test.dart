@@ -352,6 +352,60 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'failed generation records the detailed cause and rejected response in chat conversation for next AI turn',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      final prompts = <String>[];
+      const invalidResponse =
+          '{"message":"Raté","vibe":{"components":{"broken-comp":{"type":"unknown_widget"}}}}';
+
+      await pumpChat(tester, appearance, registry, (prompt) async {
+        prompts.add(prompt);
+        if (prompts.length <= 2) {
+          return invalidResponse;
+        }
+        return jsonEncode({
+          'message': 'Corrigé après lecture de la cause.',
+          'vibe': _fileListPatch('mainLayout'),
+        });
+      });
+
+      // Premier envoi : les 2 tentatives échouent sur le composant invalide.
+      await send(tester);
+      expect(prompts.length, 2);
+      // La tentative 2 a déjà reçu la cause précise du composant en erreur.
+      expect(prompts[1], contains('CORRECTION REQUISE'));
+      expect(prompts[1], contains('Composant "broken-comp"'));
+      expect(prompts[1], contains('unknown_widget'));
+
+      // Le chat affiche la cause détaillée à l'utilisateur.
+      expect(find.textContaining('Composant "broken-comp"'), findsOneWidget);
+
+      // Deuxième envoi utilisateur : la conversation envoyée à l'IA contient
+      // l'erreur détaillée et la réponse précédente invalide.
+      await tester.enterText(
+        find.byKey(const ValueKey('vibe-chat-input')),
+        'Corrige ton erreur.',
+      );
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(prompts.length, 3);
+      expect(prompts[2], contains('Assistant (ERREUR À CORRIGER) :'));
+      expect(prompts[2], contains('Composant "broken-comp"'));
+      expect(prompts[2], contains(invalidResponse));
+      expect(find.text('Corrigé après lecture de la cause.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _GuideBundle extends CachingAssetBundle {
