@@ -328,6 +328,14 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             }
           : null,
       onDeselect: _clear,
+      onContextMenu: (position) => EditorSlotState.openMenuFromContext(
+        !widget.editSurface && widget.showRegionInPath
+            ? (_keys[_selected]?.currentContext ??
+                  _keys['body']?.currentContext ??
+                  context)
+            : context,
+        position,
+      ),
       treeBuilder: () {
         if (!widget.showRegionInPath) {
           final regionId = widget.regions.first.id;
@@ -339,16 +347,20 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   final sLabel = _resolvedSlotLabel(slot);
                   final slotPath = [..._path, sLabel];
                   void selectThisSlot() => selectSlot(regionId, slot);
+                  final slotCtx =
+                      widget.slotContextFor?.call(slot) ??
+                      _slotKeys[slot.id]?.currentContext ??
+                      _keys['$regionId:${slot.id}']?.currentContext ??
+                      _keys[regionId]?.currentContext;
                   return LayoutSelectionNode(
                     label: sLabel,
                     path: slotPath,
                     icon: slot.menuIcon,
                     onSelect: selectThisSlot,
+                    onContextMenu: (position) =>
+                        EditorSlotState.openMenuFromContext(slotCtx, position),
                     children: LayoutSelection.childrenFromContext(
-                      widget.slotContextFor?.call(slot) ??
-                          _slotKeys[slot.id]?.currentContext ??
-                          _keys['$regionId:${slot.id}']?.currentContext ??
-                          _keys[regionId]?.currentContext,
+                      slotCtx,
                       slotPath,
                       selectThisSlot,
                       ignoreOwner: this,
@@ -379,6 +391,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                         path: slotPath,
                         icon: slot.menuIcon,
                         onSelect: selectThisSlot,
+                        onContextMenu: (position) =>
+                            EditorSlotState.openMenuFromContext(
+                              slotCtx,
+                              position,
+                            ),
                         children: LayoutSelection.childrenFromContext(
                           slotCtx,
                           slotPath,
@@ -403,6 +420,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   path: regionPath,
                   icon: EditorSlot.zoneMenuIcon,
                   onSelect: () => select(region.id),
+                  onContextMenu: (position) =>
+                      EditorSlotState.openMenuFromContext(
+                        _keys[region.id]?.currentContext,
+                        position,
+                      ),
                   children: slotNodes,
                 );
               }(),

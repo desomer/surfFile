@@ -39,6 +39,7 @@ class StyleEditBanner extends StatefulWidget {
 }
 
 class _StyleEditBannerState extends State<StyleEditBanner> {
+  final _bannerKey = GlobalKey();
   _BannerLayout _layout = _BannerLayout(null);
   _VibeChatLayout _chatLayout = _VibeChatLayout(null);
   bool _chatOpen = false;
@@ -51,6 +52,27 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   })?
   _treePopup;
 
+  Rect? _bannerRect() {
+    if (!mounted) return null;
+    final box = _bannerKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  Offset _menuPositionForBanner(Offset position) {
+    final rect = _bannerRect();
+    if (rect == null) return position;
+    final viewSize = MediaQuery.maybeSizeOf(context);
+    final spaceAbove = rect.top;
+    final spaceBelow = viewSize == null
+        ? double.infinity
+        : viewSize.height - rect.bottom;
+    final dy = spaceBelow >= spaceAbove || spaceBelow >= 220
+        ? math.max(position.dy, rect.bottom + 6)
+        : math.min(position.dy, rect.top - 6);
+    return Offset(position.dx, dy);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +80,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       null,
       available: LayoutSelection.editorViewport.value,
     );
+    LayoutSelection.bannerBounds = _bannerRect;
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
   }
@@ -116,6 +139,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
 
   @override
   void dispose() {
+    if (identical(LayoutSelection.bannerBounds, _bannerRect)) {
+      LayoutSelection.bannerBounds = null;
+    }
     LayoutSelection.editorViewport.removeListener(_reposition);
     LayoutSelection.path.removeListener(_onPathChanged);
     super.dispose();
@@ -140,6 +166,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     final banner = CustomSingleChildLayout(
       delegate: _layout,
       child: GestureDetector(
+        key: _bannerKey,
         onPanUpdate: (details) => setState(() {
           _treePopup = null;
           _layout = _BannerLayout(
@@ -327,6 +354,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                             path.sublist(0, index + 1),
                                           );
                                         },
+                                        onSecondaryTap: (position) {
+                                          if (_treePopup != null) {
+                                            setState(() => _treePopup = null);
+                                          }
+                                          LayoutSelection.openContextMenu(
+                                            path.sublist(0, index + 1),
+                                            _menuPositionForBanner(position),
+                                          );
+                                        },
                                       ),
                                     ],
                                   ],
@@ -384,6 +420,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                   node.onSelect!();
                 } else {
                   LayoutSelection.select(node.path);
+                }
+              },
+              onContextMenuNode: (node, position) {
+                setState(() => _treePopup = null);
+                final targetPosition = _menuPositionForBanner(position);
+                if (node.onContextMenu != null) {
+                  node.onContextMenu!(targetPosition);
+                } else {
+                  LayoutSelection.openContextMenu(node.path, targetPosition);
                 }
               },
             ),
@@ -595,6 +640,7 @@ class _PathTreeDialog extends StatelessWidget {
     required this.currentPath,
     required this.onClose,
     required this.onSelectNode,
+    this.onContextMenuNode,
   });
 
   final String parentLabel;
@@ -602,6 +648,8 @@ class _PathTreeDialog extends StatelessWidget {
   final List<String> currentPath;
   final VoidCallback onClose;
   final ValueChanged<LayoutSelectionNode> onSelectNode;
+  final void Function(LayoutSelectionNode node, Offset globalPosition)?
+  onContextMenuNode;
 
   List<Widget> _buildNodes(
     BuildContext context,
@@ -629,6 +677,9 @@ class _PathTreeDialog extends StatelessWidget {
               ? ValueKey(baseKey)
               : ValueKey('$baseKey#$occurrence'),
           onTap: () => onSelectNode(node),
+          onSecondaryTapUp: onContextMenuNode == null
+              ? null
+              : (details) => onContextMenuNode!(node, details.globalPosition),
           child: ColoredBox(
             color: isSelected
                 ? scheme.primaryContainer.withValues(alpha: .55)
@@ -763,18 +814,23 @@ class _PathSegment extends StatelessWidget {
     required this.label,
     required this.current,
     required this.onTap,
+    this.onSecondaryTap,
     super.key,
   });
 
   final String label;
   final bool current;
   final VoidCallback? onTap;
+  final ValueChanged<Offset>? onSecondaryTap;
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.onPrimary;
     return InkWell(
       onTap: onTap,
+      onSecondaryTapUp: onSecondaryTap == null
+          ? null
+          : (details) => onSecondaryTap!(details.globalPosition),
       borderRadius: BorderRadius.circular(6),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),

@@ -91,6 +91,8 @@ extension _SuperLayoutView on SuperLayoutState {
               }
               LayoutSelection.report(this, const []);
             },
+            onContextMenu: (position) =>
+                EditorSlotState.openMenuFromContext(this.context, position),
             treeBuilder: () {
               final currentConfig = _config.value;
               final layoutPath = [...parentPath, name];
@@ -108,6 +110,9 @@ extension _SuperLayoutView on SuperLayoutState {
                       path: zonePath,
                       icon: EditorSlot.zoneMenuIcon,
                       onSelect: () => _selectZone(zone),
+                      onContextMenu: (position) => _zoneSlotKeys[zone]
+                          ?.currentState
+                          ?.openMenu(position, selectTarget: false),
                       children: [
                         for (final slot in slots)
                           () {
@@ -118,13 +123,20 @@ extension _SuperLayoutView on SuperLayoutState {
                               _LayoutEditSelection.activate(this);
                             }
 
+                            final slotCtx =
+                                _slotFocusKeys[slot.id]?.currentContext;
                             return LayoutSelectionNode(
                               label: slot.label,
                               path: slotPath,
                               icon: slot.menuIcon,
                               onSelect: selectThisSlot,
+                              onContextMenu: (position) =>
+                                  EditorSlotState.openMenuFromContext(
+                                    slotCtx,
+                                    position,
+                                  ),
                               children: LayoutSelection.childrenFromContext(
-                                _slotFocusKeys[slot.id]?.currentContext,
+                                slotCtx,
                                 slotPath,
                                 selectThisSlot,
                                 ignoreOwner: this,

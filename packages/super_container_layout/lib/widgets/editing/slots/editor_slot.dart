@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -530,11 +531,53 @@ class EditorSlotState extends State<EditorSlot> {
     return targets;
   }
 
+  /// Opens the context menu for the editable target rooted at [targetContext]
+  /// without changing the current selection path.
+  static Future<void> openMenuFromContext(
+    BuildContext? targetContext,
+    Offset globalPosition,
+  ) async {
+    if (targetContext is! Element || !targetContext.mounted) return;
+    if (targetContext is StatefulElement &&
+        targetContext.state is EditorSlotState) {
+      final state = targetContext.state as EditorSlotState;
+      if (state.canEdit) {
+        await state.openMenu(globalPosition, selectTarget: false);
+        return;
+      }
+    }
+    EditorSlotState? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element is StatefulElement && element.state is EditorSlotState) {
+        final state = element.state as EditorSlotState;
+        if (state.canEdit) {
+          found = state;
+          return;
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    targetContext.visitChildElements(visit);
+    if (found != null) {
+      await found!.openMenu(globalPosition, selectTarget: false);
+      return;
+    }
+    await targetContext.findAncestorStateOfType<EditorSlotState>()?.openMenu(
+      globalPosition,
+      actions: EditorSlotAction.of(targetContext),
+      targetContext: targetContext,
+      selectTarget: false,
+    );
+  }
+
   /// Opens this slot's menu at a global pointer position.
   Future<void> openMenu(
     Offset globalPosition, {
     List<EditorSlotAction>? actions,
     BuildContext? targetContext,
+    bool selectTarget = true,
   }) async {
     if (!mounted ||
         !(StyleEditScope.controllerOf(context)?.value ?? true) ||
@@ -543,85 +586,87 @@ class EditorSlotState extends State<EditorSlot> {
       return;
     }
     final chain = editableChain;
-    final callbacks = <VoidCallback>[];
     final origin = targetContext ?? context;
-    if (origin is Element) {
-      void collectElement(Element element) {
-        if (element is StatefulElement) {
-          final state = element.state;
-          if (state is EditorSlotState &&
-              chain.contains(state) &&
-              (StyleEditScope.controllerOf(state.context)?.value ?? false) &&
+    if (selectTarget) {
+      final callbacks = <VoidCallback>[];
+      if (origin is Element) {
+        void collectElement(Element element) {
+          if (element is StatefulElement) {
+            final state = element.state;
+            if (state is EditorSlotState &&
+                chain.contains(state) &&
+                (StyleEditScope.controllerOf(state.context)?.value ?? false) &&
+                state.widget.onContextMenu != null) {
+              final onContextMenu = state.widget.onContextMenu!;
+              callbacks.add(() => onContextMenu(globalPosition));
+            }
+          } else {
+            final widget = element.widget;
+            if (widget is EditorSlotAction &&
+                widget.enabled &&
+                widget.onSelect != null &&
+                (StyleEditScope.controllerOf(element)?.value ?? false)) {
+              callbacks.add(widget.onSelect!);
+            }
+          }
+        }
+
+        collectElement(origin);
+        origin.visitAncestorElements((element) {
+          collectElement(element);
+          return true;
+        });
+      } else {
+        for (final state in chain) {
+          if ((StyleEditScope.controllerOf(state.context)?.value ?? false) &&
               state.widget.onContextMenu != null) {
             final onContextMenu = state.widget.onContextMenu!;
             callbacks.add(() => onContextMenu(globalPosition));
           }
-        } else {
-          final widget = element.widget;
-          if (widget is EditorSlotAction &&
-              widget.enabled &&
-              widget.onSelect != null &&
-              (StyleEditScope.controllerOf(element)?.value ?? false)) {
-            callbacks.add(widget.onSelect!);
-          }
         }
       }
-
-      collectElement(origin);
-      origin.visitAncestorElements((element) {
-        collectElement(element);
-        return true;
-      });
-    } else {
-      for (final state in chain) {
-        if ((StyleEditScope.controllerOf(state.context)?.value ?? false) &&
-            state.widget.onContextMenu != null) {
-          final onContextMenu = state.widget.onContextMenu!;
-          callbacks.add(() => onContextMenu(globalPosition));
-        }
+      for (final callback in callbacks.reversed) {
+        callback();
       }
-    }
-    for (final callback in callbacks.reversed) {
-      callback();
-    }
-    if (origin is Element) {
-      final slotStates = <EditorSlotState>[];
-      var foundSlotBoundary = false;
-      void collectLeaf(Element element) {
-        if (foundSlotBoundary) return;
-        if (element is StatefulElement) {
-          final state = element.state;
-          if (state is EditorSlotState && chain.contains(state)) {
-            if (state.widget.onContextMenu != null) {
-              foundSlotBoundary = true;
-              return;
+      if (origin is Element) {
+        final slotStates = <EditorSlotState>[];
+        var foundSlotBoundary = false;
+        void collectLeaf(Element element) {
+          if (foundSlotBoundary) return;
+          if (element is StatefulElement) {
+            final state = element.state;
+            if (state is EditorSlotState && chain.contains(state)) {
+              if (state.widget.onContextMenu != null) {
+                foundSlotBoundary = true;
+                return;
+              }
+              slotStates.add(state);
             }
-            slotStates.add(state);
-          }
-        } else {
-          final widget = element.widget;
-          if ((widget is EditorSlotAction &&
-                  widget.enabled &&
-                  widget.onSelect != null) ||
-              widget is LayoutSelectionScope) {
-            foundSlotBoundary = true;
+          } else {
+            final widget = element.widget;
+            if ((widget is EditorSlotAction &&
+                    widget.enabled &&
+                    widget.onSelect != null) ||
+                widget is LayoutSelectionScope) {
+              foundSlotBoundary = true;
+            }
           }
         }
-      }
 
-      collectLeaf(origin);
-      origin.visitAncestorElements((element) {
-        collectLeaf(element);
-        return !foundSlotBoundary;
-      });
-      if (slotStates.length > 1) {
-        final leaves = [
-          for (final state in slotStates.reversed.skip(1)) state.label,
-        ];
-        LayoutSelection.setLeafSuffix(leaves);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) LayoutSelection.setLeafSuffix(leaves);
+        collectLeaf(origin);
+        origin.visitAncestorElements((element) {
+          collectLeaf(element);
+          return !foundSlotBoundary;
         });
+        if (slotStates.length > 1) {
+          final leaves = [
+            for (final state in slotStates.reversed.skip(1)) state.label,
+          ];
+          LayoutSelection.setLeafSuffix(leaves);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) LayoutSelection.setLeafSuffix(leaves);
+          });
+        }
       }
     }
     final extraActions = [
@@ -652,12 +697,61 @@ class EditorSlotState extends State<EditorSlot> {
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
+    final bannerGlobalRect = LayoutSelection.bannerBounds?.call();
+    final bannerLocal = bannerGlobalRect == null
+        ? null
+        : Rect.fromPoints(
+            overlay.globalToLocal(bannerGlobalRect.topLeft),
+            overlay.globalToLocal(bannerGlobalRect.bottomRight),
+          );
+    var menuConstraints = const BoxConstraints(minWidth: 240, maxWidth: 420);
+    var menuPosition = RelativeRect.fromLTRB(
+      position.dx,
+      position.dy,
+      overlay.size.width - position.dx,
+      overlay.size.height - position.dy,
+    );
+    if (!selectTarget && bannerLocal != null) {
+      final spaceAbove = bannerLocal.top;
+      final spaceBelow = overlay.size.height - bannerLocal.bottom;
+      if (spaceBelow >= spaceAbove || spaceBelow >= 220) {
+        final minTop = bannerLocal.bottom + 6;
+        final top = math.max(position.dy, minTop);
+        final maxHeight = math.max(120.0, overlay.size.height - minTop - 8);
+        menuConstraints = BoxConstraints(
+          minWidth: 240,
+          maxWidth: 420,
+          maxHeight: maxHeight,
+        );
+        menuPosition = RelativeRect.fromLTRB(
+          position.dx,
+          top,
+          overlay.size.width - position.dx,
+          overlay.size.height - minTop,
+        );
+      } else {
+        final maxBottom = bannerLocal.top - 6;
+        final bottomEdge = math.min(position.dy, maxBottom);
+        final maxHeight = math.max(120.0, bottomEdge - 8);
+        menuConstraints = BoxConstraints(
+          minWidth: 240,
+          maxWidth: 420,
+          maxHeight: maxHeight,
+        );
+        menuPosition = RelativeRect.fromLTRB(
+          position.dx,
+          overlay.size.height,
+          overlay.size.width - position.dx,
+          overlay.size.height - bottomEdge,
+        );
+      }
+    }
     final colors = Theme.of(context).colorScheme;
     Object? selected;
     try {
       selected = await showMenu<Object>(
         context: context,
-        constraints: const BoxConstraints(minWidth: 240, maxWidth: 420),
+        constraints: menuConstraints,
         color: colors.surfaceContainerHigh.withAlpha(240),
         surfaceTintColor: Colors.transparent,
         shadowColor: colors.shadow.withValues(alpha: .18),
@@ -668,12 +762,7 @@ class EditorSlotState extends State<EditorSlot> {
         ),
         menuPadding: const EdgeInsets.symmetric(vertical: 4),
         clipBehavior: Clip.antiAlias,
-        position: RelativeRect.fromLTRB(
-          position.dx,
-          position.dy,
-          overlay.size.width - position.dx,
-          overlay.size.height - position.dy,
-        ),
+        position: menuPosition,
         items: [
           if (insertions.isNotEmpty || canEdit) ...[
             PopupMenuItem<Future<void> Function()>(

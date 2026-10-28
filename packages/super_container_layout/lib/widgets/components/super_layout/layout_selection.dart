@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:flutter/painting.dart' show Axis, Rect;
+import 'package:flutter/painting.dart' show Axis, Offset, Rect;
 import 'package:flutter/widgets.dart'
     show
         BuildContext,
@@ -67,6 +67,7 @@ class LayoutSelectionNode {
     this.icon,
     this.children = const [],
     this.onSelect,
+    this.onContextMenu,
   });
 
   final String label;
@@ -74,6 +75,7 @@ class LayoutSelectionNode {
   final IconData? icon;
   final List<LayoutSelectionNode> children;
   final VoidCallback? onSelect;
+  final ValueChanged<Offset>? onContextMenu;
 }
 
 /// Chemin des zones sélectionnées (parent > ... > enfant) dans les dispositions
@@ -96,8 +98,12 @@ class LayoutSelection {
     _pointer = original;
     return true;
   }
+
   /// Free screen area while an editor dialog is docked.
   static final editorViewport = ValueNotifier<Rect?>(null);
+
+  /// Global screen bounds of the active `StyleEditBanner`, if mounted.
+  static Rect? Function()? bannerBounds;
 
   static final _reported = <Object, List<String>>{};
   static final _axisActions = <Object, LayoutAxisAction>{};
@@ -115,8 +121,8 @@ class LayoutSelection {
       >{};
   static final _slotSelectors = <Object, ValueChanged<String>>{};
   static final _deselects = <Object, VoidCallback>{};
-  static final _treeBuilders =
-      <Object, List<LayoutSelectionNode> Function()>{};
+  static final _treeBuilders = <Object, List<LayoutSelectionNode> Function()>{};
+  static final _contextMenus = <Object, ValueChanged<Offset>>{};
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
   static bool _activating = false;
@@ -177,6 +183,7 @@ class LayoutSelection {
     VoidCallback? onDeselect,
     bool delegateToParent = false,
     List<LayoutSelectionNode> Function()? treeBuilder,
+    ValueChanged<Offset>? onContextMenu,
   }) {
     if (onDeselect == null) {
       _deselects.remove(owner);
@@ -193,6 +200,11 @@ class LayoutSelection {
     } else {
       _treeBuilders[owner] = treeBuilder;
     }
+    if (onContextMenu == null) {
+      _contextMenus.remove(owner);
+    } else {
+      _contextMenus[owner] = onContextMenu;
+    }
     _targets[owner] = (
       path: List.unmodifiable(path),
       select: select,
@@ -206,6 +218,7 @@ class LayoutSelection {
     _slotSelectors.remove(owner);
     _deselects.remove(owner);
     _treeBuilders.remove(owner);
+    _contextMenus.remove(owner);
   }
 
   /// Extracts nested selectable `LayoutSelectionNode`s from a slot's widget
@@ -245,6 +258,10 @@ class LayoutSelection {
               path: target.path,
               children: children,
               onSelect: () => target.select(null),
+              onContextMenu:
+                  _contextMenus[state] ??
+                  (position) =>
+                      EditorSlotState.openMenuFromContext(element, position),
             ),
           ];
         }
@@ -276,6 +293,8 @@ class LayoutSelection {
                     setLeafSuffix(leafLabels);
                   });
                 },
+                onContextMenu: (position) =>
+                    state.openMenu(position, selectTarget: false),
               ),
             ];
           }
@@ -307,24 +326,69 @@ class LayoutSelection {
     return null;
   }
 
+  static List<Object> _candidateOwners() {
+    final result = <Object>[];
+    var current = _activeOwner;
+    while (current != null) {
+      result.add(current);
+      current = _targets[current]?.parent;
+    }
+    for (final owner in _targets.keys.toList().reversed) {
+      if (!result.contains(owner)) result.add(owner);
+    }
+    return result;
+  }
+
+  /// Opens the context menu of the element at [prefix] at [globalPosition]
+  /// without altering the currently displayed selection path.
+  static void openContextMenu(List<String> prefix, Offset globalPosition) {
+    if (prefix.isEmpty) return;
+    final owners = _candidateOwners();
+
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final openMenu = _contextMenus[owner];
+      if (target != null &&
+          !target.delegateToParent &&
+          openMenu != null &&
+          listEquals(target.path, prefix)) {
+        openMenu(globalPosition);
+        return;
+      }
+    }
+
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final builder = _treeBuilders[owner];
+      if (target == null || builder == null) continue;
+      if (prefix.length > target.path.length &&
+          listEquals(prefix.take(target.path.length).toList(), target.path)) {
+        final roots = builder();
+        if (_findNode(roots, prefix) case final node?
+            when node.onContextMenu != null) {
+          node.onContextMenu!(globalPosition);
+          return;
+        }
+      }
+    }
+
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final openMenu = _contextMenus[owner];
+      if (target != null &&
+          openMenu != null &&
+          listEquals(target.path, prefix)) {
+        openMenu(globalPosition);
+        return;
+      }
+    }
+  }
+
   /// Returns the complete tree of selectable children under [prefix].
   static List<LayoutSelectionNode> childrenOf(List<String> prefix) {
     if (prefix.isEmpty) return const [];
 
-    List<Object> candidateOwners() {
-      final result = <Object>[];
-      var current = _activeOwner;
-      while (current != null) {
-        result.add(current);
-        current = _targets[current]?.parent;
-      }
-      for (final owner in _targets.keys.toList().reversed) {
-        if (!result.contains(owner)) result.add(owner);
-      }
-      return result;
-    }
-
-    final owners = candidateOwners();
+    final owners = _candidateOwners();
 
     // 1. Direct match on a registered container's root path.
     for (final owner in owners) {
@@ -364,6 +428,7 @@ class LayoutSelection {
           label: currentPath[index],
           path: segmentPath,
           onSelect: () => select(segmentPath),
+          onContextMenu: (position) => openContextMenu(segmentPath, position),
           children: index + 1 < currentPath.length
               ? [buildChain(index + 1)]
               : const [],
