@@ -122,12 +122,12 @@ class NativePropertyDescriptor {
   Map<String, Object> toJson() => {
     'id': id,
     'label': label,
-    if (subtitle != null) 'subtitle': subtitle!,
+    'subtitle': ?subtitle,
     'editorType': editorType.name,
-    if (defaultValue != null) 'defaultValue': defaultValue!,
-    if (min != null) 'min': min!,
-    if (max != null) 'max': max!,
-    if (divisions != null) 'divisions': divisions!,
+    'defaultValue': ?defaultValue,
+    'min': ?min,
+    'max': ?max,
+    'divisions': ?divisions,
     if (options.isNotEmpty)
       'options': [for (final option in options) option.toJson()],
     if (!nullable) 'nullable': false,
@@ -411,3 +411,38 @@ const List<NativePropertyDescriptor> superAppBarPropertyDescriptors = [
     ],
   ),
 ];
+
+/// Descripteur de la propriété `useDefaultNavigation` de [SuperAppBar].
+const NativePropertyDescriptor useDefaultNavigationPropertyDescriptor =
+    NativePropertyDescriptor(
+      id: 'useDefaultNavigation',
+      label: 'Bouton de navigation par défaut',
+      subtitle:
+          'Menu du drawer ou bouton Retour natif. Remplace la zone Navigation.',
+      editorType: NativePropertyEditorType.bool,
+      defaultValue: true,
+    );
+
+/// Catalogue déclaratif des propriétés de comportement de [SuperExpansible].
+const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
+  NativePropertyDescriptor(
+    id: 'initiallyExpanded',
+    label: 'Ouvert par défaut',
+    subtitle: 'État initial hors liaison repository',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'headerClickToggles',
+    label: 'Basculer au clic sur l’en-tête',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'maintainState',
+    label: 'Maintenir l’état fermé',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+];
+

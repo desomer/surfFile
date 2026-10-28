@@ -374,6 +374,24 @@ class _GridSurfaceState extends State<_GridSurface> {
                         rect: rect(grid.items[slot.id]!),
                         child: EditorSlotAction(
                           label: 'Position et taille : ${slot.label}',
+                          tooltip: formatSlotSizeTooltip(
+                            title: 'Position et taille : ${slot.label}',
+                            constraints: widget
+                                .owner
+                                ._config
+                                .value
+                                .slotSizeConstraints[slot.id],
+                            preferredSize:
+                                widget.owner._config.value.slotPreferredSizes
+                                    .containsKey(slot.id)
+                                ? widget
+                                      .owner
+                                      ._config
+                                      .value
+                                      .slotPreferredSizes[slot.id]
+                                : slot.preferredSize,
+                            gridPosition: grid.items[slot.id],
+                          ),
                           enabled:
                               widget.owner.widget.editable &&
                               (StyleEditScope.controllerOf(context)?.value ??

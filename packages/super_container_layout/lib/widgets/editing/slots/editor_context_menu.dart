@@ -22,6 +22,7 @@ class EditorSlotAction extends InheritedWidget {
     required this.label,
     required this.onEdit,
     required this.enabled,
+    this.tooltip,
     this.onRemove,
     this.onSelect,
     this.inline = false,
@@ -34,6 +35,7 @@ class EditorSlotAction extends InheritedWidget {
   });
 
   final String label;
+  final String? tooltip;
   final Future<void> Function() onEdit;
   final bool enabled;
   final Future<void> Function()? onRemove;
@@ -63,6 +65,7 @@ class EditorSlotAction extends InheritedWidget {
   @override
   bool updateShouldNotify(EditorSlotAction oldWidget) =>
       label != oldWidget.label ||
+      tooltip != oldWidget.tooltip ||
       enabled != oldWidget.enabled ||
       onEdit != oldWidget.onEdit ||
       onRemove != oldWidget.onRemove ||

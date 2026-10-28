@@ -22,6 +22,7 @@ class IterableContent extends StatefulWidget {
     this.editable = true,
     this.shrinkWrap = false,
     this.onEditSize,
+    this.sizeConstraints,
     super.key,
   });
 
@@ -35,6 +36,7 @@ class IterableContent extends StatefulWidget {
   final bool editable;
   final bool shrinkWrap;
   final Future<void> Function()? onEditSize;
+  final SlotSizeConstraints? sizeConstraints;
 
   @override
   State<IterableContent> createState() => _IterableContentState();
@@ -105,10 +107,15 @@ class _IterableContentState extends State<IterableContent> {
       ),
     );
     final editSize = widget.onEditSize;
+    final actionLabel = 'Taille et marge préférées : ${widget.label}';
     final content = editSize == null
         ? surface
         : EditorSlotAction(
-            label: 'Taille et marge préférées : ${widget.label}',
+            label: actionLabel,
+            tooltip: formatSlotSizeTooltip(
+              title: actionLabel,
+              constraints: widget.sizeConstraints,
+            ),
             onEdit: editSize,
             enabled:
                 widget.editable &&

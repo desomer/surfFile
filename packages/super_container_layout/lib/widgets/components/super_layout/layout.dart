@@ -259,23 +259,45 @@ class SuperLayoutState extends State<SuperLayout> {
     }
   }
 
-  LayoutAxisAction _axisAction(SuperLayoutZone zone) => LayoutAxisAction(
-    zoneLabel: widget.zoneLabel(zone),
-    axis: _config.value.axisOf(zone),
-    onToggle: () {
-      if (!mounted || !widget.editable) return;
-      final config = _config.value;
-      _update(
-        config.withAxis(
-          zone,
-          config.axisOf(zone) == Axis.horizontal
-              ? Axis.vertical
-              : Axis.horizontal,
-        ),
-      );
-    },
-    onEditFlow: widget.editable ? () => _openZoneFlowEditor(zone) : null,
-  );
+  LayoutAxisAction _axisAction(SuperLayoutZone zone) {
+    final current = _config.value;
+    final label = widget.zoneLabel(zone);
+    final axis = current.axisOf(zone);
+    return LayoutAxisAction(
+      zoneLabel: label,
+      axis: axis,
+      onToggle: () {
+        if (!mounted || !widget.editable) return;
+        final config = _config.value;
+        _update(
+          config.withAxis(
+            zone,
+            config.axisOf(zone) == Axis.horizontal
+                ? Axis.vertical
+                : Axis.horizontal,
+          ),
+        );
+      },
+      onEditFlow: widget.editable ? () => _openZoneFlowEditor(zone) : null,
+      flowTooltip: widget.editable
+          ? formatZoneFlowTooltip(
+              zoneLabel: label,
+              axis: axis,
+              flow: current.flowOf(zone),
+              isSide: zone.isSide,
+              sizeAxis: !zone.isSide
+                  ? null
+                  : (zone == SuperLayoutZone.north ||
+                        zone == SuperLayoutZone.south)
+                  ? Axis.vertical
+                  : Axis.horizontal,
+              autoSize: zone.isSide && current.isAuto(zone),
+              size: zone.isSide ? current.sizeOf(zone) : null,
+              canResize: zone.isSide && current.canResize(zone),
+            )
+          : null,
+    );
+  }
 
   /// Déclare le chemin des zones sélectionnées à la bannière du mode édition.
   void _reportPath(List<String> path, {LayoutAxisAction? axis}) {

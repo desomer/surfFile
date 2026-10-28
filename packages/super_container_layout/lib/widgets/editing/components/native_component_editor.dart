@@ -472,6 +472,13 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   LayoutAxisAction _axisActionFor(String id) {
     final spec = definition(id);
     final currentAxis = axisOf(id);
+    final fixedSize = sizeOf(id);
+    final defaultSize = spec.emptySize.height.isFinite
+        ? spec.emptySize.height
+        : 100.0;
+    final hasNaturalHeight = currentAxis == Axis.vertical
+        ? !spec.expand
+        : !spec.stretch;
     return LayoutAxisAction(
       zoneLabel: spec.label,
       axis: currentAxis,
@@ -486,6 +493,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         );
       },
       onEditFlow: () => _openRegionFlowEditor(id),
+      flowTooltip: formatZoneFlowTooltip(
+        zoneLabel: spec.label,
+        axis: currentAxis,
+        flow: flowOf(id),
+        isSide: true,
+        sizeAxis: hasNaturalHeight ? Axis.vertical : null,
+        autoSize: fixedSize == null,
+        size: fixedSize ?? defaultSize,
+      ),
     );
   }
 

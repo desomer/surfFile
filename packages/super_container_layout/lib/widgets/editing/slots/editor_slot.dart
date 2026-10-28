@@ -1001,6 +1001,7 @@ class EditorSlotState extends State<EditorSlot> {
                                 'style-menu-zone-flow-${state.label}',
                               ),
                               tooltip:
+                                  state.widget.axisAction!().flowTooltip ??
                                   'Taille et flux de la zone ${state.widget.axisAction!().zoneLabel}',
                               icon: const Icon(Icons.straighten),
                               style: _menuIconButtonStyle(context),
@@ -1036,7 +1037,7 @@ class EditorSlotState extends State<EditorSlot> {
                           if (action.showEdit)
                             IconButton(
                               key: ValueKey('style-menu-size-${action.label}'),
-                              tooltip: action.label,
+                              tooltip: action.tooltip ?? action.label,
                               icon: const Icon(Icons.straighten),
                               style: _menuIconButtonStyle(context),
                               onPressed: () =>

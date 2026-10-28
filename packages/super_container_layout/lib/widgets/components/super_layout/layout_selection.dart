@@ -49,12 +49,14 @@ class LayoutAxisAction {
     required this.axis,
     required this.onToggle,
     this.onEditFlow,
+    this.flowTooltip,
   });
 
   final String zoneLabel;
   final Axis axis;
   final VoidCallback onToggle;
   final Future<void> Function()? onEditFlow;
+  final String? flowTooltip;
 }
 
 /// Node in the hierarchy tree under a breadcrumb segment in `StyleEditBanner`.

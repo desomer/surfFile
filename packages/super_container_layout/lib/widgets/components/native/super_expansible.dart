@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
+import '../../../models/native_property_descriptor.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_binding.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -20,6 +21,9 @@ import '../super_layout/slot_implementation.dart';
 /// and `body` regions and optional two-way boolean JSON repository binding
 /// for its open/closed state.
 class SuperExpansible extends StatefulWidget {
+  static const List<NativePropertyDescriptor> propertyDescriptors =
+      superExpansiblePropertyDescriptors;
+
   const SuperExpansible({
     this.id = 'root-expansible',
     this.label = 'Expansible',
@@ -80,9 +84,11 @@ class SuperExpansible extends StatefulWidget {
   NativeComponentConfig get _initialConfig =>
       nativeConfig ??
       NativeComponentConfig(
-        initiallyExpanded: initiallyExpanded ? true : null,
-        maintainState: maintainState ? null : false,
-        headerClickToggles: headerClickToggles ? null : false,
+        properties: {
+          if (initiallyExpanded) 'initiallyExpanded': true,
+          if (!maintainState) 'maintainState': false,
+          if (!headerClickToggles) 'headerClickToggles': false,
+        },
         regions: const {'header': true, 'body': true},
         placements: {
           if (header != null || headers.isNotEmpty)
@@ -456,6 +462,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
           slots: _slots,
           onSlotAdded: _added,
           regions: _regions,
+          propertyDescriptors: SuperExpansible.propertyDescriptors,
           regionActions: (region) {
             if (region != 'header') return const [];
             final expanded = _effectiveController.isExpanded;
@@ -473,31 +480,6 @@ class _SuperExpansibleState extends State<SuperExpansible> {
             ];
           },
           settingsControls: (current, update) => [
-            SwitchListTile(
-              key: const ValueKey('super-expansible-initially-expanded'),
-              title: const Text('Ouvert par défaut'),
-              subtitle: const Text('État initial hors liaison repository'),
-              value: current.initiallyExpanded ?? widget.initiallyExpanded,
-              onChanged: (value) {
-                update(current.withInitiallyExpanded(value));
-                if (current.binding == null) {
-                  _setExpanded(value, fromBinding: false);
-                }
-              },
-            ),
-            SwitchListTile(
-              key: const ValueKey('super-expansible-header-toggle'),
-              title: const Text('Basculer au clic sur l’en-tête'),
-              value: current.headerClickToggles ?? widget.headerClickToggles,
-              onChanged: (value) =>
-                  update(current.withHeaderClickToggles(value)),
-            ),
-            SwitchListTile(
-              key: const ValueKey('super-expansible-maintain-state'),
-              title: const Text('Maintenir l’état fermé'),
-              value: current.maintainState ?? widget.maintainState,
-              onChanged: (value) => update(current.withMaintainState(value)),
-            ),
             ListTile(
               key: const ValueKey('super-expansible-binding'),
               leading: const Icon(Icons.link),
@@ -510,7 +492,8 @@ class _SuperExpansibleState extends State<SuperExpansible> {
                   title: 'Lier l’état ouvert / fermé',
                   keyPrefix: 'super-expansible-binding',
                   pathHint: 'ui.ouvert ou clients[?].ouvert',
-                  helper: 'Attribut booléen JSON synchronisé avec l’ouverture de l’expansible.',
+                  helper:
+                      'Attribut booléen JSON synchronisé avec l’ouverture de l’expansible.',
                   binding: current.binding,
                   store: repositoryStore,
                   listScope: listScope,

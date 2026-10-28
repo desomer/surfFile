@@ -14,10 +14,6 @@ import 'super_layout_config.dart' show SlotSizeConstraints, ZoneFlowConfig;
 class NativeComponentConfig extends ComponentConfig {
   static const Set<String> _reservedJsonKeys = {
     'type',
-    'useDefaultNavigation',
-    'initiallyExpanded',
-    'maintainState',
-    'headerClickToggles',
     'binding',
     'regions',
     'regionAxes',
@@ -30,7 +26,11 @@ class NativeComponentConfig extends ComponentConfig {
   };
 
   static final Map<String, NativePropertyDescriptor> _knownDescriptors = {
+    useDefaultNavigationPropertyDescriptor.id:
+        useDefaultNavigationPropertyDescriptor,
     for (final descriptor in superAppBarPropertyDescriptors)
+      descriptor.id: descriptor,
+    for (final descriptor in superExpansiblePropertyDescriptors)
       descriptor.id: descriptor,
   };
 
@@ -52,10 +52,6 @@ class NativeComponentConfig extends ComponentConfig {
   }
 
   NativeComponentConfig({
-    this.useDefaultNavigation,
-    this.initiallyExpanded,
-    this.maintainState,
-    this.headerClickToggles,
     this.binding,
     Map<String, Object> properties = const {},
     Map<String, List<String>> placements = const {},
@@ -117,18 +113,6 @@ class NativeComponentConfig extends ComponentConfig {
 
   final Map<String, List<String>> placements;
 
-  /// Null preserves the adapter's automatic navigation policy.
-  final bool? useDefaultNavigation;
-
-  /// Initial expansion state for expansible native adapters when unbound.
-  final bool? initiallyExpanded;
-
-  /// Whether an expansible native adapter keeps its collapsed body in the tree.
-  final bool? maintainState;
-
-  /// Whether tapping the header of an expansible native adapter toggles expansion.
-  final bool? headerClickToggles;
-
   /// Optional boolean repository binding for stateful native adapters (e.g. Expansible).
   final JsonTextBinding? binding;
 
@@ -144,6 +128,11 @@ class NativeComponentConfig extends ComponentConfig {
 
   /// Display names given to slot instances; a technical ID never changes.
   final Map<String, String> slotLabels;
+
+  bool? get useDefaultNavigation => boolProperty('useDefaultNavigation');
+  bool? get initiallyExpanded => boolProperty('initiallyExpanded');
+  bool? get maintainState => boolProperty('maintainState');
+  bool? get headerClickToggles => boolProperty('headerClickToggles');
 
   @override
   void validate() {
@@ -186,10 +175,6 @@ class NativeComponentConfig extends ComponentConfig {
       shapeProperty(id)?.toShapeBorder();
 
   NativeComponentConfig copyWith({
-    bool? useDefaultNavigation,
-    bool? initiallyExpanded,
-    bool? maintainState,
-    bool? headerClickToggles,
     JsonTextBinding? binding,
     bool clearBinding = false,
     Map<String, Object>? properties,
@@ -203,10 +188,6 @@ class NativeComponentConfig extends ComponentConfig {
     Map<String, SlotSizeConstraints>? slotSizeConstraints,
     Map<String, String>? slotLabels,
   }) => NativeComponentConfig(
-    useDefaultNavigation: useDefaultNavigation ?? this.useDefaultNavigation,
-    initiallyExpanded: initiallyExpanded ?? this.initiallyExpanded,
-    maintainState: maintainState ?? this.maintainState,
-    headerClickToggles: headerClickToggles ?? this.headerClickToggles,
     binding: clearBinding ? null : binding ?? this.binding,
     properties: properties ?? this.properties,
     placements: placements ?? this.placements,
@@ -253,17 +234,17 @@ class NativeComponentConfig extends ComponentConfig {
     );
   }
 
-  NativeComponentConfig withDefaultNavigation(bool enabled) =>
-      copyWith(useDefaultNavigation: enabled);
+  NativeComponentConfig withDefaultNavigation(bool? enabled) =>
+      withProperty('useDefaultNavigation', enabled);
 
-  NativeComponentConfig withInitiallyExpanded(bool expanded) =>
-      copyWith(initiallyExpanded: expanded);
+  NativeComponentConfig withInitiallyExpanded(bool? expanded) =>
+      withProperty('initiallyExpanded', expanded);
 
-  NativeComponentConfig withMaintainState(bool maintain) =>
-      copyWith(maintainState: maintain);
+  NativeComponentConfig withMaintainState(bool? maintain) =>
+      withProperty('maintainState', maintain);
 
-  NativeComponentConfig withHeaderClickToggles(bool toggles) =>
-      copyWith(headerClickToggles: toggles);
+  NativeComponentConfig withHeaderClickToggles(bool? toggles) =>
+      withProperty('headerClickToggles', toggles);
 
   NativeComponentConfig withBinding(JsonTextBinding? value) =>
       copyWith(binding: value, clearBinding: value == null);
@@ -452,10 +433,6 @@ class NativeComponentConfig extends ComponentConfig {
   Map<String, Object> toJson() {
     validate();
     return {
-      'useDefaultNavigation': ?useDefaultNavigation,
-      'initiallyExpanded': ?initiallyExpanded,
-      'maintainState': ?maintainState,
-      'headerClickToggles': ?headerClickToggles,
       if (binding != null) 'binding': binding!.toJson(),
       ...properties,
       'regions': regions,
@@ -499,22 +476,6 @@ class NativeComponentConfig extends ComponentConfig {
       throw const FormatException('Invalid native component configuration.');
     }
     final rawRegions = value['regions'] ?? const {};
-    final navigation = value['useDefaultNavigation'];
-    if (navigation != null && navigation is! bool) {
-      throw const FormatException('Invalid default navigation preference.');
-    }
-    final initiallyExpanded = value['initiallyExpanded'];
-    if (initiallyExpanded != null && initiallyExpanded is! bool) {
-      throw const FormatException('Invalid initial expansion preference.');
-    }
-    final maintainState = value['maintainState'];
-    if (maintainState != null && maintainState is! bool) {
-      throw const FormatException('Invalid maintainState preference.');
-    }
-    final headerClickToggles = value['headerClickToggles'];
-    if (headerClickToggles != null && headerClickToggles is! bool) {
-      throw const FormatException('Invalid headerClickToggles preference.');
-    }
     final binding = value.containsKey('binding') && value['binding'] != null
         ? JsonTextBinding.fromJson(value['binding'])
         : null;
@@ -622,10 +583,6 @@ class NativeComponentConfig extends ComponentConfig {
         parsedProperties[trimmed] = _normalizeProperty(trimmed, entry.value!);
       }
       return NativeComponentConfig(
-        useDefaultNavigation: navigation as bool?,
-        initiallyExpanded: initiallyExpanded as bool?,
-        maintainState: maintainState as bool?,
-        headerClickToggles: headerClickToggles as bool?,
         binding: binding,
         properties: parsedProperties,
         placements: placements,

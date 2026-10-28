@@ -418,9 +418,19 @@ class SlotStack extends StatelessWidget {
     final fitHeight = axis == Axis.vertical ? fitMain : fitCross;
     final selectable =
         onSelectContent != null && (canSelectSlot?.call(slot) ?? true);
+    final actionLabel = 'Taille et marge préférées : ${slot.label}';
+    final constraints = sizeConstraints[slot.id];
+    final preferredSize = preferredSizes.containsKey(slot.id)
+        ? preferredSizes[slot.id]
+        : slot.preferredSize;
     return EditorSlotAction(
       key: ValueKey('slot-item-${slot.id}'),
-      label: 'Taille et marge préférées : ${slot.label}',
+      label: actionLabel,
+      tooltip: formatSlotSizeTooltip(
+        title: actionLabel,
+        constraints: constraints,
+        preferredSize: preferredSize,
+      ),
       inline: true,
       enabled:
           onEditPreferredSize != null ||

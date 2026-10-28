@@ -333,7 +333,7 @@ void main() {
       registry.nativeComponentController(
         'exp-center',
         fallback: NativeComponentConfig(
-          initiallyExpanded: true,
+          properties: const {'initiallyExpanded': true},
           regions: const {'header': true, 'body': true},
         ),
       );
@@ -424,6 +424,13 @@ void main() {
       );
       expect(flowMenuBtn, findsOneWidget);
       expect(
+        tester.widget<IconButton>(flowMenuBtn).tooltip,
+        'Taille et flux de la zone En-tête\n'
+        'Taille : Auto\n'
+        'Direction : Ligne (Row) · Éléments : Étirer (flex : 1)\n'
+        'Espacement : 0 px · Marge : 0 px',
+      );
+      expect(
         find.byKey(const ValueKey('style-menu-axis-En-tête')),
         findsOneWidget,
       );
@@ -455,9 +462,11 @@ void main() {
         path: 'clients[?].expanded',
       );
       final config = NativeComponentConfig(
-        initiallyExpanded: true,
-        maintainState: false,
-        headerClickToggles: false,
+        properties: const {
+          'initiallyExpanded': true,
+          'maintainState': false,
+          'headerClickToggles': false,
+        },
         binding: binding,
         regions: const {'header': true, 'body': true},
         regionAxes: const {'header': Axis.vertical},

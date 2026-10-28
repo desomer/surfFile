@@ -534,6 +534,7 @@ class _SuperListViewState extends State<SuperListView> {
     final natural =
         config.itemSize != null ||
         (config.wrap && config.wrapSizing == ListWrapSizing.automatic);
+    final dimensions = _initialItemSize(config);
     final content = ValueListenableBuilder<SuperLayoutConfig>(
       valueListenable: layout,
       builder: (context, value, _) => ValueListenableBuilder<ContainerStyle>(
@@ -545,6 +546,7 @@ class _SuperListViewState extends State<SuperListView> {
           config: value,
           style: rowStyle,
           shrinkWrap: natural,
+          sizeConstraints: dimensions,
           onEditSize: () => _editItemSize(context, configuration, viewport),
           onChanged: (next) => layout.value = next,
           onStyleChanged: (next) => style.value = next,
@@ -561,7 +563,6 @@ class _SuperListViewState extends State<SuperListView> {
           )
         : content;
     final vertical = config.axis == Axis.vertical;
-    final dimensions = _initialItemSize(config);
     final basis = dimensions.percentBasis == SlotPercentBasis.layout
         ? _parentLayoutSize(viewport)
         : viewport;

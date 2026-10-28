@@ -1860,6 +1860,83 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'context menu ruler icon tooltip summarizes element and zone size parameters',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(
+        tester,
+        editMode: mode,
+        config: base.copyWith(
+          north: true,
+          autoSides: const {},
+          northSize: 75,
+          resizeSides: true,
+          slotSizeConstraints: const {
+            'first': SlotSizeConstraints(
+              preferredWidth: SlotDimension(50, SlotSizeUnit.percent),
+              minWidth: SlotDimension(120, SlotSizeUnit.pixels),
+              maxWidth: SlotDimension(400, SlotSizeUnit.pixels),
+              preferredHeight: SlotDimension(180, SlotSizeUnit.pixels),
+              padding: 12,
+              percentBasis: SlotPercentBasis.layout,
+              fitContent: true,
+            ),
+          },
+        ),
+        slots: [slot('first', styled: true), slot('second')],
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('content-first')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final slotRuler = tester.widget<IconButton>(
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : first'),
+        ),
+      );
+      expect(
+        slotRuler.tooltip,
+        'Taille et marge préférées : first\n'
+        'Largeur : 50 % (min : 120 px, max : 400 px) · Hauteur : 180 px\n'
+        'Flex : Contenu (flex : 0) · Base % : Layout · Marge : 12 px',
+      );
+
+      final centerZoneRuler = tester.widget<IconButton>(
+        find.byKey(const ValueKey('style-menu-zone-flow-Centre')),
+      );
+      expect(
+        centerZoneRuler.tooltip,
+        'Taille et flux de la zone Centre\n'
+        'Direction : Colonne (Column) · Éléments : Étirer (flex : 1)\n'
+        'Espacement : 0 px · Marge : 0 px',
+      );
+
+      // Dismiss menu and check North side zone ruler tooltip
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(300, 20), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      final northZoneRuler = tester.widget<IconButton>(
+        find.byKey(const ValueKey('style-menu-zone-flow-Nord')),
+      );
+      expect(
+        northZoneRuler.tooltip,
+        'Taille et flux de la zone Nord\n'
+        'Taille : 75 px · redimensionnable\n'
+        'Direction : Colonne (Column) · Éléments : Étirer (flex : 1)\n'
+        'Espacement : 0 px · Marge : 0 px',
+      );
+      await tester.tapAt(const Offset(10, 390));
+      await tester.pumpAndSettle();
+    },
+  );
 }
 
 class _StateProbe extends StatefulWidget {

@@ -951,7 +951,7 @@ void main() {
     'navigation preference survives native mutations JSON transfer and reset',
     () {
       final config = NativeComponentConfig(
-        useDefaultNavigation: true,
+        properties: const {'useDefaultNavigation': true},
         placements: {
           'leading': ['a'],
         },
