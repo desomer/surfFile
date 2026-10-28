@@ -49,6 +49,10 @@ class NativeWidgetSlot extends SlotImplementation
 
   final NativePreferredSizeWidget child;
   @override
+  bool get isSliverSlot => super.isSliverSlot || isSliverWidget(child);
+  @override
+  bool canRenderAsSliver(BuildContext context) => isSliverSlot;
+  @override
   Size get preferredSize => child.preferredSize;
   @override
   Size preferredSizeIn(BuildContext context) => child.preferredSizeIn(context);
@@ -150,6 +154,7 @@ class NativeComponentEditor extends StatefulWidget {
     this.settingsControls,
     this.propertyDescriptors = const [],
     this.isRegionAvailable,
+    this.isPropertyAvailable,
     super.key,
   });
 
@@ -185,6 +190,11 @@ class NativeComponentEditor extends StatefulWidget {
   final List<NativePropertyDescriptor> propertyDescriptors;
   final bool Function(NativeComponentConfig config, String region)?
   isRegionAvailable;
+  final bool Function(
+    NativeComponentConfig config,
+    NativePropertyDescriptor descriptor,
+  )?
+  isPropertyAvailable;
 
   @override
   State<NativeComponentEditor> createState() => NativeComponentEditorState();
@@ -768,7 +778,16 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                         if (widget.propertyDescriptors.isNotEmpty) ...[
                           const Divider(),
                           for (final descriptor in widget.propertyDescriptors)
-                            _buildPropertyControl(context, config, descriptor),
+                            if (widget.isPropertyAvailable?.call(
+                                  config,
+                                  descriptor,
+                                ) ??
+                                true)
+                              _buildPropertyControl(
+                                context,
+                                config,
+                                descriptor,
+                              ),
                         ],
                       ],
                     ),
@@ -917,7 +936,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         child: DropdownButtonFormField<String?>(
           key: propKey,
           isExpanded: true,
-          initialValue: config.stringProperty(descriptor.id),
+          initialValue:
+              config.stringProperty(descriptor.id) ??
+              (!descriptor.nullable && descriptor.defaultValue is String
+                  ? descriptor.defaultValue as String
+                  : null),
           decoration: InputDecoration(
             labelText: descriptor.label,
             helperText: descriptor.subtitle,
@@ -935,8 +958,14 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 child: Text(option.label),
               ),
           ],
-          onChanged: (value) =>
-              _update(_config.value.withProperty(descriptor.id, value)),
+          onChanged: (value) => _update(
+            _config.value.withProperty(
+              descriptor.id,
+              !descriptor.nullable && value == descriptor.defaultValue
+                  ? null
+                  : value,
+            ),
+          ),
         ),
       ),
       NativePropertyEditorType.shape => () {
@@ -1805,6 +1834,309 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     );
   }
 
+  /// Renders a single [slot] of region [id] as a Sliver:
+  /// - If [slot] can render natively as a Sliver (`SuperAppBar`, `SuperListView`,
+  ///   or a Flutter `Sliver*` widget), it is built inside a [SliverSlotScope]
+  ///   with its slot editing actions and selection.
+  /// - Otherwise, it is wrapped in a [SliverToBoxAdapter] containing [slotItem].
+  Widget sliverSlotItem(
+    String id,
+    SlotImplementation slot, {
+    required Axis scrollDirection,
+  }) {
+    if (slot.canRenderAsSliver(context)) {
+      final selectable = _canSelectSlot(slot);
+      final actionLabel = 'Taille et marge préférées : ${slot.label}';
+      final constraints = widget.config.slotSizeConstraints[slot.id];
+      final preferredSize = preferredSizeFor(slot);
+      final padding = constraints?.contentPadding ?? EdgeInsets.zero;
+      Widget sliver = SliverSlotScope(
+        enabled: true,
+        scrollDirection: scrollDirection,
+        child: EditorSlotAction(
+          key: ValueKey('slot-item-${slot.id}'),
+          label: actionLabel,
+          tooltip: formatSlotSizeTooltip(
+            title: actionLabel,
+            constraints: constraints,
+            preferredSize: preferredSize,
+          ),
+          inline: true,
+          enabled: editing,
+          showEdit: editing,
+          onSelect: editing && selectable
+              ? () => _selectSlot(id, slot)
+              : null,
+          onEdit: () async => _editSize(slot),
+          onRemove: editing
+              ? () async {
+                  if (widget.onSlotRemoved != null) {
+                    await widget.onSlotRemoved!(id, slot);
+                    return;
+                  }
+                  removeSlotInstance(
+                    context,
+                    id: slot.id,
+                    type: _config.value.slotTypeOf(slot.id),
+                    containerKind: EditorConfigKind.nativeComponent,
+                    unplace: () => _update(_config.value.withoutSlot(slot.id)),
+                  );
+                }
+              : null,
+          wrapActions: editing
+              ? wrapActionsForSlot(id, slot)
+              : const <EditorSlotWrapAction>[],
+          insertion: editing ? insertionForSlot(id, slot) : null,
+          child: KeyedSubtree(
+            key: _slotKeys.putIfAbsent('${slot.id}:sliver', GlobalKey.new),
+            child: EditorSelectionRegion(
+              enabled: editing && selectable,
+              selected: _selected == id && _selectedSlot == slot.id,
+              onSelect: () => _selectSlot(id, slot),
+              child: slot,
+            ),
+          ),
+        ),
+      );
+      if (padding != EdgeInsets.zero) {
+        sliver = SliverPadding(padding: padding, sliver: sliver);
+      }
+      return sliver;
+    }
+    return SliverToBoxAdapter(
+      child: SlotContentFitScope(
+        fitWidth: scrollDirection == Axis.horizontal,
+        fitHeight: scrollDirection == Axis.vertical,
+        child: slotItem(id, slot),
+      ),
+    );
+  }
+
+  /// Renders region [id] as a Sliver (for use inside a `CustomScrollView`).
+  Widget sliverRegion(
+    String id, {
+    required Axis scrollDirection,
+    bool fillWhenEmpty = false,
+  }) {
+    final spec = definition(id);
+    final slots = slotsFor(id);
+    if (slots.isEmpty && !fillWhenEmpty) {
+      if (!editing) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
+      final fallbackHeight =
+          sizeOf(id) ??
+          (spec.emptySize.height.isFinite
+              ? spec.emptySize.height
+              : kToolbarHeight);
+      return SliverToBoxAdapter(
+        child: SizedBox(height: fallbackHeight, child: region(id)),
+      );
+    }
+    final selected = _selected == id;
+    final regionFlow = flowOf(id);
+    final spacing = regionFlow.spacing;
+    final padding = regionFlow.contentPadding;
+    final slivers = <Widget>[];
+    for (final (index, slot) in slots.indexed) {
+      if (index > 0 && spacing > 0) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: SizedBox(
+              width: scrollDirection == Axis.horizontal ? spacing : null,
+              height: scrollDirection == Axis.vertical ? spacing : null,
+            ),
+          ),
+        );
+      }
+      slivers.add(sliverSlotItem(id, slot, scrollDirection: scrollDirection));
+    }
+    Widget content = slivers.isEmpty
+        ? const SliverFillRemaining(
+            hasScrollBody: false,
+            child: SizedBox.expand(),
+          )
+        : slivers.length == 1
+        ? slivers.single
+        : SliverMainAxisGroup(slivers: slivers);
+    if (padding != EdgeInsets.zero) {
+      content = SliverPadding(padding: padding, sliver: content);
+    }
+    return SliverSlotScope(
+      enabled: true,
+      scrollDirection: scrollDirection,
+      child: LayoutSelectionScope(
+        owner: this,
+        path: [..._path, spec.label],
+        child: Builder(
+          key: _keys.putIfAbsent('$id:sliver', GlobalKey.new),
+          builder: (regionContext) => EditorSelectionRegion(
+            enabled: editing,
+            isZone: true,
+            selected: selected && _selectedSlot == null,
+            onSelect: () => select(id, regionContext),
+            child: EditorSlot(
+              label: spec.label,
+              menuTitle: 'zone ${spec.label}',
+              menuSubtitle: () => _componentLabel,
+              menuIcon: EditorSlot.zoneMenuIcon,
+              menuDestination: spec.menuDestination,
+              editable: true,
+              axisAction: spec.editableFlow ? () => _axisActionFor(id) : null,
+              onEdit: widget.onEditRegion != null
+                  ? () => widget.onEditRegion!(id)
+                  : configure,
+              onAdd: () => add(id),
+              wrapChildrenActions: wrapActionsForRegion(id),
+              onContextMenu: (_) => select(id, regionContext),
+              child: content,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Wraps a box [child] (such as a `CustomScrollView`) with the drop target,
+  /// selection border, hover highlight, and zone badge of region [id].
+  Widget regionOverlay(
+    String id, {
+    required Widget child,
+    bool showBadge = true,
+  }) {
+    final spec = definition(id);
+    final regionAxis = axisOf(id);
+    final slots = slotsFor(id);
+    final overlay = _showOverlay();
+    final selected = _selected == id;
+    final emphasis = LabelEmphasis(
+      scopes: _hoveredRegionScopes,
+      scope: id,
+      onHover: (_, _, value) => _setRegionHovered(id, value),
+    );
+    final colors = Theme.of(context).colorScheme;
+    return SlotZoneTarget(
+      key: ValueKey('${widget.keyPrefix}-slot-drop-$id'),
+      owner: this,
+      zoneLabel: spec.label,
+      ids: _config.value.slotsOf(id),
+      canMove: (slotId) => _canMoveSlot(slotId, id),
+      onMove: (slotId) => _moveSlot(slotId, id),
+      alignment: regionAxis == Axis.horizontal && !spec.stretch
+          ? AlignmentDirectional.centerStart
+          : AlignmentDirectional.topStart,
+      child: Stack(
+        alignment: regionAxis == Axis.horizontal && !spec.stretch
+            ? AlignmentDirectional.centerStart
+            : AlignmentDirectional.topStart,
+        children: [
+          child,
+          Positioned.fill(
+            child: EditorOverlayVisibility(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  key: selected && overlay
+                      ? ValueKey('${widget.keyPrefix}-selected-$id')
+                      : null,
+                  decoration: BoxDecoration(
+                    border: overlay
+                        ? Border.all(
+                            color: selected
+                                ? colors.primary
+                                : colors.outlineVariant,
+                            width: selected ? 3 : 1,
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (overlay && showBadge)
+            ValueListenableBuilder<Set<Object>>(
+              valueListenable: _hoveredRegionScopes,
+              builder: (context, hoveredRegions, _) =>
+                  hoveredRegions.contains(id)
+                  ? EditorZoneHighlight(
+                      key: ValueKey(
+                        '${widget.keyPrefix}-zone-highlight-$id',
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          if (overlay && showBadge)
+            Positioned.fill(
+              key: ValueKey('${widget.keyPrefix}-badge-$id'),
+              child: EditorOverlay(
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: EmphasizedLabel(
+                      emphasis: emphasis,
+                      allScopes: true,
+                      child: EditorZoneBadge(
+                        key: ValueKey(
+                          '${widget.keyPrefix}-badge-content-$id',
+                        ),
+                        label: spec.label,
+                        labelKey: ValueKey(
+                          '${widget.keyPrefix}-select-$id',
+                        ),
+                        selected: selected,
+                        onHover: (hovered) => emphasis.report(id, hovered),
+                        onTap: () => select(
+                          selected ? null : id,
+                          _keys['$id:sliver']?.currentContext ??
+                              _keys[id]?.currentContext,
+                        ),
+                        onAdd: slots.isEmpty
+                            ? () {
+                                select(
+                                  id,
+                                  _keys['$id:sliver']?.currentContext ??
+                                      _keys[id]?.currentContext,
+                                );
+                                add(id);
+                              }
+                            : null,
+                        addKey: ValueKey('${widget.keyPrefix}-add-$id'),
+                        addTooltip: 'Ajouter dans ${spec.label}',
+                        actions: [
+                          if (spec.editableFlow && selected) ...[
+                            ZoneAxisButton(
+                              key: ValueKey(
+                                '${widget.keyPrefix}-toggle-axis-$id',
+                              ),
+                              action: _axisActionFor(id),
+                              compact: true,
+                              color: colors.onSurface,
+                            ),
+                            IconButton(
+                              key: ValueKey('${widget.keyPrefix}-flow-$id'),
+                              tooltip:
+                                  '${spec.label} : Taille et paramètres de flux',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 14,
+                              padding: const EdgeInsets.all(2),
+                              constraints: const BoxConstraints(),
+                              color: colors.onSurface,
+                              onPressed: () => _openRegionFlowEditor(id),
+                              icon: const Icon(Icons.straighten),
+                            ),
+                          ],
+                          ...?widget.regionActions?.call(id),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   /// Decorates a native property without changing the adapter's composition.
   Widget region(
     String id, {
@@ -2096,6 +2428,28 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   @override
   Widget build(BuildContext context) {
     _validate(widget.config);
+    Widget wrapSurface(BuildContext context) {
+      final child = widget.builder(context, this);
+      if (!widget.editSurface) return child;
+      return EditorSelectionRegion(
+        enabled: editing,
+        isZone: true,
+        fallback: true,
+        selected: _active && _selected == null,
+        onSelect: () => select(null),
+        child: EditorSlot(
+          label: widget.settingsTitle,
+          menuTitle: widget.label,
+          menuType: widget.menuType,
+          menuIcon: widget.menuIcon,
+          editable: true,
+          onEdit: configure,
+          onContextMenu: (_) => select(null),
+          child: child,
+        ),
+      );
+    }
+
     return ProvidedSlotScope(
       slots: widget.slots,
       child: EditorAddZones(
@@ -2104,33 +2458,35 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         zones: _addZones,
         child: ListenableBuilder(
           listenable: LayoutSelection.path,
-          builder: (context, _) => LayoutBuilder(
-            builder: (context, constraints) {
-              _layoutSize = Size(
-                constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
-                constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
+          builder: (context, _) {
+            if (SliverSlotScope.isSliver(context)) {
+              return SliverLayoutBuilder(
+                builder: (context, constraints) {
+                  final horizontal = constraints.axis == Axis.horizontal;
+                  final width = horizontal
+                      ? constraints.viewportMainAxisExtent
+                      : constraints.crossAxisExtent;
+                  final height = horizontal
+                      ? constraints.crossAxisExtent
+                      : constraints.viewportMainAxisExtent;
+                  _layoutSize = Size(
+                    width.isFinite ? width : 0,
+                    height.isFinite ? height : 0,
+                  );
+                  return wrapSurface(context);
+                },
               );
-              final child = widget.builder(context, this);
-              if (!widget.editSurface) return child;
-              return EditorSelectionRegion(
-                enabled: editing,
-                isZone: true,
-                fallback: true,
-                selected: _active && _selected == null,
-                onSelect: () => select(null),
-                child: EditorSlot(
-                  label: widget.settingsTitle,
-                  menuTitle: widget.label,
-                  menuType: widget.menuType,
-                  menuIcon: widget.menuIcon,
-                  editable: true,
-                  onEdit: configure,
-                  onContextMenu: (_) => select(null),
-                  child: child,
-                ),
-              );
-            },
-          ),
+            }
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                _layoutSize = Size(
+                  constraints.maxWidth.isFinite ? constraints.maxWidth : 0,
+                  constraints.maxHeight.isFinite ? constraints.maxHeight : 0,
+                );
+                return wrapSurface(context);
+              },
+            );
+          },
         ),
       ),
     );

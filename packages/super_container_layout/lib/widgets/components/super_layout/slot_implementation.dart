@@ -17,6 +17,36 @@ import '../../editing/addition/insertion_plan.dart';
 import '../../editing/slots/editor_slot.dart';
 import '../../editing/slots/editor_selection_region.dart';
 
+export '../../editing/slots/editor_selection_region.dart'
+    show SliverPointerRegion, SliverSlotScope;
+
+/// Marqueur implémenté par les composants capables de produire un Sliver
+/// lorsqu'ils sont placés dans un [SliverSlotScope] (ex: `SuperAppBar`, `SuperListView`).
+abstract interface class SliverCapableWidget implements Widget {}
+
+/// Indique si [widget] est un Sliver natif ou un composant capable de retourner un Sliver.
+bool isSliverWidget(Widget widget) => switch (widget) {
+  SliverCapableWidget() => true,
+  final SlotImplementation slot => slot.isSliverSlot,
+  final KeyedSubtree subtree => isSliverWidget(subtree.child),
+  SliverAppBar() ||
+  SliverPersistentHeader() ||
+  SliverWithKeepAliveWidget() ||
+  SliverToBoxAdapter() ||
+  SliverPadding() ||
+  SliverFillRemaining() ||
+  SliverFillViewport() ||
+  SliverMainAxisGroup() ||
+  SliverCrossAxisGroup() ||
+  SliverLayoutBuilder() ||
+  SliverOffstage() ||
+  SliverOpacity() ||
+  SliverSafeArea() ||
+  SliverVisibility() ||
+  SliverIgnorePointer() => true,
+  _ => false,
+};
+
 MouseCursor editorDragCursor({required bool dragging}) {
   // Flutter's Windows cursor map does not implement grab or grabbing.
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
@@ -159,6 +189,15 @@ abstract class SlotImplementation extends StatelessWidget {
   /// même coin.
   final Alignment labelAlignment;
 
+  /// Vrai si les tags du slot indiquent un composant compatible Sliver.
+  bool get isSliverSlot =>
+      tags.contains('sliver') ||
+      tags.contains('list') ||
+      tags.contains('appBar');
+
+  /// Détermine si ce slot peut produire directement un Sliver dans [context].
+  bool canRenderAsSliver(BuildContext context) => isSliverSlot;
+
   @protected
   Widget buildSlot(BuildContext context);
 
@@ -184,6 +223,15 @@ class BuilderSlot extends SlotImplementation {
   });
 
   final WidgetBuilder builder;
+
+  @override
+  bool canRenderAsSliver(BuildContext context) {
+    final built = builder(context);
+    if (built is SlotImplementation) {
+      return built.canRenderAsSliver(context);
+    }
+    return isSliverWidget(built);
+  }
 
   @override
   Widget buildSlot(BuildContext context) => builder(context);
@@ -213,6 +261,13 @@ class InstanceSlot extends SlotImplementation {
   final ValueChanged<String> onRename;
   final VoidCallback onRestore;
   final bool overridden;
+
+  @override
+  bool get isSliverSlot => component.isSliverSlot;
+
+  @override
+  bool canRenderAsSliver(BuildContext context) =>
+      component.canRenderAsSliver(context);
 
   @override
   Widget build(BuildContext context) => buildSlot(context);
@@ -350,7 +405,7 @@ class SlotStack extends StatelessWidget {
       ],
     );
     if (flow.scrollable) {
-      flex = _ScrollViewportHost(
+      flex = ScrollViewportHost(
         padding: padding,
         child: SingleChildScrollView(
           scrollDirection: axis,
@@ -481,8 +536,12 @@ class SlotStack extends StatelessWidget {
   }
 }
 
-class _ScrollViewportHost extends SingleChildRenderObjectWidget {
-  const _ScrollViewportHost({required this.padding, required super.child});
+class ScrollViewportHost extends SingleChildRenderObjectWidget {
+  const ScrollViewportHost({
+    this.padding = EdgeInsets.zero,
+    required super.child,
+    super.key,
+  });
 
   final EdgeInsets padding;
 
@@ -662,7 +721,7 @@ class _RenderSlotFlex extends RenderBox
         : (viewport != null ? crossExtent(viewport) : double.infinity);
     final layoutMain = mainExtent(_configuration.layoutSize);
     final layoutCross = crossExtent(_configuration.layoutSize);
-    final scrollable = _configuration.scrollable;
+    final scrollable = _configuration.scrollable || !rawMaxMain.isFinite;
     final expand = _configuration.expand && maxMain.isFinite;
     final stretch = _configuration.stretch && maxCross.isFinite;
     final stretchCross =

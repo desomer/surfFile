@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart'
+    show kPrimaryButton, kSecondaryMouseButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
@@ -236,6 +238,10 @@ class EditorSlotState extends State<EditorSlot> {
   );
   static bool _hoveredTargetUpdateScheduled = false;
   static EditorSlotState? _menuHoveredTarget;
+  static bool _menuOpen = false;
+  PointerDownEvent? _sliverDown;
+  int _sliverButtons = 0;
+  bool _sliverMoved = false;
 
   int _cachedDepth = 0;
 
@@ -747,6 +753,8 @@ class EditorSlotState extends State<EditorSlot> {
       }
     }
     final colors = Theme.of(context).colorScheme;
+    if (_menuOpen) return;
+    _menuOpen = true;
     Object? selected;
     try {
       selected = await showMenu<Object>(
@@ -1255,6 +1263,7 @@ class EditorSlotState extends State<EditorSlot> {
         ],
       );
     } finally {
+      _menuOpen = false;
       _menuHoveredTarget = null;
       _refreshHoveredTarget();
     }
@@ -1275,6 +1284,102 @@ class EditorSlotState extends State<EditorSlot> {
   @override
   Widget build(BuildContext context) {
     final editMode = StyleEditScope.controllerOf(context);
+    final isSliver = SliverSlotScope.isSliver(context);
+    final inEditMode = editMode?.value ?? false;
+    final appearance = AppearanceScope.controllerOf(context)?.value;
+    final behaviors =
+        appearance?.behaviorsFor(effectiveComponentId) ?? const [];
+    final clickBehaviors = behaviors
+        .where((b) => b.enabled && b.trigger == BehaviorTrigger.click)
+        .toList();
+    final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
+
+    if (isSliver) {
+      final Widget child =
+          widget.child ?? const SliverToBoxAdapter(child: SizedBox.shrink());
+      if (canEdit && editMode != null) {
+        _cachedDepth = _depth;
+      } else if (_hovered.contains(this)) {
+        _removeHoveredSafely();
+      }
+      final painter = canEdit && editMode != null
+          ? EditorSelectionOutline(
+              color: AppearanceScope.of(context).accent.withValues(alpha: .8),
+              radius: widget.outlineRadius,
+            )
+          : null;
+      return ValueListenableBuilder<EditorSlotState?>(
+        valueListenable: _hoveredTarget,
+        builder: (context, target, child) => ListenableBuilder(
+          listenable: Listenable.merge([
+            EditorOverlayVisibility.openDialogs,
+            EditorSelectionRegion.hoverTarget,
+          ]),
+          builder: (context, child) => SliverPointerRegion(
+            cursor: hasClickBehaviors
+                ? SystemMouseCursors.click
+                : MouseCursor.defer,
+            onEnter: canEdit && editMode != null
+                ? (_) => _setHovered(true)
+                : null,
+            onExit: canEdit && editMode != null
+                ? (_) => _setHovered(false)
+                : null,
+            onPointerDown: (event) {
+              _sliverDown = event;
+              _sliverButtons = event.buttons;
+              _sliverMoved = false;
+            },
+            onPointerMove: (event) {
+              final down = _sliverDown;
+              if (down != null &&
+                  down.pointer == event.pointer &&
+                  (event.position - down.position).distance > kTouchSlop) {
+                _sliverMoved = true;
+              }
+            },
+            onPointerUp: (event) async {
+              final down = _sliverDown;
+              final buttons = _sliverButtons;
+              final moved = _sliverMoved;
+              _sliverDown = null;
+              _sliverButtons = 0;
+              _sliverMoved = false;
+              if (down == null ||
+                  down.pointer != event.pointer ||
+                  moved ||
+                  (event.position - down.position).distance > kTouchSlop) {
+                return;
+              }
+              if (buttons == kSecondaryMouseButton && canEdit) {
+                await openMenu(event.position);
+              } else if (buttons == kPrimaryButton && hasClickBehaviors) {
+                for (final b in clickBehaviors) {
+                  await b.execute(context);
+                }
+              }
+            },
+            onPointerCancel: (_) {
+              _sliverDown = null;
+              _sliverButtons = 0;
+              _sliverMoved = false;
+            },
+            foregroundPainter:
+                painter != null &&
+                    EditorOverlayVisibility.openDialogs.value == 0 &&
+                    identical(target, this) &&
+                    (EditorSelectionRegion.hoverTarget.value == null ||
+                        _menuHoveredTarget != null)
+                ? painter
+                : null,
+            child: child,
+          ),
+          child: child,
+        ),
+        child: child,
+      );
+    }
+
     Widget content = widget.child ?? const SizedBox.expand();
     if (canEdit && editMode != null) {
       _cachedDepth = _depth;
@@ -1310,14 +1415,6 @@ class EditorSlotState extends State<EditorSlot> {
     } else if (_hovered.contains(this)) {
       _removeHoveredSafely();
     }
-    final inEditMode = editMode?.value ?? false;
-    final appearance = AppearanceScope.controllerOf(context)?.value;
-    final behaviors =
-        appearance?.behaviorsFor(effectiveComponentId) ?? const [];
-    final clickBehaviors = behaviors
-        .where((b) => b.enabled && b.trigger == BehaviorTrigger.click)
-        .toList();
-    final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
 
     content = MouseRegion(
       cursor: hasClickBehaviors ? SystemMouseCursors.click : MouseCursor.defer,

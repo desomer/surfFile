@@ -30,11 +30,15 @@ class NativeComponentConfig extends ComponentConfig {
         useDefaultNavigationPropertyDescriptor,
     for (final descriptor in superAppBarPropertyDescriptors)
       descriptor.id: descriptor,
+    for (final descriptor in superSliverAppBarPropertyDescriptors)
+      descriptor.id: descriptor,
     for (final descriptor in superBottomAppBarPropertyDescriptors)
       descriptor.id: descriptor,
     for (final descriptor in superBottomNavigationBarPropertyDescriptors)
       descriptor.id: descriptor,
     for (final descriptor in superExpansiblePropertyDescriptors)
+      descriptor.id: descriptor,
+    for (final descriptor in scaffoldPagePropertyDescriptors)
       descriptor.id: descriptor,
   };
 

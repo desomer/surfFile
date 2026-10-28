@@ -683,3 +683,138 @@ const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
   ),
 ];
 
+/// Catalogue déclaratif des propriétés supplémentaires de [SuperAppBar] en mode `SliverAppBar`.
+const List<NativePropertyDescriptor> superSliverAppBarPropertyDescriptors = [
+  NativePropertyDescriptor(
+    id: 'pinned',
+    label: 'Épingler la barre (pinned)',
+    subtitle: 'Garde la barre visible en haut lors du défilement',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'floating',
+    label: 'Barre flottante (floating)',
+    subtitle: 'Réapparaît dès que l’utilisateur défile vers le haut',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'snap',
+    label: 'Magnétisme (snap)',
+    subtitle: 'Anime complètement l’apparition/disparition (requiert floating)',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'stretch',
+    label: 'Étirement (stretch)',
+    subtitle: 'Autorise l’étirement de la barre lors d’un sur-défilement',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'expandedHeight',
+    label: 'Hauteur étendue (expandedHeight)',
+    subtitle: 'Hauteur maximale de la barre complètement déployée',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 160.0,
+    min: 56,
+    max: 400,
+    divisions: 172,
+  ),
+  NativePropertyDescriptor(
+    id: 'collapsedHeight',
+    label: 'Hauteur réduite (collapsedHeight)',
+    subtitle: 'Hauteur minimale de la barre repliée',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 56.0,
+    min: 32,
+    max: 200,
+    divisions: 84,
+  ),
+];
+
+/// Catalogue déclaratif des propriétés de mise en page et défilement de [ScaffoldPageLayout].
+const List<NativePropertyDescriptor> scaffoldPagePropertyDescriptors = [
+  NativePropertyDescriptor(
+    id: 'bodyMode',
+    label: 'Mode du corps (Body)',
+    subtitle: 'Conteneur principal de la zone Corps de la page',
+    editorType: NativePropertyEditorType.select,
+    defaultValue: 'standard',
+    nullable: false,
+    options: [
+      NativePropertyOption(
+        value: 'standard',
+        label: 'Standard (Fixe / plein écran)',
+      ),
+      NativePropertyOption(
+        value: 'singleChildScrollView',
+        label: 'Défilement simple (SingleChildScrollView)',
+      ),
+      NativePropertyOption(
+        value: 'customScrollView',
+        label: 'Défilement Slivers (CustomScrollView)',
+      ),
+    ],
+  ),
+  NativePropertyDescriptor(
+    id: 'scrollDirection',
+    label: 'Axe de défilement',
+    subtitle: 'Direction du défilement pour SingleChildScrollView / CustomScrollView',
+    editorType: NativePropertyEditorType.select,
+    defaultValue: 'vertical',
+    options: [
+      NativePropertyOption(value: 'vertical', label: 'Vertical (vertical)'),
+      NativePropertyOption(
+        value: 'horizontal',
+        label: 'Horizontal (horizontal)',
+      ),
+    ],
+  ),
+  NativePropertyDescriptor(
+    id: 'reverse',
+    label: 'Inverser le sens de défilement',
+    subtitle: 'Défile en sens inverse sur l’axe principal (reverse)',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'primary',
+    label: 'Défilement principal (primary)',
+    subtitle: 'Utilise le PrimaryScrollController de la page',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'scrollPadding',
+    label: 'Marge intérieure du défilement',
+    subtitle: 'Espacement interne autour du contenu défilant (padding)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 0.0,
+    min: 0,
+    max: 64,
+    divisions: 64,
+  ),
+  NativePropertyDescriptor(
+    id: 'clipBehavior',
+    label: 'Découpage (Clip)',
+    subtitle: 'Mode de découpage de la zone de défilement',
+    editorType: NativePropertyEditorType.select,
+    options: [
+      NativePropertyOption(value: 'none', label: 'Aucun (none)'),
+      NativePropertyOption(value: 'hardEdge', label: 'Bord net (hardEdge)'),
+      NativePropertyOption(
+        value: 'antiAlias',
+        label: 'Anticrénelage (antiAlias)',
+      ),
+      NativePropertyOption(
+        value: 'antiAliasWithSaveLayer',
+        label: 'Anticrénelage avec calque (antiAliasWithSaveLayer)',
+      ),
+    ],
+  ),
+];
+
+

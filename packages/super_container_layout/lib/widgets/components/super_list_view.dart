@@ -93,7 +93,7 @@ import '../editing/slots/slot_size_editor.dart';
 /// Un clic sélectionne la ligne dans le [JsonArrayBinding] du chemin modèle :
 /// une liaison placée hors de la liste, par exemple `clients[?].nom`, lit
 /// alors la ligne sélectionnée.
-class SuperListView extends StatefulWidget {
+class SuperListView extends StatefulWidget implements SliverCapableWidget {
   const SuperListView({
     required this.id,
     this.itemId,
@@ -775,38 +775,29 @@ class _SuperListViewState extends State<SuperListView> {
             _source?.binding != null &&
             _error == null;
         final vertical = config.wrap || config.axis == Axis.vertical;
+        final isSliver = SliverSlotScope.isSliver(context);
 
-        return EditorSlot(
-          id: widget.id,
-          label: 'Liste',
-          menuType: 'ListView',
-          onEdit: () => _edit(configuration),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final fill = constraints.hasBoundedHeight;
-              final viewport = Size(
-                constraints.maxWidth,
-                fill
-                    ? constraints.maxHeight
-                    : MediaQuery.sizeOf(context).height,
-              );
-              Widget item(BuildContext context, int index) {
-                if (index == count) {
-                  return Align(
-                    widthFactor: config.wrap ? 1 : null,
-                    heightFactor: config.wrap ? 1 : null,
-                    alignment: vertical
-                        ? Alignment.centerLeft
-                        : Alignment.center,
-                    child: TextButton.icon(
-                      key: ValueKey('super-list-add-${widget.id}'),
-                      onPressed: _busy ? null : _add,
-                      icon: const Icon(Icons.add),
-                      label: const Text('Ajouter'),
-                    ),
-                  );
-                }
-                return _row(
+        Widget buildItem(
+          BuildContext context,
+          int index,
+          Size viewport,
+        ) => SliverSlotScope(
+          enabled: false,
+          child: index == count
+              ? Align(
+                  widthFactor: config.wrap ? 1 : null,
+                  heightFactor: config.wrap ? 1 : null,
+                  alignment: vertical
+                      ? Alignment.centerLeft
+                      : Alignment.center,
+                  child: TextButton.icon(
+                    key: ValueKey('super-list-add-${widget.id}'),
+                    onPressed: _busy ? null : _add,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Ajouter'),
+                  ),
+                )
+              : _row(
                   layout,
                   style,
                   configuration,
@@ -814,73 +805,215 @@ class _SuperListViewState extends State<SuperListView> {
                   scope,
                   template ? null : index,
                   viewport,
-                );
-              }
+                ),
+        );
 
-              final Widget list = config.wrap
-                  ? SingleChildScrollView(
-                      key: ValueKey('super-list-${widget.id}'),
-                      primary: false,
-                      child: Wrap(
-                        spacing: config.spacing,
-                        runSpacing: config.spacing,
-                        children: [
-                          for (
-                            var index = 0;
-                            index < count + (add ? 1 : 0);
-                            index++
+        final error = _error != null || config.binding == null;
+
+        return EditorSlot(
+          id: widget.id,
+          label: 'Liste',
+          menuType: 'ListView',
+          onEdit: () => _edit(configuration),
+          child: isSliver
+              ? SliverLayoutBuilder(
+                  builder: (context, sliverConstraints) {
+                    final scrollAxis = sliverConstraints.axis;
+                    final mainExtent = sliverConstraints.viewportMainAxisExtent;
+                    final crossExtent = sliverConstraints.crossAxisExtent;
+                    final viewport = scrollAxis == Axis.horizontal
+                        ? Size(
+                            mainExtent.isFinite
+                                ? mainExtent
+                                : MediaQuery.sizeOf(context).width,
+                            crossExtent.isFinite
+                                ? crossExtent
+                                : MediaQuery.sizeOf(context).height,
                           )
-                            if (index == count &&
-                                config.wrapSizing == ListWrapSizing.fixed &&
-                                config.itemSize == null)
-                              SizedBox(
-                                width: config.itemWidth,
-                                height: config.itemExtent,
-                                child: item(context, index),
-                              )
-                            else
-                              item(context, index),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      key: ValueKey('super-list-${widget.id}'),
-                      primary: false,
-                      shrinkWrap: vertical && !fill,
-                      scrollDirection: config.axis,
-                      itemExtent: config.itemSize == null
-                          ? config.itemExtent + config.spacing
-                          : null,
-                      itemCount: count + (add ? 1 : 0),
-                      itemBuilder: item,
+                        : Size(
+                            crossExtent.isFinite
+                                ? crossExtent
+                                : MediaQuery.sizeOf(context).width,
+                            mainExtent.isFinite
+                                ? mainExtent
+                                : MediaQuery.sizeOf(context).height,
+                          );
+                    Widget item(BuildContext context, int index) =>
+                        buildItem(context, index, viewport);
+                    final totalCount = count + (add ? 1 : 0);
+                    final slivers = <Widget>[
+                      if (message != null ||
+                          (_error != null && config.binding != null))
+                        SliverToBoxAdapter(
+                          child: SliverSlotScope(
+                            enabled: false,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (message != null)
+                                  _message(message, error: error),
+                                if (_error != null && config.binding != null)
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton.icon(
+                                      onPressed: _reload,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('Recharger la liste'),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (totalCount > 0)
+                        if (config.wrap)
+                          SliverToBoxAdapter(
+                            child: SliverSlotScope(
+                              enabled: false,
+                              child: Wrap(
+                                key: ValueKey('super-list-${widget.id}'),
+                                spacing: config.spacing,
+                                runSpacing: config.spacing,
+                                children: [
+                                  for (var index = 0; index < totalCount; index++)
+                                    if (index == count &&
+                                        config.wrapSizing ==
+                                            ListWrapSizing.fixed &&
+                                        config.itemSize == null)
+                                      SizedBox(
+                                        width: config.itemWidth,
+                                        height: config.itemExtent,
+                                        child: item(context, index),
+                                      )
+                                    else
+                                      item(context, index),
+                                ],
+                              ),
+                            ),
+                          )
+                        else if (config.axis == scrollAxis)
+                          config.itemSize == null
+                              ? SliverFixedExtentList.builder(
+                                  key: ValueKey('super-list-${widget.id}'),
+                                  itemExtent:
+                                      config.itemExtent + config.spacing,
+                                  itemCount: totalCount,
+                                  itemBuilder: item,
+                                )
+                              : SliverList.builder(
+                                  key: ValueKey('super-list-${widget.id}'),
+                                  itemCount: totalCount,
+                                  itemBuilder: item,
+                                )
+                        else
+                          SliverToBoxAdapter(
+                            child: SliverSlotScope(
+                              enabled: false,
+                              child: SizedBox(
+                                width: config.axis == Axis.vertical
+                                    ? config.itemExtent
+                                    : null,
+                                height: config.axis == Axis.horizontal
+                                    ? config.itemExtent
+                                    : viewport.height,
+                                child: ListView.builder(
+                                  key: ValueKey('super-list-${widget.id}'),
+                                  primary: false,
+                                  scrollDirection: config.axis,
+                                  itemExtent: config.itemSize == null
+                                      ? config.itemExtent + config.spacing
+                                      : null,
+                                  itemCount: totalCount,
+                                  itemBuilder: item,
+                                ),
+                              ),
+                            ),
+                          ),
+                    ];
+                    if (slivers.isEmpty) {
+                      return const SliverToBoxAdapter(child: SizedBox.shrink());
+                    }
+                    if (slivers.length == 1) return slivers.single;
+                    return SliverMainAxisGroup(slivers: slivers);
+                  },
+                )
+              : LayoutBuilder(
+                  builder: (context, constraints) {
+                    final fill = constraints.hasBoundedHeight;
+                    final viewport = Size(
+                      constraints.maxWidth,
+                      fill
+                          ? constraints.maxHeight
+                          : MediaQuery.sizeOf(context).height,
                     );
-              final error = _error != null || config.binding == null;
-              return Column(
-                mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (message != null) _message(message, error: error),
-                  if (_error != null && config.binding != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: _reload,
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Recharger la liste'),
-                      ),
-                    ),
-                  if (count > 0 || add)
-                    if (fill)
-                      Expanded(child: list)
-                    else if (vertical)
-                      list
-                    else
-                      // Une liste horizontale a besoin d'une hauteur bornée.
-                      SizedBox(height: config.itemExtent, child: list),
-                ],
-              );
-            },
-          ),
+                    Widget item(BuildContext context, int index) =>
+                        buildItem(context, index, viewport);
+
+                    final Widget list = config.wrap
+                        ? SingleChildScrollView(
+                            key: ValueKey('super-list-${widget.id}'),
+                            primary: false,
+                            child: Wrap(
+                              spacing: config.spacing,
+                              runSpacing: config.spacing,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < count + (add ? 1 : 0);
+                                  index++
+                                )
+                                  if (index == count &&
+                                      config.wrapSizing ==
+                                          ListWrapSizing.fixed &&
+                                      config.itemSize == null)
+                                    SizedBox(
+                                      width: config.itemWidth,
+                                      height: config.itemExtent,
+                                      child: item(context, index),
+                                    )
+                                  else
+                                    item(context, index),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            key: ValueKey('super-list-${widget.id}'),
+                            primary: false,
+                            shrinkWrap: vertical && !fill,
+                            scrollDirection: config.axis,
+                            itemExtent: config.itemSize == null
+                                ? config.itemExtent + config.spacing
+                                : null,
+                            itemCount: count + (add ? 1 : 0),
+                            itemBuilder: item,
+                          );
+                    return Column(
+                      mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (message != null) _message(message, error: error),
+                        if (_error != null && config.binding != null)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: _reload,
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Recharger la liste'),
+                            ),
+                          ),
+                        if (count > 0 || add)
+                          if (fill)
+                            Expanded(child: list)
+                          else if (vertical)
+                            list
+                          else
+                            // Une liste horizontale a besoin d'une hauteur bornée.
+                            SizedBox(height: config.itemExtent, child: list),
+                      ],
+                    );
+                  },
+                ),
         );
       },
     );

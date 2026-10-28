@@ -21,6 +21,12 @@ class SuperPage extends StatelessWidget {
     this.bottomSheet,
     this.slots = const [],
     this.pageConfig,
+    this.bodyMode,
+    this.scrollDirection,
+    this.reverse,
+    this.primary,
+    this.scrollPadding,
+    this.clipBehavior,
     this.maxAutoZoomExtent = EditorZoom.defaultMaxAutoZoomExtent,
     super.key,
   }) : assert(
@@ -47,12 +53,22 @@ class SuperPage extends StatelessWidget {
   /// Initial native Scaffold region placement; persisted edits take precedence.
   final ScaffoldPageConfig? pageConfig;
 
+  /// Mode d'affichage de la zone `body` (`standard`, `singleChildScrollView`, `customScrollView`).
+  final ScaffoldBodyMode? bodyMode;
+  final Axis? scrollDirection;
+  final bool? reverse;
+  final bool? primary;
+  final double? scrollPadding;
+  final Clip? clipBehavior;
+
   /// Taille (px) à partir de laquelle une sélection n'est plus zoomée en mode édition.
   final double maxAutoZoomExtent;
 
   @override
   Widget build(BuildContext context) {
-    final resolvedConfig = pageConfig ?? ScaffoldPageConfig(
+    var resolvedConfig =
+        pageConfig ??
+        ScaffoldPageConfig(
           placements: {
             if (appBar != null)
               ScaffoldPageRegion.appBar: const ['scaffold:appBar'],
@@ -73,6 +89,24 @@ class SuperPage extends StatelessWidget {
               ScaffoldPageRegion.bottomSheet: const ['scaffold:bottomSheet'],
           },
         );
+    if (bodyMode != null) {
+      resolvedConfig = resolvedConfig.withBodyMode(bodyMode);
+    }
+    if (scrollDirection != null) {
+      resolvedConfig = resolvedConfig.withScrollDirection(scrollDirection);
+    }
+    if (reverse != null) {
+      resolvedConfig = resolvedConfig.withReverse(reverse);
+    }
+    if (primary != null) {
+      resolvedConfig = resolvedConfig.withPrimary(primary);
+    }
+    if (scrollPadding != null) {
+      resolvedConfig = resolvedConfig.withScrollPadding(scrollPadding);
+    }
+    if (clipBehavior != null) {
+      resolvedConfig = resolvedConfig.withClipBehavior(clipBehavior);
+    }
     return EditorZoom(
       maxAutoZoomExtent: maxAutoZoomExtent,
       child: ScaffoldPageLayout(

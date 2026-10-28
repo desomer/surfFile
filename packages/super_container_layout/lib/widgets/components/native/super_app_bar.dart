@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
@@ -11,9 +13,13 @@ import '../super_layout/slot_implementation.dart';
 import '../../editing/slots/editor_slot.dart';
 
 /// AppBar regions map to Flutter properties, never to a SuperLayout.
-class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
+class SuperAppBar extends StatefulWidget
+    implements NativePreferredSizeWidget, SliverCapableWidget {
   static const List<NativePropertyDescriptor> propertyDescriptors =
       superAppBarPropertyDescriptors;
+
+  static const List<NativePropertyDescriptor> sliverPropertyDescriptors =
+      superSliverAppBarPropertyDescriptors;
 
   const SuperAppBar({
     this.id = 'root-appBar',
@@ -27,6 +33,12 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
     this.automaticallyImplyLeading = true,
     this.automaticallyImplyActions = true,
     this.toolbarHeight = kToolbarHeight,
+    this.pinned = false,
+    this.floating = false,
+    this.snap = false,
+    this.stretch = false,
+    this.expandedHeight,
+    this.collapsedHeight,
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
@@ -46,6 +58,12 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   final bool automaticallyImplyLeading;
   final bool automaticallyImplyActions;
   final double toolbarHeight;
+  final bool pinned;
+  final bool floating;
+  final bool snap;
+  final bool stretch;
+  final double? expandedHeight;
+  final double? collapsedHeight;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
@@ -53,6 +71,14 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
   NativeComponentConfig get _initialConfig =>
       nativeConfig ??
       NativeComponentConfig(
+        properties: {
+          if (pinned) 'pinned': true,
+          if (floating) 'floating': true,
+          if (snap) 'snap': true,
+          if (stretch) 'stretch': true,
+          if (expandedHeight != null) 'expandedHeight': expandedHeight!,
+          if (collapsedHeight != null) 'collapsedHeight': collapsedHeight!,
+        },
         placements: {
           if (leading != null) 'leading': ['leading'],
           if (title != null) 'title': ['title'],
@@ -268,6 +294,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
     final controller = widget._controller(context) ?? _localConfig;
+    final isSliver = SliverSlotScope.isSliver(context);
     return ValueListenableBuilder<NativeComponentConfig>(
       valueListenable: controller,
       builder: (context, config, _) => NativeComponentEditor(
@@ -281,7 +308,12 @@ class _SuperAppBarState extends State<SuperAppBar> {
         regions: _regions(config),
         slots: _slots(config),
         registry: registry,
-        propertyDescriptors: SuperAppBar.propertyDescriptors,
+        propertyDescriptors: isSliver
+            ? const [
+                ...SuperAppBar.propertyDescriptors,
+                ...SuperAppBar.sliverPropertyDescriptors,
+              ]
+            : SuperAppBar.propertyDescriptors,
         isRegionAvailable: (config, region) =>
             region != 'leading' || !_usesDefaultNavigation(config),
         settingsControls: (config, onChanged) => [
@@ -309,10 +341,110 @@ class _SuperAppBarState extends State<SuperAppBar> {
             String id, {
             SlotImplementation? item,
             bool showBadge = true,
-          }) => SizedBox(
-            height: effectiveToolbarHeight,
-            child: editor.region(id, item: item, showBadge: showBadge),
+          }) => SliverSlotScope(
+            enabled: false,
+            child: SizedBox(
+              height: effectiveToolbarHeight,
+              child: editor.region(id, item: item, showBadge: showBadge),
+            ),
           );
+          final leadingWidget =
+              !_usesDefaultNavigation(config) && editor.visible('leading')
+              ? toolbarRegion('leading')
+              : null;
+          final titleWidget = editor.visible('title')
+              ? toolbarRegion('title')
+              : null;
+          final actionsWidgets = !editor.visible('actions')
+              ? (config.regions['actions'] == false ? const <Widget>[] : null)
+              : <Widget>[
+                  if (actions.isEmpty)
+                    SizedBox(width: 96, child: toolbarRegion('actions'))
+                  else if (!config.regionFlowOf('actions').isDefault ||
+                      config.regionAxisOf('actions') != null)
+                    toolbarRegion('actions')
+                  else
+                    for (final (index, slot) in actions.indexed)
+                      toolbarRegion(
+                        'actions',
+                        item: slot,
+                        showBadge: index == 0,
+                      ),
+                ];
+          final bottomWidget = editor.visible('bottom')
+              ? PreferredSize(
+                  preferredSize: Size.fromHeight(bottomHeight),
+                  child: SliverSlotScope(
+                    enabled: false,
+                    child: SizedBox(
+                      height: bottomHeight,
+                      child: editor.region('bottom'),
+                    ),
+                  ),
+                )
+              : null;
+          final flexibleSpaceWidget = editor.visible('flexibleSpace')
+              ? SliverSlotScope(
+                  enabled: false,
+                  child: editor.region('flexibleSpace'),
+                )
+              : null;
+
+          if (isSliver) {
+            final effectiveFloating =
+                config.boolProperty('floating') ?? widget.floating;
+            final effectivePinned =
+                config.boolProperty('pinned') ?? widget.pinned;
+            final effectiveSnap =
+                (config.boolProperty('snap') ?? widget.snap) &&
+                effectiveFloating;
+            final effectiveStretch =
+                config.boolProperty('stretch') ?? widget.stretch;
+            final rawCollapsed =
+                config.doubleProperty('collapsedHeight') ??
+                widget.collapsedHeight;
+            final effectiveCollapsed = rawCollapsed != null
+                ? math.max(rawCollapsed, effectiveToolbarHeight)
+                : null;
+            final effectiveExpanded =
+                config.doubleProperty('expandedHeight') ??
+                widget.expandedHeight;
+            return SliverAppBar(
+              toolbarHeight: effectiveToolbarHeight,
+              leadingWidth: config.doubleProperty('leadingWidth'),
+              titleSpacing: config.doubleProperty('titleSpacing') ?? 0,
+              centerTitle: config.boolProperty('centerTitle'),
+              backgroundColor: config.colorProperty('backgroundColor'),
+              foregroundColor: config.colorProperty('foregroundColor'),
+              surfaceTintColor: config.colorProperty('surfaceTintColor'),
+              shadowColor: config.colorProperty('shadowColor'),
+              elevation: config.doubleProperty('elevation'),
+              scrolledUnderElevation: config.doubleProperty(
+                'scrolledUnderElevation',
+              ),
+              forceMaterialTransparency:
+                  config.boolProperty('forceMaterialTransparency') ?? false,
+              shape: config.shapeBorderProperty('shape'),
+              primary: config.boolProperty('primary') ?? true,
+              excludeHeaderSemantics:
+                  config.boolProperty('excludeHeaderSemantics') ?? false,
+              clipBehavior: _clipBehavior(config),
+              systemOverlayStyle: _systemOverlayStyle(config),
+              automaticallyImplyLeading: _usesDefaultNavigation(config),
+              pinned: effectivePinned,
+              floating: effectiveFloating,
+              snap: effectiveSnap,
+              stretch: effectiveStretch,
+              expandedHeight: effectiveExpanded,
+              collapsedHeight: effectiveCollapsed,
+              leading: leadingWidget,
+              title: titleWidget,
+              actions: actionsWidgets,
+              bottom: bottomWidget,
+              flexibleSpace: flexibleSpaceWidget,
+            );
+          }
+
           return AppBar(
             toolbarHeight: effectiveToolbarHeight,
             leadingWidth: config.doubleProperty('leadingWidth'),
@@ -340,39 +472,11 @@ class _SuperAppBarState extends State<SuperAppBar> {
             automaticallyImplyActions:
                 widget.automaticallyImplyActions &&
                 config.regions['actions'] != false,
-            leading:
-                !_usesDefaultNavigation(config) && editor.visible('leading')
-                ? toolbarRegion('leading')
-                : null,
-            title: editor.visible('title') ? toolbarRegion('title') : null,
-            actions: !editor.visible('actions')
-                ? (config.regions['actions'] == false ? const [] : null)
-                : [
-                    if (actions.isEmpty)
-                      SizedBox(width: 96, child: toolbarRegion('actions'))
-                    else if (!config.regionFlowOf('actions').isDefault ||
-                        config.regionAxisOf('actions') != null)
-                      toolbarRegion('actions')
-                    else
-                      for (final (index, slot) in actions.indexed)
-                        toolbarRegion(
-                          'actions',
-                          item: slot,
-                          showBadge: index == 0,
-                        ),
-                  ],
-            bottom: editor.visible('bottom')
-                ? PreferredSize(
-                    preferredSize: Size.fromHeight(bottomHeight),
-                    child: SizedBox(
-                      height: bottomHeight,
-                      child: editor.region('bottom'),
-                    ),
-                  )
-                : null,
-            flexibleSpace: editor.visible('flexibleSpace')
-                ? editor.region('flexibleSpace')
-                : null,
+            leading: leadingWidget,
+            title: titleWidget,
+            actions: actionsWidgets,
+            bottom: bottomWidget,
+            flexibleSpace: flexibleSpaceWidget,
           );
         },
       ),

@@ -193,6 +193,73 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
     return Drawer(child: content);
   }
 
+  Widget _body(
+    ScaffoldPageConfig config,
+    NativeComponentEditorState editor,
+  ) {
+    final scrollAxis = config.scrollDirection;
+    final paddingValue = config.scrollPadding;
+    final padding = paddingValue != null && paddingValue > 0
+        ? EdgeInsets.all(paddingValue)
+        : EdgeInsets.zero;
+    return switch (config.bodyMode) {
+      ScaffoldBodyMode.standard => SizedBox.expand(
+        child: editor.region('body'),
+      ),
+      ScaffoldBodyMode.singleChildScrollView => SizedBox.expand(
+        child: ScrollViewportHost(
+          padding: padding,
+          child: SingleChildScrollView(
+            key: const ValueKey('scaffold-page-single-child-scroll-view'),
+            scrollDirection: scrollAxis,
+            reverse: config.reverse,
+            primary: config.primary,
+            padding: padding == EdgeInsets.zero ? null : padding,
+            clipBehavior: config.clipBehavior ?? Clip.hardEdge,
+            child: SlotContentFitScope(
+              fitWidth: scrollAxis == Axis.horizontal,
+              fitHeight: scrollAxis == Axis.vertical,
+              child: editor.region('body'),
+            ),
+          ),
+        ),
+      ),
+      ScaffoldBodyMode.customScrollView => () {
+        final bodySliver = editor.sliverRegion(
+          'body',
+          scrollDirection: scrollAxis,
+          fillWhenEmpty: true,
+        );
+        return SizedBox.expand(
+          child: ScrollViewportHost(
+            padding: padding,
+            child: editor.regionOverlay(
+              'body',
+              child: CustomScrollView(
+                key: const ValueKey('scaffold-page-custom-scroll-view'),
+                scrollDirection: scrollAxis,
+                reverse: config.reverse,
+                primary: config.primary,
+                clipBehavior: config.clipBehavior ?? Clip.hardEdge,
+                slivers: [
+                  if (editor.visible('appBar'))
+                    editor.sliverRegion(
+                      'appBar',
+                      scrollDirection: scrollAxis,
+                    ),
+                  if (padding != EdgeInsets.zero)
+                    SliverPadding(padding: padding, sliver: bodySliver)
+                  else
+                    bodySliver,
+                ],
+              ),
+            ),
+          ),
+        );
+      }(),
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
@@ -215,6 +282,13 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           regions: _regions,
           slots: _providedSlots(),
           registry: registry,
+          propertyDescriptors: ScaffoldPageConfig.propertyDescriptors,
+          isPropertyAvailable: (nativeConfig, descriptor) =>
+              descriptor.id == 'bodyMode' ||
+              ScaffoldBodyMode.fromName(
+                    nativeConfig.stringProperty('bodyMode'),
+                  ) !=
+                  ScaffoldBodyMode.standard,
           onConfigured: (regions) {
             final drawer = regions
                 .where((id) => id == 'drawer' || id == 'endDrawer')
@@ -251,8 +325,10 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
             ]),
             builder: (context, _) => Scaffold(
               key: _scaffoldKey,
-              appBar: _appBar(editor),
-              body: SizedBox.expand(child: editor.region('body')),
+              appBar: config.bodyMode == ScaffoldBodyMode.customScrollView
+                  ? null
+                  : _appBar(editor),
+              body: _body(config, editor),
               drawer: _drawer('drawer', editor, widget.drawer),
               endDrawer: _drawer('endDrawer', editor, widget.endDrawer),
               bottomNavigationBar: editor.visible('bottomNavigationBar')
