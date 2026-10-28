@@ -1,15 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
 import '../../../services/repositories/json_repository_store.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../theme/appearance.dart';
+import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import '../overlay/editor_zoom.dart';
 
 class JsonRepositoryManager extends StatefulWidget {
   const JsonRepositoryManager({this.store, this.appearance, super.key});
+
+  static const _preferredWidth = AlwaysStoppedAnimation<double>(900);
 
   final JsonRepositoryStore? store;
   final ValueNotifier<Appearance>? appearance;
@@ -17,8 +22,11 @@ class JsonRepositoryManager extends StatefulWidget {
   static Future<void> show(BuildContext context) {
     final store = JsonRepositoryScope.maybeOf(context);
     final appearance = AppearanceScope.controllerOf(context);
-    return showDialog<void>(
+    final zoom = EditorZoomScope.controllerOf(context);
+    return showEditorDialog<void>(
       context: context,
+      target: zoom?.contentContext,
+      preferredWidth: _preferredWidth,
       barrierDismissible: false,
       builder: (_) =>
           JsonRepositoryManager(store: store, appearance: appearance),
@@ -92,7 +100,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     if (!_dirty) return true;
     if (_confirming) return false;
     _confirming = true;
-    final result = await showDialog<bool>(
+    final result = await showEditorDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Modifications non enregistrées'),
@@ -196,7 +204,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
   }
 
-  Future<String?> _askName({String? current}) => showDialog<String>(
+  Future<String?> _askName({String? current}) => showEditorDialog<String>(
     context: context,
     builder: (_) => _RepositoryNameDialog(current: current),
   );
@@ -254,7 +262,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
     if (inUse || _error != null || !mounted) return;
     _confirming = true;
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showEditorDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Supprimer le repository ?'),
@@ -427,6 +435,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
       if (!didPop && !_busy) _close();
     },
     child: AlertDialog(
+      insetPadding: const EdgeInsets.all(24),
       title: const EditorDialogHeader(label: 'Repository'),
       content: SizedBox(
         width: 900,
@@ -464,7 +473,10 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
                 builder: (context, constraints) => constraints.maxWidth < 600
                     ? Column(
                         children: [
-                          SizedBox(height: 130, child: _repositories()),
+                          SizedBox(
+                            height: math.min(130, constraints.maxHeight * .4),
+                            child: _repositories(),
+                          ),
                           const SizedBox(height: 8),
                           Expanded(child: _editor()),
                         ],

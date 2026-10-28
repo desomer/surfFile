@@ -64,6 +64,8 @@ class _EditorZoomState extends State<EditorZoom>
   @override
   void initState() {
     super.initState();
+    _controller._contentKey = _content;
+    EditorZoomController._mounted.add(_controller);
     _controller._pointerDownHandler = _onPointerDown;
     _controller._pointerMoveHandler = _onPointerMove;
     _controller._pointerUpHandler = _onPointerUp;
@@ -111,8 +113,12 @@ class _EditorZoomState extends State<EditorZoom>
     var destination = (scale: 1.0, offset: Offset.zero);
     _controller.enabled = _editMode?.value ?? false;
     if (_framingHeld && _controller.enabled) return;
+    _controller.contentContext = _content.currentContext;
     final dialog = _controller.dialog.value;
-    final focus = dialog?.target ?? LayoutSelection.focus.value?.context;
+    final focus =
+        dialog?.target ??
+        LayoutSelection.focus.value?.context ??
+        (dialog != null ? _content.currentContext : null);
     if (!_controller.enabled ||
         !identical(focus, _zoomTarget) ||
         !identical(dialog, _zoomDialog)) {
@@ -121,7 +127,6 @@ class _EditorZoomState extends State<EditorZoom>
       _zoomTarget = focus;
       _zoomDialog = dialog;
     }
-    _controller.contentContext = _content.currentContext;
     final rect = _controller.targetBounds(focus);
     if (_controller.enabled && !_viewport.isEmpty) {
       var available = Offset.zero & _viewport;
@@ -573,8 +578,23 @@ class EditorZoomScope extends InheritedWidget {
   final Offset offset;
   final EditorZoomController? controller;
 
-  static EditorZoomController? controllerOf(BuildContext context) =>
-      context.getInheritedWidgetOfExactType<EditorZoomScope>()?.controller;
+  static EditorZoomController? controllerOf(BuildContext context) {
+    final inherited =
+        context.getInheritedWidgetOfExactType<EditorZoomScope>()?.controller;
+    if (inherited != null) return inherited;
+    EditorZoomController? descendant;
+    void visit(Element element) {
+      if (descendant != null) return;
+      if (element.widget case EditorZoomScope(:final controller?)) {
+        descendant = controller;
+        return;
+      }
+      element.visitChildElements(visit);
+    }
+
+    if (context is Element) visit(context);
+    return descendant ?? EditorZoomController._active;
+  }
 
   static bool contains(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<EditorZoomScope>() != null;
@@ -587,6 +607,17 @@ class EditorZoomScope extends InheritedWidget {
 }
 
 class EditorZoomController {
+  static final List<EditorZoomController> _mounted = [];
+  static EditorZoomController? get _active {
+    for (var i = _mounted.length - 1; i >= 0; i--) {
+      final candidate = _mounted[i];
+      if (!candidate.disposed && (candidate.contentContext?.mounted ?? false)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
   void Function(PointerSignalEvent)? _pointerSignalHandler;
   void Function(PointerDownEvent)? _pointerDownHandler;
   void Function(PointerMoveEvent)? _pointerMoveHandler;
@@ -628,7 +659,11 @@ class EditorZoomController {
   bool enabled = false;
   bool disposed = false;
   final dialog = EditorDialogNotifier();
-  BuildContext? contentContext;
+  GlobalKey? _contentKey;
+  BuildContext? _contentContext;
+  BuildContext? get contentContext =>
+      _contentContext ?? _contentKey?.currentContext;
+  set contentContext(BuildContext? value) => _contentContext = value;
 
   Rect? targetBounds(BuildContext? targetContext) {
     if (targetContext == null ||
@@ -660,6 +695,7 @@ class EditorZoomController {
   }
 
   void dispose() {
+    _mounted.remove(this);
     disposed = true;
     _pointerSignalHandler = null;
     _interactionHandler = null;

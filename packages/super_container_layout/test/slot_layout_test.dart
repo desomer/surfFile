@@ -2524,6 +2524,62 @@ void main() {
         expect(rawScrollbar.scrollbarOrientation, ScrollbarOrientation.left);
       },
     );
+
+    testWidgets(
+      'mouse wheel scrolls horizontally in a horizontal scrollable zone without holding Shift',
+      (tester) async {
+        const config = SuperLayoutConfig(
+          north: false,
+          south: false,
+          west: false,
+          east: false,
+          zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+          zoneFlows: {
+            SuperLayoutZone.center: ZoneFlowConfig(
+              scrollable: true,
+              showScrollbar: true,
+              spacing: 10,
+            ),
+          },
+          placements: {
+            SuperLayoutZone.center: ['h1', 'h2', 'h3'],
+          },
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                width: 300,
+                height: 200,
+                child: SuperLayout(
+                  config: config,
+                  slots: [
+                    _slot('h1', width: 160, height: 100),
+                    _slot('h2', width: 160, height: 100),
+                    _slot('h3', width: 160, height: 100),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-h1'))).dx, 0);
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-h3'))).dx, 340);
+
+        final pointer = TestPointer(1, PointerDeviceKind.mouse);
+        pointer.hover(const Offset(150, 100));
+        await tester.sendEventToBinding(pointer.scroll(const Offset(0, 120)));
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.getTopLeft(find.byKey(const ValueKey('box-h1'))).dx,
+          -120,
+        );
+        expect(tester.getTopLeft(find.byKey(const ValueKey('box-h3'))).dx, 220);
+      },
+    );
   });
 }
 

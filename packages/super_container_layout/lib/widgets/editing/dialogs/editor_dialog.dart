@@ -93,7 +93,13 @@ Future<T?> _showEditorDialog<T>({
   // A nested editor may pass its dialog context, which is outside the canvas.
   // Keep framing the edited component rather than resetting the whole page.
   final focus =
-      [target, previous?.target, context, LayoutSelection.focus.value?.context]
+      [
+            target,
+            previous?.target,
+            context,
+            LayoutSelection.focus.value?.context,
+            controller.contentContext,
+          ]
           .whereType<BuildContext>()
           .where((candidate) => controller.targetBounds(candidate) != null)
           .firstOrNull;

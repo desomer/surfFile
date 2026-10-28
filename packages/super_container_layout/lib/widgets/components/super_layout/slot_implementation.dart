@@ -4,7 +4,13 @@ import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/gestures.dart'
-    show PointerDownEvent, kPrimaryButton, kTouchSlop;
+    show
+        GestureBinding,
+        PointerDownEvent,
+        PointerScrollEvent,
+        PointerSignalEvent,
+        kPrimaryButton,
+        kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart';
@@ -559,6 +565,31 @@ class ZoneScrollableViewport extends StatefulWidget {
 class _ZoneScrollableViewportState extends State<ZoneScrollableViewport> {
   final ScrollController _controller = ScrollController();
 
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (widget.axis != Axis.horizontal ||
+        event is! PointerScrollEvent ||
+        event.scrollDelta.dx != 0 ||
+        event.scrollDelta.dy == 0 ||
+        !_controller.hasClients) {
+      return;
+    }
+    final position = _controller.position;
+    if (position.maxScrollExtent <= position.minScrollExtent) return;
+    final target = (position.pixels + event.scrollDelta.dy).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == position.pixels) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      PointerSignalEvent resolved,
+    ) {
+      if (!mounted || !_controller.hasClients) return;
+      _controller.position.pointerScroll(
+        (resolved as PointerScrollEvent).scrollDelta.dy,
+      );
+    });
+  }
+
   @override
   void dispose() {
     _controller.dispose();
@@ -599,6 +630,12 @@ class _ZoneScrollableViewportState extends State<ZoneScrollableViewport> {
                 ? colors.outlineVariant.withValues(alpha: 0.5)
                 : const Color(0x00000000)),
         scrollbarOrientation: style.side.resolveOrientation(widget.axis),
+        child: scrollView,
+      );
+    }
+    if (widget.axis == Axis.horizontal) {
+      scrollView = Listener(
+        onPointerSignal: _handlePointerSignal,
         child: scrollView,
       );
     }

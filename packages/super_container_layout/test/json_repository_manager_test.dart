@@ -4,9 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
+import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
+import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 void main() {
   late Directory directory;
@@ -240,6 +244,86 @@ void main() {
       expect(find.byKey(const ValueKey('repository-json')), findsNothing);
       expect(find.text('Repository supprimé.'), findsOneWidget);
       expect(await tester.runAsync(() => store.list()), ['Articles']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'repository dialog docks on the right and zooms out the screen',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final editMode = ValueNotifier(true);
+      final appearance = ValueNotifier(Appearance());
+      final navigatorKey = GlobalKey<NavigatorState>();
+      final pageKey = GlobalKey();
+      addTearDown(editMode.dispose);
+      addTearDown(appearance.dispose);
+
+      Rect screenRect(Finder finder) {
+        final box = tester.renderObject<RenderBox>(finder);
+        return MatrixUtils.transformRect(
+          box.getTransformTo(null),
+          Offset.zero & box.size,
+        );
+      }
+
+      await tester.pumpWidget(
+        JsonRepositoryScope(
+          store: store,
+          child: AppearanceScope(
+            controller: appearance,
+            child: StyleEditScope(
+              controller: editMode,
+              child: MaterialApp(
+                navigatorKey: navigatorKey,
+                builder: (context, child) => Stack(
+                  children: [
+                    child!,
+                    Positioned.fill(
+                      child: StyleEditBanner(navigatorKey: navigatorKey),
+                    ),
+                  ],
+                ),
+                home: Scaffold(
+                  body: EditorZoom(
+                    child: SizedBox.expand(
+                      key: pageKey,
+                      child: const ColoredBox(color: Colors.blue),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+
+      final pageFinder = find.byKey(pageKey);
+      final before = screenRect(pageFinder);
+      expect(before, const Rect.fromLTWH(0, 0, 1400, 900));
+
+      await tap(tester, find.byKey(const ValueKey('style-edit-banner-repository')));
+      await settle(tester);
+
+      expect(find.byType(JsonRepositoryManager), findsOneWidget);
+      final panel = find.byKey(const ValueKey('editor-dialog-panel'));
+      expect(panel, findsOneWidget);
+      final panelBounds = screenRect(panel);
+      expect(panelBounds.right, 1400);
+      expect(panelBounds.width, closeTo(770, .01));
+
+      final zoomedOut = screenRect(pageFinder);
+      expect(zoomedOut.width, lessThan(before.width));
+      expect(zoomedOut.overlaps(panelBounds), isFalse);
+      expect(zoomedOut.center.dx, closeTo((1400 - panelBounds.width) / 2, .01));
+
+      await tap(tester, find.text('Fermer'));
+      await settle(tester);
+
+      expect(find.byType(JsonRepositoryManager), findsNothing);
+      expect(screenRect(pageFinder), before);
       expect(tester.takeException(), isNull);
     },
   );
