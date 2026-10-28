@@ -1986,18 +1986,16 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     ),
                   ),
                   if (overlay && showBadge)
-                    Positioned.fill(
-                      child: ValueListenableBuilder<Set<Object>>(
-                        valueListenable: _hoveredRegionScopes,
-                        builder: (context, hoveredRegions, _) =>
-                            hoveredRegions.contains(id)
-                            ? EditorZoneHighlight(
-                                key: ValueKey(
-                                  '${widget.keyPrefix}-zone-highlight-$id',
-                                ),
-                              )
-                            : const SizedBox.shrink(),
-                      ),
+                    ValueListenableBuilder<Set<Object>>(
+                      valueListenable: _hoveredRegionScopes,
+                      builder: (context, hoveredRegions, _) =>
+                          hoveredRegions.contains(id)
+                          ? EditorZoneHighlight(
+                              key: ValueKey(
+                                '${widget.keyPrefix}-zone-highlight-$id',
+                              ),
+                            )
+                          : const SizedBox.shrink(),
                     ),
                   if (overlay && showBadge)
                     Positioned.fill(

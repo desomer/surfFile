@@ -1659,11 +1659,15 @@ void main() {
   });
 
   test('NativePropertyDescriptor serializes to/from JSON and NativeComponentConfig stores flat properties', () {
-    final jsonList = NativePropertyDescriptor.listToJson(
+    for (final descriptors in [
       SuperAppBar.propertyDescriptors,
-    );
-    final roundTripped = NativePropertyDescriptor.listFromJson(jsonList);
-    expect(roundTripped, SuperAppBar.propertyDescriptors);
+      SuperBottomAppBar.propertyDescriptors,
+      SuperBottomNavigationBar.propertyDescriptors,
+    ]) {
+      final jsonList = NativePropertyDescriptor.listToJson(descriptors);
+      final roundTripped = NativePropertyDescriptor.listFromJson(jsonList);
+      expect(roundTripped, descriptors);
+    }
 
     final config = NativeComponentConfig.fromJson({
       'placements': <String, Object>{},
@@ -1880,6 +1884,373 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.getTopLeft(titleFinder).dx, closeTo(0, 1.0));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperBottomAppBar applies Flutter style properties and edits them through generic property controls',
+    (tester) async {
+      final registry = Registry();
+      await mount(
+        SuperPage(
+          bottomNavigationBar: SuperBottomAppBar(
+            id: 'styled-bottom-bar',
+            left: const Text('Left'),
+            nativeConfig: NativeComponentConfig.fromJson({
+              'regions': {'left': true, 'center': true, 'right': true},
+              'placements': {
+                'left': ['left'],
+              },
+              'color': '#0F172A',
+              'surfaceTintColor': '#38BDF8',
+              'shadowColor': '#000000',
+              'elevation': 10,
+              'height': 76,
+              'padding': 8,
+              'notchMargin': 6,
+              'clipBehavior': 'antiAlias',
+            }),
+          ),
+          child: const SizedBox.expand(key: ValueKey('bottom-body')),
+        ),
+        tester,
+        registry,
+      );
+
+      var bottomBar = tester.widget<BottomAppBar>(find.byType(BottomAppBar));
+      expect(bottomBar.color, const Color(0xFF0F172A));
+      expect(bottomBar.surfaceTintColor, const Color(0xFF38BDF8));
+      expect(bottomBar.shadowColor, const Color(0xFF000000));
+      expect(bottomBar.elevation, 10.0);
+      expect(bottomBar.height, 76.0);
+      expect(bottomBar.padding, const EdgeInsets.all(8));
+      expect(bottomBar.notchMargin, 6.0);
+      expect(bottomBar.clipBehavior, Clip.antiAlias);
+      expect(tester.getSize(find.byType(BottomAppBar)).height, 76.0);
+
+      final context = tester.element(find.byType(SuperBottomAppBar));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+
+      final editor = tester.state<NativeComponentEditorState>(
+        find.descendant(
+          of: find.byType(SuperBottomAppBar),
+          matching: find.byType(NativeComponentEditor),
+        ),
+      );
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+
+      final resetColor = find.byKey(
+        const ValueKey('super-bottom-app-bar-prop-reset-color'),
+      );
+      await tester.ensureVisible(resetColor);
+      await tester.pumpAndSettle();
+      await tester.tap(resetColor);
+      await tester.pumpAndSettle();
+
+      bottomBar = tester.widget<BottomAppBar>(find.byType(BottomAppBar));
+      expect(bottomBar.color, isNull);
+
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      bottomBar = tester.widget<BottomAppBar>(find.byType(BottomAppBar));
+      expect(bottomBar.color, const Color(0xFF0F172A));
+
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+
+      final shapeTile = find.byKey(
+        const ValueKey('super-bottom-app-bar-prop-shape'),
+      );
+      await tester.ensureVisible(shapeTile);
+      await tester.pumpAndSettle();
+      await tester.tap(shapeTile);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('super-bottom-app-bar-shape-shape-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('super-bottom-app-bar-shape-shape-apply')),
+      );
+      await tester.pumpAndSettle();
+
+      bottomBar = tester.widget<BottomAppBar>(find.byType(BottomAppBar));
+      expect(bottomBar.shape, isA<AutomaticNotchedShape>());
+
+      await tester.tap(find.text('Réinitialiser'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      bottomBar = tester.widget<BottomAppBar>(find.byType(BottomAppBar));
+      expect(bottomBar.color, isNull);
+      expect(bottomBar.elevation, isNull);
+      expect(bottomBar.shape, isNull);
+      expect(bottomBar.height, kBottomNavigationBarHeight);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperBottomNavigationBar applies Flutter style properties and edits them through generic property controls',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      await mount(
+        SuperPage(
+          bottomNavigationBar: SuperBottomNavigationBar(
+            id: 'styled-bottom-nav',
+            destinations: const [
+              SuperAction(
+                id: 'nav-home',
+                config: SuperActionConfig(label: 'Home', icon: 'home'),
+              ),
+              SuperAction(
+                id: 'nav-settings',
+                config: SuperActionConfig(label: 'Settings', icon: 'settings'),
+              ),
+            ],
+            nativeConfig: NativeComponentConfig.fromJson({
+              'regions': {'destinations': true},
+              'placements': {
+                'destinations': ['nav-home', 'nav-settings'],
+              },
+              'backgroundColor': '#1E293B',
+              'selectedItemColor': '#38BDF8',
+              'unselectedItemColor': '#94A3B8',
+              'elevation': 12,
+              'height': 68,
+              'iconSize': 28,
+              'selectedFontSize': 16,
+              'unselectedFontSize': 11,
+              'navigationBarType': 'fixed',
+              'landscapeLayout': 'centered',
+              'showSelectedLabels': true,
+              'showUnselectedLabels': false,
+              'enableFeedback': false,
+              'useLegacyColorScheme': false,
+              'mouseCursor': 'click',
+            }),
+          ),
+          child: const SizedBox.expand(),
+        ),
+        tester,
+        registry,
+      );
+
+      var navBar = tester.widget<BottomNavigationBar>(
+        find.byType(BottomNavigationBar),
+      );
+      expect(navBar.backgroundColor, const Color(0xFF1E293B));
+      expect(navBar.selectedItemColor, const Color(0xFF38BDF8));
+      expect(navBar.unselectedItemColor, const Color(0xFF94A3B8));
+      expect(navBar.elevation, 12.0);
+      expect(navBar.iconSize, 28.0);
+      expect(navBar.selectedFontSize, 16.0);
+      expect(navBar.unselectedFontSize, 11.0);
+      expect(navBar.type, BottomNavigationBarType.fixed);
+      expect(
+        navBar.landscapeLayout,
+        BottomNavigationBarLandscapeLayout.centered,
+      );
+      expect(navBar.showSelectedLabels, isTrue);
+      expect(navBar.showUnselectedLabels, isFalse);
+      expect(navBar.enableFeedback, isFalse);
+      expect(navBar.useLegacyColorScheme, isFalse);
+      expect(navBar.mouseCursor, SystemMouseCursors.click);
+      expect(tester.getSize(find.byType(BottomNavigationBar)).height, 68.0);
+
+      final context = tester.element(find.byType(SuperBottomNavigationBar));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+
+      final editor = tester.state<NativeComponentEditorState>(
+        find.descendant(
+          of: find.byType(SuperBottomNavigationBar),
+          matching: find.byType(NativeComponentEditor),
+        ),
+      );
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+
+      final unselectedSwitch = find.byKey(
+        const ValueKey('super-bottom-navigation-bar-prop-showUnselectedLabels'),
+      );
+      await tester.ensureVisible(unselectedSwitch);
+      await tester.pumpAndSettle();
+      await tester.tap(unselectedSwitch);
+      await tester.pumpAndSettle();
+
+      navBar = tester.widget<BottomNavigationBar>(
+        find.byType(BottomNavigationBar),
+      );
+      expect(navBar.showUnselectedLabels, isTrue);
+
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      navBar = tester.widget<BottomNavigationBar>(
+        find.byType(BottomNavigationBar),
+      );
+      expect(navBar.showUnselectedLabels, isFalse);
+
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Réinitialiser'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      navBar = tester.widget<BottomNavigationBar>(
+        find.byType(BottomNavigationBar),
+      );
+      expect(navBar.backgroundColor, isNull);
+      expect(navBar.selectedItemColor, isNull);
+      expect(navBar.unselectedItemColor, isNull);
+      expect(navBar.elevation, isNull);
+      expect(navBar.iconSize, 24.0);
+      expect(navBar.selectedFontSize, 14.0);
+      expect(navBar.unselectedFontSize, 12.0);
+      expect(navBar.type, isNull);
+      expect(navBar.landscapeLayout, isNull);
+      expect(navBar.showSelectedLabels, isNull);
+      expect(navBar.showUnselectedLabels, isNull);
+      expect(navBar.enableFeedback, isNull);
+      expect(navBar.useLegacyColorScheme, isTrue);
+      expect(navBar.mouseCursor, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'native zones expose ruler icon, tooltip and flow editor in edit context menu',
+    (tester) async {
+      final registry = Registry();
+      await mount(
+        SuperPage(
+          maxAutoZoomExtent: 0,
+          appBar: SuperAppBar(
+            id: 'flow-app-bar',
+            title: const Text('Flow Title'),
+            actions: const [Text('A1'), Text('A2')],
+          ),
+          bottomNavigationBar: SuperBottomAppBar(
+            id: 'flow-bottom-bar',
+            left: const Text('Left Item'),
+          ),
+          child: const Text('Page Body Item'),
+        ),
+        tester,
+        registry,
+      );
+
+      final context = tester.element(find.byType(SuperPage));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const ValueKey('style-edit-banner-drag')),
+        const Offset(0, 200),
+      );
+      await tester.pumpAndSettle();
+
+      // 1. Right-click on SuperAppBar 'Actions' zone
+      await tester.tapAt(
+        tester.getCenter(find.text('A1')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final actionsFlowBtn = find.byKey(
+        const ValueKey('style-menu-zone-flow-Actions'),
+      );
+      expect(actionsFlowBtn, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('style-menu-axis-Actions')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<IconButton>(actionsFlowBtn).tooltip,
+        contains('Taille et flux de la zone Actions'),
+      );
+
+      await tester.tap(actionsFlowBtn);
+      await tester.pumpAndSettle();
+      expect(find.text('Flux de la zone : Actions'), findsOneWidget);
+
+      final spacingSlider = find.byWidgetPredicate(
+        (widget) =>
+            widget is Slider &&
+            widget.key ==
+                const ValueKey('super-app-bar-flow-dialog-actions-spacing'),
+      );
+      await tester.ensureVisible(spacingSlider);
+      tester.widget<Slider>(spacingSlider).onChanged!(16);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      final appBarConfig = registry
+          .nativeComponentController('flow-app-bar')
+          .value;
+      expect(appBarConfig.regionFlowOf('actions').spacing, 16.0);
+
+      // 2. Right-click on SuperBottomAppBar 'Gauche' zone
+      await tester.tapAt(
+        tester.getCenter(find.text('Left Item')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final leftFlowBtn = find.byKey(
+        const ValueKey('style-menu-zone-flow-Gauche'),
+      );
+      final bodyFlowBtn = find.byKey(
+        const ValueKey('style-menu-zone-flow-Corps'),
+      );
+      expect(leftFlowBtn, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('style-menu-axis-Gauche')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<IconButton>(leftFlowBtn).tooltip,
+        'Taille et flux de la zone Gauche\n'
+        'Taille : Auto\n'
+        'Direction : Ligne (Row) · Éléments : Étirer (flex : 1)\n'
+        'Espacement : 0 px · Marge : 0 px',
+      );
+      expect(bodyFlowBtn, findsNothing);
+
+      // Toggle axis of 'Gauche' directly from the context menu
+      await tester.tap(find.byKey(const ValueKey('style-menu-axis-Gauche')));
+      await tester.pumpAndSettle();
+
+      final bottomBarConfig = registry
+          .nativeComponentController('flow-bottom-bar')
+          .value;
+      expect(bottomBarConfig.regionAxisOf('left'), Axis.vertical);
+
+      // 3. Right-click on SuperPage 'Corps' zone
+      await tester.tapAt(
+        tester.getCenter(find.text('Page Body Item')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('style-menu-zone-flow-Corps')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-axis-Corps')),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },
   );

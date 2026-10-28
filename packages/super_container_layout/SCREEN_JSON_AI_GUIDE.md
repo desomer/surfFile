@@ -265,8 +265,21 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
     - Comportement & opacité : `centerTitle` (`bool`), `toolbarOpacity` (`0.0`..`1.0`, défaut `1.0`), `bottomOpacity` (`0.0`..`1.0`, défaut `1.0`), `primary` (`bool`, défaut `true`), `excludeHeaderSemantics` (`bool`, défaut `false`), `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`), `systemOverlayStyle` (`"light"` | `"dark"`).
     - Pour réinitialiser une propriété au thème Material 3 par défaut en mode Vibe (`applyVibe`), passe sa valeur à `null` (ex. `{"backgroundColor": null}`).
 
-- **`"registry:BottomNavigationBar"` $\rightarrow$ `BottomAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
-  - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).
+- **`"registry:BottomAppBar"` $\rightarrow$ `BottomAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
+  - **Régions** :
+    - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).
+  - **Propriétés de style Flutter `BottomAppBar` (directement à la racine de `components[bottomAppBarId]`)** :
+    - Couleurs (`"#RRGGBB"` ou `"#AARRGGBB"`) : `color`, `surfaceTintColor`, `shadowColor`.
+    - Élévation, forme & encoche : `elevation` (`0`..`24`, défaut `3`), `shape` (objet `NativeShapeConfig` ou raccourcis rayon / coins), `notchMargin` (`0`..`24`, défaut `4`).
+    - Dimensions, marges & découpage : `height` (`32`..`160`, défaut `56`), `padding` (`0`..`48`, défaut `0`), `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`).
+
+- **`"registry:BottomNavigationBar"` $\rightarrow$ `BottomNavigationBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
+  - **Régions** :
+    - `destinations` (liste horizontale de composants `"action"`, convertis en entrées `BottomNavigationBarItem`).
+  - **Propriétés de style Flutter `BottomNavigationBar` (directement à la racine de `components[bottomNavId]`)** :
+    - Couleurs (`"#RRGGBB"` ou `"#AARRGGBB"`) : `backgroundColor`, `selectedItemColor`, `unselectedItemColor`.
+    - Élévation & dimensions : `elevation` (`0`..`24`, défaut `8`), `height` (`32`..`160`, défaut `56`), `iconSize` (`12`..`48`, défaut `24`), `selectedFontSize` (`8`..`32`, défaut `14`), `unselectedFontSize` (`8`..`32`, défaut `12`).
+    - Disposition, libellés & comportement : `navigationBarType` (`"fixed"` | `"shifting"`), `landscapeLayout` (`"spread"` | `"centered"` | `"linear"`), `showSelectedLabels` (`bool`, défaut `true`), `showUnselectedLabels` (`bool`, défaut `true`), `enableFeedback` (`bool`, défaut `true`), `useLegacyColorScheme` (`bool`, défaut `true`), `mouseCursor` (`"click"` | `"basic"` | `"defer"` | `"none"`).
 
 - **`"registry:Card"` $\rightarrow$ Conteneur monoenfant (`Card` / `Container` Flutter) + surface `ContainerStyle` enrichie** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
   - `child` (1 slot unique max, région obligatoire toujours active) : comme un `Card` ou `Container` Flutter, ne prend qu'un seul composant enfant `child` (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants, ou utilise `"registry:IterableContent"` si tu veux fusionner carte et grille sous le même ID).
@@ -282,7 +295,13 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
   - Contrairement à `Card` (qui n'accepte qu'un seul `child` dans une config `"native"` et nécessite un second composant `"layout"` enfant), `IterableContent` fusionne directement **une surface stylisée** (`styles[id]`) et **une grille `SuperLayout`** (`components[id]` avec `"type": "layout"`) sous **le même `id`** !
   - De plus, `IterableContent` fournit automatiquement un `ContentHoverScope` à tous ses composants enfants, ce qui permet aux `Value`, `Action` et `styles` placés à l'intérieur de réagir à l'état automatique `contentHover` dès que le curseur survole la carte.
 
-Propriétés communes dans `components[id]` pour `"native"` : `useDefaultNavigation` (`bool?`), `regions` (`Map<string, bool>`), `placements` (`Map<string, List<{"id": string, "type": string}>>`), `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
+Propriétés communes dans `components[id]` pour `"native"` :
+- `regions` (`Map<string, bool>`), `placements` (`Map<string, List<{"id": string, "type": string}>>`).
+- **Flux et taille par région native** (mêmes clés et options que `zoneAxes` / `zoneFlows` d'un `"layout"`, applicables aux régions de `Page`/`Scaffold` (`body`, `drawer`, `endDrawer`, `bottomSheet`), `ApplicationBar` (`leading`, `title`, `actions`, `bottom`, `flexibleSpace`), `BottomAppBar` (`left`, `center`, `right`) et `Expansible` (`header`, `body`)) :
+  - `regionAxes` (`Map<regionId, "horizontal" | "vertical">`) : direction du flux de la région.
+  - `regionFlows` (`Map<regionId, ZoneFlowConfig>`) : `scrollable` (`bool`), `expandSlots` (`bool`), `mainAxisAlignment` (`"start" | "center" | "end" | "spaceBetween" | "spaceAround" | "spaceEvenly"`), `crossAxisAlignment` (`"start" | "center" | "end" | "stretch"`), `spacing` (`0`..`64`), `padding` (`0`..`64` ou `[top, right, bottom, left]`).
+  - `regionSizes` (`Map<regionId, number>`) : hauteur/taille fixe en pixels de la région (omettre pour la taille automatique).
+- `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
 
 ### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher ou un interrupteur :

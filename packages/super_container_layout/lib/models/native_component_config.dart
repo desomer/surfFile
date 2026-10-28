@@ -30,6 +30,10 @@ class NativeComponentConfig extends ComponentConfig {
         useDefaultNavigationPropertyDescriptor,
     for (final descriptor in superAppBarPropertyDescriptors)
       descriptor.id: descriptor,
+    for (final descriptor in superBottomAppBarPropertyDescriptors)
+      descriptor.id: descriptor,
+    for (final descriptor in superBottomNavigationBarPropertyDescriptors)
+      descriptor.id: descriptor,
     for (final descriptor in superExpansiblePropertyDescriptors)
       descriptor.id: descriptor,
   };
@@ -38,6 +42,9 @@ class NativeComponentConfig extends ComponentConfig {
     final trimmed = id.trim();
     if (trimmed.isEmpty || _reservedJsonKeys.contains(trimmed)) {
       throw ArgumentError.value(id, 'id', 'Invalid native property ID.');
+    }
+    if (trimmed == 'fixedColor') {
+      return JsonColor.toHex(JsonColor.parse(value, trimmed));
     }
     final descriptor = _knownDescriptors[trimmed];
     if (descriptor != null) {

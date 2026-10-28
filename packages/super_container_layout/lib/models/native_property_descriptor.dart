@@ -423,6 +423,243 @@ const NativePropertyDescriptor useDefaultNavigationPropertyDescriptor =
       defaultValue: true,
     );
 
+/// Catalogue déclaratif des propriétés de style Flutter disponibles sur [SuperBottomAppBar].
+const List<NativePropertyDescriptor> superBottomAppBarPropertyDescriptors = [
+  // Couleurs
+  NativePropertyDescriptor(
+    id: 'color',
+    label: 'Couleur de fond',
+    subtitle: 'Arrière-plan de la barre basse (color)',
+    editorType: NativePropertyEditorType.color,
+  ),
+  NativePropertyDescriptor(
+    id: 'surfaceTintColor',
+    label: 'Teinte de surface',
+    subtitle: 'Teinte Material 3 appliquée avec l’élévation (surfaceTintColor)',
+    editorType: NativePropertyEditorType.color,
+  ),
+  NativePropertyDescriptor(
+    id: 'shadowColor',
+    label: 'Couleur de l’ombre',
+    subtitle: 'Couleur de l’ombre portée sous la barre (shadowColor)',
+    editorType: NativePropertyEditorType.color,
+  ),
+  // Élévation, forme & encoche
+  NativePropertyDescriptor(
+    id: 'elevation',
+    label: 'Élévation',
+    subtitle: 'Hauteur de l’ombre portée au repos (elevation)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 3.0,
+    min: 0,
+    max: 24,
+    divisions: 24,
+  ),
+  NativePropertyDescriptor(
+    id: 'shape',
+    label: 'Forme et bordure (Shape)',
+    subtitle: 'Découpe géométrique, coins arrondis et contour (shape)',
+    editorType: NativePropertyEditorType.shape,
+  ),
+  NativePropertyDescriptor(
+    id: 'notchMargin',
+    label: 'Marge d’encoche (FAB)',
+    subtitle: 'Espace entre le bouton flottant et l’encoche (notchMargin)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 4.0,
+    min: 0,
+    max: 24,
+    divisions: 24,
+  ),
+  // Dimensions, marges & découpage
+  NativePropertyDescriptor(
+    id: 'height',
+    label: 'Hauteur de la barre',
+    subtitle: 'Hauteur en pixels de la barre basse (height)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 56.0,
+    min: 32,
+    max: 160,
+    divisions: 128,
+  ),
+  NativePropertyDescriptor(
+    id: 'padding',
+    label: 'Marge intérieure (Padding)',
+    subtitle: 'Espacement interne autour du contenu de la barre (padding)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 0.0,
+    min: 0,
+    max: 48,
+    divisions: 48,
+  ),
+  NativePropertyDescriptor(
+    id: 'clipBehavior',
+    label: 'Découpage (Clip)',
+    subtitle: 'Mode de découpage du contenu dépassant de la barre',
+    editorType: NativePropertyEditorType.select,
+    options: [
+      NativePropertyOption(value: 'none', label: 'Aucun (none)'),
+      NativePropertyOption(value: 'hardEdge', label: 'Bord net (hardEdge)'),
+      NativePropertyOption(
+        value: 'antiAlias',
+        label: 'Anticrénelage (antiAlias)',
+      ),
+      NativePropertyOption(
+        value: 'antiAliasWithSaveLayer',
+        label: 'Anticrénelage avec calque (antiAliasWithSaveLayer)',
+      ),
+    ],
+  ),
+];
+
+/// Catalogue déclaratif des propriétés de style Flutter disponibles sur [SuperBottomNavigationBar].
+const List<NativePropertyDescriptor>
+superBottomNavigationBarPropertyDescriptors = [
+  // Couleurs
+  NativePropertyDescriptor(
+    id: 'backgroundColor',
+    label: 'Couleur de fond',
+    subtitle: 'Arrière-plan de la barre de navigation (backgroundColor)',
+    editorType: NativePropertyEditorType.color,
+  ),
+  NativePropertyDescriptor(
+    id: 'selectedItemColor',
+    label: 'Couleur de l’élément sélectionné',
+    subtitle: 'Couleur de l’icône et du libellé actifs (selectedItemColor)',
+    editorType: NativePropertyEditorType.color,
+  ),
+  NativePropertyDescriptor(
+    id: 'unselectedItemColor',
+    label: 'Couleur des éléments non sélectionnés',
+    subtitle: 'Couleur des icônes et libellés inactifs (unselectedItemColor)',
+    editorType: NativePropertyEditorType.color,
+  ),
+  // Élévation & dimensions
+  NativePropertyDescriptor(
+    id: 'elevation',
+    label: 'Élévation',
+    subtitle: 'Hauteur de l’ombre portée de la barre (elevation)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 8.0,
+    min: 0,
+    max: 24,
+    divisions: 24,
+  ),
+  NativePropertyDescriptor(
+    id: 'height',
+    label: 'Hauteur de la barre',
+    subtitle: 'Hauteur en pixels de la barre de navigation (height)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 56.0,
+    min: 32,
+    max: 160,
+    divisions: 128,
+  ),
+  NativePropertyDescriptor(
+    id: 'iconSize',
+    label: 'Taille des icônes',
+    subtitle: 'Taille en pixels des icônes des destinations (iconSize)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 24.0,
+    min: 12,
+    max: 48,
+    divisions: 36,
+  ),
+  NativePropertyDescriptor(
+    id: 'selectedFontSize',
+    label: 'Taille du texte sélectionné',
+    subtitle: 'Taille de police du libellé actif (selectedFontSize)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 14.0,
+    min: 8,
+    max: 32,
+    divisions: 24,
+  ),
+  NativePropertyDescriptor(
+    id: 'unselectedFontSize',
+    label: 'Taille du texte non sélectionné',
+    subtitle: 'Taille de police des libellés inactifs (unselectedFontSize)',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 12.0,
+    min: 8,
+    max: 32,
+    divisions: 24,
+  ),
+  // Disposition, libellés & comportement
+  NativePropertyDescriptor(
+    id: 'navigationBarType',
+    label: 'Type de barre',
+    subtitle: 'Mode de disposition des destinations (type)',
+    editorType: NativePropertyEditorType.select,
+    options: [
+      NativePropertyOption(value: 'fixed', label: 'Fixe (fixed)'),
+      NativePropertyOption(
+        value: 'shifting',
+        label: 'Animé / décalé (shifting)',
+      ),
+    ],
+  ),
+  NativePropertyDescriptor(
+    id: 'landscapeLayout',
+    label: 'Disposition en mode paysage',
+    subtitle: 'Agencement des destinations à l’horizontale (landscapeLayout)',
+    editorType: NativePropertyEditorType.select,
+    options: [
+      NativePropertyOption(value: 'spread', label: 'Réparti (spread)'),
+      NativePropertyOption(value: 'centered', label: 'Centré (centered)'),
+      NativePropertyOption(
+        value: 'linear',
+        label: 'Linéaire côte à côte (linear)',
+      ),
+    ],
+  ),
+  NativePropertyDescriptor(
+    id: 'showSelectedLabels',
+    label: 'Afficher le libellé sélectionné',
+    subtitle: 'Affiche le texte sous la destination active (showSelectedLabels)',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'showUnselectedLabels',
+    label: 'Afficher les libellés non sélectionnés',
+    subtitle:
+        'Affiche le texte sous les destinations inactives (showUnselectedLabels)',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'enableFeedback',
+    label: 'Retour haptique et sonore',
+    subtitle: 'Active les vibrations et sons système au clic (enableFeedback)',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'useLegacyColorScheme',
+    label: 'Schéma de couleurs hérité',
+    subtitle:
+        'Applique la logique classique des couleurs d’icônes et libellés (useLegacyColorScheme)',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'mouseCursor',
+    label: 'Curseur de la souris',
+    subtitle: 'Apparence du pointeur au survol des destinations (mouseCursor)',
+    editorType: NativePropertyEditorType.select,
+    options: [
+      NativePropertyOption(value: 'click', label: 'Main cliquable (click)'),
+      NativePropertyOption(value: 'basic', label: 'Flèche standard (basic)'),
+      NativePropertyOption(
+        value: 'defer',
+        label: 'Hérité du parent (defer)',
+      ),
+      NativePropertyOption(value: 'none', label: 'Masqué (none)'),
+    ],
+  ),
+];
+
 /// Catalogue déclaratif des propriétés de comportement de [SuperExpansible].
 const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
   NativePropertyDescriptor(

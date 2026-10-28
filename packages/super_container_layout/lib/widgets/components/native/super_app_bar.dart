@@ -84,6 +84,9 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
     if (ids.length > 1) {
       throw StateError('AppBar.bottom accepts a single slot.');
     }
+    if (config.regionSizeOf('bottom') case final regionSize?) {
+      return regionSize;
+    }
     if (ids.isEmpty) return kToolbarHeight;
     final id = ids.single;
     final type = config.slotTypeOf(id);
@@ -179,6 +182,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
         'leading',
         'Navigation',
         single: true,
+        editableFlow: true,
         emptySize: Size(
           config.doubleProperty('leadingWidth') ?? 56,
           effectiveToolbarHeight,
@@ -190,6 +194,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
         axis: Axis.horizontal,
         expand: !centerTitle,
         stretch: false,
+        editableFlow: true,
         emptySize: Size(double.infinity, effectiveToolbarHeight),
       ),
       NativeRegion(
@@ -198,10 +203,16 @@ class _SuperAppBarState extends State<SuperAppBar> {
         axis: Axis.horizontal,
         expand: false,
         stretch: false,
+        editableFlow: true,
         emptySize: Size(96, effectiveToolbarHeight),
       ),
-      const NativeRegion('bottom', 'Bas', single: true),
-      const NativeRegion('flexibleSpace', 'Espace flexible', single: true),
+      const NativeRegion('bottom', 'Bas', single: true, editableFlow: true),
+      const NativeRegion(
+        'flexibleSpace',
+        'Espace flexible',
+        single: true,
+        editableFlow: true,
+      ),
     ];
   }
 
@@ -339,6 +350,9 @@ class _SuperAppBarState extends State<SuperAppBar> {
                 : [
                     if (actions.isEmpty)
                       SizedBox(width: 96, child: toolbarRegion('actions'))
+                    else if (!config.regionFlowOf('actions').isDefault ||
+                        config.regionAxisOf('actions') != null)
+                      toolbarRegion('actions')
                     else
                       for (final (index, slot) in actions.indexed)
                         toolbarRegion(

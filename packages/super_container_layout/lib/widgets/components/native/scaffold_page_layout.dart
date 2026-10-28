@@ -51,9 +51,9 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
       'AppBar',
       tagFilter: ComponentTagFilter(include: {'appBar'}),
     ),
-    NativeRegion('body', 'Corps', required: true),
-    NativeRegion('drawer', 'Drawer gauche'),
-    NativeRegion('endDrawer', 'Drawer droit'),
+    NativeRegion('body', 'Corps', required: true, editableFlow: true),
+    NativeRegion('drawer', 'Drawer gauche', editableFlow: true),
+    NativeRegion('endDrawer', 'Drawer droit', editableFlow: true),
     NativeRegion(
       'bottomNavigationBar',
       'Barre basse',
@@ -73,6 +73,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
       'bottomSheet',
       'Panneau bas',
       expand: false,
+      editableFlow: true,
       fillSize: Size.fromHeight(kBottomNavigationBarHeight),
     ),
   ];
@@ -241,7 +242,10 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           ],
           builder: (context, editor) => ListenableBuilder(
             listenable: Listenable.merge([
-              for (final slot in editor.slotsFor('appBar'))
+              for (final slot in [
+                ...editor.slotsFor('appBar'),
+                ...editor.slotsFor('bottomNavigationBar'),
+              ])
                 if (slot case NativePreferredSizeWidget native)
                   native.sizeListenable(context),
             ]),
