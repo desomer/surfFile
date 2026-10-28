@@ -2365,6 +2365,165 @@ void main() {
         expect(centerRect.height, greaterThan(450));
       },
     );
+
+    test(
+      'ZoneFlowConfig serializes showScrollbar and ScrollbarStyleConfig',
+      () {
+        const style = ScrollbarStyleConfig(
+          thumbVisibility: false,
+          trackVisibility: true,
+          interactive: false,
+          thickness: 12,
+          radius: 6,
+          mainAxisMargin: 8,
+          crossAxisMargin: 4,
+          thumbColor: Color(0xFF336699),
+          trackColor: Color(0x22000000),
+          trackBorderColor: Color(0xFF112233),
+          side: ScrollbarSide.start,
+        );
+        const flow = ZoneFlowConfig(
+          scrollable: true,
+          showScrollbar: true,
+          scrollbarStyle: style,
+        );
+        expect(flow.isDefault, isFalse);
+        final json = flow.toJson();
+        expect(json['scrollable'], isTrue);
+        expect(json['showScrollbar'], isTrue);
+        expect(json['scrollbarStyle'], isA<Map<String, Object?>>());
+
+        final restored = ZoneFlowConfig.fromJson(json);
+        expect(restored, flow);
+        expect(restored.hashCode, flow.hashCode);
+        expect(restored.scrollbarStyle, style);
+        expect(restored.scrollbarStyle.summary, contains('12 px'));
+      },
+    );
+
+    testWidgets(
+      'renders styled RawScrollbar when scrollable and showScrollbar are enabled and edits style via ScrollbarStyleEditor',
+      (tester) async {
+        final editMode = ValueNotifier(true);
+        addTearDown(editMode.dispose);
+        SuperLayoutConfig current = const SuperLayoutConfig(
+          north: false,
+          south: false,
+          west: false,
+          east: false,
+          zoneFlows: {SuperLayoutZone.center: ZoneFlowConfig(scrollable: true)},
+          placements: {
+            SuperLayoutZone.center: ['s1', 's2', 's3'],
+          },
+        );
+
+        await tester.pumpWidget(
+          StatefulBuilder(
+            builder: (context, setState) => StyleEditScope(
+              controller: editMode,
+              child: MaterialApp(
+                home: Scaffold(
+                  body: SizedBox(
+                    width: 600,
+                    height: 300,
+                    child: SuperLayout(
+                      config: current,
+                      onChanged: (next) => setState(() => current = next),
+                      slots: [
+                        _slot('s1', width: 120, height: 150),
+                        _slot('s2', width: 120, height: 150),
+                        _slot('s3', width: 120, height: 150),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // By default, showScrollbar is false -> no RawScrollbar is built.
+        expect(find.byType(RawScrollbar), findsNothing);
+
+        // Select center zone and open zone flow dialog.
+        await tester.tapAt(const Offset(300, 150));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('super-layout-flow-center')),
+        );
+        await tester.pumpAndSettle();
+
+        // Enable showScrollbar switch.
+        final showScrollbarSwitch = find.byKey(
+          const ValueKey('zone-flow-dialog-center-show-scrollbar'),
+        );
+        expect(showScrollbarSwitch, findsOneWidget);
+        await tester.ensureVisible(showScrollbarSwitch);
+        await tester.pumpAndSettle();
+        await tester.tap(showScrollbarSwitch);
+        await tester.pumpAndSettle();
+
+        expect(current.flowOf(SuperLayoutZone.center).showScrollbar, isTrue);
+        expect(find.byType(RawScrollbar), findsOneWidget);
+
+        // Open ScrollbarStyleEditor dialog from the tile.
+        final styleTile = find.byKey(
+          const ValueKey('zone-flow-dialog-center-scrollbar-style'),
+        );
+        expect(styleTile, findsOneWidget);
+        await tester.ensureVisible(styleTile);
+        await tester.pumpAndSettle();
+        await tester.tap(styleTile);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.byKey(
+            const ValueKey('zone-flow-dialog-center-scrollbar-editor-dialog'),
+          ),
+          findsOneWidget,
+        );
+
+        // Toggle trackVisibility and select Gauche side.
+        final trackVisibilitySwitch = find.byKey(
+          const ValueKey(
+            'zone-flow-dialog-center-scrollbar-editor-track-visibility',
+          ),
+        );
+        await tester.ensureVisible(trackVisibilitySwitch);
+        await tester.pumpAndSettle();
+        await tester.tap(trackVisibilitySwitch);
+        await tester.pumpAndSettle();
+        final gaucheFinder = find.text('Gauche');
+        await tester.ensureVisible(gaucheFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(gaucheFinder);
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.byKey(
+            const ValueKey('zone-flow-dialog-center-scrollbar-editor-apply'),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Apply the zone flow dialog as well.
+        await tester.tap(find.text('Appliquer'));
+        await tester.pumpAndSettle();
+
+        final appliedStyle = current
+            .flowOf(SuperLayoutZone.center)
+            .scrollbarStyle;
+        expect(appliedStyle.trackVisibility, isTrue);
+        expect(appliedStyle.side, ScrollbarSide.start);
+
+        final rawScrollbar = tester.widget<RawScrollbar>(
+          find.byType(RawScrollbar),
+        );
+        expect(rawScrollbar.trackVisibility, isTrue);
+        expect(rawScrollbar.scrollbarOrientation, ScrollbarOrientation.left);
+      },
+    );
   });
 }
 

@@ -516,6 +516,81 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
               onChanged: (value) =>
                   onFlowChanged(flow.copyWith(scrollable: value)),
             ),
+            if (flow.scrollable) ...[
+              Divider(
+                height: 12,
+                color: colors.outlineVariant.withValues(alpha: 0.4),
+              ),
+              SwitchListTile(
+                key: ValueKey('$keyPrefix-show-scrollbar'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                secondary: Icon(
+                  Icons.linear_scale_rounded,
+                  size: 20,
+                  color: colors.onSurfaceVariant,
+                ),
+                title: const Text(
+                  'Afficher la barre de défilement (ScrollBar)',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                subtitle: const Text(
+                  'Rend visible une barre de défilement personnalisable.',
+                  style: TextStyle(fontSize: 11),
+                ),
+                value: flow.showScrollbar,
+                onChanged: (value) =>
+                    onFlowChanged(flow.copyWith(showScrollbar: value)),
+              ),
+              if (flow.showScrollbar) ...[
+                const SizedBox(height: 4),
+                ListTile(
+                  key: ValueKey('$keyPrefix-scrollbar-style'),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    Icons.palette_outlined,
+                    size: 20,
+                    color: colors.primary,
+                  ),
+                  title: const Text(
+                    'Style de la barre de défilement',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: Text(
+                    flow.scrollbarStyle.summary,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!flow.scrollbarStyle.isDefault)
+                        IconButton(
+                          key: ValueKey('$keyPrefix-scrollbar-style-reset'),
+                          tooltip: 'Style par défaut',
+                          visualDensity: VisualDensity.compact,
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          onPressed: () => onFlowChanged(
+                            flow.copyWith(
+                              scrollbarStyle: const ScrollbarStyleConfig(),
+                            ),
+                          ),
+                        ),
+                      const Icon(Icons.tune, size: 18),
+                    ],
+                  ),
+                  onTap: () => showScrollbarStyleEditor(
+                    context: context,
+                    axis: axis,
+                    keyPrefix: '$keyPrefix-scrollbar-editor',
+                    initialValue: flow.scrollbarStyle,
+                    onChanged: (nextStyle) => onFlowChanged(
+                      flow.copyWith(scrollbarStyle: nextStyle),
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ],
         ),
         _FlowSectionCard(

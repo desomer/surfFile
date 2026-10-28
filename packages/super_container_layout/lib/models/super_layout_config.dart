@@ -7,7 +7,9 @@ import 'package:flutter/rendering.dart'
 import 'component_config.dart';
 import 'grid_layout_config.dart';
 import 'json_syntax.dart';
+import 'scrollbar_style_config.dart';
 export 'grid_layout_config.dart';
+export 'scrollbar_style_config.dart';
 
 /// Les neuf zones d'un [SuperLayoutConfig].
 enum SuperLayoutZone {
@@ -323,6 +325,8 @@ class ZoneFlowConfig {
 
   const ZoneFlowConfig({
     this.scrollable = false,
+    this.showScrollbar = false,
+    this.scrollbarStyle = const ScrollbarStyleConfig(),
     this.expandSlots = true,
     this.mainAxisAlignment = MainAxisAlignment.start,
     this.crossAxisAlignment = CrossAxisAlignment.stretch,
@@ -333,6 +337,12 @@ class ZoneFlowConfig {
        assert(padding >= 0 && padding <= maxPadding);
 
   final bool scrollable;
+
+  /// Affiche une barre de défilement lorsque [scrollable] est activé.
+  final bool showScrollbar;
+
+  /// Style visuel de la barre de défilement lorsque [showScrollbar] est activé.
+  final ScrollbarStyleConfig scrollbarStyle;
 
   /// Si `true` (défaut), les slots sans taille fixe se partagent l'espace
   /// (`flex: 1`). Si `false`, ils prennent la taille de leur contenu (`flex: 0`).
@@ -348,6 +358,8 @@ class ZoneFlowConfig {
 
   bool get isDefault =>
       !scrollable &&
+      !showScrollbar &&
+      scrollbarStyle.isDefault &&
       expandSlots &&
       mainAxisAlignment == MainAxisAlignment.start &&
       crossAxisAlignment == CrossAxisAlignment.stretch &&
@@ -356,6 +368,8 @@ class ZoneFlowConfig {
 
   ZoneFlowConfig copyWith({
     bool? scrollable,
+    bool? showScrollbar,
+    ScrollbarStyleConfig? scrollbarStyle,
     bool? expandSlots,
     MainAxisAlignment? mainAxisAlignment,
     CrossAxisAlignment? crossAxisAlignment,
@@ -365,6 +379,8 @@ class ZoneFlowConfig {
     bool clearPaddingInsets = false,
   }) => ZoneFlowConfig(
     scrollable: scrollable ?? this.scrollable,
+    showScrollbar: showScrollbar ?? this.showScrollbar,
+    scrollbarStyle: scrollbarStyle ?? this.scrollbarStyle,
     expandSlots: expandSlots ?? this.expandSlots,
     mainAxisAlignment: mainAxisAlignment ?? this.mainAxisAlignment,
     crossAxisAlignment: crossAxisAlignment ?? this.crossAxisAlignment,
@@ -377,6 +393,8 @@ class ZoneFlowConfig {
 
   Map<String, Object?> toJson() => {
     if (scrollable) 'scrollable': scrollable,
+    if (showScrollbar) 'showScrollbar': showScrollbar,
+    if (!scrollbarStyle.isDefault) 'scrollbarStyle': scrollbarStyle.toJson(),
     if (!expandSlots) 'expandSlots': expandSlots,
     if (mainAxisAlignment != MainAxisAlignment.start)
       'mainAxisAlignment': mainAxisAlignment.name,
@@ -401,6 +419,13 @@ class ZoneFlowConfig {
     if (scrollable is! bool) {
       throw const FormatException('Valeur invalide pour "scrollable".');
     }
+    final showScrollbar = value['showScrollbar'] ?? false;
+    if (showScrollbar is! bool) {
+      throw const FormatException('Valeur invalide pour "showScrollbar".');
+    }
+    final scrollbarStyle = value['scrollbarStyle'] == null
+        ? const ScrollbarStyleConfig()
+        : ScrollbarStyleConfig.fromJson(value['scrollbarStyle']);
     final expandSlots = value['expandSlots'] ?? true;
     if (expandSlots is! bool) {
       throw const FormatException('Valeur invalide pour "expandSlots".');
@@ -440,6 +465,8 @@ class ZoneFlowConfig {
         : SlotSizeConstraints._readPaddingInsets(rawPaddingInsets);
     return ZoneFlowConfig(
       scrollable: scrollable,
+      showScrollbar: showScrollbar,
+      scrollbarStyle: scrollbarStyle,
       expandSlots: expandSlots,
       mainAxisAlignment: mainAxisAlignment,
       crossAxisAlignment: crossAxisAlignment,
@@ -453,6 +480,8 @@ class ZoneFlowConfig {
   bool operator ==(Object other) =>
       other is ZoneFlowConfig &&
       other.scrollable == scrollable &&
+      other.showScrollbar == showScrollbar &&
+      other.scrollbarStyle == scrollbarStyle &&
       other.expandSlots == expandSlots &&
       other.mainAxisAlignment == mainAxisAlignment &&
       other.crossAxisAlignment == crossAxisAlignment &&
@@ -463,6 +492,8 @@ class ZoneFlowConfig {
   @override
   int get hashCode => Object.hash(
     scrollable,
+    showScrollbar,
+    scrollbarStyle,
     expandSlots,
     mainAxisAlignment,
     crossAxisAlignment,
@@ -589,7 +620,10 @@ String formatZoneFlowTooltip({
     ?sizeLabel,
     'Direction : $directionLabel · Éléments : $elementsLabel',
     [
-      if (flow.scrollable) 'Scroll : Activé',
+      if (flow.scrollable) ...[
+        'Scroll : Activé',
+        if (flow.showScrollbar) 'ScrollBar : ${flow.scrollbarStyle.summary}',
+      ],
       'Espacement : ${SlotDimension.formatNumber(flow.spacing)} px',
       'Marge : $paddingLabel',
     ].join(' · '),

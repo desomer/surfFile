@@ -218,6 +218,17 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
       - `true` (`flex: 1`) : les slots sans taille préférée se partagent tout l'espace disponible de la zone.
       - `false` (`flex: 0` / taille du contenu) : chaque slot (y compris une `Card`, un `Layout` imbriqué, un `Action` ou un `Value`) prend uniquement la hauteur/largeur naturelle de son contenu au lieu de s'étirer sur toute la zone.
     - `scrollable` (`bool`, défaut `false`) : active le défilement automatique (`SingleChildScrollView`) sur l'axe de la zone si les éléments dépassent, sans compresser leurs tailles préférées.
+    - `showScrollbar` (`bool`, défaut `false`) : affiche une barre de défilement (`RawScrollbar`) lorsque `scrollable` est activé.
+    - `scrollbarStyle` (`ScrollbarStyleConfig`, optionnel) : personnalisation visuelle de la barre de défilement :
+      - `thumbVisibility` (`bool`, défaut `true`) : maintient le curseur visible en permanence (`false` pour l'afficher uniquement pendant le défilement).
+      - `trackVisibility` (`bool`, défaut `false`) : affiche la piste en arrière-plan du curseur.
+      - `interactive` (`bool`, défaut `true`) : autorise le glisser du curseur.
+      - `thickness` (`number`, **bornes : `2` à `24`**, défaut `8`) : épaisseur en pixels.
+      - `radius` (`number`, **bornes : `0` à `24`**, défaut `4`) : rayon d'arrondi en pixels.
+      - `mainAxisMargin` (`number`, **bornes : `0` à `48`**, défaut `0`) : marge aux extrémités sur l'axe principal.
+      - `crossAxisMargin` (`number`, **bornes : `0` à `24`**, défaut `0`) : marge latérale par rapport au bord de la zone.
+      - `thumbColor`, `trackColor`, `trackBorderColor` (`string` hex `#AARRGGBB` / `#RRGGBB`) : couleurs personnalisées du curseur, de la piste et de sa bordure.
+      - `side` (`"auto"` | `"start"` | `"end"`, défaut `"auto"`) : côté d'affichage (`"start"` = gauche/haut, `"end"` = droite/bas).
     - `mainAxisAlignment` : `"start"` (défaut), `"center"`, `"end"`, `"spaceBetween"`, `"spaceAround"`, `"spaceEvenly"`.
     - `crossAxisAlignment` : `"stretch"` (défaut, occupe toute la largeur en Column / toute la hauteur en Row), `"start"`, `"center"`, `"end"`.
     - `spacing` (`number`, **bornes : `0` à `100`**, défaut `0`) : espacement en pixels entre les composants de la zone.

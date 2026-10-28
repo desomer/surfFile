@@ -405,13 +405,12 @@ class SlotStack extends StatelessWidget {
       ],
     );
     if (flow.scrollable) {
-      flex = ScrollViewportHost(
+      flex = ZoneScrollableViewport(
+        axis: axis,
+        showScrollbar: flow.showScrollbar,
+        scrollbarStyle: flow.scrollbarStyle,
         padding: padding,
-        child: SingleChildScrollView(
-          scrollDirection: axis,
-          padding: padding == EdgeInsets.zero ? null : padding,
-          child: flex,
-        ),
+        child: flex,
       );
     } else if (padding != EdgeInsets.zero) {
       flex = Padding(padding: padding, child: flex);
@@ -532,6 +531,78 @@ class SlotStack extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Conteneur de défilement d'une zone, gérant l'affichage conditionnel et le
+/// style de la [RawScrollbar] sans interférer avec le `ScrollConfiguration` parent.
+class ZoneScrollableViewport extends StatefulWidget {
+  const ZoneScrollableViewport({
+    required this.axis,
+    required this.showScrollbar,
+    this.scrollbarStyle = const ScrollbarStyleConfig(),
+    this.padding = EdgeInsets.zero,
+    required this.child,
+    super.key,
+  });
+
+  final Axis axis;
+  final bool showScrollbar;
+  final ScrollbarStyleConfig scrollbarStyle;
+  final EdgeInsets padding;
+  final Widget child;
+
+  @override
+  State<ZoneScrollableViewport> createState() => _ZoneScrollableViewportState();
+}
+
+class _ZoneScrollableViewportState extends State<ZoneScrollableViewport> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    Widget scrollView = ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: SingleChildScrollView(
+        controller: _controller,
+        scrollDirection: widget.axis,
+        padding: widget.padding == EdgeInsets.zero ? null : widget.padding,
+        child: widget.child,
+      ),
+    );
+    if (widget.showScrollbar) {
+      final style = widget.scrollbarStyle;
+      final colors = Theme.of(context).colorScheme;
+      scrollView = RawScrollbar(
+        controller: _controller,
+        thumbVisibility: style.thumbVisibility,
+        trackVisibility: style.trackVisibility,
+        interactive: style.interactive,
+        thickness: style.thickness,
+        radius: Radius.circular(style.radius),
+        mainAxisMargin: style.mainAxisMargin,
+        crossAxisMargin: style.crossAxisMargin,
+        thumbColor:
+            style.thumbColor ?? colors.onSurfaceVariant.withValues(alpha: 0.45),
+        trackColor:
+            style.trackColor ??
+            colors.surfaceContainerHighest.withValues(alpha: 0.35),
+        trackBorderColor:
+            style.trackBorderColor ??
+            (style.trackVisibility
+                ? colors.outlineVariant.withValues(alpha: 0.5)
+                : const Color(0x00000000)),
+        scrollbarOrientation: style.side.resolveOrientation(widget.axis),
+        child: scrollView,
+      );
+    }
+    return ScrollViewportHost(padding: widget.padding, child: scrollView);
   }
 }
 
