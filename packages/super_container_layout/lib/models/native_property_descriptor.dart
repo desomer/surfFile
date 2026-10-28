@@ -311,16 +311,6 @@ const List<NativePropertyDescriptor> superAppBarPropertyDescriptors = [
   ),
   // Dimensions & espacements
   NativePropertyDescriptor(
-    id: 'toolbarHeight',
-    label: 'Hauteur de la barre',
-    subtitle: 'Hauteur en pixels de la barre principale (toolbarHeight)',
-    editorType: NativePropertyEditorType.number,
-    defaultValue: 56.0,
-    min: 32,
-    max: 160,
-    divisions: 128,
-  ),
-  NativePropertyDescriptor(
     id: 'leadingWidth',
     label: 'Largeur de Navigation',
     subtitle: 'Largeur réservée à la zone leading (leadingWidth)',
@@ -473,16 +463,6 @@ const List<NativePropertyDescriptor> superBottomAppBarPropertyDescriptors = [
   ),
   // Dimensions, marges & découpage
   NativePropertyDescriptor(
-    id: 'height',
-    label: 'Hauteur de la barre',
-    subtitle: 'Hauteur en pixels de la barre basse (height)',
-    editorType: NativePropertyEditorType.number,
-    defaultValue: 56.0,
-    min: 32,
-    max: 160,
-    divisions: 128,
-  ),
-  NativePropertyDescriptor(
     id: 'padding',
     label: 'Marge intérieure (Padding)',
     subtitle: 'Espacement interne autour du contenu de la barre (padding)',
@@ -544,16 +524,6 @@ superBottomNavigationBarPropertyDescriptors = [
     min: 0,
     max: 24,
     divisions: 24,
-  ),
-  NativePropertyDescriptor(
-    id: 'height',
-    label: 'Hauteur de la barre',
-    subtitle: 'Hauteur en pixels de la barre de navigation (height)',
-    editorType: NativePropertyEditorType.number,
-    defaultValue: 56.0,
-    min: 32,
-    max: 160,
-    divisions: 128,
   ),
   NativePropertyDescriptor(
     id: 'iconSize',

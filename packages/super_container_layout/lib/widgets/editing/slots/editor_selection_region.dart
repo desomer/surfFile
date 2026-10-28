@@ -21,12 +21,14 @@ class SliverSlotScope extends InheritedWidget {
   const SliverSlotScope({
     this.enabled = true,
     this.scrollDirection = Axis.vertical,
+    this.preferredSize,
     required super.child,
     super.key,
   });
 
   final bool enabled;
   final Axis scrollDirection;
+  final Size? preferredSize;
 
   static bool isSliver(BuildContext context) {
     context.dependOnInheritedWidgetOfExactType<SliverSlotScope>();
@@ -62,10 +64,16 @@ class SliverSlotScope extends InheritedWidget {
           ?.scrollDirection ??
       Axis.vertical;
 
+  static Size? preferredSizeOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<SliverSlotScope>()
+          ?.preferredSize;
+
   @override
   bool updateShouldNotify(SliverSlotScope oldWidget) =>
       oldWidget.enabled != enabled ||
-      oldWidget.scrollDirection != scrollDirection;
+      oldWidget.scrollDirection != scrollDirection ||
+      oldWidget.preferredSize != preferredSize;
 }
 
 /// Équivalent Sliver de `MouseRegion` + `Listener` + `CustomPaint(foregroundPainter)`.

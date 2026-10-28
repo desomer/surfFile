@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
@@ -253,13 +255,58 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       enabled(id) && (editing || slotsFor(id).isNotEmpty);
 
   Size? preferredSizeFor(SlotImplementation slot) {
-    if (widget.config.slotPreferredSizes.containsKey(slot.id)) {
-      return widget.config.slotPreferredSizes[slot.id];
+    final base = widget.config.slotPreferredSizes.containsKey(slot.id)
+        ? widget.config.slotPreferredSizes[slot.id]
+        : switch (slot) {
+            NativePreferredSizeWidget native => native.preferredSizeIn(context),
+            _ => slot.preferredSize,
+          };
+    final configured = widget.config.slotSizeConstraints[slot.id];
+    if (configured == null || !configured.hasSizeConstraints) {
+      return base;
     }
-    return switch (slot) {
-      NativePreferredSizeWidget native => native.preferredSizeIn(context),
-      _ => slot.preferredSize,
-    };
+    final media = MediaQuery.maybeSizeOf(context) ?? Size.zero;
+    final basisWidth = _layoutSize.width > 0 ? _layoutSize.width : media.width;
+    final basisHeight = _layoutSize.height > 0
+        ? _layoutSize.height
+        : media.height;
+    double? resolveDimension(
+      SlotDimension? preferred,
+      SlotDimension? min,
+      SlotDimension? max,
+      double basis,
+      double? fallback,
+    ) {
+      var value = preferred?.resolve(basis) ?? fallback;
+      final minVal = min?.resolve(basis);
+      final maxVal = max?.resolve(basis);
+      if (value != null && value.isFinite) {
+        if (minVal != null) value = math.max(value, minVal);
+        if (maxVal != null) value = math.min(value, maxVal);
+        return value;
+      }
+      if (minVal != null) {
+        return maxVal != null ? math.min(minVal, maxVal) : minVal;
+      }
+      return value;
+    }
+
+    final width = resolveDimension(
+      configured.preferredWidth,
+      configured.minWidth,
+      configured.maxWidth,
+      basisWidth,
+      base?.width,
+    );
+    final height = resolveDimension(
+      configured.preferredHeight,
+      configured.minHeight,
+      configured.maxHeight,
+      basisHeight,
+      base?.height,
+    );
+    if (width == null && height == null) return base;
+    return Size(width ?? double.infinity, height ?? double.infinity);
   }
 
   @override
@@ -1859,6 +1906,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       Widget sliver = SliverSlotScope(
         enabled: true,
         scrollDirection: scrollDirection,
+        preferredSize: preferredSize,
         child: EditorSlotAction(
           key: ValueKey('slot-item-${slot.id}'),
           label: actionLabel,

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/component_tag_filter.dart';
@@ -105,8 +107,17 @@ class SuperBottomNavigationBar extends StatefulWidget
         },
       );
 
-  double _height(NativeComponentConfig config) =>
-      config.doubleProperty('height') ?? height;
+  double _height(NativeComponentConfig config) {
+    if (config.doubleProperty('height') case final h?) return h;
+    if (config.regionSizeOf('destinations') case final h?) return h;
+    final effectiveIconSize = config.doubleProperty('iconSize') ?? iconSize;
+    final effectiveSelectedFontSize =
+        config.doubleProperty('selectedFontSize') ?? selectedFontSize;
+    return math.max(
+      height,
+      effectiveIconSize + effectiveSelectedFontSize * 2.0 + 4.0,
+    );
+  }
 
   ValueNotifier<NativeComponentConfig>? _controller(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
@@ -206,181 +217,196 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
     final controller = widget._controller(context) ?? _localConfig;
     return ValueListenableBuilder<NativeComponentConfig>(
       valueListenable: controller,
-      builder: (context, config, _) {
-        final effectiveHeight = widget._height(config);
-        return NativeComponentEditor(
-          label: widget.label,
-          menuType: 'BottomNavigationBar',
-          keyPrefix: 'super-bottom-navigation-bar',
-          settingsTitle: 'Configurer la barre de navigation',
-          editSurface: true,
-          config: config,
-          onChanged: (value) => controller.value = value,
-          registry: registry,
-          slots: _slots,
-          propertyDescriptors: SuperBottomNavigationBar.propertyDescriptors,
-          onSlotAdded: _added,
-          regions: [
-            NativeRegion(
-              'destinations',
-              'Destinations',
-              axis: Axis.horizontal,
-              emptySize: Size(double.infinity, effectiveHeight),
-              tagFilter: const ComponentTagFilter(include: {'action'}),
-            ),
-          ],
-          builder: (context, editor) {
-            if (!editor.visible('destinations')) {
-              return const SizedBox.shrink();
-            }
-            final slots = editor.slotsFor('destinations');
-            final supplied = _suppliedActions;
-            final effectiveBackgroundColor =
-                config.colorProperty('backgroundColor') ??
-                config.colorProperty('color') ??
-                widget.backgroundColor ??
-                widget.color;
-            final effectiveElevation =
-                config.doubleProperty('elevation') ?? widget.elevation;
-            if (slots.length < 2) {
-              return Material(
-                color:
-                    effectiveBackgroundColor ??
-                    Theme.of(context).colorScheme.surface,
-                elevation: effectiveElevation ?? 8.0,
-                child: SizedBox(
-                  height: effectiveHeight,
-                  child: editor.region('destinations'),
-                ),
-              );
-            }
-            return ListenableBuilder(
-              listenable: Listenable.merge([
-                for (final slot in slots)
-                  if (registry != null)
-                    registry.actionController(
-                      slot.id,
-                      fallback:
-                          supplied[slot.id]?.config ??
-                          const SuperActionConfig(),
-                    ),
-              ]),
-              builder: (context, _) {
-                final effectiveIndex = _selectedIndex.clamp(
-                  0,
-                  slots.length - 1,
+      builder: (context, config, _) => LayoutBuilder(
+        builder: (context, constraints) {
+          final baseHeight = widget._height(config);
+          final bottomPadding = MediaQuery.paddingOf(context).bottom;
+          final targetHeight = constraints.hasTightHeight
+              ? constraints.maxHeight
+              : (baseHeight + bottomPadding).clamp(
+                  constraints.minHeight,
+                  constraints.maxHeight,
                 );
-                final items = [
+          final resolvedHeight = targetHeight - bottomPadding;
+          final effectiveHeight =
+              resolvedHeight.isFinite && resolvedHeight > 0
+              ? resolvedHeight
+              : baseHeight;
+          return NativeComponentEditor(
+            label: widget.label,
+            menuType: 'BottomNavigationBar',
+            keyPrefix: 'super-bottom-navigation-bar',
+            settingsTitle: 'Configurer la barre de navigation',
+            editSurface: true,
+            config: config,
+            onChanged: (value) => controller.value = value,
+            registry: registry,
+            slots: _slots,
+            propertyDescriptors:
+                SuperBottomNavigationBar.propertyDescriptors,
+            onSlotAdded: _added,
+            regions: [
+              NativeRegion(
+                'destinations',
+                'Destinations',
+                axis: Axis.horizontal,
+                emptySize: Size(double.infinity, effectiveHeight),
+                tagFilter: const ComponentTagFilter(include: {'action'}),
+              ),
+            ],
+            builder: (context, editor) {
+              if (!editor.visible('destinations')) {
+                return const SizedBox.shrink();
+              }
+              final slots = editor.slotsFor('destinations');
+              final supplied = _suppliedActions;
+              final effectiveBackgroundColor =
+                  config.colorProperty('backgroundColor') ??
+                  config.colorProperty('color') ??
+                  widget.backgroundColor ??
+                  widget.color;
+              final effectiveElevation =
+                  config.doubleProperty('elevation') ?? widget.elevation;
+              if (slots.length < 2) {
+                return Material(
+                  color:
+                      effectiveBackgroundColor ??
+                      Theme.of(context).colorScheme.surface,
+                  elevation: effectiveElevation ?? 8.0,
+                  child: SizedBox(
+                    height: effectiveHeight,
+                    child: editor.region('destinations'),
+                  ),
+                );
+              }
+              return ListenableBuilder(
+                listenable: Listenable.merge([
                   for (final slot in slots)
-                    () {
+                    if (registry != null)
+                      registry.actionController(
+                        slot.id,
+                        fallback:
+                            supplied[slot.id]?.config ??
+                            const SuperActionConfig(),
+                      ),
+                ]),
+                builder: (context, _) {
+                  final effectiveIndex = _selectedIndex.clamp(
+                    0,
+                    slots.length - 1,
+                  );
+                  final items = [
+                    for (final slot in slots)
+                      () {
+                        final fallback =
+                            supplied[slot.id]?.config ??
+                            const SuperActionConfig();
+                        final actionConfig =
+                            registry
+                                ?.actionController(slot.id, fallback: fallback)
+                                .value ??
+                            fallback;
+                        return BottomNavigationBarItem(
+                          icon: SuperActionNavigationScope(
+                            part: SuperActionNavigationPart.icon,
+                            child: editor.slotItem('destinations', slot),
+                          ),
+                          label: actionConfig.label,
+                          tooltip: actionConfig.tooltip.trim().isNotEmpty
+                              ? actionConfig.tooltip
+                              : null,
+                          backgroundColor:
+                              actionConfig.backgroundColor ??
+                              actionConfig.style.color,
+                        );
+                      }(),
+                  ];
+                  final effectiveSelectedItemColor =
+                      config.colorProperty('selectedItemColor') ??
+                      config.colorProperty('fixedColor') ??
+                      widget.selectedItemColor ??
+                      widget.fixedColor;
+                  final effectiveUnselectedItemColor =
+                      config.colorProperty('unselectedItemColor') ??
+                      widget.unselectedItemColor;
+                  final effectiveIconSize =
+                      config.doubleProperty('iconSize') ?? widget.iconSize;
+                  final effectiveSelectedFontSize =
+                      config.doubleProperty('selectedFontSize') ??
+                      widget.selectedFontSize;
+                  final effectiveUnselectedFontSize =
+                      config.doubleProperty('unselectedFontSize') ??
+                      widget.unselectedFontSize;
+                  final effectiveShowSelectedLabels =
+                      config.boolProperty('showSelectedLabels') ??
+                      widget.showSelectedLabels;
+                  final effectiveShowUnselectedLabels =
+                      config.boolProperty('showUnselectedLabels') ??
+                      widget.showUnselectedLabels;
+                  final effectiveEnableFeedback =
+                      config.boolProperty('enableFeedback') ??
+                      widget.enableFeedback;
+                  final effectiveUseLegacyColorScheme =
+                      config.boolProperty('useLegacyColorScheme') ??
+                      widget.useLegacyColorScheme;
+                  Widget navBar = BottomNavigationBar(
+                    currentIndex: effectiveIndex,
+                    backgroundColor: effectiveBackgroundColor,
+                    selectedItemColor: effectiveSelectedItemColor,
+                    unselectedItemColor: effectiveUnselectedItemColor,
+                    elevation: effectiveElevation,
+                    type: _barType(config),
+                    landscapeLayout: _landscapeLayout(config),
+                    iconSize: effectiveIconSize,
+                    selectedFontSize: effectiveSelectedFontSize,
+                    unselectedFontSize: effectiveUnselectedFontSize,
+                    selectedIconTheme: widget.selectedIconTheme,
+                    unselectedIconTheme: widget.unselectedIconTheme,
+                    selectedLabelStyle: widget.selectedLabelStyle,
+                    unselectedLabelStyle: widget.unselectedLabelStyle,
+                    showSelectedLabels: effectiveShowSelectedLabels,
+                    showUnselectedLabels: effectiveShowUnselectedLabels,
+                    mouseCursor: _mouseCursor(config),
+                    enableFeedback: effectiveEnableFeedback,
+                    useLegacyColorScheme: effectiveUseLegacyColorScheme,
+                    items: items,
+                    onTap: (index) {
+                      final slot = slots[index];
+                      final action = supplied[slot.id];
                       final fallback =
-                          supplied[slot.id]?.config ??
-                          const SuperActionConfig();
+                          action?.config ?? const SuperActionConfig();
                       final actionConfig =
                           registry
                               ?.actionController(slot.id, fallback: fallback)
                               .value ??
                           fallback;
-                      return BottomNavigationBarItem(
-                        icon: SuperActionNavigationScope(
-                          part: SuperActionNavigationPart.icon,
-                          child: editor.slotItem('destinations', slot),
-                        ),
-                        label: actionConfig.label,
-                        tooltip: actionConfig.tooltip.trim().isNotEmpty
-                            ? actionConfig.tooltip
-                            : null,
-                        backgroundColor:
-                            actionConfig.backgroundColor ??
-                            actionConfig.style.color,
+                      if (!actionConfig.enabled) return;
+                      setState(() => _selectedIndex = index);
+                      widget.onTap?.call(index);
+                      executeSuperActionClick(
+                        context,
+                        slot.id,
+                        onPressed: action?.onPressed,
                       );
-                    }(),
-                ];
-                final effectiveSelectedItemColor =
-                    config.colorProperty('selectedItemColor') ??
-                    config.colorProperty('fixedColor') ??
-                    widget.selectedItemColor ??
-                    widget.fixedColor;
-                final effectiveUnselectedItemColor =
-                    config.colorProperty('unselectedItemColor') ??
-                    widget.unselectedItemColor;
-                final effectiveIconSize =
-                    config.doubleProperty('iconSize') ?? widget.iconSize;
-                final effectiveSelectedFontSize =
-                    config.doubleProperty('selectedFontSize') ??
-                    widget.selectedFontSize;
-                final effectiveUnselectedFontSize =
-                    config.doubleProperty('unselectedFontSize') ??
-                    widget.unselectedFontSize;
-                final effectiveShowSelectedLabels =
-                    config.boolProperty('showSelectedLabels') ??
-                    widget.showSelectedLabels;
-                final effectiveShowUnselectedLabels =
-                    config.boolProperty('showUnselectedLabels') ??
-                    widget.showUnselectedLabels;
-                final effectiveEnableFeedback =
-                    config.boolProperty('enableFeedback') ??
-                    widget.enableFeedback;
-                final effectiveUseLegacyColorScheme =
-                    config.boolProperty('useLegacyColorScheme') ??
-                    widget.useLegacyColorScheme;
-                Widget navBar = BottomNavigationBar(
-                  currentIndex: effectiveIndex,
-                  backgroundColor: effectiveBackgroundColor,
-                  selectedItemColor: effectiveSelectedItemColor,
-                  unselectedItemColor: effectiveUnselectedItemColor,
-                  elevation: effectiveElevation,
-                  type: _barType(config),
-                  landscapeLayout: _landscapeLayout(config),
-                  iconSize: effectiveIconSize,
-                  selectedFontSize: effectiveSelectedFontSize,
-                  unselectedFontSize: effectiveUnselectedFontSize,
-                  selectedIconTheme: widget.selectedIconTheme,
-                  unselectedIconTheme: widget.unselectedIconTheme,
-                  selectedLabelStyle: widget.selectedLabelStyle,
-                  unselectedLabelStyle: widget.unselectedLabelStyle,
-                  showSelectedLabels: effectiveShowSelectedLabels,
-                  showUnselectedLabels: effectiveShowUnselectedLabels,
-                  mouseCursor: _mouseCursor(config),
-                  enableFeedback: effectiveEnableFeedback,
-                  useLegacyColorScheme: effectiveUseLegacyColorScheme,
-                  items: items,
-                  onTap: (index) {
-                    final slot = slots[index];
-                    final action = supplied[slot.id];
-                    final fallback =
-                        action?.config ?? const SuperActionConfig();
-                    final actionConfig =
-                        registry
-                            ?.actionController(slot.id, fallback: fallback)
-                            .value ??
-                        fallback;
-                    if (!actionConfig.enabled) return;
-                    setState(() => _selectedIndex = index);
-                    widget.onTap?.call(index);
-                    executeSuperActionClick(
-                      context,
-                      slot.id,
-                      onPressed: action?.onPressed,
-                    );
-                  },
-                );
-                if (config.doubleProperty('height') != null ||
-                    widget.height != kBottomNavigationBarHeight) {
-                  navBar = ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight:
-                          effectiveHeight + MediaQuery.paddingOf(context).bottom,
-                    ),
-                    child: navBar,
+                    },
                   );
-                }
-                return editor.region('destinations', child: navBar);
-              },
-            );
-          },
-        );
-      },
+                  if (effectiveHeight != kBottomNavigationBarHeight ||
+                      config.doubleProperty('height') != null ||
+                      widget.height != kBottomNavigationBarHeight) {
+                    navBar = ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: effectiveHeight + bottomPadding,
+                      ),
+                      child: navBar,
+                    );
+                  }
+                  return editor.region('destinations', child: navBar);
+                },
+              );
+            },
+          );
+        },
+      ),
     );
   }
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/native_component_config.dart';
@@ -67,8 +69,17 @@ class SuperBottomAppBar extends StatefulWidget
         },
       );
 
-  double _height(NativeComponentConfig config) =>
-      config.doubleProperty('height') ?? height;
+  double _height(NativeComponentConfig config) {
+    if (config.doubleProperty('height') case final h?) return h;
+    final regionHeights = [
+      for (final id in const ['left', 'center', 'right'])
+        if (config.isEnabled(id)) ?config.regionSizeOf(id),
+    ];
+    if (regionHeights.isNotEmpty) {
+      return regionHeights.reduce(math.max);
+    }
+    return height;
+  }
 
   ValueNotifier<NativeComponentConfig>? _controller(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
@@ -108,8 +119,10 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
         _ => null,
       };
 
-  List<NativeRegion> _regions(NativeComponentConfig config) {
-    final effectiveHeight = widget._height(config);
+  List<NativeRegion> _regions(
+    NativeComponentConfig config,
+    double effectiveHeight,
+  ) {
     return [
       NativeRegion(
         'left',
@@ -151,68 +164,84 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
     final controller = widget._controller(context) ?? _localConfig;
     return ValueListenableBuilder<NativeComponentConfig>(
       valueListenable: controller,
-      builder: (context, config, _) => NativeComponentEditor(
-        label: widget.label,
-        menuType: 'BottomAppBar',
-        keyPrefix: 'super-bottom-app-bar',
-        settingsTitle: 'Configurer la barre basse',
-        editSurface: true,
-        config: config,
-        onChanged: (value) => controller.value = value,
-        registry: registry,
-        slots: _slots,
-        propertyDescriptors: SuperBottomAppBar.propertyDescriptors,
-        onSlotAdded: widget.onNativeSlotAdded,
-        regions: _regions(config),
-        builder: (context, editor) {
-          final effectiveHeight = widget._height(config);
-          final shapeBorder = config.shapeBorderProperty('shape');
-          final effectiveShape = shapeBorder != null
-              ? AutomaticNotchedShape(shapeBorder)
-              : widget.shape;
-          final configPadding = config.doubleProperty('padding');
-          final effectivePadding = configPadding != null
-              ? EdgeInsets.all(configPadding)
-              : (widget.padding ?? EdgeInsets.zero);
-          Widget bar = BottomAppBar(
-            height: effectiveHeight,
-            padding: effectivePadding,
-            color:
-                config.colorProperty('color') ??
-                config.colorProperty('backgroundColor') ??
-                widget.color,
-            surfaceTintColor:
-                config.colorProperty('surfaceTintColor') ??
-                widget.surfaceTintColor,
-            shadowColor:
-                config.colorProperty('shadowColor') ?? widget.shadowColor,
-            elevation:
-                config.doubleProperty('elevation') ?? widget.elevation,
-            shape: effectiveShape,
-            clipBehavior:
-                _clipBehavior(config) ?? widget.clipBehavior ?? Clip.none,
-            notchMargin:
-                config.doubleProperty('notchMargin') ?? widget.notchMargin,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final region in ['left', 'center', 'right'])
-                  if (editor.visible(region))
-                    Expanded(child: editor.region(region)),
-              ],
-            ),
+      builder: (context, config, _) => LayoutBuilder(
+        builder: (context, constraints) {
+          final baseHeight = widget._height(config);
+          final bottomPadding = MediaQuery.paddingOf(context).bottom;
+          final targetHeight = constraints.hasTightHeight
+              ? constraints.maxHeight
+              : (baseHeight + bottomPadding).clamp(
+                  constraints.minHeight,
+                  constraints.maxHeight,
+                );
+          final resolvedHeight = targetHeight - bottomPadding;
+          final effectiveHeight =
+              resolvedHeight.isFinite && resolvedHeight > 0
+              ? resolvedHeight
+              : baseHeight;
+          return NativeComponentEditor(
+            label: widget.label,
+            menuType: 'BottomAppBar',
+            keyPrefix: 'super-bottom-app-bar',
+            settingsTitle: 'Configurer la barre basse',
+            editSurface: true,
+            config: config,
+            onChanged: (value) => controller.value = value,
+            registry: registry,
+            slots: _slots,
+            propertyDescriptors: SuperBottomAppBar.propertyDescriptors,
+            onSlotAdded: widget.onNativeSlotAdded,
+            regions: _regions(config, effectiveHeight),
+            builder: (context, editor) {
+              final shapeBorder = config.shapeBorderProperty('shape');
+              final effectiveShape = shapeBorder != null
+                  ? AutomaticNotchedShape(shapeBorder)
+                  : widget.shape;
+              final configPadding = config.doubleProperty('padding');
+              final effectivePadding = configPadding != null
+                  ? EdgeInsets.all(configPadding)
+                  : (widget.padding ?? EdgeInsets.zero);
+              Widget bar = BottomAppBar(
+                height: effectiveHeight,
+                padding: effectivePadding,
+                color:
+                    config.colorProperty('color') ??
+                    config.colorProperty('backgroundColor') ??
+                    widget.color,
+                surfaceTintColor:
+                    config.colorProperty('surfaceTintColor') ??
+                    widget.surfaceTintColor,
+                shadowColor:
+                    config.colorProperty('shadowColor') ?? widget.shadowColor,
+                elevation:
+                    config.doubleProperty('elevation') ?? widget.elevation,
+                shape: effectiveShape,
+                clipBehavior:
+                    _clipBehavior(config) ?? widget.clipBehavior ?? Clip.none,
+                notchMargin:
+                    config.doubleProperty('notchMargin') ?? widget.notchMargin,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (final region in ['left', 'center', 'right'])
+                      if (editor.visible(region))
+                        Expanded(child: editor.region(region)),
+                  ],
+                ),
+              );
+              if (shapeBorder != null) {
+                bar = ClipPath(
+                  clipper: ShapeBorderClipper(shape: shapeBorder),
+                  child: DecoratedBox(
+                    position: DecorationPosition.foreground,
+                    decoration: ShapeDecoration(shape: shapeBorder),
+                    child: bar,
+                  ),
+                );
+              }
+              return bar;
+            },
           );
-          if (shapeBorder != null) {
-            bar = ClipPath(
-              clipper: ShapeBorderClipper(shape: shapeBorder),
-              child: DecoratedBox(
-                position: DecorationPosition.foreground,
-                decoration: ShapeDecoration(shape: shapeBorder),
-                child: bar,
-              ),
-            );
-          }
-          return bar;
         },
       ),
     );

@@ -1659,6 +1659,18 @@ void main() {
   });
 
   test('NativePropertyDescriptor serializes to/from JSON and NativeComponentConfig stores flat properties', () {
+    expect(
+      SuperAppBar.propertyDescriptors.any((d) => d.id == 'toolbarHeight'),
+      isFalse,
+    );
+    expect(
+      SuperBottomAppBar.propertyDescriptors.any((d) => d.id == 'height'),
+      isFalse,
+    );
+    expect(
+      SuperBottomNavigationBar.propertyDescriptors.any((d) => d.id == 'height'),
+      isFalse,
+    );
     for (final descriptors in [
       SuperAppBar.propertyDescriptors,
       SuperBottomAppBar.propertyDescriptors,
@@ -2251,6 +2263,86 @@ void main() {
       );
       await tester.tapAt(const Offset(10, 10));
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperAppBar and SuperBottomAppBar update their height when edited through the ruler size editor',
+    (tester) async {
+      final registry = Registry();
+      await mount(
+        const SuperPage(
+          maxAutoZoomExtent: 0,
+          appBar: SuperAppBar(title: Text('Bar Title')),
+          bottomNavigationBar: SuperBottomAppBar(left: Text('Bottom Left')),
+          child: Text('Main Body'),
+        ),
+        tester,
+        registry,
+      );
+
+      expect(tester.getSize(find.byType(AppBar)).height, 56.0);
+      expect(tester.getTopLeft(find.text('Main Body')).dy, 56.0);
+      expect(tester.getSize(find.byType(BottomAppBar)).height, 56.0);
+
+      final context = tester.element(find.byType(SuperPage));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      await tester.drag(
+        find.byKey(const ValueKey('style-edit-banner-drag')),
+        const Offset(0, 200),
+      );
+      await tester.pumpAndSettle();
+
+      // Right-click on SuperAppBar and click the ruler icon for the AppBar slot
+      await tester.tapAt(
+        tester.getCenter(find.text('Bar Title')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : AppBar'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-height')),
+        '92',
+      );
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(find.byType(AppBar)).height, 92.0);
+      expect(tester.widget<AppBar>(find.byType(AppBar)).toolbarHeight, 92.0);
+      expect(tester.getTopLeft(find.text('Main Body')).dy, 92.0);
+
+      // Right-click on SuperBottomAppBar and click the ruler icon for the bottom bar slot
+      await tester.tapAt(
+        tester.getCenter(find.text('Bottom Left')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'style-menu-size-Taille et marge préférées : Bottom navigation bar',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-height')),
+        '84',
+      );
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(find.byType(BottomAppBar)).height, 84.0);
+      expect(tester.widget<BottomAppBar>(find.byType(BottomAppBar)).height, 84.0);
       expect(tester.takeException(), isNull);
     },
   );

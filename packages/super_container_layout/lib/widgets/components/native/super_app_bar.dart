@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/super_layout_config.dart' show SlotSizeUnit;
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../models/registry.dart';
@@ -105,8 +106,19 @@ class SuperAppBar extends StatefulWidget
         },
       );
 
-  double _toolbarHeight(NativeComponentConfig config) =>
-      config.doubleProperty('toolbarHeight') ?? toolbarHeight;
+  double _toolbarHeight(NativeComponentConfig config) {
+    if (config.doubleProperty('toolbarHeight') case final height?) {
+      return height;
+    }
+    final regionHeights = [
+      for (final id in const ['leading', 'title', 'actions'])
+        if (config.isEnabled(id)) ?config.regionSizeOf(id),
+    ];
+    if (regionHeights.isNotEmpty) {
+      return regionHeights.reduce(math.max);
+    }
+    return toolbarHeight;
+  }
 
   @override
   Size get preferredSize => Size.fromHeight(
@@ -128,6 +140,12 @@ class SuperAppBar extends StatefulWidget
     }
     if (ids.isEmpty) return kToolbarHeight;
     final id = ids.single;
+    final constraints = config.slotSizeConstraints[id];
+    if (constraints?.preferredHeight case final preferredHeight?
+        when preferredHeight.unit == SlotSizeUnit.pixels &&
+            preferredHeight.value.isFinite) {
+      return preferredHeight.value;
+    }
     final type = config.slotTypeOf(id);
     final supplied = slots
         .where((slot) => slot.id == id || slot.id == type)
@@ -213,8 +231,10 @@ class _SuperAppBarState extends State<SuperAppBar> {
         _ => null,
       };
 
-  List<NativeRegion> _regions(NativeComponentConfig config) {
-    final effectiveToolbarHeight = widget._toolbarHeight(config);
+  List<NativeRegion> _regions(
+    NativeComponentConfig config,
+    double effectiveToolbarHeight,
+  ) {
     final centerTitle = config.boolProperty('centerTitle') ?? false;
     return [
       NativeRegion(
@@ -308,63 +328,77 @@ class _SuperAppBarState extends State<SuperAppBar> {
     final registry = SuperApp.maybeOf(context)?.registry;
     final controller = widget._controller(context) ?? _localConfig;
     final isSliver = SliverSlotScope.isSliver(context);
+    final sliverPreferredSize = isSliver
+        ? SliverSlotScope.preferredSizeOf(context)
+        : null;
+    final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     return ValueListenableBuilder<NativeComponentConfig>(
       valueListenable: controller,
-      builder: (context, config, _) => NativeComponentEditor(
-        label: widget.label,
-        menuType: 'AppBar',
-        keyPrefix: 'super-app-bar',
-        settingsTitle: 'Configurer la barre',
-        editSurface: true,
-        config: config,
-        onChanged: (value) => controller.value = value,
-        regions: _regions(config),
-        slots: _slots(config),
-        registry: registry,
-        propertyDescriptors: isSliver
-            ? const [
-                ...SuperAppBar.sliverPropertyDescriptors,
-                ...SuperAppBar.propertyDescriptors,
-              ]
-            : SuperAppBar.propertyDescriptors,
-        isPropertyAvailable: (_, descriptor) =>
-            !isSliver ||
-            (descriptor.id != 'toolbarOpacity' &&
-                descriptor.id != 'bottomOpacity'),
-        isRegionAvailable: (config, region) =>
-            region != 'leading' || !_usesDefaultNavigation(config),
-        settingsControls: (config, onChanged) => [
-          SwitchListTile(
-            key: const ValueKey('super-app-bar-default-navigation'),
-            title: const Text('Bouton de navigation par défaut'),
-            subtitle: const Text(
-              'Menu du drawer ou bouton Retour natif. Remplace la zone Navigation.',
-            ),
-            value: _usesDefaultNavigation(config),
-            onChanged: (value) =>
-                onChanged(config.withDefaultNavigation(value)),
-          ),
-        ],
-        onSlotAdded: _added,
-        builder: (context, editor) {
-          final effectiveToolbarHeight = widget._toolbarHeight(config);
-          final bottomHeight = widget._bottomHeight(
-            config,
-            editing: editor.editing,
-            registry: registry,
-          );
-          final actions = editor.slotsFor('actions');
-          Widget toolbarRegion(
-            String id, {
-            SlotImplementation? item,
-            bool showBadge = true,
-          }) => SliverSlotScope(
-            enabled: false,
-            child: SizedBox(
-              height: effectiveToolbarHeight,
-              child: editor.region(id, item: item, showBadge: showBadge),
-            ),
-          );
+      builder: (context, config, _) {
+        final baseToolbarHeight = widget._toolbarHeight(config);
+        final bottomHeight = widget._bottomHeight(
+          config,
+          editing: editing,
+          registry: registry,
+        );
+        double resolveToolbarHeight(double? allocatedHeight) {
+          if (allocatedHeight == null || !allocatedHeight.isFinite) {
+            return baseToolbarHeight;
+          }
+          final resolved = allocatedHeight - bottomHeight;
+          return resolved > 0 ? resolved : baseToolbarHeight;
+        }
+
+        Widget buildEditor(double effectiveToolbarHeight) =>
+            NativeComponentEditor(
+              label: widget.label,
+              menuType: 'AppBar',
+              keyPrefix: 'super-app-bar',
+              settingsTitle: 'Configurer la barre',
+              editSurface: true,
+              config: config,
+              onChanged: (value) => controller.value = value,
+              regions: _regions(config, effectiveToolbarHeight),
+              slots: _slots(config),
+              registry: registry,
+              propertyDescriptors: isSliver
+                  ? const [
+                      ...SuperAppBar.sliverPropertyDescriptors,
+                      ...SuperAppBar.propertyDescriptors,
+                    ]
+                  : SuperAppBar.propertyDescriptors,
+              isPropertyAvailable: (_, descriptor) =>
+                  !isSliver ||
+                  (descriptor.id != 'toolbarOpacity' &&
+                      descriptor.id != 'bottomOpacity'),
+              isRegionAvailable: (config, region) =>
+                  region != 'leading' || !_usesDefaultNavigation(config),
+              settingsControls: (config, onChanged) => [
+                SwitchListTile(
+                  key: const ValueKey('super-app-bar-default-navigation'),
+                  title: const Text('Bouton de navigation par défaut'),
+                  subtitle: const Text(
+                    'Menu du drawer ou bouton Retour natif. Remplace la zone Navigation.',
+                  ),
+                  value: _usesDefaultNavigation(config),
+                  onChanged: (value) =>
+                      onChanged(config.withDefaultNavigation(value)),
+                ),
+              ],
+              onSlotAdded: _added,
+              builder: (context, editor) {
+                final actions = editor.slotsFor('actions');
+                Widget toolbarRegion(
+                  String id, {
+                  SlotImplementation? item,
+                  bool showBadge = true,
+                }) => SliverSlotScope(
+                  enabled: false,
+                  child: SizedBox(
+                    height: effectiveToolbarHeight,
+                    child: editor.region(id, item: item, showBadge: showBadge),
+                  ),
+                );
           final leadingWidget =
               !_usesDefaultNavigation(config) && editor.visible('leading')
               ? toolbarRegion('leading')
@@ -517,7 +551,22 @@ class _SuperAppBarState extends State<SuperAppBar> {
             flexibleSpace: flexibleSpaceWidget,
           );
         },
-      ),
+      );
+        if (isSliver) {
+          return buildEditor(resolveToolbarHeight(sliverPreferredSize?.height));
+        }
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final targetHeight = constraints.hasTightHeight
+                ? constraints.maxHeight
+                : (baseToolbarHeight + bottomHeight).clamp(
+                    constraints.minHeight,
+                    constraints.maxHeight,
+                  );
+            return buildEditor(resolveToolbarHeight(targetHeight));
+          },
+        );
+      },
     );
   }
 
