@@ -308,7 +308,7 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
 
 - **`"registry:Card"` $\rightarrow$ Conteneur monoenfant (`Card` / `Container` Flutter) + surface `ContainerStyle` enrichie** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
   - `child` (1 slot unique max, région obligatoire toujours active) : comme un `Card` ou `Container` Flutter, ne prend qu'un seul composant enfant `child` (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants, ou utilise `"registry:IterableContent"` si tu veux fusionner carte et grille sous le même ID).
-  - **Carte vide / purement visuelle (ex. affiche, miniature, séparateur ou bloc avec `fill.imageUrl`)** : si une `Card` ne contient aucun composant enfant, **ne mets jamais `"regions": { "child": false }`** (la région `child` d'une `Card` est requise et ne peut pas être désactivée). Utilise `"regions": {}, "placements": {}` (ou `"regions": { "child": true }, "placements": {}`), ou omet simplement l'entrée de `components["<cardId>"]` et définis uniquement son style dans `styles["<cardId>"]`.
+  - **Carte vide / purement visuelle (ex. affiche, logo, miniature, séparateur ou bloc avec `fill.imageUrl`)** : si une `Card` ne contient aucun composant enfant, **ne mets jamais `"regions": { "child": false }`** (la région `child` d'une `Card` est requise et ne peut pas être désactivée). Utilise `"regions": {}, "placements": {}` (ou `"regions": { "child": true }, "placements": {}`), ou omet simplement l'entrée de `components["<cardId>"]` et définis uniquement son style dans `styles["<cardId>"]`. Pour fixer la taille de cette carte (`preferredWidth`, `preferredHeight`, etc.), déclare ses contraintes dans le `slotSizeConstraints["<cardId>"]` de son **conteneur parent** (et non sous la forme d'un objet plat dans `components["<cardId>"].slotSizeConstraints`).
   - **Style visuel de la carte (bien plus riche qu'un `Card` Flutter natif)** : se configure intégralement dans **`styles["<cardId>"]`** (système de design Material / Neumorphism / Liquid Glass, couleur unie, dégradés `linear` / `radial` / `sweep`, image de fond, coins uniformes ou par angle, bordures pleines / tiretées / pointillées par côté, ombre portée ou intérieure, halo néon, flou `backdropBlur`, motif `grain` / `lines` / `dots`, transformation 2D, effets de clic/survol et états `states` — voir § 4.7).
 
 - **`"registry:Expansible"` $\rightarrow$ `Expansible` de Flutter** (`type: "native"`) :
@@ -331,7 +331,7 @@ Propriétés communes dans `components[id]` pour `"native"` :
   - `regionAxes` (`Map<regionId, "horizontal" | "vertical">`) : direction du flux de la région.
   - `regionFlows` (`Map<regionId, ZoneFlowConfig>`) : `scrollable` (`bool`), `expandSlots` (`bool`), `mainAxisAlignment` (`"start" | "center" | "end" | "spaceBetween" | "spaceAround" | "spaceEvenly"`), `crossAxisAlignment` (`"start" | "center" | "end" | "stretch"`), `spacing` (`0`..`64`), `padding` (`0`..`64` ou `[top, right, bottom, left]`).
   - `regionSizes` (`Map<regionId, number>`) : hauteur/taille fixe en pixels de la région (omettre pour la taille automatique).
-- `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
+- `slotPreferredSizes` (`Map<childSlotId, [width, height]>`), `slotSizeConstraints` (`Map<childSlotId, SlotSizeConstraints>` — toujours indexé par l'`id` du slot enfant placé, jamais un objet `SlotSizeConstraints` direct sans clé de slot), `slotLabels` (`Map<childSlotId, string>`).
 
 ### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher ou un interrupteur :
@@ -422,7 +422,7 @@ Affiche un conteneur à onglets combinant une barre d'onglets (`TabBar`) et une 
   - **Flux et contraintes des zones de contenu** :
     - `zoneAxes` (`Map<zone, "horizontal" | "vertical">`) : axe d'empilement d'une zone de contenu (`"content:<tabSlotId>"` ou `"content"`, `"vertical"` par défaut).
     - `zoneFlows` (`Map<zone, ZoneFlowConfig>`) : options de flux (`expandSlots`, `scrollable`, `mainAxisAlignment`, `crossAxisAlignment`, `spacing`, `padding`) par zone de contenu.
-    - `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
+    - `slotPreferredSizes` (`Map<childSlotId, [width, height]>`), `slotSizeConstraints` (`Map<childSlotId, SlotSizeConstraints>`), `slotLabels` (`Map<childSlotId, string>`).
 
 #### Exemple 1 : `SuperTab` en mode `"static"`
 

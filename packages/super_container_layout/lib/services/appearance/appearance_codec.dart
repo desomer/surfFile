@@ -112,6 +112,19 @@ class AppearanceCodec {
       return value;
     }
 
+    final selfConstraints = <String, SlotSizeConstraints>{};
+    final decodedComponents = <String, ComponentConfig>{
+      for (final entry in entries('components', optional: true).entries)
+        entry.key: ComponentConfig.fromJson(
+          _extractSelfSlotSizeConstraints(
+            entry.key,
+            entry.value,
+            selfConstraints,
+          ),
+        ),
+    };
+    _applySelfSlotSizeConstraints(decodedComponents, selfConstraints);
+
     return Appearance(
       mode: mode,
       accent: parsedAccent,
@@ -122,10 +135,7 @@ class AppearanceCodec {
         for (final entry in entries('styles').entries)
           entry.key: ContainerStyle.fromJson(entry.value),
       },
-      components: {
-        for (final entry in entries('components', optional: true).entries)
-          entry.key: ComponentConfig.fromJson(entry.value),
-      },
+      components: decodedComponents,
       behaviors: {
         if (json['behaviors'] case final Map<String, dynamic> bMap)
           for (final entry in bMap.entries)
@@ -140,6 +150,69 @@ class AppearanceCodec {
           ? EditorPageCatalog.fromJson(json['pageCatalog'])
           : const EditorPageCatalog.empty(),
     );
+  }
+
+  /// Extracts a direct `SlotSizeConstraints` object placed on component [id]
+  /// (e.g. `{"preferredWidth": "110px", "preferredHeight": "40px"}`) so it can
+  /// be attached to the parent container that places [id].
+  static Map<Object?, Object?> _extractSelfSlotSizeConstraints(
+    String id,
+    Map<Object?, Object?> map,
+    Map<String, SlotSizeConstraints> outSelfConstraints,
+  ) {
+    final rawConstraints = map['slotSizeConstraints'];
+    if (SlotSizeConstraints.isDirectConstraintsMap(rawConstraints)) {
+      outSelfConstraints[id] = SlotSizeConstraints.fromJson(rawConstraints);
+      return <Object?, Object?>{
+        for (final entry in map.entries)
+          if (entry.key != 'slotSizeConstraints') entry.key: entry.value,
+      };
+    }
+    return map;
+  }
+
+  /// Attaches extracted self-constraints to any parent container placing the slot.
+  static void _applySelfSlotSizeConstraints(
+    Map<String, ComponentConfig> components,
+    Map<String, SlotSizeConstraints> selfConstraints,
+  ) {
+    if (selfConstraints.isEmpty) return;
+    for (final entry in components.entries.toList()) {
+      var comp = entry.value;
+      for (final MapEntry(key: slotId, value: constraints)
+          in selfConstraints.entries) {
+        if (comp is SuperLayoutConfig && comp.placedSlotIds.contains(slotId)) {
+          comp = comp.copyWith(
+            slotSizeConstraints: {
+              ...comp.slotSizeConstraints,
+              slotId: constraints,
+            },
+          );
+        } else if (comp is NativeComponentConfig &&
+            comp.placements.values.any((ids) => ids.contains(slotId))) {
+          comp = comp.withSlotSizeConstraints(slotId, constraints);
+        } else if (comp is ScaffoldPageConfig &&
+            comp.native.placements.values.any((ids) => ids.contains(slotId))) {
+          comp = ScaffoldPageConfig.fromNative(
+            comp.native.withSlotSizeConstraints(slotId, constraints),
+          );
+        } else if (comp is SuperListViewConfig &&
+            comp.template.placedSlotIds.contains(slotId)) {
+          comp = comp.copyWith(
+            template: comp.template.copyWith(
+              slotSizeConstraints: {
+                ...comp.template.slotSizeConstraints,
+                slotId: constraints,
+              },
+            ),
+          );
+        } else if (comp is SuperTabConfig &&
+            comp.placedSlotIds.contains(slotId)) {
+          comp = comp.withSlotSizeConstraints(slotId, constraints);
+        }
+      }
+      components[entry.key] = comp;
+    }
   }
 
   /// Applies an incremental GenUI-style surface update ([patch]) onto [current].
@@ -266,6 +339,7 @@ class AppearanceCodec {
 
     final components = Map<String, ComponentConfig>.of(current.components);
     final removedIds = <String>{};
+    final selfConstraints = <String, SlotSizeConstraints>{};
     if (patch.containsKey('components') && patch['components'] != null) {
       final rawComponents = patch['components'];
       if (rawComponents is! Map) {
@@ -281,11 +355,16 @@ class AppearanceCodec {
           styles.remove(id);
           removedIds.add(id);
         } else if (entry.value is Map) {
-          final map = entry.value as Map;
-          final rawType = map['type'] ?? map['componentType'];
+          final rawMap = entry.value as Map;
+          final rawType = rawMap['type'] ?? rawMap['componentType'];
           final existing = components[id];
           final resolvedType = rawType ?? existing?.componentType ?? 'inconnu';
           try {
+            final map = _extractSelfSlotSizeConstraints(
+              id,
+              rawMap,
+              selfConstraints,
+            );
             if (existing != null &&
                 (rawType == null || existing.componentType == rawType)) {
               final payload = <String, Object?>{
@@ -326,6 +405,8 @@ class AppearanceCodec {
         }
       }
     }
+
+    _applySelfSlotSizeConstraints(components, selfConstraints);
 
     if (removedIds.isNotEmpty) {
       for (final entry in components.entries.toList()) {

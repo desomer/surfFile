@@ -865,10 +865,10 @@ class SuperTabConfig extends ComponentConfig {
         zoneAxes: parsedAxes,
         zoneFlows: parsedFlows,
         slotPreferredSizes: sizes,
-        slotSizeConstraints: {
-          for (final entry in rawConstraints.entries)
-            entry.key as String: SlotSizeConstraints.fromJson(entry.value),
-        },
+        slotSizeConstraints: SlotSizeConstraints.parseMap(
+          rawConstraints,
+          placedIds: placements.values.expand((ids) => ids),
+        ),
         slotLabels: Map<String, String>.from(rawLabels),
       )..validate();
     } on ArgumentError {

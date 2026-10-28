@@ -135,10 +135,7 @@ void main() {
               },
             },
           },
-          'row-nom': {
-            'type': 'value',
-            'binding': 'clients[?].nom',
-          },
+          'row-nom': {'type': 'value', 'binding': 'clients[?].nom'},
           'card-detail': {
             'type': 'native',
             'regions': {'child': true},
@@ -163,10 +160,7 @@ void main() {
             'type': 'value',
             'mode': 'input',
             'label': 'Nom complet',
-            'binding': {
-              'repositoryId': repoId,
-              'path': 'clients[?].nom',
-            },
+            'binding': {'repositoryId': repoId, 'path': 'clients[?].nom'},
           },
         },
       });
@@ -285,13 +279,8 @@ void main() {
                 },
               },
             },
-            'item-b-value': {
-              'initialText': 'Élément',
-            },
-            'item-b-text-a': {
-              'type': 'value',
-              'text': 'text A',
-            },
+            'item-b-value': {'initialText': 'Élément'},
+            'item-b-text-a': {'type': 'value', 'text': 'text A'},
           },
         }),
       );
@@ -435,6 +424,52 @@ void main() {
       );
       expect(current.styles.containsKey('card-profile'), isFalse);
       expect(current.components.containsKey('card-profile'), isFalse);
+    });
+
+    test('attaches direct slotSizeConstraints on a child component to its parent container', () {
+      final updated = AppearanceTransfer.applyVibe(
+        Appearance(),
+        jsonEncode({
+          'components': {
+            'main-appbar': {
+              'type': 'native',
+              'regions': {'title': true},
+              'placements': {
+                'title': [
+                  {'id': 'logo-illicado', 'type': 'registry:Card'},
+                ],
+              },
+            },
+            'logo-illicado': {
+              'type': 'native',
+              'regions': <String, Object?>{},
+              'slotSizeConstraints': {
+                'preferredWidth': '110px',
+                'preferredHeight': '40px',
+              },
+              'placements': <String, Object?>{},
+            },
+          },
+        }),
+      );
+
+      expect(updated.components.containsKey('logo-illicado'), isTrue);
+      expect(
+        updated.nativeComponent('logo-illicado').slotSizeConstraints,
+        isEmpty,
+      );
+      final parentConstraints = updated
+          .nativeComponent('main-appbar')
+          .slotSizeConstraints['logo-illicado'];
+      expect(parentConstraints, isNotNull);
+      expect(
+        parentConstraints!.preferredWidth,
+        const SlotDimension(110, SlotSizeUnit.pixels),
+      );
+      expect(
+        parentConstraints.preferredHeight,
+        const SlotDimension(40, SlotSizeUnit.pixels),
+      );
     });
   });
 }

@@ -108,6 +108,68 @@ class SlotDimension {
 class SlotSizeConstraints {
   static const maxPadding = 200.0;
 
+  static const Set<String> jsonKeys = {
+    'minWidth',
+    'minHeight',
+    'maxWidth',
+    'maxHeight',
+    'preferredWidth',
+    'preferredHeight',
+    'padding',
+    'paddingInsets',
+    'percentBasis',
+    'fitContent',
+    'flex',
+  };
+
+  /// Retourne `true` si [value] est directement un objet de contraintes de slot
+  /// (ex. `{"preferredWidth": "110px", "preferredHeight": "40px"}`) au lieu
+  /// d'une `Map<slotId, SlotSizeConstraints>`.
+  static bool isDirectConstraintsMap(Object? value) {
+    if (value is! Map || value.isEmpty) return false;
+    return value.keys.every(
+          (key) => key is String && jsonKeys.contains(key),
+        ) &&
+        value.values.any(
+          (entry) =>
+              entry is! Map ||
+              entry.containsKey('value') ||
+              entry.containsKey('unit'),
+        );
+  }
+
+  /// Lit une `Map<slotId, SlotSizeConstraints>` en tolérant aussi un objet
+  /// [SlotSizeConstraints] direct si l'IA l'a placé sans clé de slot.
+  static Map<String, SlotSizeConstraints> parseMap(
+    Object? raw, {
+    Iterable<String> placedIds = const [],
+    Map<String, SlotSizeConstraints> fallback = const {},
+  }) {
+    if (raw == null) return fallback;
+    if (raw is! Map) {
+      throw const FormatException('Contraintes de taille invalides.');
+    }
+    if (isDirectConstraintsMap(raw)) {
+      final direct = SlotSizeConstraints.fromJson(raw);
+      final uniquePlaced = placedIds.toSet();
+      if (uniquePlaced.length == 1) {
+        return {...fallback, uniquePlaced.single: direct};
+      }
+      return fallback;
+    }
+    final result = <String, SlotSizeConstraints>{};
+    for (final entry in raw.entries) {
+      final key = entry.key;
+      if (key is! String || key.trim().isEmpty) {
+        throw const FormatException('Identifiant de slot invalide.');
+      }
+      if (entry.value != null) {
+        result[key] = SlotSizeConstraints.fromJson(entry.value);
+      }
+    }
+    return result;
+  }
+
   const SlotSizeConstraints({
     this.minWidth,
     this.minHeight,
@@ -1378,21 +1440,13 @@ class SuperLayoutConfig extends ComponentConfig {
       return result;
     }
 
-    Map<String, SlotSizeConstraints> slotConstraints() {
-      final raw = value['slotSizeConstraints'];
-      if (raw == null) return fallback.slotSizeConstraints;
-      if (raw is! Map) {
-        throw const FormatException('Contraintes de taille invalides.');
-      }
-      final result = <String, SlotSizeConstraints>{};
-      for (final entry in raw.entries) {
-        if (entry.key is! String || (entry.key as String).isEmpty) {
-          throw const FormatException('Identifiant de slot invalide.');
-        }
-        result[entry.key as String] = SlotSizeConstraints.fromJson(entry.value);
-      }
-      return result;
-    }
+    Map<String, SlotSizeConstraints> slotConstraints(
+      Iterable<String> placedIds,
+    ) => SlotSizeConstraints.parseMap(
+      value['slotSizeConstraints'],
+      placedIds: placedIds,
+      fallback: fallback.slotSizeConstraints,
+    );
 
     Map<SuperLayoutZone, Axis> axes() {
       final raw = value['zoneAxes'];
@@ -1488,7 +1542,9 @@ class SuperLayoutConfig extends ComponentConfig {
       placements: parsedPlacements,
       slotTypes: rawPlacements == null ? fallback.slotTypes : slotTypes,
       slotPreferredSizes: preferredSizes(),
-      slotSizeConstraints: slotConstraints(),
+      slotSizeConstraints: slotConstraints(
+        parsedPlacements.values.expand((ids) => ids),
+      ),
       zoneAxes: axes(),
       zoneFlows: flows(),
       label: displayLabel(value['label']) ?? fallback.label,
