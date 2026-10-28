@@ -152,6 +152,7 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
           (color) => _update(key, color.toARGB32()),
           dense: true,
           key: ValueKey('text-field-setting-$key'),
+          onClear: () => _update(key, null),
         ),
         Align(
           alignment: Alignment.centerRight,

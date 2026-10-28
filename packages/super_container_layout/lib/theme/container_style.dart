@@ -15,6 +15,8 @@ part 'surface_style_states.dart';
 
 const Object _keep = Object();
 
+enum ContainerStyleProperty { imageUrl }
+
 @immutable
 class ContainerStyle {
   const ContainerStyle({
@@ -45,6 +47,7 @@ class ContainerStyle {
     this.pattern = SurfacePattern.none,
     this.patternOpacity = .1,
     this.transform,
+    this.propertyBindings = const {},
     this.states,
   });
 
@@ -101,9 +104,15 @@ class ContainerStyle {
   final SurfacePattern pattern;
   final double patternOpacity;
   final TransformSpec? transform;
+  final Map<ContainerStyleProperty, JsonTextBinding> propertyBindings;
   final SurfaceStyleStates? states;
 
   static const maxBlur = 40.0;
+
+  JsonTextBinding? get imageBinding =>
+      propertyBindings[ContainerStyleProperty.imageUrl] ?? fill.imageBinding;
+
+  bool get hasImage => fill.hasImage || imageBinding != null;
 
   BorderRadius get borderRadius =>
       radii?.radii ?? BorderRadius.circular(radius);
@@ -159,6 +168,7 @@ class ContainerStyle {
     pattern: other.pattern,
     patternOpacity: other.patternOpacity,
     transform: other.transform,
+    propertyBindings: propertyBindings,
   );
 
   /// Couleur du voile au survol ; `null` pour le gris Material.
@@ -186,6 +196,7 @@ class ContainerStyle {
     bool? hoverEffect,
     HoverTint? hoverTint,
     Color? hoverColor,
+    bool resetHoverColor = false,
     Object? radii = _keep,
     Object? borderWidths = _keep,
     BorderLine? borderLine,
@@ -198,10 +209,12 @@ class ContainerStyle {
     SurfacePattern? pattern,
     double? patternOpacity,
     Object? transform = _keep,
+    Map<ContainerStyleProperty, JsonTextBinding>? propertyBindings,
     SurfaceStyleStates? states,
     bool clearStates = false,
   }) => ContainerStyle(
     states: clearStates ? null : states ?? this.states,
+    propertyBindings: propertyBindings ?? this.propertyBindings,
     color: resetColor ? null : color ?? this.color,
     fill: fill ?? this.fill,
     radius: radius ?? this.radius,
@@ -216,7 +229,7 @@ class ContainerStyle {
     interactionEffect: interactionEffect ?? this.interactionEffect,
     hoverEffect: hoverEffect ?? this.hoverEffect,
     hoverTint: hoverTint ?? this.hoverTint,
-    hoverColor: hoverColor ?? this.hoverColor,
+    hoverColor: resetHoverColor ? null : hoverColor ?? this.hoverColor,
     radii: identical(radii, _keep) ? this.radii : radii as Quad?,
     borderWidths: identical(borderWidths, _keep)
         ? this.borderWidths
@@ -286,6 +299,11 @@ class ContainerStyle {
     if (pattern != SurfacePattern.none) 'pattern': pattern.name,
     if (patternOpacity != .1) 'patternOpacity': patternOpacity,
     if (transform != null) 'transform': transform!.toJson(),
+    if (propertyBindings.isNotEmpty)
+      'propertyBindings': {
+        for (final entry in propertyBindings.entries)
+          entry.key.name: entry.value.toJson(),
+      },
     if (states != null) 'states': states!.toJson(),
   };
 
@@ -321,6 +339,11 @@ class ContainerStyle {
       if (pattern != SurfacePattern.none) 'pattern': pattern.name,
       if (patternOpacity != .1) 'patternOpacity': patternOpacity,
       if (transform != null) 'transform': transform!.toJson(),
+      if (propertyBindings.isNotEmpty)
+        'propertyBindings': {
+          for (final entry in propertyBindings.entries)
+            entry.key.name: entry.value.toCompactJson(),
+        },
       if (states != null) 'states': states!.toCompactJson(),
     };
   }
@@ -339,7 +362,33 @@ class ContainerStyle {
         fallback: fill,
       ).toJson();
     }
-    return ContainerStyle.fromJson(merged, fallback: this);
+    if (patch['propertyBindings'] is Map) {
+      final currentBindings = <String, Object?>{
+        for (final entry in propertyBindings.entries)
+          entry.key.name: entry.value.toJson(),
+      };
+      for (final entry in (patch['propertyBindings'] as Map).entries) {
+        if (entry.key is String) {
+          if (entry.value == null) {
+            currentBindings.remove(entry.key);
+          } else {
+            currentBindings[entry.key as String] = entry.value;
+          }
+        }
+      }
+      merged['propertyBindings'] = currentBindings;
+    }
+    return ContainerStyle.fromJson(
+      merged,
+      fallback: patch['fill'] is Map || patch.containsKey('propertyBindings')
+          ? copyWith(
+              fill: patch['fill'] is Map ? const ContainerFill() : fill,
+              propertyBindings: patch.containsKey('propertyBindings')
+                  ? const {}
+                  : propertyBindings,
+            )
+          : this,
+    );
   }
 
   static ContainerStyle fromJson(
@@ -416,10 +465,44 @@ class ContainerStyle {
         !SurfacePattern.values.any((kind) => kind.name == pattern)) {
       throw const FormatException('Motif de conteneur invalide.');
     }
+    final rawPropertyBindings = value['propertyBindings'];
+    if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
+      throw const FormatException(
+        'Liaisons de propriétés de conteneur invalides.',
+      );
+    }
+    final Map<ContainerStyleProperty, JsonTextBinding> propertyBindings;
+    if (!value.containsKey('propertyBindings')) {
+      propertyBindings = fallback.propertyBindings;
+    } else {
+      propertyBindings = <ContainerStyleProperty, JsonTextBinding>{};
+      for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
+        if (entry.key is! String) {
+          throw const FormatException(
+            'Liaison de propriété de conteneur invalide.',
+          );
+        }
+        final property = ContainerStyleProperty.values
+            .where((candidate) => candidate.name == entry.key)
+            .firstOrNull;
+        if (property == null ||
+            (entry.value != null &&
+                entry.value is! Map &&
+                entry.value is! String)) {
+          throw const FormatException(
+            'Liaison de propriété de conteneur invalide.',
+          );
+        }
+        if (entry.value != null) {
+          propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
+        }
+      }
+    }
     return ContainerStyle(
       states: value['states'] == null
           ? fallback.states
           : SurfaceStyleStates.fromJson(value['states']),
+      propertyBindings: Map.unmodifiable(propertyBindings),
       color: parsedColor,
       fill: value['fill'] == null
           ? fallback.fill
@@ -510,8 +593,11 @@ String formatContainerStyleTooltip({
     FillType.radial => 'Dégradé radial',
     FillType.sweep => 'Dégradé conique',
   };
-  final fillLabel = style.fill.hasImage
-      ? '$baseFillLabel · Image (${style.fill.imageUrl.trim()})'
+  final imageTarget = style.fill.imageUrl.trim().isNotEmpty
+      ? style.fill.imageUrl.trim()
+      : '${style.imageBinding?.toCompactJson() ?? ''}';
+  final fillLabel = style.hasImage
+      ? '$baseFillLabel · Image ($imageTarget)'
       : baseFillLabel;
   final radiusLabel = _formatStyleQuad(style.radius, style.radii);
   final borderExtent = _formatStyleQuad(style.borderWidth, style.borderWidths);

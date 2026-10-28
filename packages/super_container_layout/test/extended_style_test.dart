@@ -7,6 +7,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/json_text_binding.dart';
+import 'package:super_container_layout/services/repositories/json_list_scope.dart';
+import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
+import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -747,6 +751,175 @@ void main() {
         } finally {
           debugNetworkImageHttpClientProvider = null;
         }
+      },
+    );
+
+    testWidgets(
+      'surface propertyBindings.imageUrl round-trips, resolves from repository and can be bound in editor',
+      (tester) async {
+        const repoId = '0123456789abcdef0123456789abcdef';
+        const styleWithBinding = ContainerStyle(
+          fill: ContainerFill(imageFit: BoxFit.contain, imageOpacity: .8),
+          propertyBindings: {
+            ContainerStyleProperty.imageUrl: JsonTextBinding(
+              repositoryId: repoId,
+              path: 'clients[?].avatar',
+            ),
+          },
+        );
+        expect(styleWithBinding.hasImage, isTrue);
+        final json = styleWithBinding.toJson();
+        expect(ContainerStyle.fromJson(json).toJson(), json);
+        expect(
+          ContainerStyle.fromJson(json).propertyBindings,
+          styleWithBinding.propertyBindings,
+        );
+        final compact = styleWithBinding.toCompactJson();
+        expect(ContainerStyle.fromJson(compact).toJson(), json);
+        expect(
+          ContainerStyle.fromJson(compact).propertyBindings,
+          styleWithBinding.propertyBindings,
+        );
+        final cleared = styleWithBinding.patchFromJson({
+          'propertyBindings': {'imageUrl': null},
+        });
+        expect(cleared.propertyBindings, isEmpty);
+        expect(cleared.hasImage, isFalse);
+
+        // State overrides track and apply propertyBindings.imageUrl under background
+        final override = SelectedSurfaceStyle().edited(styleWithBinding);
+        expect(override.properties, contains(SurfaceStyleProperty.background));
+        final applied = override.apply(const ContainerStyle());
+        expect(
+          applied.propertyBindings[ContainerStyleProperty.imageUrl],
+          const JsonTextBinding(repositoryId: repoId, path: 'clients[?].avatar'),
+        );
+
+        final dir = await tester.runAsync(
+          () => Directory.systemTemp.createTemp('surface-image-bind-'),
+        );
+        addTearDown(() => tester.runAsync(() => dir!.delete(recursive: true)));
+        final store = JsonRepositoryStore(dir!);
+        addTearDown(store.dispose);
+        final actualRepoId = await tester.runAsync(() async {
+          await store.create('Clients');
+          final old = await store.read('Clients');
+          await store.save(
+            'Clients',
+            '{"clients":[{"avatar":"https://example.com/a.png"},{"avatar":""}]}\n',
+            expectedText: old,
+          );
+          return store.idOf('Clients');
+        });
+
+        Future<void> real(Future<void> Function() action) async {
+          await tester.runAsync(() async {
+            await action();
+            for (var i = 0; i < 4; i++) {
+              await tester.pump();
+              await Future<void>.delayed(const Duration(milliseconds: 50));
+            }
+          });
+          await tester.pumpAndSettle();
+        }
+
+        tester.view.physicalSize = const Size(1400, 1000);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        // Runtime resolution inside a JsonListScope row with fallback imageUrl
+        final rowIndex = ValueNotifier<int>(0);
+        addTearDown(rowIndex.dispose);
+        await real(
+          () => tester.pumpWidget(
+            MaterialApp(
+              home: JsonRepositoryScope(
+                store: store,
+                child: Scaffold(
+                  body: Center(
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: rowIndex,
+                      builder: (context, index, _) => JsonListScope(
+                        repositoryId: actualRepoId!,
+                        indices: [index],
+                        child: const EditableSurface(
+                          style: ContainerStyle(
+                            fill: ContainerFill(
+                              imageUrl: 'https://example.com/fallback.png',
+                            ),
+                            propertyBindings: {
+                              ContainerStyleProperty.imageUrl: JsonTextBinding(
+                                path: 'clients[?].avatar',
+                              ),
+                            },
+                          ),
+                          child: SizedBox(
+                            width: 120,
+                            height: 60,
+                            child: Text('Row'),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+
+        Ink findSurfaceInk() => tester.widget<Ink>(
+          find
+              .descendant(
+                of: find.byType(StyledSurface),
+                matching: find.byType(Ink),
+              )
+              .first,
+        );
+        expect(
+          ((findSurfaceInk().decoration! as BoxDecoration).image!.image
+                  as NetworkImage)
+              .url,
+          'https://example.com/a.png',
+        );
+
+        // Switching to row 1 (empty avatar) falls back to imageUrl
+        await real(() async => rowIndex.value = 1);
+        expect(
+          ((findSurfaceInk().decoration! as BoxDecoration).image!.image
+                  as NetworkImage)
+              .url,
+          'https://example.com/fallback.png',
+        );
+
+        // Configure binding through the style editor dialog
+        await tester.tap(find.text('Row'), buttons: kSecondaryMouseButton);
+        await tester.pumpAndSettle();
+        await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
+        await tester.pumpAndSettle();
+
+        final bindBtn = find.byKey(const ValueKey('image-url-bind-Card'));
+        await tester.ensureVisible(bindBtn);
+        await tester.pumpAndSettle();
+        await tester.tap(bindBtn);
+        await real(() async {});
+
+        final pathField = find.byKey(
+          const ValueKey('image-url-binding-Card-repository-path'),
+        );
+        expect(pathField, findsOneWidget);
+        await tester.enterText(pathField, 'clients[0].avatar');
+        await tester.tap(
+          find.byKey(const ValueKey('image-url-binding-Card-apply')),
+        );
+        await tester.pumpAndSettle();
+
+        expect(
+          current(tester).propertyBindings[ContainerStyleProperty.imageUrl],
+          const JsonTextBinding(path: 'clients[0].avatar'),
+        );
+        expect(find.text('Lié à : clients[0].avatar'), findsOneWidget);
+        expect(tester.takeException(), isNull);
       },
     );
   });

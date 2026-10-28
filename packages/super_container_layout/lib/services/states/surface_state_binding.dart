@@ -70,6 +70,7 @@ class SurfaceStateBinding extends ChangeNotifier {
         _scope?.placeholder != scope?.placeholder ||
         !listEquals(_scope?.indices, scope?.indices);
     if (storeChanged) {
+      _store?.unregisterBindings(this);
       _store?.removeListener(_storeChanged);
       _store = store;
       _store?.addListener(_storeChanged);
@@ -113,6 +114,7 @@ class SurfaceStateBinding extends ChangeNotifier {
     error = null;
 
     if (_placeholder || (_scope?.placeholder ?? false)) {
+      _store?.unregisterBindings(this);
       loading = false;
       notifyListeners();
       return;
@@ -124,6 +126,10 @@ class SurfaceStateBinding extends ChangeNotifier {
       notifyListeners();
       return;
     }
+
+    store.registerBindings(this, [
+      _binding.repositoryId ?? _scope?.repositoryId,
+    ]);
 
     late final JsonSelectedBinding resolved;
     try {
@@ -184,6 +190,7 @@ class SurfaceStateBinding extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _generation++;
+    _store?.unregisterBindings(this);
     _store?.removeListener(_storeChanged);
     _detachArrays();
     super.dispose();

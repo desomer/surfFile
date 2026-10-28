@@ -191,11 +191,13 @@ class DiskGaugeStyleEditor extends StatelessWidget {
           'Piste vide',
           track,
           (c) => onChanged(value.copyWith(trackColor: c)),
+          onClear: () => onChanged(value.copyWith(resetTrackColor: true)),
         ),
         styleColorTile(
           'Remplissage',
           fill,
           (c) => onChanged(value.copyWith(fillColor: c)),
+          onClear: () => onChanged(value.copyWith(resetFillColor: true)),
         ),
         SwitchListTile(
           title: const Text('Dégradé le long de la piste'),
@@ -213,6 +215,13 @@ class DiskGaugeStyleEditor extends StatelessWidget {
               color,
               (c) => onChanged(
                 value.copyWith(gradient: [...value.gradient]..[i] = c),
+              ),
+              onClear: () => onChanged(
+                value.copyWith(
+                  gradient: value.gradient.length <= 2
+                      ? const []
+                      : ([...value.gradient]..removeAt(i)),
+                ),
               ),
             ),
           Align(
@@ -240,6 +249,7 @@ class DiskGaugeStyleEditor extends StatelessWidget {
           'Alerte',
           alert,
           (c) => onChanged(value.copyWith(alertColor: c)),
+          onClear: () => onChanged(value.copyWith(resetAlertColor: true)),
         ),
         _slider(
           'Seuil d’alerte',

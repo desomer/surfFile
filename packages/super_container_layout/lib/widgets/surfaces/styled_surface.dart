@@ -2,6 +2,11 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../models/json_text_binding.dart';
+import '../../services/repositories/json_list_scope.dart';
+import '../../services/repositories/json_repository_scope.dart';
+import '../../services/states/surface_state_binding.dart';
+import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
 import '../../theme/design_system.dart';
 import '../../theme/interaction_effect.dart';
@@ -10,6 +15,85 @@ import '../../theme/appearance.dart';
 import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
 import 'surface_painters.dart';
+
+/// Resolves a surface image binding ([ContainerStyleProperty.imageUrl] or
+/// [ContainerFill.imageBinding]) against the surrounding
+/// [JsonRepositoryScope] and [JsonListScope] when configured.
+class BoundContainerFill extends StatefulWidget {
+  const BoundContainerFill({
+    required this.fill,
+    required this.builder,
+    this.binding,
+    super.key,
+  });
+
+  final ContainerFill fill;
+  final JsonTextBinding? binding;
+  final Widget Function(BuildContext context, ContainerFill fill) builder;
+
+  @override
+  State<BoundContainerFill> createState() => _BoundContainerFillState();
+}
+
+class _BoundContainerFillState extends State<BoundContainerFill> {
+  SurfaceStateBinding? _binding;
+
+  void _bindingChanged() {
+    if (mounted) WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _syncBinding(BuildContext context) {
+    final binding = widget.binding ?? widget.fill.imageBinding;
+    if (binding == null) {
+      _binding?.removeListener(_bindingChanged);
+      _binding?.dispose();
+      _binding = null;
+      return;
+    }
+    final store = JsonRepositoryScope.maybeOf(context);
+    final scope = JsonListScope.maybeOf(context);
+    final placeholder = scope?.placeholder ?? false;
+    if (_binding == null) {
+      _binding = SurfaceStateBinding(
+        store: store,
+        binding: binding,
+        scope: scope,
+        placeholder: placeholder,
+      )..addListener(_bindingChanged);
+    } else {
+      _binding!.reconfigure(
+        store: store,
+        binding: binding,
+        scope: scope,
+        placeholder: placeholder,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _binding?.removeListener(_bindingChanged);
+    _binding?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _syncBinding(context);
+    final binding = _binding;
+    if (binding == null) return widget.builder(context, widget.fill);
+    return ListenableBuilder(
+      listenable: binding,
+      builder: (context, _) {
+        final boundUrl = binding.stateName?.trim() ?? '';
+        final effectiveFill = boundUrl.isEmpty
+            ? widget.fill
+            : widget.fill.copyWith(imageUrl: boundUrl);
+        return widget.builder(context, effectiveFill);
+      },
+    );
+  }
+}
 
 class StyledSurface extends StatelessWidget {
   const StyledSurface({
@@ -28,16 +112,37 @@ class StyledSurface extends StatelessWidget {
   final bool horizontalBorder;
 
   @override
-  Widget build(BuildContext context) => InteractionEffectBox(
-    effect: style.interactionEffect,
-    hover: style.hoverEffect,
-    hoverColor: style.hoverBase(AppearanceScope.of(context).accent),
-    radius: style.maxRadius,
-    borderRadius: style.borderRadius,
-    builder: _surface,
-  );
+  Widget build(BuildContext context) {
+    final imageBinding = style.imageBinding;
+    if (imageBinding != null) {
+      return BoundContainerFill(
+        fill: style.fill,
+        binding: imageBinding,
+        builder: (context, resolvedFill) =>
+            _buildBox(context, style.copyWith(fill: resolvedFill)),
+      );
+    }
+    return _buildBox(context, style);
+  }
 
-  Widget _surface(BuildContext context, double elevationBoost) {
+  Widget _buildBox(BuildContext context, ContainerStyle effectiveStyle) =>
+      InteractionEffectBox(
+        effect: effectiveStyle.interactionEffect,
+        hover: effectiveStyle.hoverEffect,
+        hoverColor: effectiveStyle.hoverBase(
+          AppearanceScope.of(context).accent,
+        ),
+        radius: effectiveStyle.maxRadius,
+        borderRadius: effectiveStyle.borderRadius,
+        builder: (context, elevationBoost) =>
+            _surface(context, effectiveStyle, elevationBoost),
+      );
+
+  Widget _surface(
+    BuildContext context,
+    ContainerStyle style,
+    double elevationBoost,
+  ) {
     final custom = style.shadow;
     final elevation = custom != null
         ? 0.0

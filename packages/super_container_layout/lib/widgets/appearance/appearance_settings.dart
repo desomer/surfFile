@@ -85,6 +85,22 @@ class AppearanceSettings extends StatelessWidget {
         label: 'Couleur d’accent',
         icon: Icons.palette_outlined,
         builder: (context) => _controls([
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              key: const ValueKey('clear-accent-color'),
+              onPressed: () {
+                final codec = AppearanceServicesScope.codecOf(context);
+                final defaultAccent =
+                    (defaults?.call() ?? codec.defaults).accent;
+                controller.value = controller.value.copyWith(
+                  accent: defaultAccent,
+                );
+              },
+              icon: const Icon(Icons.format_color_reset_outlined, size: 18),
+              label: const Text('Retirer la couleur'),
+            ),
+          ),
           ColorPicker(
             key: const ValueKey('picker-Couleur d’accent'),
             color: AppearanceScope.of(context).accent,

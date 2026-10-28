@@ -1006,6 +1006,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   _update(_config.value.withProperty(descriptor.id, color)),
               key: propKey,
               dense: true,
+              onClear: descriptor.nullable
+                  ? () =>
+                        _update(_config.value.withProperty(descriptor.id, null))
+                  : null,
             ),
           ),
           ?resetButton(),

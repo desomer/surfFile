@@ -797,6 +797,7 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                 .padLeft(8, '0');
           }),
           key: ValueKey('super-action-color-picker-$fieldKey'),
+          onClear: () => setState(() => _fields[fieldKey]!.clear()),
         ),
         _withBinding(
           property,
@@ -1014,16 +1015,15 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                       MaterialIconPickerField(
                         key: const ValueKey('super-action-setting-icon'),
                         label: 'Icône',
-                        value: SuperActionIcons.isKnown(_draft.icon)
-                            ? _draft.icon
-                            : 'touch_app',
-                        onChanged: (icon) {
-                          if (icon != null) {
-                            setState(
-                              () => _draft = _draft.copyWith(icon: icon),
-                            );
-                          }
-                        },
+                        nullable: true,
+                        value: _draft.icon.trim().isEmpty
+                            ? null
+                            : (SuperActionIcons.isKnown(_draft.icon)
+                                  ? _draft.icon
+                                  : 'touch_app'),
+                        onChanged: (icon) => setState(
+                          () => _draft = _draft.copyWith(icon: icon ?? ''),
+                        ),
                       ),
                     ),
                   if (_draft.kind == SuperActionKind.textAndIcon)

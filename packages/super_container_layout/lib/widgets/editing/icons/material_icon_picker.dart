@@ -22,7 +22,7 @@ Future<MaterialIconPickerResult?> showMaterialIconPickerDialog({
   required BuildContext context,
   String? selectedId,
   String title = 'Choisir une icône',
-  bool nullable = false,
+  bool nullable = true,
   String emptyLabel = 'Thème / aucune',
   Iterable<String>? allowedIds,
 }) => showEditorDialog<MaterialIconPickerResult>(
@@ -43,7 +43,7 @@ class MaterialIconPickerField extends StatelessWidget {
     required this.label,
     required this.value,
     required this.onChanged,
-    this.nullable = false,
+    this.nullable = true,
     this.emptyLabel = 'Thème / aucune',
     this.isDense = false,
     this.showId = true,

@@ -40,6 +40,9 @@ Object _parseBoundActionProperty(SuperActionProperty property, Object? value) {
       }
       return value;
     case SuperActionProperty.icon:
+      if (value == null || (value is String && value.trim().isEmpty)) {
+        return '';
+      }
       if (value is! String || !SuperActionIcons.isKnown(value)) {
         throw const FormatException(
           'L’icône liée doit être un identifiant d’icône valide.',
@@ -178,14 +181,21 @@ Widget buildSuperActionVisual({
     TextAlign.end || TextAlign.right => MainAxisAlignment.end,
     _ => MainAxisAlignment.center,
   };
-  final iconData = SuperActionIcons.resolve(config.icon);
+  final hasIcon = config.kind.hasIcon && config.icon.trim().isNotEmpty;
+  final iconData = hasIcon ? SuperActionIcons.resolve(config.icon) : null;
   final effectiveIconColor = config.iconColor ?? config.color;
-  final iconWidget = Icon(
-    iconData,
-    key: iconKey,
-    size: config.iconSize,
-    color: effectiveIconColor,
-  );
+  final iconWidget = hasIcon
+      ? Icon(
+          iconData,
+          key: iconKey,
+          size: config.iconSize,
+          color: effectiveIconColor,
+        )
+      : SizedBox(
+          key: iconKey,
+          width: config.iconSize ?? 20,
+          height: config.iconSize ?? 20,
+        );
   final textWidget = Text(
     config.label,
     key: labelKey,
@@ -205,7 +215,9 @@ Widget buildSuperActionVisual({
     SuperActionKind.textAndIcon => Row(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: align,
-      children: config.iconPosition == SuperActionIconPosition.leading
+      children: !hasIcon
+          ? [Flexible(child: textWidget)]
+          : config.iconPosition == SuperActionIconPosition.leading
           ? [
               iconWidget,
               SizedBox(width: config.iconSpacing),
@@ -222,7 +234,7 @@ Widget buildSuperActionVisual({
   final hasCustomSurface =
       config.variant == SuperActionVariant.surface ||
       config.style.fill.type != FillType.solid ||
-      config.style.fill.hasImage ||
+      config.style.hasImage ||
       config.style.neon != null ||
       config.style.shadow != null ||
       config.style.hasInnerShadow ||
@@ -629,6 +641,7 @@ class _SuperActionState extends State<SuperAction>
     _refreshPropertyBindings = false;
     _requestedPropertyBindings = Map.of(bindings);
     if (!identical(_requestedPropertyStore, store)) {
+      _requestedPropertyStore?.unregisterBindings(this);
       _requestedPropertyStore?.removeListener(_propertyStoreChanged);
       store?.addListener(_propertyStoreChanged);
       _requestedPropertyStore = store;
@@ -639,11 +652,16 @@ class _SuperActionState extends State<SuperAction>
     final generation = ++_propertyBindingGeneration;
     _propertyBindingErrors = const {};
     if (bindings.isEmpty || (scope?.placeholder ?? false)) {
+      store?.unregisterBindings(this);
       _boundPropertyValues = const {};
       _activePropertyBindings = const {};
       _listenPropertySelections(const []);
       return;
     }
+
+    store?.registerBindings(this, [
+      for (final b in bindings.values) b.repositoryId ?? scope?.repositoryId,
+    ]);
 
     final selections = <JsonArrayBinding>[];
     final resolved = <SuperActionProperty, JsonTextBinding>{};
@@ -778,6 +796,7 @@ class _SuperActionState extends State<SuperAction>
     _stateReader?.dispose();
     _propertyBindingGeneration++;
     _listenPropertySelections(const []);
+    _requestedPropertyStore?.unregisterBindings(this);
     _requestedPropertyStore?.removeListener(_propertyStoreChanged);
     _requestedPropertyStore = null;
     _local.dispose();
@@ -885,12 +904,19 @@ class _SuperActionState extends State<SuperAction>
           }
 
           if (navScope?.part == SuperActionNavigationPart.icon) {
-            Widget iconVisual = Icon(
-              SuperActionIcons.resolve(config.icon),
-              key: ValueKey('super-action-icon-${widget.id}'),
-              size: config.iconSize,
-              color: config.iconColor ?? config.color,
-            );
+            final hasIcon = config.icon.trim().isNotEmpty;
+            Widget iconVisual = hasIcon
+                ? Icon(
+                    SuperActionIcons.resolve(config.icon),
+                    key: ValueKey('super-action-icon-${widget.id}'),
+                    size: config.iconSize,
+                    color: config.iconColor ?? config.color,
+                  )
+                : SizedBox(
+                    key: ValueKey('super-action-icon-${widget.id}'),
+                    width: config.iconSize ?? 24,
+                    height: config.iconSize ?? 24,
+                  );
             if (config.tooltip.trim().isNotEmpty) {
               iconVisual = Tooltip(message: config.tooltip, child: iconVisual);
             }
@@ -913,12 +939,20 @@ class _SuperActionState extends State<SuperAction>
           }
 
           if (navScope?.part == SuperActionNavigationPart.tab) {
-            final iconWidget = Icon(
-              SuperActionIcons.resolve(config.icon),
-              key: ValueKey('super-action-icon-${widget.id}'),
-              size: config.iconSize ?? 18,
-              color: config.iconColor ?? config.color,
-            );
+            final hasIcon =
+                config.kind.hasIcon && config.icon.trim().isNotEmpty;
+            final iconWidget = hasIcon
+                ? Icon(
+                    SuperActionIcons.resolve(config.icon),
+                    key: ValueKey('super-action-icon-${widget.id}'),
+                    size: config.iconSize ?? 18,
+                    color: config.iconColor ?? config.color,
+                  )
+                : SizedBox(
+                    key: ValueKey('super-action-icon-${widget.id}'),
+                    width: config.iconSize ?? 18,
+                    height: config.iconSize ?? 18,
+                  );
             final textWidget = Text(
               config.label,
               key: ValueKey('super-action-label-${widget.id}'),
@@ -930,21 +964,26 @@ class _SuperActionState extends State<SuperAction>
             Widget tabVisual = switch (config.kind) {
               SuperActionKind.icon => iconWidget,
               SuperActionKind.text => textWidget,
-              SuperActionKind.textAndIcon => Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: config.iconPosition == SuperActionIconPosition.leading
-                    ? [
-                        iconWidget,
-                        SizedBox(width: config.iconSpacing),
-                        Flexible(child: textWidget),
-                      ]
-                    : [
-                        Flexible(child: textWidget),
-                        SizedBox(width: config.iconSpacing),
-                        iconWidget,
-                      ],
-              ),
+              SuperActionKind.textAndIcon =>
+                !hasIcon
+                    ? textWidget
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children:
+                            config.iconPosition ==
+                                SuperActionIconPosition.leading
+                            ? [
+                                iconWidget,
+                                SizedBox(width: config.iconSpacing),
+                                Flexible(child: textWidget),
+                              ]
+                            : [
+                                Flexible(child: textWidget),
+                                SizedBox(width: config.iconSpacing),
+                                iconWidget,
+                              ],
+                      ),
             };
             if (!config.enabled) {
               tabVisual = Opacity(opacity: 0.45, child: tabVisual);

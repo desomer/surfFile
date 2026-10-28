@@ -5,19 +5,23 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../services/repositories/json_repository_store.dart';
 import '../../../services/repositories/json_repository_scope.dart';
+import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog_header.dart';
 
 class JsonRepositoryManager extends StatefulWidget {
-  const JsonRepositoryManager({this.store, super.key});
+  const JsonRepositoryManager({this.store, this.appearance, super.key});
 
   final JsonRepositoryStore? store;
+  final ValueNotifier<Appearance>? appearance;
 
   static Future<void> show(BuildContext context) {
     final store = JsonRepositoryScope.maybeOf(context);
+    final appearance = AppearanceScope.controllerOf(context);
     return showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => JsonRepositoryManager(store: store),
+      builder: (_) =>
+          JsonRepositoryManager(store: store, appearance: appearance),
     );
   }
 
@@ -235,7 +239,20 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
 
   Future<void> _delete([String? target]) async {
     final name = target ?? _selected;
-    if (name == null || _busy || _confirming) return;
+    if (name == null || _busy || _confirming || _store == null) return;
+    final appearance =
+        (widget.appearance ?? AppearanceScope.controllerOf(context))?.value;
+    var inUse = false;
+    await _run(() async {
+      inUse = await _store!.isRepositoryInUse(name, appearance: appearance);
+      if (inUse) {
+        throw FormatException(
+          'Impossible de supprimer « $name » : '
+          'ce repository est encore utilisé par un bind de l’application.',
+        );
+      }
+    });
+    if (inUse || _error != null || !mounted) return;
     _confirming = true;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -258,7 +275,9 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     _confirming = false;
     if (confirmed != true || !mounted) return;
     await _run(() async {
-      await _store!.delete(name);
+      final currentAppearance =
+          (widget.appearance ?? AppearanceScope.controllerOf(context))?.value;
+      await _store!.delete(name, appearance: currentAppearance);
       final names = await _store!.list();
       if (!mounted) return;
       final removedSelected =

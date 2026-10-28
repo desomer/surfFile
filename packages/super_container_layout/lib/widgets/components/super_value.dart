@@ -545,6 +545,7 @@ class _SuperValueState extends State<SuperValue>
     _refreshPropertyBindings = false;
     _requestedPropertyBindings = Map.of(bindings);
     if (!identical(_requestedPropertyStore, store)) {
+      _requestedPropertyStore?.unregisterBindings(this);
       _requestedPropertyStore?.removeListener(_propertyStoreChanged);
       store?.addListener(_propertyStoreChanged);
       _requestedPropertyStore = store;
@@ -555,11 +556,16 @@ class _SuperValueState extends State<SuperValue>
     final generation = ++_propertyBindingGeneration;
     _propertyBindingErrors = const {};
     if (bindings.isEmpty || (scope?.placeholder ?? false)) {
+      store?.unregisterBindings(this);
       _boundPropertyValues = const {};
       _activePropertyBindings = const {};
       _listenPropertySelections(const []);
       return;
     }
+
+    store?.registerBindings(this, [
+      for (final b in bindings.values) b.repositoryId ?? scope?.repositoryId,
+    ]);
 
     final selections = <JsonArrayBinding>[];
     final resolved = <SuperValueProperty, JsonTextBinding>{};
@@ -669,6 +675,7 @@ class _SuperValueState extends State<SuperValue>
     _listenSelections(const []);
     _propertyBindingGeneration++;
     _listenPropertySelections(const []);
+    _requestedPropertyStore?.unregisterBindings(this);
     _requestedPropertyStore?.removeListener(_propertyStoreChanged);
     _requestedPropertyStore = null;
     _binding?.removeListener(_bindingChanged);

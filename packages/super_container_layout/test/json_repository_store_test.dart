@@ -2,7 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:super_container_layout/models/json_text_binding.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 
 void main() {
   late Directory directory;
@@ -63,6 +66,37 @@ void main() {
       store.delete('Missing'),
       throwsA(isA<FileSystemException>()),
     );
+  });
+
+  test('delete refuses when repository is still used by an application bind', () async {
+    await store.create('Clients');
+    final id = await store.idOf('Clients');
+
+    // Bound via Appearance
+    final appearance = Appearance().withValueComponent(
+      'v1',
+      SuperValueConfig(binding: JsonTextBinding(repositoryId: id, path: 'nom')),
+    );
+    expect(appearance.usesRepository(id), isTrue);
+    expect(await store.isRepositoryInUse('Clients', appearance: appearance), isTrue);
+    await expectLater(
+      store.delete('Clients', appearance: appearance),
+      throwsFormatException,
+    );
+    expect(await store.list(), ['Clients']);
+
+    // Bound via active runtime binding
+    final owner = Object();
+    store.registerBindings(owner, [id]);
+    expect(await store.isRepositoryInUse('Clients'), isTrue);
+    await expectLater(store.delete('Clients'), throwsFormatException);
+    expect(await store.list(), ['Clients']);
+
+    // Unbound -> can delete
+    store.unregisterBindings(owner);
+    expect(await store.isRepositoryInUse('Clients'), isFalse);
+    await store.delete('Clients', appearance: Appearance());
+    expect(await store.list(), isEmpty);
   });
 
   test('invalid JSON and duplicate names never overwrite documents', () async {

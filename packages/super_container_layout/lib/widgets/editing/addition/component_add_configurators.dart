@@ -106,7 +106,13 @@ ComponentAddConfigurator<SuperActionConfig> superActionAddConfigurator(
     ),
     ('Variante', draft.variant.name),
     if (draft.kind.hasText && draft.label.isNotEmpty) ('Libellé', draft.label),
-    if (draft.kind.hasIcon) ('Icône', SuperActionIcons.labelOf(draft.icon)),
+    if (draft.kind.hasIcon)
+      (
+        'Icône',
+        draft.icon.trim().isEmpty
+            ? 'Aucune'
+            : SuperActionIcons.labelOf(draft.icon),
+      ),
     if (draft.fontSize != null) ('Taille du texte', '${draft.fontSize}'),
     if (draft.iconSize != null) ('Taille de l’icône', '${draft.iconSize}'),
     ('Alignement', _alignLabel(draft.textAlign)),

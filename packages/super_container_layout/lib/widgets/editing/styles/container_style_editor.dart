@@ -1,7 +1,11 @@
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/json_text_binding.dart';
+import '../../../services/repositories/json_list_scope.dart';
+import '../../../services/repositories/json_repository_scope.dart';
 import '../history/editor_history.dart';
+import '../repositories/repository_binding_fields.dart';
 
 import '../../../theme/container_fill.dart';
 import '../../../theme/design_system.dart';
@@ -51,6 +55,7 @@ class ContainerStyleEditor extends StatelessWidget {
     this.hoverColor,
     this.onHoverTintChanged,
     this.onHoverColorChanged,
+    this.onResetHoverColor,
     this.extraSections = const [],
     this.onResetColor,
     this.onReset,
@@ -60,6 +65,7 @@ class ContainerStyleEditor extends StatelessWidget {
     this.dense,
     this.onDenseChanged,
     this.onLabelChanged,
+    this.ownerContext,
     super.key,
   });
 
@@ -83,6 +89,7 @@ class ContainerStyleEditor extends StatelessWidget {
   final Color? hoverColor;
   final ValueChanged<HoverTint>? onHoverTintChanged;
   final ValueChanged<Color>? onHoverColorChanged;
+  final VoidCallback? onResetHoverColor;
 
   final String label;
   final ContainerFill value;
@@ -132,6 +139,7 @@ class ContainerStyleEditor extends StatelessWidget {
   final bool? dense;
   final ValueChanged<bool>? onDenseChanged;
   final ValueChanged<String>? onLabelChanged;
+  final BuildContext? ownerContext;
 
   bool get _panel => !collapsible;
 
@@ -224,7 +232,13 @@ class ContainerStyleEditor extends StatelessWidget {
           'Couleur du voile',
           hoverColor ?? accent,
           onHoverColorChanged!,
+          key: ValueKey('hover-color-$label'),
           dense: _panel,
+          onClear:
+              onResetHoverColor ??
+              (style != null && onStyle != null
+                  ? () => onStyle!(style!.copyWith(resetHoverColor: true))
+                  : null),
         ),
     ],
   ];
@@ -245,19 +259,34 @@ class ContainerStyleEditor extends StatelessWidget {
       },
     ),
     if (value.type == FillType.solid && onSolidColorChanged != null)
-      _color('Couleur unie', solidColor, onSolidColorChanged!, dense: _panel),
+      _color(
+        'Couleur unie',
+        solidColor,
+        onSolidColorChanged!,
+        key: ValueKey('solid-color-$label'),
+        dense: _panel,
+        onClear:
+            onResetColor ??
+            (style != null && onStyle != null
+                ? () => onStyle!(style!.copyWith(resetColor: true))
+                : null),
+      ),
     if (value.type != FillType.solid) ...[
       _color(
         'Couleur de départ',
         value.start,
         (color) => onChanged(value.copyWith(start: color)),
+        key: ValueKey('start-color-$label'),
         dense: _panel,
+        onClear: () => onChanged(value.copyWith(resetStart: true)),
       ),
       _color(
         'Couleur d’arrivée',
         value.end,
         (color) => onChanged(value.copyWith(end: color)),
+        key: ValueKey('end-color-$label'),
         dense: _panel,
+        onClear: () => onChanged(value.copyWith(resetEnd: true)),
       ),
       if (value.type != FillType.radial)
         _slider(
@@ -282,10 +311,42 @@ class ContainerStyleEditor extends StatelessWidget {
       key: ValueKey('image-url-$label'),
       fieldKey: ValueKey('image-url-field-$label'),
       clearKey: ValueKey('image-url-clear-$label'),
+      bindKey: ValueKey('image-url-bind-$label'),
+      bindingKeyPrefix: 'image-url-binding-$label',
+      ownerContext: ownerContext,
       value: value.imageUrl,
+      binding: style?.imageBinding ?? value.imageBinding,
       onChanged: (url) => onChanged(value.copyWith(imageUrl: url)),
+      onBindingChanged: (binding) {
+        if (style != null && onStyle != null) {
+          final bindings =
+              Map<ContainerStyleProperty, JsonTextBinding>.of(
+                style!.propertyBindings,
+              );
+          if (binding == null) {
+            bindings.remove(ContainerStyleProperty.imageUrl);
+          } else {
+            bindings[ContainerStyleProperty.imageUrl] = binding;
+          }
+          onStyle!(
+            style!.copyWith(
+              propertyBindings: bindings,
+              fill: style!.fill.imageBinding == null
+                  ? style!.fill
+                  : style!.fill.copyWith(clearImageBinding: true),
+            ),
+          );
+        } else {
+          onChanged(
+            value.copyWith(
+              imageBinding: binding,
+              clearImageBinding: binding == null,
+            ),
+          );
+        }
+      },
     ),
-    if (value.hasImage) ...[
+    if (value.hasImage || style?.hasImage == true) ...[
       DropdownButtonFormField<BoxFit>(
         key: ValueKey('image-fit-$label-${value.imageFit.name}'),
         initialValue: value.imageFit,
@@ -364,7 +425,13 @@ class ContainerStyleEditor extends StatelessWidget {
         'Couleur de la bordure',
         borderColor ?? Theme.of(context).colorScheme.outlineVariant,
         onBorderColorChanged!,
+        key: ValueKey('border-color-$label'),
         dense: _panel,
+        onClear:
+            onResetBorderColor ??
+            (style != null && onStyle != null
+                ? () => onStyle!(style!.copyWith(resetBorderColor: true))
+                : null),
       ),
     if (onResetBorderColor != null && resetButton)
       TextButton(
@@ -412,30 +479,33 @@ class ContainerStyleEditor extends StatelessWidget {
       ),
   ];
 
-  BoxDecoration _decoration(BuildContext context) => BoxDecoration(
-    color: value.type == FillType.solid
-        ? solidColor.withValues(alpha: solidColor.a * opacity)
-        : null,
-    gradient: value.gradient(opacity: opacity),
-    image: value.decorationImage(opacity: opacity),
-    borderRadius: BorderRadius.circular(radius),
-    border: Border.all(
-      color: borderColor ?? Theme.of(context).colorScheme.outlineVariant,
-      width: borderWidth,
-      style: borderWidth == 0 ? BorderStyle.none : BorderStyle.solid,
-    ),
-    boxShadow: elevation == 0
-        ? null
-        : designSystem == DesignSystem.neumorphism
-        ? DesignSystem.neumorphicShadows(solidColor, elevation, shadowOpacity)
-        : [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: shadowOpacity),
-              blurRadius: elevation * 2,
-              offset: Offset(0, elevation / 2),
-            ),
-          ],
-  );
+  BoxDecoration _decoration(BuildContext context, [ContainerFill? resolved]) {
+    final fill = resolved ?? value;
+    return BoxDecoration(
+      color: fill.type == FillType.solid
+          ? solidColor.withValues(alpha: solidColor.a * opacity)
+          : null,
+      gradient: fill.gradient(opacity: opacity),
+      image: fill.decorationImage(opacity: opacity),
+      borderRadius: BorderRadius.circular(radius),
+      border: Border.all(
+        color: borderColor ?? Theme.of(context).colorScheme.outlineVariant,
+        width: borderWidth,
+        style: borderWidth == 0 ? BorderStyle.none : BorderStyle.solid,
+      ),
+      boxShadow: elevation == 0
+          ? null
+          : designSystem == DesignSystem.neumorphism
+          ? DesignSystem.neumorphicShadows(solidColor, elevation, shadowOpacity)
+          : [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: shadowOpacity),
+                blurRadius: elevation * 2,
+                offset: Offset(0, elevation / 2),
+              ),
+            ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -468,11 +538,14 @@ class ContainerStyleEditor extends StatelessWidget {
           style: neon,
           accent: accent,
           radius: radius,
-          child: Container(
-            key: ValueKey('preview-$label'),
-            height: 100,
-            width: double.infinity,
-            decoration: _decoration(context),
+          child: BoundContainerFill(
+            fill: value,
+            builder: (context, fill) => Container(
+              key: ValueKey('preview-$label'),
+              height: 100,
+              width: double.infinity,
+              decoration: _decoration(context, fill),
+            ),
           ),
         ),
       ),
@@ -735,6 +808,8 @@ class NeonStyleEditor extends StatelessWidget {
           'Couleur du néon',
           value.color ?? accent,
           (color) => onChanged(value.copyWith(color: color)),
+          key: ValueKey('neon-color-$label'),
+          onClear: () => onChanged(value.copyWith(resetColor: true)),
         ),
         TextButton(
           onPressed: () => onChanged(value.copyWith(resetColor: true)),
@@ -757,8 +832,17 @@ Widget _color(
   String label,
   Color color,
   ValueChanged<Color> onChanged, {
+  Key? key,
   bool dense = false,
-}) => styleColorTile(label, color, onChanged, dense: dense);
+  VoidCallback? onClear,
+}) => styleColorTile(
+  label,
+  color,
+  onChanged,
+  key: key,
+  dense: dense,
+  onClear: onClear,
+);
 
 /// Ligne repliable avec pastille et sélecteur de couleur (palette, roue).
 Widget styleColorTile(
@@ -767,9 +851,38 @@ Widget styleColorTile(
   ValueChanged<Color> onChanged, {
   Key? key,
   bool dense = false,
+  VoidCallback? onClear,
 }) => ExpansionTile(
   key: key,
-  title: Text(label, style: dense ? const TextStyle(fontSize: 13) : null),
+  title: onClear == null
+      ? Text(label, style: dense ? const TextStyle(fontSize: 13) : null)
+      : Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: dense ? const TextStyle(fontSize: 13) : null,
+              ),
+            ),
+            IconButton(
+              key: key is ValueKey
+                  ? ValueKey('${key.value}-clear')
+                  : ValueKey('clear-color-$label'),
+              tooltip: 'Retirer la couleur',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                minimumSize: Size.zero,
+                padding: EdgeInsets.zero,
+              ),
+              iconSize: 16,
+              onPressed: onClear,
+              icon: const Icon(Icons.format_color_reset_outlined),
+            ),
+          ],
+        ),
   dense: dense,
   tilePadding: dense ? EdgeInsets.zero : null,
   childrenPadding: dense ? const EdgeInsets.only(bottom: 8) : null,
@@ -845,13 +958,16 @@ class _PreviewPaneState extends State<_PreviewPane> {
     final height = spacing ? padding.vertical + 64 : 110.0;
     final key = ValueKey('preview-${editor.label}');
     Widget surface = st == null
-        ? Container(
-            key: key,
-            height: height,
-            width: double.infinity,
-            padding: spacing ? padding : null,
-            decoration: editor._decoration(context),
-            child: Center(child: zone),
+        ? BoundContainerFill(
+            fill: editor.value,
+            builder: (context, fill) => Container(
+              key: key,
+              height: height,
+              width: double.infinity,
+              padding: spacing ? padding : null,
+              decoration: editor._decoration(context, fill),
+              child: Center(child: zone),
+            ),
           )
         : SizedBox(
             key: key,
@@ -869,6 +985,23 @@ class _PreviewPaneState extends State<_PreviewPane> {
               ),
             ),
           );
+    final ownerCtx = editor.ownerContext;
+    if (ownerCtx != null && ownerCtx.mounted) {
+      final ownerListScope = JsonListScope.maybeOf(ownerCtx);
+      if (ownerListScope != null && JsonListScope.maybeOf(context) == null) {
+        surface = JsonListScope(
+          repositoryId: ownerListScope.repositoryId,
+          indices: ownerListScope.indices,
+          placeholder: ownerListScope.placeholder,
+          selected: ownerListScope.selected,
+          child: surface,
+        );
+      }
+      final ownerStore = JsonRepositoryScope.maybeOf(ownerCtx);
+      if (ownerStore != null && JsonRepositoryScope.maybeOf(context) == null) {
+        surface = JsonRepositoryScope(store: ownerStore, child: surface);
+      }
+    }
     surface = Padding(
       padding: editor.neon.enabled ? const EdgeInsets.all(18) : EdgeInsets.zero,
       child: st != null
@@ -1013,15 +1146,25 @@ class _BackgroundImageUrlField extends StatefulWidget {
   const _BackgroundImageUrlField({
     required this.value,
     required this.onChanged,
+    this.binding,
+    this.onBindingChanged,
+    this.ownerContext,
     this.fieldKey,
     this.clearKey,
+    this.bindKey,
+    this.bindingKeyPrefix,
     super.key,
   });
 
   final String value;
   final ValueChanged<String> onChanged;
+  final JsonTextBinding? binding;
+  final ValueChanged<JsonTextBinding?>? onBindingChanged;
+  final BuildContext? ownerContext;
   final Key? fieldKey;
   final Key? clearKey;
+  final Key? bindKey;
+  final String? bindingKeyPrefix;
 
   @override
   State<_BackgroundImageUrlField> createState() =>
@@ -1051,26 +1194,77 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
   }
 
   @override
-  Widget build(BuildContext context) => TextFormField(
-    key: widget.fieldKey,
-    controller: _controller,
-    keyboardType: TextInputType.url,
-    decoration: InputDecoration(
-      labelText: 'Image de fond (URL)',
-      hintText: 'https://...',
-      suffixIcon: widget.value.isEmpty
-          ? null
-          : IconButton(
-              key: widget.clearKey,
-              tooltip: 'Effacer l’image',
-              icon: const Icon(Icons.clear, size: 18),
-              onPressed: () {
-                _controller.clear();
-                widget.onChanged('');
-              },
-            ),
-    ),
-    onChanged: widget.onChanged,
-  );
+  Widget build(BuildContext context) {
+    final field = TextFormField(
+      key: widget.fieldKey,
+      controller: _controller,
+      keyboardType: TextInputType.url,
+      decoration: InputDecoration(
+        labelText: 'Image de fond (URL)',
+        hintText: 'https://...',
+        helperText: widget.binding == null
+            ? null
+            : 'Lié à : ${widget.binding!.toCompactJson()}',
+        suffixIcon: widget.value.isEmpty
+            ? null
+            : IconButton(
+                key: widget.clearKey,
+                tooltip: 'Effacer l’image',
+                icon: const Icon(Icons.clear, size: 18),
+                onPressed: () {
+                  _controller.clear();
+                  widget.onChanged('');
+                },
+              ),
+      ),
+      onChanged: widget.onChanged,
+    );
+    if (widget.onBindingChanged == null) return field;
+    final targetContext =
+        widget.ownerContext != null && widget.ownerContext!.mounted
+        ? widget.ownerContext!
+        : context;
+    final repositories =
+        JsonRepositoryScope.maybeOf(targetContext) ??
+        JsonRepositoryScope.maybeOf(context);
+    final listScope =
+        JsonListScope.maybeOf(targetContext) ??
+        JsonListScope.maybeOf(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: field),
+        IconButton(
+          key: widget.bindKey,
+          tooltip: widget.binding != null
+              ? 'Modifier la liaison de l’image de fond'
+              : 'Lier l’image de fond à un repository',
+          visualDensity: VisualDensity.compact,
+          icon: Icon(
+            widget.binding != null ? Icons.link : Icons.add_link,
+            size: 18,
+          ),
+          onPressed: repositories == null
+              ? null
+              : () async {
+                  final result = await showRepositoryBindingDialog(
+                    context: targetContext,
+                    title: 'Lier l’image de fond',
+                    keyPrefix: widget.bindingKeyPrefix ?? 'image-url-binding',
+                    pathHint: 'client.imageUrl',
+                    binding: widget.binding,
+                    store: repositories,
+                    listScope: listScope,
+                    helper:
+                        'Lecture seule : la valeur du repository remplace ce paramètre.',
+                  );
+                  if (result != null && mounted) {
+                    widget.onBindingChanged!(result.binding);
+                  }
+                },
+        ),
+      ],
+    );
+  }
 }
 

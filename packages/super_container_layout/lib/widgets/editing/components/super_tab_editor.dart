@@ -514,6 +514,8 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
                 _draft.indicatorColor ?? scheme.primary,
                 (color) => _update(_draft.copyWith(indicatorColor: color)),
                 key: const ValueKey('super-tab-indicator-color'),
+                onClear: () =>
+                    _update(_draft.copyWith(clearIndicatorColor: true)),
               ),
               if (_draft.indicatorColor != null)
                 Align(
@@ -583,6 +585,7 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               _draft.dividerColor ?? scheme.outlineVariant,
               (color) => _update(_draft.copyWith(dividerColor: color)),
               key: const ValueKey('super-tab-divider-color'),
+              onClear: () => _update(_draft.copyWith(clearDividerColor: true)),
             ),
             if (_draft.dividerColor != null || _draft.dividerHeight != null)
               Align(
@@ -615,6 +618,7 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               _draft.labelColor ?? scheme.primary,
               (color) => _update(_draft.copyWith(labelColor: color)),
               key: const ValueKey('super-tab-label-color'),
+              onClear: () => _update(_draft.copyWith(clearLabelColor: true)),
             ),
             if (_draft.labelColor != null)
               Align(
@@ -630,6 +634,8 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               _draft.unselectedLabelColor ?? scheme.onSurfaceVariant,
               (color) => _update(_draft.copyWith(unselectedLabelColor: color)),
               key: const ValueKey('super-tab-unselected-label-color'),
+              onClear: () =>
+                  _update(_draft.copyWith(clearUnselectedLabelColor: true)),
             ),
             if (_draft.unselectedLabelColor != null)
               Align(
@@ -646,6 +652,7 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               _draft.overlayColor ?? scheme.primary.withValues(alpha: 0.12),
               (color) => _update(_draft.copyWith(overlayColor: color)),
               key: const ValueKey('super-tab-overlay-color'),
+              onClear: () => _update(_draft.copyWith(clearOverlayColor: true)),
             ),
             if (_draft.overlayColor != null)
               Align(
@@ -730,6 +737,8 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               _updateStyle(style.copyWith(hoverTint: tint)),
           onHoverColorChanged: (color) =>
               _updateStyle(style.copyWith(hoverColor: color)),
+          onResetHoverColor: () =>
+              _updateStyle(style.copyWith(resetHoverColor: true)),
           interactionEffect: style.interactionEffect,
           onInteractionEffectChanged: (effect) => _updateStyle(
             style.copyWith(interactionEffect: effect),

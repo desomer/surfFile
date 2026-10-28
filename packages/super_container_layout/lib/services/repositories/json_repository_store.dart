@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../models/json_text_binding.dart';
+import '../../theme/appearance.dart';
 import 'json_repository_binding.dart';
 
 typedef JsonRepositoryEntry = ({String name, String id});
@@ -33,12 +34,50 @@ class JsonRepositoryStore extends ChangeNotifier {
   final errors = ValueNotifier<String?>(null);
 
   final _bindings = <String, JsonRepositoryBinding>{};
+  final _activeBindings = <Object, Set<String>>{};
 
   /// Runtime selections and bound components of [repositoryId]'s arrays.
   JsonRepositoryBinding bindingOf(String repositoryId) => _bindings.putIfAbsent(
     repositoryId,
     () => JsonRepositoryBinding(repositoryId),
   );
+
+  /// Enregistre les identifiants de repositories utilisés par un bind actif [owner].
+  void registerBindings(Object owner, Iterable<String?> repositoryIds) {
+    final ids = {
+      for (final id in repositoryIds)
+        if (id != null && id.isNotEmpty) id,
+    };
+    if (ids.isEmpty) {
+      _activeBindings.remove(owner);
+    } else {
+      _activeBindings[owner] = ids;
+    }
+  }
+
+  /// Désenregistre les liaisons actives associées à [owner].
+  void unregisterBindings(Object owner) => _activeBindings.remove(owner);
+
+  /// Indique si [repositoryId] est actuellement utilisé par un bind actif du store.
+  bool isRepositoryBound(String repositoryId) =>
+      (_bindings[repositoryId]?.isBound ?? false) ||
+      _activeBindings.values.any((ids) => ids.contains(repositoryId));
+
+  /// Indique si le repository [name] est utilisé par un bind actif du store
+  /// ou par une liaison configurée dans [appearance].
+  Future<bool> isRepositoryInUse(String name, {Appearance? appearance}) =>
+      _exclusive(() => _isRepositoryInUse(name, appearance: appearance));
+
+  Future<bool> _isRepositoryInUse(String name, {Appearance? appearance}) async {
+    final idFile = _idFile(name);
+    if (await FileSystemEntity.type(idFile.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      return false;
+    }
+    final id = (await idFile.readAsString()).trim();
+    if (id.isEmpty) return false;
+    return isRepositoryBound(id) || (appearance?.usesRepository(id) ?? false);
+  }
   Future<void> _pending = Future.value();
   final _flushers = <Future<void> Function()>{};
   bool _disposed = false;
@@ -379,35 +418,52 @@ class JsonRepositoryStore extends ChangeNotifier {
     _changed();
   });
 
-  Future<void> delete(String name) => _exclusive(() async {
-    final file = _file(name);
-    if (await FileSystemEntity.type(file.path, followLinks: false) !=
-        FileSystemEntityType.file) {
-      throw FileSystemException(
-        'Fichier JSON introuvable ou lien refusé.',
-        file.path,
-      );
-    }
-    final idFile = _idFile(name);
-    final idType = await FileSystemEntity.type(idFile.path, followLinks: false);
-    if (idType != FileSystemEntityType.notFound &&
-        idType != FileSystemEntityType.file) {
-      throw FileSystemException('Fichier d’identifiant invalide.', idFile.path);
-    }
-    String? id;
-    if (idType == FileSystemEntityType.file) {
-      id = (await idFile.readAsString()).trim();
-    }
-    await file.delete();
-    if (idType == FileSystemEntityType.file) {
-      await idFile.delete();
-    }
-    final binding = id == null ? null : _bindings[id];
-    if (binding != null) {
-      for (final array in binding.arrays) {
-        array.clear();
-      }
-    }
-    _changed();
-  });
+  Future<void> delete(String name, {Appearance? appearance}) =>
+      _exclusive(() async {
+        final validated = validateName(name);
+        final file = _file(validated);
+        if (await FileSystemEntity.type(file.path, followLinks: false) !=
+            FileSystemEntityType.file) {
+          throw FileSystemException(
+            'Fichier JSON introuvable ou lien refusé.',
+            file.path,
+          );
+        }
+        final idFile = _idFile(validated);
+        final idType = await FileSystemEntity.type(
+          idFile.path,
+          followLinks: false,
+        );
+        if (idType != FileSystemEntityType.notFound &&
+            idType != FileSystemEntityType.file) {
+          throw FileSystemException(
+            'Fichier d’identifiant invalide.',
+            idFile.path,
+          );
+        }
+        String? id;
+        if (idType == FileSystemEntityType.file) {
+          id = (await idFile.readAsString()).trim();
+        }
+        if (id != null &&
+            id.isNotEmpty &&
+            (isRepositoryBound(id) ||
+                (appearance?.usesRepository(id) ?? false))) {
+          throw FormatException(
+            'Impossible de supprimer « $validated » : '
+            'ce repository est encore utilisé par un bind de l’application.',
+          );
+        }
+        await file.delete();
+        if (idType == FileSystemEntityType.file) {
+          await idFile.delete();
+        }
+        final binding = id == null ? null : _bindings[id];
+        if (binding != null) {
+          for (final array in binding.arrays) {
+            array.clear();
+          }
+        }
+        _changed();
+      });
 }

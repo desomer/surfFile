@@ -46,6 +46,7 @@ class ContainerAddForm extends StatelessWidget {
         (color) => onChanged(draft.copyWith(color: color)),
         key: const ValueKey('add-container-color'),
         dense: true,
+        onClear: () => onChanged(draft.copyWith(resetColor: true)),
       ),
       _slider(
         'radius',

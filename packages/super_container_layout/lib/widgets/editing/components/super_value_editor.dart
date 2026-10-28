@@ -1462,6 +1462,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                             .padLeft(8, '0');
                       }),
                       key: const ValueKey('super-value-color-picker'),
+                      onClear: () => setState(() => _fields['color']!.clear()),
                     ),
                     _withBinding(
                       SuperValueProperty.color,

@@ -2,7 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/models/json_text_binding.dart';
+import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
+import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 
 void main() {
@@ -36,6 +39,7 @@ void main() {
   Future<void> open(
     WidgetTester tester, {
     Size size = const Size(1100, 850),
+    ValueNotifier<Appearance>? appearance,
   }) async {
     await tester.binding.setSurfaceSize(size);
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -47,7 +51,8 @@ void main() {
               onPressed: () => showDialog<void>(
                 context: context,
                 barrierDismissible: false,
-                builder: (_) => JsonRepositoryManager(store: store),
+                builder: (_) =>
+                    JsonRepositoryManager(store: store, appearance: appearance),
               ),
               child: const Text('Open'),
             ),
@@ -168,44 +173,74 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('delete repository with confirmation', (tester) async {
-    await tester.runAsync(() async {
-      await store.create('Clients');
-      await store.create('Articles');
-    });
-    await open(tester);
-    await tap(tester, find.byKey(const ValueKey('repository-entry-Clients')));
-    await settle(tester);
-    expect(find.byKey(const ValueKey('repository-json')), findsOneWidget);
+  testWidgets(
+    'delete checks that repository is not bound and asks confirmation',
+    (tester) async {
+      late String clientsId;
+      await tester.runAsync(() async {
+        await store.create('Clients');
+        await store.create('Articles');
+        clientsId = await store.idOf('Clients');
+      });
+      final appearance = ValueNotifier(
+        Appearance().withValueComponent(
+          'v1',
+          SuperValueConfig(
+            binding: JsonTextBinding(repositoryId: clientsId, path: 'nom'),
+          ),
+        ),
+      );
+      addTearDown(appearance.dispose);
 
-    // Cancel deletion first
-    await tap(tester, find.byKey(const ValueKey('repository-delete')));
-    await tester.pumpAndSettle();
-    expect(find.text('Supprimer le repository ?'), findsOneWidget);
-    await tap(tester, find.text('Annuler'));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('repository-entry-Clients')),
-      findsOneWidget,
-    );
+      await open(tester, appearance: appearance);
+      await tap(tester, find.byKey(const ValueKey('repository-entry-Clients')));
+      await settle(tester);
+      expect(find.byKey(const ValueKey('repository-json')), findsOneWidget);
 
-    // Confirm deletion
-    await tap(tester, find.byKey(const ValueKey('repository-delete')));
-    await tester.pumpAndSettle();
-    await tap(tester, find.byKey(const ValueKey('repository-confirm-delete')));
-    await settle(tester);
+      // Attempt deletion while bound in Appearance -> blocked with error
+      await tap(tester, find.byKey(const ValueKey('repository-delete')));
+      await settle(tester);
+      expect(find.text('Supprimer le repository ?'), findsNothing);
+      expect(find.byKey(const ValueKey('repository-error')), findsOneWidget);
+      expect(find.textContaining('encore utilisé par un bind'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('repository-entry-Clients')),
+        findsOneWidget,
+      );
 
-    expect(
-      find.byKey(const ValueKey('repository-entry-Clients')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey('repository-entry-Articles')),
-      findsOneWidget,
-    );
-    expect(find.byKey(const ValueKey('repository-json')), findsNothing);
-    expect(find.text('Repository supprimé.'), findsOneWidget);
-    expect(await tester.runAsync(() => store.list()), ['Articles']);
-    expect(tester.takeException(), isNull);
-  });
+      // Remove binding -> confirmation dialog is shown
+      appearance.value = Appearance();
+      await tap(tester, find.byKey(const ValueKey('repository-delete')));
+      await settle(tester);
+      expect(find.text('Supprimer le repository ?'), findsOneWidget);
+      await tap(tester, find.text('Annuler'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('repository-entry-Clients')),
+        findsOneWidget,
+      );
+
+      // Confirm deletion
+      await tap(tester, find.byKey(const ValueKey('repository-delete')));
+      await settle(tester);
+      await tap(
+        tester,
+        find.byKey(const ValueKey('repository-confirm-delete')),
+      );
+      await settle(tester);
+
+      expect(
+        find.byKey(const ValueKey('repository-entry-Clients')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('repository-entry-Articles')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('repository-json')), findsNothing);
+      expect(find.text('Repository supprimé.'), findsOneWidget);
+      expect(await tester.runAsync(() => store.list()), ['Articles']);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

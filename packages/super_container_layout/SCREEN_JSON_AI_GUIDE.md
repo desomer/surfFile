@@ -579,9 +579,10 @@ Chaque carte (`styles["<cardId>"]`) ou surface dispose des 8 familles de réglag
      - `end` : `"#RRGGBB"` ou `"#AARRGGBB"` (défaut `"#B794F4"`).
      - `angle` : nombre de **`0` à `360`** degrés (`45` par défaut ; utilisé par `"linear"` et `"sweep"`).
      - `radius` : nombre de **`0.1` à `2.0`** (`0.8` par défaut ; utilisé par `"radial"`).
-     - `imageUrl` : `string` (`"https://..."` incluant `.webp` et `.svg`, `"data:image/...;base64,..."`, `"data:image/svg+xml;utf8,<svg..."`, chaîne Base64 brute ou code SVG `<svg...>`) — affiche une image en fond de la carte (peut se superposer à `color` ou au dégradé).
+     - `imageUrl` : `string` (`"https://..."` incluant `.webp` et `.svg`, `"data:image/...;base64,..."`, `"data:image/svg+xml;utf8,<svg..."`, chaîne Base64 brute ou code SVG `<svg...>`) — affiche une image en fond de la carte (peut se superposer à `color` ou au dégradé ; sert aussi d'image de repli si `propertyBindings.imageUrl` est défini).
      - `imageFit` : `"cover"` (défaut), `"contain"`, `"fill"`, `"fitWidth"`, `"fitHeight"`, `"none"`, `"scaleDown"`.
      - `imageOpacity` : nombre de **`0.0` à `1.0`** (`1.0` par défaut).
+   - `propertyBindings` (`Map<ContainerStyleProperty, JsonTextBinding>`, optionnel) : liaisons de propriétés du style à un repository JSON (comme sur `Value` et `Action`), notamment `"propertyBindings": { "imageUrl": "clients[?].avatar" }` (ou l'alias `fill.imageBinding`) pour lier dynamiquement l'image de fond d'une surface.
 
 3. **Coins et arrondis (`radius` & `radii`)** :
    - `radius` : nombre de **`0` à `36`** (`0` par défaut) — rayon d'arrondi uniforme des 4 coins.

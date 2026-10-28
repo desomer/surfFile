@@ -135,7 +135,9 @@ class StyleExtrasControls {
       'Couleur de l’ombre',
       spec.color,
       (color) => onChanged(spec.copyWith(color: color)),
+      key: ValueKey('$id-color-$label'),
       dense: true,
+      onClear: () => onChanged(spec.copyWith(resetColor: true)),
     ),
     StyleSliderField(
       label: 'Opacité',

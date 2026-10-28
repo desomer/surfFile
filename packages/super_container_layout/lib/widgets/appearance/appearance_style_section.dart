@@ -73,6 +73,8 @@ class AppearanceStyleSection extends StatelessWidget {
               update(current().copyWith(hoverTint: value)),
           onHoverColorChanged: (value) =>
               update(current().copyWith(hoverColor: value)),
+          onResetHoverColor: () =>
+              update(current().copyWith(resetHoverColor: true)),
           onChanged: (value) => update(current().copyWith(fill: value)),
           onSolidColorChanged: (value) =>
               update(current().copyWith(color: value)),

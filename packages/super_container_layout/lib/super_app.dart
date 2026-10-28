@@ -20,6 +20,7 @@ import 'widgets/editing/history/editor_history.dart';
 import 'widgets/editing/pages/editor_page_manager.dart';
 import 'widgets/components/super_layout/layout_reset_shortcut.dart';
 import 'widgets/surfaces/neon_surface.dart';
+import 'widgets/surfaces/styled_surface.dart';
 import 'widgets/editing/overlay/style_edit_banner.dart';
 import 'widgets/editing/slots/editor_slot.dart';
 
@@ -400,16 +401,20 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
                     : BorderStyle.solid,
               ),
             ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: value.backgroundStyle.fill.gradient(
-                  opacity: value.backgroundOpacity,
+            child: BoundContainerFill(
+              fill: value.backgroundStyle.fill,
+              binding: value.backgroundStyle.imageBinding,
+              builder: (context, fill) => DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: fill.gradient(
+                    opacity: value.backgroundOpacity,
+                  ),
+                  image: fill.decorationImage(
+                    opacity: value.backgroundOpacity,
+                  ),
                 ),
-                image: value.backgroundStyle.fill.decorationImage(
-                  opacity: value.backgroundOpacity,
-                ),
+                child: child,
               ),
-              child: child,
             ),
           ),
         ),

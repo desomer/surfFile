@@ -230,6 +230,7 @@ class ContainerStyleDialog {
                             void update(ContainerStyle value) =>
                                 updateStyle(value);
                             return ContainerStyleEditor(
+                              ownerContext: ownerContext,
                               label: label,
                               onLabelChanged: onLabelChanged,
                               collapsible: false,
@@ -297,6 +298,8 @@ class ContainerStyleDialog {
                                   update(style.copyWith(hoverTint: value)),
                               onHoverColorChanged: (value) =>
                                   update(style.copyWith(hoverColor: value)),
+                              onResetHoverColor: () =>
+                                  update(style.copyWith(resetHoverColor: true)),
                               interactionEffect: style.interactionEffect,
                               onInteractionEffectChanged: (value) => update(
                                 style.copyWith(interactionEffect: value),

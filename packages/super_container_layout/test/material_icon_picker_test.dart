@@ -137,6 +137,38 @@ void main() {
 
       expect(draft.icon, 'folder');
       expect(find.text('Dossier'), findsOneWidget);
+
+      // Clear icon choice via inline clear button
+      await tester.tap(find.byTooltip('Aucune icône'));
+      await tester.pumpAndSettle();
+
+      expect(draft.icon, isEmpty);
+      expect(() => draft.validate(), returnsNormally);
+    },
+  );
+
+  testWidgets(
+    'ContainerAddForm and styleColorTile allow clearing color to null',
+    (tester) async {
+      var draft = const ContainerStyle(color: Color(0xFF112233));
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => ContainerAddForm(
+                draft: draft,
+                onChanged: (next) => setState(() => draft = next),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(draft.color, const Color(0xFF112233));
+      await tester.tap(find.byKey(const ValueKey('add-container-color-clear')));
+      await tester.pumpAndSettle();
+      expect(draft.color, isNull);
     },
   );
 

@@ -119,16 +119,16 @@ class _SuperActionAddFormState extends State<SuperActionAddForm> {
             MaterialIconPickerField(
               key: const ValueKey('add-action-icon'),
               label: 'Icône',
+              nullable: true,
               isDense: true,
               showId: false,
-              value: SuperActionIcons.isKnown(draft.icon)
-                  ? draft.icon
-                  : 'touch_app',
-              onChanged: (icon) {
-                if (icon != null) {
-                  widget.onChanged(draft.copyWith(icon: icon));
-                }
-              },
+              value: draft.icon.trim().isEmpty
+                  ? null
+                  : (SuperActionIcons.isKnown(draft.icon)
+                        ? draft.icon
+                        : 'touch_app'),
+              onChanged: (icon) =>
+                  widget.onChanged(draft.copyWith(icon: icon ?? '')),
             ),
           TextFormField(
             key: const ValueKey('add-action-font-size'),

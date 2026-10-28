@@ -10,6 +10,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../models/json_syntax.dart';
+import '../models/json_text_binding.dart';
 
 enum FillType { solid, linear, radial, sweep }
 
@@ -22,6 +23,7 @@ class ContainerFill {
     this.angle = 45,
     this.radius = .8,
     this.imageUrl = '',
+    this.imageBinding,
     this.imageFit = BoxFit.cover,
     this.imageOpacity = 1,
   });
@@ -32,27 +34,33 @@ class ContainerFill {
   final double angle;
   final double radius;
   final String imageUrl;
+  final JsonTextBinding? imageBinding;
   final BoxFit imageFit;
   final double imageOpacity;
 
-  bool get hasImage => imageUrl.trim().isNotEmpty;
+  bool get hasImage => imageUrl.trim().isNotEmpty || imageBinding != null;
 
   ContainerFill copyWith({
     FillType? type,
     Color? start,
+    bool resetStart = false,
     Color? end,
+    bool resetEnd = false,
     double? angle,
     double? radius,
     String? imageUrl,
+    JsonTextBinding? imageBinding,
+    bool clearImageBinding = false,
     BoxFit? imageFit,
     double? imageOpacity,
   }) => ContainerFill(
     type: type ?? this.type,
-    start: start ?? this.start,
-    end: end ?? this.end,
+    start: resetStart ? const Color(0xFF5268D9) : start ?? this.start,
+    end: resetEnd ? const Color(0xFFB794F4) : end ?? this.end,
     angle: angle ?? this.angle,
     radius: radius ?? this.radius,
     imageUrl: imageUrl ?? this.imageUrl,
+    imageBinding: clearImageBinding ? null : imageBinding ?? this.imageBinding,
     imageFit: imageFit ?? this.imageFit,
     imageOpacity: imageOpacity ?? this.imageOpacity,
   );
@@ -110,6 +118,7 @@ class ContainerFill {
     'angle': angle,
     'radius': radius,
     if (imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+    if (imageBinding != null) 'imageBinding': imageBinding!.toJson(),
     if (imageFit != BoxFit.cover) 'imageFit': imageFit.name,
     if (imageOpacity != 1) 'imageOpacity': imageOpacity,
   };
@@ -121,6 +130,7 @@ class ContainerFill {
     if (type != FillType.solid && angle != 45) 'angle': angle,
     if (type == FillType.radial && radius != .8) 'radius': radius,
     if (imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+    if (imageBinding != null) 'imageBinding': imageBinding!.toCompactJson(),
     if (imageFit != BoxFit.cover) 'imageFit': imageFit.name,
     if (imageOpacity != 1) 'imageOpacity': imageOpacity,
   };
@@ -159,6 +169,11 @@ class ContainerFill {
     if (rawImageUrl is! String) {
       throw const FormatException('URL d’image de fond invalide.');
     }
+    final imageBinding = value.containsKey('imageBinding')
+        ? (value['imageBinding'] == null
+              ? null
+              : JsonTextBinding.fromJson(value['imageBinding']))
+        : fallback.imageBinding;
     final rawImageFit = value['imageFit'] ?? fallback.imageFit.name;
     final imageFit = rawImageFit is String
         ? BoxFit.values.where((fit) => fit.name == rawImageFit).firstOrNull
@@ -174,6 +189,7 @@ class ContainerFill {
       angle: number('angle', 0, 360, fallback.angle),
       radius: number('radius', .1, 2, fallback.radius),
       imageUrl: rawImageUrl,
+      imageBinding: imageBinding,
       imageFit: imageFit,
       imageOpacity: number('imageOpacity', 0, 1, fallback.imageOpacity),
     );
@@ -188,6 +204,7 @@ class ContainerFill {
       other.angle == angle &&
       other.radius == radius &&
       other.imageUrl == imageUrl &&
+      other.imageBinding == imageBinding &&
       other.imageFit == imageFit &&
       other.imageOpacity == imageOpacity;
 
@@ -199,6 +216,7 @@ class ContainerFill {
     angle,
     radius,
     imageUrl,
+    imageBinding,
     imageFit,
     imageOpacity,
   );

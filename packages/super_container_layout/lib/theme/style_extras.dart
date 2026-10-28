@@ -141,6 +141,7 @@ class ShadowSpec {
   ShadowSpec copyWith({
     bool? enabled,
     Color? color,
+    bool resetColor = false,
     double? opacity,
     double? blur,
     double? spread,
@@ -148,7 +149,7 @@ class ShadowSpec {
     double? dy,
   }) => ShadowSpec(
     enabled: enabled ?? this.enabled,
-    color: color ?? this.color,
+    color: resetColor ? const Color(0xFF000000) : color ?? this.color,
     opacity: opacity ?? this.opacity,
     blur: blur ?? this.blur,
     spread: spread ?? this.spread,

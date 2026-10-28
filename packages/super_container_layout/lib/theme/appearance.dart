@@ -314,6 +314,38 @@ class Appearance {
     pageCatalog: const EditorPageCatalog.empty(),
   );
 
+  /// Nombre de liaisons (`JsonTextBinding`) de l'apparence qui référencent [repositoryId].
+  int countRepositoryBindings(String repositoryId) {
+    if (repositoryId.isEmpty) return 0;
+    var count = 0;
+    void visit(Object? node) {
+      if (node is Map) {
+        if (node['repositoryId'] == repositoryId && node['path'] is String) {
+          count++;
+        }
+        for (final value in node.values) {
+          visit(value);
+        }
+      } else if (node is Iterable) {
+        for (final item in node) {
+          visit(item);
+        }
+      }
+    }
+
+    for (final style in styles.values) {
+      visit(style.toJson());
+    }
+    for (final component in components.values) {
+      visit(component.toTypedJson());
+    }
+    return count;
+  }
+
+  /// Indique si au moins une liaison de l'apparence référence [repositoryId].
+  bool usesRepository(String repositoryId) =>
+      countRepositoryBindings(repositoryId) > 0;
+
   ThemeData theme(Brightness brightness) {
     final surface =
         backgroundStyle.color ??
@@ -333,7 +365,7 @@ class Appearance {
       ),
       scaffoldBackgroundColor:
           backgroundStyle.fill.type == FillType.solid &&
-              !backgroundStyle.fill.hasImage
+              !backgroundStyle.hasImage
           ? surface.withValues(alpha: surface.a * backgroundOpacity)
           : Colors.transparent,
       fontFamily: 'Segoe UI',

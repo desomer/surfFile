@@ -3,7 +3,7 @@ part of 'container_style.dart';
 /// Related fields share an override switch to keep uniform/independent values
 /// and nullable decorations coherent.
 enum SurfaceStyleProperty {
-  background('Fond', ['color', 'fill']),
+  background('Fond', ['color', 'fill'], ContainerStyleProperty.imageUrl),
   corners('Coins', ['radius', 'radii']),
   border('Bordure', [
     'borderWidth',
@@ -24,9 +24,10 @@ enum SurfaceStyleProperty {
   pattern('Motif', ['pattern', 'patternOpacity']),
   transform('Transformation', ['transform']);
 
-  const SurfaceStyleProperty(this.label, this.keys);
+  const SurfaceStyleProperty(this.label, this.keys, [this.bindingProperty]);
   final String label;
   final List<String> keys;
+  final ContainerStyleProperty? bindingProperty;
 }
 
 @immutable
@@ -50,8 +51,11 @@ class SelectedSurfaceStyle {
         ...properties,
         for (final property in SurfaceStyleProperty.values)
           if (property.keys.any(
-            (key) => !_sameStyleValue(before[key], after[key]),
-          ))
+                (key) => !_sameStyleValue(before[key], after[key]),
+              ) ||
+              (property.bindingProperty != null &&
+                  style.propertyBindings[property.bindingProperty] !=
+                      next.propertyBindings[property.bindingProperty]))
             property,
       },
     );
@@ -60,6 +64,9 @@ class SelectedSurfaceStyle {
   ContainerStyle apply(ContainerStyle base) {
     final source = style.toJson();
     final json = base.copyWith(clearStates: true).toJson();
+    final bindings = Map<ContainerStyleProperty, JsonTextBinding>.of(
+      base.propertyBindings,
+    );
     // Absent optional keys mean an explicit reset, not inheritance.
     for (final property in properties) {
       for (final key in property.keys) {
@@ -69,8 +76,19 @@ class SelectedSurfaceStyle {
           json.remove(key);
         }
       }
+      final target = property.bindingProperty;
+      if (target != null) {
+        final binding = style.propertyBindings[target];
+        if (binding == null) {
+          bindings.remove(target);
+        } else {
+          bindings[target] = binding;
+        }
+      }
     }
-    return ContainerStyle.fromJson(json);
+    return ContainerStyle.fromJson(
+      json,
+    ).copyWith(propertyBindings: Map.unmodifiable(bindings));
   }
 
   Map<String, Object?> toJson() => {

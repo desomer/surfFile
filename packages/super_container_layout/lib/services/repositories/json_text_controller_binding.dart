@@ -15,6 +15,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     this.onChanged,
     this.asBool = false,
   }) {
+    store.registerBindings(this, [binding.repositoryId]);
     controller.addListener(_edited);
     store.addListener(_repositoryChanged);
     store.addFlusher(flush);
@@ -177,6 +178,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
 
   @override
   void dispose() {
+    store.unregisterBindings(this);
     store.removeFlusher(flush);
     flush();
     _disposed = true;

@@ -81,6 +81,9 @@ class JsonArrayBinding extends ChangeNotifier {
   /// Efface la sélection et notifie les composants liés.
   void clear() => _set(null);
 
+  /// Indique si au moins un composant écoute ce tableau.
+  bool get isBound => hasListeners;
+
   void _set(List<int>? selection) {
     if (listEquals(_selection, selection)) return;
     _selection = selection == null ? null : List.unmodifiable(selection);
@@ -101,6 +104,9 @@ class JsonRepositoryBinding {
 
   /// Tableaux déjà utilisés.
   Iterable<JsonArrayBinding> get arrays => _arrays.values;
+
+  /// Indique si au moins un tableau de ce repository a un composant lié actif.
+  bool get isBound => _arrays.values.any((array) => array.isBound);
 
   /// Sélection du tableau [template] (chemin modèle canonique, voir
   /// `JsonAttributePath.toString`), créée au premier accès ; la même instance

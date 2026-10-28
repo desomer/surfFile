@@ -233,6 +233,9 @@ Future<void> showNativeShapeEditor({
                                     update(shape.copyWith(borderColor: color)),
                                 key: ValueKey('$keyPrefix-border-color'),
                                 dense: true,
+                                onClear: () => update(
+                                  shape.copyWith(clearBorderColor: true),
+                                ),
                               ),
                             ),
                             if (shape.borderColor != null)

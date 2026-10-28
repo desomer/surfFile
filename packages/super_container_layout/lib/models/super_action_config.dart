@@ -138,8 +138,7 @@ class SuperActionConfig extends ComponentConfig {
     for (final binding in propertyBindings.values) {
       binding.validate();
     }
-    if (icon.trim().isEmpty ||
-        !SuperActionIcons.isKnown(icon) ||
+    if ((icon.trim().isNotEmpty && !SuperActionIcons.isKnown(icon)) ||
         !iconSpacing.isFinite ||
         iconSpacing < 0 ||
         (iconSize != null && (!iconSize!.isFinite || iconSize! <= 0)) ||
@@ -494,12 +493,19 @@ class SuperActionConfig extends ComponentConfig {
       throw const FormatException('Invalid Action "style".');
     }
 
+    final rawIcon = !value.containsKey('icon')
+        ? fallback.icon
+        : (value['icon'] ?? '');
+    if (rawIcon is! String) {
+      throw const FormatException('Invalid Action "icon".');
+    }
+
     final result = SuperActionConfig(
       kind: kind,
       variant: variant,
       label: resolvedLabel,
       tooltip: field('tooltip', fallback.tooltip),
-      icon: field('icon', fallback.icon),
+      icon: rawIcon,
       iconPosition: iconPosition,
       iconSize: number('iconSize', fallback.iconSize),
       iconSpacing: resolvedIconSpacing,
