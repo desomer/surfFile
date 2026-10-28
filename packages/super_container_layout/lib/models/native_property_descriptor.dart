@@ -714,6 +714,16 @@ const List<NativePropertyDescriptor> superSliverAppBarPropertyDescriptors = [
     defaultValue: false,
   ),
   NativePropertyDescriptor(
+    id: 'stretchTriggerOffset',
+    label: 'Seuil d’étirement (stretchTriggerOffset)',
+    subtitle: 'Distance de sur-défilement en pixels déclenchant l’étirement',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 100.0,
+    min: 10,
+    max: 300,
+    divisions: 58,
+  ),
+  NativePropertyDescriptor(
     id: 'expandedHeight',
     label: 'Hauteur étendue (expandedHeight)',
     subtitle: 'Hauteur maximale de la barre complètement déployée',
@@ -732,6 +742,30 @@ const List<NativePropertyDescriptor> superSliverAppBarPropertyDescriptors = [
     min: 32,
     max: 200,
     divisions: 84,
+  ),
+  NativePropertyDescriptor(
+    id: 'forceElevated',
+    label: 'Forcer l’élévation (forceElevated)',
+    subtitle: 'Affiche l’ombre même lorsque le contenu ne défile pas sous la barre',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'useDefaultSemanticsOrder',
+    label: 'Ordre sémantique par défaut (useDefaultSemanticsOrder)',
+    subtitle: 'Utilise l’ordre standard d’accessibilité dans la barre sliver',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: true,
+  ),
+  NativePropertyDescriptor(
+    id: 'actionsPadding',
+    label: 'Marge des actions (actionsPadding)',
+    subtitle: 'Marge horizontale intérieure autour de la zone Actions',
+    editorType: NativePropertyEditorType.number,
+    defaultValue: 0.0,
+    min: 0,
+    max: 48,
+    divisions: 48,
   ),
 ];
 

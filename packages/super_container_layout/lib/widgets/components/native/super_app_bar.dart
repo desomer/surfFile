@@ -37,8 +37,12 @@ class SuperAppBar extends StatefulWidget
     this.floating = false,
     this.snap = false,
     this.stretch = false,
+    this.stretchTriggerOffset = 100.0,
+    this.forceElevated = false,
+    this.useDefaultSemanticsOrder = true,
     this.expandedHeight,
     this.collapsedHeight,
+    this.actionsPadding,
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
@@ -62,8 +66,12 @@ class SuperAppBar extends StatefulWidget
   final bool floating;
   final bool snap;
   final bool stretch;
+  final double stretchTriggerOffset;
+  final bool forceElevated;
+  final bool useDefaultSemanticsOrder;
   final double? expandedHeight;
   final double? collapsedHeight;
+  final double? actionsPadding;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
@@ -76,8 +84,13 @@ class SuperAppBar extends StatefulWidget
           if (floating) 'floating': true,
           if (snap) 'snap': true,
           if (stretch) 'stretch': true,
+          if (stretchTriggerOffset != 100.0)
+            'stretchTriggerOffset': stretchTriggerOffset,
+          if (forceElevated) 'forceElevated': true,
+          if (!useDefaultSemanticsOrder) 'useDefaultSemanticsOrder': false,
           'expandedHeight': ?expandedHeight,
           'collapsedHeight': ?collapsedHeight,
+          'actionsPadding': ?actionsPadding,
         },
         placements: {
           if (leading != null) 'leading': ['leading'],
@@ -310,10 +323,14 @@ class _SuperAppBarState extends State<SuperAppBar> {
         registry: registry,
         propertyDescriptors: isSliver
             ? const [
-                ...SuperAppBar.propertyDescriptors,
                 ...SuperAppBar.sliverPropertyDescriptors,
+                ...SuperAppBar.propertyDescriptors,
               ]
             : SuperAppBar.propertyDescriptors,
+        isPropertyAvailable: (_, descriptor) =>
+            !isSliver ||
+            (descriptor.id != 'toolbarOpacity' &&
+                descriptor.id != 'bottomOpacity'),
         isRegionAvailable: (config, region) =>
             region != 'leading' || !_usesDefaultNavigation(config),
         settingsControls: (config, onChanged) => [
@@ -400,6 +417,22 @@ class _SuperAppBarState extends State<SuperAppBar> {
                 effectiveFloating;
             final effectiveStretch =
                 config.boolProperty('stretch') ?? widget.stretch;
+            final effectiveStretchTriggerOffset = math.max(
+              1.0,
+              config.doubleProperty('stretchTriggerOffset') ??
+                  widget.stretchTriggerOffset,
+            );
+            final effectiveForceElevated =
+                config.boolProperty('forceElevated') ?? widget.forceElevated;
+            final effectiveUseDefaultSemanticsOrder =
+                config.boolProperty('useDefaultSemanticsOrder') ??
+                widget.useDefaultSemanticsOrder;
+            final rawActionsPadding =
+                config.doubleProperty('actionsPadding') ??
+                widget.actionsPadding;
+            final effectiveActionsPadding = rawActionsPadding != null
+                ? EdgeInsets.symmetric(horizontal: rawActionsPadding)
+                : null;
             final rawCollapsed =
                 config.doubleProperty('collapsedHeight') ??
                 widget.collapsedHeight;
@@ -422,19 +455,24 @@ class _SuperAppBarState extends State<SuperAppBar> {
               scrolledUnderElevation: config.doubleProperty(
                 'scrolledUnderElevation',
               ),
+              forceElevated: effectiveForceElevated,
               forceMaterialTransparency:
                   config.boolProperty('forceMaterialTransparency') ?? false,
               shape: config.shapeBorderProperty('shape'),
               primary: config.boolProperty('primary') ?? true,
               excludeHeaderSemantics:
                   config.boolProperty('excludeHeaderSemantics') ?? false,
+              useDefaultSemanticsOrder: effectiveUseDefaultSemanticsOrder,
               clipBehavior: _clipBehavior(config),
               systemOverlayStyle: _systemOverlayStyle(config),
               automaticallyImplyLeading: _usesDefaultNavigation(config),
+              automaticallyImplyActions: widget.automaticallyImplyActions,
+              actionsPadding: effectiveActionsPadding,
               pinned: effectivePinned,
               floating: effectiveFloating,
               snap: effectiveSnap,
               stretch: effectiveStretch,
+              stretchTriggerOffset: effectiveStretchTriggerOffset,
               expandedHeight: effectiveExpanded,
               collapsedHeight: effectiveCollapsed,
               leading: leadingWidget,

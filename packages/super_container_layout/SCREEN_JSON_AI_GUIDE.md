@@ -3,7 +3,7 @@
 Ce document est la spécification technique destinée à une Intelligence Artificielle. Il décrit le format JSON plat et polymorphe inspiré de **Flutter GenUI** utilisé par `super_container_layout` pour le stockage, l'import/export et les mises à jour incrémentales (`applyVibe`).
 
 > **Moteur d'exécution cible : Application Flutter (Material 3)**
-> Ce JSON est interprété dynamiquement par une application **Flutter**. Appuie-toi sur ta connaissance de Flutter pour comprendre le comportement physique des layouts (`Flex`, `MainAxisAlignment`, `CrossAxisAlignment`, contraintes de taille, défilement `SingleChildScrollView`), l'anatomie des écrans (`Scaffold`, `AppBar`, `Drawer`, `BottomAppBar`, `TabBar` / `TabBarView`) et les conventions Material 3 (variantes de boutons `filled` / `tonal` / `elevated` / `outlined` / `text`, identifiants d'icônes Material en `snake_case`).
+> Ce JSON est interprété dynamiquement par une application **Flutter**. Appuie-toi sur ta connaissance de Flutter pour comprendre le comportement physique des layouts (`Flex`, `MainAxisAlignment`, `CrossAxisAlignment`, contraintes de taille, défilement `SingleChildScrollView` / `CustomScrollView`), l'anatomie des écrans (`Scaffold`, `AppBar`, `SliverAppBar`, `Drawer`, `BottomAppBar`, `TabBar` / `TabBarView`) et les conventions Material 3 (variantes de boutons `filled` / `tonal` / `elevated` / `outlined` / `text`, identifiants d'icônes Material en `snake_case`).
 > **Règle stricte (zéro hallucination Flutter)** : ce format **n'est pas** un arbre de widgets Flutter sérialisé. N'invente **aucun** nom de widget ou paramètre Flutter (`Row`, `Column`, `Container`, `SizedBox`, `children`, `mainAxisSize`, `EdgeInsets`, `BoxDecoration`, etc.) qui ne figure pas dans ce guide ; utilise exclusivement le dictionnaire plat par ID (`components`, `styles`, `behaviors`) et les propriétés documentées ci-dessous.
 
 ---
@@ -242,28 +242,53 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
 Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les widgets structurels standards de la bibliothèque **Flutter Material** (`package:flutter/material.dart`). Leurs noms de régions dans `regions` et `placements` reprennent exactement les paramètres nommés des constructeurs Flutter correspondants :
 
 - **Page / Écran (`"root"` ou `<pageId>` du `pageCatalog`) $\rightarrow$ `Scaffold` de Flutter** (`type: "native"` ou `"scaffold"`) :
-  - `appBar` (1 slot max, dédié au composant `"registry:ApplicationBar"`) : barre supérieure du `Scaffold`.
-  - `body` (empilement vertical, toujours actif) : contenu principal de la page. Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"mainLayout"`.
-  - `drawer` / `endDrawer` (empilement vertical) : panneaux latéraux coulissants gauche / droite (`Drawer` Flutter).
-  - `bottomNavigationBar` (1 slot max, dédié au composant `"registry:BottomNavigationBar"`) : barre de navigation inférieure.
-  - `floatingActionButton` (1 slot max) : bouton d'action flottant en bas à droite.
-  - `bottomSheet` (1 slot max) : panneau persistant affiché en bas du `Scaffold`.
+  - **Régions** :
+    - `appBar` (1 slot max, dédié au composant `"registry:ApplicationBar"`) : barre supérieure du `Scaffold` (ou premier sliver `SliverAppBar` lorsque `bodyMode` vaut `"customScrollView"`).
+    - `body` (empilement vertical, toujours actif) : contenu principal de la page. Pour `"root"`, contient par défaut `{"id": "scaffold:body", "type": "scaffold:body"}` qui monte le layout `"mainLayout"`.
+    - `drawer` / `endDrawer` (empilement vertical) : panneaux latéraux coulissants gauche / droite (`Drawer` Flutter).
+    - `bottomNavigationBar` (1 slot max, dédié aux composants `"registry:BottomNavigationBar"` ou `"registry:BottomAppBar"`) : barre de navigation inférieure.
+    - `floatingActionButton` (1 slot max) : bouton d'action flottant en bas à droite.
+    - `bottomSheet` (1 slot max) : panneau persistant affiché en bas du `Scaffold`.
+  - **Propriétés du `Scaffold` et mode du corps (`bodyMode`) — directement à la racine de `components["root"]` ou `components[pageId]`** :
+    - `bodyMode` (`"standard"` | `"singleChildScrollView"` | `"customScrollView"`, défaut `"standard"`) :
+      - `"standard"` : zone `body` fixe occupant tout l'espace disponible (`SizedBox.expand`).
+      - `"singleChildScrollView"` : enveloppe la zone `body` dans un `SingleChildScrollView` (avec `SlotContentFitScope` automatique pour que `"mainLayout"` et sa zone `center` prennent la hauteur naturelle de leurs enfants sans avoir à fixer une hauteur en pixels sur `"scaffold:body"`).
+      - `"customScrollView"` : affiche la page dans un `CustomScrollView` unifié où la région `appBar` devient un `SliverAppBar`, les `ListView` deviennent des `SliverList` / `SliverFixedExtentList`, et les autres composants (dont `"mainLayout"`) sont enveloppés dans des `SliverToBoxAdapter` prenant la hauteur de leurs enfants.
+    - `extendBodyBehindAppBar` (`bool`, défaut `false`) : étend la zone `body` sous l'`AppBar` en haut de la page (utile avec une `ApplicationBar` transparente ou translucide).
+    - `extendBody` (`bool`, défaut `false`) : étend la zone `body` derrière la `bottomNavigationBar` en bas de la page.
+    - **Options de défilement** (actives lorsque `bodyMode` vaut `"singleChildScrollView"` ou `"customScrollView"`) :
+      - `scrollDirection` (`"vertical"` | `"horizontal"`, défaut `"vertical"`) : axe de défilement de la page.
+      - `reverse` (`bool`, défaut `false`) : inverse le sens de défilement sur l'axe principal.
+      - `primary` (`bool`, défaut `true`) : associe la vue de défilement au `PrimaryScrollController` de la page.
+      - `scrollPadding` (`0`..`64`, défaut `0`) : marge intérieure uniforme (en pixels) autour du contenu défilant.
+      - `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`, défaut `"hardEdge"`) : mode de découpage de la zone de défilement.
 
-- **`"registry:ApplicationBar"` $\rightarrow$ `AppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `appBar` d'une page) :
+- **`"registry:ApplicationBar"` $\rightarrow$ `AppBar` / `SliverAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `appBar` d'une page) :
   - `useDefaultNavigation` (`bool`, `true` par défaut) : laisse Flutter gérer automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`). Mettre à `false` pour utiliser une région `leading` personnalisée.
   - **Régions** :
     - `leading` (1 slot max) : widget placé tout à gauche de l'`AppBar` (ignoré si `useDefaultNavigation: true`).
     - `title` (liste horizontale) : titre ou barre d'outils centrale de l'`AppBar`.
     - `actions` (liste horizontale) : boutons/actions alignés à droite de l'`AppBar`.
     - `bottom` (1 slot max) : barre secondaire sous l'`AppBar` (ex. onglets ou barre de filtres).
-    - `flexibleSpace` (1 slot max) : arrière-plan de l'`AppBar`.
+    - `flexibleSpace` (1 slot max) : arrière-plan de l'`AppBar` / `SliverAppBar` (déployé sur `expandedHeight` en mode sliver).
   - **Propriétés de style Flutter `AppBar` (directement à la racine de `components[appBarId]`)** :
     - Couleurs (`"#RRGGBB"` ou `"#AARRGGBB"`) : `backgroundColor`, `foregroundColor`, `surfaceTintColor`, `shadowColor`.
     - Élévation & transparence : `elevation` (`0`..`24`), `scrolledUnderElevation` (`0`..`24`), `forceMaterialTransparency` (`bool`, défaut `false`).
     - Forme et bordure (`shape`) : objet `{"kind": "rounded" | "continuous" | "beveled" | "stadium" | "linear", "radius": 0..64, "radii": [topLeft, topRight, bottomRight, bottomLeft], "borderWidth": 0..16, "borderColor": "#RRGGBB", "top": bool, "right": bool, "bottom": bool, "left": bool}` (ou raccourcis : nombre `16` pour un rayon uniforme, ou `[0, 0, 16, 16]` pour des coins indépendants).
     - Dimensions & espacements : `toolbarHeight` (`32`..`160`, défaut `56`), `leadingWidth` (`24`..`200`, défaut `56`), `titleSpacing` (`0`..`64`, défaut `0`).
-    - Comportement & opacité : `centerTitle` (`bool`), `toolbarOpacity` (`0.0`..`1.0`, défaut `1.0`), `bottomOpacity` (`0.0`..`1.0`, défaut `1.0`), `primary` (`bool`, défaut `true`), `excludeHeaderSemantics` (`bool`, défaut `false`), `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`), `systemOverlayStyle` (`"light"` | `"dark"`).
-    - Pour réinitialiser une propriété au thème Material 3 par défaut en mode Vibe (`applyVibe`), passe sa valeur à `null` (ex. `{"backgroundColor": null}`).
+    - Comportement & opacité : `centerTitle` (`bool`), `toolbarOpacity` (`0.0`..`1.0`, défaut `1.0`, mode `AppBar` standard uniquement), `bottomOpacity` (`0.0`..`1.0`, défaut `1.0`, mode `AppBar` standard uniquement), `primary` (`bool`, défaut `true`), `excludeHeaderSemantics` (`bool`, défaut `false`), `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`), `systemOverlayStyle` (`"light"` | `"dark"`).
+  - **Propriétés spécifiques `SliverAppBar` (prises en compte lorsque la page parente est en `bodyMode: "customScrollView"`)** :
+    - `pinned` (`bool`, défaut `false`) : garde la barre épinglée en haut lors du défilement.
+    - `floating` (`bool`, défaut `false`) : fait réapparaître la barre dès que l'utilisateur défile vers le haut.
+    - `snap` (`bool`, défaut `false`) : anime complètement l'apparition/disparition de la barre (requiert `floating: true`).
+    - `stretch` (`bool`, défaut `false`) : autorise l'étirement de la barre lors d'un sur-défilement.
+    - `stretchTriggerOffset` (`10`..`300`, défaut `100`) : distance de sur-défilement en pixels déclenchant l'étirement.
+    - `expandedHeight` (`56`..`400`, ex. `160`) : hauteur maximale en pixels de la barre lorsqu'elle est complètement déployée.
+    - `collapsedHeight` (`32`..`200`, défaut `56`, $\ge$ `toolbarHeight`) : hauteur minimale en pixels de la barre repliée.
+    - `forceElevated` (`bool`, défaut `false`) : affiche l'ombre correspondant à `elevation` même lorsque le contenu ne défile pas sous la barre.
+    - `useDefaultSemanticsOrder` (`bool`, défaut `true`) : utilise l'ordre standard d'accessibilité dans la barre sliver.
+    - `actionsPadding` (`0`..`48`, défaut `0`) : marge horizontale intérieure en pixels autour de la zone `actions`.
+    - Pour réinitialiser une propriété au thème Material 3 par défaut en mode Vibe (`applyVibe`), passe sa valeur à `null` (ex. `{"backgroundColor": null, "expandedHeight": null}`).
 
 - **`"registry:BottomAppBar"` $\rightarrow$ `BottomAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
   - **Régions** :

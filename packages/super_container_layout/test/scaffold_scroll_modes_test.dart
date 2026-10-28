@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -271,6 +273,11 @@ void main() {
             title: Text('Sliver Header Title'),
             pinned: true,
             floating: true,
+            stretch: true,
+            stretchTriggerOffset: 150,
+            forceElevated: true,
+            useDefaultSemanticsOrder: false,
+            actionsPadding: 12,
             expandedHeight: 140,
             flexibleSpace: ColoredBox(color: Colors.indigo),
           ),
@@ -346,6 +353,14 @@ void main() {
       final sliverAppBar = tester.widget<SliverAppBar>(sliverAppBarFinder);
       expect(sliverAppBar.pinned, isTrue);
       expect(sliverAppBar.floating, isTrue);
+      expect(sliverAppBar.stretch, isTrue);
+      expect(sliverAppBar.stretchTriggerOffset, 150.0);
+      expect(sliverAppBar.forceElevated, isTrue);
+      expect(sliverAppBar.useDefaultSemanticsOrder, isFalse);
+      expect(
+        sliverAppBar.actionsPadding,
+        const EdgeInsets.symmetric(horizontal: 12),
+      );
       expect(sliverAppBar.expandedHeight, 140.0);
       expect(find.text('Sliver Header Title'), findsOneWidget);
 
@@ -414,8 +429,34 @@ void main() {
         findsOneWidget,
       );
       expect(
+        find.byKey(const ValueKey('super-app-bar-prop-stretchTriggerOffset')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-app-bar-prop-forceElevated')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('super-app-bar-prop-useDefaultSemanticsOrder'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-app-bar-prop-actionsPadding')),
+        findsOneWidget,
+      );
+      expect(
         find.byKey(const ValueKey('super-app-bar-prop-expandedHeight')),
         findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-app-bar-prop-toolbarOpacity')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('super-app-bar-prop-bottomOpacity')),
+        findsNothing,
       );
       await tester.tap(
         find.byKey(const ValueKey('super-app-bar-settings-cancel')),
@@ -729,6 +770,96 @@ void main() {
         expect(find.text('MainLayout Child 3'), findsOneWidget);
         expect(tester.takeException(), isNull);
       }
+    },
+  );
+
+  test(
+    'SCREEN_JSON_AI_GUIDE documents all Scaffold bodyMode/scroll and SliverAppBar properties and applyVibe accepts them',
+    () {
+      final guideFile = File('SCREEN_JSON_AI_GUIDE.md').existsSync()
+          ? File('SCREEN_JSON_AI_GUIDE.md')
+          : File('packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md');
+      final guideText = guideFile.readAsStringSync();
+
+      for (final descriptor in [
+        ...ScaffoldPageConfig.propertyDescriptors,
+        ...SuperAppBar.sliverPropertyDescriptors,
+      ]) {
+        expect(
+          guideText,
+          contains(descriptor.id),
+          reason:
+              'Property "${descriptor.id}" must be documented in SCREEN_JSON_AI_GUIDE.md',
+        );
+      }
+
+      final patched = AppearanceTransfer.applyVibe(
+        Appearance(),
+        jsonEncode({
+          'components': {
+            'root': {
+              'type': 'native',
+              'bodyMode': 'customScrollView',
+              'extendBody': true,
+              'extendBodyBehindAppBar': true,
+              'scrollDirection': 'vertical',
+              'reverse': true,
+              'primary': false,
+              'scrollPadding': 20,
+              'clipBehavior': 'antiAlias',
+              'regions': {'appBar': true, 'body': true},
+              'placements': {
+                'appBar': [
+                  {'id': 'main-appbar', 'type': 'registry:ApplicationBar'},
+                ],
+                'body': [
+                  {'id': 'scaffold:body', 'type': 'scaffold:body'},
+                ],
+              },
+            },
+            'main-appbar': {
+              'type': 'native',
+              'pinned': true,
+              'floating': true,
+              'snap': true,
+              'stretch': true,
+              'stretchTriggerOffset': 160,
+              'expandedHeight': 220,
+              'collapsedHeight': 64,
+              'forceElevated': true,
+              'useDefaultSemanticsOrder': false,
+              'actionsPadding': 16,
+              'regions': {'title': true},
+              'placements': {'title': []},
+            },
+          },
+        }),
+      );
+
+      final rootConfig = ScaffoldPageConfig.fromNative(
+        patched.components['root']! as NativeComponentConfig,
+      );
+      expect(rootConfig.bodyMode, ScaffoldBodyMode.customScrollView);
+      expect(rootConfig.extendBody, isTrue);
+      expect(rootConfig.extendBodyBehindAppBar, isTrue);
+      expect(rootConfig.scrollDirection, Axis.vertical);
+      expect(rootConfig.reverse, isTrue);
+      expect(rootConfig.primary, isFalse);
+      expect(rootConfig.scrollPadding, 20.0);
+      expect(rootConfig.clipBehavior, Clip.antiAlias);
+
+      final appBarConfig =
+          patched.components['main-appbar']! as NativeComponentConfig;
+      expect(appBarConfig.boolProperty('pinned'), isTrue);
+      expect(appBarConfig.boolProperty('floating'), isTrue);
+      expect(appBarConfig.boolProperty('snap'), isTrue);
+      expect(appBarConfig.boolProperty('stretch'), isTrue);
+      expect(appBarConfig.doubleProperty('stretchTriggerOffset'), 160.0);
+      expect(appBarConfig.doubleProperty('expandedHeight'), 220.0);
+      expect(appBarConfig.doubleProperty('collapsedHeight'), 64.0);
+      expect(appBarConfig.boolProperty('forceElevated'), isTrue);
+      expect(appBarConfig.boolProperty('useDefaultSemanticsOrder'), isFalse);
+      expect(appBarConfig.doubleProperty('actionsPadding'), 16.0);
     },
   );
 }

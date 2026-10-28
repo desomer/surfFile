@@ -229,6 +229,17 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       !slot.id.startsWith('scaffold:') &&
       (widget.isSlotSelectable?.call(slot) ?? true);
 
+  BuildContext? _regionContext(String? id) =>
+      id == null
+          ? null
+          : (_keys[id]?.currentContext ??
+                _keys['$id:sliver']?.currentContext);
+
+  BuildContext? _slotContext(String slotId, [String? region]) =>
+      _slotKeys[slotId]?.currentContext ??
+      _slotKeys['$slotId:sliver']?.currentContext ??
+      (region == null ? null : _keys['$region:$slotId']?.currentContext);
+
   NativeRegion definition(String id) =>
       widget.regions.firstWhere((region) => region.id == id);
   Axis axisOf(String id) =>
@@ -340,8 +351,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       onDeselect: _clear,
       onContextMenu: (position) => EditorSlotState.openMenuFromContext(
         !widget.editSurface && widget.showRegionInPath
-            ? (_keys[_selected]?.currentContext ??
-                  _keys['body']?.currentContext ??
+            ? (_regionContext(_selected) ??
+                  _regionContext('body') ??
                   context)
             : context,
         position,
@@ -359,9 +370,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   void selectThisSlot() => selectSlot(regionId, slot);
                   final slotCtx =
                       widget.slotContextFor?.call(slot) ??
-                      _slotKeys[slot.id]?.currentContext ??
-                      _keys['$regionId:${slot.id}']?.currentContext ??
-                      _keys[regionId]?.currentContext;
+                      _slotContext(slot.id, regionId) ??
+                      _regionContext(regionId);
                   return LayoutSelectionNode(
                     label: sLabel,
                     path: slotPath,
@@ -389,8 +399,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                 for (final slot in currentSlots) {
                   final slotCtx =
                       widget.slotContextFor?.call(slot) ??
-                      _slotKeys[slot.id]?.currentContext ??
-                      _keys['${region.id}:${slot.id}']?.currentContext;
+                      _slotContext(slot.id, region.id);
                   if (_canSelectSlot(slot)) {
                     final sLabel = _resolvedSlotLabel(slot);
                     final slotPath = [...regionPath, sLabel];
@@ -417,7 +426,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   } else {
                     slotNodes.addAll(
                       LayoutSelection.childrenFromContext(
-                        slotCtx ?? _keys[region.id]?.currentContext,
+                        slotCtx ?? _regionContext(region.id),
                         regionPath,
                         () => select(region.id),
                         ignoreOwner: this,
@@ -432,7 +441,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   onSelect: () => select(region.id),
                   onContextMenu: (position) =>
                       EditorSlotState.openMenuFromContext(
-                        _keys[region.id]?.currentContext,
+                        _regionContext(region.id),
                         position,
                       ),
                   children: slotNodes,
@@ -497,7 +506,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           ? _axisActionFor(id)
           : null,
       clear: _clear,
-      focusContext: target ?? _keys[id]?.currentContext ?? context,
+      focusContext: target ?? _regionContext(id) ?? context,
     );
   }
 
@@ -547,7 +556,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       confirmed =
           await showEditorDialog<bool>(
             context: context,
-            target: _keys[id]?.currentContext ?? context,
+            target: _regionContext(id) ?? context,
             barrierDismissible: true,
             barrierColor: Colors.transparent,
             builder: (context) => AlertDialog(
@@ -659,9 +668,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       clear: _clear,
       focusContext:
           target ??
-          _slotKeys[slot.id]?.currentContext ??
-          _keys['$region:${slot.id}']?.currentContext ??
-          _keys[region]?.currentContext ??
+          _slotContext(slot.id, region) ??
+          _regionContext(region) ??
           context,
     );
   }
@@ -1529,17 +1537,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       saved: initial.slotSizeConstraints[slot.id],
       legacy: preferredSizeFor(slot),
       changes: _config,
-      target: _slotKeys[slot.id]?.currentContext,
+      target: _slotContext(slot.id),
       measure: () {
         final layout = context.findRenderObject();
-        final slotBox = _slotKeys[slot.id]?.currentContext?.findRenderObject();
+        final slotBox = _slotContext(slot.id)?.findRenderObject();
         final region = initial.placements.entries
             .where((entry) => entry.value.contains(slot.id))
             .firstOrNull
             ?.key;
-        final zoneBox = (_keys['$region:${slot.id}'] ?? _keys[region])
-            ?.currentContext
-            ?.findRenderObject();
+        final zoneBox = _regionContext(region)?.findRenderObject();
         if (layout is! RenderBox ||
             !layout.hasSize ||
             slotBox is! RenderBox ||
