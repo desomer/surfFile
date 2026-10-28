@@ -1,11 +1,15 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
+import '../../../models/json_syntax.dart';
 import '../../../models/native_component_config.dart';
+import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/component_tag_filter.dart';
 import '../../../models/registry.dart';
 import '../dialogs/editor_dialog.dart';
+import '../styles/container_style_editor.dart' show styleColorTile;
+import 'native_shape_editor.dart';
 import '../addition/component_add_wizard.dart';
 import '../addition/insertion_plan.dart';
 import '../history/editor_history.dart';
@@ -144,6 +148,7 @@ class NativeComponentEditor extends StatefulWidget {
     this.menuIcon,
     this.menuType,
     this.settingsControls,
+    this.propertyDescriptors = const [],
     this.isRegionAvailable,
     super.key,
   });
@@ -177,6 +182,7 @@ class NativeComponentEditor extends StatefulWidget {
     ValueChanged<NativeComponentConfig> onChanged,
   )?
   settingsControls;
+  final List<NativePropertyDescriptor> propertyDescriptors;
   final bool Function(NativeComponentConfig config, String region)?
   isRegionAvailable;
 
@@ -675,53 +681,255 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       await widget.onConfigure!();
       return;
     }
+    final initial = _config.value;
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
     final activated = <String>{};
-    await showEditorDialog<void>(
-      context: context,
-      target: context,
-      builder: (dialogContext) => AlertDialog(
-        key: ValueKey('${widget.keyPrefix}-settings'),
-        title: Text(widget.settingsTitle),
-        content: SizedBox(
-          width: 360,
-          child: SingleChildScrollView(
-            child: ValueListenableBuilder<NativeComponentConfig>(
-              valueListenable: _config,
-              builder: (context, config, _) => Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...?widget.settingsControls?.call(config, _update),
-                  for (final region in widget.regions)
-                    if (!region.required &&
-                        (widget.isRegionAvailable?.call(config, region.id) ??
-                            true))
-                      SwitchListTile(
-                        key: ValueKey(
-                          '${widget.keyPrefix}-switch-${region.id}',
-                        ),
-                        title: Text(region.label),
-                        value: config.isEnabled(region.id),
-                        onChanged: (value) {
-                          _update(
-                            _config.value.withRegionEnabled(region.id, value),
-                          );
-                          if (value) activated.add(region.id);
-                        },
-                      ),
-                ],
+    var confirmed = false;
+    try {
+      confirmed =
+          await showEditorDialog<bool>(
+            context: context,
+            target: context,
+            builder: (dialogContext) => AlertDialog(
+              key: ValueKey('${widget.keyPrefix}-settings'),
+              title: Text(widget.settingsTitle),
+              content: SizedBox(
+                width: widget.propertyDescriptors.isEmpty ? 360 : 420,
+                child: SingleChildScrollView(
+                  child: ValueListenableBuilder<NativeComponentConfig>(
+                    valueListenable: _config,
+                    builder: (context, config, _) => Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        ...?widget.settingsControls?.call(config, _update),
+                        for (final region in widget.regions)
+                          if (!region.required &&
+                              (widget.isRegionAvailable?.call(
+                                    config,
+                                    region.id,
+                                  ) ??
+                                  true))
+                            SwitchListTile(
+                              key: ValueKey(
+                                '${widget.keyPrefix}-switch-${region.id}',
+                              ),
+                              title: Text(region.label),
+                              value: config.isEnabled(region.id),
+                              onChanged: (value) {
+                                _update(
+                                  _config.value.withRegionEnabled(
+                                    region.id,
+                                    value,
+                                  ),
+                                );
+                                if (value) activated.add(region.id);
+                              },
+                            ),
+                        if (widget.propertyDescriptors.isNotEmpty) ...[
+                          const Divider(),
+                          for (final descriptor in widget.propertyDescriptors)
+                            _buildPropertyControl(context, config, descriptor),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
               ),
+              actions: [
+                TextButton(
+                  key: ValueKey('${widget.keyPrefix}-settings-reset'),
+                  onPressed: () {
+                    activated.clear();
+                    _update(_config.value.withSettingsReset());
+                  },
+                  child: const Text('Réinitialiser'),
+                ),
+                TextButton(
+                  key: ValueKey('${widget.keyPrefix}-settings-cancel'),
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Annuler'),
+                ),
+                FilledButton(
+                  key: ValueKey('${widget.keyPrefix}-settings-apply'),
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Appliquer'),
+                ),
+              ],
+            ),
+          ) ==
+          true;
+    } finally {
+      if (!confirmed && mounted) _update(initial);
+      if (confirmed) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
+    }
+    if (confirmed && mounted) {
+      widget.onConfigured?.call(activated.where(enabled).toSet());
+    }
+  }
+
+  Widget _buildPropertyControl(
+    BuildContext context,
+    NativeComponentConfig config,
+    NativePropertyDescriptor descriptor,
+  ) {
+    final propKey = ValueKey('${widget.keyPrefix}-prop-${descriptor.id}');
+    final resetKey = ValueKey(
+      '${widget.keyPrefix}-prop-reset-${descriptor.id}',
+    );
+    final hasCustomValue = config.property(descriptor.id) != null;
+
+    Widget? resetButton() => descriptor.nullable && hasCustomValue
+        ? IconButton(
+            key: resetKey,
+            tooltip: 'Par défaut (Thème)',
+            icon: const Icon(Icons.restart_alt, size: 18),
+            onPressed: () =>
+                _update(_config.value.withProperty(descriptor.id, null)),
+          )
+        : null;
+
+    return switch (descriptor.editorType) {
+      NativePropertyEditorType.bool => SwitchListTile(
+        key: propKey,
+        title: Text(descriptor.label),
+        subtitle: descriptor.subtitle != null
+            ? Text(descriptor.subtitle!)
+            : null,
+        secondary: resetButton(),
+        value:
+            config.boolProperty(descriptor.id) ??
+            (descriptor.defaultValue is bool
+                ? descriptor.defaultValue as bool
+                : false),
+        onChanged: (value) =>
+            _update(_config.value.withProperty(descriptor.id, value)),
+      ),
+      NativePropertyEditorType.color => Row(
+        children: [
+          Expanded(
+            child: styleColorTile(
+              descriptor.label,
+              config.colorProperty(descriptor.id) ??
+                  (descriptor.defaultValue != null
+                      ? JsonColor.parse(descriptor.defaultValue, descriptor.id)
+                      : Theme.of(context).colorScheme.primary),
+              (color) =>
+                  _update(_config.value.withProperty(descriptor.id, color)),
+              key: propKey,
+              dense: true,
             ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Fermer'),
-          ),
+          ?resetButton(),
         ],
       ),
-    );
-    if (mounted) widget.onConfigured?.call(activated.where(enabled).toSet());
+      NativePropertyEditorType.number => () {
+        final min = descriptor.min ?? 0.0;
+        final max = descriptor.max ?? 100.0;
+        final current = config.doubleProperty(descriptor.id);
+        final fallback =
+            (descriptor.defaultValue as num?)?.toDouble() ?? min;
+        final effective = (current ?? fallback).clamp(min, max);
+        final formatted = current == null
+            ? 'Auto'
+            : (current == current.roundToDouble()
+                  ? current.toInt().toString()
+                  : current.toStringAsFixed(2));
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${descriptor.label} ($formatted)',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                  ),
+                  ?resetButton(),
+                ],
+              ),
+              if (descriptor.subtitle != null)
+                Text(
+                  descriptor.subtitle!,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              Slider(
+                key: propKey,
+                value: effective,
+                min: min,
+                max: max,
+                divisions: descriptor.divisions,
+                onChanged: (value) =>
+                    _update(_config.value.withProperty(descriptor.id, value)),
+              ),
+            ],
+          ),
+        );
+      }(),
+      NativePropertyEditorType.select => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: DropdownButtonFormField<String?>(
+          key: propKey,
+          isExpanded: true,
+          initialValue: config.stringProperty(descriptor.id),
+          decoration: InputDecoration(
+            labelText: descriptor.label,
+            helperText: descriptor.subtitle,
+            isDense: true,
+          ),
+          items: [
+            if (descriptor.nullable)
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('Par défaut (Thème)'),
+              ),
+            for (final option in descriptor.options)
+              DropdownMenuItem<String?>(
+                value: option.value,
+                child: Text(option.label),
+              ),
+          ],
+          onChanged: (value) =>
+              _update(_config.value.withProperty(descriptor.id, value)),
+        ),
+      ),
+      NativePropertyEditorType.shape => () {
+        final currentShape = config.shapeProperty(descriptor.id);
+        return ListTile(
+          key: propKey,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+          leading: const Icon(Icons.rounded_corner, size: 20),
+          title: Text(descriptor.label),
+          subtitle: Text(
+            currentShape?.summary ??
+                (descriptor.subtitle ?? 'Par défaut (Thème)'),
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ?resetButton(),
+              const Icon(Icons.tune, size: 18),
+            ],
+          ),
+          onTap: () => showNativeShapeEditor(
+            context: context,
+            title: descriptor.label,
+            initialValue: currentShape,
+            keyPrefix: '${widget.keyPrefix}-shape-${descriptor.id}',
+            onChanged: (nextShape) =>
+                _update(_config.value.withProperty(descriptor.id, nextShape)),
+          ),
+        );
+      }(),
+    };
   }
 
   Map<String, SlotImplementation> _provided() {
@@ -1762,16 +1970,18 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     ),
                   ),
                   if (overlay && showBadge)
-                    ValueListenableBuilder<Set<Object>>(
-                      valueListenable: _hoveredRegionScopes,
-                      builder: (context, hoveredRegions, _) =>
-                          hoveredRegions.contains(id)
-                          ? EditorZoneHighlight(
-                              key: ValueKey(
-                                '${widget.keyPrefix}-zone-highlight-$id',
-                              ),
-                            )
-                          : const SizedBox.shrink(),
+                    Positioned.fill(
+                      child: ValueListenableBuilder<Set<Object>>(
+                        valueListenable: _hoveredRegionScopes,
+                        builder: (context, hoveredRegions, _) =>
+                            hoveredRegions.contains(id)
+                            ? EditorZoneHighlight(
+                                key: ValueKey(
+                                  '${widget.keyPrefix}-zone-highlight-$id',
+                                ),
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                     ),
                   if (overlay && showBadge)
                     Positioned.fill(

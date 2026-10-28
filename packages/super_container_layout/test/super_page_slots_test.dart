@@ -321,7 +321,7 @@ void main() {
         controller.value.isEnabled(ScaffoldPageRegion.bottomNavigationBar),
         isTrue,
       );
-      await tester.tap(find.text('Fermer'));
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('scaffold-page-select-bottomNavigationBar')),
@@ -411,7 +411,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await toggleRegion(tester, region);
-      await tester.tap(find.text('Fermer'));
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(
         find.byKey(ValueKey('scaffold-page-add-${region.name}')).hitTestable(),
@@ -472,7 +472,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await toggleRegion(tester, ScaffoldPageRegion.bottomNavigationBar);
-      await tester.tap(find.text('Fermer'));
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(find.text('Saved footer'), findsNothing);
       final appearance =
@@ -601,7 +601,7 @@ void main() {
       find.byKey(const ValueKey('scaffold-page-settings')),
       findsOneWidget,
     );
-    await tester.tap(find.text('Fermer'));
+    await tester.tap(find.text('Appliquer'));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('style-edit-mode')));
     await tester.pumpAndSettle();

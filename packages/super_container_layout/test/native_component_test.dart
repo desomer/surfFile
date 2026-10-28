@@ -762,13 +762,13 @@ void main() {
         find.byKey(const ValueKey('super-app-bar-settings')),
         findsOneWidget,
       );
-      expect(find.byType(SwitchListTile), findsNWidgets(5));
+      expect(find.byType(SwitchListTile), findsNWidgets(9));
       final toggle = find.byKey(const ValueKey('super-app-bar-switch-actions'));
       await tester.ensureVisible(toggle);
       await tester.pumpAndSettle();
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Fermer'));
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('super-app-bar-add-actions')),
@@ -1064,9 +1064,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(editor.enabled('leading'), isTrue);
-      await tester.tap(find.text('Fermer'));
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
-      history.undo();
       history.undo();
       await tester.pumpAndSettle();
       expect(find.byType(DrawerButton), findsOneWidget);
@@ -1369,7 +1368,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(toggle);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Fermer'));
+        await tester.tap(find.text('Appliquer'));
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('super-app-bar-add-title')),
@@ -1505,7 +1504,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(toggle);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Fermer'));
+      await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('super-bottom-app-bar-add-right')),
@@ -1658,4 +1657,230 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  test('NativePropertyDescriptor serializes to/from JSON and NativeComponentConfig stores flat properties', () {
+    final jsonList = NativePropertyDescriptor.listToJson(
+      SuperAppBar.propertyDescriptors,
+    );
+    final roundTripped = NativePropertyDescriptor.listFromJson(jsonList);
+    expect(roundTripped, SuperAppBar.propertyDescriptors);
+
+    final config = NativeComponentConfig.fromJson({
+      'placements': <String, Object>{},
+      'regions': {'title': true},
+      'backgroundColor': '#1E293B',
+      'foregroundColor': '#FFFFFF',
+      'elevation': 6,
+      'toolbarHeight': 72,
+      'centerTitle': true,
+      'clipBehavior': 'antiAlias',
+      'systemOverlayStyle': 'light',
+    });
+    expect(config.colorProperty('backgroundColor'), const Color(0xFF1E293B));
+    expect(config.colorProperty('foregroundColor'), const Color(0xFFFFFFFF));
+    expect(config.doubleProperty('elevation'), 6.0);
+    expect(config.doubleProperty('toolbarHeight'), 72.0);
+    expect(config.boolProperty('centerTitle'), isTrue);
+    expect(config.stringProperty('clipBehavior'), 'antiAlias');
+    expect(config.stringProperty('systemOverlayStyle'), 'light');
+
+    final serialized = config.toJson();
+    expect(serialized['backgroundColor'], '#1E293B');
+    expect(serialized['elevation'], 6.0);
+    expect(serialized['toolbarHeight'], 72.0);
+    expect(serialized['centerTitle'], isTrue);
+
+    final patched = config.patchFromJson({
+      'backgroundColor': null,
+      'elevation': 12,
+    });
+    expect(patched.colorProperty('backgroundColor'), isNull);
+    expect(patched.toJson().containsKey('backgroundColor'), isFalse);
+    expect(patched.doubleProperty('elevation'), 12.0);
+
+    final withDirectColor = patched.withProperty(
+      'backgroundColor',
+      const Color(0xFF38BDF8),
+    );
+    expect(
+      withDirectColor.colorProperty('backgroundColor'),
+      const Color(0xFF38BDF8),
+    );
+    expect(withDirectColor.toJson()['backgroundColor'], '#38BDF8');
+  });
+
+  testWidgets(
+    'SuperAppBar applies Flutter style properties and edits them through generic property controls',
+    (tester) async {
+      final registry = Registry();
+      await mount(
+        SuperPage(
+          appBar: SuperAppBar(
+            id: 'styled-bar',
+            title: const Text('Styled Heading'),
+            nativeConfig: NativeComponentConfig.fromJson({
+              'placements': {
+                'title': ['title'],
+              },
+              'backgroundColor': '#1E293B',
+              'foregroundColor': '#F8FAFC',
+              'elevation': 8,
+              'toolbarHeight': 72,
+              'centerTitle': true,
+              'clipBehavior': 'antiAlias',
+              'systemOverlayStyle': 'light',
+            }),
+          ),
+          child: const Text('Body below bar'),
+        ),
+        tester,
+        registry,
+      );
+
+      var appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.backgroundColor, const Color(0xFF1E293B));
+      expect(appBar.foregroundColor, const Color(0xFFF8FAFC));
+      expect(appBar.elevation, 8.0);
+      expect(appBar.toolbarHeight, 72.0);
+      expect(appBar.centerTitle, isTrue);
+      expect(appBar.clipBehavior, Clip.antiAlias);
+      expect(appBar.systemOverlayStyle, SystemUiOverlayStyle.light);
+      expect(tester.getTopLeft(find.text('Body below bar')).dy, 72.0);
+
+      final context = tester.element(find.byType(SuperAppBar));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+
+      final editor = tester.state<NativeComponentEditorState>(
+        find.descendant(
+          of: find.byType(SuperAppBar),
+          matching: find.byType(NativeComponentEditor),
+        ),
+      );
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+
+      final centerTitleSwitch = find.byKey(
+        const ValueKey('super-app-bar-prop-centerTitle'),
+      );
+      await tester.ensureVisible(centerTitleSwitch);
+      await tester.pumpAndSettle();
+      await tester.tap(centerTitleSwitch);
+      await tester.pumpAndSettle();
+
+      appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.centerTitle, isFalse);
+
+      final resetBg = find.byKey(
+        const ValueKey('super-app-bar-prop-reset-backgroundColor'),
+      );
+      await tester.ensureVisible(resetBg);
+      await tester.pumpAndSettle();
+      await tester.tap(resetBg);
+      await tester.pumpAndSettle();
+
+      appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.backgroundColor, isNull);
+
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.backgroundColor, const Color(0xFF1E293B));
+      expect(appBar.centerTitle, isTrue);
+
+      unawaited(editor.configure());
+      await tester.pumpAndSettle();
+
+      final shapeTile = find.byKey(const ValueKey('super-app-bar-prop-shape'));
+      await tester.ensureVisible(shapeTile);
+      await tester.pumpAndSettle();
+      await tester.tap(shapeTile);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('super-app-bar-shape-shape-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey('super-app-bar-shape-shape-independent-corners'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('super-app-bar-shape-shape-apply')),
+      );
+      await tester.pumpAndSettle();
+
+      appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.shape, isA<RoundedRectangleBorder>());
+
+      await tester.tap(find.text('Réinitialiser'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+
+      appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.backgroundColor, isNull);
+      expect(appBar.elevation, isNull);
+      expect(appBar.centerTitle, isNull);
+      expect(appBar.shape, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperAppBar centerTitle centers a SuperValue placed in the title region',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final store = AppearanceStore();
+      await store.save(
+        Appearance(
+          components: {
+            'root': ScaffoldPageConfig.fromJson({
+              'regions': {'appBar': true, 'body': true},
+              'placements': {
+                'appBar': [
+                  {'id': 'main-appbar', 'type': 'registry:ApplicationBar'},
+                ],
+                'body': [
+                  {'id': 'scaffold:body', 'type': 'scaffold:body'},
+                ],
+              },
+            }),
+            'main-appbar': NativeComponentConfig.fromJson({
+              'centerTitle': true,
+              'regions': {'title': true},
+              'placements': {
+                'title': [
+                  {'id': 'app-title', 'type': 'registry:Value'},
+                ],
+              },
+            }),
+            'app-title': const SuperValueConfig(initialText: 'Titre Centré'),
+          },
+        ),
+      );
+      await mount(
+        const SuperPage(child: Text('Body')),
+        tester,
+        registry,
+        store: store,
+      );
+
+      final titleFinder = find.text('Titre Centré');
+      expect(titleFinder, findsOneWidget);
+      final appBarCenter = tester.getCenter(find.byType(AppBar)).dx;
+      expect(tester.getCenter(titleFinder).dx, closeTo(appBarCenter, 1.0));
+      expect(tester.getTopLeft(titleFinder).dx, greaterThan(200));
+
+      final controller = registry.nativeComponentController('main-appbar');
+      controller.value = controller.value.withProperty('centerTitle', false);
+      await tester.pumpAndSettle();
+
+      expect(tester.getTopLeft(titleFinder).dx, closeTo(0, 1.0));
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

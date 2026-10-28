@@ -21,9 +21,12 @@ abstract final class JsonColor {
   static String? toHexNullable(Color? color) =>
       color == null ? null : toHex(color);
 
-  /// Lit une couleur depuis une chaîne hexadécimale (`#RRGGBB`, `#AARRGGBB`,
-  /// `#RGB`, `#ARGB`, `0xAARRGGBB`) ou un entier ARGB 32 bits.
+  /// Lit une couleur depuis une instance [Color], une chaîne hexadécimale
+  /// (`#RRGGBB`, `#AARRGGBB`, `#RGB`, `#ARGB`, `0xAARRGGBB`) ou un entier ARGB 32 bits.
   static Color parse(Object? value, [String field = 'color']) {
+    if (value is Color) {
+      return value;
+    }
     if (value is int && value >= 0 && value <= 0xFFFFFFFF) {
       return Color(value);
     }

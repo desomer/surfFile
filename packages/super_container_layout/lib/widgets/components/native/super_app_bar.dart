@@ -1,6 +1,8 @@
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/native_component_config.dart';
+import '../../../models/native_property_descriptor.dart';
 import '../../../models/registry.dart';
 import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
@@ -10,6 +12,9 @@ import '../../editing/slots/editor_slot.dart';
 
 /// AppBar regions map to Flutter properties, never to a SuperLayout.
 class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
+  static const List<NativePropertyDescriptor> propertyDescriptors =
+      superAppBarPropertyDescriptors;
+
   const SuperAppBar({
     this.id = 'root-appBar',
     this.label = 'ApplicationBar',
@@ -61,9 +66,13 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
         },
       );
 
+  double _toolbarHeight(NativeComponentConfig config) =>
+      config.doubleProperty('toolbarHeight') ?? toolbarHeight;
+
   @override
-  Size get preferredSize =>
-      Size.fromHeight(toolbarHeight + _bottomHeight(_initialConfig));
+  Size get preferredSize => Size.fromHeight(
+    _toolbarHeight(_initialConfig) + _bottomHeight(_initialConfig),
+  );
 
   double _bottomHeight(
     NativeComponentConfig config, {
@@ -113,7 +122,7 @@ class SuperAppBar extends StatefulWidget implements NativePreferredSizeWidget {
             .nativeComponent(id, fallback: _initialConfig);
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     return Size.fromHeight(
-      toolbarHeight +
+      _toolbarHeight(config) +
           _bottomHeight(
             config,
             editing: editing,
@@ -146,71 +155,103 @@ class _SuperAppBarState extends State<SuperAppBar> {
         config;
   }
 
-  List<NativeRegion> get _regions => [
-    const NativeRegion(
-      'leading',
-      'Navigation',
-      single: true,
-      emptySize: Size.square(56),
-    ),
-    NativeRegion(
-      'title',
-      'Titre',
-      axis: Axis.horizontal,
-      stretch: false,
-      emptySize: Size(double.infinity, widget.toolbarHeight),
-    ),
-    const NativeRegion(
-      'actions',
-      'Actions',
-      axis: Axis.horizontal,
-      expand: false,
-      stretch: false,
-      emptySize: Size(96, kToolbarHeight),
-    ),
-    const NativeRegion('bottom', 'Bas', single: true),
-    const NativeRegion('flexibleSpace', 'Espace flexible', single: true),
-  ];
+  Clip? _clipBehavior(NativeComponentConfig config) =>
+      switch (config.stringProperty('clipBehavior')) {
+        'none' => Clip.none,
+        'hardEdge' => Clip.hardEdge,
+        'antiAlias' => Clip.antiAlias,
+        'antiAliasWithSaveLayer' => Clip.antiAliasWithSaveLayer,
+        _ => null,
+      };
 
-  List<SlotImplementation> _slots() => [
-    if (widget.leading case final child?)
-      BuilderSlot(id: 'leading', label: 'leading', builder: (_) => child),
-    if (widget.title case final child?)
-      BuilderSlot(
-        id: 'title',
-        label: 'title',
-        builder: (_) =>
-            Align(alignment: AlignmentDirectional.centerStart, child: child),
+  SystemUiOverlayStyle? _systemOverlayStyle(NativeComponentConfig config) =>
+      switch (config.stringProperty('systemOverlayStyle')) {
+        'light' => SystemUiOverlayStyle.light,
+        'dark' => SystemUiOverlayStyle.dark,
+        _ => null,
+      };
+
+  List<NativeRegion> _regions(NativeComponentConfig config) {
+    final effectiveToolbarHeight = widget._toolbarHeight(config);
+    final centerTitle = config.boolProperty('centerTitle') ?? false;
+    return [
+      NativeRegion(
+        'leading',
+        'Navigation',
+        single: true,
+        emptySize: Size(
+          config.doubleProperty('leadingWidth') ?? 56,
+          effectiveToolbarHeight,
+        ),
       ),
-    if (widget.action case final child?)
-      BuilderSlot(
-        id: 'action',
-        label: 'action',
-        sizing: SlotSizing.intrinsic,
-        builder: (_) => child,
+      NativeRegion(
+        'title',
+        'Titre',
+        axis: Axis.horizontal,
+        expand: !centerTitle,
+        stretch: false,
+        emptySize: Size(double.infinity, effectiveToolbarHeight),
       ),
-    for (final (index, child) in widget.actions.indexed)
-      BuilderSlot(
-        id: 'action:$index',
-        label: 'action ${index + 1}',
-        sizing: SlotSizing.intrinsic,
-        builder: (_) => child,
+      NativeRegion(
+        'actions',
+        'Actions',
+        axis: Axis.horizontal,
+        expand: false,
+        stretch: false,
+        emptySize: Size(96, effectiveToolbarHeight),
       ),
-    if (widget.bottom case final child?)
-      BuilderSlot(
-        id: 'bottom',
-        label: 'bottom',
-        preferredSize: child.preferredSize,
-        builder: (_) => child,
-      ),
-    if (widget.flexibleSpace case final child?)
-      BuilderSlot(
-        id: 'flexibleSpace',
-        label: 'flexibleSpace',
-        builder: (_) => child,
-      ),
-    ...widget.slots,
-  ];
+      const NativeRegion('bottom', 'Bas', single: true),
+      const NativeRegion('flexibleSpace', 'Espace flexible', single: true),
+    ];
+  }
+
+  List<SlotImplementation> _slots(NativeComponentConfig config) {
+    final centerTitle = config.boolProperty('centerTitle') ?? false;
+    return [
+      if (widget.leading case final child?)
+        BuilderSlot(id: 'leading', label: 'leading', builder: (_) => child),
+      if (widget.title case final child?)
+        BuilderSlot(
+          id: 'title',
+          label: 'title',
+          sizing: centerTitle ? SlotSizing.intrinsic : SlotSizing.fill,
+          builder: (_) => centerTitle
+              ? child
+              : Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: child,
+                ),
+        ),
+      if (widget.action case final child?)
+        BuilderSlot(
+          id: 'action',
+          label: 'action',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) => child,
+        ),
+      for (final (index, child) in widget.actions.indexed)
+        BuilderSlot(
+          id: 'action:$index',
+          label: 'action ${index + 1}',
+          sizing: SlotSizing.intrinsic,
+          builder: (_) => child,
+        ),
+      if (widget.bottom case final child?)
+        BuilderSlot(
+          id: 'bottom',
+          label: 'bottom',
+          preferredSize: child.preferredSize,
+          builder: (_) => child,
+        ),
+      if (widget.flexibleSpace case final child?)
+        BuilderSlot(
+          id: 'flexibleSpace',
+          label: 'flexibleSpace',
+          builder: (_) => child,
+        ),
+      ...widget.slots,
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -226,9 +267,10 @@ class _SuperAppBarState extends State<SuperAppBar> {
         editSurface: true,
         config: config,
         onChanged: (value) => controller.value = value,
-        regions: _regions,
-        slots: _slots(),
+        regions: _regions(config),
+        slots: _slots(config),
         registry: registry,
+        propertyDescriptors: SuperAppBar.propertyDescriptors,
         isRegionAvailable: (config, region) =>
             region != 'leading' || !_usesDefaultNavigation(config),
         settingsControls: (config, onChanged) => [
@@ -245,6 +287,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
         ],
         onSlotAdded: _added,
         builder: (context, editor) {
+          final effectiveToolbarHeight = widget._toolbarHeight(config);
           final bottomHeight = widget._bottomHeight(
             config,
             editing: editor.editing,
@@ -256,12 +299,32 @@ class _SuperAppBarState extends State<SuperAppBar> {
             SlotImplementation? item,
             bool showBadge = true,
           }) => SizedBox(
-            height: widget.toolbarHeight,
+            height: effectiveToolbarHeight,
             child: editor.region(id, item: item, showBadge: showBadge),
           );
           return AppBar(
-            toolbarHeight: widget.toolbarHeight,
-            titleSpacing: 0,
+            toolbarHeight: effectiveToolbarHeight,
+            leadingWidth: config.doubleProperty('leadingWidth'),
+            titleSpacing: config.doubleProperty('titleSpacing') ?? 0,
+            centerTitle: config.boolProperty('centerTitle'),
+            backgroundColor: config.colorProperty('backgroundColor'),
+            foregroundColor: config.colorProperty('foregroundColor'),
+            surfaceTintColor: config.colorProperty('surfaceTintColor'),
+            shadowColor: config.colorProperty('shadowColor'),
+            elevation: config.doubleProperty('elevation'),
+            scrolledUnderElevation: config.doubleProperty(
+              'scrolledUnderElevation',
+            ),
+            forceMaterialTransparency:
+                config.boolProperty('forceMaterialTransparency') ?? false,
+            shape: config.shapeBorderProperty('shape'),
+            toolbarOpacity: config.doubleProperty('toolbarOpacity') ?? 1.0,
+            bottomOpacity: config.doubleProperty('bottomOpacity') ?? 1.0,
+            primary: config.boolProperty('primary') ?? true,
+            excludeHeaderSemantics:
+                config.boolProperty('excludeHeaderSemantics') ?? false,
+            clipBehavior: _clipBehavior(config),
+            systemOverlayStyle: _systemOverlayStyle(config),
             automaticallyImplyLeading: _usesDefaultNavigation(config),
             automaticallyImplyActions:
                 widget.automaticallyImplyActions &&

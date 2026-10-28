@@ -251,11 +251,19 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
 
 - **`"registry:ApplicationBar"` $\rightarrow$ `AppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `appBar` d'une page) :
   - `useDefaultNavigation` (`bool`, `true` par défaut) : laisse Flutter gérer automatiquement le bouton menu (`Drawer`) ou retour (`BackButton`). Mettre à `false` pour utiliser une région `leading` personnalisée.
-  - `leading` (1 slot max) : widget placé tout à gauche de l'`AppBar` (ignoré si `useDefaultNavigation: true`).
-  - `title` (liste horizontale) : titre ou barre d'outils centrale de l'`AppBar`.
-  - `actions` (liste horizontale) : boutons/actions alignés à droite de l'`AppBar`.
-  - `bottom` (1 slot max) : barre secondaire sous l'`AppBar` (ex. onglets ou barre de filtres).
-  - `flexibleSpace` (1 slot max) : arrière-plan de l'`AppBar`.
+  - **Régions** :
+    - `leading` (1 slot max) : widget placé tout à gauche de l'`AppBar` (ignoré si `useDefaultNavigation: true`).
+    - `title` (liste horizontale) : titre ou barre d'outils centrale de l'`AppBar`.
+    - `actions` (liste horizontale) : boutons/actions alignés à droite de l'`AppBar`.
+    - `bottom` (1 slot max) : barre secondaire sous l'`AppBar` (ex. onglets ou barre de filtres).
+    - `flexibleSpace` (1 slot max) : arrière-plan de l'`AppBar`.
+  - **Propriétés de style Flutter `AppBar` (directement à la racine de `components[appBarId]`)** :
+    - Couleurs (`"#RRGGBB"` ou `"#AARRGGBB"`) : `backgroundColor`, `foregroundColor`, `surfaceTintColor`, `shadowColor`.
+    - Élévation & transparence : `elevation` (`0`..`24`), `scrolledUnderElevation` (`0`..`24`), `forceMaterialTransparency` (`bool`, défaut `false`).
+    - Forme et bordure (`shape`) : objet `{"kind": "rounded" | "continuous" | "beveled" | "stadium" | "linear", "radius": 0..64, "radii": [topLeft, topRight, bottomRight, bottomLeft], "borderWidth": 0..16, "borderColor": "#RRGGBB", "top": bool, "right": bool, "bottom": bool, "left": bool}` (ou raccourcis : nombre `16` pour un rayon uniforme, ou `[0, 0, 16, 16]` pour des coins indépendants).
+    - Dimensions & espacements : `toolbarHeight` (`32`..`160`, défaut `56`), `leadingWidth` (`24`..`200`, défaut `56`), `titleSpacing` (`0`..`64`, défaut `0`).
+    - Comportement & opacité : `centerTitle` (`bool`), `toolbarOpacity` (`0.0`..`1.0`, défaut `1.0`), `bottomOpacity` (`0.0`..`1.0`, défaut `1.0`), `primary` (`bool`, défaut `true`), `excludeHeaderSemantics` (`bool`, défaut `false`), `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`), `systemOverlayStyle` (`"light"` | `"dark"`).
+    - Pour réinitialiser une propriété au thème Material 3 par défaut en mode Vibe (`applyVibe`), passe sa valeur à `null` (ex. `{"backgroundColor": null}`).
 
 - **`"registry:BottomNavigationBar"` $\rightarrow$ `BottomAppBar` de Flutter** (`type: "native"`, uniquement plaçable dans la région `bottomNavigationBar` d'une page) :
   - `left` (liste horizontale, alignée à gauche), `center` (liste horizontale, centrée), `right` (liste horizontale, alignée à droite).

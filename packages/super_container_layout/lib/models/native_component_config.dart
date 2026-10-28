@@ -1,21 +1,63 @@
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/painting.dart' show Axis;
+import 'package:flutter/painting.dart' show Axis, ShapeBorder;
 
 import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
+import 'native_property_descriptor.dart';
+import 'native_shape_config.dart';
 import 'super_layout_config.dart' show SlotSizeConstraints, ZoneFlowConfig;
 
 /// Immutable placements shared by adapters for native Flutter components.
 class NativeComponentConfig extends ComponentConfig {
+  static const Set<String> _reservedJsonKeys = {
+    'type',
+    'useDefaultNavigation',
+    'initiallyExpanded',
+    'maintainState',
+    'headerClickToggles',
+    'binding',
+    'regions',
+    'regionAxes',
+    'regionFlows',
+    'regionSizes',
+    'placements',
+    'slotPreferredSizes',
+    'slotSizeConstraints',
+    'slotLabels',
+  };
+
+  static final Map<String, NativePropertyDescriptor> _knownDescriptors = {
+    for (final descriptor in superAppBarPropertyDescriptors)
+      descriptor.id: descriptor,
+  };
+
+  static Object _normalizeProperty(String id, Object value) {
+    final trimmed = id.trim();
+    if (trimmed.isEmpty || _reservedJsonKeys.contains(trimmed)) {
+      throw ArgumentError.value(id, 'id', 'Invalid native property ID.');
+    }
+    final descriptor = _knownDescriptors[trimmed];
+    if (descriptor != null) {
+      return descriptor.normalizeValue(value)!;
+    }
+    if (value is NativeShapeConfig) return value.toJson();
+    if (value is Color) return JsonColor.toHex(value);
+    if (value is bool || value is String) return value;
+    if (value is num && value.isFinite) return value.toDouble();
+    if (value is Map) return Map<String, Object?>.unmodifiable(value);
+    throw FormatException('Valeur invalide pour la propriété "$trimmed".');
+  }
+
   NativeComponentConfig({
     this.useDefaultNavigation,
     this.initiallyExpanded,
     this.maintainState,
     this.headerClickToggles,
     this.binding,
+    Map<String, Object> properties = const {},
     Map<String, List<String>> placements = const {},
     Map<String, String> slotTypes = const {},
     Map<String, bool> regions = const {},
@@ -25,7 +67,11 @@ class NativeComponentConfig extends ComponentConfig {
     Map<String, Size?> slotPreferredSizes = const {},
     Map<String, SlotSizeConstraints> slotSizeConstraints = const {},
     Map<String, String> slotLabels = const {},
-  }) : placements = Map.unmodifiable({
+  }) : properties = Map.unmodifiable({
+         for (final entry in properties.entries)
+           entry.key.trim(): _normalizeProperty(entry.key, entry.value),
+       }),
+       placements = Map.unmodifiable({
          for (final entry in placements.entries)
            entry.key: List<String>.unmodifiable(entry.value),
        }),
@@ -85,6 +131,9 @@ class NativeComponentConfig extends ComponentConfig {
 
   /// Optional boolean repository binding for stateful native adapters (e.g. Expansible).
   final JsonTextBinding? binding;
+
+  /// Generic style and behavior properties stored flat at the root of the JSON config.
+  final Map<String, Object> properties;
   final Map<String, String> slotTypes;
   final Map<String, bool> regions;
   final Map<String, Axis> regionAxes;
@@ -110,6 +159,32 @@ class NativeComponentConfig extends ComponentConfig {
       regionFlows[region] ?? const ZoneFlowConfig();
   double? regionSizeOf(String region) => regionSizes[region];
 
+  Object? property(String id) => properties[id];
+  bool? boolProperty(String id) => switch (properties[id]) {
+    final bool value => value,
+    _ => null,
+  };
+  double? doubleProperty(String id) => switch (properties[id]) {
+    final num value => value.toDouble(),
+    _ => null,
+  };
+  Color? colorProperty(String id) => switch (properties[id]) {
+    final Color value => value,
+    final Object value => JsonColor.parse(value, id),
+    null => null,
+  };
+  String? stringProperty(String id) => switch (properties[id]) {
+    final String value => value,
+    _ => null,
+  };
+  NativeShapeConfig? shapeProperty(String id) => switch (properties[id]) {
+    final NativeShapeConfig value => value,
+    final Object value => NativeShapeConfig.fromJson(value),
+    null => null,
+  };
+  ShapeBorder? shapeBorderProperty(String id) =>
+      shapeProperty(id)?.toShapeBorder();
+
   NativeComponentConfig copyWith({
     bool? useDefaultNavigation,
     bool? initiallyExpanded,
@@ -117,6 +192,7 @@ class NativeComponentConfig extends ComponentConfig {
     bool? headerClickToggles,
     JsonTextBinding? binding,
     bool clearBinding = false,
+    Map<String, Object>? properties,
     Map<String, List<String>>? placements,
     Map<String, String>? slotTypes,
     Map<String, bool>? regions,
@@ -132,6 +208,7 @@ class NativeComponentConfig extends ComponentConfig {
     maintainState: maintainState ?? this.maintainState,
     headerClickToggles: headerClickToggles ?? this.headerClickToggles,
     binding: clearBinding ? null : binding ?? this.binding,
+    properties: properties ?? this.properties,
     placements: placements ?? this.placements,
     slotTypes: slotTypes ?? this.slotTypes,
     regions: regions ?? this.regions,
@@ -190,6 +267,30 @@ class NativeComponentConfig extends ComponentConfig {
 
   NativeComponentConfig withBinding(JsonTextBinding? value) =>
       copyWith(binding: value, clearBinding: value == null);
+
+  NativeComponentConfig withProperty(String id, Object? value) {
+    final next = {...properties};
+    final trimmed = id.trim();
+    if (value == null) {
+      next.remove(trimmed);
+    } else {
+      next[trimmed] = _normalizeProperty(trimmed, value);
+    }
+    return copyWith(properties: next);
+  }
+
+  /// Resets dialog settings and style properties while keeping placed slots.
+  NativeComponentConfig withSettingsReset() => NativeComponentConfig(
+    placements: placements,
+    slotTypes: slotTypes,
+    regions: const {},
+    regionAxes: regionAxes,
+    regionFlows: regionFlows,
+    regionSizes: regionSizes,
+    slotPreferredSizes: slotPreferredSizes,
+    slotSizeConstraints: slotSizeConstraints,
+    slotLabels: slotLabels,
+  );
 
   NativeComponentConfig withRegionEnabled(String region, bool enabled) =>
       copyWith(regions: {...regions, region: enabled});
@@ -356,6 +457,7 @@ class NativeComponentConfig extends ComponentConfig {
       'maintainState': ?maintainState,
       'headerClickToggles': ?headerClickToggles,
       if (binding != null) 'binding': binding!.toJson(),
+      ...properties,
       'regions': regions,
       if (regionAxes.isNotEmpty)
         'regionAxes': {
@@ -508,12 +610,24 @@ class NativeComponentConfig extends ComponentConfig {
           allowInfiniteSides: true,
         );
       }
+      final parsedProperties = <String, Object>{};
+      for (final entry in value.entries) {
+        final key = entry.key;
+        if (key is! String) {
+          throw const FormatException('Invalid native property key.');
+        }
+        final trimmed = key.trim();
+        if (_reservedJsonKeys.contains(trimmed)) continue;
+        if (entry.value == null) continue;
+        parsedProperties[trimmed] = _normalizeProperty(trimmed, entry.value!);
+      }
       return NativeComponentConfig(
         useDefaultNavigation: navigation as bool?,
         initiallyExpanded: initiallyExpanded as bool?,
         maintainState: maintainState as bool?,
         headerClickToggles: headerClickToggles as bool?,
         binding: binding,
+        properties: parsedProperties,
         placements: placements,
         slotTypes: types,
         regions: {
