@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../ai/vibe_chat_attachment.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/scaffold_page_config.dart';
@@ -12,6 +14,8 @@ import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_transfer.dart';
 import '../../../theme/appearance.dart';
 
+export '../../../ai/vibe_chat_attachment.dart';
+
 class VibeChatDialog extends StatefulWidget {
   const VibeChatDialog({
     required this.controller,
@@ -19,6 +23,8 @@ class VibeChatDialog extends StatefulWidget {
     required this.onClose,
     required this.onDrag,
     required this.generate,
+    this.pickAttachments,
+    this.pasteAttachments,
     this.validateAppearance,
     this.registry,
     super.key,
@@ -29,6 +35,8 @@ class VibeChatDialog extends StatefulWidget {
   final VoidCallback onClose;
   final ValueChanged<Offset> onDrag;
   final Future<String> Function(String prompt) generate;
+  final Future<List<VibeChatAttachment>> Function()? pickAttachments;
+  final Future<List<VibeChatAttachment>> Function()? pasteAttachments;
   final void Function(Appearance appearance)? validateAppearance;
   final Registry? registry;
 
@@ -43,6 +51,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   ];
 
   final _input = TextEditingController();
+  final _pendingAttachments = <VibeChatAttachment>[];
   final _messages = <_ChatMessage>[
     const _ChatMessage(
       text: 'Décris l’écran à créer ou les changements souhaités.',
@@ -51,6 +60,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   ];
   bool _sending = false;
   String? _lastFailedResponse;
+  String? _attachmentError;
 
   Appearance get _currentAppearance =>
       widget.registry?.appearanceSnapshot(widget.controller.value) ??
@@ -60,6 +70,80 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
   void dispose() {
     _input.dispose();
     super.dispose();
+  }
+
+  Future<void> _attachFromPicker() async {
+    if (_sending) return;
+    setState(() => _attachmentError = null);
+    try {
+      final picker = widget.pickAttachments ?? VibeChatAttachment.pickFiles;
+      final picked = await picker();
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        _pendingAttachments.addAll(picked);
+        _attachmentError = null;
+      });
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _attachmentError = error.message);
+    } on FileSystemException catch (error) {
+      if (mounted) {
+        setState(
+          () => _attachmentError = 'Lecture impossible : ${error.message}',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _attachmentError =
+              'Impossible d’importer le fichier : ${_describeErrorCause(error)}',
+        );
+      }
+    }
+  }
+
+  Future<void> _attachFromClipboard() async {
+    if (_sending) return;
+    setState(() => _attachmentError = null);
+    try {
+      final paster = widget.pasteAttachments ?? VibeChatAttachment.fromClipboard;
+      final pasted = await paster();
+      if (!mounted) return;
+      if (pasted.isEmpty) {
+        setState(
+          () => _attachmentError =
+              'Aucun fichier ou texte trouvé dans le presse-papiers.',
+        );
+        return;
+      }
+      setState(() {
+        _pendingAttachments.addAll(pasted);
+        _attachmentError = null;
+      });
+    } on FormatException catch (error) {
+      if (mounted) setState(() => _attachmentError = error.message);
+    } on FileSystemException catch (error) {
+      if (mounted) {
+        setState(
+          () => _attachmentError = 'Lecture impossible : ${error.message}',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _attachmentError =
+              'Impossible de coller depuis le presse-papiers : '
+              '${_describeErrorCause(error)}',
+        );
+      }
+    }
+  }
+
+  void _removePendingAttachment(int index) {
+    if (_sending || index < 0 || index >= _pendingAttachments.length) return;
+    setState(() {
+      _pendingAttachments.removeAt(index);
+      _attachmentError = null;
+    });
   }
 
   String _describeErrorCause(Object error) {
@@ -90,19 +174,40 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   Future<void> _send() async {
     final request = _input.text.trim();
-    if (request.isEmpty || _sending) return;
+    final attachments = List<VibeChatAttachment>.unmodifiable(
+      _pendingAttachments,
+    );
+    if ((request.isEmpty && attachments.isEmpty) || _sending) return;
     _input.clear();
     _lastFailedResponse = null;
     setState(() {
       _sending = true;
-      _messages.add(_ChatMessage(text: request, isUser: true));
+      _pendingAttachments.clear();
+      _attachmentError = null;
+      _messages.add(
+        _ChatMessage(
+          text: request,
+          isUser: true,
+          attachments: attachments,
+        ),
+      );
     });
 
-    debugPrint('[Vibe IA] Nouvelle demande utilisateur : "$request"');
+    debugPrint(
+      '[Vibe IA] Nouvelle demande utilisateur : "$request" '
+      '(pièces jointes: ${attachments.map((a) => a.name).toList()})',
+    );
     try {
       final guide = await _loadGuide(context);
       final prompt = _buildPrompt(guide);
-      final generated = await _generateAndApply(prompt);
+      final allAttachments = <VibeChatAttachment>[
+        for (final message in _messages)
+          if (message.isUser) ...message.attachments,
+      ];
+      final generated = await _generateAndApply(
+        prompt,
+        attachments: allAttachments,
+      );
       if (generated.appearance case final appearance?) {
         widget.controller.value = appearance;
         debugPrint(
@@ -198,16 +303,34 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     }
   }
 
+  Future<String> _invokeGenerate(
+    String prompt,
+    List<VibeChatAttachment> attachments,
+  ) {
+    final generator = widget.generate;
+    if (generator is Future<String> Function(
+      String, {
+      List<VibeChatAttachment> attachments,
+    })) {
+      return generator(prompt, attachments: attachments);
+    }
+    return generator(prompt);
+  }
+
   Future<({Appearance? appearance, Map<String, dynamic> result})>
-  _generateAndApply(String prompt) async {
+  _generateAndApply(
+    String prompt, {
+    List<VibeChatAttachment> attachments = const [],
+  }) async {
     for (var attempt = 0; attempt < 2; attempt++) {
       debugPrint(
         '[Vibe IA] Tentative ${attempt + 1}/2 — envoi du prompt '
-        '(${prompt.length} caractères)...',
+        '(${prompt.length} caractères, '
+        'fichiers joints: ${attachments.length})...',
       );
       final String response;
       try {
-        response = await widget.generate(prompt);
+        response = await _invokeGenerate(prompt, attachments);
       } catch (error, stackTrace) {
         debugPrint(
           '[Vibe IA] Échec de widget.generate à la tentative ${attempt + 1} '
@@ -561,11 +684,89 @@ $conversation
             ),
           ),
           const Divider(height: 1),
+          if (_attachmentError != null)
+            Container(
+              key: const ValueKey('vibe-chat-attachment-error'),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              color: scheme.errorContainer,
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 16,
+                    color: scheme.onErrorContainer,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _attachmentError!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onErrorContainer,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    iconSize: 16,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 24,
+                      height: 24,
+                    ),
+                    color: scheme.onErrorContainer,
+                    onPressed: () => setState(() => _attachmentError = null),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            ),
+          if (_pendingAttachments.isNotEmpty)
+            Container(
+              key: const ValueKey('vibe-chat-pending-attachments'),
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final (index, attachment)
+                        in _pendingAttachments.indexed)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: _PendingAttachmentChip(
+                          index: index,
+                          attachment: attachment,
+                          onRemove: _sending
+                              ? null
+                              : () => _removePendingAttachment(index),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.all(10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                IconButton(
+                  key: const ValueKey('vibe-chat-attach'),
+                  tooltip: 'Joindre un fichier (image ou texte)',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _sending ? null : _attachFromPicker,
+                  icon: const Icon(Icons.attach_file),
+                ),
+                IconButton(
+                  key: const ValueKey('vibe-chat-paste-attachment'),
+                  tooltip: 'Coller un fichier ou texte du presse-papiers',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: _sending ? null : _attachFromClipboard,
+                  icon: const Icon(Icons.content_paste),
+                ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: TextField(
                     key: const ValueKey('vibe-chat-input'),
@@ -607,20 +808,122 @@ class _ChatMessage {
     required this.text,
     required this.isUser,
     this.failedResponse,
+    this.attachments = const [],
   });
 
   final String text;
   final bool isUser;
   final String? failedResponse;
+  final List<VibeChatAttachment> attachments;
 
   String toConversationEntry() {
-    if (isUser) return 'Utilisateur : $text';
+    if (isUser) {
+      final effectiveText = text.isEmpty && attachments.isNotEmpty
+          ? 'Analyse les fichiers joints et applique les modifications correspondantes.'
+          : text;
+      if (attachments.isEmpty) {
+        return 'Utilisateur : $effectiveText';
+      }
+      final buffer = StringBuffer('Utilisateur : $effectiveText');
+      for (final attachment in attachments) {
+        if (attachment.isImage) {
+          buffer.write(
+            '\n[Fichier image joint : "${attachment.name}" (${attachment.mimeType})]',
+          );
+        } else if (attachment.isText) {
+          buffer.write(
+            '\n[Fichier texte joint : "${attachment.name}" (${attachment.mimeType})]\n'
+            '${attachment.textContent}',
+          );
+        }
+      }
+      return buffer.toString();
+    }
     final rejected = failedResponse?.trim();
     if (rejected == null || rejected.isEmpty) {
       return 'Assistant : $text';
     }
     return 'Assistant (ERREUR À CORRIGER) : $text\n'
         'Réponse précédente invalide :\n$rejected';
+  }
+}
+
+class _PendingAttachmentChip extends StatelessWidget {
+  const _PendingAttachmentChip({
+    required this.index,
+    required this.attachment,
+    required this.onRemove,
+  });
+
+  final int index;
+  final VibeChatAttachment attachment;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      key: ValueKey('vibe-chat-pending-attachment-$index'),
+      color: scheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 2, 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (attachment.isImage)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.memory(
+                  attachment.bytes,
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Icon(
+                    Icons.image_outlined,
+                    size: 20,
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+              )
+            else
+              Icon(
+                Icons.description_outlined,
+                size: 18,
+                color: scheme.onSecondaryContainer,
+              ),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                attachment.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: scheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            IconButton(
+              key: ValueKey('vibe-chat-remove-attachment-$index'),
+              tooltip: 'Retirer ${attachment.name}',
+              visualDensity: VisualDensity.compact,
+              iconSize: 16,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+              onPressed: onRemove,
+              icon: Icon(
+                Icons.close,
+                size: 15,
+                color: scheme.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -632,6 +935,9 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final foreground = message.isUser
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
     return Align(
       alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -644,7 +950,109 @@ class _MessageBubble extends StatelessWidget {
               : scheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
         ),
-        child: SelectableText(message.text),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (message.attachments.isNotEmpty) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final attachment in message.attachments)
+                    if (attachment.isImage)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxWidth: 220,
+                                maxHeight: 120,
+                              ),
+                              child: Image.memory(
+                                attachment.bytes,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  padding: const EdgeInsets.all(8),
+                                  color: scheme.surface.withValues(alpha: 0.4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.image_outlined,
+                                        size: 16,
+                                        color: foreground,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          attachment.name,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: foreground,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            attachment.name,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: foreground.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.surface.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.description_outlined,
+                              size: 15,
+                              color: foreground,
+                            ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                attachment.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: foreground,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                ],
+              ),
+              if (message.text.isNotEmpty) const SizedBox(height: 6),
+            ],
+            if (message.text.isNotEmpty) SelectableText(message.text),
+          ],
+        ),
       ),
     );
   }

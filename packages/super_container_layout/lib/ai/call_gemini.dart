@@ -2,9 +2,16 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
+import 'vibe_chat_attachment.dart';
+
+export 'vibe_chat_attachment.dart';
+
 const _geminiModel = 'gemini-flash-latest';
 
-Future<String> callGemini(String prompt) async {
+Future<String> callGemini(
+  String prompt, {
+  List<VibeChatAttachment> attachments = const [],
+}) async {
   final isDotenvInitialized = dotenv.isInitialized;
   final apiKey = isDotenvInitialized ? dotenv.env['GEMINI_API_KEY'] ?? '' : '';
   if (apiKey.isEmpty) {
@@ -18,11 +25,32 @@ Future<String> callGemini(String prompt) async {
   final stopwatch = Stopwatch()..start();
   debugPrint(
     '[Vibe IA][Gemini] Appel de $_geminiModel '
-    '(prompt: ${prompt.length} caractères)...',
+    '(prompt: ${prompt.length} caractères, '
+    'fichiers joints: ${attachments.length})...',
   );
 
   final model = GenerativeModel(model: _geminiModel, apiKey: apiKey);
-  final content = [Content.text(prompt)];
+  final parts = <Part>[TextPart(prompt)];
+  for (final attachment in attachments) {
+    if (attachment.isImage) {
+      parts.add(
+        TextPart(
+          'Fichier image joint : "${attachment.name}" (${attachment.mimeType})',
+        ),
+      );
+      parts.add(DataPart(attachment.mimeType, attachment.bytes));
+    } else if (attachment.isText && !prompt.contains(attachment.textContent!)) {
+      parts.add(
+        TextPart(
+          'Fichier texte joint "${attachment.name}" (${attachment.mimeType}) :\n'
+          '${attachment.textContent}',
+        ),
+      );
+    }
+  }
+  final content = [
+    parts.length == 1 ? Content.text(prompt) : Content.multi(parts),
+  ];
 
   final GenerateContentResponse response;
   try {

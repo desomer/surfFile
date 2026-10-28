@@ -1,3 +1,4 @@
+export 'ai/vibe_chat_attachment.dart';
 export 'models/registry.dart';
 export 'models/component_config.dart';
 export 'models/component_behavior.dart';

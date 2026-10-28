@@ -406,6 +406,233 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  test(
+    'VibeChatAttachment detects image and text files and rejects unknown binary',
+    () {
+      final pngBytes = Uint8List.fromList([
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, //
+        0x00, 0x00, 0x00, 0x0D,
+      ]);
+      final imageAttachment = VibeChatAttachment.fromBytes(
+        pngBytes,
+        name: 'maquette.png',
+      );
+      expect(imageAttachment.isImage, isTrue);
+      expect(imageAttachment.isText, isFalse);
+      expect(imageAttachment.mimeType, 'image/png');
+
+      final textAttachment = VibeChatAttachment.fromBytes(
+        Uint8List.fromList(utf8.encode('# Cahier des charges\nListe de tâches')),
+        name: 'spec.md',
+      );
+      expect(textAttachment.isImage, isFalse);
+      expect(textAttachment.isText, isTrue);
+      expect(textAttachment.mimeType, 'text/markdown');
+      expect(textAttachment.textContent, contains('Cahier des charges'));
+
+      expect(
+        () => VibeChatAttachment.fromBytes(
+          Uint8List.fromList([0x00, 0x01, 0x02, 0xFF]),
+          name: 'archive.bin',
+        ),
+        throwsFormatException,
+      );
+    },
+  );
+
+  testWidgets(
+    'attaching image and text files previews them, allows removal, and sends them to AI without requiring text input',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      // 1x1 transparent PNG
+      final pngBytes = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      );
+      final imageFile = VibeChatAttachment.image(
+        name: 'capture.png',
+        bytes: pngBytes,
+      );
+      final textFile = VibeChatAttachment.text(
+        name: 'notes.txt',
+        content: 'Afficher une liste de fichiers avec icône et taille.',
+      );
+      final extraFile = VibeChatAttachment.text(
+        name: 'ignorer.txt',
+        content: 'Ce fichier sera retiré avant envoi.',
+      );
+
+      String? receivedPrompt;
+      List<VibeChatAttachment>? receivedAttachments;
+
+      Future<String> generateWithAttachments(
+        String prompt, {
+        List<VibeChatAttachment> attachments = const [],
+      }) async {
+        receivedPrompt = prompt;
+        receivedAttachments = attachments;
+        return jsonEncode({
+          'message': 'Écran généré depuis les fichiers joints.',
+          'vibe': _fileListPatch('mainLayout'),
+        });
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                codec: const AppearanceCodec(),
+                onClose: () {},
+                onDrag: (_) {},
+                pickAttachments: () async => [extraFile, imageFile, textFile],
+                generate: generateWithAttachments,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Clique sur le bouton d'import de fichiers
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-attach')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('vibe-chat-pending-attachments')),
+        findsOneWidget,
+      );
+      expect(find.text('ignorer.txt'), findsOneWidget);
+      expect(find.text('capture.png'), findsOneWidget);
+      expect(find.text('notes.txt'), findsOneWidget);
+
+      // Retire le premier fichier ("ignorer.txt")
+      await tester.tap(
+        find.byKey(const ValueKey('vibe-chat-remove-attachment-0')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('ignorer.txt'), findsNothing);
+      expect(find.text('capture.png'), findsOneWidget);
+      expect(find.text('notes.txt'), findsOneWidget);
+
+      // Envoie sans saisir de texte dans le champ d'entrée
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('vibe-chat-pending-attachments')),
+        findsNothing,
+      );
+      expect(receivedAttachments, isNotNull);
+      expect(receivedAttachments!.map((a) => a.name), [
+        'capture.png',
+        'notes.txt',
+      ]);
+      expect(
+        receivedPrompt,
+        contains('[Fichier image joint : "capture.png" (image/png)]'),
+      );
+      expect(
+        receivedPrompt,
+        contains('[Fichier texte joint : "notes.txt" (text/plain)]'),
+      );
+      expect(
+        receivedPrompt,
+        contains('Afficher une liste de fichiers avec icône et taille.'),
+      );
+      expect(receivedPrompt, isNot(contains('ignorer.txt')));
+      expect(
+        find.text('Écran généré depuis les fichiers joints.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'pasting attachment from clipboard and handling invalid file format error',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier(Appearance());
+      registry.bindAppearance(appearance);
+      registry.layoutController('mainLayout');
+      addTearDown(appearance.dispose);
+      addTearDown(registry.unbindAppearance);
+
+      String? sentPrompt;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: DefaultAssetBundle(
+              bundle: _GuideBundle(),
+              child: VibeChatDialog(
+                controller: appearance,
+                registry: registry,
+                codec: const AppearanceCodec(),
+                onClose: () {},
+                onDrag: (_) {},
+                pickAttachments: () async => throw const FormatException(
+                  'Format de fichier non pris en charge ("test.exe").',
+                ),
+                pasteAttachments: () async => [
+                  VibeChatAttachment.text(
+                    name: 'presse-papiers.json',
+                    content: '{"titre":"Mon écran"}',
+                    mimeType: 'application/json',
+                  ),
+                ],
+                generate: (prompt) async {
+                  sentPrompt = prompt;
+                  return jsonEncode({'message': 'Collage bien reçu.'});
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Test erreur sur fichier invalide
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-attach')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('vibe-chat-attachment-error')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Format de fichier non pris en charge'),
+        findsOneWidget,
+      );
+
+      // Test collage depuis le presse-papiers
+      await tester.tap(
+        find.byKey(const ValueKey('vibe-chat-paste-attachment')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('vibe-chat-attachment-error')),
+        findsNothing,
+      );
+      expect(find.text('presse-papiers.json'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('vibe-chat-send')));
+      await tester.pumpAndSettle();
+
+      expect(sentPrompt, contains('presse-papiers.json'));
+      expect(sentPrompt, contains('{"titre":"Mon écran"}'));
+      expect(find.text('Collage bien reçu.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 class _GuideBundle extends CachingAssetBundle {
