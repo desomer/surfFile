@@ -46,6 +46,8 @@ class ScaffoldPageConfig extends ComponentConfig {
     Map<ScaffoldPageRegion, bool> regions = const {},
     Map<String, Object> properties = const {},
     ScaffoldBodyMode? bodyMode,
+    bool? extendBody,
+    bool? extendBodyBehindAppBar,
     Axis? scrollDirection,
     bool? reverse,
     bool? primary,
@@ -57,11 +59,13 @@ class ScaffoldPageConfig extends ComponentConfig {
              ...properties,
              if (bodyMode != null && bodyMode != ScaffoldBodyMode.standard)
                'bodyMode': bodyMode.name,
+             'extendBody': ?extendBody,
+             'extendBodyBehindAppBar': ?extendBodyBehindAppBar,
              if (scrollDirection != null)
                'scrollDirection': scrollDirection.name,
-             if (reverse != null) 'reverse': reverse,
-             if (primary != null) 'primary': primary,
-             if (scrollPadding != null) 'scrollPadding': scrollPadding,
+             'reverse': ?reverse,
+             'primary': ?primary,
+             'scrollPadding': ?scrollPadding,
              if (clipBehavior != null) 'clipBehavior': clipBehavior.name,
            },
            placements: {
@@ -101,6 +105,11 @@ class ScaffoldPageConfig extends ComponentConfig {
   ScaffoldBodyMode get bodyMode =>
       ScaffoldBodyMode.fromName(native.stringProperty('bodyMode'));
 
+  bool get extendBody => native.boolProperty('extendBody') ?? false;
+
+  bool get extendBodyBehindAppBar =>
+      native.boolProperty('extendBodyBehindAppBar') ?? false;
+
   Axis get scrollDirection => switch (native.stringProperty('scrollDirection')) {
     'horizontal' => Axis.horizontal,
     _ => Axis.vertical,
@@ -137,6 +146,10 @@ class ScaffoldPageConfig extends ComponentConfig {
         'bodyMode',
         mode == null || mode == ScaffoldBodyMode.standard ? null : mode.name,
       );
+  ScaffoldPageConfig withExtendBody(bool? extendBody) =>
+      withProperty('extendBody', extendBody);
+  ScaffoldPageConfig withExtendBodyBehindAppBar(bool? extendBodyBehindAppBar) =>
+      withProperty('extendBodyBehindAppBar', extendBodyBehindAppBar);
   ScaffoldPageConfig withScrollDirection(Axis? direction) =>
       withProperty('scrollDirection', direction?.name);
   ScaffoldPageConfig withReverse(bool? reverse) =>

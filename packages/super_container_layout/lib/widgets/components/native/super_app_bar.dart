@@ -76,8 +76,8 @@ class SuperAppBar extends StatefulWidget
           if (floating) 'floating': true,
           if (snap) 'snap': true,
           if (stretch) 'stretch': true,
-          if (expandedHeight != null) 'expandedHeight': expandedHeight!,
-          if (collapsedHeight != null) 'collapsedHeight': collapsedHeight!,
+          'expandedHeight': ?expandedHeight,
+          'collapsedHeight': ?collapsedHeight,
         },
         placements: {
           if (leading != null) 'leading': ['leading'],

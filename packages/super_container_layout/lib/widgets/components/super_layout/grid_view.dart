@@ -106,7 +106,9 @@ extension _SuperLayoutGrid on SuperLayoutState {
         path: [...parentPath, name],
       ),
     );
-    if (!widget.shrinkWrap) return surface;
+    final fitScope = SlotContentFitScope.maybeOf(context);
+    final shrinkHeight = widget.shrinkWrap || (fitScope?.fitHeight ?? false);
+    if (!shrinkHeight) return surface;
     final grid = _config.value.effectiveGrid;
     final rows = grid.items.values.fold<int>(
       0,

@@ -1781,7 +1781,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       regionSlotIds: [for (final item in slotsFor(id)) item.id],
       axis: spec.axis,
       expand: false,
-      stretch: false,
+      stretch: spec.stretch,
       emphasis: emphasis,
       preferredSizes: {
         if (slot case NativePreferredSizeWidget native)

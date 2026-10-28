@@ -285,6 +285,8 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
           propertyDescriptors: ScaffoldPageConfig.propertyDescriptors,
           isPropertyAvailable: (nativeConfig, descriptor) =>
               descriptor.id == 'bodyMode' ||
+              descriptor.id == 'extendBody' ||
+              descriptor.id == 'extendBodyBehindAppBar' ||
               ScaffoldBodyMode.fromName(
                     nativeConfig.stringProperty('bodyMode'),
                   ) !=
@@ -325,6 +327,8 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
             ]),
             builder: (context, _) => Scaffold(
               key: _scaffoldKey,
+              extendBody: config.extendBody,
+              extendBodyBehindAppBar: config.extendBodyBehindAppBar,
               appBar: config.bodyMode == ScaffoldBodyMode.customScrollView
                   ? null
                   : _appBar(editor),

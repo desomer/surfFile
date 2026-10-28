@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -67,6 +66,8 @@ void main() {
 
     final defaultConfig = ScaffoldPageConfig();
     expect(defaultConfig.bodyMode, ScaffoldBodyMode.standard);
+    expect(defaultConfig.extendBody, isFalse);
+    expect(defaultConfig.extendBodyBehindAppBar, isFalse);
     expect(defaultConfig.scrollDirection, Axis.vertical);
     expect(defaultConfig.reverse, isFalse);
     expect(defaultConfig.primary, isNull);
@@ -80,6 +81,8 @@ void main() {
         ScaffoldPageRegion.body: const ['scaffold:body'],
       },
       bodyMode: ScaffoldBodyMode.customScrollView,
+      extendBody: true,
+      extendBodyBehindAppBar: true,
       scrollDirection: Axis.horizontal,
       reverse: true,
       primary: false,
@@ -87,6 +90,8 @@ void main() {
       clipBehavior: Clip.antiAlias,
     );
     expect(configured.bodyMode, ScaffoldBodyMode.customScrollView);
+    expect(configured.extendBody, isTrue);
+    expect(configured.extendBodyBehindAppBar, isTrue);
     expect(configured.scrollDirection, Axis.horizontal);
     expect(configured.reverse, isTrue);
     expect(configured.primary, isFalse);
@@ -95,6 +100,8 @@ void main() {
 
     final restored = ScaffoldPageConfig.fromJson(configured.toJson());
     expect(restored.bodyMode, ScaffoldBodyMode.customScrollView);
+    expect(restored.extendBody, isTrue);
+    expect(restored.extendBodyBehindAppBar, isTrue);
     expect(restored.scrollDirection, Axis.horizontal);
     expect(restored.reverse, isTrue);
     expect(restored.primary, isFalse);
@@ -103,10 +110,14 @@ void main() {
 
     final singleScroll = restored
         .withBodyMode(ScaffoldBodyMode.singleChildScrollView)
+        .withExtendBody(false)
+        .withExtendBodyBehindAppBar(false)
         .withScrollDirection(Axis.vertical)
         .withReverse(false)
         .withScrollPadding(8);
     expect(singleScroll.bodyMode, ScaffoldBodyMode.singleChildScrollView);
+    expect(singleScroll.extendBody, isFalse);
+    expect(singleScroll.extendBodyBehindAppBar, isFalse);
     expect(singleScroll.scrollDirection, Axis.vertical);
     expect(singleScroll.reverse, isFalse);
     expect(singleScroll.scrollPadding, 8.0);
@@ -124,12 +135,17 @@ void main() {
       await pumpPage(
         tester,
         const SuperPage(
+          extendBody: true,
+          extendBodyBehindAppBar: true,
           appBar: SuperAppBar(title: Text('Fixed Header')),
           child: Text('Fixed Body'),
         ),
         registry: Registry(),
       );
 
+      final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+      expect(scaffold.extendBody, isTrue);
+      expect(scaffold.extendBodyBehindAppBar, isTrue);
       expect(find.byType(AppBar), findsOneWidget);
       expect(find.byType(SliverAppBar), findsNothing);
       expect(
@@ -628,6 +644,91 @@ void main() {
       );
       expect(find.text('Body Content'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperLayout as SuperPage body child sizes to its center children height and scrolls without explicit pixel height on MainLayout',
+    (tester) async {
+      for (final mode in [
+        ScaffoldBodyMode.singleChildScrollView,
+        ScaffoldBodyMode.customScrollView,
+      ]) {
+        final registry = Registry()..bootstrap();
+        await pumpPage(
+          tester,
+          SuperPage(
+            id: 'page-${mode.name}',
+            bodyMode: mode,
+            appBar: const SuperAppBar(title: Text('Header')),
+            child: SuperLayout(
+              key: ValueKey('main-layout-${mode.name}'),
+              label: 'Main Layout',
+              slots: [
+                BuilderSlot(
+                  id: 'child-1',
+                  label: 'Child 1',
+                  preferredSize: const Size(double.infinity, 420),
+                  builder: (_) => const ColoredBox(
+                    color: Colors.blue,
+                    child: Text('MainLayout Child 1'),
+                  ),
+                ),
+                BuilderSlot(
+                  id: 'child-2',
+                  label: 'Child 2',
+                  preferredSize: const Size(double.infinity, 420),
+                  builder: (_) => const ColoredBox(
+                    color: Colors.green,
+                    child: Text('MainLayout Child 2'),
+                  ),
+                ),
+                BuilderSlot(
+                  id: 'child-3',
+                  label: 'Child 3',
+                  sizing: SlotSizing.intrinsic,
+                  builder: (_) => const SizedBox(
+                    height: 360,
+                    child: Text('MainLayout Child 3'),
+                  ),
+                ),
+              ],
+              config: const SuperLayoutConfig(
+                placements: {
+                  SuperLayoutZone.center: ['child-1', 'child-2', 'child-3'],
+                },
+              ),
+            ),
+          ),
+          registry: registry,
+        );
+
+        final mainLayoutFinder = find.byKey(
+          ValueKey('main-layout-${mode.name}'),
+        );
+        final mainLayoutSize = tester.getSize(mainLayoutFinder);
+        // 420 + 420 + 360 = 1200 px (> 600 px test viewport height)
+        expect(mainLayoutSize.height, 1200.0);
+        expect(mainLayoutSize.width, 800.0);
+
+        final scrollFinder = find.byKey(
+          ValueKey(
+            mode == ScaffoldBodyMode.singleChildScrollView
+                ? 'scaffold-page-single-child-scroll-view'
+                : 'scaffold-page-custom-scroll-view',
+          ),
+        );
+        final initialTop = tester.getTopLeft(find.text('MainLayout Child 1')).dy;
+        await tester.drag(scrollFinder, const Offset(0, -450));
+        await tester.pumpAndSettle();
+
+        expect(
+          tester.getTopLeft(find.text('MainLayout Child 1')).dy,
+          lessThan(initialTop - 350),
+        );
+        expect(find.text('MainLayout Child 3'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
     },
   );
 }

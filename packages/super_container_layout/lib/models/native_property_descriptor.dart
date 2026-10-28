@@ -760,6 +760,20 @@ const List<NativePropertyDescriptor> scaffoldPagePropertyDescriptors = [
     ],
   ),
   NativePropertyDescriptor(
+    id: 'extendBodyBehindAppBar',
+    label: 'Étendre le corps derrière l’AppBar (extendBodyBehindAppBar)',
+    subtitle: 'Fait passer la zone Corps sous l’AppBar en haut de la page',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
+    id: 'extendBody',
+    label: 'Étendre le corps sous la barre basse (extendBody)',
+    subtitle: 'Fait passer la zone Corps derrière la barre de navigation basse',
+    editorType: NativePropertyEditorType.bool,
+    defaultValue: false,
+  ),
+  NativePropertyDescriptor(
     id: 'scrollDirection',
     label: 'Axe de défilement',
     subtitle: 'Direction du défilement pour SingleChildScrollView / CustomScrollView',

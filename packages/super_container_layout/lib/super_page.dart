@@ -22,6 +22,8 @@ class SuperPage extends StatelessWidget {
     this.slots = const [],
     this.pageConfig,
     this.bodyMode,
+    this.extendBody,
+    this.extendBodyBehindAppBar,
     this.scrollDirection,
     this.reverse,
     this.primary,
@@ -55,6 +57,8 @@ class SuperPage extends StatelessWidget {
 
   /// Mode d'affichage de la zone `body` (`standard`, `singleChildScrollView`, `customScrollView`).
   final ScaffoldBodyMode? bodyMode;
+  final bool? extendBody;
+  final bool? extendBodyBehindAppBar;
   final Axis? scrollDirection;
   final bool? reverse;
   final bool? primary;
@@ -91,6 +95,14 @@ class SuperPage extends StatelessWidget {
         );
     if (bodyMode != null) {
       resolvedConfig = resolvedConfig.withBodyMode(bodyMode);
+    }
+    if (extendBody != null) {
+      resolvedConfig = resolvedConfig.withExtendBody(extendBody);
+    }
+    if (extendBodyBehindAppBar != null) {
+      resolvedConfig = resolvedConfig.withExtendBodyBehindAppBar(
+        extendBodyBehindAppBar,
+      );
     }
     if (scrollDirection != null) {
       resolvedConfig = resolvedConfig.withScrollDirection(scrollDirection);

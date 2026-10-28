@@ -429,11 +429,10 @@ class SlotStack extends StatelessWidget {
               ? preferredSizes[slot.id] != null
               : slot.preferredSize != null);
     if (hasExplicitMain) return false;
+    if (parentFitMain || flow.scrollable) return true;
     final fitOverride = constraints?.fitContent;
     if (fitOverride != null) return fitOverride;
-    if (parentFitMain) return true;
     return !flow.expandSlots ||
-        flow.scrollable ||
         flow.mainAxisAlignment != MainAxisAlignment.start;
   }
 
@@ -719,11 +718,17 @@ class _RenderSlotFlex extends RenderBox
     final maxCross = rawMaxCross.isFinite
         ? rawMaxCross
         : (viewport != null ? crossExtent(viewport) : double.infinity);
-    final layoutMain = mainExtent(_configuration.layoutSize);
-    final layoutCross = crossExtent(_configuration.layoutSize);
+    final rawLayoutMain = mainExtent(_configuration.layoutSize);
+    final rawLayoutCross = crossExtent(_configuration.layoutSize);
+    final layoutMain = rawLayoutMain.isFinite
+        ? rawLayoutMain
+        : (viewport != null ? mainExtent(viewport) : double.infinity);
+    final layoutCross = rawLayoutCross.isFinite
+        ? rawLayoutCross
+        : (viewport != null ? crossExtent(viewport) : double.infinity);
     final scrollable = _configuration.scrollable || !rawMaxMain.isFinite;
     final expand = _configuration.expand && maxMain.isFinite;
-    final stretch = _configuration.stretch && maxCross.isFinite;
+    final stretch = _configuration.stretch && rawMaxCross.isFinite;
     final stretchCross =
         stretch &&
         _configuration.crossAxisAlignment == CrossAxisAlignment.stretch;
@@ -743,7 +748,7 @@ class _RenderSlotFlex extends RenderBox
             : available,
       );
       double? preferredMain = configured == null
-          ? legacy == null
+          ? legacy == null || !mainExtent(legacy).isFinite
                 ? null
                 : mainExtent(legacy)
           : value(
@@ -754,7 +759,7 @@ class _RenderSlotFlex extends RenderBox
               layoutMain,
             );
       double? preferredCross = configured == null
-          ? legacy == null
+          ? legacy == null || !crossExtent(legacy).isFinite
                 ? null
                 : crossExtent(legacy)
           : value(
@@ -775,6 +780,7 @@ class _RenderSlotFlex extends RenderBox
         limit ?? (available.isFinite ? available : double.infinity),
       );
       final mainCap = scrollable ? double.infinity : null;
+      final crossCap = !rawMaxCross.isFinite ? double.infinity : null;
       final minMain = bound(
         configured == null
             ? null
@@ -799,7 +805,7 @@ class _RenderSlotFlex extends RenderBox
             : configured.maxHeight,
         maxMain,
         layoutMain,
-        maxMain,
+        mainCap ?? maxMain,
         limit: mainCap,
       );
       final minCross = bound(
@@ -811,7 +817,13 @@ class _RenderSlotFlex extends RenderBox
         maxCross,
         layoutCross,
         0,
+        limit: crossCap,
       );
+      final hasConfiguredMaxCross =
+          configured != null &&
+          (horizontal
+              ? configured.maxHeight != null
+              : configured.maxWidth != null);
       final maxConfiguredCross = bound(
         configured == null
             ? null
@@ -820,12 +832,13 @@ class _RenderSlotFlex extends RenderBox
             : configured.maxWidth,
         maxCross,
         layoutCross,
-        maxCross,
+        crossCap ?? maxCross,
+        limit: crossCap,
       );
       var effectiveMaxMain = maxConfiguredMain < minMain
           ? minMain
           : maxConfiguredMain;
-      final effectiveMaxCross = maxConfiguredCross < minCross
+      var effectiveMaxCross = maxConfiguredCross < minCross
           ? minCross
           : maxConfiguredCross;
       if (preferredMain != null) {
@@ -838,7 +851,17 @@ class _RenderSlotFlex extends RenderBox
         }
       }
       if (preferredCross != null) {
-        preferredCross = preferredCross.clamp(minCross, effectiveMaxCross);
+        preferredCross = preferredCross.clamp(
+          minCross,
+          hasConfiguredMaxCross || rawMaxCross.isFinite
+              ? effectiveMaxCross
+              : double.infinity,
+        );
+        if (!hasConfiguredMaxCross &&
+            !rawMaxCross.isFinite &&
+            preferredCross > effectiveMaxCross) {
+          effectiveMaxCross = preferredCross;
+        }
       }
       bounds.add((
         minMain,
@@ -857,12 +880,11 @@ class _RenderSlotFlex extends RenderBox
     var preferredExtent = 0.0;
     var fills = 0;
     bool fillsSpace(int index) {
-      if (!expand || bounds[index].$3 != null) return false;
+      if (!expand || scrollable || bounds[index].$3 != null) return false;
       final fitOverride = sizeConstraints[index]?.fitContent;
       if (fitOverride != null) return !fitOverride;
       if (_configuration.sizing[index] != SlotSizing.fill) return false;
       return _configuration.expandSlots &&
-          !scrollable &&
           _configuration.mainAxisAlignment == MainAxisAlignment.start;
     }
 

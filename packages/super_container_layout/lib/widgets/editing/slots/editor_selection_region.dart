@@ -129,19 +129,16 @@ class SliverPointerRegion extends SingleChildRenderObjectWidget {
 class _RenderSliverPointerRegion extends RenderProxySliver
     implements MouseTrackerAnnotation {
   _RenderSliverPointerRegion({
-    PointerEnterEventListener? onEnter,
+    this._onEnter,
     this.onHover,
-    PointerExitEventListener? onExit,
-    MouseCursor cursor = MouseCursor.defer,
+    this._onExit,
+    this._cursor = MouseCursor.defer,
     this.onPointerDown,
     this.onPointerMove,
     this.onPointerUp,
     this.onPointerCancel,
-    CustomPainter? foregroundPainter,
-  }) : _onEnter = onEnter,
-       _onExit = onExit,
-       _cursor = cursor,
-       _foregroundPainter = foregroundPainter;
+    this._foregroundPainter,
+  });
 
   PointerEnterEventListener? _onEnter;
   @override
