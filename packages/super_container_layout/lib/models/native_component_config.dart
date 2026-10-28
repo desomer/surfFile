@@ -649,3 +649,74 @@ class NativeComponentConfig extends ComponentConfig {
     }
   }
 }
+
+String _formatNativeNumber(double value) =>
+    value == value.roundToDouble() ? '${value.round()}' : '$value';
+
+String _formatNativeDescriptorValue(
+  NativePropertyDescriptor descriptor,
+  Object value,
+) => switch (descriptor.editorType) {
+  NativePropertyEditorType.bool => (value as bool) ? 'Oui' : 'Non',
+  NativePropertyEditorType.number =>
+    _formatNativeNumber((value as num).toDouble()),
+  NativePropertyEditorType.color =>
+    value is Color ? JsonColor.toHex(value) : '$value',
+  NativePropertyEditorType.select =>
+    descriptor.options
+            .where((option) => option.value == value)
+            .firstOrNull
+            ?.label ??
+        '$value',
+  NativePropertyEditorType.shape =>
+    value is NativeShapeConfig
+        ? value.kind.label
+        : NativeShapeConfig.fromJson(value).kind.label,
+};
+
+/// Résumé des propriétés d'un [NativeComponentConfig] pour l'info-bulle du menu contextuel.
+String formatNativeComponentTooltip({
+  required String title,
+  required NativeComponentConfig config,
+  List<({String label, int count, bool enabled})> regions = const [],
+  List<NativePropertyDescriptor> propertyDescriptors = const [],
+}) {
+  final activeRegions = [
+    for (final region in regions)
+      if (region.enabled) '${region.label} (${region.count})',
+  ];
+  final inactiveRegions = [
+    for (final region in regions)
+      if (!region.enabled) region.label,
+  ];
+  final configuredProps = <String>[];
+  final defaultProps = <String>[];
+  for (final descriptor in propertyDescriptors) {
+    final raw = config.property(descriptor.id);
+    if (raw != null) {
+      configuredProps.add(
+        '${descriptor.label} : ${_formatNativeDescriptorValue(descriptor, raw)}',
+      );
+    } else if (descriptor.defaultValue != null) {
+      defaultProps.add(
+        '${descriptor.label} : ${_formatNativeDescriptorValue(descriptor, descriptor.defaultValue!)}',
+      );
+    }
+  }
+  final propSummary = configuredProps.isNotEmpty
+      ? configuredProps
+      : defaultProps.take(3).toList();
+  return [
+    title,
+    if (activeRegions.isNotEmpty)
+      'Zones actives : ${activeRegions.join(', ')}'
+    else if (regions.isNotEmpty)
+      'Zones actives : Aucune',
+    if (inactiveRegions.isNotEmpty)
+      'Zones masquées : ${inactiveRegions.join(', ')}',
+    if (config.binding != null)
+      'Liaison : ${config.binding!.repositoryId ?? 'Hérité'} → ${config.binding!.path}',
+    if (propSummary.isNotEmpty) propSummary.join(' · '),
+  ].join('\n');
+}
+

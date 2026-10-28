@@ -548,7 +548,7 @@ L'habillage de l'arrière-plan combine les **propriétés racines** du document 
    - **Couleur de base (`color`)** : `"#RRGGBB"` ou `"#AARRGGBB"` (par défaut `#F8F9FC` en mode clair, `#171A23` en mode sombre). Définit la couleur du `Scaffold`, la couleur `surface` du thème, le fond par défaut de l'`ApplicationBar` et adapte automatiquement la couleur du texte (`onSurface`) selon sa luminosité.
    - **Dégradé ou image plein écran (`fill`)** :
      - Dégradé `"linear"`, `"radial"` ou `"sweep"` entre `start` et `end` (modulé par `backgroundOpacity`). Lorsque `fill.type` n'est pas `"solid"` ou qu'une `imageUrl` est définie, le `Scaffold` devient automatiquement transparent pour laisser voir le dégradé et/ou l'image sur tout l'écran.
-     - Image d'arrière-plan via `fill.imageUrl` (`https://...`), `fill.imageFit` et `fill.imageOpacity`.
+     - Image d'arrière-plan via `fill.imageUrl` (URL `https://...` dont `.webp` et `.svg`, Data URI `data:image/...;base64,...`, chaîne Base64 brute ou SVG inline `<svg...>`), `fill.imageFit` et `fill.imageOpacity`.
    - **Cadre et lueur périphériques de l'écran** :
      - `borderWidth` (**`0` à `4`**) et `borderColor` (`"#RRGGBB"`) : dessine une bordure autour de toute la zone de l'application.
      - `neon` (`true` ou `{"enabled": true, "color": "#00FFFF", "intensity": 0..3}`) : ajoute un halo néon autour de l'écran.
@@ -579,7 +579,7 @@ Chaque carte (`styles["<cardId>"]`) ou surface dispose des 8 familles de réglag
      - `end` : `"#RRGGBB"` ou `"#AARRGGBB"` (défaut `"#B794F4"`).
      - `angle` : nombre de **`0` à `360`** degrés (`45` par défaut ; utilisé par `"linear"` et `"sweep"`).
      - `radius` : nombre de **`0.1` à `2.0`** (`0.8` par défaut ; utilisé par `"radial"`).
-     - `imageUrl` : `string` (`"https://..."`) — affiche une image réseau en fond de la carte (peut se superposer à `color` ou au dégradé).
+     - `imageUrl` : `string` (`"https://..."` incluant `.webp` et `.svg`, `"data:image/...;base64,..."`, `"data:image/svg+xml;utf8,<svg..."`, chaîne Base64 brute ou code SVG `<svg...>`) — affiche une image en fond de la carte (peut se superposer à `color` ou au dégradé).
      - `imageFit` : `"cover"` (défaut), `"contain"`, `"fill"`, `"fitWidth"`, `"fitHeight"`, `"none"`, `"scaleDown"`.
      - `imageOpacity` : nombre de **`0.0` à `1.0`** (`1.0` par défaut).
 

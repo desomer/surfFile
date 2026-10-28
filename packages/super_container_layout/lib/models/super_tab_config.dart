@@ -1000,3 +1000,49 @@ class SuperTabConfig extends ComponentConfig {
     ),
   ]);
 }
+
+String _formatTabNumber(double value) =>
+    value == value.roundToDouble() ? '${value.round()}' : '$value';
+
+/// Résumé des propriétés d'un [SuperTabConfig] pour l'info-bulle du menu contextuel.
+String formatSuperTabTooltip({
+  required String title,
+  required SuperTabConfig config,
+}) {
+  final modeLabel =
+      config.mode == SuperTabMode.dynamic ? 'Dynamique' : 'Statique';
+  final posLabel =
+      config.tabBarPosition == SuperTabBarPosition.bottom ? 'En bas' : 'En haut';
+  final bindingLabel = config.binding == null
+      ? null
+      : '${config.binding!.repositoryId ?? 'Hérité'} → ${config.binding!.path}';
+  final contentLine = config.mode == SuperTabMode.dynamic
+      ? [
+          'Liaison : ${bindingLabel ?? 'Aucune'}',
+          'Ajout : ${config.allowAdd ? 'Activé' : 'Désactivé'}',
+          'Suppression : ${config.allowRemove ? 'Activée' : 'Désactivée'}',
+        ].join(' · ')
+      : [
+          'Onglets : ${config.slotsOf(SuperTabConfig.tabsZone).length}',
+          'Index initial : ${config.initialIndex}',
+          if (bindingLabel != null) 'Liaison : $bindingLabel',
+        ].join(' · ');
+  final indicatorLabel = switch (config.indicatorKind) {
+    SuperTabIndicatorKind.underline =>
+      'Souligné (${_formatTabNumber(config.indicatorWeight)} px)',
+    SuperTabIndicatorKind.box =>
+      'Boîte (rayon ${_formatTabNumber(config.indicatorRadius)} px)',
+    SuperTabIndicatorKind.none => 'Aucun',
+  };
+  return [
+    title,
+    [
+      'Mode : $modeLabel',
+      'Barre : $posLabel',
+      if (config.isScrollable) 'Défilable',
+    ].join(' · '),
+    contentLine,
+    'Indicateur : $indicatorLabel',
+  ].join('\n');
+}
+

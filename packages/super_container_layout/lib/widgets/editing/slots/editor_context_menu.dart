@@ -83,12 +83,14 @@ class EditorContextMenuEntry extends InheritedWidget {
     required this.label,
     required this.onSelected,
     required this.enabled,
+    this.tooltip,
     this.destination = EditorMenuDestination.configuration,
     required super.child,
     super.key,
   });
 
   final String label;
+  final String? tooltip;
   final Future<void> Function() onSelected;
   final bool enabled;
   final EditorMenuDestination destination;
@@ -96,6 +98,7 @@ class EditorContextMenuEntry extends InheritedWidget {
   @override
   bool updateShouldNotify(EditorContextMenuEntry oldWidget) =>
       label != oldWidget.label ||
+      tooltip != oldWidget.tooltip ||
       onSelected != oldWidget.onSelected ||
       enabled != oldWidget.enabled ||
       destination != oldWidget.destination;

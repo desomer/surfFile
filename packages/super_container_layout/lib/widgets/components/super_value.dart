@@ -769,6 +769,10 @@ class _SuperValueState extends State<SuperValue> {
             id: widget.id,
             label: 'Valeur',
             menuType: 'Value',
+            menuTooltip: () => formatSuperValueTooltip(
+              title: _surface.currentState?.titleLabel ?? 'Valeur',
+              config: config,
+            ),
             onEdit: () async {
               if (_editorText != null) return;
               final initial = configuration.value;

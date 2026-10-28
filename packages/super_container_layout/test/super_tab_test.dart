@@ -81,67 +81,70 @@ void main() {
     );
   }
 
-  test('SuperTabConfig round-trips through JSON and ComponentConfigCatalog', () {
-    final config = SuperTabConfig(
-      mode: SuperTabMode.static,
-      tabBarPosition: SuperTabBarPosition.bottom,
-      isScrollable: true,
-      initialIndex: 1,
-      binding: JsonTextBinding(repositoryId: repositoryId, path: 'ui.tab'),
-      tabBarStyle: const ContainerStyle(
-        color: Color(0xFF1E293B),
-        radius: 16,
-        borderWidth: 2,
-        borderColor: Color(0xFF38BDF8),
-        elevation: 6,
-        padding: 4,
-        margin: 8,
-      ),
-      indicatorKind: SuperTabIndicatorKind.box,
-      indicatorSize: TabBarIndicatorSize.label,
-      indicatorColor: const Color(0xFF0EA5E9),
-      indicatorWeight: 3,
-      indicatorRadius: 12,
-      indicatorHorizontalPadding: 6,
-      indicatorVerticalPadding: 4,
-      labelColor: const Color(0xFFFFFFFF),
-      unselectedLabelColor: const Color(0xFF94A3B8),
-      overlayColor: const Color(0x3338BDF8),
-      labelHorizontalPadding: 20,
-      dividerColor: const Color(0xFF334155),
-      dividerHeight: 2,
-      tabAlignment: TabAlignment.start,
-      placements: const {
-        'tabs': ['tab-1', 'tab-2'],
-        'content:tab-1': ['val-1'],
-        'content:tab-2': ['val-2'],
-      },
-      slotTypes: const {
-        'tab-1': 'registry:Action',
-        'tab-2': 'registry:Action',
-        'val-1': 'registry:Value',
-        'val-2': 'registry:Value',
-      },
-      zoneAxes: const {'content:tab-1': Axis.horizontal},
-      slotLabels: const {'tab-1': 'Premier onglet'},
-    );
+  test(
+    'SuperTabConfig round-trips through JSON and ComponentConfigCatalog',
+    () {
+      final config = SuperTabConfig(
+        mode: SuperTabMode.static,
+        tabBarPosition: SuperTabBarPosition.bottom,
+        isScrollable: true,
+        initialIndex: 1,
+        binding: JsonTextBinding(repositoryId: repositoryId, path: 'ui.tab'),
+        tabBarStyle: const ContainerStyle(
+          color: Color(0xFF1E293B),
+          radius: 16,
+          borderWidth: 2,
+          borderColor: Color(0xFF38BDF8),
+          elevation: 6,
+          padding: 4,
+          margin: 8,
+        ),
+        indicatorKind: SuperTabIndicatorKind.box,
+        indicatorSize: TabBarIndicatorSize.label,
+        indicatorColor: const Color(0xFF0EA5E9),
+        indicatorWeight: 3,
+        indicatorRadius: 12,
+        indicatorHorizontalPadding: 6,
+        indicatorVerticalPadding: 4,
+        labelColor: const Color(0xFFFFFFFF),
+        unselectedLabelColor: const Color(0xFF94A3B8),
+        overlayColor: const Color(0x3338BDF8),
+        labelHorizontalPadding: 20,
+        dividerColor: const Color(0xFF334155),
+        dividerHeight: 2,
+        tabAlignment: TabAlignment.start,
+        placements: const {
+          'tabs': ['tab-1', 'tab-2'],
+          'content:tab-1': ['val-1'],
+          'content:tab-2': ['val-2'],
+        },
+        slotTypes: const {
+          'tab-1': 'registry:Action',
+          'tab-2': 'registry:Action',
+          'val-1': 'registry:Value',
+          'val-2': 'registry:Value',
+        },
+        zoneAxes: const {'content:tab-1': Axis.horizontal},
+        slotLabels: const {'tab-1': 'Premier onglet'},
+      );
 
-    final typedJson = config.toTypedJson();
-    expect(typedJson['type'], 'tab');
-    final decoded = ComponentConfig.fromJson(typedJson);
-    expect(decoded, isA<SuperTabConfig>());
-    expect(decoded, equals(config));
+      final typedJson = config.toTypedJson();
+      expect(typedJson['type'], 'tab');
+      final decoded = ComponentConfig.fromJson(typedJson);
+      expect(decoded, isA<SuperTabConfig>());
+      expect(decoded, equals(config));
 
-    final compactJson = config.toTypedCompactJson();
-    expect(ComponentConfig.fromJson(compactJson), equals(config));
+      final compactJson = config.toTypedCompactJson();
+      expect(ComponentConfig.fromJson(compactJson), equals(config));
 
-    // Removing a tab slot also removes its content zone and children
-    final afterRemove = config.withoutSlot('tab-1');
-    expect(afterRemove.tabSlotIds, ['tab-2']);
-    expect(afterRemove.slotsOf('content:tab-1'), isEmpty);
-    expect(afterRemove.placedSlotIds, {'tab-2', 'val-2'});
-    expect(afterRemove.zoneAxes.containsKey('content:tab-1'), isFalse);
-  });
+      // Removing a tab slot also removes its content zone and children
+      final afterRemove = config.withoutSlot('tab-1');
+      expect(afterRemove.tabSlotIds, ['tab-2']);
+      expect(afterRemove.slotsOf('content:tab-1'), isEmpty);
+      expect(afterRemove.placedSlotIds, {'tab-2', 'val-2'});
+      expect(afterRemove.zoneAxes.containsKey('content:tab-1'), isFalse);
+    },
+  );
 
   testWidgets(
     'SuperTab static mode renders TabBar with SuperAction tabs and switches TabBarView contents',
@@ -175,10 +178,7 @@ void main() {
               ),
               const SuperAction(
                 id: 'tab-disabled',
-                config: SuperActionConfig(
-                  label: 'Verrouillé',
-                  enabled: false,
-                ),
+                config: SuperActionConfig(label: 'Verrouillé', enabled: false),
               ),
             ],
             children: const [
@@ -257,17 +257,18 @@ void main() {
       expect(find.text('Valeur A'), findsOneWidget);
 
       // Test page duplication remaps content:<tabId> regions
-      final appearance = AppearanceScope.controllerOf(
-        tester.element(find.byType(SuperTab)),
-      )!.value.withComponent(
-        'root',
-        ScaffoldPageConfig(
-          placements: {
-            ScaffoldPageRegion.body: const ['my-tabs'],
-          },
-          slotTypes: const {'my-tabs': 'registry:Tab'},
-        ),
-      );
+      final appearance =
+          AppearanceScope.controllerOf(tester.element(find.byType(SuperTab)))!
+              .value
+              .withComponent(
+                'root',
+                ScaffoldPageConfig(
+                  placements: {
+                    ScaffoldPageRegion.body: const ['my-tabs'],
+                  },
+                  slotTypes: const {'my-tabs': 'registry:Tab'},
+                ),
+              );
       final duplicated = EditorPageGraph.duplicate(
         appearance: appearance,
         registry: registry,
@@ -357,22 +358,28 @@ void main() {
           'tpl-value': 'registry:Value',
         },
       );
-      registry.valueController('tpl-value', fallback: SuperValueConfig(
-        mode: SuperValueMode.display,
-        binding: JsonTextBinding(
-          repositoryId: repositoryId,
-          path: 'categories[?].detail',
-        ),
-      ));
-      registry.actionController('tpl-action', fallback: SuperActionConfig(
-        label: 'Catégorie',
-        propertyBindings: {
-          SuperActionProperty.label: JsonTextBinding(
+      registry.valueController(
+        'tpl-value',
+        fallback: SuperValueConfig(
+          mode: SuperValueMode.display,
+          binding: JsonTextBinding(
             repositoryId: repositoryId,
-            path: 'categories[?].nom',
+            path: 'categories[?].detail',
           ),
-        },
-      ));
+        ),
+      );
+      registry.actionController(
+        'tpl-action',
+        fallback: SuperActionConfig(
+          label: 'Catégorie',
+          propertyBindings: {
+            SuperActionProperty.label: JsonTextBinding(
+              repositoryId: repositoryId,
+              path: 'categories[?].nom',
+            ),
+          },
+        ),
+      );
 
       await mount(
         const SuperPage(child: SuperTab(id: 'dyn-tabs')),
@@ -591,7 +598,9 @@ void main() {
 
       // 1) Component Tab & content zones open the simple properties dialog (showSuperTabEditor)
       expect(
-        editorState.definition(SuperTabConfig.contentZoneFor('st-1')).menuDestination,
+        editorState
+            .definition(SuperTabConfig.contentZoneFor('st-1'))
+            .menuDestination,
         EditorMenuDestination.configuration,
       );
       final simpleFuture = editorState.configure();
@@ -629,6 +638,83 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('super-tab-bar-style-apply')));
       await tester.pumpAndSettle();
       await styleFuture;
+    },
+  );
+
+  testWidgets(
+    'SuperTab lays out and switches tabs inside an unbounded vertical scrollable parent',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      registry.tabController(
+        'scroll-static-tabs',
+        fallback: SuperTabConfig(
+          placements: const {
+            'tabs': ['st-a', 'st-b'],
+            'content:st-a': ['val-a'],
+            'content:st-b': ['val-b'],
+          },
+          slotTypes: const {
+            'st-a': 'registry:Action',
+            'st-b': 'registry:Action',
+            'val-a': 'registry:Value',
+            'val-b': 'registry:Value',
+          },
+        ),
+      );
+      registry.actionController(
+        'st-a',
+        fallback: const SuperActionConfig(label: 'Joyeuses Fêtes'),
+      );
+      registry.actionController(
+        'st-b',
+        fallback: const SuperActionConfig(label: 'Anniversaire'),
+      );
+      registry.valueController(
+        'val-a',
+        fallback: const SuperValueConfig(initialText: 'Cartes de fêtes'),
+      );
+      registry.valueController(
+        'val-b',
+        fallback: const SuperValueConfig(initialText: 'Cartes anniversaire'),
+      );
+
+      await mount(
+        SuperPage(
+          id: 'scroll-page',
+          pageConfig: ScaffoldPageConfig(
+            bodyMode: ScaffoldBodyMode.singleChildScrollView,
+            placements: {
+              ScaffoldPageRegion.body: const [
+                'scroll-static-tabs',
+                'scroll-empty-tabs',
+              ],
+            },
+            slotTypes: const {
+              'scroll-static-tabs': 'factory:Tab',
+              'scroll-empty-tabs': 'factory:Tab',
+            },
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Joyeuses Fêtes'), findsOneWidget);
+      expect(find.text('Anniversaire'), findsOneWidget);
+      expect(find.text('Cartes de fêtes'), findsOneWidget);
+      expect(find.text('Cartes anniversaire'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('super-tab-empty-scroll-empty-tabs')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Anniversaire'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('Cartes anniversaire'), findsOneWidget);
+      expect(find.text('Cartes de fêtes'), findsNothing);
     },
   );
 }

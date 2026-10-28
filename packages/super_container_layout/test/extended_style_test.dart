@@ -1,7 +1,14 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
+import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/style_extras.dart';
 import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
@@ -558,5 +565,267 @@ void main() {
         expect(tester.takeException(), isNull);
       },
     );
+
+    testWidgets(
+      'surfaces resolve and render webp, svg and base64 via imageUrl',
+      (tester) async {
+        // Minimal 1x1 lossy WebP in base64 ("RIFF....WEBPVP8 ...")
+        const webpBase64 =
+            'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+        final webpBytes = base64Decode(webpBase64);
+
+        const svgMarkup =
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">'
+            '<rect width="40" height="20" fill="#5268D9"/>'
+            '</svg>';
+        final svgBase64 = base64Encode(utf8.encode(svgMarkup));
+
+        // 1) WebP network URL
+        const webpUrlFill = ContainerFill(
+          imageUrl: 'https://example.com/banner.webp',
+        );
+        final webpUrlDecoration = webpUrlFill.decorationImage();
+        expect(webpUrlDecoration, isNotNull);
+        expect(webpUrlDecoration!.image, isA<NetworkImage>());
+        expect(
+          (webpUrlDecoration.image as NetworkImage).url,
+          'https://example.com/banner.webp',
+        );
+
+        // 2) SVG network URL
+        const svgUrlFill = ContainerFill(
+          imageUrl: 'https://example.com/vector.svg',
+        );
+        final svgUrlDecoration = svgUrlFill.decorationImage();
+        expect(svgUrlDecoration, isNotNull);
+        expect(svgUrlDecoration!.image, isA<NetworkImage>());
+        expect(
+          (svgUrlDecoration.image as NetworkImage).url,
+          'https://example.com/vector.svg',
+        );
+
+        // 3) WebP data URI and raw base64
+        const webpDataUriFill = ContainerFill(
+          imageUrl: 'data:image/webp;base64,$webpBase64',
+        );
+        final webpDataDecoration = webpDataUriFill.decorationImage();
+        expect(webpDataDecoration, isNotNull);
+        expect(webpDataDecoration!.image, isA<MemoryImage>());
+        expect((webpDataDecoration.image as MemoryImage).bytes, webpBytes);
+
+        const webpRawBase64Fill = ContainerFill(imageUrl: webpBase64);
+        final webpRawDecoration = webpRawBase64Fill.decorationImage();
+        expect(webpRawDecoration, isNotNull);
+        expect(webpRawDecoration!.image, isA<MemoryImage>());
+        expect((webpRawDecoration.image as MemoryImage).bytes, webpBytes);
+
+        // 4) SVG data URI (base64 & utf8), raw base64 and inline SVG
+        final svgDataBase64Fill = ContainerFill(
+          imageUrl: 'data:image/svg+xml;base64,$svgBase64',
+        );
+        expect(
+          svgDataBase64Fill.decorationImage()!.image,
+          isA<SvgMemoryImage>(),
+        );
+
+        const svgDataUtf8Fill = ContainerFill(
+          imageUrl: 'data:image/svg+xml;utf8,$svgMarkup',
+        );
+        expect(svgDataUtf8Fill.decorationImage()!.image, isA<SvgMemoryImage>());
+
+        final svgRawBase64Fill = ContainerFill(imageUrl: svgBase64);
+        expect(
+          svgRawBase64Fill.decorationImage()!.image,
+          isA<SvgMemoryImage>(),
+        );
+
+        const svgInlineFill = ContainerFill(imageUrl: svgMarkup);
+        expect(svgInlineFill.decorationImage()!.image, isA<SvgMemoryImage>());
+
+        // Verify SVG memory image decodes into a real ui.Image with 2:1 aspect ratio
+        final svgCompleter = Completer<ImageInfo>();
+        final stream = svgDataBase64Fill.decorationImage()!.image.resolve(
+          ImageConfiguration.empty,
+        );
+        final listener = ImageStreamListener(
+          (info, _) {
+            if (!svgCompleter.isCompleted) svgCompleter.complete(info);
+          },
+          onError: (error, stackTrace) {
+            if (!svgCompleter.isCompleted) {
+              svgCompleter.completeError(error, stackTrace);
+            }
+          },
+        );
+        stream.addListener(listener);
+        addTearDown(() => stream.removeListener(listener));
+        final svgImageInfo = await svgCompleter.future;
+        expect(svgImageInfo.image.width, greaterThan(0));
+        expect(svgImageInfo.image.height, greaterThan(0));
+        expect(
+          svgImageInfo.image.width / svgImageInfo.image.height,
+          closeTo(2.0, 0.05),
+        );
+
+        // Verify SVG network image decodes into a real ui.Image via mocked HttpClient
+        debugNetworkImageHttpClientProvider = () =>
+            _FakeSvgHttpClient(Uint8List.fromList(utf8.encode(svgMarkup)));
+        try {
+          final netSvgCompleter = Completer<ImageInfo>();
+          final netStream = svgUrlFill.decorationImage()!.image.resolve(
+            ImageConfiguration.empty,
+          );
+          final netListener = ImageStreamListener(
+            (info, _) {
+              if (!netSvgCompleter.isCompleted) netSvgCompleter.complete(info);
+            },
+            onError: (error, stackTrace) {
+              if (!netSvgCompleter.isCompleted) {
+                netSvgCompleter.completeError(error, stackTrace);
+              }
+            },
+          );
+          netStream.addListener(netListener);
+          addTearDown(() => netStream.removeListener(netListener));
+          final netSvgInfo = await netSvgCompleter.future;
+          expect(
+            netSvgInfo.image.width / netSvgInfo.image.height,
+            closeTo(2.0, 0.05),
+          );
+
+          // Verify SVG with CSS Color 4 display-p3 style fallback preserves its fill color (#211B42)
+          const p3Svg =
+              '<svg width="93" height="44" viewBox="0 0 93 44" fill="none" xmlns="http://www.w3.org/2000/svg">'
+              '<rect width="93" height="44" fill="#211B42" '
+              'style="fill:#211B42;fill:color(display-p3 0.1294 0.1059 0.2588);fill-opacity:1;"/>'
+              '</svg>';
+          const p3Fill = ContainerFill(imageUrl: p3Svg);
+          final p3Completer = Completer<ImageInfo>();
+          final p3Stream = p3Fill.decorationImage()!.image.resolve(
+            ImageConfiguration.empty,
+          );
+          final p3Listener = ImageStreamListener((info, _) {
+            if (!p3Completer.isCompleted) p3Completer.complete(info);
+          });
+          p3Stream.addListener(p3Listener);
+          addTearDown(() => p3Stream.removeListener(p3Listener));
+          final p3Info = await p3Completer.future;
+          final rgba = await tester.runAsync(
+            () => p3Info.image.toByteData(format: ui.ImageByteFormat.rawRgba),
+          );
+          expect(rgba, isNotNull);
+          // First pixel in RGBA should be #211B42 (R=0x21, G=0x1B, B=0x42, A=0xFF)
+          expect(rgba!.getUint8(0), 0x21);
+          expect(rgba.getUint8(1), 0x1B);
+          expect(rgba.getUint8(2), 0x42);
+          expect(rgba.getUint8(3), 0xFF);
+
+          // Render StyledSurface with SVG data URI, WebP base64 and SVG network URL
+          for (final fill in [
+            svgDataBase64Fill,
+            svgDataUtf8Fill,
+            svgRawBase64Fill,
+            webpDataUriFill,
+            webpRawBase64Fill,
+            svgUrlFill,
+          ]) {
+            await tester.pumpWidget(
+              MaterialApp(
+                home: Scaffold(
+                  body: StyledSurface(
+                    style: ContainerStyle(fill: fill),
+                    fallbackColor: Colors.white,
+                    borderColor: Colors.black12,
+                    child: const SizedBox(width: 120, height: 60),
+                  ),
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+            expect(tester.takeException(), isNull);
+          }
+        } finally {
+          debugNetworkImageHttpClientProvider = null;
+        }
+      },
+    );
   });
+}
+
+class _FakeSvgHttpClient implements HttpClient {
+  _FakeSvgHttpClient(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  bool autoUncompress = false;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) async =>
+      _FakeSvgHttpClientRequest(bytes);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeSvgHttpClientRequest implements HttpClientRequest {
+  _FakeSvgHttpClientRequest(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  final HttpHeaders headers = _FakeSvgHttpHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async => _FakeSvgHttpClientResponse(bytes);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeSvgHttpHeaders implements HttpHeaders {
+  @override
+  ContentType? get contentType => ContentType('image', 'svg+xml');
+
+  @override
+  void add(String name, Object value, {bool preserveHeaderCase = false}) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeSvgHttpClientResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  _FakeSvgHttpClientResponse(this.bytes);
+
+  final Uint8List bytes;
+
+  @override
+  int get statusCode => HttpStatus.ok;
+
+  @override
+  int get contentLength => bytes.length;
+
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+
+  @override
+  HttpHeaders get headers => _FakeSvgHttpHeaders();
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int> event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => Stream<List<int>>.value(bytes).listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

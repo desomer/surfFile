@@ -327,3 +327,35 @@ class SuperListViewConfig extends ComponentConfig {
     itemId,
   );
 }
+
+/// Résumé des propriétés d'un [SuperListViewConfig] pour l'info-bulle du menu contextuel.
+String formatSuperListViewTooltip({
+  required String title,
+  required SuperListViewConfig config,
+}) {
+  final bindingLabel = config.binding == null
+      ? 'Aucune'
+      : '${config.binding!.repositoryId ?? 'Hérité'} → ${config.binding!.path}';
+  final layoutLine = config.wrap
+      ? [
+          'Disposition : Wrap (${config.wrapSizing == ListWrapSizing.automatic ? 'Auto' : '${SlotDimension.formatNumber(config.itemWidth)} × ${SlotDimension.formatNumber(config.itemExtent)} px'})',
+          'Espacement : ${SlotDimension.formatNumber(config.spacing)} px',
+        ].join(' · ')
+      : [
+          'Direction : ${config.axis == Axis.horizontal ? 'Horizontale' : 'Verticale'}',
+          'Taille ligne : ${SlotDimension.formatNumber(config.itemExtent)} px',
+          'Espacement : ${SlotDimension.formatNumber(config.spacing)} px',
+        ].join(' · ');
+  final optionsLine = <String>[
+    'Ajout : ${config.allowAdd ? 'Activé' : 'Désactivé'}',
+    'Suppression : ${config.allowRemove ? 'Activée' : 'Désactivée'}',
+    if (config.emptyText.isNotEmpty) 'Vide : ${config.emptyText}',
+  ].join(' · ');
+  return [
+    title,
+    'Liaison : $bindingLabel',
+    layoutLine,
+    optionsLine,
+  ].join('\n');
+}
+

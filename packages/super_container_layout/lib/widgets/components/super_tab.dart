@@ -16,6 +16,7 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
 import '../../super_app.dart';
+import '../../theme/container_style.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tab_editor.dart';
 import '../editing/history/editor_history.dart';
@@ -361,7 +362,8 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       String? error,
       bool placeholder,
       List<JsonArrayBinding> selections,
-    }) resolved;
+    })
+    resolved;
     final raw = config.binding;
     if (raw == null) {
       resolved = (
@@ -962,10 +964,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         style: renderStyle,
         fallbackColor: colors.surface,
         borderColor: colors.outlineVariant,
-        child: Padding(
-          padding: style.contentPadding,
-          child: child,
-        ),
+        child: Padding(padding: style.contentPadding, child: child),
       ),
     );
   }
@@ -976,10 +975,11 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     required TabController tabController,
     required List<Widget> tabs,
     required ValueChanged<int> onTap,
+    bool hasBoundedWidth = true,
   }) => TabBar(
     key: ValueKey('super-tab-bar-${widget.id}'),
     controller: tabController,
-    isScrollable: config.isScrollable,
+    isScrollable: config.isScrollable || !hasBoundedWidth,
     tabAlignment: config.tabAlignment,
     indicator: _buildTabIndicator(context, config),
     indicatorSize: config.indicatorSize,
@@ -1005,6 +1005,28 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     onTap: onTap,
   );
 
+  Widget _buildContentRegion(
+    NativeComponentEditorState editor,
+    String zoneId, {
+    required bool shrinkWidth,
+    required bool shrinkHeight,
+  }) {
+    final zoneAxis = editor.axisOf(zoneId);
+    Widget region = editor.region(
+      zoneId,
+      expand: !(zoneAxis == Axis.vertical ? shrinkHeight : shrinkWidth),
+      stretch: !(zoneAxis == Axis.vertical ? shrinkWidth : shrinkHeight),
+    );
+    if (shrinkWidth || shrinkHeight) {
+      region = SlotContentFitScope(
+        fitWidth: shrinkWidth,
+        fitHeight: shrinkHeight,
+        child: region,
+      );
+    }
+    return region;
+  }
+
   void _handleRegionSelected(String? regionId, SuperTabConfig config) {
     if (regionId == null || config.mode != SuperTabMode.static) return;
     final tabId = SuperTabConfig.tabSlotIdOfZone(regionId);
@@ -1026,7 +1048,19 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     NativeComponentEditorState editor,
     SuperTabConfig config,
     Registry? registry,
+    BoxConstraints constraints,
   ) {
+    final fitScope = SlotContentFitScope.maybeOf(context);
+    final hasBoundedWidth = constraints.hasBoundedWidth;
+    final shrinkWidth =
+        !hasBoundedWidth ||
+        (!constraints.hasTightWidth && (fitScope?.fitWidth ?? false));
+    final shrinkHeight =
+        !constraints.hasBoundedHeight ||
+        (!constraints.hasTightHeight && (fitScope?.fitHeight ?? false));
+    final crossAxisAlignment = hasBoundedWidth
+        ? CrossAxisAlignment.stretch
+        : CrossAxisAlignment.start;
     final tabSlots = editor.slotsFor(SuperTabConfig.tabsZone);
     final supplied = _suppliedActions;
 
@@ -1040,17 +1074,19 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           child: editor.region(SuperTabConfig.tabsZone),
         ),
       );
-      final emptyBody = Expanded(
-        child: Center(
-          child: Text(
-            'Ajoutez une Action dans la zone « Onglets » pour créer un onglet.',
-            key: ValueKey('super-tab-empty-${widget.id}'),
-            textAlign: TextAlign.center,
-          ),
+      final emptyMessage = Center(
+        child: Text(
+          'Ajoutez une Action dans la zone « Onglets » pour créer un onglet.',
+          key: ValueKey('super-tab-empty-${widget.id}'),
+          textAlign: TextAlign.center,
         ),
       );
+      final emptyBody = shrinkHeight
+          ? SizedBox(height: 160, child: emptyMessage)
+          : Expanded(child: emptyMessage);
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,
+        crossAxisAlignment: crossAxisAlignment,
         children: config.tabBarPosition == SuperTabBarPosition.bottom
             ? [emptyBody, barPlaceholder]
             : [barPlaceholder, emptyBody],
@@ -1092,6 +1128,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
               config: config,
               tabController: tabController,
               tabs: tabs,
+              hasBoundedWidth: hasBoundedWidth,
               onTap: (index) {
                 final slot = tabSlots[index];
                 final action = supplied[slot.id];
@@ -1102,10 +1139,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                         .value ??
                     fallback;
                 if (!actionConfig.enabled) {
-                  final restore = _lastValidIndex.clamp(
-                    0,
-                    tabSlots.length - 1,
-                  );
+                  final restore = _lastValidIndex.clamp(0, tabSlots.length - 1);
                   if (tabController.index != restore) {
                     tabController.index = restore;
                   }
@@ -1129,32 +1163,47 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           ),
         );
 
-        final tabBarView = Expanded(
-          child: TabBarView(
-            key: ValueKey('super-tab-view-${widget.id}'),
-            controller: tabController,
-            children: [
-              for (final slot in tabSlots)
-                KeyedSubtree(
-                  key: ValueKey('super-tab-content-${slot.id}'),
-                  child: editor.region(
-                    SuperTabConfig.contentZoneFor(slot.id),
+        final activeSlot = tabSlots[effectiveIndex];
+        final tabBarView = shrinkHeight
+            ? KeyedSubtree(
+                key: ValueKey('super-tab-view-${widget.id}'),
+                child: KeyedSubtree(
+                  key: ValueKey('super-tab-content-${activeSlot.id}'),
+                  child: _buildContentRegion(
+                    editor,
+                    SuperTabConfig.contentZoneFor(activeSlot.id),
+                    shrinkWidth: shrinkWidth,
+                    shrinkHeight: shrinkHeight,
                   ),
                 ),
-            ],
-          ),
-        );
+              )
+            : Expanded(
+                child: TabBarView(
+                  key: ValueKey('super-tab-view-${widget.id}'),
+                  controller: tabController,
+                  children: [
+                    for (final slot in tabSlots)
+                      KeyedSubtree(
+                        key: ValueKey('super-tab-content-${slot.id}'),
+                        child: _buildContentRegion(
+                          editor,
+                          SuperTabConfig.contentZoneFor(slot.id),
+                          shrinkWidth: shrinkWidth,
+                          shrinkHeight: shrinkHeight,
+                        ),
+                      ),
+                  ],
+                ),
+              );
 
         final activeError = _staticBindingError ?? _staticBinding?.error;
         return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,
+          crossAxisAlignment: crossAxisAlignment,
           children: [
             if (activeError != null)
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 child: Text(
                   activeError,
                   key: ValueKey('super-tab-error-${widget.id}'),
@@ -1180,7 +1229,19 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     SuperTabConfig config,
     Registry? registry,
     JsonListScope? scope,
+    BoxConstraints constraints,
   ) {
+    final fitScope = SlotContentFitScope.maybeOf(context);
+    final hasBoundedWidth = constraints.hasBoundedWidth;
+    final shrinkWidth =
+        !hasBoundedWidth ||
+        (!constraints.hasTightWidth && (fitScope?.fitWidth ?? false));
+    final shrinkHeight =
+        !constraints.hasBoundedHeight ||
+        (!constraints.hasTightHeight && (fitScope?.fitHeight ?? false));
+    final crossAxisAlignment = hasBoundedWidth
+        ? CrossAxisAlignment.stretch
+        : CrossAxisAlignment.start;
     final placeholder = scope?.placeholder ?? false;
     final items = placeholder ? null : _dynamicItems;
     final editing = editor.editing;
@@ -1210,17 +1271,20 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
     if (templateSlot == null || count == 0) {
       _ensureTabController(0, 0);
+      final barRegion = SizedBox(
+        height: kTextTabBarHeight,
+        child: editor.region(SuperTabConfig.tabsZone),
+      );
       final barArea = _wrapTabBarSurface(
         context,
         config,
         Row(
+          mainAxisSize: hasBoundedWidth ? MainAxisSize.max : MainAxisSize.min,
           children: [
-            Expanded(
-              child: SizedBox(
-                height: kTextTabBarHeight,
-                child: editor.region(SuperTabConfig.tabsZone),
-              ),
-            ),
+            if (hasBoundedWidth)
+              Expanded(child: barRegion)
+            else
+              Flexible(fit: FlexFit.loose, child: barRegion),
             if (canAdd)
               IconButton(
                 key: ValueKey('super-tab-add-${widget.id}'),
@@ -1231,11 +1295,18 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           ],
         ),
       );
-      final contentArea = Expanded(
-        child: editor.region(SuperTabConfig.dynamicContentZone),
+      final contentRegion = _buildContentRegion(
+        editor,
+        SuperTabConfig.dynamicContentZone,
+        shrinkWidth: shrinkWidth,
+        shrinkHeight: shrinkHeight,
       );
+      final contentArea = shrinkHeight
+          ? contentRegion
+          : Expanded(child: contentRegion);
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,
+        crossAxisAlignment: crossAxisAlignment,
         children: [
           if (message != null)
             Padding(
@@ -1320,38 +1391,43 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         ),
     ];
 
+    final tabBarRegion = editor.region(
+      SuperTabConfig.tabsZone,
+      child: _buildTabBarWidget(
+        context: context,
+        config: config,
+        tabController: tabController,
+        tabs: tabs,
+        hasBoundedWidth: hasBoundedWidth,
+        onTap: (index) {
+          setState(() {
+            _selectedIndex = index;
+            _lastValidIndex = index;
+          });
+          if (!templateMode) {
+            _selectDynamicIndex(index);
+          }
+          widget.onTabSelected?.call(index);
+          final action = supplied[templateSlot.id];
+          executeSuperActionClick(
+            context,
+            templateSlot.id,
+            onPressed: action?.onPressed,
+          );
+        },
+      ),
+    );
+
     final tabBarRow = _wrapTabBarSurface(
       context,
       config,
       Row(
+        mainAxisSize: hasBoundedWidth ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          Expanded(
-            child: editor.region(
-              SuperTabConfig.tabsZone,
-              child: _buildTabBarWidget(
-                context: context,
-                config: config,
-                tabController: tabController,
-                tabs: tabs,
-                onTap: (index) {
-                  setState(() {
-                    _selectedIndex = index;
-                    _lastValidIndex = index;
-                  });
-                  if (!templateMode) {
-                    _selectDynamicIndex(index);
-                  }
-                  widget.onTabSelected?.call(index);
-                  final action = supplied[templateSlot.id];
-                  executeSuperActionClick(
-                    context,
-                    templateSlot.id,
-                    onPressed: action?.onPressed,
-                  );
-                },
-              ),
-            ),
-          ),
+          if (hasBoundedWidth)
+            Expanded(child: tabBarRegion)
+          else
+            Flexible(fit: FlexFit.loose, child: tabBarRegion),
           if (canAdd)
             IconButton(
               key: ValueKey('super-tab-add-${widget.id}'),
@@ -1363,21 +1439,33 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       ),
     );
 
-    final tabBarView = Expanded(
-      key: ValueKey('super-tab-view-${widget.id}'),
-      child: KeyedSubtree(
-        key: ValueKey(
-          'super-tab-dynamic-content-${widget.id}-${templateMode ? 'template' : effectiveIndex}',
-        ),
-        child: wrapScope(
-          effectiveIndex,
-          editor.region(SuperTabConfig.dynamicContentZone),
+    final dynamicContent = KeyedSubtree(
+      key: ValueKey(
+        'super-tab-dynamic-content-${widget.id}-${templateMode ? 'template' : effectiveIndex}',
+      ),
+      child: wrapScope(
+        effectiveIndex,
+        _buildContentRegion(
+          editor,
+          SuperTabConfig.dynamicContentZone,
+          shrinkWidth: shrinkWidth,
+          shrinkHeight: shrinkHeight,
         ),
       ),
     );
+    final tabBarView = shrinkHeight
+        ? KeyedSubtree(
+            key: ValueKey('super-tab-view-${widget.id}'),
+            child: dynamicContent,
+          )
+        : Expanded(
+            key: ValueKey('super-tab-view-${widget.id}'),
+            child: dynamicContent,
+          );
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: shrinkHeight ? MainAxisSize.min : MainAxisSize.max,
+      crossAxisAlignment: crossAxisAlignment,
       children: [
         if (message != null)
           Padding(
@@ -1429,6 +1517,16 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           settingsTitle: 'Configurer les onglets',
           editSurface: true,
           config: nativeConfig,
+          menuTooltip: (_) => formatSuperTabTooltip(
+            title: editorComponentLabelOf(context)?.label ?? widget.label,
+            config: config,
+          ),
+          regionTooltip: (_, region) => region == SuperTabConfig.tabsZone
+              ? formatContainerStyleTooltip(
+                  title: 'Zone Onglets',
+                  style: config.tabBarStyle,
+                )
+              : null,
           onChanged: (nextNative) {
             controller.value = _fromNativeConfig(
               controller.value,
@@ -1447,18 +1545,27 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           registry: registry,
           slots: _providedSlots,
           regions: regions,
-          builder: (context, editor) {
-            if (config.mode == SuperTabMode.dynamic) {
-              return _buildDynamicTabs(
+          builder: (context, editor) => LayoutBuilder(
+            builder: (context, constraints) {
+              if (config.mode == SuperTabMode.dynamic) {
+                return _buildDynamicTabs(
+                  context,
+                  editor,
+                  config,
+                  registry,
+                  listScope,
+                  constraints,
+                );
+              }
+              return _buildStaticTabs(
                 context,
                 editor,
                 config,
                 registry,
-                listScope,
+                constraints,
               );
-            }
-            return _buildStaticTabs(context, editor, config, registry);
-          },
+            },
+          ),
         );
       },
     );

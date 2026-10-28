@@ -773,7 +773,7 @@ class Registry {
 
     registry['Action'] = ComponentBuilderDynamic(
       menuIcon: Icons.smart_button_outlined,
-      label: 'Button / Action',
+      label: 'Action / Button',
       duplication: ComponentDuplicationContract.superAction,
       tags: const {'action', 'button', 'input'},
       addConfigurator: superActionAddConfigurator(availableFontFamilies),
@@ -784,7 +784,7 @@ class Registry {
 
     registry['Card'] = ComponentBuilderDynamic(
       menuIcon: Icons.crop_square,
-      label: 'Card',
+      label: 'Card / Image',
       duplication: ComponentDuplicationContract.newContainer,
       tags: const {'container'},
       addConfigurator: containerAddConfigurator,

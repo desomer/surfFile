@@ -485,3 +485,57 @@ class ContainerStyle {
     );
   }
 }
+
+String _formatStyleNumber(double value) =>
+    value == value.roundToDouble() ? '${value.round()}' : '$value';
+
+String _formatStyleQuad(double uniform, Quad? quad) {
+  if (quad != null && !quad.uniform) {
+    return '${_formatStyleNumber(quad.top)}/${_formatStyleNumber(quad.right)}/'
+        '${_formatStyleNumber(quad.bottom)}/${_formatStyleNumber(quad.left)} px';
+  }
+  final v = quad?.top ?? uniform;
+  return '${_formatStyleNumber(v)} px';
+}
+
+/// Résumé des propriétés d'un [ContainerStyle] pour l'info-bulle du menu contextuel.
+String formatContainerStyleTooltip({
+  required String title,
+  required ContainerStyle style,
+}) {
+  final baseFillLabel = switch (style.fill.type) {
+    FillType.solid =>
+      style.color != null ? JsonColor.toHex(style.color!) : 'Auto',
+    FillType.linear => 'Dégradé linéaire',
+    FillType.radial => 'Dégradé radial',
+    FillType.sweep => 'Dégradé conique',
+  };
+  final fillLabel = style.fill.hasImage
+      ? '$baseFillLabel · Image (${style.fill.imageUrl.trim()})'
+      : baseFillLabel;
+  final radiusLabel = _formatStyleQuad(style.radius, style.radii);
+  final borderExtent = _formatStyleQuad(style.borderWidth, style.borderWidths);
+  final borderDetails = <String>[
+    borderExtent,
+    if (style.borderColor != null) JsonColor.toHex(style.borderColor!),
+    if (style.borderLine != BorderLine.solid) style.borderLine.label,
+  ].join(' ');
+  final extras = <String>[
+    if (style.opacity != 1) 'Opacité : ${(style.opacity * 100).round()} %',
+    if (style.neon?.enabled == true) 'Néon : Activé',
+    if (style.hoverEffect) 'Survol : Activé',
+    if (style.backdropBlur != null && style.backdropBlur! > 0)
+      'Flou : ${_formatStyleNumber(style.backdropBlur!)} px',
+    if (style.pattern != SurfacePattern.none) 'Motif : ${style.pattern.label}',
+    if (style.states != null) 'États : Configurés',
+  ];
+  return [
+    title,
+    'Design : ${style.designSystem.label} · Fond : $fillLabel',
+    'Rayon : $radiusLabel · Bordure : $borderDetails · Élévation : ${_formatStyleNumber(style.elevation)}',
+    'Padding : ${_formatStyleQuad(style.padding, style.paddingInsets)} · '
+        'Marge : ${_formatStyleQuad(style.margin, style.marginInsets)}',
+    if (extras.isNotEmpty) extras.join(' · '),
+  ].join('\n');
+}
+

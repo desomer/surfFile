@@ -520,3 +520,56 @@ class SuperValueConfig extends ComponentConfig {
     states,
   ]);
 }
+
+String _formatValueNumber(double value) =>
+    value == value.roundToDouble() ? '${value.round()}' : '$value';
+
+/// Résumé des propriétés d'un [SuperValueConfig] pour l'info-bulle du menu contextuel.
+String formatSuperValueTooltip({
+  required String title,
+  required SuperValueConfig config,
+}) {
+  final modeLabel =
+      config.mode == SuperValueMode.input ? 'Saisie' : 'Affichage';
+  final kindLabel = switch (config.kind) {
+    SuperValueKind.text => 'Texte',
+    SuperValueKind.checkbox => 'Case à cocher',
+    SuperValueKind.switchControl => 'Interrupteur',
+  };
+  final flags = <String>[
+    if (!config.enabled) 'Désactivé',
+    if (config.readOnly) 'Lecture seule',
+    if (config.obscureText) 'Masqué',
+  ];
+  final contentParts = <String>[
+    if (config.binding != null)
+      'Liaison : ${config.binding!.repositoryId ?? 'Hérité'} → ${config.binding!.path}'
+    else if (config.kind.isBoolean)
+      'Valeur : ${config.initialBool ? 'Vrai' : 'Faux'}'
+    else if (config.obscureText)
+      'Valeur : ••••••'
+    else
+      'Texte : ${config.initialText.isEmpty ? 'Vide' : config.initialText}',
+    if (config.label.isNotEmpty) 'Libellé : ${config.label}',
+    if (config.placeholder.isNotEmpty) 'Placeholder : ${config.placeholder}',
+  ];
+  final styleParts = <String>[
+    'Police : ${config.fontFamily ?? 'Auto'}',
+    'Taille : ${config.fontSize != null ? '${_formatValueNumber(config.fontSize!)} px' : 'Auto'}',
+    'Alignement : ${config.textAlign.name}',
+    if (!config.kind.isBoolean && (config.minLines > 1 || config.maxLines > 1))
+      'Lignes : ${config.minLines == config.maxLines ? '${config.maxLines}' : '${config.minLines}–${config.maxLines}'}',
+    if (config.color != null) 'Couleur : ${JsonColor.toHex(config.color!)}',
+  ];
+  return [
+    title,
+    [
+      'Mode : $modeLabel',
+      'Type : $kindLabel',
+      ...flags,
+    ].join(' · '),
+    contentParts.join(' · '),
+    styleParts.join(' · '),
+  ].join('\n');
+}
+

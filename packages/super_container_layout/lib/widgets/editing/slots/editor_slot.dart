@@ -77,6 +77,7 @@ class EditorSlot extends StatefulWidget {
     this.onAdd,
     this.axisAction,
     this.menuSubtitle,
+    this.menuTooltip,
     this.onContextMenu,
     this.menuIcon,
     this.menuDestination = EditorMenuDestination.configuration,
@@ -97,6 +98,7 @@ class EditorSlot extends StatefulWidget {
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
   final String? Function()? menuSubtitle;
+  final String? Function()? menuTooltip;
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
   final EditorMenuDestination menuDestination;
@@ -239,6 +241,7 @@ class EditorSlotState extends State<EditorSlot> {
   static bool _hoveredTargetUpdateScheduled = false;
   static EditorSlotState? _menuHoveredTarget;
   static bool _menuOpen = false;
+  bool _ownsOpenMenu = false;
   PointerDownEvent? _sliverDown;
   int _sliverButtons = 0;
   bool _sliverMoved = false;
@@ -317,33 +320,45 @@ class EditorSlotState extends State<EditorSlot> {
     String label, {
     required EditorMenuDestination? destination,
     TextStyle? style,
-  }) => Row(
-    children: [
-      if (destination != null) ...[
-        Tooltip(
-          message: destination == EditorMenuDestination.style
-              ? 'Ouvre le style'
-              : 'Ouvre les paramètres',
-          child: Icon(
-            destination == EditorMenuDestination.style
-                ? Icons.palette_outlined
-                : Icons.settings_outlined,
-            size: 12,
-            color: Theme.of(context).colorScheme.onSurfaceVariant,
+    String? tooltip,
+    Key? tooltipKey,
+  }) {
+    final textWidget = Text(
+      label,
+      style: style ?? Theme.of(context).textTheme.titleSmall,
+      overflow: TextOverflow.ellipsis,
+      maxLines: 1,
+    );
+    final resolvedTooltip = tooltip?.trim();
+    return Row(
+      children: [
+        if (destination != null) ...[
+          Tooltip(
+            message: destination == EditorMenuDestination.style
+                ? 'Ouvre le style'
+                : 'Ouvre les paramètres',
+            child: Icon(
+              destination == EditorMenuDestination.style
+                  ? Icons.palette_outlined
+                  : Icons.settings_outlined,
+              size: 12,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
+          const SizedBox(width: 4),
+        ],
+        Expanded(
+          child: resolvedTooltip != null && resolvedTooltip.isNotEmpty
+              ? Tooltip(
+                  key: tooltipKey,
+                  message: resolvedTooltip,
+                  child: textWidget,
+                )
+              : textWidget,
         ),
-        const SizedBox(width: 4),
       ],
-      Expanded(
-        child: Text(
-          label,
-          style: style ?? Theme.of(context).textTheme.titleSmall,
-          overflow: TextOverflow.ellipsis,
-          maxLines: 1,
-        ),
-      ),
-    ],
-  );
+    );
+  }
 
   ButtonStyle _menuIconButtonStyle(
     BuildContext context, {
@@ -405,6 +420,10 @@ class EditorSlotState extends State<EditorSlot> {
 
   @override
   void dispose() {
+    if (_ownsOpenMenu) {
+      _ownsOpenMenu = false;
+      _menuOpen = false;
+    }
     _removeHoveredSafely();
     super.dispose();
   }
@@ -755,6 +774,7 @@ class EditorSlotState extends State<EditorSlot> {
     final colors = Theme.of(context).colorScheme;
     if (_menuOpen) return;
     _menuOpen = true;
+    _ownsOpenMenu = true;
     Object? selected;
     try {
       selected = await showMenu<Object>(
@@ -932,6 +952,10 @@ class EditorSlotState extends State<EditorSlot> {
                       child: _menuTitle(
                         action.label,
                         destination: action.destination,
+                        tooltip: action.tooltip,
+                        tooltipKey: ValueKey(
+                          'style-menu-action-tooltip-${action.label}',
+                        ),
                       ),
                     ),
                     if (action.onRemove case final remove?)
@@ -978,6 +1002,10 @@ class EditorSlotState extends State<EditorSlot> {
                           child: _menuTitle(
                             entry.label,
                             destination: entry.destination,
+                            tooltip: entry.tooltip,
+                            tooltipKey: ValueKey(
+                              'style-menu-entry-tooltip-${entry.label}',
+                            ),
                           ),
                         ),
                       ],
@@ -1021,6 +1049,12 @@ class EditorSlotState extends State<EditorSlot> {
                                     : state.widget.menuDestination,
                                 style: Theme.of(context).textTheme.titleSmall
                                     ?.copyWith(fontWeight: FontWeight.w600),
+                                tooltip:
+                                    state.widget.menuTooltip?.call() ??
+                                    state.widget.axisAction?.call().flowTooltip,
+                                tooltipKey: ValueKey(
+                                  'style-menu-tooltip-${state.label}',
+                                ),
                               ),
                               if ((state.widget.menuSubtitle?.call() ??
                                       ((StyleEditScope.controllerOf(
@@ -1263,7 +1297,10 @@ class EditorSlotState extends State<EditorSlot> {
         ],
       );
     } finally {
-      _menuOpen = false;
+      if (_ownsOpenMenu) {
+        _ownsOpenMenu = false;
+        _menuOpen = false;
+      }
       _menuHoveredTarget = null;
       _refreshHoveredTarget();
     }

@@ -534,6 +534,44 @@ String formatZoneFlowTooltip({
   ].join('\n');
 }
 
+/// Résumé des propriétés d'un [SuperLayoutConfig] pour l'info-bulle du menu contextuel.
+String formatSuperLayoutTooltip({
+  required String title,
+  required SuperLayoutConfig config,
+  String Function(SuperLayoutZone)? zoneLabel,
+}) {
+  final labelOf = zoneLabel ?? ((SuperLayoutZone z) => z.label);
+  final elementCount = config.placedSlotIds.length;
+  if (config.positioning == SuperLayoutPositioning.grid) {
+    final grid = config.effectiveGrid;
+    return [
+      title,
+      'Mode : Grille (${grid.columns} colonnes)',
+      'Hauteur de ligne : ${SlotDimension.formatNumber(grid.rowHeight)} px · '
+          'Espacement : ${SlotDimension.formatNumber(grid.gap)} px',
+      'Éléments : $elementCount',
+    ].join('\n');
+  }
+  final visible = [for (final z in config.visibleZones) labelOf(z)];
+  final sides = <String>[
+    for (final side in const [
+      SuperLayoutZone.north,
+      SuperLayoutZone.south,
+      SuperLayoutZone.west,
+      SuperLayoutZone.east,
+    ])
+      if (config.hasSide(side))
+        '${labelOf(side)} : ${config.isAuto(side) ? 'Auto' : '${SlotDimension.formatNumber(config.sizeOf(side))} px'}',
+  ];
+  return [
+    title,
+    'Mode : Zones (${visible.join(', ')})',
+    sides.isEmpty ? 'Côtés : Aucun' : sides.join(' · '),
+    'Redimensionnement : ${config.resizeSides ? 'Activé' : 'Désactivé'} · '
+        'Éléments : $elementCount',
+  ].join('\n');
+}
+
 /// Disposition en grille 3×3 : les zones Nord, Sud, Est et Ouest sont
 /// optionnelles et les coins peuvent fusionner avec l'un de leurs voisins.
 ///

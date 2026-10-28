@@ -604,3 +604,54 @@ class SuperActionConfig extends ComponentConfig {
     states,
   ]);
 }
+
+String _formatActionNumber(double value) =>
+    value == value.roundToDouble() ? '${value.round()}' : '$value';
+
+/// Résumé des propriétés d'un [SuperActionConfig] pour l'info-bulle du menu contextuel.
+String formatSuperActionTooltip({
+  required String title,
+  required SuperActionConfig config,
+}) {
+  final kindLabel = switch (config.kind) {
+    SuperActionKind.text => 'Texte',
+    SuperActionKind.icon => 'Icône',
+    SuperActionKind.textAndIcon => 'Texte et icône',
+  };
+  final variantLabel = switch (config.variant) {
+    SuperActionVariant.filled => 'Plein',
+    SuperActionVariant.tonal => 'Tonal',
+    SuperActionVariant.elevated => 'Élevé',
+    SuperActionVariant.outlined => 'Contour',
+    SuperActionVariant.text => 'Texte',
+    SuperActionVariant.icon => 'Icône',
+    SuperActionVariant.surface => 'Surface',
+  };
+  final contentParts = <String>[
+    if (config.kind.hasText)
+      'Libellé : ${config.label.isEmpty ? 'Vide' : config.label}',
+    if (config.kind.hasIcon) 'Icône : ${config.icon}',
+    if (config.tooltip.trim().isNotEmpty)
+      'Infobulle : ${config.tooltip.trim()}',
+  ];
+  final styleParts = <String>[
+    'Police : ${config.fontFamily ?? 'Auto'}',
+    'Taille : ${config.fontSize != null ? '${_formatActionNumber(config.fontSize!)} px' : 'Auto'}',
+    if (config.radius != null)
+      'Rayon : ${_formatActionNumber(config.radius!)} px',
+    if (config.elevation != null)
+      'Élévation : ${_formatActionNumber(config.elevation!)}',
+    if (config.color != null) 'Couleur : ${JsonColor.toHex(config.color!)}',
+  ];
+  return [
+    title,
+    [
+      'Type : $kindLabel',
+      'Variante : $variantLabel',
+      if (!config.enabled) 'Désactivé',
+    ].join(' · '),
+    if (contentParts.isNotEmpty) contentParts.join(' · '),
+    styleParts.join(' · '),
+  ].join('\n');
+}
+

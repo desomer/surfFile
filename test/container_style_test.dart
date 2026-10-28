@@ -104,6 +104,31 @@ void main() {
     );
     expect(image.fit, BoxFit.contain);
     expect(image.opacity, closeTo(.375, .005));
+
+    // Also supports .webp, .svg and base64 / data URI values through imageUrl
+    const webpFill = ContainerFill(
+      imageUrl: 'https://example.com/surface.webp',
+    );
+    expect(
+      (webpFill.decorationImage()!.image as NetworkImage).url,
+      'https://example.com/surface.webp',
+    );
+    const svgUrlFill = ContainerFill(
+      imageUrl: 'https://example.com/surface.svg',
+    );
+    expect(
+      (svgUrlFill.decorationImage()!.image as NetworkImage).url,
+      'https://example.com/surface.svg',
+    );
+    const webpBase64 =
+        'UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA';
+    const base64Fill = ContainerFill(imageUrl: webpBase64);
+    expect(base64Fill.decorationImage()!.image, isA<MemoryImage>());
+    final svgDataFill = ContainerFill(
+      imageUrl:
+          'data:image/svg+xml;base64,${base64Encode(utf8.encode('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>'))}',
+    );
+    expect(svgDataFill.decorationImage()!.image, isA<SvgMemoryImage>());
   });
 
   testWidgets('editor changes type and renders a matching gradient preview', (

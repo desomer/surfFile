@@ -473,4 +473,201 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'context menu entry names expose property summary tooltips on hover',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              appBar: SuperAppBar(
+                id: 'app-bar-tooltip',
+                title: const Text('Barre Titre'),
+                nativeConfig: NativeComponentConfig(
+                  properties: const {'elevation': 4.0},
+                  placements: const {
+                    'title': ['title'],
+                  },
+                ),
+              ),
+              body: EditableSurface(
+                label: 'Carte principale',
+                style: const ContainerStyle(
+                  radius: 12,
+                  borderWidth: 2,
+                  elevation: 3,
+                  padding: 8,
+                  margin: 4,
+                ),
+                child: SuperLayout(
+                  label: 'Disposition',
+                  config: const SuperLayoutConfig(
+                    north: true,
+                    south: false,
+                    west: false,
+                    east: false,
+                    placements: {
+                      SuperLayoutZone.center: ['val-slot', 'act-slot'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'val-slot',
+                      label: 'Champ texte',
+                      builder: (_) => const SuperValue(
+                        id: 'val-1',
+                        config: SuperValueConfig(
+                          mode: SuperValueMode.input,
+                          initialText: 'Bonjour',
+                          label: 'Nom',
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'act-slot',
+                      label: 'Bouton action',
+                      builder: (_) => const SuperAction(
+                        id: 'act-1',
+                        config: SuperActionConfig(
+                          kind: SuperActionKind.textAndIcon,
+                          variant: SuperActionVariant.tonal,
+                          label: 'Valider',
+                          icon: 'check',
+                          tooltip: 'Confirmer',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Right-click on SuperValue inside Centre zone -> Layout -> EditableSurface
+      await tester.tap(
+        find.byType(SuperValue),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final valueTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Valeur')),
+      );
+      expect(
+        valueTooltip.message,
+        allOf(
+          contains('Mode : Saisie · Type : Texte'),
+          contains('Texte : Bonjour · Libellé : Nom'),
+          contains('Taille : 16 px'),
+        ),
+      );
+
+      final centerZoneTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Centre')),
+      );
+      expect(
+        centerZoneTooltip.message,
+        allOf(
+          contains('Taille et flux de la zone Centre'),
+          contains('Direction : Colonne (Column)'),
+        ),
+      );
+
+      final layoutTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Disposition')),
+      );
+      expect(
+        layoutTooltip.message,
+        allOf(
+          contains('Mode : Zones (Centre, Nord)'),
+          contains('Nord : Auto'),
+          contains('Éléments : 2'),
+        ),
+      );
+
+      final surfaceTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Carte principale')),
+      );
+      expect(
+        surfaceTooltip.message,
+        allOf(
+          contains('Carte principale'),
+          contains('Rayon : 12 px · Bordure : 2 px · Élévation : 3'),
+          contains('Padding : 8 px · Marge : 4 px'),
+        ),
+      );
+
+      // Hover over the name 'Carte principale' to trigger its Tooltip overlay
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+      await gesture.moveTo(
+        tester.getCenter(
+          find.descendant(
+            of: find.byKey(const ValueKey('style-menu-Carte principale')),
+            matching: find.text('Carte principale'),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(
+        find.textContaining('Rayon : 12 px · Bordure : 2 px · Élévation : 3'),
+        findsOneWidget,
+      );
+
+      // Close menu and right-click on SuperAction
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byType(SuperAction),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final actionTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Action')),
+      );
+      expect(
+        actionTooltip.message,
+        allOf(
+          contains('Type : Texte et icône · Variante : Tonal'),
+          contains('Libellé : Valider · Icône : check · Infobulle : Confirmer'),
+        ),
+      );
+
+      // Close menu and right-click on SuperAppBar
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.text('Barre Titre'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final appBarTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Configurer la barre')),
+      );
+      expect(
+        appBarTooltip.message,
+        allOf(
+          contains('ApplicationBar'),
+          contains('Zones actives : Titre (1)'),
+        ),
+      );
+
+      await tester.tapAt(const Offset(10, 500));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

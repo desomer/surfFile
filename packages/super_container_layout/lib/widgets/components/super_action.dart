@@ -896,6 +896,10 @@ class _SuperActionState extends State<SuperAction> {
               id: widget.id,
               label: 'Action',
               menuType: 'Action',
+              menuTooltip: () => formatSuperActionTooltip(
+                title: _surface.currentState?.titleLabel ?? 'Action',
+                config: config,
+              ),
               onEdit: editAction,
               child: SizedBox(
                 width: 56,
@@ -950,6 +954,10 @@ class _SuperActionState extends State<SuperAction> {
               id: widget.id,
               label: 'Action',
               menuType: 'Action',
+              menuTooltip: () => formatSuperActionTooltip(
+                title: _surface.currentState?.titleLabel ?? 'Action',
+                config: config,
+              ),
               onEdit: editAction,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -963,6 +971,10 @@ class _SuperActionState extends State<SuperAction> {
             id: widget.id,
             label: 'Action',
             menuType: 'Action',
+            menuTooltip: () => formatSuperActionTooltip(
+              title: _surface.currentState?.titleLabel ?? 'Action',
+              config: config,
+            ),
             onEdit: editAction,
             child: Column(
               mainAxisSize: MainAxisSize.min,

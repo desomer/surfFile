@@ -41,6 +41,7 @@ class EditableSurface extends StatefulWidget {
     this.onAdd,
     this.axisAction,
     this.menuSubtitle,
+    this.menuTooltip,
     this.menuType,
     this.onContextMenu,
     this.menuIcon,
@@ -75,6 +76,7 @@ class EditableSurface extends StatefulWidget {
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
   final String? Function()? menuSubtitle;
+  final String? Function()? menuTooltip;
   final String? menuType;
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
@@ -335,6 +337,14 @@ class EditableSurfaceState extends State<EditableSurface> {
                       : null,
                   axisAction: widget.axisAction,
                   menuSubtitle: widget.menuSubtitle,
+                  menuTooltip:
+                      widget.menuTooltip ??
+                      (widget.onEdit == null
+                          ? () => formatContainerStyleTooltip(
+                              title: _editorKey.currentState?.titleLabel ?? _label,
+                              style: style,
+                            )
+                          : null),
                   menuType: widget.menuType,
                   onContextMenu: widget.onContextMenu,
                   menuIcon: widget.menuIcon,

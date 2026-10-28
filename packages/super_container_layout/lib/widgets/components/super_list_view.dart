@@ -814,6 +814,10 @@ class _SuperListViewState extends State<SuperListView> {
           id: widget.id,
           label: 'Liste',
           menuType: 'ListView',
+          menuTooltip: () => formatSuperListViewTooltip(
+            title: editorComponentLabelOf(context)?.label ?? 'Liste',
+            config: config,
+          ),
           onEdit: () => _edit(configuration),
           child: isSliver
               ? SliverLayoutBuilder(

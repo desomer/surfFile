@@ -16,6 +16,11 @@ extension _SuperLayoutView on SuperLayoutState {
           _config.value.positioning == SuperLayoutPositioning.grid
           ? 'Grille'
           : 'Zones',
+      menuTooltip: () => formatSuperLayoutTooltip(
+        title: _displayLabel,
+        config: _config.value,
+        zoneLabel: widget.zoneLabel,
+      ),
       onContextMenu: _selectContextZone,
       child: ListenableBuilder(
         listenable: Listenable.merge([

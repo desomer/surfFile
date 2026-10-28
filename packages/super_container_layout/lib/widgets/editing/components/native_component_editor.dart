@@ -153,6 +153,8 @@ class NativeComponentEditor extends StatefulWidget {
     this.slotContextFor,
     this.menuIcon,
     this.menuType,
+    this.menuTooltip,
+    this.regionTooltip,
     this.settingsControls,
     this.propertyDescriptors = const [],
     this.isRegionAvailable,
@@ -184,6 +186,9 @@ class NativeComponentEditor extends StatefulWidget {
   final BuildContext? Function(SlotImplementation slot)? slotContextFor;
   final IconData? menuIcon;
   final String? menuType;
+  final String? Function(NativeComponentConfig config)? menuTooltip;
+  final String? Function(NativeComponentConfig config, String region)?
+  regionTooltip;
   final List<Widget> Function(
     NativeComponentConfig config,
     ValueChanged<NativeComponentConfig> onChanged,
@@ -587,6 +592,54 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         size: fixedSize ?? defaultSize,
       ),
     );
+  }
+
+  String _componentTooltip() {
+    final config = _config.value;
+    if (widget.menuTooltip?.call(config) case final custom?) return custom;
+    return formatNativeComponentTooltip(
+      title: _componentLabel,
+      config: config,
+      regions: [
+        for (final region in widget.regions)
+          if (widget.isRegionAvailable?.call(config, region.id) ?? true)
+            (
+              label: region.label,
+              count: slotsFor(region.id).length,
+              enabled: enabled(region.id),
+            ),
+      ],
+      propertyDescriptors: [
+        for (final descriptor in widget.propertyDescriptors)
+          if (widget.isPropertyAvailable?.call(config, descriptor) ?? true)
+            descriptor,
+      ],
+    );
+  }
+
+  String _regionTooltip(String id) {
+    final config = _config.value;
+    if (widget.regionTooltip?.call(config, id) case final custom?) {
+      return custom;
+    }
+    final spec = definition(id);
+    final zoneSummary = spec.editableFlow
+        ? _axisActionFor(id).flowTooltip!
+        : [
+            'Zone ${spec.label} ($_componentLabel)',
+            [
+              'Direction : ${axisOf(id) == Axis.horizontal ? 'Ligne (Row)' : 'Colonne (Column)'}',
+              if (spec.single) 'Élément unique',
+            ].join(' · '),
+            'Éléments : ${slotsFor(id).length}',
+          ].join('\n');
+    if (!widget.editSurface && widget.onEditRegion == null) {
+      final parentLines = _componentTooltip().split('\n').skip(1);
+      if (parentLines.isNotEmpty) {
+        return [zoneSummary, ...parentLines].join('\n');
+      }
+    }
+    return zoneSummary;
   }
 
   Future<void> _openRegionFlowEditor(String id) async {
@@ -2050,6 +2103,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               label: spec.label,
               menuTitle: 'zone ${spec.label}',
               menuSubtitle: () => _componentLabel,
+              menuTooltip: () => _regionTooltip(id),
               menuIcon: EditorSlot.zoneMenuIcon,
               menuDestination: spec.menuDestination,
               editable: true,
@@ -2208,11 +2262,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     Widget? child,
     SlotImplementation? item,
     bool showBadge = true,
+    bool? expand,
+    bool? stretch,
   }) {
     final spec = definition(id);
     final regionAxis = axisOf(id);
     final regionFlow = flowOf(id);
     final fixedSize = sizeOf(id);
+    final effectiveExpand = expand ?? spec.expand;
+    final effectiveStretch = stretch ?? spec.stretch;
     final slots = item == null ? slotsFor(id) : [item];
     final overlay = _showOverlay();
     final selected = _selected == id;
@@ -2231,10 +2289,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           flow: regionFlow,
           expand: fixedSize != null && regionAxis == Axis.vertical
               ? true
-              : spec.expand,
+              : effectiveExpand,
           stretch: fixedSize != null && regionAxis == Axis.horizontal
               ? true
-              : spec.stretch,
+              : effectiveStretch,
           preferredSizes: {
             for (final slot in slots)
               if (slot case NativePreferredSizeWidget native)
@@ -2322,6 +2380,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             label: spec.label,
             menuTitle: 'zone ${spec.label}',
             menuSubtitle: () => _componentLabel,
+            menuTooltip: () => _regionTooltip(id),
             menuIcon: EditorSlot.zoneMenuIcon,
             menuDestination: spec.menuDestination,
             editable: true,
@@ -2341,11 +2400,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               ids: _config.value.slotsOf(id),
               canMove: (slotId) => _canMoveSlot(slotId, id),
               onMove: (slotId) => _moveSlot(slotId, id),
-              alignment: regionAxis == Axis.horizontal && !spec.stretch
+              alignment: regionAxis == Axis.horizontal && !effectiveStretch
                   ? AlignmentDirectional.centerStart
                   : AlignmentDirectional.topStart,
               child: Stack(
-                alignment: regionAxis == Axis.horizontal && !spec.stretch
+                alignment: regionAxis == Axis.horizontal && !effectiveStretch
                     ? AlignmentDirectional.centerStart
                     : AlignmentDirectional.topStart,
                 children: [
@@ -2354,14 +2413,14 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                       builder: (context, constraints) {
                         final fillWidth =
                             (regionAxis == Axis.horizontal
-                                ? spec.expand
-                                : spec.stretch) &&
+                                ? effectiveExpand
+                                : effectiveStretch) &&
                             constraints.hasBoundedWidth;
                         final fillHeight =
                             fixedSize == null &&
                             (regionAxis == Axis.vertical
-                                ? spec.expand
-                                : spec.stretch) &&
+                                ? effectiveExpand
+                                : effectiveStretch) &&
                             constraints.hasBoundedHeight;
                         return SizedBox(
                           width: fillWidth
@@ -2506,6 +2565,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           label: widget.settingsTitle,
           menuTitle: widget.label,
           menuType: widget.menuType,
+          menuTooltip: _componentTooltip,
           menuIcon: widget.menuIcon,
           editable: true,
           onEdit: configure,
