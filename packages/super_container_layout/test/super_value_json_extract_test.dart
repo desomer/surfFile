@@ -168,7 +168,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('style-menu-more-Nord')));
       await tester.pumpAndSettle();
-      expect(find.text('Extraire les SuperValue en JSON…'), findsNothing);
+      expect(find.text('Extraire en JSON…'), findsNothing);
       expect(find.text('Modifier avec l’IA…'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('style-menu-more-Nord')));
       await tester.pumpAndSettle();
@@ -200,7 +200,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('style-menu-more-Centre')));
       await tester.pumpAndSettle();
 
-      expect(find.text('Extraire les SuperValue en JSON…'), findsOneWidget);
+      expect(find.text('Extraire en JSON…'), findsOneWidget);
       await tester.tap(
         find.byKey(const ValueKey('style-menu-extract-super-values-Centre')),
       );
@@ -610,6 +610,171 @@ void main() {
         appearance.value.actionComponent('act_submit').propertyBindings,
         isEmpty,
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Card with an image exposes Extraire en JSON… and automatically binds propertyBindings.imageUrl',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final tempDir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('surface_extract_test_'),
+      ))!;
+      addTearDown(() async {
+        await tester.runAsync(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+      });
+      final repoStore = JsonRepositoryStore(tempDir);
+      addTearDown(repoStore.dispose);
+
+      final registry = Registry()..bootstrap();
+      const initialLayout = SuperLayoutConfig(
+        north: false,
+        south: false,
+        west: false,
+        east: false,
+        placements: {
+          SuperLayoutZone.center: ['card_avatar'],
+        },
+        slotTypes: {'card_avatar': 'factory:Card'},
+        slotLabels: {'card_avatar': 'AvatarClient'},
+      );
+      final layoutController = registry.layoutController(
+        'root',
+        fallback: initialLayout,
+      );
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => JsonRepositoryScope(
+              store: repoStore,
+              child: Scaffold(
+                body: Center(
+                  child: SizedBox(
+                    key: hostKey,
+                    width: 800,
+                    height: 600,
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: layoutController,
+                      builder: (_, config, _) => SuperLayout(
+                        label: 'Fiche',
+                        config: config,
+                        onChanged: (value) => layoutController.value = value,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.byKey(hostKey));
+      final appearance = AppearanceScope.controllerOf(context)!;
+      appearance.value = appearance.value.copyWith(
+        layouts: {'root': initialLayout},
+        styles: const {
+          'card_avatar': ContainerStyle(
+            fill: ContainerFill(imageUrl: 'https://example.com/avatar.png'),
+          ),
+        },
+      );
+      await tester.pumpAndSettle();
+
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.clear();
+
+      // Right-click on the Card and open its 3-dot menu ('AvatarClient').
+      await tester.tapAt(
+        tester.getCenter(find.byKey(hostKey)),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final cardMore = find.byKey(const ValueKey('style-menu-more-AvatarClient'));
+      expect(cardMore, findsOneWidget);
+      await tester.tap(cardMore);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Extraire en JSON…'), findsOneWidget);
+      await tester.tap(
+        find.byKey(
+          const ValueKey('style-menu-extract-super-values-AvatarClient'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('super-value-extract-prop-card_avatar-imageUrl'),
+        ),
+        findsOneWidget,
+      );
+      final jsonField = tester.widget<TextField>(
+        find.byKey(const ValueKey('super-value-extract-json')),
+      );
+      expect(jsonDecode(jsonField.controller!.text), {
+        'AvatarClient': 'https://example.com/avatar.png',
+      });
+
+      await tester.enterText(
+        find.byKey(const ValueKey('super-value-extract-repo-name')),
+        'avatars',
+      );
+      await tester.pump();
+      await tester.runAsync(() async {
+        await tester.tap(
+          find.byKey(const ValueKey('super-value-extract-create-repo')),
+        );
+        await tester.pump();
+        for (var i = 0; i < 50; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+          if (find
+                  .byKey(const ValueKey('super-value-extract-status'))
+                  .evaluate()
+                  .isNotEmpty ||
+              find
+                  .byKey(const ValueKey('super-value-extract-error'))
+                  .evaluate()
+                  .isNotEmpty) {
+            break;
+          }
+        }
+      });
+      await tester.pumpAndSettle();
+
+      final repoId = (await tester.runAsync(
+        () => repoStore.idOf('avatars'),
+      ))!;
+      final updatedStyle = appearance.value.style('card_avatar');
+      expect(
+        updatedStyle.propertyBindings[ContainerStyleProperty.imageUrl],
+        JsonTextBinding(repositoryId: repoId, path: 'AvatarClient'),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('super-value-extract-close')));
+      await tester.pumpAndSettle();
+
+      expect(history.canUndo, isTrue);
+      history.undo();
+      await tester.pumpAndSettle();
+      expect(appearance.value.style('card_avatar').propertyBindings, isEmpty);
       expect(tester.takeException(), isNull);
     },
   );

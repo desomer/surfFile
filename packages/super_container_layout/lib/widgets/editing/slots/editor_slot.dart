@@ -1347,7 +1347,7 @@ class EditorSlotState extends State<EditorSlot> {
                                         );
                                       }),
                                   child: const Text(
-                                    'Extraire les SuperValue en JSON…',
+                                    'Extraire & lier en JSON…',
                                   ),
                                 ),
                               if (canEditWithAi)

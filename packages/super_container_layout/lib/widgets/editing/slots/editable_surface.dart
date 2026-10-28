@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
+import '../../../models/json_text_binding.dart';
 import '../../../services/states/content_hover_scope.dart';
 
 import '../../../theme/appearance.dart';
@@ -11,6 +12,7 @@ import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/states/surface_state_binding.dart';
 import '../../surfaces/super_container.dart';
 import '../../components/super_layout/layout_selection.dart';
+import '../dialogs/super_value_json_extract_dialog.dart';
 import '../styles/container_style_dialog.dart';
 import '../history/editor_history.dart';
 import 'editor_slot.dart';
@@ -86,7 +88,8 @@ class EditableSurface extends StatefulWidget {
   EditableSurfaceState createState() => EditableSurfaceState();
 }
 
-class EditableSurfaceState extends State<EditableSurface> {
+class EditableSurfaceState extends State<EditableSurface>
+    implements JsonExtractableState {
   final _editorKey = GlobalKey<EditorSlotState>();
   final _singleChildKey = GlobalKey<EditableSingleChildState>();
   late final ValueNotifier<ContainerStyle> _local = ValueNotifier(widget.style);
@@ -341,7 +344,8 @@ class EditableSurfaceState extends State<EditableSurface> {
                       widget.menuTooltip ??
                       (widget.onEdit == null
                           ? () => formatContainerStyleTooltip(
-                              title: _editorKey.currentState?.titleLabel ?? _label,
+                              title:
+                                  _editorKey.currentState?.titleLabel ?? _label,
                               style: style,
                             )
                           : null),
@@ -392,6 +396,82 @@ class EditableSurfaceState extends State<EditableSurface> {
       );
     }
     return _buildSurface(context, widget.child ?? const SizedBox.expand());
+  }
+
+  @override
+  String get extractableId =>
+      _editorKey.currentState?.effectiveComponentId ??
+      widget.id ??
+      widget.slot?.name ??
+      _label;
+
+  @override
+  ExtractableComponentKind get extractableKind =>
+      ExtractableComponentKind.surface;
+
+  @override
+  EditorSlotState? get extractableSurface => _editorKey.currentState;
+
+  @override
+  BuildContext get extractableContext => context;
+
+  @override
+  bool get isExtractableMounted => mounted;
+
+  @override
+  String get preferredExtractableKey {
+    final slot = _editorKey.currentState;
+    if (slot != null && slot.mounted && slot.hasCustomLabel) {
+      final renamed = slot.titleLabel.trim();
+      if (renamed.isNotEmpty) return renamed;
+    }
+    final instanceLabel = slot?.componentLabel?.label.trim();
+    if (instanceLabel != null &&
+        instanceLabel.isNotEmpty &&
+        instanceLabel != 'Card' &&
+        instanceLabel != 'Iterable Content') {
+      return instanceLabel;
+    }
+    return extractableId;
+  }
+
+  @override
+  ExtractableComponentTarget buildExtractableTarget(String assignedBaseKey) {
+    final currentStyle = style;
+    final imageUrl = currentStyle.fill.imageUrl.trim();
+    final options = <ExtractablePropertyOption>[
+      if (imageUrl.isNotEmpty || currentStyle.imageBinding != null)
+        ExtractablePropertyOption(
+          id: ContainerStyleProperty.imageUrl.name,
+          label: 'Image de fond',
+          value: imageUrl,
+          defaultSelected: true,
+        ),
+    ];
+    return ExtractableComponentTarget(
+      id: extractableId,
+      kind: ExtractableComponentKind.surface,
+      displayName: preferredExtractableKey,
+      baseJsonKey: assignedBaseKey,
+      properties: options,
+      applyBindings: (bindings) {
+        if (!mounted || bindings.isEmpty) return;
+        final current = style;
+        final updatedProps = <ContainerStyleProperty, JsonTextBinding>{
+          ...current.propertyBindings,
+          for (final prop in ContainerStyleProperty.values)
+            if (bindings[prop.name] case final propBinding?) prop: propBinding,
+        };
+        final next = current.copyWith(
+          propertyBindings: updatedProps,
+          fill: current.fill.imageBinding == null
+              ? current.fill
+              : current.fill.copyWith(clearImageBinding: true),
+        );
+        if (next == current) return;
+        _update(next);
+      },
+    );
   }
 
   @override

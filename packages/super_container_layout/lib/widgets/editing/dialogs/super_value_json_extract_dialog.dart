@@ -15,7 +15,8 @@ import 'editor_dialog_header.dart';
 
 enum ExtractableComponentKind {
   superValue('SuperValue'),
-  superAction('SuperAction');
+  superAction('SuperAction'),
+  surface('Surface');
 
   const ExtractableComponentKind(this.label);
   final String label;
@@ -93,37 +94,45 @@ List<ExtractableComponentTarget> collectExtractableTargetsFromSlot(
     return true;
   });
 
-  if (direct != null) {
-    statesByKey[(direct!.extractableKind, direct!.extractableId)] = direct!;
-  } else {
-    void visit(Element element) {
-      if (element is StatefulElement && element.state is JsonExtractableState) {
-        final state = element.state as JsonExtractableState;
-        if (state.isExtractableMounted) {
-          final mapKey = (state.extractableKind, state.extractableId);
-          final existing = statesByKey[mapKey];
-          final scope = JsonListScope.maybeOf(state.extractableContext);
-          final isPlaceholder = scope?.placeholder ?? false;
-          final isSelected = scope?.selected ?? false;
-          if (existing == null) {
-            statesByKey[mapKey] = state;
-          } else {
-            final existingScope = JsonListScope.maybeOf(
-              existing.extractableContext,
-            );
-            final existingPlaceholder = existingScope?.placeholder ?? false;
-            final existingSelected = existingScope?.selected ?? false;
-            if ((existingPlaceholder && !isPlaceholder) ||
-                (!existingSelected && isSelected && !isPlaceholder)) {
-              statesByKey[mapKey] = state;
-            }
-          }
-          return;
-        }
+  void addState(JsonExtractableState state) {
+    if (!state.isExtractableMounted) return;
+    final mapKey = (state.extractableKind, state.extractableId);
+    final existing = statesByKey[mapKey];
+    final scope = JsonListScope.maybeOf(state.extractableContext);
+    final isPlaceholder = scope?.placeholder ?? false;
+    final isSelected = scope?.selected ?? false;
+    if (existing == null) {
+      statesByKey[mapKey] = state;
+    } else {
+      final existingScope = JsonListScope.maybeOf(
+        existing.extractableContext,
+      );
+      final existingPlaceholder = existingScope?.placeholder ?? false;
+      final existingSelected = existingScope?.selected ?? false;
+      if ((existingPlaceholder && !isPlaceholder) ||
+          (!existingSelected && isSelected && !isPlaceholder)) {
+        statesByKey[mapKey] = state;
       }
-      element.visitChildren(visit);
     }
+  }
 
+  void visit(Element element) {
+    if (element is StatefulElement && element.state is JsonExtractableState) {
+      final state = element.state as JsonExtractableState;
+      addState(state);
+      if (state.extractableKind != ExtractableComponentKind.surface) {
+        return;
+      }
+    }
+    element.visitChildren(visit);
+  }
+
+  if (direct != null) {
+    addState(direct!);
+    if (direct!.extractableKind == ExtractableComponentKind.surface) {
+      slot.context.visitChildElements(visit);
+    }
+  } else {
     slot.context.visitChildElements(visit);
   }
 
