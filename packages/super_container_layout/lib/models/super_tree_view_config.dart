@@ -21,6 +21,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     this.initiallyExpanded = true,
     this.showConnectors = true,
     this.showCheckboxes = false,
+    this.animateSelectionAndHover = true,
     this.emptyText = 'Aucun élément',
     this.itemId,
     Map<String, List<String>> placements = const {},
@@ -104,6 +105,9 @@ class SuperTreeViewConfig extends ComponentConfig {
   /// Affiche les cases à cocher de sélection en début de ligne.
   final bool showCheckboxes;
 
+  /// Anime verticalement le déplacement du fond de la ligne sélectionnée et survolée.
+  final bool animateSelectionAndHover;
+
   /// Message affiché lorsque l'arbre est vide.
   final String emptyText;
 
@@ -168,6 +172,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     bool? initiallyExpanded,
     bool? showConnectors,
     bool? showCheckboxes,
+    bool? animateSelectionAndHover,
     String? emptyText,
     String? itemId,
     Map<String, List<String>>? placements,
@@ -186,6 +191,8 @@ class SuperTreeViewConfig extends ComponentConfig {
     initiallyExpanded: initiallyExpanded ?? this.initiallyExpanded,
     showConnectors: showConnectors ?? this.showConnectors,
     showCheckboxes: showCheckboxes ?? this.showCheckboxes,
+    animateSelectionAndHover:
+        animateSelectionAndHover ?? this.animateSelectionAndHover,
     emptyText: emptyText ?? this.emptyText,
     itemId: itemId ?? this.itemId,
     placements: placements ?? this.placements,
@@ -306,6 +313,7 @@ class SuperTreeViewConfig extends ComponentConfig {
       'initiallyExpanded': initiallyExpanded,
       'showConnectors': showConnectors,
       'showCheckboxes': showCheckboxes,
+      'animateSelectionAndHover': animateSelectionAndHover,
       'emptyText': emptyText,
       if (itemId != null) 'itemId': itemId,
       if (placements.isNotEmpty)
@@ -365,6 +373,8 @@ class SuperTreeViewConfig extends ComponentConfig {
         'initiallyExpanded': initiallyExpanded,
       if (showConnectors != d.showConnectors) 'showConnectors': showConnectors,
       if (showCheckboxes != d.showCheckboxes) 'showCheckboxes': showCheckboxes,
+      if (animateSelectionAndHover != d.animateSelectionAndHover)
+        'animateSelectionAndHover': animateSelectionAndHover,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
       if (itemId != null) 'itemId': itemId,
       if (placements.isNotEmpty)
@@ -422,12 +432,14 @@ class SuperTreeViewConfig extends ComponentConfig {
     final initiallyExpanded = value['initiallyExpanded'] ?? true;
     final showConnectors = value['showConnectors'] ?? true;
     final showCheckboxes = value['showCheckboxes'] ?? false;
+    final animateSelectionAndHover = value['animateSelectionAndHover'] ?? true;
     final emptyText = value['emptyText'] ?? 'Aucun élément';
     final itemId = value['itemId'];
     if (childrenKey is! String ||
         initiallyExpanded is! bool ||
         showConnectors is! bool ||
         showCheckboxes is! bool ||
+        animateSelectionAndHover is! bool ||
         emptyText is! String ||
         (itemId != null && itemId is! String)) {
       throw const FormatException('Options de TreeView invalides.');
@@ -533,6 +545,7 @@ class SuperTreeViewConfig extends ComponentConfig {
         initiallyExpanded: initiallyExpanded,
         showConnectors: showConnectors,
         showCheckboxes: showCheckboxes,
+        animateSelectionAndHover: animateSelectionAndHover,
         emptyText: emptyText,
         itemId: itemId as String?,
         placements: placements,
@@ -565,6 +578,7 @@ class SuperTreeViewConfig extends ComponentConfig {
         initiallyExpanded != other.initiallyExpanded ||
         showConnectors != other.showConnectors ||
         showCheckboxes != other.showCheckboxes ||
+        animateSelectionAndHover != other.animateSelectionAndHover ||
         emptyText != other.emptyText ||
         itemId != other.itemId ||
         placements.length != other.placements.length ||
@@ -592,6 +606,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     initiallyExpanded,
     showConnectors,
     showCheckboxes,
+    animateSelectionAndHover,
     emptyText,
     itemId,
     Object.hashAllUnordered(

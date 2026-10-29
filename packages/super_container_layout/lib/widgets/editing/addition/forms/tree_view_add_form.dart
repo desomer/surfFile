@@ -107,6 +107,17 @@ class _TreeViewAddFormState extends State<TreeViewAddForm> {
             onChanged: (value) =>
                 widget.onChanged(draft.copyWith(showConnectors: value)),
           ),
+          SwitchListTile(
+            key: const ValueKey('add-tree-animate-selection-hover'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Animer le déplacement de la sélection et du survol',
+            ),
+            value: draft.animateSelectionAndHover,
+            onChanged: (value) => widget.onChanged(
+              draft.copyWith(animateSelectionAndHover: value),
+            ),
+          ),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(

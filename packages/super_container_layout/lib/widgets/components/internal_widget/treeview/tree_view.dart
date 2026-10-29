@@ -166,6 +166,11 @@ class TreeView<T> extends StatefulWidget {
     this.onHeaderSizeChanged,
     this.onToggleNode,
     this.rowWrapper,
+    this.animateSelectionAndHover = false,
+    this.rowExtraExtent = 0.0,
+    this.selectionIndicatorBuilder,
+    this.hoverIndicatorBuilder,
+    this.canHoverNode,
     this.onCopy,
     this.onPaste,
   });
@@ -183,6 +188,23 @@ class TreeView<T> extends StatefulWidget {
 
   /// Enveloppe optionnelle autour de chaque ligne construite (ex: `IterableContent`).
   final Widget Function(TreeNodeData<T> node, Widget child)? rowWrapper;
+
+  /// Active l'animation verticale des fonds de sélection et de survol.
+  final bool animateSelectionAndHover;
+
+  /// Hauteur additionnelle par ligne ajoutée par [rowWrapper] (padding + margin).
+  final double rowExtraExtent;
+
+  /// Construit le fond animé de la ligne sélectionnée.
+  final Widget Function(BuildContext context, TreeNodeData<T> node)?
+  selectionIndicatorBuilder;
+
+  /// Construit le fond animé de la ligne survolée.
+  final Widget Function(BuildContext context, TreeNodeData<T> node)?
+  hoverIndicatorBuilder;
+
+  /// Indique si un nœud peut déclencher l'indicateur de survol.
+  final bool Function(TreeNodeData<T> node)? canHoverNode;
 
   /// Affiche une case à cocher en début de chaque ligne.
   final bool showCheckboxes;
@@ -244,6 +266,18 @@ class TreeViewState<T> extends State<TreeView<T>> {
   final Set<TreeNodeData<T>> selectedNodes = {};
   bool showCheckboxes = false;
 
+  final ValueNotifier<TreeNodeData<T>?> _hoveredNodeNotifier =
+      ValueNotifier<TreeNodeData<T>?>(null);
+  TreeNodeData<T>? _lastHoveredNode;
+  double _lastHoveredTop = 0.0;
+  bool _wasHoverVisible = false;
+  bool _shouldAnimateHoverSlide = false;
+
+  TreeNodeData<T>? _lastSelectedNode;
+  double _lastSelectedTop = 0.0;
+  bool _wasSelectionVisible = false;
+  bool _shouldAnimateSelectionSlide = false;
+
   void toggleCheckboxMode() {
     setState(() {
       showCheckboxes = !showCheckboxes;
@@ -258,6 +292,8 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 
   double get _effectiveRowHeight => widget.rowHeight ?? rowHeight;
+
+  double get _totalRowExtent => _effectiveRowHeight + widget.rowExtraExtent;
 
   IndentInfo get _effectiveIndent => IndentInfo(
     indent: widget.indentSize ?? indent.indent,
@@ -282,7 +318,9 @@ class TreeViewState<T> extends State<TreeView<T>> {
     }
     if (oldWidget.rowHeight != widget.rowHeight ||
         oldWidget.indentSize != widget.indentSize ||
-        oldWidget.showConnectors != widget.showConnectors) {
+        oldWidget.showConnectors != widget.showConnectors ||
+        oldWidget.animateSelectionAndHover != widget.animateSelectionAndHover ||
+        oldWidget.rowExtraExtent != widget.rowExtraExtent) {
       repaintInProgess = DateTime.now().millisecondsSinceEpoch;
     }
   }
@@ -290,6 +328,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
   @override
   void dispose() {
     isDisposed = true;
+    _hoveredNodeNotifier.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -354,7 +393,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
               headerSize = clampedHeaderSize;
               repaintInProgess = timeBuild;
             }
-            return Scrollbar(
+            final listView = Scrollbar(
               controller: _scrollController,
               thumbVisibility: true, // ✅ Toujours visible sur desktop
               child: ListView.builder(
@@ -374,6 +413,32 @@ class TreeViewState<T> extends State<TreeView<T>> {
                   return row;
                 },
               ),
+            );
+            if (!widget.animateSelectionAndHover) {
+              return listView;
+            }
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ListenableBuilder(
+                      listenable: _scrollController,
+                      builder: (context, child) {
+                        final scrollOffset = _scrollController.hasClients
+                            ? _scrollController.offset
+                            : 0.0;
+                        return Transform.translate(
+                          offset: Offset(0, -scrollOffset),
+                          child: child,
+                        );
+                      },
+                      child: _buildSlidingIndicatorsLayer(context),
+                    ),
+                  ),
+                ),
+                listView,
+              ],
             );
           },
         );
@@ -505,52 +570,175 @@ class TreeViewState<T> extends State<TreeView<T>> {
     return result;
   }
 
+  double? _computeNodeTopOffset(TreeNodeData<T>? target) {
+    if (target == null) return null;
+    if (target.isHiddenByParent || target.isInvisibleRequested) return null;
+    double top = 0.0;
+    final extent = _totalRowExtent;
+    for (final node in list) {
+      if (identical(node, target)) {
+        return top;
+      }
+      if (!node.isHiddenByParent && !node.isInvisibleRequested) {
+        top += extent;
+      }
+    }
+    return null;
+  }
+
+  TreeNodeData<T>? _findSelectedNode() {
+    for (final node in list) {
+      if (widget.isSelected(node, this, currentRowSelectedState)) {
+        return node;
+      }
+    }
+    return null;
+  }
+
+  void _onRowHoverEnter(TreeNodeData<T> node) {
+    if (widget.canHoverNode != null && !widget.canHoverNode!(node)) {
+      return;
+    }
+    if (_hoveredNodeNotifier.value != node) {
+      _hoveredNodeNotifier.value = node;
+    }
+  }
+
+  void _onRowHoverExit(TreeNodeData<T> node) {
+    if (_hoveredNodeNotifier.value == node) {
+      _hoveredNodeNotifier.value = null;
+    }
+  }
+
+  Widget _buildSlidingIndicatorsLayer(BuildContext context) {
+    final extent = _totalRowExtent;
+    final selectedNode = _findSelectedNode();
+    final selectedTop = _computeNodeTopOffset(selectedNode);
+    final isSelectionVisible = selectedNode != null && selectedTop != null;
+    if (isSelectionVisible != _wasSelectionVisible ||
+        (selectedTop != null && (selectedTop - _lastSelectedTop).abs() > 0.5)) {
+      _shouldAnimateSelectionSlide =
+          _wasSelectionVisible &&
+          isSelectionVisible &&
+          (selectedTop - _lastSelectedTop).abs() > 0.5;
+      if (selectedTop != null) {
+        _lastSelectedTop = selectedTop;
+      }
+      _wasSelectionVisible = isSelectionVisible;
+    }
+    if (selectedNode != null) {
+      _lastSelectedNode = selectedNode;
+    }
+    final effectiveSelectedNode = selectedNode ?? _lastSelectedNode;
+    final selectionChild = effectiveSelectedNode == null
+        ? const SizedBox.shrink()
+        : (widget.selectionIndicatorBuilder != null
+              ? widget.selectionIndicatorBuilder!(
+                  context,
+                  effectiveSelectedNode,
+                )
+              : Container(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.primary.withValues(alpha: 0.14),
+                ));
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: ValueListenableBuilder<TreeNodeData<T>?>(
+            valueListenable: _hoveredNodeNotifier,
+            builder: (context, hoveredNode, _) {
+              final hoveredTop = _computeNodeTopOffset(hoveredNode);
+              final isHoverVisible = hoveredNode != null && hoveredTop != null;
+              if (isHoverVisible != _wasHoverVisible ||
+                  (hoveredTop != null &&
+                      (hoveredTop - _lastHoveredTop).abs() > 0.5)) {
+                _shouldAnimateHoverSlide =
+                    _wasHoverVisible &&
+                    isHoverVisible &&
+                    (hoveredTop - _lastHoveredTop).abs() > 0.5;
+                if (hoveredTop != null) {
+                  _lastHoveredTop = hoveredTop;
+                }
+                _wasHoverVisible = isHoverVisible;
+              }
+              if (hoveredNode != null) {
+                _lastHoveredNode = hoveredNode;
+              }
+              final effectiveHoverNode = hoveredNode ?? _lastHoveredNode;
+              final hoverChild = effectiveHoverNode == null
+                  ? const SizedBox.shrink()
+                  : (widget.hoverIndicatorBuilder != null
+                        ? widget.hoverIndicatorBuilder!(
+                            context,
+                            effectiveHoverNode,
+                          )
+                        : Container(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.06),
+                          ));
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedPositioned(
+                    key: const ValueKey('tree-view-hover-positioned'),
+                    duration: _shouldAnimateHoverSlide
+                        ? const Duration(milliseconds: 180)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    top: _lastHoveredTop,
+                    left: 0,
+                    right: 0,
+                    height: extent,
+                    child: AnimatedOpacity(
+                      key: const ValueKey('tree-view-hover-opacity'),
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      opacity: isHoverVisible ? 1.0 : 0.0,
+                      child: hoverChild,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        AnimatedPositioned(
+          key: const ValueKey('tree-view-selection-positioned'),
+          duration: _shouldAnimateSelectionSlide
+              ? const Duration(milliseconds: 200)
+              : Duration.zero,
+          curve: Curves.easeOutCubic,
+          top: _lastSelectedTop,
+          left: 0,
+          right: 0,
+          height: extent,
+          child: AnimatedOpacity(
+            key: const ValueKey('tree-view-selection-opacity'),
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            opacity: isSelectionVisible ? 1.0 : 0.0,
+            child: selectionChild,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget getHover(TreeNodeData<T> attr, Widget child) {
-
-    return child;
-
-    // return HoverableCard(
-    //   onHover: (isHovered) {
-    //     if (attr.data is NodeAttribut) {
-    //       (attr.data as NodeAttribut).info.isHoover?.value = isHovered;
-    //     }
-    //   },
-    //   onBuild: (state, ctx) {
-    //     if (attr.data is NodeAttribut) {
-    //       (attr.data as NodeAttribut).widgetRowHoverState = state;
-    //     }
-    //   },
-    //   isSelected: (State state) {
-    //     if (attr.data is NodeAttribut) {
-    //       (attr.data as NodeAttribut).widgetRowHoverState = state;
-    //     }
-    //     if (widget.onBuild != null) {
-    //       widget.onBuild!(this, ctx);
-    //     }
-
-    //     bool isSelected = widget.isSelected(
-    //       attr,
-    //       state,
-    //       currentRowSelectedState,
-    //     );
-    //     if (isSelected) {
-    //       if (state != currentRowSelectedState) {
-    //         var old = currentRowSelectedState;
-    //         // deselectionner l'ancien
-    //         SchedulerBinding.instance.addPostFrameCallback((timeStamp) {
-    //           state.setState(() {});
-    //           if (old?.mounted == true) {
-    //             // ignore: invalid_use_of_protected_member
-    //             old?.setState(() {});
-    //           }
-    //         });
-    //       }
-    //       currentRowSelectedState = state;
-    //     }
-    //     return isSelected;
-    //   },
-    //   child: child,
-    // );
+    if (!widget.animateSelectionAndHover) {
+      return child;
+    }
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) => _onRowHoverEnter(attr),
+      onExit: (_) => _onRowHoverExit(attr),
+      child: child,
+    );
   }
 
   void doTapHeader(TreeNodeData<T> node, String type) {
@@ -607,17 +795,22 @@ class TreeViewState<T> extends State<TreeView<T>> {
   // }
 
   Widget _buildNode(BuildContext context, TreeNodeData<T> node) {
-    final stack = Stack(
-      clipBehavior: Clip.none,
-      children: [
-        getHover(node, _getRowCached(node)),
-        if (widget.showConnectors && node.depth > 0)
-          Positioned(
-            left: 0,
-            top: 0,
-            child: TreeConnector(node: node, indentInfo: _effectiveIndent),
-          ),
-      ],
+    final stack = getHover(
+      node,
+      Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _getRowCached(node),
+          if (widget.showConnectors && node.depth > 0)
+            Positioned(
+              left: 0,
+              top: 0,
+              child: IgnorePointer(
+                child: TreeConnector(node: node, indentInfo: _effectiveIndent),
+              ),
+            ),
+        ],
+      ),
     );
     if (!widget.enableContextMenu) return stack;
     return GestureDetector(

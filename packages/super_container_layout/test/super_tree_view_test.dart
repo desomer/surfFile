@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -123,6 +124,7 @@ void main() {
       initiallyExpanded: false,
       showConnectors: false,
       showCheckboxes: true,
+      animateSelectionAndHover: false,
       emptyText: 'Vide',
       placements: const {
         SuperTreeViewConfig.headerZone: ['h1'],
@@ -134,6 +136,7 @@ void main() {
     final encoded = config.toTypedJson();
     final decoded = ComponentConfig.fromJson(encoded);
     expect(decoded, equals(config));
+    expect(config.toCompactJson()['animateSelectionAndHover'], isFalse);
   });
 
   testWidgets(
@@ -633,6 +636,149 @@ void main() {
       for (final clipRect in rowClipRects) {
         expect(clipRect.clipBehavior, Clip.none);
       }
+    },
+  );
+
+  testWidgets(
+    'SuperTreeView animates selection and hover backgrounds vertically with IterableContent states',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      const rowStyle = ContainerStyle(radius: 8);
+      final styledStates = SurfaceStyleStates(
+        selected: SelectedSurfaceStyle(
+          style: const ContainerStyle(color: Colors.teal, radius: 12),
+          properties: const {
+            SurfaceStyleProperty.background,
+            SurfaceStyleProperty.corners,
+          },
+        ),
+        hover: SelectedSurfaceStyle(
+          style: const ContainerStyle(color: Colors.amber, radius: 10),
+          properties: const {
+            SurfaceStyleProperty.background,
+            SurfaceStyleProperty.corners,
+          },
+        ),
+      );
+
+      await mount(
+        tester,
+        SuperTreeView(
+          id: 'catalog-tree',
+          templateStyle: rowStyle.copyWith(states: styledStates),
+          config: SuperTreeViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'nodes'),
+            rowHeight: 36,
+            placements: const {
+              SuperTreeViewConfig.headerZone: ['header'],
+              SuperTreeViewConfig.dataZone: ['data'],
+            },
+          ),
+          header: const SuperValue(
+            id: 'node-header',
+            config: SuperValueConfig(
+              mode: SuperValueMode.display,
+              binding: JsonTextBinding(path: 'key'),
+            ),
+          ),
+          data: const SuperValue(
+            id: 'node-data',
+            config: SuperValueConfig(
+              mode: SuperValueMode.display,
+              binding: JsonTextBinding(path: 'data'),
+            ),
+          ),
+        ),
+        registry: registry,
+      );
+
+      final selIndicatorFinder = find.byKey(
+        const ValueKey('super-tree-selection-indicator-catalog-tree'),
+      );
+      final hoverIndicatorFinder = find.byKey(
+        const ValueKey('super-tree-hover-indicator-catalog-tree'),
+      );
+      final selOpacityFinder = find.byKey(
+        const ValueKey('tree-view-selection-opacity'),
+      );
+      final hoverOpacityFinder = find.byKey(
+        const ValueKey('tree-view-hover-opacity'),
+      );
+
+      // Initially neither selection nor hover indicator is visible.
+      expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 0.0);
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityFinder).opacity, 0.0);
+
+      // 1. Tap first row ("Parent 1", index 0 -> top offset 0)
+      await tester.tap(find.text('Parent 1'));
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 1.0);
+      expect(
+        tester
+            .widget<SuperContainer>(selIndicatorFinder)
+            .style
+            .color
+            ?.toARGB32(),
+        Colors.teal.toARGB32(),
+      );
+      expect(
+        tester.widget<SuperContainer>(selIndicatorFinder).style.radius,
+        12,
+      );
+      final initialSelTop = tester.getTopLeft(selIndicatorFinder).dy;
+
+      // 2. Tap fourth row ("Parent 2", index 3 -> top offset 3 * 36 = 108)
+      await tester.tap(find.text('Parent 2'));
+      await tester.pump();
+      // Mid-animation (80ms into 200ms slide): indicator is moving vertically
+      await tester.pump(const Duration(milliseconds: 80));
+      final midSelTop = tester.getTopLeft(selIndicatorFinder).dy;
+      expect(midSelTop, greaterThan(initialSelTop + 10));
+      expect(midSelTop, lessThan(initialSelTop + 108 - 5));
+
+      await tester.pumpAndSettle();
+      final finalSelTop = tester.getTopLeft(selIndicatorFinder).dy;
+      expect(finalSelTop - initialSelTop, closeTo(3 * 36.0, 0.5));
+
+      // 3. Hover first row ("Parent 1"), then move to third row ("Child 1.2")
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+
+      await gesture.moveTo(tester.getCenter(find.text('Parent 1')));
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityFinder).opacity, 1.0);
+      expect(
+        tester
+            .widget<SuperContainer>(hoverIndicatorFinder)
+            .style
+            .color
+            ?.toARGB32(),
+        Colors.amber.toARGB32(),
+      );
+      final initialHoverTop = tester.getTopLeft(hoverIndicatorFinder).dy;
+      expect(initialHoverTop, closeTo(initialSelTop, 0.5));
+
+      await gesture.moveTo(tester.getCenter(find.text('Child 1.2')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 70));
+      final midHoverTop = tester.getTopLeft(hoverIndicatorFinder).dy;
+      expect(midHoverTop, greaterThan(initialHoverTop + 8));
+      expect(midHoverTop, lessThan(initialHoverTop + 2 * 36.0 - 4));
+
+      await tester.pumpAndSettle();
+      final finalHoverTop = tester.getTopLeft(hoverIndicatorFinder).dy;
+      expect(finalHoverTop - initialHoverTop, closeTo(2 * 36.0, 0.5));
+
+      // 4. Move pointer outside tree: hover fades out in place without jumping
+      await gesture.moveTo(const Offset(5, 5));
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityFinder).opacity, 0.0);
+      expect(
+        tester.getTopLeft(hoverIndicatorFinder).dy,
+        closeTo(finalHoverTop, 0.5),
+      );
     },
   );
 }

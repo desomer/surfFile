@@ -39,6 +39,7 @@ class EditableSurface extends StatefulWidget {
     this.decorate = true,
     this.applyPadding,
     this.editable = true,
+    this.resolveSelectionAndHover = true,
     this.onEdit,
     this.onAdd,
     this.axisAction,
@@ -74,6 +75,11 @@ class EditableSurface extends StatefulWidget {
   final bool decorate;
   final bool? applyPadding;
   final bool editable;
+
+  /// When false, delegates visual `selected` and `hover` state resolution to an
+  /// external animated indicator layer while keeping [JsonListScope] selection
+  /// and style-dialog preview intact.
+  final bool resolveSelectionAndHover;
   final Future<void> Function()? onEdit;
   final Future<void> Function()? onAdd;
   final LayoutAxisAction Function()? axisAction;
@@ -297,13 +303,19 @@ class EditableSurfaceState extends State<EditableSurface>
           listenable: Listenable.merge([_preview, _hovered, ?_stateBinding]),
           builder: (context, _) {
             final base = style;
+            final isDelegatedActive =
+                !widget.resolveSelectionAndHover &&
+                _preview.value == null &&
+                ((scope?.selected ?? false) || _hovered.value);
             final surfaceStyle =
                 _preview.value ??
                 base.states?.resolve(
                   base,
                   name: _stateBinding?.stateName,
-                  isSelected: scope?.selected ?? false,
-                  isHovered: _hovered.value,
+                  isSelected:
+                      widget.resolveSelectionAndHover &&
+                      (scope?.selected ?? false),
+                  isHovered: widget.resolveSelectionAndHover && _hovered.value,
                   activeStates: {
                     if (content?.hovered == true) AutomaticState.contentHover,
                   },
@@ -312,6 +324,10 @@ class EditableSurfaceState extends State<EditableSurface>
             final renderStyle = surfaceStyle.copyWith(
               margin: 0,
               marginInsets: null,
+              resetColor: isDelegatedActive,
+              hoverEffect: widget.resolveSelectionAndHover
+                  ? surfaceStyle.hoverEffect
+                  : false,
             );
             final radius =
                 widget.slot?.role == AppearanceSurfaceRole.applicationBackground

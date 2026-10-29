@@ -101,6 +101,7 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
   late bool _initiallyExpanded = widget.config.initiallyExpanded;
   late bool _showConnectors = widget.config.showConnectors;
   late bool _showCheckboxes = widget.config.showCheckboxes;
+  late bool _animateSelectionAndHover = widget.config.animateSelectionAndHover;
   List<JsonRepositoryEntry> _repositories = [];
   String? _error;
   bool _busy = false;
@@ -171,6 +172,7 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
       initiallyExpanded: _initiallyExpanded,
       showConnectors: _showConnectors,
       showCheckboxes: _showCheckboxes,
+      animateSelectionAndHover: _animateSelectionAndHover,
       emptyText: _empty.text,
     );
     result.validate();
@@ -290,8 +292,7 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
                   decoration: const InputDecoration(
                     labelText: 'Clé des nœuds enfants',
                     hintText: 'children',
-                    helperText:
-                        'Propriété JSON de chaque nœud contenant la liste de ses sous-nœuds.',
+                    helperText: 'Propriété JSON de chaque nœud contenant la liste de ses sous-nœuds.',
                   ),
                 ),
                 Row(
@@ -364,6 +365,16 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
                   title: const Text('Afficher les cases à cocher'),
                   value: _showCheckboxes,
                   onChanged: (value) => setState(() => _showCheckboxes = value),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('super-tree-animate-selection-hover'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Animer le déplacement de la sélection et du survol',
+                  ),
+                  value: _animateSelectionAndHover,
+                  onChanged: (value) =>
+                      setState(() => _animateSelectionAndHover = value),
                 ),
                 const Text(
                   'Chaque ligne expose 2 zones éditables : « Header » et '

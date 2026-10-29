@@ -10,6 +10,7 @@ import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
+import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_layout.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/treeview/tree_view.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
@@ -62,10 +63,10 @@ class _TestAppState extends State<TestApp> {
     var tree = TreeViewData(
       nodes: [
         TreeNodeData<Map<String, dynamic>>(
-          data: {'key': 'value', 'data' : 'someData'},
+          data: {'key': 'value', 'data': 'someData'},
           children: [
             TreeNodeData<Map<String, dynamic>>(
-              data: {'key': 'value2', 'data' : 'someData2'},
+              data: {'key': 'value2', 'data': 'someData2'},
               children: [],
             ),
           ],
@@ -103,6 +104,73 @@ class _TestAppState extends State<TestApp> {
                   ) {
                     return false;
                   },
+            );
+          },
+        ),
+      ),
+    );
+
+    _registry.registerFactory(
+      'B',
+      EditableSurface(
+        label: "Tabbble",
+        child: Builder(
+          builder: (context) {
+            return FrozenTableView(
+              rowCount: 200,
+              colCount: 200,
+              buildTopCell: (int row, int col) {
+                return Container(
+                  width: 100,
+                  height: 50,
+                  color: Colors.grey,
+                  child: Center(child: Text('Top $row,$col')),
+                );
+              },
+              buildBottomCell: (int row, int col) {
+                return Container(
+                  width: 100,
+                  height: 50,
+                  color: Colors.lightBlue,
+                  child: Center(child: Text('Bottom $row,$col')),
+                );
+              },
+              buildLeftCell: (int row, int col) {
+                return Container(
+                  width: 100,
+                  height: 50,
+                  color: Colors.green,
+                  child: Center(child: Text('Left $row,$col')),
+                );
+              },
+              buildBodyCell: (int row, int col) {
+                return Container(
+                  width: 100,
+                  height: 50,
+                  color: Colors.orange,
+                  child: Center(child: Text('Body $row,$col')),
+                );
+              },
+              rowCountTop: 1,
+              rowCountBottom: 1,
+              colFreezeLeftCount: 2,
+              getColWidth:
+                  (int col, double usedWidth, bool isCalc, int nbFillCol) {
+                    return 100.0;
+                  },
+              getRowHeight: (int row) {
+                return 50.0;
+              },
+              buildRow: (
+                int row,
+                bool isStartCols,
+                Widget child,
+                FrozenTableViewState tableState,
+              ) {
+                return child;
+              },
+              rowWidthBorderR: 0,
+              rowWidthBorderL: 0,
             );
           },
         ),

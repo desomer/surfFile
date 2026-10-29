@@ -36,10 +36,12 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
 import '../../theme/appearance.dart';
+import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tree_view_editor.dart';
 import '../editing/history/editor_history.dart';
+import '../surfaces/super_container.dart';
 import 'super_layout/iterable_content.dart';
 import 'super_layout/slot_implementation.dart';
 import 'internal_widget/treeview/tree_view.dart';
@@ -762,8 +764,9 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     String rowId,
     JsonListScope? parentScope,
     TreeNodeData<SuperTreeNodeItem> node,
-    Widget rowContent,
-  ) {
+    Widget rowContent, {
+    required bool animateSelectionAndHover,
+  }) {
     final item = node.data;
     final selected = _isNodeSelected(item);
     final placeholder = item.isTemplate || (parentScope?.placeholder ?? false);
@@ -773,6 +776,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
         id: rowId,
         label: 'Iterable Content',
         style: rowStyle,
+        resolveSelectionAndHover: !animateSelectionAndHover,
         onStyleChanged: (next) => style.value = next,
         child: rowContent,
       ),
@@ -797,6 +801,75 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       treeTemplatePath: _templatePath,
       placeholder: placeholder,
       child: interactive,
+    );
+  }
+
+  Widget _buildSelectionIndicator(
+    BuildContext context,
+    ContainerStyle currentRowStyle,
+  ) {
+    final defaultColor = Theme.of(
+      context,
+    ).colorScheme.primary.withValues(alpha: 0.14);
+    final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
+    final resolved = hasCustomSelected
+        ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
+        : currentRowStyle.copyWith(clearStates: true);
+    final hasFill =
+        resolved.fill.type != FillType.solid || resolved.hasImage;
+    final effectiveStyle = resolved.copyWith(
+      clearStates: true,
+      margin: 0,
+      marginInsets: null,
+      hoverEffect: false,
+      color: hasCustomSelected
+          ? (resolved.color ?? (hasFill ? null : defaultColor))
+          : defaultColor,
+    );
+    return Padding(
+      padding: resolved.outerMargin,
+      child: SuperContainer(
+        key: ValueKey('super-tree-selection-indicator-${widget.id}'),
+        style: effectiveStyle,
+        fallbackColor: Colors.transparent,
+        borderColor: Colors.transparent,
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
+  Widget _buildHoverIndicator(
+    BuildContext context,
+    ContainerStyle currentRowStyle,
+  ) {
+    final accent = AppearanceScope.of(context).accent;
+    final hoverBase = currentRowStyle.hoverBase(accent);
+    final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
+        .withValues(alpha: 0.08);
+    final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
+    final resolved = hasCustomHover
+        ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
+        : currentRowStyle.copyWith(clearStates: true);
+    final hasFill =
+        resolved.fill.type != FillType.solid || resolved.hasImage;
+    final effectiveStyle = resolved.copyWith(
+      clearStates: true,
+      margin: 0,
+      marginInsets: null,
+      hoverEffect: false,
+      color: hasCustomHover
+          ? (resolved.color ?? (hasFill ? null : defaultColor))
+          : defaultColor,
+    );
+    return Padding(
+      padding: resolved.outerMargin,
+      child: SuperContainer(
+        key: ValueKey('super-tree-hover-indicator-${widget.id}'),
+        style: effectiveStyle,
+        fallbackColor: Colors.transparent,
+        borderColor: Colors.transparent,
+        child: const SizedBox.expand(),
+      ),
     );
   }
 
@@ -884,10 +957,13 @@ class _SuperTreeViewState extends State<SuperTreeView> {
 
               final hasCustomSelectedStyle =
                   currentRowStyle.states?.hasSelected == true;
+              final animateIndicators = config.animateSelectionAndHover;
               for (final root in treeNodes) {
                 void applySelectionBg(TreeNodeData<SuperTreeNodeItem> node) {
                   node.bgColor =
-                      !hasCustomSelectedStyle && _isNodeSelected(node.data)
+                      !animateIndicators &&
+                          !hasCustomSelectedStyle &&
+                          _isNodeSelected(node.data)
                       ? Theme.of(
                           context,
                         ).colorScheme.primary.withValues(alpha: 0.14)
@@ -899,6 +975,10 @@ class _SuperTreeViewState extends State<SuperTreeView> {
 
                 applySelectionBg(root);
               }
+
+              final rowExtraExtent =
+                  currentRowStyle.contentPadding.vertical +
+                  currentRowStyle.outerMargin.vertical;
 
               return Column(
                 mainAxisSize: MainAxisSize.min,
@@ -923,9 +1003,16 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                       child: TreeView<SuperTreeNodeItem>(
                         key: ValueKey('super-tree-${widget.id}'),
                         rowHeight: config.rowHeight,
+                        rowExtraExtent: rowExtraExtent,
                         indentSize: config.indent,
                         showConnectors: config.showConnectors,
                         showCheckboxes: config.showCheckboxes,
+                        animateSelectionAndHover: animateIndicators,
+                        selectionIndicatorBuilder: (ctx, _) =>
+                            _buildSelectionIndicator(ctx, currentRowStyle),
+                        hoverIndicatorBuilder: (ctx, _) =>
+                            _buildHoverIndicator(ctx, currentRowStyle),
+                        canHoverNode: (node) => !node.data.isTemplate,
                         enableContextMenu: !editing,
                         onToggleNode: (node) {
                           if (!node.data.isTemplate) {
@@ -945,6 +1032,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                           listScope,
                           node,
                           rowContent,
+                          animateSelectionAndHover: animateIndicators,
                         ),
                         getHeader: (node) => _buildZoneContent(
                           context,
