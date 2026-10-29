@@ -1338,6 +1338,18 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               ],
               accepts: option.tagFilter.accepts,
               zoneTags: option.tagFilter.include,
+              preview: _regionPreview(option.id),
+              previewFor: (beforeId) {
+                if (beforeId == null) return _regionPreview(option.id);
+                final siblingLabel = slotsFor(
+                  option.id,
+                ).where((s) => s.id == beforeId).firstOrNull?.label;
+                return _regionPreview(
+                  option.id,
+                  beforeId: beforeId,
+                  label: siblingLabel == null ? null : 'Avant $siblingLabel',
+                );
+              },
             ),
       ],
     );
@@ -1433,8 +1445,62 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       ),
       acceptsTags: spec.tagFilter.accepts,
       zoneTags: spec.tagFilter.include,
+      targetContext: () =>
+          widget.slotContextFor?.call(slot) ?? _slotContext(slot.id, region),
       insert: (plan, component) async =>
           _insertAround(region, slot, plan, component),
+    );
+  }
+
+  static InsertDirection? _inactiveEdgeForRegion(String region) =>
+      switch (region) {
+        'appBar' ||
+        'header' ||
+        'top' ||
+        'flexibleSpace' ||
+        'title' => InsertDirection.up,
+        'bottomNavigationBar' ||
+        'bottomAppBar' ||
+        'bottomSheet' ||
+        'footer' ||
+        'bottom' ||
+        'persistentFooterButtons' => InsertDirection.down,
+        'drawer' ||
+        'navigationRail' ||
+        'leading' ||
+        'start' => InsertDirection.left,
+        'endDrawer' ||
+        'actions' ||
+        'trailing' ||
+        'end' ||
+        'floatingActionButton' => InsertDirection.right,
+        _ => null,
+      };
+
+  ComponentAddPlacementPreview _regionPreview(
+    String regionId, {
+    String? beforeId,
+    String? label,
+  }) {
+    final spec = definition(regionId);
+    return ComponentAddPlacementPreview.inZone(
+      zoneContext: () => _regionContext(regionId),
+      containerContext: () => mounted ? context : null,
+      axis: () => axisOf(regionId),
+      replaces: spec.single,
+      inactiveEdge: _inactiveEdgeForRegion(regionId),
+      beforeContext: beforeId == null
+          ? null
+          : () => _slotContext(beforeId, regionId),
+      lastSiblingContext: () {
+        final slots = slotsFor(regionId);
+        if (slots.isEmpty) return null;
+        final last = slots.last;
+        return widget.slotContextFor?.call(last) ??
+            _slotContext(last.id, regionId);
+      },
+      label: label ?? spec.label,
+      icon: beforeId == null ? Icons.add_box_outlined : Icons.vertical_align_top,
     );
   }
 
@@ -1582,6 +1648,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             hint: enabled(region.id) ? null : 'Active la zone ${region.label}',
             accepts: region.tagFilter.accepts,
             zoneTags: region.tagFilter.include,
+            preview: _regionPreview(region.id),
             insert: (component) async => _insertInRegion(region.id, component),
           ),
     ];

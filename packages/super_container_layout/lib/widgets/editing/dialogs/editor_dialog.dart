@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../../components/super_layout/layout_selection.dart';
+import '../addition/insertion_plan.dart';
 import '../overlay/editor_zoom.dart';
 import '../overlay/editor_overlay.dart';
 
@@ -84,7 +85,13 @@ Future<T?> _showEditorDialog<T>({
   if (controller == null || !controller.enabled) {
     return await showDialog<T>(
       context: context,
-      builder: builder,
+      builder: (context) => Stack(
+        fit: StackFit.expand,
+        children: [
+          const IgnorePointer(child: EditorInsertionPreviewOverlay()),
+          Builder(builder: builder),
+        ],
+      ),
       barrierDismissible: barrierDismissible,
       barrierColor: barrierColor,
     );
@@ -246,6 +253,16 @@ class _EditorDialogState extends State<_EditorDialog> {
               ),
             ),
           ),
+          Positioned.fromRect(
+            rect: available,
+            child: IgnorePointer(
+              child: ClipRect(
+                child: EditorInsertionPreviewOverlay(
+                  controller: widget.controller,
+                ),
+              ),
+            ),
+          ),
           Positioned(
             key: const ValueKey('editor-dialog-panel'),
             left: bottom || _left ? 0 : null,
@@ -315,3 +332,166 @@ class _EditorDialogState extends State<_EditorDialog> {
     },
   );
 }
+
+/// Renders the hovered placement preview on top of the canvas.
+class EditorInsertionPreviewOverlay extends StatefulWidget {
+  const EditorInsertionPreviewOverlay({
+    this.controller,
+    super.key,
+  });
+
+  final EditorZoomController? controller;
+
+  @override
+  State<EditorInsertionPreviewOverlay> createState() =>
+      _EditorInsertionPreviewOverlayState();
+}
+
+class _EditorInsertionPreviewOverlayState
+    extends State<EditorInsertionPreviewOverlay> {
+  final _boxKey = GlobalKey();
+  InsertionPreviewBounds? _lastBounds;
+  bool _postFrameScheduled = false;
+
+  void _scheduleCheck(ComponentAddPlacementPreview? preview) {
+    if (_postFrameScheduled || preview == null) return;
+    _postFrameScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _postFrameScheduled = false;
+      if (!mounted) return;
+      final current = EditorInsertionPreview.active.value;
+      if (current == null) return;
+      final box = _boxKey.currentContext?.findRenderObject();
+      if (box is RenderBox && box.attached && box.hasSize) {
+        final next = current.resolve(box);
+        if (next != _lastBounds) {
+          setState(() => _lastBounds = next);
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      EditorInsertionPreview.active,
+      widget.controller?.transform,
+      widget.controller?.dialog,
+    ]),
+    builder: (context, _) {
+      final preview = EditorInsertionPreview.active.value;
+      if (preview == null) {
+        _lastBounds = null;
+        return SizedBox.expand(key: _boxKey);
+      }
+      InsertionPreviewBounds? bounds;
+      final box = _boxKey.currentContext?.findRenderObject();
+      if (box is RenderBox && box.attached && box.hasSize) {
+        bounds = preview.resolve(box);
+        _lastBounds = bounds;
+      } else {
+        bounds = _lastBounds;
+      }
+      _scheduleCheck(preview);
+      if (bounds == null) {
+        return SizedBox.expand(key: _boxKey);
+      }
+      final colors = Theme.of(context).colorScheme;
+      final refRect = bounds.referenceRect;
+      final insertRect = bounds.insertRect;
+      return SizedBox.expand(
+        key: _boxKey,
+        child: Stack(
+          key: const ValueKey('editor-insertion-preview-overlay'),
+          fit: StackFit.expand,
+          children: [
+            if (refRect != null && refRect != insertRect)
+              Positioned.fromRect(
+                key: const ValueKey('editor-insertion-preview-reference'),
+                rect: refRect,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: .06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: colors.primary.withValues(alpha: .55),
+                      width: 1.5,
+                    ),
+                  ),
+                ),
+              ),
+            Positioned.fromRect(
+              key: const ValueKey('editor-insertion-preview-rect'),
+              rect: insertRect,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.primary.withValues(alpha: .22),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: colors.primary,
+                    width: 2.5,
+                  ),
+                ),
+                child: insertRect.width >= 24 &&
+                        insertRect.height >= 20 &&
+                        (preview.icon != null ||
+                            (preview.label != null &&
+                                preview.label!.isNotEmpty))
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.primary,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (preview.icon case final icon?)
+                                    Icon(
+                                      icon,
+                                      size: 14,
+                                      color: colors.onPrimary,
+                                    ),
+                                  if (preview.icon != null &&
+                                      preview.label != null &&
+                                      preview.label!.isNotEmpty)
+                                    const SizedBox(width: 4),
+                                  if (preview.label case final label?
+                                      when label.isNotEmpty)
+                                    Text(
+                                      label,
+                                      key: const ValueKey(
+                                        'editor-insertion-preview-label',
+                                      ),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .labelSmall
+                                          ?.copyWith(
+                                            color: colors.onPrimary,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+

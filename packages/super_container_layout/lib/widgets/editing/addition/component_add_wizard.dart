@@ -9,6 +9,7 @@ import '../../../services/repositories/json_repository_scope.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import 'insertion_plan.dart';
 
 /// Component-specific settings edited by the add wizard before insertion.
 ///
@@ -110,6 +111,8 @@ class ComponentAddTarget {
     this.accepts,
     this.zoneTags = const {},
     this.replaces = false,
+    this.preview,
+    this.previewFor,
   });
 
   final String id;
@@ -124,6 +127,16 @@ class ComponentAddTarget {
 
   /// The target holds a single component, replaced by the addition.
   final bool replaces;
+
+  /// Visual preview of the target zone when appending to it.
+  final ComponentAddPlacementPreview? preview;
+
+  /// Visual preview for a specific sibling position (`beforeId`, or null for
+  /// the end of the zone).
+  final ComponentAddPlacementPreview? Function(String? beforeId)? previewFor;
+
+  ComponentAddPlacementPreview? resolvePreview([String? beforeId]) =>
+      previewFor?.call(beforeId) ?? preview;
 
   bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
 
@@ -141,6 +154,7 @@ class ComponentAddPlacement {
     this.hint,
     this.accepts,
     this.zoneTags = const {},
+    this.preview,
   });
 
   final String id;
@@ -156,6 +170,9 @@ class ComponentAddPlacement {
 
   /// Tags the receiving zone is dedicated to (its filter's `include`).
   final Set<String> zoneTags;
+
+  /// Visual preview of the placement on the page.
+  final ComponentAddPlacementPreview? preview;
 
   bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
 
@@ -264,6 +281,7 @@ Future<ComponentAddRequest?> showComponentAddWizard({
       },
     );
   } finally {
+    EditorInsertionPreview.active.value = null;
     width.dispose();
   }
 }
@@ -315,9 +333,25 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   @override
   void dispose() {
+    if (EditorInsertionPreview.active.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        EditorInsertionPreview.active.value = null;
+      });
+    }
     _label.dispose();
     _size.dispose();
     super.dispose();
+  }
+
+  void _setHoveredPreview(ComponentAddPlacementPreview? preview) {
+    EditorInsertionPreview.active.value = preview;
+  }
+
+  void _clearHoveredPreview([ComponentAddPlacementPreview? expected]) {
+    if (expected == null ||
+        identical(EditorInsertionPreview.active.value, expected)) {
+      EditorInsertionPreview.active.value = null;
+    }
   }
 
   ComponentAddTarget get _target =>
@@ -479,6 +513,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   void _next() {
     if (!_canContinue) return;
+    _clearHoveredPreview();
     if (_stage != _WizardStage.summary) {
       setState(() => _step = _nextStep);
       return;
@@ -499,7 +534,10 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   }
 
   void _back() {
-    if (_step > 0) setState(() => _step = _previousStep);
+    if (_step > 0) {
+      _clearHoveredPreview();
+      setState(() => _step = _previousStep);
+    }
   }
 
   @override
@@ -551,6 +589,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
                     onStepTapped: (step) {
                       if (!_enabled(_WizardStage.values[step])) return;
                       if (step < _step || (step == _nextStep && _canContinue)) {
+                        _clearHoveredPreview();
                         setState(() => _step = step);
                       }
                     },
@@ -828,6 +867,19 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     final theme = Theme.of(context);
     final targets = _targetsFor(candidate);
     final target = _target;
+    final currentPreview = target.resolvePreview(
+      target.replaces ? null : _beforeId,
+    );
+    final endPreview = target.resolvePreview(null);
+    final siblingPreviews = {
+      for (final (id, _) in target.siblings) id: target.resolvePreview(id),
+    };
+    final targetPreviews = {
+      for (final option in targets)
+        option.id: option.resolvePreview(
+          option.id == target.id && !option.replaces ? _beforeId : null,
+        ),
+    };
     return Row(
       children: [
         Expanded(
@@ -835,25 +887,59 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
             key: ValueKey('${widget.keyPrefix}-add-target'),
             initialValue: target.id,
             isExpanded: true,
-            decoration: const InputDecoration(isDense: true, labelText: 'Zone'),
+            decoration: const InputDecoration(
+              isDense: true,
+              labelText: 'Zone',
+            ),
+            selectedItemBuilder: (_) => [
+              for (final option in targets)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    option.label,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
             items: [
               for (final option in targets)
-                DropdownMenuItem(value: option.id, child: Text(option.label)),
+                DropdownMenuItem(
+                  value: option.id,
+                  onTap: _clearHoveredPreview,
+                  child: MouseRegion(
+                    hitTestBehavior: HitTestBehavior.opaque,
+                    onEnter: (_) =>
+                        _setHoveredPreview(targetPreviews[option.id]),
+                    onExit: (_) =>
+                        _clearHoveredPreview(targetPreviews[option.id]),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(option.label),
+                    ),
+                  ),
+                ),
             ],
-            onChanged: (value) => setState(() {
-              _targetId = value ?? widget.initialTargetId;
-              _beforeId = null;
-            }),
+            onChanged: (value) {
+              _clearHoveredPreview();
+              setState(() {
+                _targetId = value ?? widget.initialTargetId;
+                _beforeId = null;
+              });
+            },
           ),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: target.replaces
-              ? Text(
-                  target.siblings.isEmpty
-                      ? 'Composant unique'
-                      : 'Remplace le contenu actuel',
-                  style: theme.textTheme.bodySmall,
+              ? MouseRegion(
+                  onEnter: (_) => _setHoveredPreview(endPreview),
+                  onExit: (_) => _clearHoveredPreview(endPreview),
+                  child: Text(
+                    target.siblings.isEmpty
+                        ? 'Composant unique'
+                        : 'Remplace le contenu actuel',
+                    style: theme.textTheme.bodySmall,
+                  ),
                 )
               : DropdownButtonFormField<String?>(
                   key: ValueKey(
@@ -865,21 +951,58 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
                     isDense: true,
                     labelText: 'Position',
                   ),
-                  items: [
-                    for (final (id, label) in target.siblings)
-                      DropdownMenuItem(
-                        value: id,
+                  selectedItemBuilder: (_) => [
+                    for (final (_, label) in target.siblings)
+                      Align(
+                        alignment: Alignment.centerLeft,
                         child: Text(
                           'Avant $label',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    const DropdownMenuItem<String?>(
-                      value: null,
+                    const Align(
+                      alignment: Alignment.centerLeft,
                       child: Text('À la fin'),
                     ),
                   ],
-                  onChanged: (value) => setState(() => _beforeId = value),
+                  items: [
+                    for (final (id, label) in target.siblings)
+                      DropdownMenuItem(
+                        value: id,
+                        onTap: _clearHoveredPreview,
+                        child: MouseRegion(
+                          hitTestBehavior: HitTestBehavior.opaque,
+                          onEnter: (_) =>
+                              _setHoveredPreview(siblingPreviews[id]),
+                          onExit: (_) =>
+                              _clearHoveredPreview(siblingPreviews[id]),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Avant $label',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ),
+                      ),
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      onTap: _clearHoveredPreview,
+                      child: MouseRegion(
+                        hitTestBehavior: HitTestBehavior.opaque,
+                        onEnter: (_) => _setHoveredPreview(endPreview),
+                        onExit: (_) => _clearHoveredPreview(endPreview),
+                        child: const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('À la fin'),
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    _clearHoveredPreview();
+                    setState(() => _beforeId = value);
+                  },
                 ),
         ),
       ],
@@ -914,18 +1037,22 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
           runSpacing: 6,
           children: [
             for (final option in options)
-              Tooltip(
-                message: option.hint ?? option.label,
-                child: ChoiceChip(
-                  key: ValueKey(
-                    '${widget.keyPrefix}-add-placement-${option.id}',
+              MouseRegion(
+                onEnter: (_) => _setHoveredPreview(option.preview),
+                onExit: (_) => _clearHoveredPreview(option.preview),
+                child: Tooltip(
+                  message: option.hint ?? option.label,
+                  child: ChoiceChip(
+                    key: ValueKey(
+                      '${widget.keyPrefix}-add-placement-${option.id}',
+                    ),
+                    avatar: Icon(option.icon, size: 16),
+                    visualDensity: VisualDensity.compact,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    label: Text(option.label),
+                    selected: selected?.id == option.id,
+                    onSelected: (_) => setState(() => _placementId = option.id),
                   ),
-                  avatar: Icon(option.icon, size: 16),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  label: Text(option.label),
-                  selected: selected?.id == option.id,
-                  onSelected: (_) => setState(() => _placementId = option.id),
                 ),
               ),
           ],

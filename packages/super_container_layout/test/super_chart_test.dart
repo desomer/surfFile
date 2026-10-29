@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -309,6 +310,56 @@ void main() {
   });
 
   group('SuperChartEditor & EditorPageGraph duplication', () {
+    testWidgets(
+      'right-click directly on fl_chart canvas opens context menu and chart editor',
+      (tester) async {
+        await real(tester, () async {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: JsonRepositoryScope(
+                  store: store,
+                  child: SizedBox(
+                    width: 600,
+                    height: 360,
+                    child: SuperChart(
+                      id: 'ctx-chart',
+                      config: SuperChartConfig(
+                        binding: JsonTextBinding(
+                          repositoryId: repository,
+                          path: 'ventes',
+                        ),
+                        kind: SuperChartKind.line,
+                        labelPath: 'mois',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        });
+
+        expect(find.byType(LineChart), findsOneWidget);
+
+        // Clic droit au centre du LineChart (qui enregistre ses propres recognizers)
+        await tester.tap(find.byType(LineChart), buttons: kSecondaryMouseButton);
+        await tester.pumpAndSettle();
+
+        final menuEntry = find.byKey(const ValueKey('style-menu-Graphique'));
+        expect(menuEntry, findsOneWidget);
+
+        await real(tester, () async {
+          await tester.tap(menuEntry);
+        });
+
+        expect(
+          find.byKey(const ValueKey('super-chart-editor')),
+          findsOneWidget,
+        );
+      },
+    );
+
     testWidgets('edits chart type and series in showSuperChartEditor', (
       tester,
     ) async {

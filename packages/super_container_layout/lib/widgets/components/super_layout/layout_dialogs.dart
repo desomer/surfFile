@@ -210,6 +210,21 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             accepts: (tags) =>
                 widget.zoneTagFilters[option]?.accepts(tags) ?? true,
             zoneTags: widget.zoneTagFilters[option]?.include ?? const {},
+            preview: _zonePreview(option),
+            previewFor: (beforeId) {
+              if (beforeId == null) return _zonePreview(option);
+              final siblingLabel = _slotsOf(
+                initial,
+                initial.contentZone(option),
+              ).where((s) => s.id == beforeId).firstOrNull?.label;
+              return _zonePreview(
+                option,
+                beforeId: beforeId,
+                label: siblingLabel == null
+                    ? null
+                    : 'Avant ${initial.slotLabels[beforeId] ?? siblingLabel}',
+              );
+            },
           ),
       ],
     );

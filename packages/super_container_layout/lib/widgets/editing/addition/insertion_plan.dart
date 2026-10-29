@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/rendering.dart' show RenderSliver;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart' show SlotSizeConstraints;
@@ -145,6 +148,390 @@ class InsertedComponent {
   final void Function(String instanceId) configure;
 }
 
+/// Resolved rectangles of a placement preview in the coordinate space of an
+/// ancestor [RenderObject].
+class InsertionPreviewBounds {
+  const InsertionPreviewBounds({
+    required this.insertRect,
+    this.referenceRect,
+  });
+
+  /// Where the new component will be placed.
+  final Rect insertRect;
+
+  /// Existing element or container zone used as reference.
+  final Rect? referenceRect;
+
+  /// Union of [insertRect] and [referenceRect] for camera framing.
+  Rect get framingRect => referenceRect == null
+      ? insertRect
+      : insertRect.expandToInclude(referenceRect!);
+
+  @override
+  bool operator ==(Object other) =>
+      other is InsertionPreviewBounds &&
+      other.insertRect == insertRect &&
+      other.referenceRect == referenceRect;
+
+  @override
+  int get hashCode => Object.hash(insertRect, referenceRect);
+}
+
+/// Visual bounds of [target] in the coordinate space of [ancestor].
+Rect? boundsOfContextIn(BuildContext? target, RenderObject ancestor) {
+  if (target == null || !target.mounted || !ancestor.attached) return null;
+  final ro = target.findRenderObject();
+  if (ro == null || !ro.attached || ro.owner != ancestor.owner) return null;
+  Size? size;
+  if (ro is RenderBox && ro.hasSize) {
+    size = ro.size;
+  } else if (ro is RenderSliver) {
+    final geom = ro.geometry;
+    if (geom != null && geom.paintExtent > 0) {
+      size = ro.constraints.axis == Axis.vertical
+          ? Size(ro.constraints.crossAxisExtent, geom.paintExtent)
+          : Size(geom.paintExtent, ro.constraints.crossAxisExtent);
+    }
+  }
+  if (size == null || size.isEmpty || !size.isFinite) return null;
+  final rect = MatrixUtils.transformRect(
+    ro.getTransformTo(ancestor),
+    Offset.zero & size,
+  );
+  return rect.isEmpty || !rect.isFinite ? null : rect;
+}
+
+/// Visual preview of a placement option hovered in the add wizard.
+class ComponentAddPlacementPreview {
+  const ComponentAddPlacementPreview({
+    required this.resolve,
+    this.focusContext,
+    this.label,
+    this.icon,
+  });
+
+  /// Preview of an insertion relative to a slot [targetContext].
+  factory ComponentAddPlacementPreview.aroundSlot({
+    required BuildContext? Function() targetContext,
+    required InsertionPlan plan,
+    String? label,
+    IconData? icon,
+  }) => ComponentAddPlacementPreview(
+    focusContext: targetContext,
+    label: label ??
+        (plan.mode == InsertMode.beside
+            ? plan.direction.label
+            : 'À la place, pousse ${plan.direction.pushLabel}'),
+    icon: icon ??
+        (plan.mode == InsertMode.beside
+            ? plan.direction.icon
+            : plan.direction.pushIcon),
+    resolve: (ancestor) {
+      final slotRect = boundsOfContextIn(targetContext(), ancestor);
+      if (slotRect == null) return null;
+      final horizontal = plan.direction.axis == Axis.horizontal;
+      final extent = horizontal ? slotRect.width : slotRect.height;
+      final band = (extent * 0.38)
+          .clamp(math.min(24.0, extent * 0.5), extent * 0.5)
+          .toDouble();
+      if (plan.mode == InsertMode.beside) {
+        final insertRect = switch (plan.direction) {
+          InsertDirection.left => Rect.fromLTWH(
+            slotRect.left,
+            slotRect.top,
+            band,
+            slotRect.height,
+          ),
+          InsertDirection.right => Rect.fromLTWH(
+            slotRect.right - band,
+            slotRect.top,
+            band,
+            slotRect.height,
+          ),
+          InsertDirection.up => Rect.fromLTWH(
+            slotRect.left,
+            slotRect.top,
+            slotRect.width,
+            band,
+          ),
+          InsertDirection.down => Rect.fromLTWH(
+            slotRect.left,
+            slotRect.bottom - band,
+            slotRect.width,
+            band,
+          ),
+        };
+        return InsertionPreviewBounds(
+          insertRect: insertRect,
+          referenceRect: slotRect,
+        );
+      }
+      final shiftedRect = switch (plan.direction) {
+        InsertDirection.left => Rect.fromLTWH(
+          slotRect.left - band,
+          slotRect.top,
+          band,
+          slotRect.height,
+        ),
+        InsertDirection.right => Rect.fromLTWH(
+          slotRect.right,
+          slotRect.top,
+          band,
+          slotRect.height,
+        ),
+        InsertDirection.up => Rect.fromLTWH(
+          slotRect.left,
+          slotRect.top - band,
+          slotRect.width,
+          band,
+        ),
+        InsertDirection.down => Rect.fromLTWH(
+          slotRect.left,
+          slotRect.bottom,
+          slotRect.width,
+          band,
+        ),
+      };
+      return InsertionPreviewBounds(
+        insertRect: slotRect,
+        referenceRect: shiftedRect,
+      );
+    },
+  );
+
+  /// Preview of an addition inside a container zone or region.
+  factory ComponentAddPlacementPreview.inZone({
+    BuildContext? Function()? zoneContext,
+    BuildContext? Function()? containerContext,
+    Axis? Function()? axis,
+    bool replaces = false,
+    InsertDirection? inactiveEdge,
+    BuildContext? Function()? beforeContext,
+    BuildContext? Function()? lastSiblingContext,
+    String? label,
+    IconData? icon = Icons.add_box_outlined,
+  }) => ComponentAddPlacementPreview(
+    focusContext: () =>
+        beforeContext?.call() ??
+        zoneContext?.call() ??
+        containerContext?.call(),
+    label: label,
+    icon: icon,
+    resolve: (ancestor) {
+      final zoneRect = boundsOfContextIn(zoneContext?.call(), ancestor);
+      final containerRect = boundsOfContextIn(
+        containerContext?.call(),
+        ancestor,
+      );
+      final effectiveAxis = axis == null ? Axis.vertical : axis();
+      if (beforeContext != null) {
+        final beforeRect = boundsOfContextIn(beforeContext(), ancestor);
+        if (beforeRect != null) {
+          final horizontal = effectiveAxis == Axis.horizontal;
+          final extent = horizontal ? beforeRect.width : beforeRect.height;
+          final band = (extent * 0.4)
+              .clamp(math.min(24.0, extent * 0.5), extent * 0.5)
+              .toDouble();
+          final insertRect = horizontal
+              ? Rect.fromLTWH(
+                  beforeRect.left,
+                  beforeRect.top,
+                  band,
+                  beforeRect.height,
+                )
+              : Rect.fromLTWH(
+                  beforeRect.left,
+                  beforeRect.top,
+                  beforeRect.width,
+                  band,
+                );
+          return InsertionPreviewBounds(
+            insertRect: insertRect,
+            referenceRect: zoneRect ?? beforeRect,
+          );
+        }
+      }
+      if (zoneRect != null) {
+        if (replaces || effectiveAxis == null) {
+          return InsertionPreviewBounds(
+            insertRect: zoneRect,
+            referenceRect: containerRect,
+          );
+        }
+        final lastRect = boundsOfContextIn(
+          lastSiblingContext?.call(),
+          ancestor,
+        );
+        if (lastRect != null) {
+          if (effectiveAxis == Axis.vertical) {
+            final remaining = zoneRect.bottom - lastRect.bottom;
+            if (remaining >= 24.0) {
+              final height = math.min(
+                remaining,
+                math.max(lastRect.height, 36.0),
+              );
+              return InsertionPreviewBounds(
+                insertRect: Rect.fromLTWH(
+                  zoneRect.left,
+                  lastRect.bottom,
+                  zoneRect.width,
+                  height,
+                ),
+                referenceRect: zoneRect,
+              );
+            }
+            final maxBand = math.max(
+              math.min(24.0, zoneRect.height * 0.5),
+              math.max(28.0, lastRect.height * 0.6),
+            );
+            final band = (zoneRect.height * 0.35)
+                .clamp(math.min(24.0, zoneRect.height * 0.5), maxBand)
+                .clamp(0.0, zoneRect.height)
+                .toDouble();
+            return InsertionPreviewBounds(
+              insertRect: Rect.fromLTWH(
+                zoneRect.left,
+                zoneRect.bottom - band,
+                zoneRect.width,
+                band,
+              ),
+              referenceRect: zoneRect,
+            );
+          } else {
+            final remaining = zoneRect.right - lastRect.right;
+            if (remaining >= 24.0) {
+              final width = math.min(
+                remaining,
+                math.max(lastRect.width, 48.0),
+              );
+              return InsertionPreviewBounds(
+                insertRect: Rect.fromLTWH(
+                  lastRect.right,
+                  zoneRect.top,
+                  width,
+                  zoneRect.height,
+                ),
+                referenceRect: zoneRect,
+              );
+            }
+            final maxBand = math.max(
+              math.min(24.0, zoneRect.width * 0.5),
+              math.max(36.0, lastRect.width * 0.6),
+            );
+            final band = (zoneRect.width * 0.35)
+                .clamp(math.min(24.0, zoneRect.width * 0.5), maxBand)
+                .clamp(0.0, zoneRect.width)
+                .toDouble();
+            return InsertionPreviewBounds(
+              insertRect: Rect.fromLTWH(
+                zoneRect.right - band,
+                zoneRect.top,
+                band,
+                zoneRect.height,
+              ),
+              referenceRect: zoneRect,
+            );
+          }
+        }
+        return InsertionPreviewBounds(
+          insertRect: zoneRect,
+          referenceRect: containerRect,
+        );
+      }
+      if (containerRect == null) return null;
+      final insertRect = switch (inactiveEdge) {
+        InsertDirection.up => Rect.fromLTWH(
+          containerRect.left,
+          containerRect.top,
+          containerRect.width,
+          (containerRect.height * 0.22)
+              .clamp(
+                math.min(24.0, containerRect.height),
+                math.max(
+                  math.min(24.0, containerRect.height),
+                  math.min(72.0, containerRect.height * 0.45),
+                ),
+              )
+              .toDouble(),
+        ),
+        InsertDirection.down => () {
+          final h = (containerRect.height * 0.22)
+              .clamp(
+                math.min(24.0, containerRect.height),
+                math.max(
+                  math.min(24.0, containerRect.height),
+                  math.min(72.0, containerRect.height * 0.45),
+                ),
+              )
+              .toDouble();
+          return Rect.fromLTWH(
+            containerRect.left,
+            containerRect.bottom - h,
+            containerRect.width,
+            h,
+          );
+        }(),
+        InsertDirection.left => Rect.fromLTWH(
+          containerRect.left,
+          containerRect.top,
+          (containerRect.width * 0.22)
+              .clamp(
+                math.min(24.0, containerRect.width),
+                math.max(
+                  math.min(24.0, containerRect.width),
+                  math.min(140.0, containerRect.width * 0.45),
+                ),
+              )
+              .toDouble(),
+          containerRect.height,
+        ),
+        InsertDirection.right => () {
+          final w = (containerRect.width * 0.22)
+              .clamp(
+                math.min(24.0, containerRect.width),
+                math.max(
+                  math.min(24.0, containerRect.width),
+                  math.min(140.0, containerRect.width * 0.45),
+                ),
+              )
+              .toDouble();
+          return Rect.fromLTWH(
+            containerRect.right - w,
+            containerRect.top,
+            w,
+            containerRect.height,
+          );
+        }(),
+        null => containerRect,
+      };
+      return InsertionPreviewBounds(
+        insertRect: insertRect,
+        referenceRect: containerRect,
+      );
+    },
+  );
+
+  /// Resolves the preview bounds in the coordinate space of [ancestor].
+  final InsertionPreviewBounds? Function(RenderObject ancestor) resolve;
+
+  /// Optional context of the target element or container for zoom framing.
+  final BuildContext? Function()? focusContext;
+
+  /// Short label displayed inside the preview overlay.
+  final String? label;
+
+  /// Icon displayed inside the preview overlay.
+  final IconData? icon;
+}
+
+/// Active placement preview hovered in the component add wizard.
+class EditorInsertionPreview {
+  EditorInsertionPreview._();
+
+  static final ValueNotifier<ComponentAddPlacementPreview?> active =
+      ValueNotifier<ComponentAddPlacementPreview?>(null);
+}
+
 /// A level of the contextual add wizard, from the clicked element outwards.
 sealed class ContextualAddLevel {
   const ContextualAddLevel();
@@ -158,6 +545,7 @@ class EditorSlotInsertion extends ContextualAddLevel {
     required this.acceptsTags,
     required this.insert,
     this.zoneTags = const {},
+    this.targetContext,
   });
 
   /// Name of the target, shown as a level of the wizard.
@@ -171,6 +559,9 @@ class EditorSlotInsertion extends ContextualAddLevel {
   final Set<String> zoneTags;
   final Future<void> Function(InsertionPlan plan, InsertedComponent component)
   insert;
+
+  /// Visual context of the target slot used to preview relative positions.
+  final BuildContext? Function()? targetContext;
 }
 
 /// A zone or region of an existing container able to receive a component.
@@ -182,6 +573,7 @@ class EditorAddZone {
     this.accepts,
     this.hint,
     this.zoneTags = const {},
+    this.preview,
   });
 
   final String id;
@@ -196,6 +588,9 @@ class EditorAddZone {
   /// Consequence of the addition; defaults to an addition at the end.
   final String? hint;
   final Future<void> Function(InsertedComponent component) insert;
+
+  /// Visual preview of the zone placement on the page.
+  final ComponentAddPlacementPreview? preview;
 
   bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
 }

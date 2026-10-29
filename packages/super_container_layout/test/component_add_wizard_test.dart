@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -596,4 +597,141 @@ void main() {
     expect(size.height, closeTo(800 * 0.9, 0.5));
     await tapKey(tester, 'test-add-cancel');
   });
+
+  testWidgets(
+    'hovering target zone and position options displays placement overlay on page',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final zoneAKey = GlobalKey();
+      final zoneBKey = GlobalKey();
+      final siblingKey = GlobalKey();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Stack(
+              children: [
+                Positioned(
+                  left: 20,
+                  top: 40,
+                  width: 300,
+                  height: 240,
+                  child: Container(
+                    key: zoneAKey,
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(key: siblingKey, width: 300, height: 80),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 20,
+                  top: 320,
+                  width: 300,
+                  height: 180,
+                  child: SizedBox(key: zoneBKey),
+                ),
+                Builder(
+                  builder: (context) => TextButton(
+                    onPressed: () {
+                      unawaited(
+                        showComponentAddWizard(
+                          context: context,
+                          title: 'Ajouter dans Zone A',
+                          keyPrefix: 'hover-test',
+                          candidates: const [
+                            ComponentAddCandidate(
+                              id: 'block',
+                              label: 'Bloc',
+                              tags: {'container'},
+                            ),
+                          ],
+                          initialTargetId: 'a',
+                          targets: [
+                            ComponentAddTarget(
+                              id: 'a',
+                              label: 'Zone A',
+                              siblings: const [('x', 'Existant')],
+                              previewFor: (beforeId) =>
+                                  ComponentAddPlacementPreview.inZone(
+                                    zoneContext: () => zoneAKey.currentContext,
+                                    beforeContext: beforeId == null
+                                        ? null
+                                        : () => siblingKey.currentContext,
+                                    lastSiblingContext: () =>
+                                        siblingKey.currentContext,
+                                    label: beforeId == null
+                                        ? 'Zone A'
+                                        : 'Avant Existant',
+                                  ),
+                            ),
+                            ComponentAddTarget(
+                              id: 'b',
+                              label: 'Zone B',
+                              preview: ComponentAddPlacementPreview.inZone(
+                                zoneContext: () => zoneBKey.currentContext,
+                                label: 'Zone B',
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: const Text('Ouvrir'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Ouvrir'));
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'hover-test-add-card-block');
+      await tapKey(tester, 'hover-test-add-next');
+      await tapKey(tester, 'hover-test-add-next');
+
+      const overlayKey = ValueKey('editor-insertion-preview-overlay');
+      const insertRectKey = ValueKey('editor-insertion-preview-rect');
+      expect(find.byKey(overlayKey), findsNothing);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      // Open Position dropdown and hover "Avant Existant" vs "À la fin".
+      await tapKey(tester, 'hover-test-add-position-a');
+      await mouse.moveTo(tester.getCenter(find.text('Avant Existant').last));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(overlayKey), findsOneWidget);
+      final beforeSiblingRect = tester.getRect(find.byKey(insertRectKey));
+      expect(beforeSiblingRect.top, closeTo(40.0, 1.0));
+      expect(beforeSiblingRect.height, lessThanOrEqualTo(40.0));
+
+      await mouse.moveTo(tester.getCenter(find.text('À la fin').last));
+      await tester.pumpAndSettle();
+      final atEndRect = tester.getRect(find.byKey(insertRectKey));
+      expect(atEndRect.top, closeTo(120.0, 1.0));
+
+      // Select "À la fin" to close position dropdown, then open Zone dropdown
+      // and hover "Zone B".
+      await tester.tap(find.text('À la fin').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(overlayKey), findsNothing);
+
+      await tapKey(tester, 'hover-test-add-target');
+      await mouse.moveTo(tester.getCenter(find.text('Zone B').last));
+      await tester.pumpAndSettle();
+      expect(find.byKey(overlayKey), findsOneWidget);
+      final zoneBRect = tester.getRect(find.byKey(insertRectKey));
+      expect(zoneBRect, equals(const Rect.fromLTWH(20, 320, 300, 180)));
+
+      await tester.tap(find.text('Zone B').last);
+      await tester.pumpAndSettle();
+      expect(find.byKey(overlayKey), findsNothing);
+    },
+  );
 }

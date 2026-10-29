@@ -325,7 +325,47 @@ extension _SuperLayoutSlots on SuperLayoutState {
       ),
       acceptsTags: (tags) => filter?.accepts(tags) ?? true,
       zoneTags: filter?.include ?? const {},
+      targetContext: () => _slotFocusKeys[slot.id]?.currentContext,
       insert: (plan, component) async => _insertAround(slot, plan, component),
+    );
+  }
+
+  ComponentAddPlacementPreview _zonePreview(
+    SuperLayoutZone zone, {
+    String? beforeId,
+    String? label,
+  }) {
+    final grid = _config.value.positioning == SuperLayoutPositioning.grid;
+    final zoneLabel = grid ? 'Grille' : widget.zoneLabel(zone);
+    return ComponentAddPlacementPreview.inZone(
+      zoneContext: () => _zoneFocusKeys[zone]?.currentContext,
+      containerContext: () => mounted ? context : null,
+      axis: () => _config.value.positioning == SuperLayoutPositioning.grid
+          ? null
+          : _config.value.axisOf(zone),
+      inactiveEdge: switch (zone) {
+        SuperLayoutZone.north ||
+        SuperLayoutZone.nw ||
+        SuperLayoutZone.ne => InsertDirection.up,
+        SuperLayoutZone.south ||
+        SuperLayoutZone.sw ||
+        SuperLayoutZone.se => InsertDirection.down,
+        SuperLayoutZone.west => InsertDirection.left,
+        SuperLayoutZone.east => InsertDirection.right,
+        SuperLayoutZone.center => null,
+      },
+      beforeContext: beforeId == null
+          ? null
+          : () => _slotFocusKeys[beforeId]?.currentContext,
+      lastSiblingContext: () {
+        final current = _config.value;
+        final slots = _slotsOf(current, current.contentZone(zone));
+        return slots.isEmpty
+            ? null
+            : _slotFocusKeys[slots.last.id]?.currentContext;
+      },
+      label: label ?? zoneLabel,
+      icon: beforeId == null ? Icons.add_box_outlined : Icons.vertical_align_top,
     );
   }
 
@@ -477,6 +517,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
               : 'Active la zone ${widget.zoneLabel(zone)}',
           accepts: (tags) => widget.zoneTagFilters[zone]?.accepts(tags) ?? true,
           zoneTags: widget.zoneTagFilters[zone]?.include ?? const {},
+          preview: _zonePreview(zone),
           insert: (component) async => _insertInZone(zone, component),
         ),
     ];

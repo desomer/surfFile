@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -115,6 +116,7 @@ void main() {
     SuperLayoutConfig? layout,
     Map<String, SuperLayoutConfig> innerLayouts = const {},
     ComponentTagFilter filter = const ComponentTagFilter(),
+    bool withZoom = false,
   }) async {
     await tester.binding.setSurfaceSize(const Size(1200, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -146,53 +148,56 @@ void main() {
       routes: [
         GoRoute(
           path: '/',
-          builder: (_, _) => Scaffold(
-            body: Center(
-              child: SizedBox(
-                key: hostKey,
-                width: 900,
-                height: 700,
-                child: switch (owner) {
-                  'surface' => const EditableSurface(id: 'root', label: 'Root'),
-                  'native' => ValueListenableBuilder<NativeComponentConfig>(
-                    valueListenable: nativeController,
-                    builder: (_, config, _) => NativeComponentEditor(
-                      label: 'Root',
-                      keyPrefix: 'contextual-native',
-                      settingsTitle: 'Native settings',
-                      editSurface: true,
-                      registry: registry,
-                      config: config,
-                      onChanged: (value) => nativeController.value = value,
-                      regions: [
-                        NativeRegion(
-                          'body',
-                          'Body',
-                          required: true,
-                          tagFilter: filter,
-                        ),
-                        const NativeRegion(
-                          'header',
-                          'Header',
-                          tagFilter: ComponentTagFilter(include: {'appBar'}),
-                        ),
-                      ],
-                      slots: const [],
-                      builder: (_, editor) => editor.region('body'),
+          builder: (_, _) {
+            final page = Scaffold(
+              body: Center(
+                child: SizedBox(
+                  key: hostKey,
+                  width: 900,
+                  height: 700,
+                  child: switch (owner) {
+                    'surface' => const EditableSurface(id: 'root', label: 'Root'),
+                    'native' => ValueListenableBuilder<NativeComponentConfig>(
+                      valueListenable: nativeController,
+                      builder: (_, config, _) => NativeComponentEditor(
+                        label: 'Root',
+                        keyPrefix: 'contextual-native',
+                        settingsTitle: 'Native settings',
+                        editSurface: true,
+                        registry: registry,
+                        config: config,
+                        onChanged: (value) => nativeController.value = value,
+                        regions: [
+                          NativeRegion(
+                            'body',
+                            'Body',
+                            required: true,
+                            tagFilter: filter,
+                          ),
+                          const NativeRegion(
+                            'header',
+                            'Header',
+                            tagFilter: ComponentTagFilter(include: {'appBar'}),
+                          ),
+                        ],
+                        slots: const [],
+                        builder: (_, editor) => editor.region('body'),
+                      ),
                     ),
-                  ),
-                  _ => ValueListenableBuilder<SuperLayoutConfig>(
-                    valueListenable: layoutController,
-                    builder: (_, config, _) => SuperLayout(
-                      label: 'Root',
-                      config: config,
-                      onChanged: (value) => layoutController.value = value,
+                    _ => ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: layoutController,
+                      builder: (_, config, _) => SuperLayout(
+                        label: 'Root',
+                        config: config,
+                        onChanged: (value) => layoutController.value = value,
+                      ),
                     ),
-                  ),
-                },
+                  },
+                ),
               ),
-            ),
-          ),
+            );
+            return withZoom ? EditorZoom(child: page) : page;
+          },
         ),
       ],
     );
@@ -755,4 +760,97 @@ void main() {
     expect(keys.indexOf('z0-center'), lessThan(keys.indexOf('1-beside-right')));
     expect(keys.indexOf('1-beside-right'), lessThan(keys.indexOf('z1-center')));
   });
+
+  testWidgets(
+    'hovering placement chips shows an overlay preview and auto-frames offscreen container zones',
+    (tester) async {
+      await mount(tester, withZoom: true);
+      await openInsertWizard(tester);
+      await tester.tap(
+        find.byKey(const ValueKey('contextual-add-card-factory:Value')),
+      );
+      await tester.pumpAndSettle();
+      for (var step = 0; step < 2; step++) {
+        await tester.tap(find.byKey(const ValueKey('contextual-add-next')));
+        await tester.pumpAndSettle();
+      }
+
+      const overlayKey = ValueKey('editor-insertion-preview-overlay');
+      const insertRectKey = ValueKey('editor-insertion-preview-rect');
+      const refRectKey = ValueKey('editor-insertion-preview-reference');
+
+      expect(find.byKey(overlayKey), findsNothing);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+
+      // Hover "À droite" (beside right): insertRect is on the right edge of the
+      // reference rect.
+      final besideRightChip = find.byKey(
+        const ValueKey('contextual-add-placement-0-beside-right'),
+      );
+      await mouse.moveTo(tester.getCenter(besideRightChip));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(overlayKey), findsOneWidget);
+      final besideInsert = tester.getRect(find.byKey(insertRectKey));
+      final besideRef = tester.getRect(find.byKey(refRectKey));
+      expect(besideInsert.right, closeTo(besideRef.right, 1.0));
+      expect(besideInsert.left, greaterThan(besideRef.left));
+      expect(besideInsert.width, lessThan(besideRef.width));
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('editor-insertion-preview-label')),
+            )
+            .data,
+        'À droite',
+      );
+
+      // Hover "À la place, pousse à droite" (push right): insertRect takes the
+      // target's place and referenceRect shifts to the right.
+      final pushRightChip = find.byKey(
+        const ValueKey('contextual-add-placement-0-push-right'),
+      );
+      await mouse.moveTo(tester.getCenter(pushRightChip));
+      await tester.pumpAndSettle();
+
+      final pushInsert = tester.getRect(find.byKey(insertRectKey));
+      final pushRef = tester.getRect(find.byKey(refRectKey));
+      final sourceRect = tester.getRect(valueOf('source'));
+      expect(pushInsert.width, closeTo(sourceRect.width, 1.0));
+      expect(pushInsert.height, closeTo(sourceRect.height, 1.0));
+      expect(pushRef.left, closeTo(pushInsert.right, 1.0));
+
+      // Hover an inactive outer zone ("Nord"): auto-frames the container so the
+      // top band is visible and highlights the top of Root.
+      final zoomPercentage = find.byKey(
+        const ValueKey('editor-zoom-percentage'),
+      );
+      final scaleBeforeZoneHover = tester.widget<Text>(zoomPercentage).data;
+      final northChip = find.byKey(
+        const ValueKey('contextual-add-placement-z0-north'),
+      );
+      await tester.ensureVisible(northChip);
+      await tester.pumpAndSettle();
+      await mouse.moveTo(tester.getCenter(northChip));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(overlayKey), findsOneWidget);
+      final northInsert = tester.getRect(find.byKey(insertRectKey));
+      final northRef = tester.getRect(find.byKey(refRectKey));
+      expect(northInsert.top, closeTo(northRef.top, 1.0));
+      expect(northInsert.height, lessThan(northRef.height * 0.5));
+      expect(
+        tester.widget<Text>(zoomPercentage).data,
+        isNot(equals(scaleBeforeZoneHover)),
+      );
+
+      // Leaving the chip hides the preview overlay.
+      await mouse.moveTo(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(find.byKey(overlayKey), findsNothing);
+    },
+  );
 }

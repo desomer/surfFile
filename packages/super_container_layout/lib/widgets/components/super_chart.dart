@@ -22,6 +22,7 @@ import 'dart:math' as math;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart' show kSecondaryMouseButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/json_text_binding.dart';
@@ -115,6 +116,10 @@ class SuperChart extends StatefulWidget implements SliverCapableWidget {
 }
 
 class _SuperChartState extends State<SuperChart> {
+  final _surface = GlobalKey<EditorSlotState>();
+  PointerDownEvent? _secondaryDown;
+  int _secondaryButtons = 0;
+  bool _secondaryMoved = false;
   late final ValueNotifier<SuperChartConfig> _localConfig;
   JsonRepositoryStore? _store;
   _ChartSource? _source;
@@ -416,9 +421,7 @@ class _SuperChartState extends State<SuperChart> {
           interval: 1,
           getTitlesWidget: (value, meta) {
             final idx = value.round();
-            if ((value - idx).abs() > 0.01 ||
-                idx < 0 ||
-                idx >= points.length) {
+            if ((value - idx).abs() > 0.01 || idx < 0 || idx >= points.length) {
               return const SizedBox.shrink();
             }
             final isSel = _isSelected(idx);
@@ -457,11 +460,7 @@ class _SuperChartState extends State<SuperChart> {
             }
             return SideTitleWidget(
               meta: meta,
-              child: Text(
-                meta.formattedValue,
-                style: textStyle,
-                maxLines: 1,
-              ),
+              child: Text(meta.formattedValue, style: textStyle, maxLines: 1),
             );
           },
         ),
@@ -470,13 +469,11 @@ class _SuperChartState extends State<SuperChart> {
   }
 
   FlGridData _buildGrid(BuildContext context, SuperChartConfig config) {
-    final lineColor = Theme.of(
-      context,
-    ).colorScheme.outlineVariant.withValues(alpha: 0.45);
+    final lineColor = Theme.of(context).colorScheme.outlineVariant
+        .withValues(alpha: 0.45);
     return FlGridData(
       show: config.showGrid,
-      getDrawingHorizontalLine: (_) =>
-          FlLine(color: lineColor, strokeWidth: 1),
+      getDrawingHorizontalLine: (_) => FlLine(color: lineColor, strokeWidth: 1),
       getDrawingVerticalLine: (_) => FlLine(color: lineColor, strokeWidth: 1),
     );
   }
@@ -584,11 +581,7 @@ class _SuperChartState extends State<SuperChart> {
         for (var s = 0; s < config.series.length; s++) {
           final nextVal = cumulative + math.max(0.0, point.yValues[s]);
           stackItems.add(
-            BarChartRodStackItem(
-              cumulative,
-              nextVal,
-              _seriesColor(config, s),
-            ),
+            BarChartRodStackItem(cumulative, nextVal, _seriesColor(config, s)),
           );
           cumulative = nextVal;
         }
@@ -823,27 +816,20 @@ class _SuperChartState extends State<SuperChart> {
               ? colors.onSurfaceVariant
               : Colors.transparent,
         ),
-        titleTextStyle: TextStyle(
-          fontSize: 11,
-          color: colors.onSurface,
-        ),
+        titleTextStyle: TextStyle(fontSize: 11, color: colors.onSurface),
         getTitle: (index, angle) {
           if (!config.showAxisLabels ||
               index < 0 ||
               index >= paddedPoints.length) {
             return const RadarChartTitle(text: '');
           }
-          return RadarChartTitle(
-            text: paddedPoints[index].label,
-            angle: 0,
-          );
+          return RadarChartTitle(text: paddedPoints[index].label, angle: 0);
         },
         radarTouchData: RadarTouchData(
           enabled: config.enableSelection,
           touchCallback: (event, response) {
             if (event is FlTapUpEvent && response?.touchedSpot != null) {
-              final entryIndex =
-                  response!.touchedSpot!.touchedRadarEntryIndex;
+              final entryIndex = response!.touchedSpot!.touchedRadarEntryIndex;
               if (entryIndex >= 0 && entryIndex < points.length) {
                 _select(entryIndex, config);
               }
@@ -1062,12 +1048,7 @@ class _SuperChartState extends State<SuperChart> {
         children: [
           if (config.showLegend ||
               (isBoundData && config.enableSelection && points.isNotEmpty)) ...[
-            _buildLegendAndCategoryChips(
-              context,
-              config,
-              points,
-              isBoundData,
-            ),
+            _buildLegendAndCategoryChips(context, config, points, isBoundData),
             const SizedBox(height: 8),
           ],
           Expanded(child: chartWidget),
@@ -1086,6 +1067,7 @@ class _SuperChartState extends State<SuperChart> {
     final scope = JsonListScope.maybeOf(context);
     final store = JsonRepositoryScope.maybeOf(context);
     final isSliver = SliverSlotScope.isSliver(context);
+    final canConfigure = StyleEditScope.controllerOf(context)?.value ?? true;
 
     return ValueListenableBuilder<SuperChartConfig>(
       valueListenable: configuration,
@@ -1094,23 +1076,71 @@ class _SuperChartState extends State<SuperChart> {
         _configPath = config.binding?.path;
         if (!placeholder) _observe(_resolve(config, scope, store), store);
 
-        final body = LayoutBuilder(
-          builder: (context, constraints) {
-            final boundedHeight = constraints.hasBoundedHeight;
-            final content = _buildBody(context, config, placeholder);
-            return boundedHeight
-                ? content
-                : SizedBox(height: 240, child: content);
+        // fl_chart's RenderBaseChart registers its own TapGestureRecognizer
+        // (including onSecondaryTapDown/Up) and wins the GestureArena before
+        // EditorSlot's GestureDetector. Listen to raw pointer events so right
+        // clicks over the chart canvas always open the context menu.
+        final body = Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (event) {
+            if (event.buttons == kSecondaryMouseButton) {
+              _secondaryDown = event;
+              _secondaryButtons = event.buttons;
+              _secondaryMoved = false;
+            }
           },
+          onPointerMove: (event) {
+            final down = _secondaryDown;
+            if (down != null &&
+                down.pointer == event.pointer &&
+                (event.position - down.position).distance > kTouchSlop) {
+              _secondaryMoved = true;
+            }
+          },
+          onPointerUp: (event) {
+            final down = _secondaryDown;
+            final buttons = _secondaryButtons;
+            final moved = _secondaryMoved;
+            _secondaryDown = null;
+            _secondaryButtons = 0;
+            _secondaryMoved = false;
+            if (down == null ||
+                down.pointer != event.pointer ||
+                moved ||
+                (event.position - down.position).distance > kTouchSlop) {
+              return;
+            }
+            if (canConfigure && buttons == kSecondaryMouseButton) {
+              _surface.currentState?.openMenu(event.position);
+            }
+          },
+          onPointerCancel: (_) {
+            _secondaryDown = null;
+            _secondaryButtons = 0;
+            _secondaryMoved = false;
+          },
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final boundedHeight = constraints.hasBoundedHeight;
+              final content = _buildBody(context, config, placeholder);
+              return boundedHeight
+                  ? content
+                  : SizedBox(height: 240, child: content);
+            },
+          ),
         );
 
         return EditorSlot(
+          key: _surface,
           id: widget.id,
           label: 'Graphique',
           menuType: 'Chart',
           menuIcon: Icons.insert_chart_outlined,
           menuTooltip: () => formatSuperChartTooltip(
-            title: editorComponentLabelOf(context)?.label ?? 'Graphique',
+            title:
+                _surface.currentState?.titleLabel ??
+                editorComponentLabelOf(context)?.label ??
+                'Graphique',
             config: config,
           ),
           onEdit: () => _edit(configuration),

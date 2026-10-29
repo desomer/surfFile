@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../components/super_layout/layout_selection.dart';
+import '../addition/insertion_plan.dart';
 import '../slots/editor_slot.dart';
 import 'editor_overlay.dart';
 
@@ -84,6 +85,7 @@ class _EditorZoomState extends State<EditorZoom>
     };
     LayoutSelection.focus.addListener(_schedule);
     _controller.dialog.addListener(_schedule);
+    EditorInsertionPreview.active.addListener(_schedule);
   }
 
   @override
@@ -127,7 +129,7 @@ class _EditorZoomState extends State<EditorZoom>
       _zoomTarget = focus;
       _zoomDialog = dialog;
     }
-    final rect = _controller.targetBounds(focus);
+    var rect = _controller.targetBounds(focus);
     if (_controller.enabled && !_viewport.isEmpty) {
       var available = Offset.zero & _viewport;
       final viewport = _viewportKey.currentContext?.findRenderObject();
@@ -138,6 +140,48 @@ class _EditorZoomState extends State<EditorZoom>
         ).intersect(available);
       }
       if (available.isEmpty) return;
+      if (dialog != null &&
+          EditorInsertionPreview.active.value != null &&
+          _content.currentContext?.findRenderObject() != null) {
+        final content = _content.currentContext!.findRenderObject()!;
+        if (content is RenderBox && content.attached && content.hasSize) {
+          final previewBounds = EditorInsertionPreview.active.value!
+              .resolve(content)
+              ?.framingRect;
+          if (previewBounds != null &&
+              !previewBounds.isEmpty &&
+              previewBounds.isFinite) {
+            if (rect == null || rect.isEmpty || !rect.isFinite) {
+              rect = previewBounds;
+            } else {
+              final baseScale = math
+                  .min(
+                    available.width * .7 / rect.width,
+                    available.height * .7 / rect.height,
+                  )
+                  .clamp(0.0, EditorZoom.maxScale);
+              final baseOffset = available.center - rect.center * baseScale;
+              final projected = Rect.fromLTWH(
+                baseOffset.dx + previewBounds.left * baseScale,
+                baseOffset.dy + previewBounds.top * baseScale,
+                previewBounds.width * baseScale,
+                previewBounds.height * baseScale,
+              );
+              final margin = math.min(
+                8.0,
+                math.min(available.width, available.height) * .05,
+              );
+              final safeArea = available.deflate(margin);
+              final fitsInView =
+                  safeArea.contains(projected.topLeft) &&
+                  safeArea.contains(projected.bottomRight);
+              if (!fitsInView) {
+                rect = rect.expandToInclude(previewBounds);
+              }
+            }
+          }
+        }
+      }
       if (_manualScale case final manualScale?) {
         destination = (
           scale: manualScale,
@@ -184,6 +228,7 @@ class _EditorZoomState extends State<EditorZoom>
     if (disableAnimations) {
       _animation.stop();
       _controller.scale.value = _to.scale;
+      _controller.transform.value = _to;
       setState(() => _current = _to);
     } else {
       _animation.forward(from: 0);
@@ -227,8 +272,10 @@ class _EditorZoomState extends State<EditorZoom>
         _manualOffset = newOffset;
         _manualScale ??= _to.scale;
         _animation.stop();
+        final next = (scale: _current.scale, offset: newOffset);
+        _controller.transform.value = next;
         setState(() {
-          _current = _from = _to = (scale: _current.scale, offset: newOffset);
+          _current = _from = _to = next;
         });
       }
     }
@@ -353,8 +400,10 @@ class _EditorZoomState extends State<EditorZoom>
     _manualOffset = nextOffset;
     _controller.scale.value = nextScale;
     _animation.stop();
+    final next = (scale: nextScale, offset: nextOffset);
+    _controller.transform.value = next;
     setState(() {
-      _current = _from = _to = (scale: nextScale, offset: nextOffset);
+      _current = _from = _to = next;
     });
   }
 
@@ -363,11 +412,10 @@ class _EditorZoomState extends State<EditorZoom>
     final scale = _from.scale + (_to.scale - _from.scale) * progress;
     final offset = Offset.lerp(_from.offset, _to.offset, progress)!;
     _controller.scale.value = scale;
+    final next = (scale: scale, offset: offset);
+    _controller.transform.value = next;
     setState(() {
-      _current = (
-        scale: scale,
-        offset: offset,
-      );
+      _current = next;
     });
   }
 
@@ -376,6 +424,7 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.sliderScaleHandler = null;
     LayoutSelection.focus.removeListener(_schedule);
     _controller.dialog.removeListener(_schedule);
+    EditorInsertionPreview.active.removeListener(_schedule);
     _controller.dispose();
     _editMode?.removeListener(_schedule);
     _animation.dispose();
@@ -652,6 +701,10 @@ class EditorZoomController {
       _pointerCancelHandler?.call(event);
 
   final scale = ValueNotifier<double>(1.0);
+  final transform = ValueNotifier<({double scale, Offset offset})>((
+    scale: 1.0,
+    offset: Offset.zero,
+  ));
   void Function(double)? sliderScaleHandler;
   void setScale(double value) => sliderScaleHandler?.call(value);
 
@@ -708,6 +761,7 @@ class EditorZoomController {
       });
     }
     dialog.dispose();
+    transform.dispose();
   }
 }
 

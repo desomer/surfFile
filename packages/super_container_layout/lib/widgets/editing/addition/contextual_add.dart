@@ -43,21 +43,31 @@ Future<void> showContextualAddWizard(
             final plan = planInsertion(level.host, direction, mode);
             if (plan == null) continue;
             final id = '$index-${mode.name}-${direction.name}';
+            final label = mode == InsertMode.beside
+                ? direction.label
+                : 'À la place, pousse ${direction.pushLabel}';
+            final icon = mode == InsertMode.beside
+                ? direction.icon
+                : direction.pushIcon;
             actions[id] = (component) => level.insert(plan, component);
             placements.add(
               ComponentAddPlacement(
                 id: id,
                 group: group,
-                label: mode == InsertMode.beside
-                    ? direction.label
-                    : 'À la place, pousse ${direction.pushLabel}',
-                icon: mode == InsertMode.beside
-                    ? direction.icon
-                    : direction.pushIcon,
+                label: label,
+                icon: icon,
                 hint: plan.hint,
                 accepts: plan is WrapInsertion ? null : level.acceptsTags,
                 // The wrapper's center zone is dedicated to nothing.
                 zoneTags: plan is WrapInsertion ? const {} : level.zoneTags,
+                preview: level.targetContext == null
+                    ? null
+                    : ComponentAddPlacementPreview.aroundSlot(
+                        targetContext: level.targetContext!,
+                        plan: plan,
+                        label: label,
+                        icon: icon,
+                      ),
               ),
             );
           }
@@ -77,6 +87,7 @@ Future<void> showContextualAddWizard(
               hint: zone.hint ?? 'À la fin de la zone ${zone.label}',
               accepts: zone.accept,
               zoneTags: zone.zoneTags,
+              preview: zone.preview,
             ),
           );
         }
