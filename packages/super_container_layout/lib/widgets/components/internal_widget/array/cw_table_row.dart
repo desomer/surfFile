@@ -19,12 +19,10 @@ class CwRowInfo {
   });
 }
 
-// ignore: must_be_immutable
 class CwTableRow extends StatefulWidget {
-  CwTableRow({super.key, required this.info, required this.child});
+  const CwTableRow({super.key, required this.info, required this.child});
   final CwRowInfo info;
   final Widget child;
-  Widget? cache;
 
   @override
   State<CwTableRow> createState() => CwTableRowState();
@@ -32,6 +30,8 @@ class CwTableRow extends StatefulWidget {
 
 class CwTableRowState extends State<CwTableRow> {
   Widget? newChild;
+  Widget? cache;
+
   void setNewChild(Widget newChild) {
     this.newChild = newChild;
   }
@@ -44,17 +44,25 @@ class CwTableRowState extends State<CwTableRow> {
 
   @override
   void initState() {
-    widget.info.tableState.initRowState(widget.info, this);
     super.initState();
+    widget.info.tableState.initRowState(widget.info, this);
+  }
+
+  @override
+  void didUpdateWidget(covariant CwTableRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.info.row != widget.info.row ||
+        oldWidget.info.isStartCols != widget.info.isStartCols ||
+        oldWidget.info.tableState != widget.info.tableState) {
+      oldWidget.info.tableState.disposeRowState(oldWidget.info, this);
+      widget.info.tableState.initRowState(widget.info, this);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     widget.info.tableState.initRowState(widget.info, this);
-    // if (withWidgetCache && widget.cache != null) {
-    //   return widget.cache!;
-    // }
-    widget.cache = getRowStyleWidget(
+    cache = getRowStyleWidget(
       widget.info.row,
       widget.info.isStartCols,
       widget.info.nbColFreeze,
@@ -62,10 +70,10 @@ class CwTableRowState extends State<CwTableRow> {
       newChild ?? widget.child,
       context,
     );
-    return widget.cache!;
+    return cache!;
   }
 
- // bool _isHovered = false;
+  // bool _isHovered = false;
 
   Widget getRowStyleWidget(
     int row,
@@ -75,7 +83,7 @@ class CwTableRowState extends State<CwTableRow> {
     Widget child,
     BuildContext context,
   ) {
-      return child;
+    return child;
 
     // // if (row == 0) return child; // pas de style pour la ligne header
 
@@ -243,9 +251,8 @@ class CWInheritedRow extends InheritedWidget {
   final GlobalKey rowkey;
 
   void getAll(Map<String, CWInheritedRow> list) {
-    var r =
-        tableKey.currentContext
-            ?.getInheritedWidgetOfExactType<CWInheritedRow>();
+    var r = tableKey.currentContext
+        ?.getInheritedWidgetOfExactType<CWInheritedRow>();
     if (r != null) {
       list[r.path] = r;
       r.getAll(list);
@@ -253,7 +260,10 @@ class CWInheritedRow extends InheritedWidget {
   }
 
   @override
-  bool updateShouldNotify(covariant InheritedWidget oldWidget) {
-    return true;
+  bool updateShouldNotify(covariant CWInheritedRow oldWidget) {
+    return path != oldWidget.path ||
+        rowIdx != oldWidget.rowIdx ||
+        tableKey != oldWidget.tableKey ||
+        rowkey != oldWidget.rowkey;
   }
 }

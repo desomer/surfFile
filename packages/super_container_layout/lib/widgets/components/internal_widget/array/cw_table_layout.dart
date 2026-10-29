@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_row.dart';
 
 bool withWidgetCache = true;
@@ -76,9 +79,20 @@ class FrozenTableViewState extends State<FrozenTableView> {
 
   CwTableRow? getCacheTableRowState(CwRowInfo info, Widget child) {
     CwTableRowState? cache = getCacheRow(info)?.cwTableRowState;
-    if (cache != null) {
+    if (cache != null && cache.mounted) {
       cache.setNewChild(child);
-      cache.setState(() {});
+      if (SchedulerBinding.instance.schedulerPhase ==
+          SchedulerPhase.persistentCallbacks) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (cache.mounted) {
+            // ignore: invalid_use_of_protected_member
+            cache.setState(() {});
+          }
+        });
+      } else {
+        // ignore: invalid_use_of_protected_member
+        cache.setState(() {});
+      }
     }
     return cache?.widget;
   }
@@ -130,96 +144,76 @@ class FrozenTableViewState extends State<FrozenTableView> {
   }
 
   void setSelectedRowIndex(int row, {bool scrollIntoView = true}) {
-    // int max = 0;
-    // int min = widget.rowCount + 1;
     var rowFreezeTop = widget.rowCountTop;
 
-    visibleRowKeyA[row + rowFreezeTop]?.cwTableRowState.setState(() {});
-    visibleRowKeyB[row + rowFreezeTop]?.cwTableRowState.setState(() {});
+    final rowA = visibleRowKeyA[row + rowFreezeTop]?.cwTableRowState;
+    if (rowA != null && rowA.mounted) {
+      // ignore: invalid_use_of_protected_member
+      rowA.setState(() {});
+    }
+    final rowB = visibleRowKeyB[row + rowFreezeTop]?.cwTableRowState;
+    if (rowB != null && rowB.mounted) {
+      // ignore: invalid_use_of_protected_member
+      rowB.setState(() {});
+    }
 
-    if (!scrollIntoView) {
+    if (!scrollIntoView || !vertical2.hasClients) {
       return;
     }
 
     final pos = vertical2.position;
-    final viewMin = vertical2.position.pixels;
-    final viewMax = vertical2.position.pixels + pos.viewportDimension;
+    final viewMin = pos.pixels;
+    final viewMax = pos.pixels + pos.viewportDimension;
 
     double topPos = 0;
     for (int r = rowFreezeTop; r < row + rowFreezeTop; r++) {
       topPos += widget.getRowHeight(r) ?? 30;
     }
     if (topPos < viewMin) {
-      // scroll up
-      //print("setSelectedRowIndex row=$row min=$min max=$max offset=$topPos");
       vertical2.animateTo(
         topPos,
-        duration: Duration(milliseconds: 1000),
+        duration: const Duration(milliseconds: 1000),
         curve: Curves.easeInOut,
       );
     }
     var bottomPos = topPos + (widget.getRowHeight(row + rowFreezeTop) ?? 30);
     if (bottomPos > viewMax) {
-      // scroll down
-      //print("setSelectedRowIndex row=$row min=$min max=$max offset=$topPos");
-      double viewHeight = vertical2.position.viewportDimension;
+      double viewHeight = pos.viewportDimension;
       vertical2.animateTo(
         bottomPos - viewHeight,
-        duration: Duration(milliseconds: 1000),
+        duration: const Duration(milliseconds: 1000),
         curve: Curves.easeInOut,
       );
     }
+  }
 
-    // if (row < min) {
-    //   // scroll up
-    //   double offset = 0;
-    //   for (int r = 0; r < row; r++) {
-    //     offset += widget.getRowHeight(r) ?? 30;
-    //   }
-    //   //vertical.jumpTo(offset);
-    //   vertical2.animateTo(offset, duration: Duration(milliseconds: 300), curve: Curves.easeInOut);
-    // } else if (row > max) {
-    //   // scroll down
-    //   double offset = 0;
-    //   for (int r = 0; r <= row; r++) {
-    //     offset += widget.getRowHeight(r) ?? 30;
-    //   }
-    //   double viewHeight = vertical2.position.viewportDimension;
-    //   //vertical.jumpTo(offset - viewHeight);
-    //   vertical2.jumpTo(offset - viewHeight);
-    // }
+  void _syncScroll(ScrollController source, ScrollController target) {
+    if (!source.hasClients || !target.hasClients) return;
+    if (target.offset != source.offset) {
+      target.jumpTo(source.offset);
+    }
   }
 
   @override
   void initState() {
     super.initState();
     vertical.addListener(() {
-      if (vertical2.offset != vertical.offset) {
-        vertical2.jumpTo(vertical.offset);
-      }
+      _syncScroll(vertical, vertical2);
     });
     vertical2.addListener(() {
-      if (vertical.hasClients && vertical.offset != vertical2.offset) {
-        vertical.jumpTo(vertical2.offset);
-      }
+      _syncScroll(vertical2, vertical);
     });
     horizontal1.addListener(() {
-      if (horizontal2.offset != horizontal1.offset) {
-        horizontal2.jumpTo(horizontal1.offset);
-      }
-      if (horizontal3.offset != horizontal1.offset) {
-        horizontal3.jumpTo(horizontal1.offset);
-      }
+      _syncScroll(horizontal1, horizontal2);
+      _syncScroll(horizontal1, horizontal3);
     });
     horizontal2.addListener(() {
-      if (horizontal1.offset != horizontal2.offset) {
-        horizontal1.jumpTo(horizontal2.offset);
-      }
+      _syncScroll(horizontal2, horizontal1);
+      _syncScroll(horizontal2, horizontal3);
     });
     horizontal3.addListener(() {
-      if (horizontal1.offset != horizontal3.offset) {
-        horizontal1.jumpTo(horizontal3.offset);
-      }
+      _syncScroll(horizontal3, horizontal1);
+      _syncScroll(horizontal3, horizontal2);
     });
   }
 
@@ -269,7 +263,7 @@ class FrozenTableViewState extends State<FrozenTableView> {
     );
   }
 
-  double getWitdhL(int start, int end) {
+  double _computeColsWidth(int start, int end, double borderWidth) {
     double totalFix = 0;
     int nbFillCol = 0;
     for (int i = start; i < end; i++) {
@@ -292,138 +286,33 @@ class FrozenTableViewState extends State<FrozenTableView> {
       }
       total += widget.getColWidth(i, totalFix, false, nbFillCol);
     }
-    return total + widget.rowWidthBorderL;
+    return total + borderWidth;
   }
 
-  double getWitdhR(int start, int end) {
-    double totalfix = 0;
-    int nbFillCol = 0;
-    for (int i = start; i < end; i++) {
-      if (colWidthMap.containsKey(i)) {
-        totalfix += colWidthMap[i]!;
-        nbFillCol++;
-        continue;
-      }
-      var colWidth = widget.getColWidth(i, totalfix, true, -1);
-      if (colWidth > 0) {
-        totalfix += colWidth;
-        nbFillCol++;
-      }
-    }
-    double total = 0;
-    for (int i = start; i < end; i++) {
-      if (colWidthMap.containsKey(i)) {
-        total += colWidthMap[i]!;
-        continue;
-      }
-      total += widget.getColWidth(i, totalfix, false, nbFillCol);
-    }
-    return total + widget.rowWidthBorderR;
-  }
+  double getWitdhL(int start, int end) =>
+      _computeColsWidth(start, end, widget.rowWidthBorderL);
+
+  double getWitdhR(int start, int end) =>
+      _computeColsWidth(start, end, widget.rowWidthBorderR);
 
   double getColWidth(int colIndex) {
-    double r = 0;
     if (colWidthMap.containsKey(colIndex)) {
-      r = colWidthMap[colIndex]!;
-      //print(' getColWidth $colIndex = $r');
-      return r;
+      return colWidthMap[colIndex]!;
     }
-    r = widget.getColWidth(colIndex, -1, false, -1);
-    //print(' getColWidth $colIndex = $r');
-    return r;
+    return widget.getColWidth(colIndex, -1, false, -1);
   }
 
   Widget getHeader(Widget child, int rowIndex, int colIndex) {
-    ValueNotifier<bool> isHover = ValueNotifier(false);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        child,
-        if (rowIndex == 0)
-          Positioned(
-            right: 10,
-            top: 0,
-            bottom: 0,
-            left: 10,
-            child: getAction(isHover),
-          ),
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: getResizeHandle(colIndex, isHover: isHover),
-        ),
-      ],
-    );
-  }
-
-  Widget getAction(ValueNotifier<bool> isHover) {
-    return MouseRegion(
-      opaque: false,
-      onEnter: (_) {},
-      onExit: (_) {
-        isHover.value = false;
-      },
-      onHover: (_) {
-        isHover.value = true;
-      },
-      child: ValueListenableBuilder(
-        valueListenable: isHover,
-        builder: (context, value, child) => Visibility(
-          visible: isHover.value,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Material(
-                elevation: 3,
-                color: Colors.black12,
-                shape: CircleBorder(),
-                child: IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints: BoxConstraints(),
-                  onPressed: () {},
-                  icon: Icon(Icons.expand_more, size: 18, color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget getResizeHandle(int colIndex, {required ValueNotifier<bool> isHover}) {
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragUpdate: (details) {
-        // Handle resize logic here
+    return _TableHeaderCell(
+      rowIndex: rowIndex,
+      colIndex: colIndex,
+      onResizeDelta: (dx) {
         setState(() {
-          // Update column width based on drag details
-          // This is a simplified example; you may want to add constraints
-          // and more complex logic depending on your requirements
-          // For this example, we'll just increase the width of the first column
-          if (colWidthMap.containsKey(colIndex)) {
-            colWidthMap[colIndex] = (colWidthMap[colIndex]! + details.delta.dx)
-                .clamp(50.0, 4000.0);
-          } else {
-            colWidthMap[colIndex] = (getColWidth(colIndex) + details.delta.dx)
-                .clamp(50.0, 4000.0);
-          }
+          final current = colWidthMap[colIndex] ?? getColWidth(colIndex);
+          colWidthMap[colIndex] = (current + dx).clamp(50.0, 4000.0);
         });
       },
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeColumn,
-        onHover: (_) => isHover.value = true,
-        onExit: (_) => isHover.value = false,
-        child: ValueListenableBuilder(
-          valueListenable: isHover,
-          builder: (context, value, child) {
-            return SizedBox(width: 5, child: value ? VerticalDivider() : null);
-          },
-        ),
-      ),
+      child: child,
     );
   }
 
@@ -436,10 +325,8 @@ class FrozenTableViewState extends State<FrozenTableView> {
   ) {
     return Listener(
       onPointerSignal: (event) {
-        if (event is PointerScrollEvent) {
-          // event.scrollDelta.dy = mouvement de la molette
+        if (event is PointerScrollEvent && controller.hasClients) {
           final delta = event.scrollDelta.dy * 0.3;
-
           controller.jumpTo(
             (controller.offset + delta).clamp(
               0.0,
@@ -453,8 +340,8 @@ class FrozenTableViewState extends State<FrozenTableView> {
               scrollbarOrientation: orientation,
               interactive: true,
               controller: controller,
-              thumbVisibility: alwaysVisible, // toujours visible
-              trackVisibility: true, // optionnel
+              thumbVisibility: alwaysVisible,
+              trackVisibility: true,
               child: child,
             )
           : child,
@@ -522,28 +409,24 @@ class FrozenTableViewState extends State<FrozenTableView> {
   Widget _bottomFrozenRow() {
     var witdh = getWitdhR(widget.colFreezeLeftCount, widget.colCount);
     return _getWeellPointerScrollBehavior(
-      horizontal1,
+      horizontal2,
       ScrollbarOrientation.bottom,
       SingleChildScrollView(
         controller: horizontal2,
         scrollDirection: Axis.horizontal,
-        physics: AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         child: Container(
-          margin: EdgeInsets.fromLTRB(0, 0, 0, 10),
-          // height: widget.rowHeight * widget.rowCountBottom,
-          width: witdh, // <-- FIX
+          margin: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+          width: witdh,
           child: ListView.builder(
             shrinkWrap: true,
             primary: false,
             itemCount: widget.rowCountBottom,
             itemBuilder: (_, row) => widget.buildRow(
               row + widget.rowCount - widget.rowCountBottom,
-              true,
+              false,
               SizedBox(
-                // height: widget.getRowHeight(
-                //   row + widget.rowCount - widget.rowCountBottom,
-                // ),
-                width: witdh, // <-- FIX
+                width: witdh,
                 child: Row(
                   children: [
                     for (
@@ -574,28 +457,25 @@ class FrozenTableViewState extends State<FrozenTableView> {
     );
   }
 
-  // Colonne gelée à gauche
+  // Colonne gelée à gauche (en haut)
   Widget _topFrozenColumn() {
     if (widget.colFreezeLeftCount == 0) {
-      return SizedBox.shrink();
+      return const SizedBox.shrink();
     }
 
     var witdh = getWitdhL(0, widget.colFreezeLeftCount);
 
     return Container(
       margin: EdgeInsets.fromLTRB(0, topMargin, 0, 0),
-      //height: widget.rowCountTop * widget.rowHeight,
-      width: witdh, // <-- FIX
+      width: witdh,
       child: ListView.builder(
         primary: false,
         shrinkWrap: true,
-        //controller: vertical,
         itemCount: widget.rowCountTop,
         itemBuilder: (_, row) => widget.buildRow(
           row,
           true,
           SizedBox(
-            // height: widget.getRowHeight(row),
             width: witdh,
             child: Row(
               children: [
@@ -614,28 +494,23 @@ class FrozenTableViewState extends State<FrozenTableView> {
     );
   }
 
-  // Colonne gelée à gauche
+  // Colonne gelée à gauche (en bas)
   Widget _bottomFrozenColumn() {
     if (widget.colFreezeLeftCount == 0) {
-      return SizedBox.shrink();
+      return const SizedBox.shrink();
     }
     var witdh = getWitdhL(0, widget.colFreezeLeftCount);
     return Container(
-      margin: EdgeInsets.fromLTRB(0, 0, 0, 10),
-      //height: widget.rowCountBottom * widget.rowHeight,
-      width: witdh, // <-- FIX
+      margin: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+      width: witdh,
       child: ListView.builder(
         primary: false,
         shrinkWrap: true,
-        //controller: vertical,
         itemCount: widget.rowCountBottom,
         itemBuilder: (_, row) => widget.buildRow(
           row + widget.rowCount - widget.rowCountBottom,
-          false,
+          true,
           SizedBox(
-            // height: widget.getRowHeight(
-            //   row + widget.rowCount - widget.rowCountBottom,
-            // ),
             width: witdh,
             child: Row(
               children: [
@@ -659,23 +534,26 @@ class FrozenTableViewState extends State<FrozenTableView> {
     );
   }
 
-  // Colonne gelée à gauche
+  int get _bodyRowCount =>
+      math.max(0, widget.rowCount - widget.rowCountTop - widget.rowCountBottom);
+
+  // Colonne gelée à gauche (corps)
   Widget _leftFrozenColumn() {
     if (widget.colFreezeLeftCount == 0) {
-      return SizedBox.shrink();
+      return const SizedBox.shrink();
     }
 
     var witdh = getWitdhL(0, widget.colFreezeLeftCount);
+    var heightRowCache = widget.getRowHeight(widget.rowCountTop);
     return SizedBox(
-      //height: widget.rowCount * widget.rowHeight,
-      width: witdh, // <-- FIX
+      width: witdh,
       child: ListView.builder(
-        shrinkWrap: true,
         primary: false,
         controller: vertical,
-        itemCount: widget.rowCount - widget.rowCountTop - widget.rowCountBottom,
+        itemExtent: heightRowCache,
+        itemCount: _bodyRowCount,
         itemBuilder: (_, row) => SizedBox(
-          //height: widget.getRowHeight(row + widget.rowCountTop),
+          height: widget.getRowHeight(row + widget.rowCountTop),
           width: witdh,
           child: widget.buildRow(
             row + widget.rowCountTop,
@@ -700,56 +578,52 @@ class FrozenTableViewState extends State<FrozenTableView> {
   // Corps du tableau
   Widget _body() {
     var witdhRow = getWitdhR(widget.colFreezeLeftCount, widget.colCount);
-    var heightRowCache = widget.getRowHeight(0 + widget.rowCountTop);
-    return //SingleChildScrollView(
-    //controller: vertical2,
-    //scrollDirection: Axis.vertical,
-    //child:
-    SingleChildScrollView(
+    var heightRowCache = widget.getRowHeight(widget.rowCountTop);
+    return SingleChildScrollView(
       controller: horizontal3,
       scrollDirection: Axis.horizontal,
       child: SizedBox(
         width: witdhRow,
-        //height: 200,
         child: ListView.builder(
-          scrollCacheExtent: ScrollCacheExtent.pixels(10),
+          scrollCacheExtent: const ScrollCacheExtent.pixels(10),
           controller: vertical2,
           primary: false,
-          shrinkWrap: true,
           itemExtent: heightRowCache,
-          itemCount:
-              widget.rowCount - widget.rowCountTop - widget.rowCountBottom,
+          itemCount: _bodyRowCount,
           itemBuilder: (_, row) {
             return getRow(row, widget.rowCountTop, witdhRow);
           },
         ),
       ),
-      // ),
     );
   }
 
-  Widget getRow(int row, int rowTop, double witdhRow) {
-    var heightRow = widget.getRowHeight(row + rowTop);
-    var cacheRow = getCacheRowByIdx(row + rowTop, false);
-    // if (cacheRow != null) {
-    //   print(
-    //     'Using cached row for row index ${row + rowTop} ${cacheRow.cwTableRowState}',
-    //   );
-    // }
+  Widget _buildCachedRightRow(
+    int row,
+    int rowTop,
+    double witdhRow, {
+    required bool isHeader,
+  }) {
+    final targetRow = row + rowTop;
+    final heightRow = widget.getRowHeight(targetRow);
+    final cacheRow = getCacheRowByIdx(targetRow, false);
     List<Widget> aRowCells;
     if (cacheRow?.rowCells != null) {
       aRowCells = cacheRow!.rowCells!;
     } else {
       aRowCells = [];
       for (int col = widget.colFreezeLeftCount; col < widget.colCount; col++) {
-        aRowCells.add(widget.buildBodyCell(row + rowTop, col));
+        final cell = isHeader
+            ? getHeader(widget.buildTopCell(targetRow, col), targetRow, col)
+            : widget.buildBodyCell(targetRow, col);
+        aRowCells.add(cell);
       }
       if (cacheRow != null) {
         cacheRow.rowCells = aRowCells;
       }
     }
 
-    var aRow = Row(
+    final aRow = Row(
       children: [
         for (int col = widget.colFreezeLeftCount; col < widget.colCount; col++)
           SizedBox(
@@ -760,56 +634,120 @@ class FrozenTableViewState extends State<FrozenTableView> {
       ],
     );
     return widget.buildRow(
-      row + rowTop,
+      targetRow,
       false,
       SizedBox(width: witdhRow, child: aRow),
       this,
     );
   }
 
-  Widget getRowHeader(int row, int rowTop, double witdhRow) {
-    var heightRow = widget.getRowHeight(row + rowTop);
-    var cacheRow = getCacheRowByIdx(row + rowTop, false);
-    // if (cacheRow != null) {
-    //   print(
-    //     'Using cached row for row index ${row + rowTop} ${cacheRow.cwTableRowState}',
-    //   );
-    // }
-    List<Widget> aRowCells;
-    if (cacheRow?.rowCells != null) {
-      aRowCells = cacheRow!.rowCells!;
-    } else {
-      aRowCells = [];
-      for (int col = widget.colFreezeLeftCount; col < widget.colCount; col++) {
-        aRowCells.add(
-          getHeader(widget.buildTopCell(row + rowTop, col), row + rowTop, col),
-        );
-      }
-      if (cacheRow != null) {
-        cacheRow.rowCells = aRowCells;
-      }
-    }
+  Widget getRow(int row, int rowTop, double witdhRow) =>
+      _buildCachedRightRow(row, rowTop, witdhRow, isHeader: false);
 
-    var aRow = Row(
-      children: [
-        for (int col = widget.colFreezeLeftCount; col < widget.colCount; col++)
-          SizedBox(
-            width: getColWidth(col),
-            height: heightRow,
-            child: aRowCells[col - widget.colFreezeLeftCount],
-          ),
-      ],
-    );
-    return widget.buildRow(
-      row + rowTop,
-      false,
-      SizedBox(width: witdhRow, child: aRow),
-      this,
-    );
-  }
+  Widget getRowHeader(int row, int rowTop, double witdhRow) =>
+      _buildCachedRightRow(row, rowTop, witdhRow, isHeader: true);
 
   void clearWidgetCache() {
     visibleRowKeyA.clear();
     visibleRowKeyB.clear();
+  }
+}
+
+class _TableHeaderCell extends StatefulWidget {
+  const _TableHeaderCell({
+    required this.rowIndex,
+    required this.colIndex,
+    required this.onResizeDelta,
+    required this.child,
+  });
+
+  final int rowIndex;
+  final int colIndex;
+  final ValueChanged<double> onResizeDelta;
+  final Widget child;
+
+  @override
+  State<_TableHeaderCell> createState() => _TableHeaderCellState();
+}
+
+class _TableHeaderCellState extends State<_TableHeaderCell> {
+  final ValueNotifier<bool> _isHover = ValueNotifier<bool>(false);
+
+  @override
+  void dispose() {
+    _isHover.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (widget.rowIndex == 0)
+          Positioned(
+            right: 10,
+            top: 0,
+            bottom: 0,
+            left: 10,
+            child: MouseRegion(
+              opaque: false,
+              onExit: (_) => _isHover.value = false,
+              onHover: (_) => _isHover.value = true,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _isHover,
+                builder: (context, hovered, _) => Visibility(
+                  visible: hovered,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Material(
+                        elevation: 3,
+                        color: Colors.black12,
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          onPressed: () {},
+                          icon: const Icon(
+                            Icons.expand_more,
+                            size: 18,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onHorizontalDragUpdate: (details) =>
+                widget.onResizeDelta(details.delta.dx),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.resizeColumn,
+              onHover: (_) => _isHover.value = true,
+              onExit: (_) => _isHover.value = false,
+              child: ValueListenableBuilder<bool>(
+                valueListenable: _isHover,
+                builder: (context, hovered, _) => SizedBox(
+                  width: 5,
+                  child: hovered ? const VerticalDivider() : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
