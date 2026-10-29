@@ -10,6 +10,7 @@ import '../models/super_value_config.dart';
 import '../models/super_action_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/super_tab_config.dart';
+import '../models/super_chart_config.dart';
 import '../models/editor_page_config.dart';
 import 'container_fill.dart';
 import 'container_style.dart';
@@ -171,6 +172,14 @@ class Appearance {
   }) => component<SuperTabConfig>(id, fallback: fallback ?? SuperTabConfig());
 
   Appearance withTabComponent(String id, SuperTabConfig value) =>
+      withComponent(id, value);
+
+  SuperChartConfig chartComponent(
+    String id, {
+    SuperChartConfig fallback = const SuperChartConfig(),
+  }) => component<SuperChartConfig>(id, fallback: fallback);
+
+  Appearance withChartComponent(String id, SuperChartConfig value) =>
       withComponent(id, value);
 
   SuperListViewConfig listComponent(

@@ -9,6 +9,7 @@ import '../../models/super_value_config.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
+import '../../models/super_chart_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 
@@ -452,6 +453,7 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
   EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
+  EditorConfigKind.chart => appearance.tryComponent<SuperChartConfig>(ref.id),
 };
 
 bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
@@ -464,6 +466,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.action => value is SuperActionConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
   EditorConfigKind.tab => value is SuperTabConfig,
+  EditorConfigKind.chart => value is SuperChartConfig,
 };
 
 Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
@@ -476,6 +479,7 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       SuperValueConfig() => [EditorConfigRef.value(entry.key)],
       SuperActionConfig() => [EditorConfigRef.action(entry.key)],
       SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
+      SuperChartConfig() => [EditorConfigRef.chart(entry.key)],
       SuperListViewConfig() => [
         EditorConfigRef.layout(entry.key),
         EditorConfigRef.list(entry.key),

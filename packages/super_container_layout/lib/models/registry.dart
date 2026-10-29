@@ -4,10 +4,12 @@ import 'component_config.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
+import 'super_chart_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_tab.dart';
+import '../widgets/components/super_chart.dart';
 import '../widgets/components/super_value.dart';
 import '../widgets/components/super_action.dart';
 import '../widgets/components/super_layout/iterable_content.dart';
@@ -49,6 +51,7 @@ enum EditorConfigKind {
   action,
   list,
   tab,
+  chart,
 }
 
 /// Key of one persisted configuration entry, e.g. `layouts[id]`.
@@ -67,6 +70,7 @@ class EditorConfigRef {
   const EditorConfigRef.action(this.id) : kind = EditorConfigKind.action;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
   const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
+  const EditorConfigRef.chart(this.id) : kind = EditorConfigKind.chart;
 
   final EditorConfigKind kind;
   final String id;
@@ -145,6 +149,9 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _tab(String id) => [
     EditorConfigRef.tab(id),
   ];
+  static List<EditorConfigRef> _chart(String id) => [
+    EditorConfigRef.chart(id),
+  ];
 
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
@@ -153,6 +160,9 @@ class ComponentDuplicationContract {
   );
   static const superTab = ComponentDuplicationContract(
     ownedConfigs: _tab,
+  );
+  static const superChart = ComponentDuplicationContract(
+    ownedConfigs: _chart,
   );
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _native,
@@ -279,6 +289,8 @@ class Registry {
   final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, ValueNotifier<SuperTabConfig>> tabConfigById = {};
   final Map<String, SuperTabConfig> _tabDefaults = {};
+  final Map<String, ValueNotifier<SuperChartConfig>> chartConfigById = {};
+  final Map<String, SuperChartConfig> _chartDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
   final Map<String, NativeComponentConfig? Function(Appearance)>
   _nativeMigrations = {};
@@ -293,6 +305,7 @@ class Registry {
     ...actionConfigById.keys,
     ...listConfigById.keys,
     ...tabConfigById.keys,
+    ...chartConfigById.keys,
   };
 
   /// Includes runtime defaults that have not yet been persisted.
@@ -310,6 +323,7 @@ class Registry {
         entry.key: entry.value.value,
       for (final entry in listConfigById.entries) entry.key: entry.value.value,
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
+      for (final entry in chartConfigById.entries) entry.key: entry.value.value,
       ...current.components,
     };
     // A list and its row layout share an ID.
@@ -364,6 +378,10 @@ class Registry {
     for (final entry in tabConfigById.entries.toList()) {
       _tabDefaults[entry.key] = entry.value.value;
       tabController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in chartConfigById.entries.toList()) {
+      _chartDefaults[entry.key] = entry.value.value;
+      chartController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -520,6 +538,12 @@ class Registry {
         entry.value.value = appearance.tabComponent(
           entry.key,
           fallback: _tabDefaults[entry.key]!,
+        );
+      }
+      for (final entry in chartConfigById.entries) {
+        entry.value.value = appearance.chartComponent(
+          entry.key,
+          fallback: _chartDefaults[entry.key]!,
         );
       }
     } finally {
@@ -682,6 +706,35 @@ class Registry {
         notifier.value.validate();
         if (!_syncing) {
           _appearance!.value = _appearance!.value.withTabComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperChartConfig> chartController(
+    String id, {
+    SuperChartConfig fallback = const SuperChartConfig(),
+  }) {
+    fallback.validate();
+    _chartDefaults.putIfAbsent(id, () => fallback);
+    final notifier = chartConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.chartComponent(id, fallback: fallback) ?? fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withChartComponent(
             id,
             notifier.value,
           );
@@ -883,6 +936,16 @@ class Registry {
       addConfigurator: tabAddConfigurator,
       previewBuilder: _buildTabPreview,
       dynamicBuilder: (ctx) => SuperTab(id: ctx.id),
+    );
+
+    registry['Chart'] = ComponentBuilderDynamic(
+      menuIcon: Icons.insert_chart_outlined,
+      label: 'Chart / Graphique',
+      duplication: ComponentDuplicationContract.superChart,
+      tags: const {'chart', 'data'},
+      addConfigurator: chartAddConfigurator,
+      previewBuilder: _buildChartPreview,
+      dynamicBuilder: (ctx) => SuperChart(id: ctx.id),
     );
 
     registry['IterableContent'] = ComponentBuilderDynamic(
@@ -1498,3 +1561,37 @@ Widget _buildListViewPreview(BuildContext context) {
     ),
   );
 }
+
+Widget _buildChartPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget bar(double height, Color color) => Container(
+    width: 14,
+    height: height,
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(3),
+    ),
+  );
+  return IgnorePointer(
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          bar(20, colors.primary.withValues(alpha: 0.65)),
+          bar(36, colors.primary),
+          bar(28, colors.tertiary),
+          bar(44, colors.primary),
+          bar(32, colors.secondary),
+        ],
+      ),
+    ),
+  );
+}
+

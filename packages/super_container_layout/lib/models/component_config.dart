@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'native_component_config.dart';
 import 'scaffold_page_config.dart';
 import 'super_action_config.dart';
+import 'super_chart_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
@@ -51,6 +52,10 @@ abstract final class ComponentConfigCatalog {
     'tab': ComponentConfigCodec<SuperTabConfig>(
       type: 'tab',
       fromJson: SuperTabConfig.fromJson,
+    ),
+    'chart': ComponentConfigCodec<SuperChartConfig>(
+      type: 'chart',
+      fromJson: SuperChartConfig.fromJson,
     ),
   };
 
