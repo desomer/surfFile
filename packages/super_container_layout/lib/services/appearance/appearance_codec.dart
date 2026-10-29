@@ -11,6 +11,7 @@ import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
 import 'package:super_container_layout/models/super_tab_config.dart';
+import 'package:super_container_layout/models/super_tree_view_config.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 
@@ -207,6 +208,9 @@ class AppearanceCodec {
             ),
           );
         } else if (comp is SuperTabConfig &&
+            comp.placedSlotIds.contains(slotId)) {
+          comp = comp.withSlotSizeConstraints(slotId, constraints);
+        } else if (comp is SuperTreeViewConfig &&
             comp.placedSlotIds.contains(slotId)) {
           comp = comp.withSlotSizeConstraints(slotId, constraints);
         }
@@ -429,6 +433,9 @@ class AppearanceCodec {
               template: comp.template.withoutSlot(removedId),
             );
           } else if (comp is SuperTabConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is SuperTreeViewConfig &&
               comp.placedSlotIds.contains(removedId)) {
             comp = comp.withoutSlot(removedId);
           }

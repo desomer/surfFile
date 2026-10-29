@@ -9,6 +9,7 @@ import '../../models/super_value_config.dart';
 import '../../models/super_action_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
+import '../../models/super_tree_view_config.dart';
 import '../../models/super_chart_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
@@ -454,6 +455,8 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
   EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
   EditorConfigKind.chart => appearance.tryComponent<SuperChartConfig>(ref.id),
+  EditorConfigKind.treeView =>
+    appearance.tryComponent<SuperTreeViewConfig>(ref.id),
 };
 
 bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
@@ -467,6 +470,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.list => value is SuperListViewConfig,
   EditorConfigKind.tab => value is SuperTabConfig,
   EditorConfigKind.chart => value is SuperChartConfig,
+  EditorConfigKind.treeView => value is SuperTreeViewConfig,
 };
 
 Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
@@ -480,6 +484,7 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       SuperActionConfig() => [EditorConfigRef.action(entry.key)],
       SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
       SuperChartConfig() => [EditorConfigRef.chart(entry.key)],
+      SuperTreeViewConfig() => [EditorConfigRef.treeView(entry.key)],
       SuperListViewConfig() => [
         EditorConfigRef.layout(entry.key),
         EditorConfigRef.list(entry.key),
@@ -513,6 +518,18 @@ Map<String, String> _slots(EditorConfigKind kind, Object value) {
     };
   }
   if (value is SuperTabConfig) {
+    return {
+      for (final id in {
+        ...value.placements.values.expand((ids) => ids),
+        ...value.slotTypes.keys,
+        ...value.slotPreferredSizes.keys,
+        ...value.slotSizeConstraints.keys,
+        ...value.slotLabels.keys,
+      })
+        id: value.slotTypeOf(id),
+    };
+  }
+  if (value is SuperTreeViewConfig) {
     return {
       for (final id in {
         ...value.placements.values.expand((ids) => ids),
@@ -607,6 +624,22 @@ Object _copy(Object value, String Function(String) remap) {
         for (final entry in value.zoneFlows.entries)
           remapZone(entry.key): entry.value,
       },
+      slotPreferredSizes: _remapKeys(value.slotPreferredSizes, remap),
+      slotSizeConstraints: _remapKeys(value.slotSizeConstraints, remap),
+      slotLabels: _remapKeys(value.slotLabels, remap),
+    );
+  }
+  if (value is SuperTreeViewConfig) {
+    return value.copyWith(
+      placements: {
+        for (final entry in value.placements.entries)
+          entry.key: [for (final id in entry.value) remap(id)],
+      },
+      slotTypes: _remapTypes(
+        _slots(EditorConfigKind.treeView, value),
+        value.slotTypes,
+        remap,
+      ),
       slotPreferredSizes: _remapKeys(value.slotPreferredSizes, remap),
       slotSizeConstraints: _remapKeys(value.slotSizeConstraints, remap),
       slotLabels: _remapKeys(value.slotLabels, remap),

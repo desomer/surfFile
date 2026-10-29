@@ -20,6 +20,16 @@ import '../styles/style_editor_panel.dart';
 import '../states/editor_state_controls.dart';
 import 'super_text_field_settings.dart';
 
+/// Ouvre la boîte de dialogue d'édition complète d'un composant `SuperValue`.
+///
+/// Cette fonction récupère le contexte de thème (`DefaultTextStyle`), le
+/// gestionnaire de repositories JSON (`JsonRepositoryScope`) ainsi que le
+/// contexte de ligne englobante (`JsonListScope`), puis affiche
+/// `_ValueStateEditor` dans une fenêtre modale redimensionnable selon le mode
+/// compact ou étendu (`StyleEditorPanel.preferredDense`).
+///
+/// Retourne la nouvelle configuration [SuperValueConfig] validée lorsque
+/// l'utilisateur clique sur « Appliquer », ou `null` en cas d'annulation.
 Future<SuperValueConfig?> showSuperValueEditor({
   required BuildContext context,
   required SuperValueConfig config,
@@ -65,7 +75,14 @@ Future<SuperValueConfig?> showSuperValueEditor({
   }
 }
 
+/// Widget conteneur orchestrant l'édition multi-états d'un `SuperValue`.
+///
+/// Il permet de basculer entre la configuration de base (état standard) et les
+/// surcharges d'états (états nommés liés à un repository, états d'interaction
+/// `hover` / `selected`, et états automatiques tels que `focused`, `disabled`,
+/// `readOnly` ou `contentHover`).
 class _ValueStateEditor extends StatefulWidget {
+  /// Crée l'éditeur multi-états pour la configuration [config].
   const _ValueStateEditor({
     required this.ownerContext,
     required this.config,
@@ -95,10 +112,15 @@ class _ValueStateEditor extends StatefulWidget {
   final Set<AutomaticState> activeAutomatic;
   final ValueChanged<SuperValueConfig>? onPreviewChanged;
   final String? activeState, stateError;
+
+  /// Crée l'état mutable associé à [_ValueStateEditor].
   @override
   State<_ValueStateEditor> createState() => _ValueStateEditorState();
 }
 
+/// État gérant la sélection de l'état en cours d'édition, la synchronisation
+/// avec la liaison d'état du repository et la fusion des surcharges dans la
+/// configuration racine [_root].
 class _ValueStateEditorState extends State<_ValueStateEditor> {
   late SuperValueConfig _root = widget.config;
   String? _state;
@@ -106,6 +128,9 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
   GlobalKey<_SuperValueEditorState> _leafKey = GlobalKey();
   SurfaceStateBinding? _reader;
 
+  /// Callback déclenché lorsque la liaison d'état ([_reader]) signale un
+  /// changement dans le repository JSON. Planifie un `setState` après la frame
+  /// courante pour rafraîchir l'état actif affiché dans l'éditeur.
   void _stateChanged() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) setState(() {});
@@ -113,6 +138,9 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     WidgetsBinding.instance.ensureVisualUpdate();
   }
 
+  /// Initialise, reconfigure ou libère l'écouteur [SurfaceStateBinding] ([_reader])
+  /// chargé de lire en temps réel le nom de l'état actif depuis le repository
+  /// JSON lorsque `_root.states?.binding` est défini.
   void _syncReader() {
     final binding = _root.states?.binding;
     if (binding == null) {
@@ -136,6 +164,7 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     }
   }
 
+  /// Libère l'écouteur de liaison d'état [_reader] à la fermeture de l'éditeur.
   @override
   void dispose() {
     _reader?.removeListener(_stateChanged);
@@ -143,6 +172,13 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     super.dispose();
   }
 
+  /// Retourne la configuration unitaire ([SuperValueConfig] sans ses sous-états)
+  /// correspondant à l'état actuellement sélectionné dans l'éditeur ([_state]) :
+  /// - si [_state] est un état automatique (`focused`, `disabled`, etc.),
+  ///   retourne la configuration de cet état automatique ;
+  /// - si [_state] est `hover` ou `selected`, retourne la surcharge correspondante ;
+  /// - si [_state] est un état nommé, retourne la configuration de cet état ;
+  /// - si [_state] est `null` (état de base), retourne [_root] sans `states`.
   SuperValueConfig get _leaf {
     final states = _root.states;
     final automatic = AutomaticState.fromKey(_state);
@@ -161,6 +197,9 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     return states?.named[_state] ?? _root.copyWith(clearStates: true);
   }
 
+  /// Réintègre la configuration modifiée [leaf] de l'état courant ([_state])
+  /// dans la configuration globale [_root], en calculant automatiquement les
+  /// propriétés surchargées via `ValueConfigOverride.edited(leaf)`.
   SuperValueConfig _withLeaf(SuperValueConfig leaf) {
     leaf = leaf.copyWith(clearStates: true);
     final states = _root.states ?? ValueConfigStates();
@@ -203,6 +242,9 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     );
   }
 
+  /// Valide la cohérence globale de la configuration [root] ainsi que de tous
+  /// ses états, et vérifie qu'aucune liaison repository n'est définie lorsque
+  /// [widget.allowBinding] vaut `false` (cas où un contrôleur externe est fourni).
   void _validate(SuperValueConfig root) {
     root.validate();
     if (!widget.allowBinding) {
@@ -221,6 +263,11 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     }
   }
 
+  /// Capture et valide les saisies en cours dans le formulaire enfant
+  /// ([_leafKey]) avant de changer d'état ou de modifier la liste des états.
+  ///
+  /// Met à jour [_root] et retourne `true` si la saisie courante est valide,
+  /// ou enregistre le message d'erreur dans [_error] et retourne `false` sinon.
   bool _capture() {
     if (_leafKey.currentState == null) return true;
     final leaf = _leafKey.currentState?.capture();
@@ -239,6 +286,9 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     return false;
   }
 
+  /// Résout la configuration effective à prévisualiser sur le composant
+  /// `SuperValue` en fonction de l'état en cours d'édition ([_state]) et la
+  /// transmet au callback [widget.onPreviewChanged].
   void _preview(SuperValueConfig root) {
     final states = root.states;
     final config = _state == null
@@ -260,6 +310,9 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     widget.onPreviewChanged?.call(config);
   }
 
+  /// Applique une transformation [update] sur la structure des états
+  /// ([ValueConfigStates]) après avoir capturé la saisie courante, valide le
+  /// résultat et met à jour l'aperçu en direct.
   void _changeStates(
     ValueConfigStates Function(ValueConfigStates states) update,
   ) {
@@ -281,9 +334,13 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
     }
   }
 
+  /// Construit l'interface d'édition combinant l'en-tête de gestion des états
+  /// ([EditorStateControls]) et le formulaire détaillé de la configuration de
+  /// l'état sélectionné ([_SuperValueEditor]).
   @override
   Widget build(BuildContext context) {
     _syncReader();
+
     final states = _root.states ?? ValueConfigStates();
     final automatic = AutomaticState.fromKey(_state);
     final overlay = states.named.containsKey(_state)
@@ -298,6 +355,7 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
         : _state == hoverSurfaceStateKey
         ? states.hover
         : states.selected;
+
     return _SuperValueEditor(
       key: _leafKey,
       config: _leaf,
@@ -499,7 +557,10 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
   }
 }
 
+/// Formulaire d'édition d'une configuration unitaire [SuperValueConfig]
+/// (état de base ou surcharge d'un état spécifique).
 class _SuperValueEditor extends StatefulWidget {
+  /// Crée le formulaire d'édition pour une feuille [config] de `SuperValue`.
   const _SuperValueEditor({
     required this.config,
     required this.availableFontFamilies,
@@ -524,10 +585,14 @@ class _SuperValueEditor extends StatefulWidget {
   final Widget? header;
   final SuperValueConfig Function(SuperValueConfig config)? onSave;
 
+  /// Crée l'état mutable du formulaire [_SuperValueEditor].
   @override
   State<_SuperValueEditor> createState() => _SuperValueEditorState();
 }
 
+/// État du formulaire [_SuperValueEditor] gérant les contrôleurs de saisie,
+/// la sélection du repository, les liaisons de propriétés individuelles,
+/// l'aperçu temps réel et la validation finale.
 class _SuperValueEditorState extends State<_SuperValueEditor> {
   final _form = GlobalKey<FormState>();
   final _fieldSettings = GlobalKey<SuperTextFieldSettingsState>();
@@ -546,9 +611,16 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
   SuperValueConfig? _lastPreview;
   String? _liveError;
 
+  /// Indique si les sections de réglages propres au `SuperTextField` doivent
+  /// être affichées (uniquement en mode saisie `input` pour une valeur textuelle
+  /// non booléenne).
   bool get _hasFieldSettings =>
       _draft.mode == SuperValueMode.input && !_draft.kind.isBoolean;
 
+  /// Valide le formulaire et les réglages du champ de texte, puis construit et
+  /// retourne la [SuperValueConfig] correspondante.
+  ///
+  /// Retourne `null` et met à jour [_liveError] si la validation échoue.
   SuperValueConfig? capture() {
     if (!_form.currentState!.validate() ||
         (_hasFieldSettings &&
@@ -570,10 +642,18 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     return null;
   }
 
+  /// Assemble et valide une instance de [SuperValueConfig] à partir du brouillon
+  /// [_draft], des contrôleurs de texte [_fields], de la configuration de champ
+  /// [field] et de la liaison repository [binding].
+  ///
+  /// Lève une [FormatException] si une valeur numérique, un nombre de lignes,
+  /// un code couleur hexadécimal ou une famille de police est invalide.
   SuperValueConfig _configuration(
     SuperTextFieldConfig field,
     JsonTextBinding? binding,
   ) {
+    /// Convertit le texte du champ [key] en `double`, ou retourne `null` s'il
+    /// est vide. Lève une [FormatException] si le format numérique est invalide.
     double? number(String key) {
       final text = _fields[key]!.text.trim();
       if (text.isEmpty) return null;
@@ -629,6 +709,12 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     return result;
   }
 
+  /// Planifie après le rendu de la frame courante la construction de la
+  /// configuration d'aperçu et appelle [widget.onPreviewChanged] si la
+  /// configuration a changé depuis le dernier aperçu ([_lastPreview]).
+  ///
+  /// Capture et affiche dans [_liveError] les éventuelles erreurs de format ou
+  /// d'arguments saisies en cours de route.
   void _schedulePreview() {
     if (widget.onPreviewChanged == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -658,6 +744,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     });
   }
 
+  /// Initialise le brouillon [_draft], l'état de la liaison repository, tous
+  /// les [TextEditingController] des champs du formulaire ([_fields]), puis
+  /// lance le chargement de la liste des repositories disponibles.
   @override
   void initState() {
     super.initState();
@@ -689,6 +778,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     if (widget.repositories != null) _loadRepositories();
   }
 
+  /// Charge de manière asynchrone le catalogue des repositories JSON depuis
+  /// [widget.repositories] afin de peupler la liste déroulante de liaison.
   Future<void> _loadRepositories() async {
     setState(() {
       _loadingRepositories = true;
@@ -710,8 +801,12 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     }
   }
 
+  /// Indique si le composant est actuellement lié à un repository (explicite
+  /// via [_repositoryId] ou hérité d'une liste englobante via [_inheritRepository]).
   bool get _bound => _repositoryId != null || _inheritRepository;
 
+  /// Construit l'objet [JsonTextBinding] correspondant à la sélection actuelle
+  /// du repository et du chemin d'attribut, ou `null` si aucune liaison n'est active.
   JsonTextBinding? get _binding => _bound
       ? JsonTextBinding(
           repositoryId: _repositoryId,
@@ -719,8 +814,13 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
         )
       : null;
 
+  /// Retourne le nombre de listes englobantes actives autour de ce composant
+  /// (déterminant le nombre de jokers `[?]` résolus par contexte de ligne).
   int get _listDepth => widget.listScope?.indices.length ?? 0;
 
+  /// Construit les contrôles de la section « Repository » permettant de choisir
+  /// le repository JSON cible, de saisir le chemin d'attribut et de recharger
+  /// la liste des repositories.
   Widget _repositorySettings() {
     final available = widget.allowBinding && widget.repositories != null;
     final inheritable = widget.listScope != null || _inheritRepository;
@@ -825,6 +925,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     ]);
   }
 
+  /// Libère le contrôleur de texte d'aperçu ([_previewText]) ainsi que tous les
+  /// contrôleurs de champs du formulaire ([_fields]).
   @override
   void dispose() {
     _previewText.dispose();
@@ -834,6 +936,13 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     super.dispose();
   }
 
+  /// Construit un [TextFormField] standardisé relié au contrôleur `_fields[key]`
+  /// avec validation intégrée (entiers positifs pour `minLines`/`maxLines`,
+  /// nombres flottants pour les champs `numeric`, et format hexadécimal 8
+  /// caractères pour `color`).
+  ///
+  /// Ajuste aussi automatiquement `maxLines` lorsque l'utilisateur saisit
+  /// plusieurs lignes dans `initialText`.
   Widget _field(String key, String label, {bool numeric = false}) =>
       TextFormField(
         key: ValueKey('super-value-setting-$key'),
@@ -886,6 +995,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
         },
       );
 
+  /// Ouvre la boîte de dialogue permettant de lier dynamiquement une propriété
+  /// visuelle ou textuelle spécifique ([property], par ex. `label`, `color`,
+  /// `fontSize`) à un attribut d'un repository JSON en lecture seule.
   Future<void> _editPropertyBinding(
     SuperValueProperty property,
     String label,
@@ -912,6 +1024,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     setState(() => _draft = _draft.copyWith(propertyBindings: bindings));
   }
 
+  /// Enveloppe un champ de réglage [child] dans une ligne comportant à sa
+  /// droite un bouton d'icône permettant de configurer ou modifier la liaison
+  /// repository de la propriété [property] via [_editPropertyBinding].
   Widget _withBinding(
     SuperValueProperty property,
     String label,
@@ -939,6 +1054,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     ],
   );
 
+  /// Dispose verticalement une liste de widgets [children] avec un espacement
+  /// uniforme de 12 pixels entre chaque élément.
   Widget _group(List<Widget> children) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -949,7 +1066,12 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     ],
   );
 
+  /// Construit la carte d'aperçu en direct du `SuperValue` (en mode `Text`,
+  /// `SuperTextField`, `Checkbox` ou `Switch`) reflétant les réglages actuels
+  /// du formulaire sans impacter la donnée réelle de l'application.
   Widget _preview(bool unavailable) {
+    /// Lit et valide localement une valeur numérique du champ [key] pour
+    /// l'appliquer au style de l'aperçu sans lever d'exception.
     double? number(String key, {bool positive = true}) {
       final value = double.tryParse(_fields[key]!.text.replaceAll(',', '.'));
       return value != null && value.isFinite && (!positive || value > 0)
@@ -1107,6 +1229,11 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     );
   }
 
+  /// Construit la boîte de dialogue complète ([AlertDialog]) contenant le
+  /// panneau d'édition par sections ([StyleEditorPanel] : États, Repository,
+  /// Contenu, Comportement, Typographie, Couleur, Alignement et espacement,
+  /// ainsi que les sections de `SuperTextFieldSettings`) et les boutons
+  /// d'action « Annuler » et « Appliquer ».
   @override
   Widget build(BuildContext context) {
     _schedulePreview();
@@ -1294,8 +1421,16 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                         )
                       else ...[
                         if (_draft.mode == SuperValueMode.input)
-                          _field('minLines', 'Nb lignes minimales', numeric: true),
-                        _field('maxLines', 'Nb lignes maximales', numeric: true),
+                          _field(
+                            'minLines',
+                            'Nb lignes minimales',
+                            numeric: true,
+                          ),
+                        _field(
+                          'maxLines',
+                          'Nb lignes maximales',
+                          numeric: true,
+                        ),
                       ],
                     ],
                     if (_draft.mode == SuperValueMode.input)

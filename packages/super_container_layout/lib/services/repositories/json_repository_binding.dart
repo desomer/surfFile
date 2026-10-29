@@ -51,12 +51,18 @@ class JsonArrayBinding extends ChangeNotifier {
   final String template;
 
   List<int>? _selection;
+  String? _selectedNodePath;
 
   /// Valeurs des `[?]` du chemin modèle (lignes parentes), puis indice de la
   /// ligne sélectionnée ; `null` sans sélection.
   ///
   /// Par exemple `[2, 1]` pour la 2e commande du 3e client.
   List<int>? get selection => _selection;
+
+  /// Chemin concret du nœud sélectionné lorsqu'il s'agit d'un arbre
+  /// (par exemple `nodes[0].children[1]`), ou `null` pour une sélection
+  /// de liste standard.
+  String? get selectedNodePath => _selectedNodePath;
 
   /// Indice sélectionné dans l'instance du tableau désignée par [parents],
   /// ou `null` si la sélection appartient à une autre instance (autre client)
@@ -71,11 +77,17 @@ class JsonArrayBinding extends ChangeNotifier {
     return selection.last;
   }
 
-  /// Sélectionne la ligne [index] de l'instance [parents] et notifie les
-  /// composants liés si la sélection change.
-  void select(List<int> parents, int index) {
+  /// Chemin concret du nœud d'arbre sélectionné dans l'instance [parents],
+  /// ou `null`.
+  String? nodePathFor(List<int> parents) =>
+      indexFor(parents) == null ? null : _selectedNodePath;
+
+  /// Sélectionne la ligne [index] de l'instance [parents] (et optionnellement
+  /// le chemin concret [nodePath] d'un nœud d'arbre) et notifie les composants
+  /// liés si la sélection change.
+  void select(List<int> parents, int index, {String? nodePath}) {
     if (index < 0) throw RangeError.value(index, 'index');
-    _set([...parents, index]);
+    _set([...parents, index], nodePath: nodePath);
   }
 
   /// Efface la sélection et notifie les composants liés.
@@ -84,9 +96,12 @@ class JsonArrayBinding extends ChangeNotifier {
   /// Indique si au moins un composant écoute ce tableau.
   bool get isBound => hasListeners;
 
-  void _set(List<int>? selection) {
-    if (listEquals(_selection, selection)) return;
+  void _set(List<int>? selection, {String? nodePath}) {
+    if (listEquals(_selection, selection) && _selectedNodePath == nodePath) {
+      return;
+    }
     _selection = selection == null ? null : List.unmodifiable(selection);
+    _selectedNodePath = selection == null ? null : nodePath;
     notifyListeners();
   }
 }

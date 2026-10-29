@@ -7,6 +7,7 @@ import 'super_chart_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
+import 'super_tree_view_config.dart';
 import 'super_value_config.dart';
 
 /// Declarative codec entry for a [ComponentConfig] subtype (GenUI CatalogItem pattern).
@@ -56,6 +57,10 @@ abstract final class ComponentConfigCatalog {
     'chart': ComponentConfigCodec<SuperChartConfig>(
       type: 'chart',
       fromJson: SuperChartConfig.fromJson,
+    ),
+    'treeView': ComponentConfigCodec<SuperTreeViewConfig>(
+      type: 'treeView',
+      fromJson: SuperTreeViewConfig.fromJson,
     ),
   };
 

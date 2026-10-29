@@ -271,6 +271,36 @@ class JsonRepositoryStore extends ChangeNotifier {
     return node;
   }
 
+  /// Reads a JSON tree root at [path] (either a JSON array of node objects or
+  /// a single root JSON object).
+  Future<({List<Object?> nodes, bool singleRootObject})> readTreeNodes(
+    String repositoryId,
+    String path,
+  ) => _exclusive(() async {
+    final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
+      ..validateResolved();
+    final root = _decode(await read(await _nameOf(repositoryId)));
+    final node = JsonAttributePath(binding.path).readNode(root);
+    if (node == null) {
+      return (nodes: const <Object?>[], singleRootObject: false);
+    }
+    if (node is List) {
+      return (
+        nodes: List<Object?>.unmodifiable(node),
+        singleRootObject: false,
+      );
+    }
+    if (node is Map<String, dynamic>) {
+      return (
+        nodes: List<Object?>.unmodifiable([node]),
+        singleRootObject: true,
+      );
+    }
+    throw const FormatException(
+      'Le chemin du TreeView doit désigner un tableau ou un objet JSON.',
+    );
+  });
+
   /// Appends a blank copy of the last element, or `{}` to an empty array.
   Future<int> appendArrayItem(
     String repositoryId,

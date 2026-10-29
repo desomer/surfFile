@@ -10,7 +10,6 @@ import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
-import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
 import 'package:super_container_layout/widgets/components/treeview/tree_view.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
@@ -62,19 +61,11 @@ class _TestAppState extends State<TestApp> {
 
     var tree = TreeViewData(
       nodes: [
-        TreeNodeData<NodeAttribut>(
-          data: NodeAttribut(
-            yamlNode: MapEntry<dynamic, dynamic>('key', 'value'),
-            info: AttributInfo()..name = 'key',
-            parent: null,
-          ),
+        TreeNodeData<Map<String, dynamic>>(
+          data: {'key': 'value', 'data' : 'someData'},
           children: [
-            TreeNodeData<NodeAttribut>(
-              data: NodeAttribut(
-                yamlNode: MapEntry<dynamic, dynamic>('childKey', 'childValue'),
-                info: AttributInfo()..name = 'childKey',
-                parent: null,
-              ),
+            TreeNodeData<Map<String, dynamic>>(
+              data: {'key': 'value2', 'data' : 'someData2'},
               children: [],
             ),
           ],
@@ -89,26 +80,24 @@ class _TestAppState extends State<TestApp> {
         label: "AB",
         child: Builder(
           builder: (context) {
-            return TreeView<NodeAttribut>(
+            return TreeView<Map<String, dynamic>>(
               getNodes: () {
                 return tree;
               },
-              getHeader: (TreeNodeData<NodeAttribut> node) {
+              getHeader: (TreeNodeData<Map<String, dynamic>> node) {
                 return InkWell(
                   onTap: () {
                     node.doToogleChild();
-                    // currentYamlTree?.doShowAttrEditor(node.data);
-                    // doShowAttrEditor(node.data);
                   },
-                  child: Text('Header: ${node.data.info.name}'),
+                  child: Text('Header: ${node.data['key']}'),
                 );
               },
-              getDataRow: (TreeNodeData<NodeAttribut> node) {
-                return Text('Data: ${node.data.yamlNode}');
+              getDataRow: (TreeNodeData<Map<String, dynamic>> node) {
+                return Text('Data: ${node.data['data']}');
               },
               isSelected:
                   (
-                    TreeNodeData<NodeAttribut> node,
+                    TreeNodeData<Map<String, dynamic>> node,
                     State<StatefulWidget>? current,
                     State<StatefulWidget>? oldSelectedState,
                   ) {
@@ -119,6 +108,7 @@ class _TestAppState extends State<TestApp> {
         ),
       ),
     );
+
     _pageRouting = EditorPageRouter(
       baseConfig: RoutingConfig(
         routes: [

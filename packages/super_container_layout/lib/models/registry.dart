@@ -4,11 +4,13 @@ import 'component_config.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
+import 'super_tree_view_config.dart';
 import 'super_chart_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_tab.dart';
+import '../widgets/components/super_tree_view.dart';
 import '../widgets/components/super_chart.dart';
 import '../widgets/components/super_value.dart';
 import '../widgets/components/super_action.dart';
@@ -52,6 +54,7 @@ enum EditorConfigKind {
   list,
   tab,
   chart,
+  treeView,
 }
 
 /// Key of one persisted configuration entry, e.g. `layouts[id]`.
@@ -71,6 +74,7 @@ class EditorConfigRef {
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
   const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
   const EditorConfigRef.chart(this.id) : kind = EditorConfigKind.chart;
+  const EditorConfigRef.treeView(this.id) : kind = EditorConfigKind.treeView;
 
   final EditorConfigKind kind;
   final String id;
@@ -152,6 +156,9 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _chart(String id) => [
     EditorConfigRef.chart(id),
   ];
+  static List<EditorConfigRef> _treeView(String id) => [
+    EditorConfigRef.treeView(id),
+  ];
 
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
@@ -163,6 +170,9 @@ class ComponentDuplicationContract {
   );
   static const superChart = ComponentDuplicationContract(
     ownedConfigs: _chart,
+  );
+  static const superTreeView = ComponentDuplicationContract(
+    ownedConfigs: _treeView,
   );
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _native,
@@ -291,6 +301,8 @@ class Registry {
   final Map<String, SuperTabConfig> _tabDefaults = {};
   final Map<String, ValueNotifier<SuperChartConfig>> chartConfigById = {};
   final Map<String, SuperChartConfig> _chartDefaults = {};
+  final Map<String, ValueNotifier<SuperTreeViewConfig>> treeViewConfigById = {};
+  final Map<String, SuperTreeViewConfig> _treeViewDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
   final Map<String, NativeComponentConfig? Function(Appearance)>
   _nativeMigrations = {};
@@ -306,6 +318,7 @@ class Registry {
     ...listConfigById.keys,
     ...tabConfigById.keys,
     ...chartConfigById.keys,
+    ...treeViewConfigById.keys,
   };
 
   /// Includes runtime defaults that have not yet been persisted.
@@ -324,6 +337,8 @@ class Registry {
       for (final entry in listConfigById.entries) entry.key: entry.value.value,
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
       for (final entry in chartConfigById.entries) entry.key: entry.value.value,
+      for (final entry in treeViewConfigById.entries)
+        entry.key: entry.value.value,
       ...current.components,
     };
     // A list and its row layout share an ID.
@@ -382,6 +397,10 @@ class Registry {
     for (final entry in chartConfigById.entries.toList()) {
       _chartDefaults[entry.key] = entry.value.value;
       chartController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in treeViewConfigById.entries.toList()) {
+      _treeViewDefaults[entry.key] = entry.value.value;
+      treeViewController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -544,6 +563,12 @@ class Registry {
         entry.value.value = appearance.chartComponent(
           entry.key,
           fallback: _chartDefaults[entry.key]!,
+        );
+      }
+      for (final entry in treeViewConfigById.entries) {
+        entry.value.value = appearance.treeViewComponent(
+          entry.key,
+          fallback: _treeViewDefaults[entry.key]!,
         );
       }
     } finally {
@@ -735,6 +760,36 @@ class Registry {
         notifier.value.validate();
         if (!_syncing) {
           _appearance!.value = _appearance!.value.withChartComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperTreeViewConfig> treeViewController(
+    String id, {
+    SuperTreeViewConfig? fallback,
+  }) {
+    final initial = fallback ?? SuperTreeViewConfig();
+    initial.validate();
+    _treeViewDefaults.putIfAbsent(id, () => initial);
+    final notifier = treeViewConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.treeViewComponent(id, fallback: initial) ?? initial,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withTreeViewComponent(
             id,
             notifier.value,
           );
@@ -968,6 +1023,16 @@ class Registry {
         label: 'Liste',
         builder: (_) => SuperListView(id: xuiCtx.id),
       ),
+    );
+
+    registry['TreeView'] = ComponentBuilderDynamic(
+      menuIcon: Icons.account_tree_outlined,
+      label: 'TreeView',
+      duplication: ComponentDuplicationContract.superTreeView,
+      tags: const {'tree', 'list', 'layout', 'data'},
+      addConfigurator: treeViewAddConfigurator,
+      previewBuilder: _buildTreeViewPreview,
+      dynamicBuilder: (ctx) => SuperTreeView(id: ctx.id),
     );
   }
 
@@ -1591,6 +1656,57 @@ Widget _buildChartPreview(BuildContext context) {
           bar(32, colors.secondary),
         ],
       ),
+    ),
+  );
+}
+
+Widget _buildTreeViewPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget nodeRow(String header, String data, {int depth = 0}) => Padding(
+    padding: EdgeInsets.only(left: depth * 16.0),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            depth == 0 ? Icons.arrow_drop_down : Icons.subdirectory_arrow_right,
+            size: 14,
+            color: colors.primary,
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              header,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 12,
+            color: colors.outlineVariant,
+            margin: const EdgeInsets.symmetric(horizontal: 6),
+          ),
+          Expanded(
+            child: Text(data, style: const TextStyle(fontSize: 11)),
+          ),
+        ],
+      ),
+    ),
+  );
+  return IgnorePointer(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        nodeRow('Header (Parent)', 'Data'),
+        const SizedBox(height: 4),
+        nodeRow('Header (Enfant)', 'Data', depth: 1),
+      ],
     ),
   );
 }

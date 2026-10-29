@@ -65,6 +65,8 @@ class JsonListScope extends InheritedWidget {
   const JsonListScope({
     required this.repositoryId,
     required this.indices,
+    this.nodePath,
+    this.treeTemplatePath,
     this.selected = false,
     this.placeholder = false,
     required super.child,
@@ -76,6 +78,14 @@ class JsonListScope extends InheritedWidget {
 
   /// Indices des lignes englobantes, liste externe d'abord.
   final List<int> indices;
+
+  /// Chemin concret du nœud courant lorsqu'il s'agit d'une ligne de
+  /// `SuperTreeView` (par exemple `nodes[0].children[1]`).
+  final String? nodePath;
+
+  /// Chemin modèle racine de l'arbre (par exemple `nodes` ou
+  /// `departments[?].nodes`).
+  final String? treeTemplatePath;
 
   /// Whether the nearest row is selected in its list.
   final bool selected;
@@ -89,6 +99,64 @@ class JsonListScope extends InheritedWidget {
   static JsonListScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<JsonListScope>();
 
+  static JsonTextBinding _applyTreeNodeScope(
+    JsonTextBinding binding,
+    JsonListScope? scope,
+  ) {
+    final currentNodePath = scope?.nodePath;
+    if (currentNodePath == null || currentNodePath.isEmpty) return binding;
+    // Apply only when the binding targets the same repository (or inherits it).
+    if (binding.repositoryId != null &&
+        scope?.repositoryId != null &&
+        binding.repositoryId != scope!.repositoryId) {
+      return binding;
+    }
+    final rawPath = binding.path.trim();
+    if (rawPath.isEmpty) return binding;
+
+    final template = scope?.treeTemplatePath;
+    if (template != null && template.isNotEmpty) {
+      final wildcardPrefix = '$template[?]';
+      if (rawPath == wildcardPrefix) {
+        return JsonTextBinding(
+          repositoryId: binding.repositoryId ?? scope?.repositoryId,
+          path: currentNodePath,
+        );
+      }
+      if (rawPath.startsWith('$wildcardPrefix.') ||
+          rawPath.startsWith('$wildcardPrefix[')) {
+        return JsonTextBinding(
+          repositoryId: binding.repositoryId ?? scope?.repositoryId,
+          path: '$currentNodePath${rawPath.substring(wildcardPrefix.length)}',
+        );
+      }
+      if (binding.repositoryId == null &&
+          (rawPath.startsWith('$template.') ||
+              rawPath.startsWith('$template[')) &&
+          !rawPath.startsWith('$currentNodePath.') &&
+          !rawPath.startsWith('$currentNodePath[')) {
+        return JsonTextBinding(
+          repositoryId: scope?.repositoryId,
+          path: '$currentNodePath${rawPath.substring(template.length)}',
+        );
+      }
+    }
+
+    // Relative path inside a tree node (e.g. `key`, `data`, `info.title`) when
+    // the repository is inherited from the enclosing tree scope.
+    if (binding.repositoryId == null &&
+        !rawPath.contains('[?]') &&
+        rawPath != currentNodePath &&
+        !rawPath.startsWith('$currentNodePath.') &&
+        !rawPath.startsWith('$currentNodePath[')) {
+      return JsonTextBinding(
+        repositoryId: scope?.repositoryId,
+        path: '$currentNodePath.$rawPath',
+      );
+    }
+    return binding;
+  }
+
   /// Liaison concrète de [binding] dans la ligne [scope], sans utiliser les
   /// sélections.
   ///
@@ -97,10 +165,13 @@ class JsonListScope extends InheritedWidget {
   static JsonTextBinding resolve(
     JsonTextBinding binding,
     JsonListScope? scope,
-  ) => binding.resolve(
-    repositoryId: scope?.repositoryId,
-    indices: scope?.indices ?? const [],
-  );
+  ) {
+    final adapted = _applyTreeNodeScope(binding, scope);
+    return adapted.resolve(
+      repositoryId: scope?.repositoryId,
+      indices: scope?.indices ?? const [],
+    );
+  }
 
   /// Comme [resolve], mais chaque `[?]` au-delà des listes englobantes prend
   /// la ligne sélectionnée de son tableau dans [store].
@@ -119,22 +190,26 @@ class JsonListScope extends InheritedWidget {
     JsonListScope? scope,
     JsonRepositoryStore? store,
   ) {
-    final path = JsonAttributePath(binding.path);
+    final adapted = _applyTreeNodeScope(binding, scope);
+    final path = JsonAttributePath(adapted.path);
     final count = path.wildcardCount;
     final indices = [...?scope?.indices];
     if (count <= indices.length) {
       return (
-        binding: resolve(binding, scope),
+        binding: adapted.resolve(
+          repositoryId: scope?.repositoryId,
+          indices: indices,
+        ),
         indices: indices.take(count).toList(),
         arrays: const [],
       );
     }
-    binding.validate();
-    final repositoryId = binding.repositoryId ?? scope?.repositoryId;
+    adapted.validate();
+    final repositoryId = adapted.repositoryId ?? scope?.repositoryId;
     if (repositoryId == null) {
       // Lève l'erreur « repository hérité indisponible ».
       return (
-        binding: binding.resolve(indices: List.filled(count, 0)),
+        binding: adapted.resolve(indices: List.filled(count, 0)),
         indices: const [],
         arrays: const [],
       );
@@ -145,6 +220,8 @@ class JsonListScope extends InheritedWidget {
     final repository = store.bindingOf(repositoryId);
     final templates = path.arrayTemplates;
     final arrays = <JsonArrayBinding>[];
+    String? treeNodeReplacement;
+    String? treePrefixToReplace;
     for (var i = indices.length; i < count; i++) {
       final array = repository.array(templates[i]);
       arrays.add(array);
@@ -152,10 +229,36 @@ class JsonListScope extends InheritedWidget {
       if (index == null) {
         return (binding: null, indices: indices, arrays: arrays);
       }
+      final selectedTreePath = array.nodePathFor(indices);
+      if (selectedTreePath != null && i == count - 1) {
+        treeNodeReplacement = selectedTreePath;
+        treePrefixToReplace =
+            '${JsonAttributePath(templates[i]).resolve(indices)}[$index]';
+      }
       indices.add(index);
     }
+    var resolvedBinding = adapted.resolve(
+      repositoryId: repositoryId,
+      indices: indices,
+    );
+    if (treeNodeReplacement != null && treePrefixToReplace != null) {
+      final resolvedRaw = resolvedBinding.path;
+      if (resolvedRaw == treePrefixToReplace) {
+        resolvedBinding = JsonTextBinding(
+          repositoryId: repositoryId,
+          path: treeNodeReplacement,
+        );
+      } else if (resolvedRaw.startsWith('$treePrefixToReplace.') ||
+          resolvedRaw.startsWith('$treePrefixToReplace[')) {
+        resolvedBinding = JsonTextBinding(
+          repositoryId: repositoryId,
+          path:
+              '$treeNodeReplacement${resolvedRaw.substring(treePrefixToReplace.length)}',
+        );
+      }
+    }
     return (
-      binding: binding.resolve(repositoryId: repositoryId, indices: indices),
+      binding: resolvedBinding,
       indices: indices,
       arrays: arrays,
     );
@@ -164,6 +267,8 @@ class JsonListScope extends InheritedWidget {
   @override
   bool updateShouldNotify(JsonListScope oldWidget) =>
       repositoryId != oldWidget.repositoryId ||
+      nodePath != oldWidget.nodePath ||
+      treeTemplatePath != oldWidget.treeTemplatePath ||
       selected != oldWidget.selected ||
       placeholder != oldWidget.placeholder ||
       !listEquals(indices, oldWidget.indices);

@@ -1,8 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
-import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
-import 'package:super_container_layout/widgets/components/treeview/widget_hover.dart';
+//import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
 import 'package:super_container_layout/widgets/components/treeview/widget_overflow.dart';
 
 final ValueNotifier<int> zoom = ValueNotifier(100);
@@ -11,7 +8,7 @@ double scale = 0.9;
 double rowHeight = 30 * scale;
 
 PanYamlTree? currentYamlTree;
-final Map<String, List<AttributInfo>> copiedMapInfoByName = {};
+final Map<String, List> copiedMapInfoByName = {};
 
 class PanYamlTree {
   TextSelection? getTextSelection() {
@@ -142,6 +139,12 @@ class TreeView<T> extends StatefulWidget {
     this.onSelectionChanged,
     this.contextMenuItems,
     this.showCheckboxes = false,
+    this.showConnectors = true,
+    this.enableContextMenu = true,
+    this.rowHeight,
+    this.indentSize,
+    this.onHeaderSizeChanged,
+    this.onToggleNode,
     this.onCopy,
     this.onPaste,
   });
@@ -160,6 +163,24 @@ class TreeView<T> extends StatefulWidget {
   /// Affiche une case à cocher en début de chaque ligne.
   final bool showCheckboxes;
 
+  /// Affiche les connecteurs hiérarchiques de l'arbre.
+  final bool showConnectors;
+
+  /// Active le menu contextuel interne au clic secondaire.
+  final bool enableContextMenu;
+
+  /// Hauteur d'une ligne (utilise la valeur globale `rowHeight` si omis).
+  final double? rowHeight;
+
+  /// Indentation par niveau de profondeur (utilise `indent.indent` si omis).
+  final double? indentSize;
+
+  /// Appelé lorsque l'utilisateur redimensionne la colonne Header.
+  final ValueChanged<double>? onHeaderSizeChanged;
+
+  /// Appelé lorsqu'un nœud est déplié ou replié.
+  final ValueChanged<TreeNodeData<T>>? onToggleNode;
+
   /// Optional extra menu items appended after the built-in actions.
   /// Each entry: {'label': String, 'icon': IconData?, 'value': String}
   final List<Map<String, dynamic>>? contextMenuItems;
@@ -168,7 +189,7 @@ class TreeView<T> extends StatefulWidget {
   State<TreeView> createState() => TreeViewState<T>();
 }
 
-final Set<TreeNodeData> _clipboardNodes = {};
+// final Set<TreeNodeData> _clipboardNodes = {};
 
 class TreeViewState<T> extends State<TreeView<T>> {
   double headerSize = -1;
@@ -212,10 +233,34 @@ class TreeViewState<T> extends State<TreeView<T>> {
     setState(() {});
   }
 
+  double get _effectiveRowHeight => widget.rowHeight ?? rowHeight;
+
+  IndentInfo get _effectiveIndent => IndentInfo(
+    indent: widget.indentSize ?? indent.indent,
+    start: indent.start,
+    end: indent.end,
+    height: _effectiveRowHeight,
+    color: indent.color,
+  );
+
   @override
   void initState() {
     super.initState();
     showCheckboxes = widget.showCheckboxes;
+  }
+
+  @override
+  void didUpdateWidget(covariant TreeView<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.showCheckboxes != widget.showCheckboxes) {
+      showCheckboxes = widget.showCheckboxes;
+      repaintInProgess = DateTime.now().millisecondsSinceEpoch;
+    }
+    if (oldWidget.rowHeight != widget.rowHeight ||
+        oldWidget.indentSize != widget.indentSize ||
+        oldWidget.showConnectors != widget.showConnectors) {
+      repaintInProgess = DateTime.now().millisecondsSinceEpoch;
+    }
   }
 
   @override
@@ -227,26 +272,26 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
   List<TreeNodeData<T>> list = [];
 
-  int doSearch(String value, int idx) {
-    var lowerCase = value.toLowerCase();
-    Iterable<TreeNodeData<T>> nodes = list.where((element) {
-      NodeAttribut attrData = element.data as NodeAttribut;
-      String? title = attrData.info.properties?['title'];
-      if (attrData.info.name.toLowerCase().contains(lowerCase)) {
-        return true;
-      } else if (title?.toLowerCase().contains(lowerCase) ?? false) {
-        return true;
-      }
-      return false;
-    });
+  // int doSearch(String value, int idx) {
+  //   var lowerCase = value.toLowerCase();
+  //   Iterable<TreeNodeData<T>> nodes = list.where((element) {
+  //     NodeAttribut attrData = element.data as NodeAttribut;
+  //     String? title = attrData.info.properties?['title'];
+  //     if (attrData.info.name.toLowerCase().contains(lowerCase)) {
+  //       return true;
+  //     } else if (title?.toLowerCase().contains(lowerCase) ?? false) {
+  //       return true;
+  //     }
+  //     return false;
+  //   });
 
-    if (nodes.isNotEmpty) {
-      var node = nodes.elementAt(idx % nodes.length);
-      doTapHeader(node, "search");
-      scrollToData(node.data);
-    }
-    return nodes.length;
-  }
+  //   if (nodes.isNotEmpty) {
+  //     var node = nodes.elementAt(idx % nodes.length);
+  //     doTapHeader(node, "search");
+  //     scrollToData(node.data);
+  //   }
+  //   return nodes.length;
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -257,45 +302,55 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
     TreeViewData<T> data = widget.getNodes();
     List<TreeNodeData<T>> nodes = data.nodes;
-    Size size = MediaQuery.of(ctx).size;
 
     NodeStack stack = NodeStack();
     list = _flattenNodeTree(stack, 0, nodes);
     //openStructureMode = 'all';
 
-    var ret = ValueListenableBuilder(
-      valueListenable: zoom,
-      // pour appel durant le changement de zoom
-      builder: (context, value, child) {
-        timeBuild = DateTime.now().millisecondsSinceEpoch;
-        if (headerSize == -1 ||
-            (headerSize < data.headerSize && dragInProgess == 0)) {
-          headerSize = data.headerSize;
-          repaintInProgess = timeBuild;
-          if (headerSize > size.width - 300 - 350 - 0) {
-            headerSize = size.width - 300 - 350 - 0;
-          }
-          if (headerSize < 100) headerSize = 100;
-        }
-        return Scrollbar(
-          controller: _scrollController,
-          thumbVisibility: true, // ✅ Toujours visible sur desktop
-          child: ListView.builder(
-            primary: false,
-            controller: _scrollController,
-            shrinkWrap: true,
-            itemCount: list.length,
-            itemBuilder: (context, index) {
-              var node = list[index];
-              node.tree = this;
-              var row = _getAnimatedHeightRow(
-                node,
-                _buildNode(context, node),
-                ValueKey('${node.hashCode}#header'),
-              );
-              return row;
-            },
-          ),
+    var ret = LayoutBuilder(
+      builder: (context, constraints) {
+        final double maxWidth = constraints.maxWidth;
+        return ValueListenableBuilder(
+          valueListenable: zoom,
+          // pour appel durant le changement de zoom
+          builder: (context, value, child) {
+            timeBuild = DateTime.now().millisecondsSinceEpoch;
+            if (headerSize == -1 ||
+                (headerSize != data.headerSize && dragInProgess == 0)) {
+              headerSize = data.headerSize;
+              repaintInProgess = timeBuild;
+            }
+            final double clampedHeaderSize = maxWidth.isFinite
+                ? headerSize.clamp(
+                    100.0,
+                    maxWidth - 100.0 > 100.0 ? maxWidth - 100.0 : 100.0,
+                  )
+                : (headerSize < 100.0 ? 100.0 : headerSize);
+            if (clampedHeaderSize != headerSize) {
+              headerSize = clampedHeaderSize;
+              repaintInProgess = timeBuild;
+            }
+            return Scrollbar(
+              controller: _scrollController,
+              thumbVisibility: true, // ✅ Toujours visible sur desktop
+              child: ListView.builder(
+                primary: false,
+                controller: _scrollController,
+                shrinkWrap: true,
+                itemCount: list.length,
+                itemBuilder: (context, index) {
+                  var node = list[index];
+                  node.tree = this;
+                  var row = _getAnimatedHeightRow(
+                    node,
+                    _buildNode(context, node),
+                    ValueKey('${node.hashCode}#header'),
+                  );
+                  return row;
+                },
+              ),
+            );
+          },
         );
       },
     );
@@ -317,61 +372,61 @@ class TreeViewState<T> extends State<TreeView<T>> {
       node.isLast = node == nodes.last;
 
       if (millisecondsSinceEpoch2 - openFactorInProgess < 500) {
-        if (openStructureMode == 'structure') {
-          node.isExpanded = false;
-          if (hasStructure(node)) {
-            node.isExpanded = true;
-          }
-        } else if (openStructureMode == 'onlyStructure') {
-          node.isExpanded = false;
-          if (!isStructure(node)) {
-            node.isShow = false;
-            continue;
-          }
-          if (node.isRoot || hasStructure(node)) {
-            node.isExpanded = true;
-          }
-        } else {
-          node.isShow = true;
-          node.isExpanded = deep < openFactor;
-        }
+        // if (openStructureMode == 'structure') {
+        //   node.isExpanded = false;
+        //   if (hasStructure(node)) {
+        //     node.isExpanded = true;
+        //   }
+        // } else if (openStructureMode == 'onlyStructure') {
+        //   node.isExpanded = false;
+        //   if (!isStructure(node)) {
+        //     node.isShow = false;
+        //     continue;
+        //   }
+        //   if (node.isRoot || hasStructure(node)) {
+        //     node.isExpanded = true;
+        //   }
+        // } else {
+        //   node.isShow = true;
+        //   node.isExpanded = deep < openFactor;
+        // }
       }
 
       if (node.isShow == false) {
         continue;
       }
 
-      if (filterType != 'all') {
-        if (node.data is NodeAttribut) {
-          var info = (node.data as NodeAttribut).info;
-          if (!(info.properties?["#target"]?.toString().contains(filterType) ??
-              true)) {
-            continue;
-          }
-        }
-      }
+      // if (filterType != 'all') {
+      //   if (node.data is NodeAttribut) {
+      //     var info = (node.data as NodeAttribut).info;
+      //     if (!(info.properties?["#target"]?.toString().contains(filterType) ??
+      //         true)) {
+      //       continue;
+      //     }
+      //   }
+      // }
 
       //bool noDisplayNodeButKeepChildren = false;
       bool noTab = false;
 
-      if (node.data is NodeAttribut) {
-        var attr = (node.data as NodeAttribut);
-        var info = attr.info;
-        if (info.name == constInherit) {
-          // les attributs d'un $inherit sont affichés au même niveau que le $inherit lui même
-          noTab = true;
-        }
+      // if (node.data is NodeAttribut) {
+      //   var attr = (node.data as NodeAttribut);
+      //   var info = attr.info;
+      //   if (info.name == constInherit) {
+      //     // les attributs d'un $inherit sont affichés au même niveau que le $inherit lui même
+      //     noTab = true;
+      //   }
 
-        // if (attr.parent?.info.name == constInherit && info.type == '\$ref') {
-        //   noTab = true;
-        //   //noDisplayNodeButKeepChildren = true;
-        // }
+      //   // if (attr.parent?.info.name == constInherit && info.type == '\$ref') {
+      //   //   noTab = true;
+      //   //   //noDisplayNodeButKeepChildren = true;
+      //   // }
 
-        if (info.type == '\$ref') {
-          noTab = true;
-          //noDisplayNodeButKeepChildren = true;
-        }
-      }
+      //   if (info.type == '\$ref') {
+      //     noTab = true;
+      //     //noDisplayNodeButKeepChildren = true;
+      //   }
+      // }
 
       // if (noDisplayNodeButKeepChildren) {
       //   // on affiche pas le noeud $ref mais on affiche directement ses attributs
@@ -395,11 +450,11 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
       stackLevelIndicator.push(node);
 
-      if (noTab) {
-        node.noTab = true;
-        // on affiche pas le noeud $ref mais on affiche directement ses attributs
-        deep--;
-      }
+      // if (noTab) {
+      //   node.noTab = true;
+      //   // on affiche pas le noeud $ref mais on affiche directement ses attributs
+      //   deep--;
+      // }
 
       if (node.children != null &&
           node.children!.isNotEmpty &&
@@ -409,10 +464,10 @@ class TreeViewState<T> extends State<TreeView<T>> {
         );
       }
 
-      if (noTab) {
-        // on affiche pas le noeud $ref mais on affiche directement ses attributs
-        deep++;
-      }
+      // if (noTab) {
+      //   // on affiche pas le noeud $ref mais on affiche directement ses attributs
+      //   deep++;
+      // }
 
       stackLevelIndicator.pop();
     }
@@ -421,48 +476,51 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 
   Widget getHover(TreeNodeData<T> attr, Widget child) {
-    return HoverableCard(
-      onHover: (isHovered) {
-        if (attr.data is NodeAttribut) {
-          (attr.data as NodeAttribut).info.isHoover?.value = isHovered;
-        }
-      },
-      onBuild: (state, ctx) {
-        if (attr.data is NodeAttribut) {
-          (attr.data as NodeAttribut).widgetRowHoverState = state;
-        }
-      },
-      isSelected: (State state) {
-        if (attr.data is NodeAttribut) {
-          (attr.data as NodeAttribut).widgetRowHoverState = state;
-        }
-        if (widget.onBuild != null) {
-          widget.onBuild!(this, ctx);
-        }
 
-        bool isSelected = widget.isSelected(
-          attr,
-          state,
-          currentRowSelectedState,
-        );
-        if (isSelected) {
-          if (state != currentRowSelectedState) {
-            var old = currentRowSelectedState;
-            // deselectionner l'ancien
-            SchedulerBinding.instance.addPostFrameCallback((timeStamp) {
-              state.setState(() {});
-              if (old?.mounted == true) {
-                // ignore: invalid_use_of_protected_member
-                old?.setState(() {});
-              }
-            });
-          }
-          currentRowSelectedState = state;
-        }
-        return isSelected;
-      },
-      child: child,
-    );
+    return child;
+
+    // return HoverableCard(
+    //   onHover: (isHovered) {
+    //     if (attr.data is NodeAttribut) {
+    //       (attr.data as NodeAttribut).info.isHoover?.value = isHovered;
+    //     }
+    //   },
+    //   onBuild: (state, ctx) {
+    //     if (attr.data is NodeAttribut) {
+    //       (attr.data as NodeAttribut).widgetRowHoverState = state;
+    //     }
+    //   },
+    //   isSelected: (State state) {
+    //     if (attr.data is NodeAttribut) {
+    //       (attr.data as NodeAttribut).widgetRowHoverState = state;
+    //     }
+    //     if (widget.onBuild != null) {
+    //       widget.onBuild!(this, ctx);
+    //     }
+
+    //     bool isSelected = widget.isSelected(
+    //       attr,
+    //       state,
+    //       currentRowSelectedState,
+    //     );
+    //     if (isSelected) {
+    //       if (state != currentRowSelectedState) {
+    //         var old = currentRowSelectedState;
+    //         // deselectionner l'ancien
+    //         SchedulerBinding.instance.addPostFrameCallback((timeStamp) {
+    //           state.setState(() {});
+    //           if (old?.mounted == true) {
+    //             // ignore: invalid_use_of_protected_member
+    //             old?.setState(() {});
+    //           }
+    //         });
+    //       }
+    //       currentRowSelectedState = state;
+    //     }
+    //     return isSelected;
+    //   },
+    //   child: child,
+    // );
   }
 
   void doTapHeader(TreeNodeData<T> node, String type) {
@@ -491,6 +549,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
         _toogleChildren(node, node.isToogleRequested);
       }
     });
+    widget.onToggleNode?.call(node);
   }
 
   // Widget _getJsonRowCached(NodeAttribut attr, ModelSchema schema) {
@@ -510,21 +569,23 @@ class TreeViewState<T> extends State<TreeView<T>> {
   // }
 
   Widget _buildNode(BuildContext context, TreeNodeData<T> node) {
+    final stack = Stack(
+      children: [
+        getHover(node, _getRowCached(node)),
+        if (widget.showConnectors && node.depth > 0)
+          Positioned(
+            left: 0,
+            top: 0,
+            child: TreeConnector(node: node, indentInfo: _effectiveIndent),
+          ),
+      ],
+    );
+    if (!widget.enableContextMenu) return stack;
     return GestureDetector(
       onSecondaryTapDown: (details) {
         _showContextMenu(context, details.globalPosition, node);
       },
-      child: Stack(
-        children: [
-          getHover(node, _getRowCached(node)),
-          if (node.depth > 0)
-            Positioned(
-              left: 0,
-              top: 0,
-              child: TreeConnector(node: node, indentInfo: indent),
-            ),
-        ],
-      ),
+      child: stack,
     );
   }
 
@@ -738,93 +799,93 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
       case 'copyPath':
         StringBuffer sb = StringBuffer();
-        if (selectedNodes.isEmpty) {
-          sb.writeln(
-            (node.data as NodeAttribut).info.getJsonPath(
-              sep: '.',
-              withRoot: false,
-            ),
-          );
-        } else {
-          for (var element in selectedNodes) {
-            _clipboardNodes.add(element);
-            if (element.data is NodeAttribut) {
-              var path = (element.data as NodeAttribut).info.getJsonPath(
-                sep: '.',
-                withRoot: false,
-              );
-              sb.writeln(path);
-            }
-          }
-        }
-        Clipboard.setData(ClipboardData(text: sb.toString()));
-        ScaffoldMessenger.of(
-          // ignore: use_build_context_synchronously
-          context,
-        ).showSnackBar(SnackBar(content: Text('copied to clipboard')));
+        // if (selectedNodes.isEmpty) {
+        //   sb.writeln(
+        //     (node.data as NodeAttribut).info.getJsonPath(
+        //       sep: '.',
+        //       withRoot: false,
+        //     ),
+        //   );
+        // } else {
+        //   for (var element in selectedNodes) {
+        //     _clipboardNodes.add(element);
+        //     if (element.data is NodeAttribut) {
+        //       var path = (element.data as NodeAttribut).info.getJsonPath(
+        //         sep: '.',
+        //         withRoot: false,
+        //       );
+        //       sb.writeln(path);
+        //     }
+        //   }
+        // }
+        // Clipboard.setData(ClipboardData(text: sb.toString()));
+        // ScaffoldMessenger.of(
+        //   // ignore: use_build_context_synchronously
+        //   context,
+        // ).showSnackBar(SnackBar(content: Text('copied to clipboard')));
         break;
 
       case 'copy':
-        _clipboardNodes.clear();
-        String rootPath = '';
-        for (var element in selectedNodes) {
-          _clipboardNodes.add(element);
-          if (element.data is NodeAttribut) {
-            var path = (element.data as NodeAttribut).info.getJsonPath(
-              sep: '>',
-            );
-            if (rootPath.isEmpty) {
-              rootPath = path;
-            } else {
-              // on garde que la partie du path qui est commune à tous les éléments sélectionnés pour éviter d'avoir des chemins trop long lors du collage
-              while (!path.startsWith(rootPath)) {
-                int index = rootPath.lastIndexOf('>');
-                if (index == -1) {
-                  rootPath = '';
-                  break;
-                }
-                rootPath = rootPath.substring(0, index);
-              }
-            }
-          }
-        }
-        StringBuffer sb = StringBuffer();
-        copiedMapInfoByName.clear();
-        for (var element in _clipboardNodes) {
-          if (element.data is NodeAttribut) {
-            var attr = element.data as NodeAttribut;
-            var path = attr.info.getJsonPath(sep: '>');
-            var length = rootPath.length;
-            if (length > 0) {
-              length++; // pour enlever le séparateur ">" en début du path
-            }
-            path = path.substring(length);
-            // compte le nb de > dans le path pour ajouter une indentation dans la console et mieux visualiser la hiérarchie des éléments copiés
-            int indent = '>'.allMatches(path).length;
-            String indentation = '\t' * indent;
-            var type = attr.info.type;
-            if (type == 'object' || type == 'array') {
-              type = '';
-            }
-            sb.writeln("$indentation${attr.info.name} : $type");
-            copiedMapInfoByName
-                .putIfAbsent(attr.info.name, () => [])
-                .add(attr.info.clone().prepareNewSave());
-          }
-        }
-        print("Copied nodes:\n$sb");
-        Clipboard.setData(ClipboardData(text: sb.toString()));
+        // _clipboardNodes.clear();
+        // String rootPath = '';
+        // for (var element in selectedNodes) {
+        //   _clipboardNodes.add(element);
+        //   if (element.data is NodeAttribut) {
+        //     var path = (element.data as NodeAttribut).info.getJsonPath(
+        //       sep: '>',
+        //     );
+        //     if (rootPath.isEmpty) {
+        //       rootPath = path;
+        //     } else {
+        //       // on garde que la partie du path qui est commune à tous les éléments sélectionnés pour éviter d'avoir des chemins trop long lors du collage
+        //       while (!path.startsWith(rootPath)) {
+        //         int index = rootPath.lastIndexOf('>');
+        //         if (index == -1) {
+        //           rootPath = '';
+        //           break;
+        //         }
+        //         rootPath = rootPath.substring(0, index);
+        //       }
+        //     }
+        //   }
+        // }
+        // StringBuffer sb = StringBuffer();
+        // copiedMapInfoByName.clear();
+        // for (var element in _clipboardNodes) {
+        //   if (element.data is NodeAttribut) {
+        //     var attr = element.data as NodeAttribut;
+        //     var path = attr.info.getJsonPath(sep: '>');
+        //     var length = rootPath.length;
+        //     if (length > 0) {
+        //       length++; // pour enlever le séparateur ">" en début du path
+        //     }
+        //     path = path.substring(length);
+        //     // compte le nb de > dans le path pour ajouter une indentation dans la console et mieux visualiser la hiérarchie des éléments copiés
+        //     int indent = '>'.allMatches(path).length;
+        //     String indentation = '\t' * indent;
+        //     var type = attr.info.type;
+        //     if (type == 'object' || type == 'array') {
+        //       type = '';
+        //     }
+        //     sb.writeln("$indentation${attr.info.name} : $type");
+        //     copiedMapInfoByName
+        //         .putIfAbsent(attr.info.name, () => [])
+        //         .add(attr.info.clone().prepareNewSave());
+        //   }
+        // }
+        // print("Copied nodes:\n$sb");
+        // Clipboard.setData(ClipboardData(text: sb.toString()));
 
-        widget.onCopy?.call(Set.unmodifiable(_clipboardNodes));
+        // widget.onCopy?.call(Set.unmodifiable(_clipboardNodes));
 
-        setState(() {
-          selectedNodes.clear();
-          _clipboardNodes.clear();
-        });
-        ScaffoldMessenger.of(
-          // ignore: use_build_context_synchronously
-          context,
-        ).showSnackBar(SnackBar(content: Text('copied to clipboard')));
+        // setState(() {
+        //   selectedNodes.clear();
+        //   _clipboardNodes.clear();
+        // });
+        // ScaffoldMessenger.of(
+        //   // ignore: use_build_context_synchronously
+        //   context,
+        // ).showSnackBar(SnackBar(content: Text('copied to clipboard')));
         break;
       // case 'paste':
       //   if (_clipboardNodes.isNotEmpty) {
@@ -850,9 +911,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
   Widget _getRowCached(TreeNodeData<T> node) {
     int numUpdate = 0;
-    if (node.data is NodeAttribut) {
-      numUpdate = (node.data as NodeAttribut).info.numUpdateForKey;
-    } else if (widget.isRowCached != null) {
+    if (widget.isRowCached != null) {
       numUpdate = widget.isRowCached!(node);
     }
 
@@ -869,7 +928,9 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 
   Widget _getRow(TreeNodeData<T> node) {
-    var left = indent.indent * node.depth;
+    final effectiveIndent = _effectiveIndent;
+    final effectiveRowHeight = _effectiveRowHeight;
+    var left = effectiveIndent.indent * node.depth;
     var w = headerSize - left;
     if (w < 20) {
       w = 20;
@@ -879,8 +940,8 @@ class TreeViewState<T> extends State<TreeView<T>> {
         : node.bgColor;
 
     return Container(
-      color: effectiveColor,
-      height: rowHeight,
+      color: effectiveColor ?? Colors.transparent,
+      height: effectiveRowHeight,
       //width:  300,
       padding: EdgeInsets.only(left: left, right: 10),
       child: NoOverflowErrorFlex(
@@ -910,7 +971,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
             ),
           SizedBox(width: w, child: widget.getHeader(node)),
           _getBtnToogle(node, node.isExpanded),
-          _getDrag(rowHeight),
+          _getDrag(effectiveRowHeight),
           Expanded(child: widget.getDataRow(node)),
         ],
       ),
@@ -918,27 +979,22 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 
   Widget _getDrag(double height) {
-    return Draggable<String>(
-      onDragUpdate: (details) {
-        setState(() {
-          repaintInProgess = DateTime.now().millisecondsSinceEpoch;
-          dragInProgess = DateTime.now().millisecondsSinceEpoch;
-          headerSize = headerSize + details.delta.dx;
-          if (headerSize < 100) {
-            headerSize = 100;
-          }
-        });
-      },
-      data: '',
-      feedback: SizedBox(width: 10, height: height),
-      childWhenDragging: MouseRegion(
-        cursor: SystemMouseCursors.resizeColumn,
-        hitTestBehavior: HitTestBehavior.opaque,
-        child: SizedBox(width: 10, height: height),
-      ),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.resizeColumn,
-        hitTestBehavior: HitTestBehavior.opaque,
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      hitTestBehavior: HitTestBehavior.opaque,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) {
+          setState(() {
+            repaintInProgess = DateTime.now().millisecondsSinceEpoch;
+            dragInProgess = DateTime.now().millisecondsSinceEpoch;
+            headerSize = headerSize + details.delta.dx;
+            if (headerSize < 100) {
+              headerSize = 100;
+            }
+          });
+          widget.onHeaderSizeChanged?.call(headerSize);
+        },
         child: SizedBox(width: 10, height: height),
       ),
     );
@@ -1035,36 +1091,36 @@ class TreeViewState<T> extends State<TreeView<T>> {
     }
   }
 
-  bool hasStructure(TreeNodeData data) {
-    for (var child in data.children ?? const <TreeNodeData>[]) {
-      if (child.data is NodeAttribut) {
-        var info = child.data as NodeAttribut;
-        var type2 = info.info.type.toLowerCase();
-        if (type2 == 'object' ||
-            type2 == 'array' ||
-            type2 == '\$ref' ||
-            type2 == '\$anyof') {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
+  // bool hasStructure(TreeNodeData data) {
+  //   for (var child in data.children ?? const <TreeNodeData>[]) {
+  //     if (child.data is NodeAttribut) {
+  //       var info = child.data as NodeAttribut;
+  //       var type2 = info.info.type.toLowerCase();
+  //       if (type2 == 'object' ||
+  //           type2 == 'array' ||
+  //           type2 == '\$ref' ||
+  //           type2 == '\$anyof') {
+  //         return true;
+  //       }
+  //     }
+  //   }
+  //   return false;
+  // }
 
-  bool isStructure(TreeNodeData data) {
-    if (data.data is NodeAttribut) {
-      var info = data.data as NodeAttribut;
-      var type2 = info.info.type.toLowerCase();
-      if (type2 == 'root' ||
-          type2 == 'object' ||
-          type2 == 'array' ||
-          type2 == '\$ref' ||
-          type2 == '\$anyof') {
-        return true;
-      }
-    }
-    return false;
-  }
+  // bool isStructure(TreeNodeData data) {
+  //   if (data.data is NodeAttribut) {
+  //     var info = data.data as NodeAttribut;
+  //     var type2 = info.info.type.toLowerCase();
+  //     if (type2 == 'root' ||
+  //         type2 == 'object' ||
+  //         type2 == 'array' ||
+  //         type2 == '\$ref' ||
+  //         type2 == '\$anyof') {
+  //       return true;
+  //     }
+  //   }
+  //   return false;
+  // }
 
   void scrollToData(T attr) {
     int? idx = _findNodeIdxByData(attr, list);
@@ -1077,7 +1133,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
     if (idx != null) {
       _scrollController.animateTo(
-        rowHeight * idx,
+        _effectiveRowHeight * idx,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeInOut,
       );
