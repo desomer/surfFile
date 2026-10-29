@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_layout.dart';
 
 class CwRowInfo {
@@ -8,6 +9,8 @@ class CwRowInfo {
   final Map<String, dynamic>? propsRow;
   final FrozenTableViewState tableState;
   final dynamic data;
+  final ContainerStyle? style;
+  final bool isHeader;
 
   CwRowInfo({
     required this.row,
@@ -16,6 +19,8 @@ class CwRowInfo {
     required this.propsRow,
     required this.tableState,
     required this.data,
+    this.style,
+    this.isHeader = false,
   });
 }
 
@@ -73,7 +78,34 @@ class CwTableRowState extends State<CwTableRow> {
     return cache!;
   }
 
-  // bool _isHovered = false;
+  static double _readDouble(
+    Map<String, dynamic>? map,
+    String key,
+    double fallback,
+  ) {
+    final raw = map?[key];
+    if (raw is num && raw.isFinite) return raw.toDouble();
+    if (raw is String) {
+      return double.tryParse(raw.trim().replaceAll(',', '.')) ?? fallback;
+    }
+    return fallback;
+  }
+
+  static Color? _readColor(Map<String, dynamic>? map, String key) {
+    final raw = map?[key];
+    if (raw is Color) return raw;
+    if (raw is int) return Color(raw);
+    if (raw is String) {
+      final hex = raw.trim().replaceFirst(RegExp(r'^#'), '');
+      if (RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(hex)) {
+        return Color(0xFF000000 | int.parse(hex, radix: 16));
+      }
+      if (RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(hex)) {
+        return Color(int.parse(hex, radix: 16));
+      }
+    }
+    return null;
+  }
 
   Widget getRowStyleWidget(
     int row,
@@ -83,157 +115,156 @@ class CwTableRowState extends State<CwTableRow> {
     Widget child,
     BuildContext context,
   ) {
-    return child;
+    final tableState = widget.info.tableState;
+    final isHeaderRow =
+        widget.info.isHeader || row < tableState.widget.rowCountTop;
+    if (isHeaderRow) {
+      return child;
+    }
 
-    // // if (row == 0) return child; // pas de style pour la ligne header
+    final hasLeftEdge = isStartCols || nbColFreeze == 0;
+    final hasRightEdge = !isStartCols || nbColFreeze == 0;
+    final baseStyle = widget.info.style;
 
-    // var bRadius = styleBox.getStyleDouble('bRadius', 0);
-    // var bColor = styleBox.getColor('bColor') ?? Colors.transparent;
-    // var bSize = styleBox.getStyleDouble('bSize', 1);
+    final isHovered = tableState.hoveredRowNotifier.value == row;
+    final isSelected = tableState.selectedRowNotifier.value == row;
+    final resolvedStyle =
+        baseStyle?.states?.resolve(
+          baseStyle,
+          isHovered: isHovered,
+          isSelected: isSelected,
+        ) ??
+        baseStyle;
 
-    // if (bSize == 0) {
-    //   bColor = Colors.transparent;
-    //   bRadius = 0;
-    // }
+    final bRadius = resolvedStyle?.radius ?? _readDouble(dataRow, 'bRadius', 0);
+    final rawBSize =
+        resolvedStyle?.borderWidth ?? _readDouble(dataRow, 'bSize', 0);
+    final bSize = rawBSize <= 0 ? 0.0 : rawBSize;
+    final bColor = bSize == 0
+        ? Colors.transparent
+        : (resolvedStyle?.borderColor ??
+              _readColor(dataRow, 'bColor') ??
+              Colors.transparent);
+    final effectiveRadius = bSize == 0 && resolvedStyle == null ? 0.0 : bRadius;
 
-    // Color? selColor = styleBox.getColor('selColor');
-    // Color? hoverColor = styleBox.getColor('hoverColor');
+    final scheme = Theme.of(context).colorScheme;
+    final selColor =
+        _readColor(dataRow, 'selColor') ??
+        (baseStyle?.states?.hasSelected == true
+            ? resolvedStyle?.color
+            : scheme.primary.withValues(alpha: 0.14));
+    final hoverColor =
+        _readColor(dataRow, 'hoverColor') ??
+        (baseStyle?.states?.hover != null
+            ? resolvedStyle?.color
+            : scheme.onSurface.withValues(alpha: 0.05));
+    final baseColor = resolvedStyle?.color ?? _readColor(dataRow, 'color');
 
-    // if (widget.info.ctx.aFactory.isModeDesigner()) {
-    //   selColor = null;
-    // }
+    final mMargin = resolvedStyle?.outerMargin;
+    final mleft = mMargin?.left ?? _readDouble(dataRow, 'pleft', 0);
+    final mtop = mMargin?.top ?? _readDouble(dataRow, 'ptop', 0);
+    final mright = mMargin?.right ?? _readDouble(dataRow, 'pright', 0);
+    final mbottom = mMargin?.bottom ?? _readDouble(dataRow, 'pbottom', 0);
 
-    // var ptop = styleBox.getStyleDouble('ptop', 0);
-    // var pbottom = styleBox.getStyleDouble('pbottom', 0);
-    // var pleft = styleBox.getStyleDouble('pleft', 0);
-    // var pright = styleBox.getStyleDouble('pright', 0);
+    final pPadding = resolvedStyle?.contentPadding;
+    final pleft = pPadding?.left ?? _readDouble(dataRow, 'mleft', 0);
+    final ptop = pPadding?.top ?? _readDouble(dataRow, 'mtop', 0);
+    final pright = pPadding?.right ?? _readDouble(dataRow, 'mright', 0);
+    final pbottom = pPadding?.bottom ?? _readDouble(dataRow, 'mbottom', 0);
 
-    // var mtop = styleBox.getStyleDouble('mtop', 0);
-    // var mbottom = styleBox.getStyleDouble('mbottom', 0);
-    // var mleft = styleBox.getStyleDouble('mleft', 0);
-    // var mright = styleBox.getStyleDouble('mright', 0);
+    final rawElevation =
+        resolvedStyle?.elevation ??
+        (dataRow?.containsKey('elevation') == true
+            ? _readDouble(dataRow, 'elevation', 0)
+            : 0.0);
+    final elevation = rawElevation > 0 ? rawElevation : null;
 
-    // var elevation = styleBox.getElevation();
-    // bool isSelected = widget.info.arrayContainer?.currentIndex == row - 1;
+    final borderRadius = BorderRadius.only(
+      topLeft: hasLeftEdge ? Radius.circular(effectiveRadius) : Radius.zero,
+      topRight: hasRightEdge ? Radius.circular(effectiveRadius) : Radius.zero,
+      bottomLeft: hasLeftEdge ? Radius.circular(effectiveRadius) : Radius.zero,
+      bottomRight: hasRightEdge
+          ? Radius.circular(effectiveRadius)
+          : Radius.zero,
+    );
 
-    // var boxDecoration = BoxDecoration(
-    //   borderRadius: BorderRadius.only(
-    //     topLeft:
-    //         isStartCols || nbColFreeze == 0
-    //             ? Radius.circular(bRadius)
-    //             : Radius.zero,
-    //     topRight:
-    //         isStartCols && nbColFreeze != 0
-    //             ? Radius.zero
-    //             : Radius.circular(bRadius),
-    //     bottomLeft:
-    //         isStartCols || nbColFreeze == 0
-    //             ? Radius.circular(bRadius)
-    //             : Radius.zero,
-    //     bottomRight:
-    //         isStartCols && nbColFreeze != 0
-    //             ? Radius.zero
-    //             : Radius.circular(bRadius),
-    //   ),
-    //   color:
-    //       (elevation == null && isSelected ? selColor : null) ??
-    //       (elevation == null && _isHovered ? hoverColor : null) ??
-    //       styleBox.config.decoration?.color,
-    //   border: Border(
-    //     bottom: BorderSide(color: bColor, width: bSize),
-    //     top: BorderSide(color: bColor, width: bSize),
-    //     left:
-    //         isStartCols || nbColFreeze == 0
-    //             ? BorderSide(color: bColor, width: bSize)
-    //             : BorderSide.none,
-    //     right:
-    //         isStartCols && nbColFreeze != 0
-    //             ? BorderSide.none
-    //             : BorderSide(color: bColor, width: bSize),
-    //   ),
-    // );
+    final border = bSize > 0
+        ? Border(
+            top: BorderSide(color: bColor, width: bSize),
+            bottom: BorderSide(color: bColor, width: bSize),
+            left: hasLeftEdge
+                ? BorderSide(color: bColor, width: bSize)
+                : BorderSide.none,
+            right: hasRightEdge
+                ? BorderSide(color: bColor, width: bSize)
+                : BorderSide.none,
+          )
+        : null;
 
-    // if (isSelected) {
-    //   widget.info.arrayContainer?.initSelected(
-    //     row - 1,
-    //     widget.info.ctx.aWidgetPath,
-    //     this,
-    //   );
-    // }
+    final effectiveColor =
+        (isSelected ? selColor : null) ??
+        (isHovered ? hoverColor : null) ??
+        baseColor;
 
-    // if (elevation != null) {
-    //   return getGestureDetector(
-    //     Container(
-    //       key: ObjectKey(widget.info.data),
-    //       margin: EdgeInsets.fromLTRB(
-    //         isStartCols || nbColFreeze == 0 ? pleft : 0,
-    //         ptop,
-    //         isStartCols && nbColFreeze != 0 ? 0 : pright,
-    //         pbottom,
-    //       ),
-    //       child: Material(
-    //         color:
-    //             (isSelected ? selColor : null) ??
-    //             (_isHovered ? hoverColor : null),
+    final margin = EdgeInsets.fromLTRB(
+      hasLeftEdge ? mleft : 0,
+      mtop,
+      hasRightEdge ? mright : 0,
+      mbottom,
+    );
+    final padding = EdgeInsets.fromLTRB(
+      hasLeftEdge ? pleft : 0,
+      ptop,
+      hasRightEdge ? pright : 0,
+      pbottom,
+    );
 
-    //         elevation: elevation,
-    //         borderRadius: boxDecoration.borderRadius,
-    //         child: Container(
-    //           decoration: boxDecoration,
-    //           padding: EdgeInsets.fromLTRB(
-    //             isStartCols || nbColFreeze == 0 ? mleft : 0,
-    //             mtop,
-    //             isStartCols && nbColFreeze != 0 ? 0 : mright,
-    //             mbottom,
-    //           ),
-    //           child: child,
-    //         ),
-    //       ),
-    //     ),
-    //   );
-    // } else {
-    //   return getGestureDetector(
-    //     Container(
-    //       key: ObjectKey(widget.info.data),
-    //       margin: EdgeInsets.fromLTRB(
-    //         isStartCols || nbColFreeze == 0 ? pleft : 0,
-    //         ptop,
-    //         isStartCols && nbColFreeze != 0 ? 0 : pright,
-    //         pbottom,
-    //       ),
-    //       decoration: boxDecoration,
-    //       padding: EdgeInsets.fromLTRB(
-    //         isStartCols || nbColFreeze == 0 ? mleft : 0,
-    //         mtop,
-    //         isStartCols && nbColFreeze != 0 ? 0 : mright,
-    //         mbottom,
-    //       ),
-    //       child: child,
-    //     ),
-    //   );
-    // }
+    final boxDecoration = BoxDecoration(
+      borderRadius: effectiveRadius > 0 ? borderRadius : null,
+      color: elevation == null ? effectiveColor : null,
+      border: border,
+    );
+
+    final Widget styledRow;
+    if (elevation != null) {
+      styledRow = Container(
+        key: widget.info.data != null ? ObjectKey(widget.info.data) : null,
+        margin: margin,
+        child: Material(
+          color: effectiveColor ?? Colors.transparent,
+          elevation: elevation,
+          borderRadius: borderRadius,
+          child: Container(
+            decoration: boxDecoration,
+            padding: padding,
+            child: child,
+          ),
+        ),
+      );
+    } else {
+      styledRow = Container(
+        key: widget.info.data != null ? ObjectKey(widget.info.data) : null,
+        margin: margin,
+        decoration: boxDecoration,
+        padding: padding,
+        child: child,
+      );
+    }
+
+    return MouseRegion(
+      onEnter: (_) => tableState.setHoveredRow(row),
+      onExit: (_) {
+        if (tableState.hoveredRowNotifier.value == row) {
+          tableState.setHoveredRow(null);
+        }
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => tableState.selectRow(row),
+        child: styledRow,
+      ),
+    );
   }
-
-  // Widget getGestureDetector(Widget child) {
-  //   StateContainerArray? arrayContainer = widget.info.arrayContainer;
-  //   int row = widget.info.row;
-  //   CwWidgetCtx ctx = widget.info.ctx;
-  //   if (arrayContainer != null && row > 0) {
-  //     return MouseRegion(
-  //       onEnter: (_) => setState(() => _isHovered = true),
-  //       onExit: (_) => setState(() => _isHovered = false),
-  //       child: GestureDetector(
-  //         onTap: () {
-  //           var w = (ctx.widgetState as CwWidgetStateBindJson);
-  //           w.doChangeRowFromParent(context, stateArray: w);
-  //         },
-  //         child: child,
-  //       ),
-  //     );
-  //   } else {
-  //     return child;
-  //   }
-  // }
 }
 
 class CWInheritedRow extends InheritedWidget {
