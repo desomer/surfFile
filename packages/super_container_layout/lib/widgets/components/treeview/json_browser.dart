@@ -1,10 +1,13 @@
+import 'package:fuzzy/data/result.dart';
+import 'package:fuzzy/fuzzy.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/components/treeview/authorization_manager.dart';
+//import 'package:super_container_layout/widgets/components/treeview/authorization_manager.dart';
 import 'package:super_container_layout/widgets/components/treeview/browse_model.dart';
 import 'package:super_container_layout/widgets/components/treeview/data_acces.dart';
 import 'package:super_container_layout/widgets/components/treeview/model_schema.dart';
 import 'package:super_container_layout/widgets/components/treeview/tree_view.dart';
 import 'package:uuid/uuid.dart';
+
 // import 'package:nanoid/async.dart';
 
 const cstAntiloop = 20;
@@ -18,15 +21,76 @@ const constTypeOf = '\$\$__of__';
 const cstExample = "#examples";
 const cstDoc = "#doc";
 
-
 const constNameAllof = '\$allof';
 const constNameOneof = '\$oneof';
 const constInherit = '\$inherit';
 const constRefOn = '\$\$__ref__';
 const constType = '\$\$__type__'; // noeud de type simple avec type dans info
 
+enum ChangeOpe { change, clear, rename, path, move, add, remove }
+
+Set fuseSet = {};
+Fuzzy<ProposalInfo>? fuse;
+bool isSearchFuse = false;
+
 String getKeyParamFromYaml(dynamic key) {
   return (key is Map ? '{${key.keys.firstOrNull}}' : key).toString();
+}
+
+class ProposalInfo {
+  final String name;
+  final Map<String, dynamic>? properties;
+  final String model;
+  final String domain;
+  final String path;
+
+  ProposalInfo({
+    required this.name,
+    this.properties,
+    required this.model,
+    required this.domain,
+    required this.path,
+  });
+}
+
+FuzzyOptions<ProposalInfo> getOptionFuse() {
+  return FuzzyOptions(
+    tokenize: true,
+    shouldSort: true,
+    shouldNormalize: true,
+    keys: [
+      WeightedKey(
+        name: "name",
+        getter: (ProposalInfo obj) {
+          return obj.name;
+        },
+        weight: 1.0,
+      ),
+      WeightedKey(
+        name: "title",
+        getter: (ProposalInfo obj) {
+          return obj.properties?['title'] ?? '';
+        },
+        weight: 0.8,
+      ),
+      WeightedKey(
+        name: "description",
+        getter: (ProposalInfo obj) {
+          return obj.properties?['description'] ?? '';
+        },
+        weight: 0.6,
+      ),
+    ],
+  );
+}
+
+List<Result<ProposalInfo>> searchProposal(NodeAttribut attr) {
+  if (fuse == null) {
+    return [];
+  }
+  final result = fuse!.search(attr.info.name, 5);
+  isSearchFuse = true;
+  return result;
 }
 
 class BrowserConfig {
@@ -140,12 +204,41 @@ class JsonBrowser<T> {
     if (model.infoManager is InfoManagerModel) {
       // creer le cache de proposition
       for (var attr in model.useAttributInfo) {
-        currentCompany.addProposal(model, attr);
+        addProposal(model, attr);
       }
     }
 
     ready = true;
     return browser;
+  }
+
+  void addProposal(ModelSchema model, AttributInfo attr) {
+    String key = attr.getMasterID();
+
+    Map<String, dynamic> hasProp = {...attr.properties ?? {}};
+    hasProp.removeWhere((key, value) {
+      return key.startsWith('\$') ||
+          key.startsWith('#') ||
+          value == null ||
+          (value is String && value.isEmpty);
+    });
+
+    if (!fuseSet.contains(key) && hasProp.isNotEmpty) {
+      if (isSearchFuse || fuse == null) {
+        isSearchFuse = false;
+        fuse = Fuzzy<ProposalInfo>(fuse?.list ?? [], options: getOptionFuse());
+      }
+
+      fuseSet.add(key);
+      var proposalInfo = ProposalInfo(
+        name: attr.name,
+        path: attr.getJsonPath(sep: '.', withRoot: false),
+        properties: hasProp,
+        model: model.headerName,
+        domain: "", // currentCompany.listDomain?.selectedAttr?.info.name ?? '',
+      );
+      fuse!.list.add(proposalInfo);
+    }
   }
 
   void doTree(ModelSchema model, NodeAttribut aNodeAttribut, dynamic r) {
@@ -220,8 +313,7 @@ class JsonBrowser<T> {
       }
     }
     if (info == null) {
-      var listName =
-          currentCompany.copiedMapInfoByName[element.nodeAttribut.info.name];
+      var listName = copiedMapInfoByName[element.nodeAttribut.info.name];
       info = model.getNearestAttributNotUsed(listName, element, false);
     }
 
@@ -457,8 +549,7 @@ class JsonBrowser<T> {
         refDomain: model.refDomain,
       );
       modelRef.namespace = model.namespace;
-      modelRef.currentVersion = bddStorage
-          .lastVersionByMaster[masterIdRef]; // recupére la derniere version charger
+      modelRef.currentVersion = bddStorage.lastVersionByMaster[masterIdRef]; // recupére la derniere version charger
       var ret = modelRef.getItemSync(-1);
       if (ret == null) {
         if (browserAttrInfo.ref == null ||

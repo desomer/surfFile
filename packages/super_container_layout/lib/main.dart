@@ -10,6 +10,8 @@ import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
+import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
+import 'package:super_container_layout/widgets/components/treeview/tree_view.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
@@ -57,13 +59,66 @@ class _TestAppState extends State<TestApp> {
   @override
   void initState() {
     super.initState();
-    // _registry.registerFactory(
-    //   'A',
-    //   const EditableSurface(
-    //     label: "AB",
-    //     child: Center(child: Text('A')),
-    //   ),
-    // );
+
+    var tree = TreeViewData(
+      nodes: [
+        TreeNodeData<NodeAttribut>(
+          data: NodeAttribut(
+            yamlNode: MapEntry<dynamic, dynamic>('key', 'value'),
+            info: AttributInfo()..name = 'key',
+            parent: null,
+          ),
+          children: [
+            TreeNodeData<NodeAttribut>(
+              data: NodeAttribut(
+                yamlNode: MapEntry<dynamic, dynamic>('childKey', 'childValue'),
+                info: AttributInfo()..name = 'childKey',
+                parent: null,
+              ),
+              children: [],
+            ),
+          ],
+        ),
+      ],
+      headerSize: 300,
+    );
+
+    _registry.registerFactory(
+      'A',
+      EditableSurface(
+        label: "AB",
+        child: Builder(
+          builder: (context) {
+            return TreeView<NodeAttribut>(
+              getNodes: () {
+                return tree;
+              },
+              getHeader: (TreeNodeData<NodeAttribut> node) {
+                return InkWell(
+                  onTap: () {
+                    node.doToogleChild();
+                    // currentYamlTree?.doShowAttrEditor(node.data);
+                    // doShowAttrEditor(node.data);
+                  },
+                  child: Text('Header: ${node.data.info.name}'),
+                );
+              },
+              getDataRow: (TreeNodeData<NodeAttribut> node) {
+                return Text('Data: ${node.data.yamlNode}');
+              },
+              isSelected:
+                  (
+                    TreeNodeData<NodeAttribut> node,
+                    State<StatefulWidget>? current,
+                    State<StatefulWidget>? oldSelectedState,
+                  ) {
+                    return false;
+                  },
+            );
+          },
+        ),
+      ),
+    );
     _pageRouting = EditorPageRouter(
       baseConfig: RoutingConfig(
         routes: [

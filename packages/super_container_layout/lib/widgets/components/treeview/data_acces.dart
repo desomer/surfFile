@@ -1,11 +1,8 @@
 import 'dart:async';
 import 'dart:core';
-
 import 'package:diff_match_patch/diff_match_patch.dart';
 import 'package:flutter/foundation.dart' show VoidCallback;
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/components/treeview/authorization_manager.dart';
-import 'package:super_container_layout/widgets/components/treeview/data_event.dart';
 import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
 import 'package:super_container_layout/widgets/components/treeview/model_schema.dart';
 import 'package:super_container_layout/widgets/components/treeview/widget_show_error.dart';
@@ -19,9 +16,9 @@ const String cstStorageID = 'id';
 const String cstStorageChange = 'changed';
 
 class DataAcces {
-  static const String _supabaseUrl = 'https://oielmrsjyymltbkyeuec.supabase.co';
-  static const String _supabaseAnonKey =
-      'sb_publishable_e9UTDwq91xn659rSjkzhCw_Z-nO5k06';
+  // static const String _supabaseUrl = 'https://oielmrsjyymltbkyeuec.supabase.co';
+  // static const String _supabaseAnonKey =
+  //     'sb_publishable_e9UTDwq91xn659rSjkzhCw_Z-nO5k06';
 
   // SupabaseClient? _sup;
   // late SupabaseClient supabase;
@@ -474,8 +471,8 @@ class DataAcces {
           attr.action = 'D';
 
           var payload = {
-            'company_id': currentCompany.companyId,
-            'namespace': model.namespace ?? currentCompany.currentNameSpace,
+            // 'company_id': currentCompany.companyId,
+            // 'namespace': model.namespace ?? currentCompany.currentNameSpace,
             'category': model.category.name,
             'schema_id': model.id,
             'version': model.getVersionId(),
@@ -499,8 +496,8 @@ class DataAcces {
 
           // supprime le use> si il existe plus
           var payloadUse = {
-            'company_id': currentCompany.companyId,
-            'namespace': model.namespace ?? currentCompany.currentNameSpace,
+            // 'company_id': currentCompany.companyId,
+            // 'namespace': model.namespace ?? currentCompany.currentNameSpace,
             'category': model.category.name,
             'schema_id': "use>${model.id}",
             'version': model.getVersionId(),
@@ -524,7 +521,7 @@ class DataAcces {
           // event
           _sendMessage({
             'typeEvent': 'PROP',
-            'company_id': currentCompany.companyId,
+            // 'company_id': currentCompany.companyId,
             'id': '${model.namespace}/${model.id}',
             'payload': payload,
           });
@@ -561,8 +558,8 @@ class DataAcces {
         }
 
         var payload = {
-          'company_id': currentCompany.companyId,
-          'namespace': model.namespace ?? currentCompany.currentNameSpace,
+          // 'company_id': currentCompany.companyId,
+          // 'namespace': model.namespace ?? currentCompany.currentNameSpace,
           'category': '$prefix${model.category.name}',
           'schema_id': model.id,
           'version': model.getVersionId(),
@@ -676,7 +673,7 @@ class DataAcces {
       idIdempotence: '',
       table: 'versions',
       data: {
-        'company_id': currentCompany.companyId,
+  //      'company_id': currentCompany.companyId,
         'model_id': model.id,
         'version': version.version,
         'json': version.data,
@@ -698,7 +695,7 @@ class DataAcces {
       table: 'api_params',
       data: {
         'id': id,
-        'company_id': currentCompany.companyId,
+    //    'company_id': currentCompany.companyId,
         'api_id': model.id,
         'category': category,
         'param': json,
@@ -767,8 +764,8 @@ class DataAcces {
       idIdempotence: '${model.id};',
       table: 'models',
       data: {
-        'compagny_id': currentCompany.companyId,
-        'namespace': model.namespace ?? currentCompany.currentNameSpace,
+      //  'compagny_id': currentCompany.companyId,
+      //  'namespace': model.namespace ?? currentCompany.currentNameSpace,
         'model_id': model.id,
         'version': version?.version ?? '1',
         'json': value,
@@ -1300,3 +1297,47 @@ class CacheValue {
 }
 
 //postgre pw = alPMsV1bPKgs10v4
+
+class OnEvent {
+  OnEvent({required this.id, required this.onPatch});
+
+  String id;
+  Function onPatch;
+}
+
+class SaveEvent {
+  SaveEvent({
+    required this.model,
+    required this.version,
+    required this.idIdempotence,
+    required this.table,
+    required this.data,
+  });
+  ModelSchema model;
+  ModelVersion? version;
+  String table;
+  String idIdempotence;
+  dynamic data;
+  int sortIdx = 0;
+}
+
+Future<Map<String, dynamic>> computeSendYamlChangeEvent(
+  Map<String, dynamic> event,
+) async {
+  String id = event['id'];
+  String old = event['old'] ?? '';
+  String value = event['value'];
+  String version = event['version'];
+  DiffMatchPatch dmp = DiffMatchPatch();
+  List<Patch> patch = dmp.patch(old, value);
+
+  String textPatch = patchToText(patch);
+  return Future.value({
+    'typeEvent': 'YAML',
+    'id': id,
+    'patch': textPatch,
+    'old': old,
+    'new': value,
+    'version': version,
+  });
+}

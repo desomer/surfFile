@@ -1,7 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:super_container_layout/widgets/components/treeview/authorization_manager.dart';
 import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
 import 'package:super_container_layout/widgets/components/treeview/widget_hover.dart';
 import 'package:super_container_layout/widgets/components/treeview/widget_overflow.dart';
@@ -10,12 +9,15 @@ final ValueNotifier<int> zoom = ValueNotifier(100);
 int timezoom = 0;
 double scale = 0.9;
 double rowHeight = 30 * scale;
+
 PanYamlTree? currentYamlTree;
+final Map<String, List<AttributInfo>> copiedMapInfoByName = {};
 
 class PanYamlTree {
-  TextSelection? getTextSelection() {}
+  TextSelection? getTextSelection() {
+    return null;
+  }
 }
-
 
 class TreeNodeData<T> {
   List<TreeNodeData<T>>? children;
@@ -100,21 +102,25 @@ class TreeNodeData<T> {
 
 typedef GetNode<T> = TreeViewData<T> Function();
 typedef GetWidget<Y> = Widget Function(TreeNodeData<Y> node);
-typedef OnTap<T> =
-    void Function(TreeNodeData<T> node, BuildContext ctx, String type);
+typedef OnTap<T> = void Function(
+  TreeNodeData<T> node,
+  BuildContext ctx,
+  String type,
+);
 typedef OnBuild<T> = void Function(TreeViewState<T> state, BuildContext ctx);
-typedef IsSelected<T> =
-    bool Function(
-      TreeNodeData<T> node,
-      State? current,
-      State? oldSelectedState,
-    );
+typedef IsSelected<T> = bool Function(
+  TreeNodeData<T> node,
+  State? current,
+  State? oldSelectedState,
+);
 
 typedef IsRowCached<T> = int Function(TreeNodeData<T> node);
 typedef OnSelectionChanged<T> = void Function(Set<TreeNodeData<T>> selected);
 typedef OnCopy<T> = void Function(Set<TreeNodeData<T>> nodes);
-typedef OnPaste<T> =
-    void Function(Set<TreeNodeData<T>> clipboard, TreeNodeData<T> target);
+typedef OnPaste<T> = void Function(
+  Set<TreeNodeData<T>> clipboard,
+  TreeNodeData<T> target,
+);
 
 class TreeViewData<T> {
   final List<TreeNodeData<T>> nodes;
@@ -122,54 +128,6 @@ class TreeViewData<T> {
 
   TreeViewData({required this.nodes, required this.headerSize});
 }
-
-/// A widget that displays a tree view with expandable and collapsible nodes.
-
-// GlobalKey<TreeViewState> keyTreeEditor = GlobalKey();
-
-//   Widget getTree(BuildContext context) {
-//     return TreeView<Map<String, dynamic>>(
-//       key: keyTreeEditor,
-//       isSelected: (node, cur, old) {
-//         return node.data['selected'] == true;
-//       },
-//       onBuild: (state, ctx) {},
-//       getNodes: () {
-//         var main = TreeNodeData<Map<String, dynamic>>(
-//           data: {'id': 'root', 'name': 'Root'},
-//           children: [
-//             TreeNodeData<Map<String, dynamic>>(
-//               data: {'id': 'aaa', 'name': 'aaaaa'},
-//             ),
-//           ],
-//         );
-//         return TreeViewData(nodes: [main], headerSize: 100);
-//       },
-//       getHeader: (node) {
-//         return Text(node.data['id'] ?? 'No id');
-//       },
-//       getDataRow: (node) {
-//         return InkWell(
-//           onTap: () {
-//             node.data['selected'] =
-//                 node.data['selected'] == true ? false : true;
-
-//             int idcache = node.data['intCache'] ?? 0;
-//             node.data['intCache'] = idcache + 1;
-
-//             keyTreeEditor.currentState?.doTapHeader(node);
-//           },
-//           child: Text(node.data['name'] ?? 'No name'),
-//         );
-//       },
-//       onTapHeader: (node, ctx) async {
-//         print('tap on ${node.data['name']}');
-//       },
-//       isRowCached: (node) {
-//         return node.data['intCache'] ?? 0;
-//       },
-//     );
-//   }
 
 class TreeView<T> extends StatefulWidget {
   const TreeView({
@@ -263,6 +221,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
   @override
   void dispose() {
     isDisposed = true;
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -418,7 +377,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
       //   // on affiche pas le noeud $ref mais on affiche directement ses attributs
       //   noTab = true;
       // } else {
-        result.add(node);
+      result.add(node);
       //}
 
       var r = <bool>[];
@@ -525,6 +484,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
           node.isToogleRequested = false;
         } else {
           node.isToogleRequested = true;
+          //node.isExpanded = false;
           node.timeChange = DateTime.now().millisecondsSinceEpoch;
         }
 
@@ -740,6 +700,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
     );
 
     if (result == null) return;
+    if (!context.mounted) return;
 
     switch (result) {
       case 'toggle_checkbox_mode':
@@ -828,7 +789,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
           }
         }
         StringBuffer sb = StringBuffer();
-        currentCompany.copiedMapInfoByName.clear();
+        copiedMapInfoByName.clear();
         for (var element in _clipboardNodes) {
           if (element.data is NodeAttribut) {
             var attr = element.data as NodeAttribut;
@@ -846,7 +807,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
               type = '';
             }
             sb.writeln("$indentation${attr.info.name} : $type");
-            currentCompany.copiedMapInfoByName
+            copiedMapInfoByName
                 .putIfAbsent(attr.info.name, () => [])
                 .add(attr.info.clone().prepareNewSave());
           }
@@ -1171,8 +1132,14 @@ class TreeConnector extends StatelessWidget {
 class _TreeConnectorPainter extends CustomPainter {
   final TreeNodeData node;
   final IndentInfo indentInfo;
+  final int depth;
+  final bool isLast;
+  final List<bool> listParentIndicator;
 
-  _TreeConnectorPainter({required this.indentInfo, required this.node});
+  _TreeConnectorPainter({required this.indentInfo, required this.node})
+    : depth = node.depth,
+      isLast = node.isLast,
+      listParentIndicator = List<bool>.of(node.listParentIndicator);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1180,7 +1147,7 @@ class _TreeConnectorPainter extends CustomPainter {
       ..color = indentInfo.color
       ..strokeWidth = 1.5;
 
-    var indentPix = indentInfo.indent * (node.depth - 1);
+    var indentPix = indentInfo.indent * (depth - 1);
 
     final midY = size.height / 2;
     final startX = indentPix + indentInfo.start;
@@ -1188,7 +1155,7 @@ class _TreeConnectorPainter extends CustomPainter {
 
     // Trait vertical : ajusté si dernier
     final topY = 0.0;
-    final bottomY = node.isLast ? midY : size.height;
+    final bottomY = isLast ? midY : size.height;
 
     canvas.drawLine(Offset(startX, topY), Offset(startX, bottomY), paint);
 
@@ -1196,9 +1163,9 @@ class _TreeConnectorPainter extends CustomPainter {
     canvas.drawLine(Offset(startX, midY), Offset(endX, midY), paint);
     indentPix = indentInfo.start;
     // print('${node.data} >  ${node.lastChild}');
-    for (var i = 1; i < node.listParentIndicator.length; i++) {
+    for (var i = 1; i < listParentIndicator.length; i++) {
       indentPix = indentPix + indentInfo.indent;
-      if (!node.listParentIndicator[i]) {
+      if (!listParentIndicator[i]) {
         final startX = indentPix - indentInfo.indent;
         final bottomY = size.height;
         canvas.drawLine(Offset(startX, topY), Offset(startX, bottomY), paint);
@@ -1207,7 +1174,21 @@ class _TreeConnectorPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _TreeConnectorPainter oldDelegate) {
+    if (oldDelegate.node != node ||
+        oldDelegate.depth != depth ||
+        oldDelegate.isLast != isLast ||
+        oldDelegate.indentInfo != indentInfo ||
+        oldDelegate.listParentIndicator.length != listParentIndicator.length) {
+      return true;
+    }
+    for (var i = 0; i < listParentIndicator.length; i++) {
+      if (oldDelegate.listParentIndicator[i] != listParentIndicator[i]) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 class NodeStack {

@@ -1,9 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:intl/intl.dart';
-import 'package:super_container_layout/widgets/components/treeview/authorization_manager.dart';
 import 'package:super_container_layout/widgets/components/treeview/browse_model.dart';
 import 'package:super_container_layout/widgets/components/treeview/data_acces.dart';
-import 'package:super_container_layout/widgets/components/treeview/data_event.dart';
 import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
 import 'package:super_container_layout/widgets/components/treeview/tree_view.dart';
 import 'package:super_container_layout/widgets/components/treeview/widget_show_error.dart';
@@ -122,6 +120,26 @@ class ModelSchemaQuality {
       typeCount: types.length,
     );
   }
+}
+
+enum Category {
+  allModel,
+  model,
+  selector,
+  allApi,
+  api,
+  allGlossary,
+  exampleApi,
+  env,
+  domain,
+  variable,
+  dataMap,
+  apps,
+  asyncApi,
+  appflow,
+  apm,
+  behavior,
+  skills
 }
 
 class ModelSchema {
@@ -255,7 +273,7 @@ class ModelSchema {
       version: '$versionNum',
       data: {
         'state': 'D',
-        'by': currentCompany.shortUserId,
+       // 'by': currentCompany.shortUserId,
         'versionTxt': '0.0.$versionNum',
       },
     );
@@ -422,7 +440,7 @@ class ModelSchema {
       'from': _getMdValue(propChangeValue),
       'to': getMdValue,
       'date': DateTime.now().toIso8601String(),
-      'by': currentCompany.shortUserId,
+      //  'by': currentCompany.shortUserId,
       'uuid': uuid ?? Uuid().v4(),
       'master': ?master,
     };
@@ -872,7 +890,7 @@ class ModelSchema {
           version: '1',
           data: {
             'state': 'D',
-            'by': currentCompany.shortUserId,
+            //'by': currentCompany.shortUserId,
             'versionTxt': '0.0.1',
           },
         );
