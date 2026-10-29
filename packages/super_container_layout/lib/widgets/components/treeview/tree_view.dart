@@ -18,7 +18,7 @@ class PanYamlTree {
 
 class TreeNodeData<T> {
   List<TreeNodeData<T>>? children;
-  bool isExpanded;
+  bool _isExpanded;
   bool isShow = true;
   late int depth;
   late List<bool> listParentIndicator;
@@ -28,8 +28,27 @@ class TreeNodeData<T> {
   Color? bgColor;
 
   int timeChange = 0;
-  bool isToogleRequested = false;
+  bool _isToogleRequested = false;
   bool isInvisibleRequested = false;
+  bool isHiddenByParent = false;
+  int toggleGeneration = 0;
+  final ValueNotifier<int> toggleNotifier = ValueNotifier<int>(0);
+
+  bool get isExpanded => _isExpanded;
+  set isExpanded(bool value) {
+    if (_isExpanded != value) {
+      _isExpanded = value;
+      toggleNotifier.value++;
+    }
+  }
+
+  bool get isToogleRequested => _isToogleRequested;
+  set isToogleRequested(bool value) {
+    if (_isToogleRequested != value) {
+      _isToogleRequested = value;
+      toggleNotifier.value++;
+    }
+  }
 
   T data;
 
@@ -44,7 +63,8 @@ class TreeNodeData<T> {
   late TreeViewState tree;
   //HoverableCardState? hoverState;
 
-  TreeNodeData({required this.data, this.children, this.isExpanded = true});
+  TreeNodeData({required this.data, this.children, bool isExpanded = true})
+    : _isExpanded = isExpanded;
 
   void setCache(String key, {bool force = false}) {
     if (rowCacheKey != key || force) {
@@ -344,7 +364,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
                   var row = _getAnimatedHeightRow(
                     node,
                     _buildNode(context, node),
-                    ValueKey('${node.hashCode}#header'),
+                    GlobalObjectKey(node),
                   );
                   return row;
                 },
@@ -361,8 +381,9 @@ class TreeViewState<T> extends State<TreeView<T>> {
   List<TreeNodeData<T>> _flattenNodeTree(
     NodeStack stackLevelIndicator,
     int deep,
-    List<TreeNodeData<T>> nodes,
-  ) {
+    List<TreeNodeData<T>> nodes, {
+    bool parentExpanded = true,
+  }) {
     List<TreeNodeData<T>> result = [];
     var millisecondsSinceEpoch2 = DateTime.now().millisecondsSinceEpoch;
 
@@ -370,6 +391,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
       node.depth = deep;
       node.isRoot = deep == 0;
       node.isLast = node == nodes.last;
+      node.isHiddenByParent = !parentExpanded;
 
       if (millisecondsSinceEpoch2 - openFactorInProgess < 500) {
         // if (openStructureMode == 'structure') {
@@ -456,11 +478,14 @@ class TreeViewState<T> extends State<TreeView<T>> {
       //   deep--;
       // }
 
-      if (node.children != null &&
-          node.children!.isNotEmpty &&
-          node.isExpanded) {
+      if (node.children != null && node.children!.isNotEmpty) {
         result.addAll(
-          _flattenNodeTree(stackLevelIndicator, deep + 1, node.children!),
+          _flattenNodeTree(
+            stackLevelIndicator,
+            deep + 1,
+            node.children!,
+            parentExpanded: parentExpanded && node.isExpanded,
+          ),
         );
       }
 
@@ -535,20 +560,28 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 
   void doToogle(TreeNodeData<T> node) {
-    setState(() {
-      if (node.children != null && node.children!.isNotEmpty) {
-        if (node.isExpanded == false) {
+    if (node.children != null && node.children!.isNotEmpty) {
+      final gen = ++node.toggleGeneration;
+      if (node.isExpanded == false || node.isToogleRequested) {
+        setState(() {
           node.isExpanded = true;
           node.isToogleRequested = false;
-        } else {
+          _toogleChildren(node, false);
+        });
+      } else {
+        setState(() {
           node.isToogleRequested = true;
-          //node.isExpanded = false;
-          node.timeChange = DateTime.now().millisecondsSinceEpoch;
-        }
-
-        _toogleChildren(node, node.isToogleRequested);
+          _toogleChildren(node, true);
+        });
+        Future.delayed(Duration(milliseconds: animateDelay)).then((value) {
+          if (!mounted || node.toggleGeneration != gen) return;
+          setState(() {
+            node.isToogleRequested = false;
+            node.isExpanded = false;
+          });
+        });
       }
-    });
+    }
     widget.onToggleNode?.call(node);
   }
 
@@ -1032,63 +1065,63 @@ class TreeViewState<T> extends State<TreeView<T>> {
       },
       child: SizedBox(
         width: 40,
-        child: node.children?.isNotEmpty == true
-            ? (expanded
-                  ? const Icon(Icons.arrow_drop_down)
-                  : const Icon(Icons.arrow_right_sharp))
-            : const Text(''),
+        child: ValueListenableBuilder<int>(
+          valueListenable: node.toggleNotifier,
+          builder: (context, _, _) {
+            final effectiveExpanded = node.isExpanded && !node.isToogleRequested;
+            return node.children?.isNotEmpty == true
+                ? (effectiveExpanded
+                      ? const Icon(Icons.arrow_drop_down)
+                      : const Icon(Icons.arrow_right_sharp))
+                : const Text('');
+          },
+        ),
       ),
     );
   }
 
   Widget _getAnimatedHeightRow(TreeNodeData node, Widget child, Key key) {
-    if (timeBuild - node.timeChange < 500) {
-      node.timeChange = 0;
-      if (node.isToogleRequested) {
-        node.isToogleRequested = false;
-
-        Future.delayed(Duration(milliseconds: animateDelay)).then((value) {
-          setState(() {
-            // les ligne sont retirer de la fin
-            node.isExpanded = false;
-          });
-        });
-
-        return ClipRect(
-          key: key,
-          child: TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0, end: 1),
-            duration: Duration(milliseconds: animateDelay),
-            builder: (context, value, child) {
-              return child!;
-            },
-            child: child,
-          ),
-        );
-      }
-
+    if (node.isHiddenByParent) {
       return ClipRect(
         key: key,
         child: TweenAnimationBuilder<double>(
-          tween: node.isInvisibleRequested
-              ? Tween(begin: 1, end: 0)
-              : Tween(begin: 0, end: 1),
-          duration: Duration(milliseconds: animateDelay),
+          tween: Tween<double>(begin: 0.0, end: 0.0),
+          duration: Duration.zero,
           builder: (context, value, child) {
-            return Align(heightFactor: value, child: child);
-          },
-          onEnd: () {
-            if (node.isInvisibleRequested) {
-              node.isExpanded = true;
-            }
-            node.isInvisibleRequested = false;
+            return Align(heightFactor: 0.0, child: child);
           },
           child: child,
         ),
       );
-    } else {
-      return child;
     }
+
+    final bool animate = node.timeChange > 0 && timeBuild - node.timeChange < 500;
+    final Tween<double> tween = animate
+        ? (node.isInvisibleRequested
+              ? Tween<double>(begin: 1.0, end: 0.0)
+              : Tween<double>(begin: 0.0, end: 1.0))
+        : (node.isInvisibleRequested
+              ? Tween<double>(begin: 0.0, end: 0.0)
+              : Tween<double>(begin: 1.0, end: 1.0));
+
+    return ClipRect(
+      key: key,
+      child: TweenAnimationBuilder<double>(
+        tween: tween,
+        duration: Duration(milliseconds: animate ? animateDelay : 0),
+        builder: (context, value, child) {
+          return Align(heightFactor: value, child: child);
+        },
+        onEnd: () {
+          node.timeChange = 0;
+          if (node.isInvisibleRequested) {
+            node.isExpanded = true;
+          }
+          node.isInvisibleRequested = false;
+        },
+        child: child,
+      ),
+    );
   }
 
   // bool hasStructure(TreeNodeData data) {

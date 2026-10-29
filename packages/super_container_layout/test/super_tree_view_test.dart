@@ -403,4 +403,101 @@ void main() {
       expect(afterElements, equals(beforeElements));
     },
   );
+
+  testWidgets(
+    'Collapsing and expanding a parent node does not flicker parent or sibling SuperValues',
+    (tester) async {
+      await mount(
+        tester,
+        SuperTreeView(
+          id: 'catalog-tree',
+          config: SuperTreeViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'nodes'),
+            placements: const {
+              SuperTreeViewConfig.headerZone: ['header'],
+              SuperTreeViewConfig.dataZone: ['data'],
+            },
+          ),
+          header: const SuperValue(
+            id: 'node-header',
+            config: SuperValueConfig(
+              mode: SuperValueMode.display,
+              binding: JsonTextBinding(path: 'key'),
+            ),
+          ),
+          data: const SuperValue(
+            id: 'node-data',
+            config: SuperValueConfig(
+              mode: SuperValueMode.display,
+              binding: JsonTextBinding(path: 'data'),
+            ),
+          ),
+        ),
+      );
+
+      final initialElements = tester
+          .elementList(find.byType(SuperValue))
+          .toList();
+      expect(initialElements.length, 8);
+
+      // Tap collapse arrow on Parent 1
+      await tester.tap(find.byIcon(Icons.arrow_drop_down).first);
+      // Frame 1 (start of collapse animation)
+      await tester.pump();
+      expect(find.text('Parent 1'), findsOneWidget);
+      expect(find.text('Data P1'), findsOneWidget);
+      expect(find.text('Child 1.1'), findsOneWidget);
+      expect(find.text('Data C1.1'), findsOneWidget);
+      expect(find.text('Parent 2'), findsOneWidget);
+      expect(find.text('Data P2'), findsOneWidget);
+
+      // Mid-animation (100ms)
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Parent 1'), findsOneWidget);
+      expect(find.text('Data P1'), findsOneWidget);
+      expect(find.text('Child 1.1'), findsOneWidget);
+      expect(find.text('Data C1.1'), findsOneWidget);
+      expect(find.text('Parent 2'), findsOneWidget);
+      expect(find.text('Data P2'), findsOneWidget);
+
+      // End of collapse (after 200ms Future.delayed)
+      await tester.pump(const Duration(milliseconds: 150));
+      await tester.pumpAndSettle();
+      expect(find.text('Parent 1'), findsOneWidget);
+      expect(find.text('Data P1'), findsOneWidget);
+      expect(find.text('Parent 2'), findsOneWidget);
+      expect(find.text('Data P2'), findsOneWidget);
+
+      final collapsedElements = tester
+          .elementList(find.byType(SuperValue))
+          .toList();
+      expect(collapsedElements, equals(initialElements));
+
+      // Now expand Parent 1 again
+      await tester.tap(find.byIcon(Icons.arrow_right_sharp).first);
+      // Frame 1 of re-expansion: even Child 1.1 and Child 1.2 are immediately
+      // present without flickering!
+      await tester.pump();
+      expect(find.text('Parent 1'), findsOneWidget);
+      expect(find.text('Data P1'), findsOneWidget);
+      expect(find.text('Child 1.1'), findsOneWidget);
+      expect(find.text('Data C1.1'), findsOneWidget);
+      expect(find.text('Child 1.2'), findsOneWidget);
+      expect(find.text('Data C1.2'), findsOneWidget);
+      expect(find.text('Parent 2'), findsOneWidget);
+      expect(find.text('Data P2'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('Parent 1'), findsOneWidget);
+      expect(find.text('Data P1'), findsOneWidget);
+      expect(find.text('Child 1.1'), findsOneWidget);
+      expect(find.text('Data C1.1'), findsOneWidget);
+
+      await tester.pumpAndSettle();
+      final reexpandedElements = tester
+          .elementList(find.byType(SuperValue))
+          .toList();
+      expect(reexpandedElements, equals(initialElements));
+    },
+  );
 }

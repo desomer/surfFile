@@ -440,6 +440,7 @@ class _SuperValueState extends State<SuperValue>
     _requestedExternal = external;
     _requestedAsBool = asBool;
     final generation = ++_bindingGeneration;
+    
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _bindingGeneration) return;
       final oldBinding = _binding;
