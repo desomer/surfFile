@@ -191,10 +191,7 @@ class EditorSlotState extends State<EditorSlot> {
         zoneLabel: label,
       );
     }
-    return VibeChatScope(
-      componentId: effectiveComponentId,
-      label: titleLabel,
-    );
+    return VibeChatScope(componentId: effectiveComponentId, label: titleLabel);
   }
 
   bool get _canEditWithAi =>
@@ -291,6 +288,7 @@ class EditorSlotState extends State<EditorSlot> {
   static void closeActiveMenu() {
     _dismissActiveMenu?.call();
   }
+
   PointerDownEvent? _sliverDown;
   int _sliverButtons = 0;
   bool _sliverMoved = false;
@@ -432,7 +430,8 @@ class EditorSlotState extends State<EditorSlot> {
       _activeMenuRoute ??= ModalRoute.of(menuContext);
       return MouseRegion(
         onEnter: (_) {
-          if (!(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+          if (!target.mounted ||
+              !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
             return;
           }
           _menuHoveredTarget = target;
@@ -584,7 +583,8 @@ class EditorSlotState extends State<EditorSlot> {
           BehaviorTargetElement(
             id: id,
             label: unique(entry.label),
-            icon: entry.widget.menuIcon ??
+            icon:
+                entry.widget.menuIcon ??
                 entry.componentLabel?.menuIcon ??
                 (index == 0 ? Icons.widgets_outlined : Icons.folder_outlined),
             depth: index,
@@ -601,7 +601,8 @@ class EditorSlotState extends State<EditorSlot> {
         BehaviorTargetElement(
           id: id,
           label: label,
-          icon: widget.menuIcon ??
+          icon:
+              widget.menuIcon ??
               componentLabel?.menuIcon ??
               Icons.widgets_outlined,
           depth: 0,
@@ -862,7 +863,9 @@ class EditorSlotState extends State<EditorSlot> {
         if (route.isActive) {
           navigator.removeRoute(route);
         }
-      } else if (hostRoute != null ? !hostRoute.isCurrent : navigator.canPop()) {
+      } else if (hostRoute != null
+          ? !hostRoute.isCurrent
+          : navigator.canPop()) {
         navigator.pop();
       }
     };
@@ -1104,7 +1107,7 @@ class EditorSlotState extends State<EditorSlot> {
                   ),
                 ),
               )
-            else if (entry case final EditorSlotState state)
+            else if (entry case final EditorSlotState state when state.mounted)
               PopupMenuItem<EditorSlotState>(
                 height: 40,
                 key: ValueKey('style-menu-${state.label}'),
@@ -1397,15 +1400,11 @@ class EditorSlotState extends State<EditorSlot> {
                                           target: state.context,
                                         );
                                       }),
-                                  child: const Text(
-                                    'Extraire & lier en JSON…',
-                                  ),
+                                  child: const Text('Extraire & lier en JSON…'),
                                 ),
                               if (canEditWithAi)
                                 MenuItemButton(
-                                  key: ValueKey(
-                                    'style-menu-ai-${state.label}',
-                                  ),
+                                  key: ValueKey('style-menu-ai-${state.label}'),
                                   leadingIcon: const Icon(
                                     Icons.auto_awesome_outlined,
                                   ),

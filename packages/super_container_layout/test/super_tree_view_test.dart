@@ -500,4 +500,139 @@ void main() {
       expect(reexpandedElements, equals(initialElements));
     },
   );
+
+  testWidgets(
+    'Newly mounted SuperValue hydrates value and propertyBindings synchronously from cache on first frame',
+    (tester) async {
+      // Because setUp saved 'Catalog' through store.save, the document is
+      // already in store's synchronous cache. Mounting a brand new SuperValue
+      // with a single pumpWidget (no runAsync, no extra frames) must render the
+      // bound text and bound property immediately on frame 1.
+      await tester.pumpWidget(
+        JsonRepositoryScope(
+          store: store,
+          child: MaterialApp(
+            home: Scaffold(
+              body: SuperValue(
+                id: 'instant-cached-value',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.display,
+                  binding: JsonTextBinding(
+                    repositoryId: repository,
+                    path: 'nodes[0].children[1].data',
+                  ),
+                  propertyBindings: {
+                    SuperValueProperty.label: JsonTextBinding(
+                      repositoryId: repository,
+                      path: 'nodes[0].children[1].key',
+                    ),
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Immediately visible on the very first frame without any async delay:
+      expect(find.text('Data C1.2'), findsOneWidget);
+      expect(find.text('Child 1.2'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'SuperTreeView rows wrap in IterableContent by default and share row ContainerStyle',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      await mount(
+        tester,
+        SuperTreeView(
+          id: 'catalog-tree',
+          config: SuperTreeViewConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'nodes'),
+            placements: const {
+              SuperTreeViewConfig.headerZone: ['header'],
+              SuperTreeViewConfig.dataZone: ['data'],
+            },
+          ),
+          header: const SuperValue(
+            id: 'node-header',
+            config: SuperValueConfig(
+              mode: SuperValueMode.display,
+              binding: JsonTextBinding(path: 'key'),
+            ),
+          ),
+          data: const SuperValue(
+            id: 'node-data',
+            config: SuperValueConfig(
+              mode: SuperValueMode.display,
+              binding: JsonTextBinding(path: 'data'),
+            ),
+          ),
+        ),
+        registry: registry,
+      );
+
+      expect(find.byType(IterableContent), findsNWidgets(4));
+      final context = tester.element(find.byType(SuperTreeView));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+
+      final appearance = AppearanceScope.controllerOf(context)!;
+      final history = EditorHistoryScope.controllerOf(context)!;
+      history.clear();
+      final before = appearance.value;
+
+      tester
+          .widget<IterableContent>(find.byType(IterableContent).first)
+          .onStyleChanged!(
+        const ContainerStyle(color: Colors.orange, radius: 10),
+      );
+      await tester.pumpAndSettle();
+
+      expect(appearance.value.styles['catalog-tree']!.radius, 10);
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style.radius, 10);
+      }
+
+      await real(tester, () async => history.undo());
+      expect(appearance.value, same(before));
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style.radius, 0);
+      }
+
+      await real(tester, () async => history.redo());
+      for (final content in tester.widgetList<IterableContent>(
+        find.byType(IterableContent),
+      )) {
+        expect(content.style.radius, 10);
+      }
+
+      // Enabling neon on the row style renders NeonSurface without hard clipping:
+      tester
+          .widget<IterableContent>(find.byType(IterableContent).first)
+          .onStyleChanged!(
+        const ContainerStyle(
+          color: Colors.orange,
+          radius: 10,
+          neon: NeonStyle(enabled: true, intensity: 0.8),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final rowClipRects = tester.widgetList<ClipRect>(
+        find.descendant(
+          of: find.byType(SuperTreeView),
+          matching: find.byType(ClipRect),
+        ),
+      );
+      for (final clipRect in rowClipRects) {
+        expect(clipRect.clipBehavior, Clip.none);
+      }
+    },
+  );
 }

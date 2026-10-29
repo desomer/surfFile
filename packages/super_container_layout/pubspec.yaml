@@ -7,6 +7,7 @@ environment:
   flutter: ">=3.47.6"
 
 dependencies:
+  assorted_layout_widgets: ^13.1.0
   diff_match_patch: ^0.4.1
   fl_chart: ^1.3.0
   flex_color_picker: ^4.0.0

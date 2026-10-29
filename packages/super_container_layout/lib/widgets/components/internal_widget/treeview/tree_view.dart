@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 //import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
-import 'package:super_container_layout/widgets/components/treeview/widget_overflow.dart';
+import 'package:super_container_layout/widgets/components/internal_widget/widget_overflow.dart';
 
 final ValueNotifier<int> zoom = ValueNotifier(100);
 int timezoom = 0;
@@ -165,6 +165,7 @@ class TreeView<T> extends StatefulWidget {
     this.indentSize,
     this.onHeaderSizeChanged,
     this.onToggleNode,
+    this.rowWrapper,
     this.onCopy,
     this.onPaste,
   });
@@ -179,6 +180,9 @@ class TreeView<T> extends StatefulWidget {
   final OnSelectionChanged<T>? onSelectionChanged;
   final OnCopy? onCopy;
   final OnPaste? onPaste;
+
+  /// Enveloppe optionnelle autour de chaque ligne construite (ex: `IterableContent`).
+  final Widget Function(TreeNodeData<T> node, Widget child)? rowWrapper;
 
   /// Affiche une case à cocher en début de chaque ligne.
   final bool showCheckboxes;
@@ -355,6 +359,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
               thumbVisibility: true, // ✅ Toujours visible sur desktop
               child: ListView.builder(
                 primary: false,
+                clipBehavior: Clip.none,
                 controller: _scrollController,
                 shrinkWrap: true,
                 itemCount: list.length,
@@ -429,7 +434,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
       // }
 
       //bool noDisplayNodeButKeepChildren = false;
-      bool noTab = false;
+      //bool noTab = false;
 
       // if (node.data is NodeAttribut) {
       //   var attr = (node.data as NodeAttribut);
@@ -603,6 +608,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
   Widget _buildNode(BuildContext context, TreeNodeData<T> node) {
     final stack = Stack(
+      clipBehavior: Clip.none,
       children: [
         getHover(node, _getRowCached(node)),
         if (widget.showConnectors && node.depth > 0)
@@ -972,13 +978,14 @@ class TreeViewState<T> extends State<TreeView<T>> {
         ? Colors.orange.withAlpha(100)
         : node.bgColor;
 
-    return Container(
+    final row = Container(
       color: effectiveColor ?? Colors.transparent,
       height: effectiveRowHeight,
       //width:  300,
       padding: EdgeInsets.only(left: left, right: 10),
       child: NoOverflowErrorFlex(
         direction: Axis.horizontal,
+        clipBehavior: Clip.none,
         children: [
           if (showCheckboxes)
             SizedBox(
@@ -1009,6 +1016,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
         ],
       ),
     );
+    return widget.rowWrapper != null ? widget.rowWrapper!(node, row) : row;
   }
 
   Widget _getDrag(double height) {
@@ -1082,20 +1090,22 @@ class TreeViewState<T> extends State<TreeView<T>> {
 
   Widget _getAnimatedHeightRow(TreeNodeData node, Widget child, Key key) {
     if (node.isHiddenByParent) {
-      return ClipRect(
+      return TweenAnimationBuilder<double>(
         key: key,
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0.0, end: 0.0),
-          duration: Duration.zero,
-          builder: (context, value, child) {
-            return Align(heightFactor: 0.0, child: child);
-          },
-          child: child,
-        ),
+        tween: Tween<double>(begin: 0.0, end: 0.0),
+        duration: Duration.zero,
+        builder: (context, value, child) {
+          return ClipRect(
+            clipBehavior: Clip.hardEdge,
+            child: Align(heightFactor: 0.0, child: child),
+          );
+        },
+        child: child,
       );
     }
 
-    final bool animate = node.timeChange > 0 && timeBuild - node.timeChange < 500;
+    final bool animate =
+        node.timeChange > 0 && timeBuild - node.timeChange < 500;
     final Tween<double> tween = animate
         ? (node.isInvisibleRequested
               ? Tween<double>(begin: 1.0, end: 0.0)
@@ -1104,23 +1114,24 @@ class TreeViewState<T> extends State<TreeView<T>> {
               ? Tween<double>(begin: 0.0, end: 0.0)
               : Tween<double>(begin: 1.0, end: 1.0));
 
-    return ClipRect(
+    return TweenAnimationBuilder<double>(
       key: key,
-      child: TweenAnimationBuilder<double>(
-        tween: tween,
-        duration: Duration(milliseconds: animate ? animateDelay : 0),
-        builder: (context, value, child) {
-          return Align(heightFactor: value, child: child);
-        },
-        onEnd: () {
-          node.timeChange = 0;
-          if (node.isInvisibleRequested) {
-            node.isExpanded = true;
-          }
-          node.isInvisibleRequested = false;
-        },
-        child: child,
-      ),
+      tween: tween,
+      duration: Duration(milliseconds: animate ? animateDelay : 0),
+      builder: (context, value, child) {
+        return ClipRect(
+          clipBehavior: value < 1.0 ? Clip.hardEdge : Clip.none,
+          child: Align(heightFactor: value, child: child),
+        );
+      },
+      onEnd: () {
+        node.timeChange = 0;
+        if (node.isInvisibleRequested) {
+          node.isExpanded = true;
+        }
+        node.isInvisibleRequested = false;
+      },
+      child: child,
     );
   }
 

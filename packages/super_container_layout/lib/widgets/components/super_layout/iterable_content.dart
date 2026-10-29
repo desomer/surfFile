@@ -23,6 +23,7 @@ class IterableContent extends StatefulWidget {
     this.shrinkWrap = false,
     this.onEditSize,
     this.sizeConstraints,
+    this.child,
     super.key,
   });
 
@@ -37,6 +38,7 @@ class IterableContent extends StatefulWidget {
   final bool shrinkWrap;
   final Future<void> Function()? onEditSize;
   final SlotSizeConstraints? sizeConstraints;
+  final Widget? child;
 
   @override
   State<IterableContent> createState() => _IterableContentState();
@@ -62,7 +64,8 @@ class _IterableContentState extends State<IterableContent> {
   Widget build(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
     final id = widget.id;
-    final layout = id == null
+    final customChild = widget.child;
+    final layout = customChild != null || id == null
         ? _layout
         : registry?.layoutController(id, fallback: widget.config) ?? _layout;
     final style = id == null
@@ -84,26 +87,28 @@ class _IterableContentState extends State<IterableContent> {
           style.value = next;
           widget.onStyleChanged?.call(next);
         },
-        child: ValueListenableBuilder<SuperLayoutConfig>(
-          valueListenable: layout,
-          builder: (context, config, _) => SuperLayout(
-            label: 'Layout',
-            id: widget.id == null
-                ? null
-                : (widget.id!.endsWith(':item')
-                    ? '${widget.id!.substring(0, widget.id!.length - 5)}:layout'
-                    : '${widget.id}:layout'),
-            config: config,
-            slots: widget.slots,
-            editable: widget.editable,
-            shrinkWrap: widget.shrinkWrap,
-            menuIcon: Icons.dashboard_outlined,
-            onChanged: (next) {
-              layout.value = next;
-              widget.onChanged?.call(next);
-            },
-          ),
-        ),
+        child:
+            customChild ??
+            ValueListenableBuilder<SuperLayoutConfig>(
+              valueListenable: layout,
+              builder: (context, config, _) => SuperLayout(
+                label: 'Layout',
+                id: widget.id == null
+                    ? null
+                    : (widget.id!.endsWith(':item')
+                          ? '${widget.id!.substring(0, widget.id!.length - 5)}:layout'
+                          : '${widget.id}:layout'),
+                config: config,
+                slots: widget.slots,
+                editable: widget.editable,
+                shrinkWrap: widget.shrinkWrap,
+                menuIcon: Icons.dashboard_outlined,
+                onChanged: (next) {
+                  layout.value = next;
+                  widget.onChanged?.call(next);
+                },
+              ),
+            ),
       ),
     );
     final editSize = widget.onEditSize;

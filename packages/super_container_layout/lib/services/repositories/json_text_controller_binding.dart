@@ -19,6 +19,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     controller.addListener(_edited);
     store.addListener(_repositoryChanged);
     store.addFlusher(flush);
+    _seedFromCache();
     reload();
   }
 
@@ -55,9 +56,32 @@ class JsonTextControllerBinding extends ChangeNotifier {
     _notify();
   }
 
+  void _seedFromCache() {
+    final cached = store.peekAttribute(binding);
+    if (cached == null) return;
+    if (asBool && cached.value != null && cached.value is! bool) return;
+    final resolvedText = asBool
+        ? (cached.value == true ? 'true' : 'false')
+        : cached.text;
+    _expected = cached.value;
+    _saved = resolvedText;
+    _queuedText = resolvedText;
+    _ready = true;
+    loading = false;
+    _applying = true;
+    if (controller.text != resolvedText) {
+      controller.value = TextEditingValue(
+        text: resolvedText,
+        selection: TextSelection.collapsed(offset: resolvedText.length),
+      );
+    }
+    _observed = controller.text;
+    _applying = false;
+  }
+
   Future<void> reload({bool showLoading = true}) async {
     final generation = ++_generation;
-    loading = showLoading;
+    loading = showLoading && !_ready;
     if (!dirty) error = null;
     _notify();
     try {

@@ -178,6 +178,7 @@ class _SuperValueState extends State<SuperValue>
   Map<SuperValueProperty, JsonTextBinding>? _requestedPropertyBindings;
   JsonRepositoryStore? _requestedPropertyStore;
   String? _requestedPropertyRepositoryId;
+  String? _requestedPropertyNodePath;
   List<int> _requestedPropertyIndices = const [];
   bool _requestedPropertyPlaceholder = false;
   bool _refreshPropertyBindings = true;
@@ -440,7 +441,25 @@ class _SuperValueState extends State<SuperValue>
     _requestedExternal = external;
     _requestedAsBool = asBool;
     final generation = ++_bindingGeneration;
-    
+
+    if (!external &&
+        resolved.error == null &&
+        !resolved.placeholder &&
+        resolved.binding != null &&
+        store != null &&
+        (_binding == null || !_binding!.dirty)) {
+      final cached = store.peekAttribute(resolved.binding!);
+      if (cached != null &&
+          (!asBool || cached.value == null || cached.value is bool)) {
+        final resolvedText = asBool
+            ? (cached.value == true ? 'true' : 'false')
+            : cached.text;
+        if (_internal.text != resolvedText) {
+          _setText(_internal, resolvedText);
+        }
+      }
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted || generation != _bindingGeneration) return;
       final oldBinding = _binding;
@@ -538,6 +557,7 @@ class _SuperValueState extends State<SuperValue>
         mapEquals(_requestedPropertyBindings, bindings) &&
         identical(_requestedPropertyStore, store) &&
         _requestedPropertyRepositoryId == scope?.repositoryId &&
+        _requestedPropertyNodePath == scope?.nodePath &&
         listEquals(_requestedPropertyIndices, scope?.indices ?? const []) &&
         _requestedPropertyPlaceholder == (scope?.placeholder ?? false);
     if (!_refreshPropertyBindings && sameBindingContext) {
@@ -552,6 +572,7 @@ class _SuperValueState extends State<SuperValue>
       _requestedPropertyStore = store;
     }
     _requestedPropertyRepositoryId = scope?.repositoryId;
+    _requestedPropertyNodePath = scope?.nodePath;
     _requestedPropertyIndices = List.of(scope?.indices ?? const []);
     _requestedPropertyPlaceholder = scope?.placeholder ?? false;
     final generation = ++_propertyBindingGeneration;
@@ -587,7 +608,6 @@ class _SuperValueState extends State<SuperValue>
       _boundPropertyValues = const {};
       return;
     }
-    if (!sameBindingContext) _boundPropertyValues = const {};
     if (store == null) {
       _boundPropertyValues = const {};
       _propertyBindingErrors = {
@@ -597,6 +617,26 @@ class _SuperValueState extends State<SuperValue>
       };
       return;
     }
+    final syncedValues = <SuperValueProperty, Object>{
+      for (final entry in _boundPropertyValues.entries)
+        if (resolved.containsKey(entry.key)) entry.key: entry.value,
+    };
+    for (final entry in resolved.entries) {
+      final cached = store.peekAttribute(entry.value);
+      if (cached == null) continue;
+      try {
+        final value = _parseBoundProperty(entry.key, cached.value);
+        if (entry.key == SuperValueProperty.fontFamily &&
+            widget.availableFontFamilies.isNotEmpty &&
+            !widget.availableFontFamilies.contains(value)) {
+          continue;
+        }
+        syncedValues[entry.key] = value;
+      } on FormatException {
+        // Error will be reported by _loadPropertyBindings.
+      }
+    }
+    _boundPropertyValues = syncedValues;
     unawaited(_loadPropertyBindings(resolved, store, generation));
   }
 

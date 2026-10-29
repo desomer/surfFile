@@ -22,6 +22,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     this.showConnectors = true,
     this.showCheckboxes = false,
     this.emptyText = 'Aucun élément',
+    this.itemId,
     Map<String, List<String>> placements = const {},
     Map<String, String> slotTypes = const {},
     Map<String, Axis> zoneAxes = const {},
@@ -106,6 +107,9 @@ class SuperTreeViewConfig extends ComponentConfig {
   /// Message affiché lorsque l'arbre est vide.
   final String emptyText;
 
+  /// ID technique distinct pour l'[IterableContent] des lignes.
+  final String? itemId;
+
   final Map<String, List<String>> placements;
   final Map<String, String> slotTypes;
   final Map<String, Axis> zoneAxes;
@@ -165,6 +169,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     bool? showConnectors,
     bool? showCheckboxes,
     String? emptyText,
+    String? itemId,
     Map<String, List<String>>? placements,
     Map<String, String>? slotTypes,
     Map<String, Axis>? zoneAxes,
@@ -182,6 +187,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     showConnectors: showConnectors ?? this.showConnectors,
     showCheckboxes: showCheckboxes ?? this.showCheckboxes,
     emptyText: emptyText ?? this.emptyText,
+    itemId: itemId ?? this.itemId,
     placements: placements ?? this.placements,
     slotTypes: slotTypes ?? this.slotTypes,
     zoneAxes: zoneAxes ?? this.zoneAxes,
@@ -301,6 +307,7 @@ class SuperTreeViewConfig extends ComponentConfig {
       'showConnectors': showConnectors,
       'showCheckboxes': showCheckboxes,
       'emptyText': emptyText,
+      if (itemId != null) 'itemId': itemId,
       if (placements.isNotEmpty)
         'placements': {
           for (final entry in placements.entries)
@@ -359,6 +366,7 @@ class SuperTreeViewConfig extends ComponentConfig {
       if (showConnectors != d.showConnectors) 'showConnectors': showConnectors,
       if (showCheckboxes != d.showCheckboxes) 'showCheckboxes': showCheckboxes,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
+      if (itemId != null) 'itemId': itemId,
       if (placements.isNotEmpty)
         'placements': {
           for (final entry in placements.entries)
@@ -415,11 +423,13 @@ class SuperTreeViewConfig extends ComponentConfig {
     final showConnectors = value['showConnectors'] ?? true;
     final showCheckboxes = value['showCheckboxes'] ?? false;
     final emptyText = value['emptyText'] ?? 'Aucun élément';
+    final itemId = value['itemId'];
     if (childrenKey is! String ||
         initiallyExpanded is! bool ||
         showConnectors is! bool ||
         showCheckboxes is! bool ||
-        emptyText is! String) {
+        emptyText is! String ||
+        (itemId != null && itemId is! String)) {
       throw const FormatException('Options de TreeView invalides.');
     }
 
@@ -524,6 +534,7 @@ class SuperTreeViewConfig extends ComponentConfig {
         showConnectors: showConnectors,
         showCheckboxes: showCheckboxes,
         emptyText: emptyText,
+        itemId: itemId as String?,
         placements: placements,
         slotTypes: types,
         zoneAxes: parsedAxes,
@@ -555,6 +566,7 @@ class SuperTreeViewConfig extends ComponentConfig {
         showConnectors != other.showConnectors ||
         showCheckboxes != other.showCheckboxes ||
         emptyText != other.emptyText ||
+        itemId != other.itemId ||
         placements.length != other.placements.length ||
         !mapEquals(slotTypes, other.slotTypes) ||
         !mapEquals(zoneAxes, other.zoneAxes) ||
@@ -581,6 +593,7 @@ class SuperTreeViewConfig extends ComponentConfig {
     showConnectors,
     showCheckboxes,
     emptyText,
+    itemId,
     Object.hashAllUnordered(
       placements.entries.map((e) => Object.hash(e.key, Object.hashAll(e.value))),
     ),

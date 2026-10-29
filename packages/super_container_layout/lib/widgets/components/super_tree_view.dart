@@ -23,6 +23,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/json_text_binding.dart';
@@ -34,11 +35,14 @@ import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
+import '../../theme/appearance.dart';
+import '../../theme/container_style.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tree_view_editor.dart';
 import '../editing/history/editor_history.dart';
+import 'super_layout/iterable_content.dart';
 import 'super_layout/slot_implementation.dart';
-import 'treeview/tree_view.dart';
+import 'internal_widget/treeview/tree_view.dart';
 
 /// Données associées à un nœud affiché dans un [SuperTreeView].
 @immutable
@@ -124,6 +128,7 @@ class _TreeSource {
 class SuperTreeView extends StatefulWidget {
   const SuperTreeView({
     this.id = 'root-tree-view',
+    this.itemId,
     this.label = 'TreeView',
     this.header,
     this.headers = const [],
@@ -131,12 +136,18 @@ class SuperTreeView extends StatefulWidget {
     this.datas = const [],
     this.slots = const [],
     this.config,
+    this.templateStyle = const ContainerStyle(),
     this.onNodeSelected,
     this.onConfigChanged,
     super.key,
   });
 
   final String id;
+
+  /// ID technique distinct pour l'[IterableContent] des lignes.
+  /// Si non spécifié, utilise [SuperTreeViewConfig.itemId] ou [id].
+  final String? itemId;
+
   final String label;
 
   /// Raccourci pour un widget dans la zone `Header`.
@@ -153,6 +164,10 @@ class SuperTreeView extends StatefulWidget {
   /// Configuration initiale avant celle enregistrée dans l'apparence.
   final SuperTreeViewConfig? config;
 
+  /// Style initial partagé par les lignes (`IterableContent`), avant celui
+  /// enregistré dans l'apparence.
+  final ContainerStyle templateStyle;
+
   /// Appelé avec le `nodePath` lorsqu'un nœud est sélectionné.
   final ValueChanged<String>? onNodeSelected;
 
@@ -160,7 +175,11 @@ class SuperTreeView extends StatefulWidget {
   final ValueChanged<SuperTreeViewConfig>? onConfigChanged;
 
   SuperTreeViewConfig get _initialConfig {
-    if (config != null) return config!;
+    if (config != null) {
+      return itemId != null && config!.itemId == null
+          ? config!.copyWith(itemId: itemId)
+          : config!;
+    }
     final headerIds = <String>[
       if (header != null) 'header',
       for (var i = 0; i < headers.length; i++) 'header:$i',
@@ -170,6 +189,7 @@ class SuperTreeView extends StatefulWidget {
       for (var i = 0; i < datas.length; i++) 'data:$i',
     ];
     return SuperTreeViewConfig(
+      itemId: itemId,
       placements: {
         if (headerIds.isNotEmpty) SuperTreeViewConfig.headerZone: headerIds,
         if (dataIds.isNotEmpty) SuperTreeViewConfig.dataZone: dataIds,
@@ -184,6 +204,9 @@ class SuperTreeView extends StatefulWidget {
 class _SuperTreeViewState extends State<SuperTreeView> {
   late final ValueNotifier<SuperTreeViewConfig> _localConfig = ValueNotifier(
     widget._initialConfig,
+  );
+  late final ValueNotifier<ContainerStyle> _localStyle = ValueNotifier(
+    widget.templateStyle,
   );
 
   JsonRepositoryStore? _store;
@@ -234,6 +257,11 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       _localConfig.value = widget._initialConfig;
       _renderRevision++;
     }
+    if (oldWidget.id != widget.id ||
+        oldWidget.templateStyle != widget.templateStyle) {
+      _localStyle.value = widget.templateStyle;
+      _renderRevision++;
+    }
   }
 
   @override
@@ -242,6 +270,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     _store?.removeListener(_reload);
     _listen(const []);
     _localConfig.dispose();
+    _localStyle.dispose();
     super.dispose();
   }
 
@@ -699,61 +728,82 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     BuildContext context,
     NativeComponentEditorState editor,
     SuperTreeViewConfig config,
-    JsonListScope? parentScope,
     SuperTreeNodeItem item,
     String zoneId,
   ) {
-    final selected = _isNodeSelected(item);
-    final Widget zoneWidget;
     if (item.isFirstRow) {
-      zoneWidget = editor.region(zoneId, expand: true, stretch: false);
-    } else {
-      final slots = editor.slotsFor(zoneId);
-      final axis = editor.axisOf(zoneId);
-      final flow = editor.flowOf(zoneId);
-      zoneWidget = slots.isEmpty
-          ? const SizedBox.shrink()
-          : SlotStack(
-              slots: slots,
-              axis: axis,
-              flow: flow,
-              expand: true,
-              stretch: false,
-              preferredSizes: {
-                for (final slot in slots)
-                  if (slot case NativePreferredSizeWidget native)
-                    slot.id: native.preferredSizeIn(context),
-                ...config.slotPreferredSizes,
-              },
-              sizeConstraints: config.slotSizeConstraints,
-            );
+      return editor.region(zoneId, expand: true, stretch: false);
     }
+    final slots = editor.slotsFor(zoneId);
+    if (slots.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final axis = editor.axisOf(zoneId);
+    final flow = editor.flowOf(zoneId);
+    return SlotStack(
+      slots: slots,
+      axis: axis,
+      flow: flow,
+      expand: true,
+      stretch: false,
+      preferredSizes: {
+        for (final slot in slots)
+          if (slot case NativePreferredSizeWidget native)
+            slot.id: native.preferredSizeIn(context),
+        ...config.slotPreferredSizes,
+      },
+      sizeConstraints: config.slotSizeConstraints,
+    );
+  }
 
-    final scoped = JsonListScope(
-      key: ValueKey('super-tree-zone-${widget.id}-${item.nodePath}-$zoneId'),
+  Widget _buildRowWrapper(
+    BuildContext context,
+    ValueNotifier<ContainerStyle> style,
+    String rowId,
+    JsonListScope? parentScope,
+    TreeNodeData<SuperTreeNodeItem> node,
+    Widget rowContent,
+  ) {
+    final item = node.data;
+    final selected = _isNodeSelected(item);
+    final placeholder = item.isTemplate || (parentScope?.placeholder ?? false);
+    final iterableRow = ValueListenableBuilder<ContainerStyle>(
+      valueListenable: style,
+      builder: (context, rowStyle, _) => IterableContent(
+        id: rowId,
+        label: 'Iterable Content',
+        style: rowStyle,
+        onStyleChanged: (next) => style.value = next,
+        child: rowContent,
+      ),
+    );
+    final interactive = placeholder
+        ? iterableRow
+        : Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (event) {
+              if (event.buttons == kPrimaryButton) {
+                _selectNode(item);
+              }
+            },
+            child: iterableRow,
+          );
+    return JsonListScope(
+      key: ValueKey('super-tree-row-${widget.id}-${item.nodePath}'),
       selected: selected,
       repositoryId: _source?.binding?.repositoryId ?? parentScope?.repositoryId,
       indices: [...?(_source?.rowBase ?? parentScope?.indices), item.rootIndex],
       nodePath: item.isTemplate ? null : item.nodePath,
       treeTemplatePath: _templatePath,
-      placeholder: item.isTemplate || (parentScope?.placeholder ?? false),
-      child: zoneWidget,
-    );
-
-    if (item.isTemplate || (parentScope?.placeholder ?? false)) {
-      return scoped;
-    }
-
-    return Listener(
-      behavior: HitTestBehavior.translucent,
-      onPointerDown: (_) => _selectNode(item),
-      child: scoped,
+      placeholder: placeholder,
+      child: interactive,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final registry = SuperApp.maybeOf(context)?.registry;
+    final app = SuperApp.maybeOf(context);
+    final registry = app?.registry;
     final controller =
         registry?.treeViewController(
           widget.id,
@@ -766,130 +816,157 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     return ValueListenableBuilder<SuperTreeViewConfig>(
       valueListenable: controller,
       builder: (context, config, _) {
+        final rowId = widget.itemId ?? config.itemId ?? widget.id;
+        final rowStyleFallback = app == null
+            ? widget.templateStyle
+            : (app.registry?.containerStyleById[rowId]?.value ??
+                  app.registry?.containerStyleById[widget.id]?.value ??
+                  AppearanceScope.controllerOf(context)?.value.styles[rowId] ??
+                  AppearanceScope.controllerOf(
+                    context,
+                  )?.value.styles[widget.id] ??
+                  widget.templateStyle);
+        final style =
+            registry?.styleController(rowId, fallback: rowStyleFallback) ??
+            _localStyle;
+
         _observe(config, listScope, repositoryStore);
         final nativeConfig = _toNativeConfig(config);
 
-        return NativeComponentEditor(
-          id: widget.id,
-          label: widget.label,
-          menuType: 'TreeView',
-          menuIcon: Icons.account_tree_outlined,
-          keyPrefix: 'super-tree-view',
-          settingsTitle: 'Configurer le TreeView',
-          editSurface: true,
-          config: nativeConfig,
-          onChanged: (nextNative) {
-            final updated = _fromNativeConfig(controller.value, nextNative);
-            controller.value = updated;
-            _renderRevision++;
-            widget.onConfigChanged?.call(updated);
-          },
-          onSlotRemoved: (region, slot) =>
-              _handleSlotRemoved(controller, registry, region, slot),
-          onConfigure: () => _openSettings(controller),
-          menuTooltip: (_) =>
-              formatSuperTreeViewTooltip(title: widget.label, config: config),
-          registry: registry,
-          slots: _slots,
-          regions: _regions,
-          builder: (context, editor) {
-            final placeholder = listScope?.placeholder ?? false;
-            final items = placeholder ? null : _rawNodes;
-            final editing = editor.editing;
-            final templateMode =
-                (items == null || items.isEmpty) && (editing || placeholder);
+        return ValueListenableBuilder<ContainerStyle>(
+          valueListenable: style,
+          builder: (context, currentRowStyle, _) => NativeComponentEditor(
+            id: widget.id,
+            label: widget.label,
+            menuType: 'TreeView',
+            menuIcon: Icons.account_tree_outlined,
+            keyPrefix: 'super-tree-view',
+            settingsTitle: 'Configurer le TreeView',
+            editSurface: true,
+            config: nativeConfig,
+            onChanged: (nextNative) {
+              final updated = _fromNativeConfig(controller.value, nextNative);
+              controller.value = updated;
+              _renderRevision++;
+              widget.onConfigChanged?.call(updated);
+            },
+            onSlotRemoved: (region, slot) =>
+                _handleSlotRemoved(controller, registry, region, slot),
+            onConfigure: () => _openSettings(controller),
+            menuTooltip: (_) =>
+                formatSuperTreeViewTooltip(title: widget.label, config: config),
+            registry: registry,
+            slots: _slots,
+            regions: _regions,
+            builder: (context, editor) {
+              final placeholder = listScope?.placeholder ?? false;
+              final items = placeholder ? null : _rawNodes;
+              final editing = editor.editing;
+              final templateMode =
+                  (items == null || items.isEmpty) && (editing || placeholder);
 
-            final message = placeholder
-                ? null
-                : config.binding == null
-                ? 'TreeView non lié : choisissez un repository dans les réglages.'
-                : _error ??
-                      (_source?.unselected == true
-                          ? 'Aucune ligne parente sélectionnée.'
-                          : items != null && items.isEmpty && !_loading
-                          ? config.emptyText
-                          : null);
+              final message = placeholder
+                  ? null
+                  : config.binding == null
+                  ? 'TreeView non lié : choisissez un repository dans les réglages.'
+                  : _error ??
+                        (_source?.unselected == true
+                            ? 'Aucune ligne parente sélectionnée.'
+                            : items != null && items.isEmpty && !_loading
+                            ? config.emptyText
+                            : null);
 
-            final treeNodes = _ensureTreeNodes(
-              config,
-              templateMode: templateMode,
-              editing: editing,
-            );
+              final treeNodes = _ensureTreeNodes(
+                config,
+                templateMode: templateMode,
+                editing: editing,
+              );
 
-            for (final root in treeNodes) {
-              void applySelectionBg(TreeNodeData<SuperTreeNodeItem> node) {
-                node.bgColor = _isNodeSelected(node.data)
-                    ? Theme.of(context).colorScheme.primary
-                          .withValues(alpha: 0.14)
-                    : null;
-                for (final child in node.children ?? const []) {
-                  applySelectionBg(child);
+              final hasCustomSelectedStyle =
+                  currentRowStyle.states?.hasSelected == true;
+              for (final root in treeNodes) {
+                void applySelectionBg(TreeNodeData<SuperTreeNodeItem> node) {
+                  node.bgColor =
+                      !hasCustomSelectedStyle && _isNodeSelected(node.data)
+                      ? Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.14)
+                      : null;
+                  for (final child in node.children ?? const []) {
+                    applySelectionBg(child);
+                  }
                 }
+
+                applySelectionBg(root);
               }
 
-              applySelectionBg(root);
-            }
-
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (message != null)
-                  Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Text(
-                      message,
-                      key: ValueKey('super-tree-message-${widget.id}'),
-                      style: _error != null || config.binding == null
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            )
-                          : null,
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (message != null)
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Text(
+                        message,
+                        key: ValueKey('super-tree-message-${widget.id}'),
+                        style: _error != null || config.binding == null
+                            ? TextStyle(
+                                color: Theme.of(context).colorScheme.error,
+                              )
+                            : null,
+                      ),
                     ),
-                  ),
-                if (treeNodes.isNotEmpty)
-                  Flexible(
-                    fit: FlexFit.loose,
-                    child: TreeView<SuperTreeNodeItem>(
-                      key: ValueKey('super-tree-${widget.id}'),
-                      rowHeight: config.rowHeight,
-                      indentSize: config.indent,
-                      showConnectors: config.showConnectors,
-                      showCheckboxes: config.showCheckboxes,
-                      enableContextMenu: !editing,
-                      onToggleNode: (node) {
-                        if (!node.data.isTemplate) {
-                          _expandedByPath[node.data.nodePath] =
-                              !node.isToogleRequested && node.isExpanded;
-                        }
-                      },
-                      isRowCached: (node) => node.data.revision,
-                      getNodes: () => TreeViewData<SuperTreeNodeItem>(
-                        nodes: treeNodes,
-                        headerSize: config.headerSize,
+                  if (treeNodes.isNotEmpty)
+                    Flexible(
+                      fit: FlexFit.loose,
+                      child: TreeView<SuperTreeNodeItem>(
+                        key: ValueKey('super-tree-${widget.id}'),
+                        rowHeight: config.rowHeight,
+                        indentSize: config.indent,
+                        showConnectors: config.showConnectors,
+                        showCheckboxes: config.showCheckboxes,
+                        enableContextMenu: !editing,
+                        onToggleNode: (node) {
+                          if (!node.data.isTemplate) {
+                            _expandedByPath[node.data.nodePath] =
+                                !node.isToogleRequested && node.isExpanded;
+                          }
+                        },
+                        isRowCached: (node) => node.data.revision,
+                        getNodes: () => TreeViewData<SuperTreeNodeItem>(
+                          nodes: treeNodes,
+                          headerSize: config.headerSize,
+                        ),
+                        rowWrapper: (node, rowContent) => _buildRowWrapper(
+                          context,
+                          style,
+                          rowId,
+                          listScope,
+                          node,
+                          rowContent,
+                        ),
+                        getHeader: (node) => _buildZoneContent(
+                          context,
+                          editor,
+                          config,
+                          node.data,
+                          SuperTreeViewConfig.headerZone,
+                        ),
+                        getDataRow: (node) => _buildZoneContent(
+                          context,
+                          editor,
+                          config,
+                          node.data,
+                          SuperTreeViewConfig.dataZone,
+                        ),
+                        isSelected: (node, _, _) => _isNodeSelected(node.data),
                       ),
-                      getHeader: (node) => _buildZoneContent(
-                        context,
-                        editor,
-                        config,
-                        listScope,
-                        node.data,
-                        SuperTreeViewConfig.headerZone,
-                      ),
-                      getDataRow: (node) => _buildZoneContent(
-                        context,
-                        editor,
-                        config,
-                        listScope,
-                        node.data,
-                        SuperTreeViewConfig.dataZone,
-                      ),
-                      isSelected: (node, _, _) => _isNodeSelected(node.data),
                     ),
-                  ),
-              ],
-            );
-          },
+                ],
+              );
+            },
+          ),
         );
       },
     );

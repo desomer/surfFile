@@ -150,13 +150,10 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _native(String id) => [
     EditorConfigRef.nativeComponent(id),
   ];
-  static List<EditorConfigRef> _tab(String id) => [
-    EditorConfigRef.tab(id),
-  ];
-  static List<EditorConfigRef> _chart(String id) => [
-    EditorConfigRef.chart(id),
-  ];
+  static List<EditorConfigRef> _tab(String id) => [EditorConfigRef.tab(id)];
+  static List<EditorConfigRef> _chart(String id) => [EditorConfigRef.chart(id)];
   static List<EditorConfigRef> _treeView(String id) => [
+    EditorConfigRef.style(id),
     EditorConfigRef.treeView(id),
   ];
 
@@ -165,12 +162,8 @@ class ComponentDuplicationContract {
   static const superAction = ComponentDuplicationContract(
     ownedConfigs: _action,
   );
-  static const superTab = ComponentDuplicationContract(
-    ownedConfigs: _tab,
-  );
-  static const superChart = ComponentDuplicationContract(
-    ownedConfigs: _chart,
-  );
+  static const superTab = ComponentDuplicationContract(ownedConfigs: _tab);
+  static const superChart = ComponentDuplicationContract(ownedConfigs: _chart);
   static const superTreeView = ComponentDuplicationContract(
     ownedConfigs: _treeView,
   );
@@ -1133,7 +1126,9 @@ Widget _previewZoneBox(
       style: TextStyle(
         fontSize: 11,
         fontWeight: highlighted ? FontWeight.w600 : FontWeight.w400,
-        color: highlighted ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+        color: highlighted
+            ? colors.onPrimaryContainer
+            : colors.onSurfaceVariant,
       ),
     ),
   );
@@ -1218,10 +1213,7 @@ Widget _buildActionPreview(BuildContext context) => IgnorePointer(
         icon: const Icon(Icons.play_arrow, size: 16),
         label: const Text('Action principale'),
       ),
-      OutlinedButton(
-        onPressed: () {},
-        child: const Text('Secondaire'),
-      ),
+      OutlinedButton(onPressed: () {}, child: const Text('Secondaire')),
       IconButton.filledTonal(
         onPressed: () {},
         icon: const Icon(Icons.bolt, size: 18),
@@ -1290,7 +1282,10 @@ Widget _buildApplicationBarPreview(BuildContext context) {
           Icon(Icons.menu, size: 18, color: colors.onSurface),
           const SizedBox(width: 12),
           Expanded(
-            child: Text('Barre d’application', style: theme.textTheme.titleSmall),
+            child: Text(
+              'Barre d’application',
+              style: theme.textTheme.titleSmall,
+            ),
           ),
           Icon(Icons.search, size: 18, color: colors.onSurfaceVariant),
           const SizedBox(width: 8),
@@ -1378,11 +1373,7 @@ Widget _buildBottomAppBarPreview(BuildContext context) {
               color: colors.primaryContainer,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(
-              Icons.add,
-              size: 16,
-              color: colors.onPrimaryContainer,
-            ),
+            child: Icon(Icons.add, size: 16, color: colors.onPrimaryContainer),
           ),
         ],
       ),
@@ -1562,7 +1553,11 @@ Widget _buildTabPreview(BuildContext context) {
           ],
         ),
         const SizedBox(height: 6),
-        _previewZoneBox(context, 'Contenu de l’onglet actif', highlighted: true),
+        _previewZoneBox(
+          context,
+          'Contenu de l’onglet actif',
+          highlighted: true,
+        ),
       ],
     ),
   );
@@ -1691,9 +1686,7 @@ Widget _buildTreeViewPreview(BuildContext context) {
             color: colors.outlineVariant,
             margin: const EdgeInsets.symmetric(horizontal: 6),
           ),
-          Expanded(
-            child: Text(data, style: const TextStyle(fontSize: 11)),
-          ),
+          Expanded(child: Text(data, style: const TextStyle(fontSize: 11))),
         ],
       ),
     ),
@@ -1710,4 +1703,3 @@ Widget _buildTreeViewPreview(BuildContext context) {
     ),
   );
 }
-

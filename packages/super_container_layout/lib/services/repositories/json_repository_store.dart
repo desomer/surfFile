@@ -35,6 +35,7 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   final _bindings = <String, JsonRepositoryBinding>{};
   final _activeBindings = <Object, Set<String>>{};
+  final _documentCache = <String, Object?>{};
 
   /// Runtime selections and bound components of [repositoryId]'s arrays.
   JsonRepositoryBinding bindingOf(String repositoryId) => _bindings.putIfAbsent(
@@ -216,10 +217,30 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
+  /// Lit de manière synchrone la valeur de [binding] depuis le cache mémoire
+  /// du repository lorsque le document JSON a déjà été chargé.
+  ///
+  /// Retourne `null` si le repository n'est pas encore en cache ou si le
+  /// chemin ne peut pas être résolu sans erreur.
+  JsonAttributeValue? peekAttribute(JsonTextBinding binding) {
+    final repoId = binding.repositoryId;
+    if (repoId == null || !_documentCache.containsKey(repoId)) return null;
+    try {
+      binding.validateResolved();
+      final root = _documentCache[repoId];
+      final value = JsonAttributePath(binding.path).read(root);
+      return (value: value, text: value?.toString() ?? '');
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) =>
       _exclusive(() async {
         binding.validateResolved();
-        final root = _decode(await read(await _nameOf(binding.repositoryId!)));
+        final repoId = binding.repositoryId!;
+        final root = _decode(await read(await _nameOf(repoId)));
+        _documentCache[repoId] = root;
         final value = JsonAttributePath(binding.path).read(root);
         return (value: value, text: value?.toString() ?? '');
       });
@@ -231,7 +252,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     bool asBool = false,
   }) => _exclusive(() async {
     binding.validateResolved();
-    final name = await _nameOf(binding.repositoryId!);
+    final repoId = binding.repositoryId!;
+    final name = await _nameOf(repoId);
     final original = await read(name);
     final root = _decode(original);
     final path = JsonAttributePath(binding.path);
@@ -246,6 +268,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       '${const JsonEncoder.withIndent('  ').convert(updated)}\n',
       expectedText: original,
     );
+    _documentCache[repoId] = updated;
     final value = path.read(updated);
     return (value: value, text: value?.toString() ?? '');
   });
@@ -256,6 +279,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
           ..validateResolved();
         final root = _decode(await read(await _nameOf(repositoryId)));
+        _documentCache[repositoryId] = root;
         return List<Object?>.unmodifiable(
           _array(JsonAttributePath(binding.path).readNode(root)),
         );
@@ -280,6 +304,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
     final root = _decode(await read(await _nameOf(repositoryId)));
+    _documentCache[repositoryId] = root;
     final node = JsonAttributePath(binding.path).readNode(root);
     if (node == null) {
       return (nodes: const <Object?>[], singleRootObject: false);
@@ -409,7 +434,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     await _checkAvailable(name);
     await _file(name).create(exclusive: true);
     await _file(name).writeAsString('{}\n', flush: true);
-    await _idOf(name);
+    final id = await _idOf(name);
+    _documentCache[id] = <String, dynamic>{};
     _changed();
   });
 
@@ -421,15 +447,16 @@ class JsonRepositoryStore extends ChangeNotifier {
     String text, {
     required String expectedText,
   }) async {
-    jsonDecode(text);
+    final decoded = jsonDecode(text);
     if (await read(name) != expectedText) {
       throw const FormatException(
         'Le fichier a été modifié sur le disque. '
         'Copiez vos modifications puis rechargez le repository.',
       );
     }
-    await _idOf(name);
+    final id = await _idOf(name);
     await _file(name).writeAsString(text, flush: true);
+    _documentCache[id] = decoded;
     _changed();
   }
 
@@ -487,6 +514,9 @@ class JsonRepositoryStore extends ChangeNotifier {
         await file.delete();
         if (idType == FileSystemEntityType.file) {
           await idFile.delete();
+        }
+        if (id != null) {
+          _documentCache.remove(id);
         }
         final binding = id == null ? null : _bindings[id];
         if (binding != null) {
