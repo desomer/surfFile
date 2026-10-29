@@ -113,14 +113,15 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
   }
 
   void _toggleTreePopup(int chevronIndex, List<String> prefix) {
+    EditorSlotState.closeActiveMenu();
     if (_treePopup?.chevronIndex == chevronIndex) {
       setState(() => _treePopup = null);
       return;
     }
     final nodes = LayoutSelection.childrenOf(prefix);
     if (nodes.isEmpty) return;
-    final chevronBox =
-        _chevronKeys[chevronIndex]?.currentContext?.findRenderObject();
+    final chevronBox = _chevronKeys[chevronIndex]?.currentContext
+        ?.findRenderObject();
     final bannerRoot = context.findRenderObject();
     var anchor = Rect.zero;
     if (chevronBox is RenderBox &&
@@ -187,13 +188,16 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       delegate: _layout,
       child: GestureDetector(
         key: _bannerKey,
-        onPanUpdate: (details) => setState(() {
-          _treePopup = null;
-          _layout = _BannerLayout(
-            _layout.resolvedPosition + details.delta,
-            available: available,
-          );
-        }),
+        onPanUpdate: (details) {
+          EditorSlotState.closeActiveMenu();
+          setState(() {
+            _treePopup = null;
+            _layout = _BannerLayout(
+              _layout.resolvedPosition + details.delta,
+              available: available,
+            );
+          });
+        },
         child: Material(
           key: const ValueKey('style-edit-banner'),
           color: scheme.primary,
@@ -368,6 +372,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                         label: label,
                                         current: index == path.length - 1,
                                         onTap: () {
+                                          EditorSlotState.closeActiveMenu();
                                           if (_treePopup != null) {
                                             setState(() => _treePopup = null);
                                           }
@@ -376,6 +381,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                           );
                                         },
                                         onSecondaryTap: (position) {
+                                          EditorSlotState.closeActiveMenu();
                                           if (_treePopup != null) {
                                             setState(() => _treePopup = null);
                                           }
@@ -436,6 +442,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               currentPath: LayoutSelection.path.value,
               onClose: () => setState(() => _treePopup = null),
               onSelectNode: (node) {
+                EditorSlotState.closeActiveMenu();
                 setState(() => _treePopup = null);
                 if (node.onSelect != null) {
                   node.onSelect!();
@@ -444,6 +451,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                 }
               },
               onContextMenuNode: (node, position) {
+                EditorSlotState.closeActiveMenu();
                 setState(() => _treePopup = null);
                 final targetPosition = _menuPositionForBanner(position);
                 if (node.onContextMenu != null) {
@@ -597,7 +605,9 @@ class _PathChevron extends StatelessWidget {
         borderRadius: radius,
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: active ? color.withValues(alpha: .18) : color.withValues(alpha: .08),
+            color: active
+                ? color.withValues(alpha: .18)
+                : color.withValues(alpha: .08),
             borderRadius: radius,
             border: Border.all(
               color: active ? color : color.withValues(alpha: .55),
@@ -815,7 +825,10 @@ class _PathTreeDialog extends StatelessWidget {
                 ],
               ),
             ),
-            Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: .5)),
+            Divider(
+              height: 1,
+              color: scheme.outlineVariant.withValues(alpha: .5),
+            ),
             Flexible(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(vertical: 4),

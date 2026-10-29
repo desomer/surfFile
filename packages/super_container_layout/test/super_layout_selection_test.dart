@@ -1828,4 +1828,132 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'right-clicking a chevron tree child or path segment replaces an already open context menu',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: mode,
+          child: MaterialApp(
+            builder: (context, child) => Stack(
+              children: [
+                child!,
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+            home: Scaffold(
+              body: SuperLayout(
+                name: 'Main',
+                label: 'Main',
+                config: config.copyWith(
+                  placements: {
+                    SuperLayoutZone.center: ['card-slot'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'card-slot',
+                    label: 'Ma Carte',
+                    builder: (_) => EditableSurface(
+                      id: 'card-slot',
+                      label: 'Ma Carte',
+                      child: Align(
+                        alignment: Alignment.bottomRight,
+                        child: SizedBox(
+                          width: 120,
+                          height: 48,
+                          child: EditorSlot(
+                            label: 'Mon Bouton',
+                            onEdit: () async {},
+                            child: const Center(child: Text('Action')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Select 'Main > Centre > Ma Carte > Mon Bouton'.
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-0')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'style-edit-banner-tree-node-Main/Centre/Ma Carte/Mon Bouton',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Open a context menu first (e.g. on 'Main') and keep it open.
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-path-0')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-Main')), findsOneWidget);
+      expect(find.byKey(const ValueKey('style-menu-Nord')), findsNothing);
+
+      // While the context menu is already open, open the children tree via chevron
+      // and right-click a child ('Nord'): its context menu must open.
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-0')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-tree-dialog')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-tree-node-Main/Nord')),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('style-edit-banner-tree-dialog')),
+        findsNothing,
+      );
+      expect(find.byKey(const ValueKey('style-menu-Nord')), findsOneWidget);
+
+      // Even if a context menu is opened while the tree dialog is open,
+      // right-clicking another child in the tree dialog replaces the open menu.
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-0')),
+      );
+      await tester.pumpAndSettle();
+      LayoutSelection.openContextMenu(const ['Main'], const Offset(200, 200));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('style-menu-Main')), findsOneWidget);
+      expect(find.byKey(const ValueKey('style-menu-Mon Bouton')), findsNothing);
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'style-edit-banner-tree-node-Main/Centre/Ma Carte/Mon Bouton',
+          ),
+        ),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('style-menu-Mon Bouton')),
+        findsOneWidget,
+      );
+
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

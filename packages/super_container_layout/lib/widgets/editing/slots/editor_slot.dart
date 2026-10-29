@@ -281,7 +281,16 @@ class EditorSlotState extends State<EditorSlot> {
   static bool _hoveredTargetUpdateScheduled = false;
   static EditorSlotState? _menuHoveredTarget;
   static bool _menuOpen = false;
+  static bool _openingMenuThisTurn = false;
+  static int _menuGeneration = 0;
+  static Route<dynamic>? _activeMenuRoute;
+  static VoidCallback? _dismissActiveMenu;
   bool _ownsOpenMenu = false;
+
+  /// Closes the currently open editor context menu, if any.
+  static void closeActiveMenu() {
+    _dismissActiveMenu?.call();
+  }
   PointerDownEvent? _sliverDown;
   int _sliverButtons = 0;
   bool _sliverMoved = false;
@@ -418,27 +427,32 @@ class EditorSlotState extends State<EditorSlot> {
     EditorSlotState target,
     Widget child, {
     double minHeight = 40,
-  }) => MouseRegion(
-    onEnter: (_) {
-      if (!(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
-        return;
-      }
-      _menuHoveredTarget = target;
-      _refreshHoveredTarget();
+  }) => Builder(
+    builder: (menuContext) {
+      _activeMenuRoute ??= ModalRoute.of(menuContext);
+      return MouseRegion(
+        onEnter: (_) {
+          if (!(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+            return;
+          }
+          _menuHoveredTarget = target;
+          _refreshHoveredTarget();
+        },
+        onExit: (_) {
+          if (identical(_menuHoveredTarget, target)) {
+            _menuHoveredTarget = null;
+            _refreshHoveredTarget();
+          }
+        },
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: minHeight),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: child,
+          ),
+        ),
+      );
     },
-    onExit: (_) {
-      if (identical(_menuHoveredTarget, target)) {
-        _menuHoveredTarget = null;
-        _refreshHoveredTarget();
-      }
-    },
-    child: ConstrainedBox(
-      constraints: BoxConstraints(minHeight: minHeight),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: child,
-      ),
-    ),
   );
 
   bool get _hasNestedEditableTarget {
@@ -463,6 +477,9 @@ class EditorSlotState extends State<EditorSlot> {
     if (_ownsOpenMenu) {
       _ownsOpenMenu = false;
       _menuOpen = false;
+      _openingMenuThisTurn = false;
+      _activeMenuRoute = null;
+      _dismissActiveMenu = null;
     }
     _removeHoveredSafely();
     super.dispose();
@@ -812,9 +829,43 @@ class EditorSlotState extends State<EditorSlot> {
       }
     }
     final colors = Theme.of(context).colorScheme;
-    if (_menuOpen) return;
+    if (_menuOpen) {
+      if (_openingMenuThisTurn && selectTarget) return;
+      closeActiveMenu();
+      if (!mounted) return;
+    }
+    final navigator = Navigator.of(context);
+    final hostRoute = ModalRoute.of(context);
+    final generation = ++_menuGeneration;
     _menuOpen = true;
+    _openingMenuThisTurn = true;
+    _activeMenuRoute = null;
     _ownsOpenMenu = true;
+    scheduleMicrotask(() {
+      if (_menuGeneration == generation) {
+        _openingMenuThisTurn = false;
+      }
+    });
+    _dismissActiveMenu = () {
+      if (_menuGeneration != generation) return;
+      _menuGeneration++;
+      _ownsOpenMenu = false;
+      _menuOpen = false;
+      _openingMenuThisTurn = false;
+      final route = _activeMenuRoute;
+      _activeMenuRoute = null;
+      _dismissActiveMenu = null;
+      _menuHoveredTarget = null;
+      _refreshHoveredTarget();
+      if (!navigator.mounted) return;
+      if (route != null) {
+        if (route.isActive) {
+          navigator.removeRoute(route);
+        }
+      } else if (hostRoute != null ? !hostRoute.isCurrent : navigator.canPop()) {
+        navigator.pop();
+      }
+    };
     Object? selected;
     try {
       selected = await showMenu<Object>(
@@ -1384,12 +1435,17 @@ class EditorSlotState extends State<EditorSlot> {
         ],
       );
     } finally {
-      if (_ownsOpenMenu) {
+      if (_menuGeneration == generation) {
         _ownsOpenMenu = false;
         _menuOpen = false;
+        _openingMenuThisTurn = false;
+        _activeMenuRoute = null;
+        _dismissActiveMenu = null;
+        _menuHoveredTarget = null;
+        _refreshHoveredTarget();
+      } else {
+        _ownsOpenMenu = false;
       }
-      _menuHoveredTarget = null;
-      _refreshHoveredTarget();
     }
     if (!mounted) return;
     if (selected is EditorSlotState && selected.mounted) {
