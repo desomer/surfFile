@@ -1295,7 +1295,7 @@ class _SuperValueState extends State<SuperValue>
         final updatedProps = <SuperValueProperty, JsonTextBinding>{
           ...current.propertyBindings,
           for (final prop in SuperValueProperty.values)
-            if (bindings[prop.name] case final propBinding?) prop: propBinding,
+            prop: ?bindings[prop.name],
         };
         final next = current.copyWith(
           binding: valueBinding ?? current.binding,

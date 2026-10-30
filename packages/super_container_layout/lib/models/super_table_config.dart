@@ -16,11 +16,14 @@ class SuperTableColumnConfig {
     required this.id,
     this.title = '',
     this.width = defaultWidth,
+    this.fillPercent = defaultFillPercent,
   });
 
   static const double defaultWidth = 140.0;
   static const double minWidth = 50.0;
   static const double maxWidth = 4000.0;
+  static const double defaultFillPercent = 0.0;
+  static const double maxFillPercent = 100.0;
 
   /// Identifiant unique de la colonne dans le tableau (ex: `'col_0'`).
   final String id;
@@ -28,8 +31,16 @@ class SuperTableColumnConfig {
   /// Titre affiché par défaut dans la cellule d'en-tête de la colonne.
   final String title;
 
-  /// Largeur de la colonne en pixels.
+  /// Largeur de la colonne en pixels (sert de largeur minimale si [isFill] est vrai).
   final double width;
+
+  /// Pourcentage (`0` à `100`) de l'espace horizontal restant occupé par la colonne.
+  ///
+  /// `0` signifie que la colonne a une largeur fixe égale à [width].
+  final double fillPercent;
+
+  /// Indique si la colonne s'étire pour occuper une part de l'espace horizontal restant.
+  bool get isFill => fillPercent > 0;
 
   void validate() {
     if (id.trim().isEmpty) {
@@ -38,16 +49,25 @@ class SuperTableColumnConfig {
     if (!width.isFinite || width < minWidth || width > maxWidth) {
       throw const FormatException('Largeur de colonne invalide.');
     }
+    if (!fillPercent.isFinite ||
+        fillPercent < 0 ||
+        fillPercent > maxFillPercent) {
+      throw const FormatException(
+        'Pourcentage de remplissage de colonne invalide.',
+      );
+    }
   }
 
   SuperTableColumnConfig copyWith({
     String? id,
     String? title,
     double? width,
+    double? fillPercent,
   }) => SuperTableColumnConfig(
     id: id ?? this.id,
     title: title ?? this.title,
     width: width ?? this.width,
+    fillPercent: fillPercent ?? this.fillPercent,
   );
 
   Map<String, Object?> toJson() {
@@ -56,6 +76,7 @@ class SuperTableColumnConfig {
       'id': id,
       'title': title,
       'width': width,
+      'fillPercent': fillPercent,
     };
   }
 
@@ -65,6 +86,7 @@ class SuperTableColumnConfig {
       'id': id,
       if (title.isNotEmpty) 'title': title,
       if (width != defaultWidth) 'width': width,
+      if (fillPercent != defaultFillPercent) 'fillPercent': fillPercent,
     };
   }
 
@@ -75,17 +97,21 @@ class SuperTableColumnConfig {
     final rawId = value['id'];
     final rawTitle = value['title'] ?? '';
     final rawWidth = value['width'] ?? defaultWidth;
+    final rawFillPercent = value['fillPercent'] ?? defaultFillPercent;
     if (rawId is! String ||
         rawId.trim().isEmpty ||
         rawTitle is! String ||
         rawWidth is! num ||
-        !rawWidth.isFinite) {
+        !rawWidth.isFinite ||
+        rawFillPercent is! num ||
+        !rawFillPercent.isFinite) {
       throw const FormatException('Configuration de colonne invalide.');
     }
     return SuperTableColumnConfig(
       id: rawId.trim(),
       title: rawTitle,
       width: rawWidth.toDouble(),
+      fillPercent: rawFillPercent.toDouble(),
     )..validate();
   }
 
@@ -94,10 +120,11 @@ class SuperTableColumnConfig {
       other is SuperTableColumnConfig &&
       other.id == id &&
       other.title == title &&
-      other.width == width;
+      other.width == width &&
+      other.fillPercent == fillPercent;
 
   @override
-  int get hashCode => Object.hash(id, title, width);
+  int get hashCode => Object.hash(id, title, width, fillPercent);
 }
 
 /// Configuration persistée d'un composant [SuperTable] lié à un repository JSON.
@@ -340,7 +367,7 @@ class SuperTableConfig extends ComponentConfig {
   SuperTableConfig withColumnWidths(Map<int, double> widthsByIndex) {
     final nextCols = [
       for (var i = 0; i < columns.length; i++)
-        widthsByIndex.containsKey(i)
+        widthsByIndex.containsKey(i) && !columns[i].isFill
             ? columns[i].copyWith(
                 width: widthsByIndex[i]!.clamp(
                   SuperTableColumnConfig.minWidth,

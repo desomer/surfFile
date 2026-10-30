@@ -663,4 +663,255 @@ void main() {
       );
     },
   );
+
+  test('SuperTableColumnConfig serializes and validates fillPercent', () {
+    const fixedCol = SuperTableColumnConfig(
+      id: 'col_0',
+      title: 'Fixe',
+      width: 140,
+    );
+    expect(fixedCol.isFill, isFalse);
+    expect(fixedCol.toCompactJson().containsKey('fillPercent'), isFalse);
+
+    const fillCol = SuperTableColumnConfig(
+      id: 'col_1',
+      title: 'Reste',
+      width: 120,
+      fillPercent: 75,
+    );
+    expect(fillCol.isFill, isTrue);
+    expect(fillCol.toCompactJson()['fillPercent'], 75);
+    expect(
+      SuperTableColumnConfig.fromJson(fillCol.toCompactJson()),
+      equals(fillCol),
+    );
+
+    expect(
+      () => const SuperTableColumnConfig(
+        id: 'col_bad',
+        fillPercent: -5,
+      ).validate(),
+      throwsFormatException,
+    );
+    expect(
+      () => const SuperTableColumnConfig(
+        id: 'col_bad',
+        fillPercent: 120,
+      ).validate(),
+      throwsFormatException,
+    );
+  });
+
+  testWidgets(
+    'SuperTable columns with fillPercent fill remaining horizontal space, respect min width, and support drag/double-click reset',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final controller = ValueNotifier<SuperTableConfig>(
+        SuperTableConfig(
+          binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+          colFreezeLeftCount: 1,
+          showHeaderRow: true,
+          columns: const [
+            SuperTableColumnConfig(id: 'col_0', title: 'Nom', width: 200),
+            SuperTableColumnConfig(
+              id: 'col_1',
+              title: 'Ville',
+              width: 120,
+              fillPercent: 30,
+            ),
+            SuperTableColumnConfig(
+              id: 'col_2',
+              title: 'Rôle',
+              width: 120,
+              fillPercent: 70,
+            ),
+          ],
+          placements: const {
+            'cell:col_0': ['cell:col_0'],
+            'cell:col_1': ['cell:col_1'],
+            'cell:col_2': ['cell:col_2'],
+          },
+        ),
+      );
+      addTearDown(controller.dispose);
+
+      await mount(
+        tester,
+        ValueListenableBuilder<SuperTableConfig>(
+          valueListenable: controller,
+          builder: (_, cfg, _) => SuperTable(
+            id: 'fill-table',
+            config: cfg,
+            cells: const {
+              'col_0': Text('Cell 0'),
+              'col_1': Text('Cell 1'),
+              'col_2': Text('Cell 2'),
+            },
+          ),
+        ),
+        registry: registry,
+      );
+
+      // Total available width is 800 px.
+      // col_0 is fixed at 200 px -> remaining space is 600 px.
+      // col_1 (30%) = 180 px, col_2 (70%) = 420 px.
+      final header0 = find.byKey(
+        const ValueKey('super-table-header-cell-fill-table-col_0'),
+      );
+      final header1 = find.byKey(
+        const ValueKey('super-table-header-cell-fill-table-col_1'),
+      );
+      final header2 = find.byKey(
+        const ValueKey('super-table-header-cell-fill-table-col_2'),
+      );
+
+      expect(tester.getSize(header0).width, closeTo(200.0, 0.5));
+      expect(tester.getSize(header1).width, closeTo(180.0, 0.5));
+      expect(tester.getSize(header2).width, closeTo(420.0, 0.5));
+
+      // Drag resize handle on col_1 -> col_1 becomes fixed at 230 px (70 px drag - 20 px touch slop = +50 px),
+      // remaining space is 800 - 200 - 230 = 370 px, so col_2 (70%) becomes 370 * 0.70 = 259 px.
+      final resize1 = find.byKey(const ValueKey('cw-table-header-resize-1'));
+      await tester.drag(resize1, const Offset(70, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(header1).width, closeTo(230.0, 0.5));
+      expect(tester.getSize(header2).width, closeTo(259.0, 0.5));
+
+      // Double-tap resize handle on col_1 to reset manual override -> returns to 180 px / 420 px.
+      await tester.tap(resize1);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(resize1);
+      await tester.pumpAndSettle();
+      expect(tester.getSize(header1).width, closeTo(180.0, 0.5));
+      expect(tester.getSize(header2).width, closeTo(420.0, 0.5));
+
+      // Verify minWidth is respected when remaining space is smaller than minWidth.
+      registry.tableController('fill-table').value = SuperTableConfig(
+        binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+        showHeaderRow: true,
+        columns: const [
+          SuperTableColumnConfig(id: 'col_0', title: 'Nom', width: 650),
+          SuperTableColumnConfig(
+            id: 'col_1',
+            title: 'Ville',
+            width: 240,
+            fillPercent: 100,
+          ),
+        ],
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getSize(header0).width, closeTo(650.0, 0.5));
+      expect(tester.getSize(header1).width, closeTo(240.0, 0.5));
+    },
+  );
+
+  testWidgets(
+    'SuperTableEditor edits column fillPercent and updates width label to Largeur min (px)',
+    (tester) async {
+      SuperTableConfig? result;
+      await mount(
+        tester,
+        Builder(
+          builder: (context) => ElevatedButton(
+            onPressed: () async {
+              result = await showSuperTableEditor(
+                context: context,
+                config: SuperTableConfig(
+                  columns: const [
+                    SuperTableColumnConfig(
+                      id: 'col_0',
+                      title: 'Nom',
+                      width: 150,
+                    ),
+                    SuperTableColumnConfig(
+                      id: 'col_1',
+                      title: 'Description',
+                      width: 120,
+                    ),
+                  ],
+                ),
+              );
+            },
+            child: const Text('Open Editor'),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Editor'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Largeur (px)'), findsNWidgets(2));
+      expect(find.text('Largeur min (px)'), findsNothing);
+
+      final fillCol1 = find.byKey(const ValueKey('super-table-col-fill-col_1'));
+      await tester.enterText(fillCol1, '100');
+      await tester.pump();
+
+      expect(find.text('Largeur (px)'), findsOneWidget);
+      expect(find.text('Largeur min (px)'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('super-table-apply')));
+      await tester.pumpAndSettle();
+
+      expect(result, isNotNull);
+      expect(result!.columns[0].fillPercent, 0);
+      expect(result!.columns[1].fillPercent, 100);
+      expect(result!.columns[1].width, 120);
+    },
+  );
+
+  testWidgets(
+    'Card containing a SuperValue inside a SuperTable column cell fills the full row height',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      registry.nativeComponentController(
+        'cell-card',
+        fallback: NativeComponentConfig(
+          placements: const {
+            'child': ['cell-val'],
+          },
+          slotTypes: const {'cell-val': 'factory:Value'},
+        ),
+      );
+      registry.valueController(
+        'cell-val',
+        fallback: const SuperValueConfig(
+          mode: SuperValueMode.display,
+          binding: JsonTextBinding(path: 'nom'),
+        ),
+      );
+      registry.tableController(
+        'card-table',
+        fallback: SuperTableConfig(
+          binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+          rowHeight: 64,
+          columns: const [
+            SuperTableColumnConfig(id: 'col_0', title: 'Nom', width: 220),
+          ],
+          placements: {
+            SuperTableConfig.cellZoneFor('col_0'): const ['cell-card'],
+          },
+          slotTypes: const {'cell-card': 'factory:Card'},
+        ),
+      );
+
+      await mount(
+        tester,
+        const SuperTable(id: 'card-table'),
+        registry: registry,
+      );
+
+      expect(find.text('Alice'), findsOneWidget);
+      final cardFinder = find.ancestor(
+        of: find.text('Alice'),
+        matching: find.byWidgetPredicate(
+          (w) => w is EditableSurface && w.id == 'cell-card',
+        ),
+      );
+      expect(cardFinder, findsOneWidget);
+      final cardSize = tester.getSize(cardFinder);
+      expect(cardSize.width, closeTo(220.0, 0.5));
+      expect(cardSize.height, closeTo(64.0, 0.5));
+    },
+  );
 }

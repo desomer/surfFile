@@ -453,7 +453,7 @@ class _SuperTableState extends State<SuperTable> {
           'En-tête ${col.title.isEmpty ? col.id : col.title}',
           axis: Axis.horizontal,
           expand: true,
-          stretch: false,
+          stretch: true,
           editableFlow: true,
           emptySize: Size(col.width, config.headerRowHeight),
         ),
@@ -463,7 +463,7 @@ class _SuperTableState extends State<SuperTable> {
         required: true,
         axis: Axis.horizontal,
         expand: true,
-        stretch: false,
+        stretch: true,
         editableFlow: true,
         emptySize: Size(col.width, config.rowHeight),
       ),
@@ -473,7 +473,7 @@ class _SuperTableState extends State<SuperTable> {
           'Pied ${col.title.isEmpty ? col.id : col.title}',
           axis: Axis.horizontal,
           expand: true,
-          stretch: false,
+          stretch: true,
           editableFlow: true,
           emptySize: Size(col.width, config.bottomRowHeight),
         ),
@@ -573,9 +573,7 @@ class _SuperTableState extends State<SuperTable> {
     }
   }
 
-  Future<void> _openSettings(
-    ValueNotifier<SuperTableConfig> controller,
-  ) async {
+  Future<void> _openSettings(ValueNotifier<SuperTableConfig> controller) async {
     final result = await showSuperTableEditor(
       context: context,
       config: controller.value,
@@ -598,28 +596,35 @@ class _SuperTableState extends State<SuperTable> {
     String zoneId, {
     required bool isInteractiveRegion,
   }) {
+    final Widget content;
     if (isInteractiveRegion) {
-      return editor.region(zoneId, expand: true, stretch: false);
+      content = editor.region(zoneId, expand: true, stretch: true);
+    } else {
+      final slots = editor.slotsFor(zoneId);
+      if (slots.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      final axis = editor.axisOf(zoneId);
+      final flow = editor.flowOf(zoneId);
+      content = SlotStack(
+        slots: slots,
+        axis: axis,
+        flow: flow,
+        expand: true,
+        stretch: true,
+        preferredSizes: {
+          for (final slot in slots)
+            if (slot case NativePreferredSizeWidget native)
+              slot.id: native.preferredSizeIn(context),
+          ...config.slotPreferredSizes,
+        },
+        sizeConstraints: config.slotSizeConstraints,
+      );
     }
-    final slots = editor.slotsFor(zoneId);
-    if (slots.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final axis = editor.axisOf(zoneId);
-    final flow = editor.flowOf(zoneId);
-    return SlotStack(
-      slots: slots,
-      axis: axis,
-      flow: flow,
-      expand: true,
-      stretch: false,
-      preferredSizes: {
-        for (final slot in slots)
-          if (slot case NativePreferredSizeWidget native)
-            slot.id: native.preferredSizeIn(context),
-        ...config.slotPreferredSizes,
-      },
-      sizeConstraints: config.slotSizeConstraints,
+    return SlotContentFitScope(
+      fitWidth: false,
+      fitHeight: false,
+      child: content,
     );
   }
 
@@ -671,9 +676,8 @@ class _SuperTableState extends State<SuperTable> {
                     col.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w600),
                   ),
                 ),
               ),
@@ -819,7 +823,9 @@ class _SuperTableState extends State<SuperTable> {
         ...?(_source?.rowBase ?? parentScope?.indices),
         templateMode ? 0 : dataIndex,
       ],
-      nodePath: templateMode || basePath == null ? null : '$basePath[$dataIndex]',
+      nodePath: templateMode || basePath == null
+          ? null
+          : '$basePath[$dataIndex]',
       treeTemplatePath: _templatePath,
       placeholder: placeholder,
       child: ValueListenableBuilder<ContainerStyle>(
@@ -885,15 +891,13 @@ class _SuperTableState extends State<SuperTable> {
     required bool isStartCols,
     required int freezeCount,
   }) {
-    final defaultColor = Theme.of(
-      context,
-    ).colorScheme.primary.withValues(alpha: 0.14);
+    final defaultColor = Theme.of(context).colorScheme.primary
+        .withValues(alpha: 0.14);
     final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
     final resolved = hasCustomSelected
         ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
         : currentRowStyle.copyWith(clearStates: true);
-    final hasFill =
-        resolved.fill.type != FillType.solid || resolved.hasImage;
+    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
     final effectiveStyle = _adaptRowStyleForEdge(
       resolved.copyWith(
         clearStates: true,
@@ -945,8 +949,7 @@ class _SuperTableState extends State<SuperTable> {
     final resolved = hasCustomHover
         ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
         : currentRowStyle.copyWith(clearStates: true);
-    final hasFill =
-        resolved.fill.type != FillType.solid || resolved.hasImage;
+    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
     final effectiveStyle = _adaptRowStyleForEdge(
       resolved.copyWith(
         clearStates: true,
@@ -989,10 +992,7 @@ class _SuperTableState extends State<SuperTable> {
     final app = SuperApp.maybeOf(context);
     final registry = app?.registry;
     final controller =
-        registry?.tableController(
-          widget.id,
-          fallback: widget._initialConfig,
-        ) ??
+        registry?.tableController(widget.id, fallback: widget._initialConfig) ??
         _localConfig;
     final listScope = JsonListScope.maybeOf(context);
     final repositoryStore = JsonRepositoryScope.maybeOf(context);
@@ -1006,9 +1006,9 @@ class _SuperTableState extends State<SuperTable> {
             : (app.registry?.containerStyleById[rowId]?.value ??
                   app.registry?.containerStyleById[widget.id]?.value ??
                   AppearanceScope.controllerOf(context)?.value.styles[rowId] ??
-                  AppearanceScope.controllerOf(
-                    context,
-                  )?.value.styles[widget.id] ??
+                  AppearanceScope.controllerOf(context)
+                      ?.value
+                      .styles[widget.id] ??
                   widget.templateStyle);
         final style =
             registry?.styleController(rowId, fallback: rowStyleFallback) ??
@@ -1145,6 +1145,10 @@ class _SuperTableState extends State<SuperTable> {
                         col >= 0 && col < config.columns.length
                         ? config.columns[col].width
                         : SuperTableColumnConfig.defaultWidth,
+                    getColFillPercent: (col) =>
+                        col >= 0 && col < config.columns.length
+                        ? config.columns[col].fillPercent
+                        : SuperTableColumnConfig.defaultFillPercent,
                     getRowHeight: (row) {
                       if (row < rowCountTop) return config.headerRowHeight;
                       if (row >= totalRowCount - rowCountBottom) {

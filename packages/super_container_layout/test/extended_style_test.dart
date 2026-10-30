@@ -223,6 +223,67 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    test('a single-side border does not bleed onto zero-width sides', () async {
+      const size = Size(300, 80);
+      Future<ByteData> rasterize(StyleBorderPainter painter) async {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(recorder);
+        painter.paint(canvas, size);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage(
+          size.width.toInt(),
+          size.height.toInt(),
+        );
+        addTearDown(image.dispose);
+        addTearDown(picture.dispose);
+        return (await image.toByteData())!;
+      }
+
+      int alphaAt(ByteData bytes, int x, int y) =>
+          bytes.getUint8((y * size.width.toInt() + x) * 4 + 3);
+
+      for (final line in BorderLine.values) {
+        for (final radius in [0.0, 12.0]) {
+          final leftOnly = await rasterize(
+            StyleBorderPainter(
+              widths: const Quad(0, 0, 0, 5),
+              color: const Color(0xFFFF0000),
+              radii: BorderRadius.circular(radius),
+              line: line,
+            ),
+          );
+          // Le côté gauche comporte bien des pixels peints (même en tireté/pointillé).
+          final leftPainted = [
+            for (var y = 12; y < 68; y++) alphaAt(leftOnly, 2, y),
+          ].any((alpha) => alpha > 0);
+          expect(
+            leftPainted,
+            isTrue,
+            reason: 'left side should paint ($line, r=$radius)',
+          );
+          // Les côtés haut, bas (hors coin arrondi) et droit restent strictement à 0.
+          final startX = radius == 0 ? 6 : 14;
+          for (var x = startX; x < 290; x += 8) {
+            expect(
+              alphaAt(leftOnly, x, 1),
+              0,
+              reason: 'top side bled at x=$x ($line, r=$radius)',
+            );
+            expect(
+              alphaAt(leftOnly, x, 78),
+              0,
+              reason: 'bottom side bled at x=$x ($line, r=$radius)',
+            );
+          }
+          expect(
+            alphaAt(leftOnly, 298, 40),
+            0,
+            reason: 'right side bled ($line, r=$radius)',
+          );
+        }
+      }
+    });
+
     testWidgets('a detailed shadow replaces the elevation', (tester) async {
       await pump(
         tester,
@@ -792,7 +853,10 @@ void main() {
         final applied = override.apply(const ContainerStyle());
         expect(
           applied.propertyBindings[ContainerStyleProperty.imageUrl],
-          const JsonTextBinding(repositoryId: repoId, path: 'clients[?].avatar'),
+          const JsonTextBinding(
+            repositoryId: repoId,
+            path: 'clients[?].avatar',
+          ),
         );
 
         final dir = await tester.runAsync(

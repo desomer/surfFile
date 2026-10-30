@@ -22,29 +22,23 @@ class StyleBorderPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final outer = radii.toRRect(Offset.zero & size);
-    final center = size.center(Offset.zero);
-    // Chaque côté est dessiné dans le triangle qui le relie au centre, ce qui
-    // sépare proprement les angles entre deux épaisseurs.
-    final wedges = [
-      [Offset.zero, Offset(size.width, 0)],
-      [Offset(size.width, 0), Offset(size.width, size.height)],
-      [Offset(size.width, size.height), Offset(0, size.height)],
-      [Offset(0, size.height), Offset.zero],
-    ];
+    if (size.isEmpty || widths.max <= 0) return;
+    final outer = radii.toRRect(Offset.zero & size).scaleRadii();
+    final inner = _innerRRect(outer, size);
+    final borderRing = Path()
+      ..fillType = PathFillType.evenOdd
+      ..addRRect(outer)
+      ..addRRect(inner);
+    if (line == BorderLine.solid) {
+      canvas.drawPath(borderRing, Paint()..color = color);
+      return;
+    }
+    canvas.save();
+    canvas.clipPath(borderRing);
     for (var i = 0; i < 4; i++) {
       final width = widths[i];
       if (width <= 0) continue;
-      canvas.save();
-      canvas.clipPath(
-        Path()
-          ..moveTo(center.dx, center.dy)
-          ..lineTo(wedges[i][0].dx, wedges[i][0].dy)
-          ..lineTo(wedges[i][1].dx, wedges[i][1].dy)
-          ..close(),
-      );
-      final path = Path()..addRRect(outer.deflate(width / 2));
+      final path = _sidePath(outer, size, i, width);
       final paint = Paint()
         ..color = color
         ..style = PaintingStyle.stroke
@@ -64,8 +58,108 @@ class StyleBorderPainter extends CustomPainter {
           paint.strokeCap = StrokeCap.round;
           _dash(canvas, path, paint, .01, width * 2);
       }
-      canvas.restore();
     }
+    canvas.restore();
+  }
+
+  RRect _innerRRect(RRect outer, Size size) {
+    final left = widths.left.clamp(0.0, size.width);
+    final top = widths.top.clamp(0.0, size.height);
+    final right = widths.right.clamp(0.0, size.width - left);
+    final bottom = widths.bottom.clamp(0.0, size.height - top);
+    Radius shrink(Radius r, double dx, double dy) =>
+        Radius.elliptical(math.max(0.0, r.x - dx), math.max(0.0, r.y - dy));
+    return RRect.fromRectAndCorners(
+      Rect.fromLTRB(left, top, size.width - right, size.height - bottom),
+      topLeft: shrink(outer.tlRadius, left, top),
+      topRight: shrink(outer.trRadius, right, top),
+      bottomRight: shrink(outer.brRadius, right, bottom),
+      bottomLeft: shrink(outer.blRadius, left, bottom),
+    );
+  }
+
+  Path _sidePath(RRect outer, Size size, int side, double width) {
+    final r = outer.deflate(width / 2).scaleRadii();
+    final prevWidth = widths[(side + 3) % 4];
+    final nextWidth = widths[(side + 1) % 4];
+    final path = Path();
+    void startCorner(Rect arc, double baseAngle, Offset sharpPoint) {
+      if (!arc.isEmpty) {
+        final start = prevWidth > 0 ? baseAngle + 0.25 * math.pi : baseAngle;
+        final sweep = (prevWidth > 0 ? 0.25 : 0.5) * math.pi;
+        path.arcTo(arc, start, sweep, true);
+      } else {
+        path.moveTo(sharpPoint.dx, sharpPoint.dy);
+      }
+    }
+
+    void endCorner(Rect arc, double baseAngle, Offset sharpPoint) {
+      if (!arc.isEmpty) {
+        final sweep = (nextWidth > 0 ? 0.25 : 0.5) * math.pi;
+        path.arcTo(arc, baseAngle, sweep, false);
+      } else {
+        path.lineTo(sharpPoint.dx, sharpPoint.dy);
+      }
+    }
+
+    final tl = Rect.fromLTWH(r.left, r.top, r.tlRadiusX * 2, r.tlRadiusY * 2);
+    final tr = Rect.fromLTWH(
+      r.right - r.trRadiusX * 2,
+      r.top,
+      r.trRadiusX * 2,
+      r.trRadiusY * 2,
+    );
+    final br = Rect.fromLTWH(
+      r.right - r.brRadiusX * 2,
+      r.bottom - r.brRadiusY * 2,
+      r.brRadiusX * 2,
+      r.brRadiusY * 2,
+    );
+    final bl = Rect.fromLTWH(
+      r.left,
+      r.bottom - r.blRadiusY * 2,
+      r.blRadiusX * 2,
+      r.blRadiusY * 2,
+    );
+    switch (side) {
+      case 0: // Haut
+        startCorner(tl, math.pi, Offset(prevWidth > 0 ? r.left : 0, r.top));
+        endCorner(
+          tr,
+          1.5 * math.pi,
+          Offset(nextWidth > 0 ? r.right : size.width, r.top),
+        );
+      case 1: // Droite
+        startCorner(
+          tr,
+          1.5 * math.pi,
+          Offset(r.right, prevWidth > 0 ? r.top : 0),
+        );
+        endCorner(
+          br,
+          0,
+          Offset(r.right, nextWidth > 0 ? r.bottom : size.height),
+        );
+      case 2: // Bas
+        startCorner(
+          br,
+          0,
+          Offset(prevWidth > 0 ? r.right : size.width, r.bottom),
+        );
+        endCorner(
+          bl,
+          0.5 * math.pi,
+          Offset(nextWidth > 0 ? r.left : 0, r.bottom),
+        );
+      case 3: // Gauche
+        startCorner(
+          bl,
+          0.5 * math.pi,
+          Offset(r.left, prevWidth > 0 ? r.bottom : size.height),
+        );
+        endCorner(tl, math.pi, Offset(r.left, nextWidth > 0 ? r.top : 0));
+    }
+    return path;
   }
 
   void _dash(Canvas canvas, Path path, Paint paint, double dash, double gap) {

@@ -177,9 +177,30 @@ class EditorSlotState extends State<EditorSlot> {
   /// outermost editor target.
   EditorComponentLabel? get componentLabel => _instance;
 
+  String? get _parentComponentIdForAi {
+    final selfCanonical = VibeChatScope.canonicalizeId(effectiveComponentId);
+    EditorSlotState? ancestor = context
+        .findAncestorStateOfType<EditorSlotState>();
+    while (ancestor != null) {
+      if (ancestor.canEdit) {
+        final candidate = VibeChatScope.canonicalizeId(
+          ancestor.effectiveComponentId,
+        );
+        if (candidate.isNotEmpty &&
+            candidate != 'component' &&
+            candidate != selfCanonical) {
+          return candidate;
+        }
+      }
+      ancestor = ancestor.context.findAncestorStateOfType<EditorSlotState>();
+    }
+    return null;
+  }
+
   /// Scope descriptor targeting this component or container zone for AI edits.
   VibeChatScope get aiScope {
     final zId = widget.zoneId;
+    final parentId = _parentComponentIdForAi;
     if (zId != null && zId.isNotEmpty) {
       final parentLabel = widget.menuSubtitle?.call()?.trim();
       return VibeChatScope(
@@ -189,9 +210,14 @@ class EditorSlotState extends State<EditorSlot> {
             : titleLabel,
         zoneId: zId,
         zoneLabel: label,
+        parentComponentId: parentId,
       );
     }
-    return VibeChatScope(componentId: effectiveComponentId, label: titleLabel);
+    return VibeChatScope(
+      componentId: effectiveComponentId,
+      label: titleLabel,
+      parentComponentId: parentId,
+    );
   }
 
   bool get _canEditWithAi =>

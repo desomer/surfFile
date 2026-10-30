@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_row.dart';
@@ -32,6 +31,7 @@ class FrozenTableView extends StatefulWidget {
   buildRow;
   final double Function(int col, double usedWidth, bool isCalc, int nbFillCol)
   getColWidth;
+  final double Function(int col)? getColFillPercent;
   final double? Function(int row) getRowHeight;
 
   /// Appelé lorsqu'une ligne de données est sélectionnée au clic.
@@ -72,6 +72,7 @@ class FrozenTableView extends StatefulWidget {
     required this.rowCountBottom,
     required this.colFreezeLeftCount,
     required this.getColWidth,
+    this.getColFillPercent,
     required this.getRowHeight,
     required this.buildRow,
     required this.rowWidthBorderR,
@@ -382,10 +383,94 @@ class FrozenTableViewState extends State<FrozenTableView> {
     super.dispose();
   }
 
-  void _recomputeColumnMetrics() {
+  void _recomputeColumnMetrics(double availableWidth) {
     final count = widget.colCount;
     final freeze = widget.colFreezeLeftCount.clamp(0, count);
     final widths = List<double>.filled(count, 0.0);
+
+    if (widget.getColFillPercent != null) {
+      final baseWidths = List<double>.filled(count, 0.0);
+      final fillPercents = List<double>.filled(count, 0.0);
+      double fixedSum =
+          (freeze > 0 ? widget.rowWidthBorderL : 0.0) + widget.rowWidthBorderR;
+      double initialSumPercent = 0.0;
+
+      for (int i = 0; i < count; i++) {
+        final baseW = widget.getColWidth(i, 0, false, -1);
+        baseWidths[i] = baseW;
+        if (colWidthMap.containsKey(i)) {
+          widths[i] = colWidthMap[i]!;
+          fixedSum += widths[i];
+        } else {
+          final pct = math.max(0.0, widget.getColFillPercent!(i));
+          if (pct > 0) {
+            fillPercents[i] = pct;
+            initialSumPercent += pct;
+          } else {
+            widths[i] = baseW;
+            fixedSum += baseW;
+          }
+        }
+      }
+
+      final remainingSpace = math.max(0.0, availableWidth - fixedSum);
+      double poolWidth =
+          remainingSpace * math.min(1.0, initialSumPercent / 100.0);
+      final remainingCols = <int>[
+        for (int i = 0; i < count; i++)
+          if (fillPercents[i] > 0) i,
+      ];
+
+      while (remainingCols.isNotEmpty) {
+        double currentWeightSum = 0.0;
+        for (final i in remainingCols) {
+          currentWeightSum += fillPercents[i];
+        }
+        if (currentWeightSum <= 0 || poolWidth <= 0) {
+          for (final i in remainingCols) {
+            widths[i] = baseWidths[i];
+          }
+          break;
+        }
+        bool clampedAny = false;
+        for (int idx = remainingCols.length - 1; idx >= 0; idx--) {
+          final col = remainingCols[idx];
+          final share = poolWidth * (fillPercents[col] / currentWeightSum);
+          if (share <= baseWidths[col]) {
+            widths[col] = baseWidths[col];
+            poolWidth = math.max(0.0, poolWidth - baseWidths[col]);
+            remainingCols.removeAt(idx);
+            clampedAny = true;
+          }
+        }
+        if (!clampedAny) {
+          for (final col in remainingCols) {
+            final share = poolWidth * (fillPercents[col] / currentWeightSum);
+            widths[col] = share.clamp(baseWidths[col], 4000.0);
+          }
+          break;
+        }
+      }
+
+      double sumL = 0;
+      for (int i = 0; i < freeze; i++) {
+        sumL += widths[i];
+      }
+      _cachedLeftTotalWidth = sumL + widget.rowWidthBorderL;
+
+      final rightCount = count - freeze;
+      final offsets = List<double>.filled(rightCount + 1, 0.0);
+      double sumR = 0;
+      for (int i = freeze; i < count; i++) {
+        offsets[i - freeze] = sumR;
+        sumR += widths[i];
+      }
+      offsets[rightCount] = sumR;
+      _cachedRightColOffsets = offsets;
+      _cachedRightTotalWidth = sumR + widget.rowWidthBorderR;
+      _cachedColWidths = widths;
+      return;
+    }
 
     double totalFixL = 0;
     int nbFillL = 0;
@@ -482,9 +567,12 @@ class FrozenTableViewState extends State<FrozenTableView> {
 
   @override
   Widget build(BuildContext context) {
-    _recomputeColumnMetrics();
     return LayoutBuilder(
       builder: (context, constraints) {
+        final totalAvailableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        _recomputeColumnMetrics(totalAvailableWidth);
         final leftWidth = widget.colFreezeLeftCount > 0
             ? _cachedLeftTotalWidth
             : 0.0;

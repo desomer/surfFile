@@ -781,4 +781,54 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'Card containing a SuperValue inside a SuperTreeView zone fills the full row height',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      registry.nativeComponentController(
+        'tree-card',
+        fallback: NativeComponentConfig(
+          placements: const {
+            'child': ['tree-val'],
+          },
+          slotTypes: const {'tree-val': 'factory:Value'},
+        ),
+      );
+      registry.valueController(
+        'tree-val',
+        fallback: const SuperValueConfig(
+          mode: SuperValueMode.display,
+          binding: JsonTextBinding(path: 'key'),
+        ),
+      );
+      registry.treeViewController(
+        'card-tree',
+        fallback: SuperTreeViewConfig(
+          binding: JsonTextBinding(repositoryId: repository, path: 'nodes'),
+          rowHeight: 60,
+          placements: const {
+            SuperTreeViewConfig.headerZone: ['tree-card'],
+          },
+          slotTypes: const {'tree-card': 'factory:Card'},
+        ),
+      );
+
+      await mount(
+        tester,
+        const SuperTreeView(id: 'card-tree'),
+        registry: registry,
+      );
+
+      expect(find.text('Parent 1'), findsOneWidget);
+      final cardFinder = find.ancestor(
+        of: find.text('Parent 1'),
+        matching: find.byWidgetPredicate(
+          (w) => w is EditableSurface && w.id == 'tree-card',
+        ),
+      );
+      expect(cardFinder, findsOneWidget);
+      expect(tester.getSize(cardFinder).height, closeTo(60.0, 0.5));
+    },
+  );
 }

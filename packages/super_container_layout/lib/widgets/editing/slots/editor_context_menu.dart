@@ -14,6 +14,7 @@ class VibeChatScope {
     required this.label,
     this.zoneId,
     this.zoneLabel,
+    this.parentComponentId,
   });
 
   /// Technical identifier of the target component (e.g. layout, card, list,
@@ -30,19 +31,34 @@ class VibeChatScope {
   /// Optional human-readable label for [zoneId].
   final String? zoneLabel;
 
+  /// Optional technical identifier of the parent container component in the
+  /// widget hierarchy, when known at selection time.
+  final String? parentComponentId;
+
   /// Registered callback by the active `StyleEditBanner` to open its floating
   /// `VibeChatDialog` focused on the requested scope.
   static bool Function(VibeChatScope scope)? onOpenRequested;
 
+  /// Canonicalizes a component/surface ID to its `Appearance.components` key.
+  static String canonicalizeId(String id) {
+    if (id.endsWith(':layout')) {
+      return id.substring(0, id.length - ':layout'.length);
+    }
+    if (id.endsWith(':item')) {
+      return id.substring(0, id.length - ':item'.length);
+    }
+    return id;
+  }
+
   /// Canonical component ID in `Appearance.components`.
-  String get canonicalComponentId {
-    if (componentId.endsWith(':layout')) {
-      return componentId.substring(0, componentId.length - ':layout'.length);
-    }
-    if (componentId.endsWith(':item')) {
-      return componentId.substring(0, componentId.length - ':item'.length);
-    }
-    return componentId;
+  String get canonicalComponentId => canonicalizeId(componentId);
+
+  /// Canonical parent component ID in `Appearance.components`, if specified.
+  String? get canonicalParentComponentId {
+    final p = parentComponentId?.trim();
+    if (p == null || p.isEmpty) return null;
+    final canonical = canonicalizeId(p);
+    return canonical == canonicalComponentId ? null : canonical;
   }
 
   /// Concise human-readable description of this scope.
@@ -64,14 +80,22 @@ class VibeChatScope {
       other.componentId == componentId &&
       other.label == label &&
       other.zoneId == zoneId &&
-      other.zoneLabel == zoneLabel;
+      other.zoneLabel == zoneLabel &&
+      other.parentComponentId == parentComponentId;
 
   @override
-  int get hashCode => Object.hash(componentId, label, zoneId, zoneLabel);
+  int get hashCode => Object.hash(
+    componentId,
+    label,
+    zoneId,
+    zoneLabel,
+    parentComponentId,
+  );
 
   @override
   String toString() =>
-      'VibeChatScope(componentId: $componentId, zoneId: $zoneId, label: $displayLabel)';
+      'VibeChatScope(componentId: $componentId, zoneId: $zoneId, '
+      'parentComponentId: $parentComponentId, label: $displayLabel)';
 }
 
 class EditorSlotWrapAction {

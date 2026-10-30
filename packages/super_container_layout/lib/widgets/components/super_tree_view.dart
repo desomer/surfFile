@@ -236,7 +236,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       required: true,
       axis: Axis.horizontal,
       expand: true,
-      stretch: false,
+      stretch: true,
       editableFlow: true,
       emptySize: Size(double.infinity, 28),
     ),
@@ -246,7 +246,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       required: true,
       axis: Axis.horizontal,
       expand: true,
-      stretch: false,
+      stretch: true,
       editableFlow: true,
       emptySize: Size(double.infinity, 28),
     ),
@@ -733,28 +733,35 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     SuperTreeNodeItem item,
     String zoneId,
   ) {
+    final Widget content;
     if (item.isFirstRow) {
-      return editor.region(zoneId, expand: true, stretch: false);
+      content = editor.region(zoneId, expand: true, stretch: true);
+    } else {
+      final slots = editor.slotsFor(zoneId);
+      if (slots.isEmpty) {
+        return const SizedBox.shrink();
+      }
+      final axis = editor.axisOf(zoneId);
+      final flow = editor.flowOf(zoneId);
+      content = SlotStack(
+        slots: slots,
+        axis: axis,
+        flow: flow,
+        expand: true,
+        stretch: true,
+        preferredSizes: {
+          for (final slot in slots)
+            if (slot case NativePreferredSizeWidget native)
+              slot.id: native.preferredSizeIn(context),
+          ...config.slotPreferredSizes,
+        },
+        sizeConstraints: config.slotSizeConstraints,
+      );
     }
-    final slots = editor.slotsFor(zoneId);
-    if (slots.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final axis = editor.axisOf(zoneId);
-    final flow = editor.flowOf(zoneId);
-    return SlotStack(
-      slots: slots,
-      axis: axis,
-      flow: flow,
-      expand: true,
-      stretch: false,
-      preferredSizes: {
-        for (final slot in slots)
-          if (slot case NativePreferredSizeWidget native)
-            slot.id: native.preferredSizeIn(context),
-        ...config.slotPreferredSizes,
-      },
-      sizeConstraints: config.slotSizeConstraints,
+    return SlotContentFitScope(
+      fitWidth: false,
+      fitHeight: false,
+      child: content,
     );
   }
 

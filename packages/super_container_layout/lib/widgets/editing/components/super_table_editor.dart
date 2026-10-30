@@ -64,19 +64,35 @@ String formatSuperTableTooltip({
 }
 
 class _ColumnDraft {
-  _ColumnDraft({required this.id, required String title, required double width})
-    : title = TextEditingController(text: title),
-      width = TextEditingController(
-        text: width == width.roundToDouble() ? '${width.toInt()}' : '$width',
-      );
+  _ColumnDraft({
+    required this.id,
+    required String title,
+    required double width,
+    double fillPercent = SuperTableColumnConfig.defaultFillPercent,
+  }) : title = TextEditingController(text: title),
+       width = TextEditingController(
+         text: width == width.roundToDouble() ? '${width.toInt()}' : '$width',
+       ),
+       fillPercent = TextEditingController(
+         text: fillPercent == fillPercent.roundToDouble()
+             ? '${fillPercent.toInt()}'
+             : '$fillPercent',
+       );
 
   final String id;
   final TextEditingController title;
   final TextEditingController width;
+  final TextEditingController fillPercent;
+
+  bool get hasFill {
+    final val = double.tryParse(fillPercent.text.trim().replaceAll(',', '.'));
+    return val != null && val > 0;
+  }
 
   void dispose() {
     title.dispose();
     width.dispose();
+    fillPercent.dispose();
   }
 }
 
@@ -115,7 +131,12 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
   late final _empty = TextEditingController(text: widget.config.emptyText);
   late final List<_ColumnDraft> _columns = [
     for (final col in widget.config.columns)
-      _ColumnDraft(id: col.id, title: col.title, width: col.width),
+      _ColumnDraft(
+        id: col.id,
+        title: col.title,
+        width: col.width,
+        fillPercent: col.fillPercent,
+      ),
   ];
 
   late String _repository = widget.config.binding == null
@@ -226,6 +247,9 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
           id: col.id,
           title: col.title.text.trim(),
           width: number(col.width),
+          fillPercent: col.fillPercent.text.trim().isEmpty
+              ? 0.0
+              : number(col.fillPercent),
         ),
     ];
 
@@ -435,17 +459,39 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
                       ),
                       const SizedBox(width: 8),
                       Expanded(
+                        child: ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: _columns[i].fillPercent,
+                          builder: (context, _, _) => TextFormField(
+                            key: ValueKey(
+                              'super-table-col-width-${_columns[i].id}',
+                            ),
+                            controller: _columns[i].width,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: _columns[i].hasFill
+                                  ? 'Largeur min (px)'
+                                  : 'Largeur (px)',
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
                         child: TextFormField(
                           key: ValueKey(
-                            'super-table-col-width-${_columns[i].id}',
+                            'super-table-col-fill-${_columns[i].id}',
                           ),
-                          controller: _columns[i].width,
+                          controller: _columns[i].fillPercent,
                           keyboardType: const TextInputType.numberWithOptions(
                             decimal: true,
                           ),
                           decoration: const InputDecoration(
                             isDense: true,
-                            labelText: 'Largeur (px)',
+                            labelText: 'Reste (%)',
+                            suffixText: '%',
                           ),
                         ),
                       ),

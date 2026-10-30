@@ -63,8 +63,7 @@ class TreeNodeData<T> {
   late TreeViewState tree;
   //HoverableCardState? hoverState;
 
-  TreeNodeData({required this.data, this.children, bool isExpanded = true})
-    : _isExpanded = isExpanded;
+  TreeNodeData({required this.data, this.children, this._isExpanded = true});
 
   void setCache(String key, {bool force = false}) {
     if (rowCacheKey != key || force) {

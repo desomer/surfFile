@@ -1259,7 +1259,7 @@ class _SuperActionState extends State<SuperAction>
         final updatedProps = <SuperActionProperty, JsonTextBinding>{
           ...current.propertyBindings,
           for (final prop in SuperActionProperty.values)
-            if (bindings[prop.name] case final propBinding?) prop: propBinding,
+            prop: ?bindings[prop.name],
         };
         final next = current.copyWith(propertyBindings: updatedProps);
         if (next == current) return;

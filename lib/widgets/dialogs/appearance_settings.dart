@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/appearance/appearance_settings.dart' as shell;
+import 'package:super_container_layout/widgets/appearance/appearance_settings.dart'
+    as shell;
 import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
+
 import '../../theme/folder_transition.dart';
 import '../../theme/surffile_appearance.dart';
 import '../../theme/surffile_appearance_slots.dart';
@@ -14,10 +16,8 @@ class AppearanceSettings extends StatelessWidget {
     return shell.showAppearanceDialog(
       context,
       const AppearanceSettings(),
-      wrapper: (child) => SurfFilePreferencesScope(
-        controller: preferences,
-        child: child,
-      ),
+      wrapper: (child) =>
+          SurfFilePreferencesScope(controller: preferences, child: child),
     );
   }
 
@@ -27,10 +27,8 @@ class AppearanceSettings extends StatelessWidget {
     return shell.AppearanceSettings(
       defaults: defaultSurfFileAppearance,
       slots: SurfFileAppearanceSlots.values,
-      dialogWrapper: (child) => SurfFilePreferencesScope(
-        controller: preferences,
-        child: child,
-      ),
+      dialogWrapper: (child) =>
+          SurfFilePreferencesScope(controller: preferences, child: child),
       additionalSections: [
         shell.AppearanceSettingsSection(
           id: 'navigation',
@@ -67,7 +65,9 @@ Widget _navigation(BuildContext context) {
         ],
         onChanged: (value) {
           if (value != null) {
-            preferences.value = preferences.value.copyWith(folderTransition: value);
+            preferences.value = preferences.value.copyWith(
+              folderTransition: value,
+            );
           }
         },
       ),
@@ -81,8 +81,10 @@ Widget _navigation(BuildContext context) {
           folderTransitionDuration: value,
         ),
       ),
-      const Text('S’applique uniquement aux changements de dossier réussis. '
-        'Respecte la réduction des animations du système.'),
+      const Text(
+        'S’applique uniquement aux changements de dossier réussis. '
+        'Respecte la réduction des animations du système.',
+      ),
     ],
   );
 }
@@ -128,10 +130,13 @@ Widget _preview(BuildContext context) {
         children: [
           Icon(Icons.folder, size: a.iconSize, color: a.accent),
           const SizedBox(height: 8),
-          Text('Documents', style: TextStyle(
-            fontSize: a.fontSize,
-            color: foregroundForCard(cardColor(context, a.style('card'))),
-          )),
+          Text(
+            'Documents',
+            style: TextStyle(
+              fontSize: a.fontSize,
+              color: foregroundForCard(cardColor(context, a.style('card'))),
+            ),
+          ),
         ],
       ),
     ),

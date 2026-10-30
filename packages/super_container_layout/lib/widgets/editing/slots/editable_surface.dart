@@ -480,7 +480,7 @@ class EditableSurfaceState extends State<EditableSurface>
         final updatedProps = <ContainerStyleProperty, JsonTextBinding>{
           ...current.propertyBindings,
           for (final prop in ContainerStyleProperty.values)
-            if (bindings[prop.name] case final propBinding?) prop: propBinding,
+            prop: ?bindings[prop.name],
         };
         final next = current.copyWith(
           propertyBindings: updatedProps,
