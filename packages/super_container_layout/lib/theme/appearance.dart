@@ -380,14 +380,16 @@ class Appearance {
       countRepositoryBindings(repositoryId) > 0;
 
   ThemeData theme(Brightness brightness) {
-    final surface =
-        backgroundStyle.color ??
-        (brightness == Brightness.dark
-            ? const Color(0xFF171A23)
-            : const Color(0xFFF8F9FC));
+    final defaultSurface = brightness == Brightness.dark
+        ? const Color(0xFF171A23)
+        : const Color(0xFFF8F9FC);
+    final surface = backgroundStyle.fill.type != FillType.solid
+        ? Color.lerp(backgroundStyle.fill.start, backgroundStyle.fill.end, .5)!
+        : (backgroundStyle.color ?? defaultSurface);
+    final effectiveBrightness = ThemeData.estimateBrightnessForColor(surface);
     final generated = ColorScheme.fromSeed(
       seedColor: accent,
-      brightness: brightness,
+      brightness: effectiveBrightness,
       surface: surface,
     );
     return ThemeData(

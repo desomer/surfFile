@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/services/window/window_transparency.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -21,6 +22,22 @@ void main() {
     expect(
       translucent.theme(Brightness.light).scaffoldBackgroundColor.a,
       closeTo(.25 * 128 / 255, .001),
+    );
+  });
+
+  test('dark background in light mode keeps menus and dialogs contrasted', () {
+    final appearance = Appearance().copyWith(
+      backgroundStyle: const ContainerStyle(color: Color(0xFF12141C)),
+    );
+    final scheme = appearance.theme(Brightness.light).colorScheme;
+    expect(scheme.brightness, Brightness.dark);
+    expect(
+      ThemeData.estimateBrightnessForColor(scheme.surfaceContainerHigh),
+      Brightness.dark,
+    );
+    expect(
+      ThemeData.estimateBrightnessForColor(scheme.onSurface),
+      Brightness.light,
     );
   });
 

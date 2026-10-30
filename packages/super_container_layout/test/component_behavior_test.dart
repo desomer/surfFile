@@ -409,6 +409,40 @@ void main() {
           findsOneWidget,
         );
 
+        // Hover over parent-card target in EditorTargetSelector -> parent EditorSlot should show outline!
+        final parentSlotFinder = find.ancestor(
+          of: find.text('Nested Child'),
+          matching: find.byWidgetPredicate(
+            (w) => w is EditorSlot && w.id == 'parent-card',
+          ),
+        );
+        CustomPaint parentOutlinePaint() => tester.widget<CustomPaint>(
+          find
+              .descendant(
+                of: parentSlotFinder,
+                matching: find.byType(CustomPaint),
+              )
+              .first,
+        );
+
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(gesture.removePointer);
+        await gesture.addPointer(location: Offset.zero);
+        await tester.pump();
+        await gesture.moveTo(
+          tester.getCenter(
+            find.byKey(const ValueKey('behavior-target-parent-card')),
+          ),
+        );
+        await tester.pump();
+        expect(parentOutlinePaint().foregroundPainter, isNotNull);
+
+        await gesture.moveTo(Offset.zero);
+        await tester.pump();
+        expect(parentOutlinePaint().foregroundPainter, isNull);
+
         // Select parent-card instead of child-text
         await tester.tap(
           find.byKey(const ValueKey('behavior-target-parent-card')),

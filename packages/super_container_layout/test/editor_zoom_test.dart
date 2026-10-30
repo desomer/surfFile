@@ -682,57 +682,155 @@ void main() {
     },
   );
 
+  testWidgets('zoom and pan work while property editor dialog is open', (
+    tester,
+  ) async {
+    await pumpPage(tester);
+    final target = find.byKey(const ValueKey('zoom-target-content'));
+    await selectTargetZone(tester);
+    await tester.pumpAndSettle();
+
+    // Open a property dialog beside the target.
+    showEditorDialog<void>(
+      context: tester.element(target),
+      builder: (dialogContext) =>
+          const SizedBox(width: 300, child: Text('Propriétés du composant')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+    expect(find.text('Propriétés du composant'), findsOneWidget);
+
+    screenRect(tester, target);
+
+    // 1. Zoom toolbar and slider are available and working in dialog.
+    expect(find.byKey(const ValueKey('editor-zoom-toolbar')), findsOneWidget);
+    final slider = tester.widget<Slider>(
+      find.byKey(const ValueKey('editor-zoom-slider')),
+    );
+    slider.onChanged!(2.5);
+    await tester.pumpAndSettle();
+    expect(screenRect(tester, target).width, closeTo(320 * 2.5, .1));
+
+    // 2. Right click drag pans the canvas while dialog is open.
+    final beforePan = screenRect(tester, target);
+    final panGesture = await tester.startGesture(
+      const Offset(100, 100),
+      buttons: kSecondaryMouseButton,
+    );
+    await panGesture.moveBy(const Offset(40, 30));
+    await tester.pumpAndSettle();
+    await panGesture.up();
+    await tester.pumpAndSettle();
+    final afterPan = screenRect(tester, target);
+    expect(afterPan.left, beforePan.left + 40);
+    expect(afterPan.top, beforePan.top + 30);
+    expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+
+    // 3. Ctrl + wheel zooms centered on mouse pointer on the canvas beside dialog.
+    const wheelPos = Offset(150, 150);
+    final relX = (wheelPos.dx - afterPan.left) / afterPan.width;
+    final relY = (wheelPos.dy - afterPan.top) / afterPan.height;
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendEventToBinding(
+      const PointerScrollEvent(position: wheelPos, scrollDelta: Offset(0, -60)),
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+
+    final zoomedWithCtrl = screenRect(tester, target);
+    expect(zoomedWithCtrl.width, greaterThan(afterPan.width));
+    expect(
+      zoomedWithCtrl.left + relX * zoomedWithCtrl.width,
+      closeTo(wheelPos.dx, .05),
+    );
+    expect(
+      zoomedWithCtrl.top + relY * zoomedWithCtrl.height,
+      closeTo(wheelPos.dy, .05),
+    );
+    expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+
+    // 4. Right click + wheel zooms centered on mouse pointer beside dialog.
+    final relX2 = (wheelPos.dx - zoomedWithCtrl.left) / zoomedWithCtrl.width;
+    final relY2 = (wheelPos.dy - zoomedWithCtrl.top) / zoomedWithCtrl.height;
+    final holdSecondary = await tester.startGesture(
+      wheelPos,
+      buttons: kSecondaryMouseButton,
+    );
+    await tester.pump();
+    await tester.sendEventToBinding(
+      const PointerScrollEvent(position: wheelPos, scrollDelta: Offset(0, -60)),
+    );
+    await tester.pumpAndSettle();
+    final zoomedWithSecondary = screenRect(tester, target);
+    expect(zoomedWithSecondary.width, greaterThan(zoomedWithCtrl.width));
+    expect(
+      zoomedWithSecondary.left + relX2 * zoomedWithSecondary.width,
+      closeTo(wheelPos.dx, .05),
+    );
+    expect(
+      zoomedWithSecondary.top + relY2 * zoomedWithSecondary.height,
+      closeTo(wheelPos.dy, .05),
+    );
+    await holdSecondary.up();
+    await tester.pumpAndSettle();
+
+    // Dialog is still open.
+    expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
-    'zoom and pan work while property editor dialog is open',
+    'context menu dialog is draggable and does not block zoom or pan',
     (tester) async {
       await pumpPage(tester);
       final target = find.byKey(const ValueKey('zoom-target-content'));
-      await selectTargetZone(tester);
+
+      // Right-click target to open the context menu dialog.
+      await tester.tap(target, buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
 
-      // Open a property dialog beside the target.
-      showEditorDialog<void>(
-        context: tester.element(target),
-        builder: (dialogContext) => const SizedBox(
-          width: 300,
-          child: Text('Propriétés du composant'),
-        ),
+      final dialog = find.byKey(const ValueKey('editor-context-menu-dialog'));
+      expect(dialog, findsOneWidget);
+
+      // 1. Context menu dialog is draggable via its header handle.
+      final initialDialogRect = screenRect(tester, dialog);
+      await tester.drag(
+        find.byKey(const ValueKey('editor-context-menu-drag')),
+        const Offset(-60, 45),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
-      expect(find.text('Propriétés du composant'), findsOneWidget);
+      final draggedDialogRect = screenRect(tester, dialog);
+      expect(draggedDialogRect.left, closeTo(initialDialogRect.left - 60, 1));
+      expect(draggedDialogRect.top, closeTo(initialDialogRect.top + 45, 1));
 
-      screenRect(tester, target);
-
-      // 1. Zoom toolbar and slider are available and working in dialog.
+      // 2. Zoom toolbar and slider remain interactive while context menu is open.
       expect(find.byKey(const ValueKey('editor-zoom-toolbar')), findsOneWidget);
       final slider = tester.widget<Slider>(
         find.byKey(const ValueKey('editor-zoom-slider')),
       );
-      slider.onChanged!(2.5);
+      slider.onChanged!(2.0);
       await tester.pumpAndSettle();
-      expect(screenRect(tester, target).width, closeTo(320 * 2.5, .1));
+      expect(screenRect(tester, target).width, closeTo(320 * 2.0, .1));
+      expect(dialog, findsOneWidget);
 
-      // 2. Right click drag pans the canvas while dialog is open.
+      // 3. Right-click drag pans the canvas without closing the context menu dialog.
       final beforePan = screenRect(tester, target);
       final panGesture = await tester.startGesture(
-        const Offset(100, 100),
+        const Offset(40, 40),
         buttons: kSecondaryMouseButton,
       );
-      await panGesture.moveBy(const Offset(40, 30));
+      await panGesture.moveBy(const Offset(35, 25));
       await tester.pumpAndSettle();
       await panGesture.up();
       await tester.pumpAndSettle();
       final afterPan = screenRect(tester, target);
-      expect(afterPan.left, beforePan.left + 40);
-      expect(afterPan.top, beforePan.top + 30);
-      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+      expect(afterPan.left, closeTo(beforePan.left + 35, .1));
+      expect(afterPan.top, closeTo(beforePan.top + 25, .1));
+      expect(dialog, findsOneWidget);
 
-      // 3. Ctrl + wheel zooms centered on mouse pointer on the canvas beside dialog.
-      const wheelPos = Offset(150, 150);
-      final relX = (wheelPos.dx - afterPan.left) / afterPan.width;
-      final relY = (wheelPos.dy - afterPan.top) / afterPan.height;
-
+      // 4. Ctrl + wheel zooms even while the context menu dialog is open.
+      const wheelPos = Offset(120, 120);
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendEventToBinding(
         const PointerScrollEvent(
@@ -742,16 +840,11 @@ void main() {
       );
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
-
       final zoomedWithCtrl = screenRect(tester, target);
       expect(zoomedWithCtrl.width, greaterThan(afterPan.width));
-      expect(zoomedWithCtrl.left + relX * zoomedWithCtrl.width, closeTo(wheelPos.dx, .05));
-      expect(zoomedWithCtrl.top + relY * zoomedWithCtrl.height, closeTo(wheelPos.dy, .05));
-      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+      expect(dialog, findsOneWidget);
 
-      // 4. Right click + wheel zooms centered on mouse pointer beside dialog.
-      final relX2 = (wheelPos.dx - zoomedWithCtrl.left) / zoomedWithCtrl.width;
-      final relY2 = (wheelPos.dy - zoomedWithCtrl.top) / zoomedWithCtrl.height;
+      // 5. Right-click + wheel zooms while the context menu dialog is open.
       final holdSecondary = await tester.startGesture(
         wheelPos,
         buttons: kSecondaryMouseButton,
@@ -766,13 +859,14 @@ void main() {
       await tester.pumpAndSettle();
       final zoomedWithSecondary = screenRect(tester, target);
       expect(zoomedWithSecondary.width, greaterThan(zoomedWithCtrl.width));
-      expect(zoomedWithSecondary.left + relX2 * zoomedWithSecondary.width, closeTo(wheelPos.dx, .05));
-      expect(zoomedWithSecondary.top + relY2 * zoomedWithSecondary.height, closeTo(wheelPos.dy, .05));
       await holdSecondary.up();
       await tester.pumpAndSettle();
+      expect(dialog, findsOneWidget);
 
-      // Dialog is still open.
-      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+      // 6. Close button dismisses the context menu dialog.
+      await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
+      await tester.pumpAndSettle();
+      expect(dialog, findsNothing);
       expect(tester.takeException(), isNull);
     },
   );

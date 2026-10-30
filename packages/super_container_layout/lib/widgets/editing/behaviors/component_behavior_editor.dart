@@ -8,6 +8,7 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../dialogs/editor_target_selector.dart';
 import '../history/editor_history.dart';
+import '../slots/editor_slot.dart';
 
 /// Element cible pouvant recevoir un comportement.
 @immutable
@@ -15,14 +16,21 @@ class BehaviorTargetElement implements EditorTargetItem {
   const BehaviorTargetElement({
     required this.id,
     required this.label,
+    this.slot,
     this.icon,
     this.depth = 0,
     this.existingBehaviors = const [],
   });
 
+  @override
   final String id;
+  @override
   final String label;
+  @override
+  final EditorSlotState? slot;
+  @override
   final IconData? icon;
+  @override
   final int depth;
   final List<ComponentBehavior> existingBehaviors;
 }

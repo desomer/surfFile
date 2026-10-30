@@ -265,10 +265,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       _loadError = null;
     });
     try {
-      await Future.wait([
-        _appearance.restore(),
-        _repositories.preload(),
-      ]);
+      await _appearance.restore();
       if (!mounted) return;
       widget.pageRouting?.synchronize(_appearance.value.pageCatalog);
       _editorHistory.clear();

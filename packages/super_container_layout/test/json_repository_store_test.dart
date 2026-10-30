@@ -7,6 +7,18 @@ import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 
+class _CountingRepositoryStore extends JsonRepositoryStore {
+  _CountingRepositoryStore(super.directory);
+
+  int diskReadCount = 0;
+
+  @override
+  Future<String> read(String name) {
+    diskReadCount++;
+    return super.read(name);
+  }
+}
+
 void main() {
   late Directory directory;
   late JsonRepositoryStore store;
@@ -68,36 +80,44 @@ void main() {
     );
   });
 
-  test('delete refuses when repository is still used by an application bind', () async {
-    await store.create('Clients');
-    final id = await store.idOf('Clients');
+  test(
+    'delete refuses when repository is still used by an application bind',
+    () async {
+      await store.create('Clients');
+      final id = await store.idOf('Clients');
 
-    // Bound via Appearance
-    final appearance = Appearance().withValueComponent(
-      'v1',
-      SuperValueConfig(binding: JsonTextBinding(repositoryId: id, path: 'nom')),
-    );
-    expect(appearance.usesRepository(id), isTrue);
-    expect(await store.isRepositoryInUse('Clients', appearance: appearance), isTrue);
-    await expectLater(
-      store.delete('Clients', appearance: appearance),
-      throwsFormatException,
-    );
-    expect(await store.list(), ['Clients']);
+      // Bound via Appearance
+      final appearance = Appearance().withValueComponent(
+        'v1',
+        SuperValueConfig(
+          binding: JsonTextBinding(repositoryId: id, path: 'nom'),
+        ),
+      );
+      expect(appearance.usesRepository(id), isTrue);
+      expect(
+        await store.isRepositoryInUse('Clients', appearance: appearance),
+        isTrue,
+      );
+      await expectLater(
+        store.delete('Clients', appearance: appearance),
+        throwsFormatException,
+      );
+      expect(await store.list(), ['Clients']);
 
-    // Bound via active runtime binding
-    final owner = Object();
-    store.registerBindings(owner, [id]);
-    expect(await store.isRepositoryInUse('Clients'), isTrue);
-    await expectLater(store.delete('Clients'), throwsFormatException);
-    expect(await store.list(), ['Clients']);
+      // Bound via active runtime binding
+      final owner = Object();
+      store.registerBindings(owner, [id]);
+      expect(await store.isRepositoryInUse('Clients'), isTrue);
+      await expectLater(store.delete('Clients'), throwsFormatException);
+      expect(await store.list(), ['Clients']);
 
-    // Unbound -> can delete
-    store.unregisterBindings(owner);
-    expect(await store.isRepositoryInUse('Clients'), isFalse);
-    await store.delete('Clients', appearance: Appearance());
-    expect(await store.list(), isEmpty);
-  });
+      // Unbound -> can delete
+      store.unregisterBindings(owner);
+      expect(await store.isRepositoryInUse('Clients'), isFalse);
+      await store.delete('Clients', appearance: Appearance());
+      expect(await store.list(), isEmpty);
+    },
+  );
 
   test('invalid JSON and duplicate names never overwrite documents', () async {
     await store.create('Clients');
@@ -208,4 +228,83 @@ void main() {
       );
     },
   );
+
+  test('concurrent reads coalesce into a single disk read and populate synchronous peek caches', () async {
+    await store.create('Clients');
+    await store.create('Articles');
+    final clientsId = await store.idOf('Clients');
+    final original = await store.read('Clients');
+    await store.save(
+      'Clients',
+      jsonEncode({
+        'title': 'Directory',
+        'items': [
+          {'name': 'Alice'},
+          {'name': 'Bob'},
+        ],
+        'tree': {
+          'key': 'root',
+          'children': [
+            {'key': 'child'},
+          ],
+        },
+      }),
+      expectedText: original,
+    );
+
+    final coldStore = _CountingRepositoryStore(Directory(directory.path));
+    addTearDown(coldStore.dispose);
+
+    // Before loading, synchronous peeks return null.
+    expect(
+      coldStore.peekAttribute(
+        JsonTextBinding(repositoryId: clientsId, path: 'title'),
+      ),
+      isNull,
+    );
+    expect(coldStore.peekArray(clientsId, 'items'), isNull);
+    expect(coldStore.peekTreeNodes(clientsId, 'tree'), isNull);
+
+    // 30 concurrent component reads on a cold store should only read the
+    // target JSON file once from disk (and never read Articles.json).
+    final results = await Future.wait([
+      for (var i = 0; i < 10; i++)
+        coldStore.readAttribute(
+          JsonTextBinding(
+            repositoryId: clientsId,
+            path: 'items[${i % 2}].name',
+          ),
+        ),
+      for (var i = 0; i < 10; i++) coldStore.readArray(clientsId, 'items'),
+      for (var i = 0; i < 10; i++) coldStore.readTreeNodes(clientsId, 'tree'),
+    ]);
+
+    expect(results, hasLength(30));
+    expect(coldStore.diskReadCount, 1);
+
+    // Subsequent reads and synchronous peeks hit the in-memory cache with 0 disk reads.
+    expect(
+      coldStore
+          .peekAttribute(
+            JsonTextBinding(repositoryId: clientsId, path: 'title'),
+          )
+          ?.text,
+      'Directory',
+    );
+    expect(coldStore.peekArray(clientsId, 'items'), hasLength(2));
+    expect(
+      coldStore.peekTreeNodes(clientsId, 'tree')?.singleRootObject,
+      isTrue,
+    );
+    await coldStore.readAttribute(
+      JsonTextBinding(repositoryId: clientsId, path: 'items[0].name'),
+    );
+    expect(coldStore.diskReadCount, 1);
+
+    // invalidateCache forces the next read to reload from disk.
+    coldStore.invalidateCache(clientsId);
+    expect(coldStore.peekArray(clientsId, 'items'), isNull);
+    await coldStore.preload();
+    expect(coldStore.peekArray(clientsId, 'items'), hasLength(2));
+  });
 }

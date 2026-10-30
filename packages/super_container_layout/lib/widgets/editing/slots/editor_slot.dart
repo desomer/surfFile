@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart'
-    show kPrimaryButton, kSecondaryMouseButton, kTouchSlop;
+    show DragStartBehavior, kPrimaryButton, kSecondaryMouseButton, kTouchSlop;
+import 'package:flutter/semantics.dart' show SemanticsRole;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
@@ -358,6 +359,28 @@ class EditorSlotState extends State<EditorSlot> {
     });
   }
 
+  /// Highlights [target] with the editor selection outline (used when hovering
+  /// entries in the context menu or target selector dialogs).
+  static void setHighlightedTarget(EditorSlotState? target) {
+    if (target != null &&
+        (!target.mounted ||
+            !(StyleEditScope.controllerOf(target.context)?.value ?? false))) {
+      return;
+    }
+    if (identical(_menuHoveredTarget, target)) return;
+    _menuHoveredTarget = target;
+    _refreshHoveredTarget();
+  }
+
+  /// Clears the highlighted target if it matches [expected] (or unconditionally
+  /// when [expected] is `null`).
+  static void clearHighlightedTarget([EditorSlotState? expected]) {
+    if (expected != null && !identical(_menuHoveredTarget, expected)) return;
+    if (_menuHoveredTarget == null) return;
+    _menuHoveredTarget = null;
+    _refreshHoveredTarget();
+  }
+
   static void _refreshHoveredTarget() {
     final menuTarget = _menuHoveredTarget;
     if (menuTarget != null && menuTarget.mounted && menuTarget.canEdit) {
@@ -617,6 +640,7 @@ class EditorSlotState extends State<EditorSlot> {
           BehaviorTargetElement(
             id: id,
             label: unique(entry.label),
+            slot: entry,
             icon:
                 entry.widget.menuIcon ??
                 entry.componentLabel?.menuIcon ??
@@ -635,6 +659,7 @@ class EditorSlotState extends State<EditorSlot> {
         BehaviorTargetElement(
           id: id,
           label: label,
+          slot: this,
           icon:
               widget.menuIcon ??
               componentLabel?.menuIcon ??
@@ -878,29 +903,16 @@ class EditorSlotState extends State<EditorSlot> {
             overlay.globalToLocal(bannerGlobalRect.bottomRight),
           );
     var menuConstraints = const BoxConstraints(minWidth: 420, maxWidth: 620);
-    var menuPosition = RelativeRect.fromLTRB(
-      position.dx,
-      position.dy,
-      overlay.size.width - position.dx,
-      overlay.size.height - position.dy,
-    );
     if (!selectTarget && bannerLocal != null) {
       final spaceAbove = bannerLocal.top;
       final spaceBelow = overlay.size.height - bannerLocal.bottom;
       if (spaceBelow >= spaceAbove || spaceBelow >= 220) {
         final minTop = bannerLocal.bottom + 6;
-        final top = math.max(position.dy, minTop);
         final maxHeight = math.max(120.0, overlay.size.height - minTop - 8);
         menuConstraints = BoxConstraints(
           minWidth: 420,
           maxWidth: 620,
           maxHeight: maxHeight,
-        );
-        menuPosition = RelativeRect.fromLTRB(
-          position.dx,
-          top,
-          overlay.size.width - position.dx,
-          overlay.size.height - minTop,
         );
       } else {
         final maxBottom = bannerLocal.top - 6;
@@ -910,12 +922,6 @@ class EditorSlotState extends State<EditorSlot> {
           minWidth: 420,
           maxWidth: 620,
           maxHeight: maxHeight,
-        );
-        menuPosition = RelativeRect.fromLTRB(
-          position.dx,
-          overlay.size.height,
-          overlay.size.width - position.dx,
-          overlay.size.height - bottomEdge,
         );
       }
     }
@@ -961,8 +967,10 @@ class EditorSlotState extends State<EditorSlot> {
     };
     Object? selected;
     try {
-      selected = await showMenu<Object>(
+      selected = await _showEditorContextMenuDialog<Object>(
         context: context,
+        initialPosition: position,
+        bannerLocal: !selectTarget ? bannerLocal : null,
         constraints: menuConstraints,
         color: colors.surfaceContainerHigh.withAlpha(240),
         surfaceTintColor: Colors.transparent,
@@ -974,7 +982,7 @@ class EditorSlotState extends State<EditorSlot> {
         ),
         menuPadding: const EdgeInsets.symmetric(vertical: 4),
         clipBehavior: Clip.antiAlias,
-        position: menuPosition,
+        onRouteCreated: (route) => _activeMenuRoute = route,
         items: [
           if (insertions.isNotEmpty || canEdit) ...[
             PopupMenuItem<Future<void> Function()>(
@@ -1723,7 +1731,8 @@ class EditorSlotState extends State<EditorSlot> {
             },
             foregroundPainter:
                 painter != null &&
-                    EditorOverlayVisibility.openDialogs.value == 0 &&
+                    (EditorOverlayVisibility.openDialogs.value == 0 ||
+                        identical(_menuHoveredTarget, this)) &&
                     identical(target, this) &&
                     (EditorSelectionRegion.hoverTarget.value == null ||
                         _menuHoveredTarget != null)
@@ -1756,7 +1765,8 @@ class EditorSlotState extends State<EditorSlot> {
             ]),
             builder: (context, child) => CustomPaint(
               foregroundPainter:
-                  EditorOverlayVisibility.openDialogs.value == 0 &&
+                  (EditorOverlayVisibility.openDialogs.value == 0 ||
+                          identical(_menuHoveredTarget, this)) &&
                       identical(target, this) &&
                       (EditorSelectionRegion.hoverTarget.value == null ||
                           _menuHoveredTarget != null)
@@ -1793,4 +1803,444 @@ class EditorSlotState extends State<EditorSlot> {
     );
     return content;
   }
+}
+
+Future<T?> _showEditorContextMenuDialog<T>({
+  required BuildContext context,
+  required Offset initialPosition,
+  required BoxConstraints constraints,
+  required Color color,
+  required Color surfaceTintColor,
+  required Color shadowColor,
+  required double elevation,
+  required ShapeBorder shape,
+  required EdgeInsetsGeometry menuPadding,
+  required Clip clipBehavior,
+  required List<PopupMenuEntry<T>> items,
+  Rect? bannerLocal,
+  ValueChanged<Route<T>>? onRouteCreated,
+}) async {
+  final navigator = Navigator.of(context);
+  final themes = InheritedTheme.capture(from: context, to: navigator.context);
+  final zoomController = EditorZoomScope.controllerOf(context);
+  final route = _EditorContextMenuRoute<T>(
+    themes: themes,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    initialPosition: initialPosition,
+    bannerLocal: bannerLocal,
+    constraints: constraints,
+    color: color,
+    surfaceTintColor: surfaceTintColor,
+    shadowColor: shadowColor,
+    elevation: elevation,
+    shape: shape,
+    menuPadding: menuPadding,
+    clipBehavior: clipBehavior,
+    zoomController: zoomController,
+    items: items,
+  );
+  onRouteCreated?.call(route);
+  final hasZoom =
+      zoomController != null &&
+      !zoomController.disposed &&
+      zoomController.enabled;
+  if (hasZoom) {
+    zoomController.openContextMenus.value++;
+  }
+  try {
+    return await navigator.push<T>(route);
+  } finally {
+    if (hasZoom && !zoomController.disposed) {
+      zoomController.openContextMenus.value--;
+    }
+  }
+}
+
+class _EditorContextMenuRoute<T> extends PopupRoute<T> {
+  _EditorContextMenuRoute({
+    required this.themes,
+    required this.barrierLabel,
+    required this.initialPosition,
+    required this.bannerLocal,
+    required this.constraints,
+    required this.color,
+    required this.surfaceTintColor,
+    required this.shadowColor,
+    required this.elevation,
+    required this.shape,
+    required this.menuPadding,
+    required this.clipBehavior,
+    required this.zoomController,
+    required this.items,
+  });
+
+  final CapturedThemes themes;
+  @override
+  final String barrierLabel;
+  final Offset initialPosition;
+  final Rect? bannerLocal;
+  final BoxConstraints constraints;
+  final Color color;
+  final Color surfaceTintColor;
+  final Color shadowColor;
+  final double elevation;
+  final ShapeBorder shape;
+  final EdgeInsetsGeometry menuPadding;
+  final Clip clipBehavior;
+  final EditorZoomController? zoomController;
+  final List<PopupMenuEntry<T>> items;
+
+  @override
+  Color? get barrierColor => null;
+
+  @override
+  bool get barrierDismissible => true;
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 120);
+
+  @override
+  Widget buildPage(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+  ) => themes.wrap(
+    _EditorContextMenuDialog<T>(
+      animation: animation,
+      initialPosition: initialPosition,
+      bannerLocal: bannerLocal,
+      constraints: constraints,
+      color: color,
+      surfaceTintColor: surfaceTintColor,
+      shadowColor: shadowColor,
+      elevation: elevation,
+      shape: shape,
+      menuPadding: menuPadding,
+      clipBehavior: clipBehavior,
+      zoomController: zoomController,
+      items: items,
+    ),
+  );
+}
+
+class _EditorContextMenuDialog<T> extends StatefulWidget {
+  const _EditorContextMenuDialog({
+    required this.animation,
+    required this.initialPosition,
+    required this.bannerLocal,
+    required this.constraints,
+    required this.color,
+    required this.surfaceTintColor,
+    required this.shadowColor,
+    required this.elevation,
+    required this.shape,
+    required this.menuPadding,
+    required this.clipBehavior,
+    required this.zoomController,
+    required this.items,
+  });
+
+  final Animation<double> animation;
+  final Offset initialPosition;
+  final Rect? bannerLocal;
+  final BoxConstraints constraints;
+  final Color color;
+  final Color surfaceTintColor;
+  final Color shadowColor;
+  final double elevation;
+  final ShapeBorder shape;
+  final EdgeInsetsGeometry menuPadding;
+  final Clip clipBehavior;
+  final EditorZoomController? zoomController;
+  final List<PopupMenuEntry<T>> items;
+
+  @override
+  State<_EditorContextMenuDialog<T>> createState() =>
+      _EditorContextMenuDialogState<T>();
+}
+
+class _EditorContextMenuDialogState<T>
+    extends State<_EditorContextMenuDialog<T>> {
+  late Offset _position = widget.initialPosition;
+  bool _dragged = false;
+  late _ContextMenuDialogLayout _layout = _ContextMenuDialogLayout(
+    position: _position,
+    dragged: _dragged,
+    bannerLocal: widget.bannerLocal,
+    menuConstraints: widget.constraints,
+  );
+  ZoomToolbarLayout _zoomToolbarLayout = ZoomToolbarLayout(null);
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final zoom = widget.zoomController;
+    final showZoomToolbar =
+        zoom != null &&
+        !zoom.disposed &&
+        zoom.enabled &&
+        zoom.dialog.value == null;
+    if (!_dragged) {
+      _layout = _ContextMenuDialogLayout(
+        position: _position,
+        dragged: _dragged,
+        bannerLocal: widget.bannerLocal,
+        menuConstraints: widget.constraints,
+      );
+    }
+    final dialogCard = FadeTransition(
+      opacity: CurvedAnimation(parent: widget.animation, curve: Curves.easeOut),
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerSignal: (event) => zoom?.handlePointerSignal(event),
+        child: Material(
+          key: const ValueKey('editor-context-menu-dialog'),
+          color: widget.color,
+          surfaceTintColor: widget.surfaceTintColor,
+          shadowColor: widget.shadowColor,
+          elevation: widget.elevation,
+          shape: widget.shape,
+          clipBehavior: widget.clipBehavior,
+          child: IntrinsicWidth(
+            stepWidth: 56.0,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                MouseRegion(
+                  cursor: SystemMouseCursors.move,
+                  child: GestureDetector(
+                    key: const ValueKey('editor-context-menu-drag'),
+                    behavior: HitTestBehavior.opaque,
+                    dragStartBehavior: DragStartBehavior.down,
+                    onPanUpdate: (details) => setState(() {
+                      _dragged = true;
+                      _position = _layout.resolvedPosition + details.delta;
+                      _layout = _ContextMenuDialogLayout(
+                        position: _position,
+                        dragged: _dragged,
+                        bannerLocal: widget.bannerLocal,
+                        menuConstraints: widget.constraints,
+                      );
+                    }),
+                    child: ColoredBox(
+                      color: colors.surfaceContainerHighest.withValues(
+                        alpha: .45,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 2, 4, 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.drag_indicator,
+                              size: 16,
+                              color: colors.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Center(
+                                child: Container(
+                                  width: 32,
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: colors.onSurfaceVariant.withValues(
+                                      alpha: .35,
+                                    ),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            IconButton(
+                              key: const ValueKey('editor-context-menu-close'),
+                              tooltip: 'Fermer',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 16,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 24,
+                                height: 24,
+                              ),
+                              color: colors.onSurfaceVariant,
+                              icon: const Icon(Icons.close),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 1,
+                  child: ColoredBox(
+                    color: colors.outlineVariant.withValues(alpha: .4),
+                  ),
+                ),
+                Flexible(
+                  child: Semantics(
+                    scopesRoute: true,
+                    namesRoute: true,
+                    explicitChildNodes: true,
+                    role: SemanticsRole.menu,
+                    child: SingleChildScrollView(
+                      padding: widget.menuPadding,
+                      child: ListBody(
+                        children: [
+                          for (final item in widget.items)
+                            Builder(builder: (_) => item),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (event) {
+              if ((event.buttons & kSecondaryMouseButton) != 0) {
+                zoom?.handlePointerDown(event);
+              }
+            },
+            onPointerMove: (event) {
+              if ((event.buttons & kSecondaryMouseButton) != 0) {
+                zoom?.handlePointerMove(event);
+              }
+            },
+            onPointerUp: (event) => zoom?.handlePointerUp(event),
+            onPointerCancel: (event) => zoom?.handlePointerCancel(event),
+            onPointerSignal: (event) => zoom?.handlePointerSignal(event),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).pop(),
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+        if (showZoomToolbar)
+          Positioned.fill(
+            child: CustomSingleChildLayout(
+              delegate: _zoomToolbarLayout = ZoomToolbarLayout(
+                zoom.toolbarPosition,
+              ),
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerSignal: zoom.handlePointerSignal,
+                child: Material(
+                  key: const ValueKey('editor-zoom-toolbar'),
+                  type: MaterialType.card,
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(8),
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: zoom.scale,
+                    builder: (context, currentScale, _) =>
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: EditorZoomToolbarContent(
+                            scale: currentScale,
+                            onScaleChanged: zoom.setScale,
+                            onDrag: (details) => setState(() {
+                              final nextPos =
+                                  _zoomToolbarLayout.resolvedPosition +
+                                  details.delta;
+                              zoom.toolbarPosition = nextPos;
+                              _zoomToolbarLayout = ZoomToolbarLayout(nextPos);
+                            }),
+                          ),
+                        ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        Positioned.fill(
+          child: CustomSingleChildLayout(delegate: _layout, child: dialogCard),
+        ),
+      ],
+    );
+  }
+}
+
+class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
+  _ContextMenuDialogLayout({
+    required this.position,
+    required this.dragged,
+    required this.bannerLocal,
+    required this.menuConstraints,
+  }) : resolvedPosition = position;
+
+  final Offset position;
+  final bool dragged;
+  final Rect? bannerLocal;
+  final BoxConstraints menuConstraints;
+  Offset resolvedPosition;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final maxWidth = math.min(menuConstraints.maxWidth, constraints.maxWidth);
+    final minWidth = math.min(menuConstraints.minWidth, maxWidth);
+    final maxHeight = dragged
+        ? math.max(120.0, constraints.maxHeight - 16.0)
+        : math.min(
+            menuConstraints.maxHeight,
+            math.max(120.0, constraints.maxHeight - 16.0),
+          );
+    return BoxConstraints(
+      minWidth: minWidth,
+      maxWidth: maxWidth,
+      maxHeight: maxHeight,
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    if (dragged) {
+      final maxX = math.max(0.0, size.width - childSize.width);
+      final maxY = math.max(0.0, size.height - childSize.height);
+      resolvedPosition = Offset(
+        position.dx.clamp(0.0, maxX),
+        position.dy.clamp(0.0, maxY),
+      );
+      return resolvedPosition;
+    }
+    const margin = 8.0;
+    final maxX = math.max(margin, size.width - childSize.width - margin);
+    final dx = position.dx.clamp(margin, maxX);
+    var minY = margin;
+    var maxY = math.max(margin, size.height - childSize.height - margin);
+    var desiredY = position.dy;
+    if (bannerLocal case final banner?) {
+      final spaceAbove = banner.top;
+      final spaceBelow = size.height - banner.bottom;
+      if (spaceBelow >= spaceAbove || spaceBelow >= 220) {
+        minY = banner.bottom + 6;
+        maxY = math.max(minY, size.height - childSize.height - margin);
+        desiredY = math.max(position.dy, minY);
+      } else {
+        final maxBottom = banner.top - 6;
+        maxY = math.max(margin, maxBottom - childSize.height);
+        desiredY = math.min(position.dy, maxBottom) - childSize.height;
+      }
+    }
+    final dy = desiredY.clamp(minY, maxY);
+    resolvedPosition = Offset(dx, dy);
+    return resolvedPosition;
+  }
+
+  @override
+  bool shouldRelayout(_ContextMenuDialogLayout oldDelegate) =>
+      position != oldDelegate.position ||
+      dragged != oldDelegate.dragged ||
+      bannerLocal != oldDelegate.bannerLocal ||
+      menuConstraints != oldDelegate.menuConstraints;
 }

@@ -185,16 +185,14 @@ class _EditorZoomState extends State<EditorZoom>
       if (_manualScale case final manualScale?) {
         destination = (
           scale: manualScale,
-          offset: _manualOffset ??
+          offset:
+              _manualOffset ??
               (rect != null
                   ? available.center - rect.center * manualScale
                   : available.center),
         );
       } else if (_manualOffset case final manualOffset?) {
-        destination = (
-          scale: _to.scale,
-          offset: manualOffset,
-        );
+        destination = (scale: _to.scale, offset: manualOffset);
       } else if (rect != null && !rect.isEmpty && rect.isFinite) {
         final tooLarge =
             dialog == null &&
@@ -258,7 +256,8 @@ class _EditorZoomState extends State<EditorZoom>
 
     if ((event.buttons & kSecondaryMouseButton) != 0) {
       final totalDelta =
-          (event.position - (_secondaryDownPosition ?? event.position)).distance;
+          (event.position - (_secondaryDownPosition ?? event.position))
+              .distance;
       if (totalDelta > kTouchSlop || _isSecondaryPanning) {
         _isSecondaryPanning = true;
         _controller.suppressContextMenu = true;
@@ -354,11 +353,11 @@ class _EditorZoomState extends State<EditorZoom>
       _manualScale = nextScale;
       _manualOffset =
           event.scrollDelta.dy > 0 &&
-                  nextScale <= EditorZoom.minScale &&
-                  _controller.dialog.value == null
-              ? Offset.zero
-              : localPointer -
-                  (localPointer - base.offset) * (nextScale / base.scale);
+              nextScale <= EditorZoom.minScale &&
+              _controller.dialog.value == null
+          ? Offset.zero
+          : localPointer -
+                (localPointer - base.offset) * (nextScale / base.scale);
       _frameSelection();
     });
   }
@@ -471,13 +470,20 @@ class _EditorZoomState extends State<EditorZoom>
               ),
             ),
             if (editing)
-              ValueListenableBuilder<int>(
-                valueListenable: EditorOverlayVisibility.openDialogs,
-                builder: (context, dialogCount, _) => dialogCount > 0
+              ListenableBuilder(
+                listenable: Listenable.merge([
+                  EditorOverlayVisibility.openDialogs,
+                  _controller.openContextMenus,
+                ]),
+                builder: (context, _) =>
+                    EditorOverlayVisibility.openDialogs.value > 0 ||
+                        _controller.openContextMenus.value > 0
                     ? const SizedBox.shrink()
                     : Positioned.fill(
                         child: CustomSingleChildLayout(
-                          delegate: _toolbarLayout,
+                          delegate: _toolbarLayout = ZoomToolbarLayout(
+                            _controller.toolbarPosition,
+                          ),
                           child: Material(
                             key: const ValueKey('editor-zoom-toolbar'),
                             type: MaterialType.card,
@@ -489,9 +495,12 @@ class _EditorZoomState extends State<EditorZoom>
                                 scale: _current.scale,
                                 onScaleChanged: _setSliderScale,
                                 onDrag: (details) => setState(() {
+                                  final nextPosition =
+                                      _toolbarLayout.resolvedPosition +
+                                      details.delta;
+                                  _controller.toolbarPosition = nextPosition;
                                   _toolbarLayout = ZoomToolbarLayout(
-                                    _toolbarLayout.resolvedPosition +
-                                        details.delta,
+                                    nextPosition,
                                   );
                                 }),
                               ),
@@ -552,10 +561,7 @@ class EditorZoomToolbarContent extends StatelessWidget {
               key: const ValueKey('editor-zoom-slider'),
               min: EditorZoom.minScale,
               max: EditorZoom.maxScale,
-              value: scale.clamp(
-                EditorZoom.minScale,
-                EditorZoom.maxScale,
-              ),
+              value: scale.clamp(EditorZoom.minScale, EditorZoom.maxScale),
               onChanged: onScaleChanged,
             ),
           ),
@@ -579,7 +585,7 @@ class EditorZoomToolbarContent extends StatelessWidget {
 
 class ZoomToolbarLayout extends SingleChildLayoutDelegate {
   ZoomToolbarLayout(this.position, {this.available})
-      : resolvedPosition = position ?? Offset.zero;
+    : resolvedPosition = position ?? Offset.zero;
 
   final Offset? position;
   final Rect? available;
@@ -592,7 +598,8 @@ class ZoomToolbarLayout extends SingleChildLayoutDelegate {
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final bounds = available ?? (Offset.zero & size);
-    final desired = position ??
+    final desired =
+        position ??
         Offset(
           bounds.right - childSize.width - 16,
           bounds.bottom - childSize.height - 12,
@@ -600,8 +607,10 @@ class ZoomToolbarLayout extends SingleChildLayoutDelegate {
     final minX = bounds.left;
     final maxX = (bounds.right - childSize.width).clamp(minX, double.infinity);
     final minY = bounds.top;
-    final maxY =
-        (bounds.bottom - childSize.height).clamp(minY, double.infinity);
+    final maxY = (bounds.bottom - childSize.height).clamp(
+      minY,
+      double.infinity,
+    );
     resolvedPosition = Offset(
       desired.dx.clamp(minX, maxX),
       desired.dy.clamp(minY, maxY),
@@ -628,8 +637,9 @@ class EditorZoomScope extends InheritedWidget {
   final EditorZoomController? controller;
 
   static EditorZoomController? controllerOf(BuildContext context) {
-    final inherited =
-        context.getInheritedWidgetOfExactType<EditorZoomScope>()?.controller;
+    final inherited = context
+        .getInheritedWidgetOfExactType<EditorZoomScope>()
+        ?.controller;
     if (inherited != null) return inherited;
     EditorZoomController? descendant;
     void visit(Element element) {
@@ -694,13 +704,14 @@ class EditorZoomController {
   void handlePointerMove(PointerMoveEvent event) =>
       _pointerMoveHandler?.call(event);
 
-  void handlePointerUp(PointerUpEvent event) =>
-      _pointerUpHandler?.call(event);
+  void handlePointerUp(PointerUpEvent event) => _pointerUpHandler?.call(event);
 
   void handlePointerCancel(PointerCancelEvent event) =>
       _pointerCancelHandler?.call(event);
 
   final scale = ValueNotifier<double>(1.0);
+  final openContextMenus = ValueNotifier<int>(0);
+  Offset? toolbarPosition;
   final transform = ValueNotifier<({double scale, Offset offset})>((
     scale: 1.0,
     offset: Offset.zero,
@@ -760,6 +771,7 @@ class EditorZoomController {
         }
       });
     }
+    openContextMenus.dispose();
     dialog.dispose();
     transform.dispose();
   }
