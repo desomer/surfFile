@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -121,6 +122,7 @@ void main() {
       bottomRowHeight: 36,
       allowAdd: true,
       allowRemove: true,
+      animateSelectionAndHover: false,
       emptyText: 'Vide',
       placements: const {
         'cell:col_0': ['c0'],
@@ -133,6 +135,7 @@ void main() {
     final decoded = ComponentConfig.fromJson(encoded);
     expect(decoded, equals(config));
     expect(config.toCompactJson()['colFreezeLeftCount'], 1);
+    expect(config.toCompactJson()['animateSelectionAndHover'], isFalse);
   });
 
   testWidgets(
@@ -394,4 +397,161 @@ void main() {
     );
     expect(items?.length, 3);
   });
+
+  testWidgets(
+    'SuperTable animates selection and hover backgrounds vertically with IterableContent states and frozen columns',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      const rowStyle = ContainerStyle(radius: 8);
+      final styledStates = SurfaceStyleStates(
+        selected: SelectedSurfaceStyle(
+          style: const ContainerStyle(color: Colors.teal, radius: 12),
+          properties: const {
+            SurfaceStyleProperty.background,
+            SurfaceStyleProperty.corners,
+          },
+        ),
+        hover: SelectedSurfaceStyle(
+          style: const ContainerStyle(color: Colors.amber, radius: 10),
+          properties: const {
+            SurfaceStyleProperty.background,
+            SurfaceStyleProperty.corners,
+          },
+        ),
+      );
+
+      await mount(
+        tester,
+        SuperTable(
+          id: 'clients-table',
+          templateStyle: rowStyle.copyWith(states: styledStates),
+          config: SuperTableConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            colFreezeLeftCount: 1,
+            rowHeight: 40,
+            columns: const [
+              SuperTableColumnConfig(id: 'col_0', title: 'Nom', width: 180),
+              SuperTableColumnConfig(id: 'col_1', title: 'Ville', width: 180),
+            ],
+            placements: const {
+              'cell:col_0': ['cell:col_0'],
+              'cell:col_1': ['cell:col_1'],
+            },
+          ),
+          cells: const {
+            'col_0': SuperValue(
+              id: 'val-nom',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                binding: JsonTextBinding(path: 'nom'),
+              ),
+            ),
+            'col_1': SuperValue(
+              id: 'val-ville',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                binding: JsonTextBinding(path: 'ville'),
+              ),
+            ),
+          },
+        ),
+        registry: registry,
+      );
+
+      final selIndicatorRight = find.byKey(
+        const ValueKey('super-table-selection-indicator-clients-table'),
+      );
+      final selIndicatorLeft = find.byKey(
+        const ValueKey('super-table-selection-indicator-left-clients-table'),
+      );
+      final hoverIndicatorRight = find.byKey(
+        const ValueKey('super-table-hover-indicator-clients-table'),
+      );
+      final selOpacityRight = find.byKey(
+        const ValueKey('table-view-selection-opacity'),
+      );
+      final hoverOpacityRight = find.byKey(
+        const ValueKey('table-view-hover-opacity'),
+      );
+
+      expect(tester.widget<AnimatedOpacity>(selOpacityRight).opacity, 0.0);
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityRight).opacity, 0.0);
+
+      // 1. Tap first row ("Alice", index 0)
+      await tester.tap(find.text('Alice'));
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(selOpacityRight).opacity, 1.0);
+      expect(
+        tester
+            .widget<SuperContainer>(selIndicatorRight)
+            .style
+            .color
+            ?.toARGB32(),
+        Colors.teal.toARGB32(),
+      );
+      expect(
+        tester.widget<SuperContainer>(selIndicatorLeft).style.color?.toARGB32(),
+        Colors.teal.toARGB32(),
+      );
+      final initialSelTop = tester.getTopLeft(selIndicatorRight).dy;
+      expect(
+        tester.getTopLeft(selIndicatorLeft).dy,
+        closeTo(initialSelTop, 0.5),
+      );
+
+      // 2. Tap second row ("Bob", index 1 -> top offset +40)
+      await tester.tap(find.text('Bob'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      final midSelTop = tester.getTopLeft(selIndicatorRight).dy;
+      expect(midSelTop, greaterThan(initialSelTop + 5));
+      expect(midSelTop, lessThan(initialSelTop + 40 - 3));
+      expect(tester.getTopLeft(selIndicatorLeft).dy, closeTo(midSelTop, 0.5));
+
+      await tester.pumpAndSettle();
+      final finalSelTop = tester.getTopLeft(selIndicatorRight).dy;
+      expect(finalSelTop - initialSelTop, closeTo(40.0, 0.5));
+      expect(tester.getTopLeft(selIndicatorLeft).dy, closeTo(finalSelTop, 0.5));
+
+      // 3. Hover first row ("Alice"), then move to second row ("Bob")
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+
+      await gesture.moveTo(tester.getCenter(find.text('Alice')));
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityRight).opacity, 1.0);
+      expect(
+        tester
+            .widget<SuperContainer>(hoverIndicatorRight)
+            .style
+            .color
+            ?.toARGB32(),
+        Colors.amber.toARGB32(),
+      );
+      final initialHoverTop = tester.getTopLeft(hoverIndicatorRight).dy;
+      expect(initialHoverTop, closeTo(initialSelTop, 0.5));
+
+      await gesture.moveTo(tester.getCenter(find.text('Bob')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 70));
+      final midHoverTop = tester.getTopLeft(hoverIndicatorRight).dy;
+      expect(midHoverTop, greaterThan(initialHoverTop + 5));
+      expect(midHoverTop, lessThan(initialHoverTop + 40.0 - 3));
+
+      await tester.pumpAndSettle();
+      final finalHoverTop = tester.getTopLeft(hoverIndicatorRight).dy;
+      expect(finalHoverTop - initialHoverTop, closeTo(40.0, 0.5));
+
+      // 4. Move pointer outside table: hover fades out in place
+      await gesture.moveTo(const Offset(5, 5));
+      await tester.pump();
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityRight).opacity, 0.0);
+      expect(
+        tester.getTopLeft(hoverIndicatorRight).dy,
+        closeTo(finalHoverTop, 0.5),
+      );
+    },
+  );
 }

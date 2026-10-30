@@ -156,6 +156,17 @@ class _TableAddFormState extends State<TableAddForm> {
             onChanged: (value) =>
                 widget.onChanged(draft.copyWith(showBottomRow: value)),
           ),
+          SwitchListTile(
+            key: const ValueKey('add-table-animate-selection-hover'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Animer le déplacement de la sélection et du survol',
+            ),
+            value: draft.animateSelectionAndHover,
+            onChanged: (value) => widget.onChanged(
+              draft.copyWith(animateSelectionAndHover: value),
+            ),
+          ),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(

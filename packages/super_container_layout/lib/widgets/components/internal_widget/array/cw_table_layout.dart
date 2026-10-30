@@ -46,6 +46,20 @@ class FrozenTableView extends StatefulWidget {
   /// Indice initial de la ligne sélectionnée.
   final int? initialSelectedRow;
 
+  /// Active l'animation verticale des fonds de sélection et de survol.
+  final bool animateSelectionAndHover;
+
+  /// Construit le fond animé de la ligne sélectionnée.
+  final Widget Function(BuildContext context, int row, bool isStartCols)?
+  selectionIndicatorBuilder;
+
+  /// Construit le fond animé de la ligne survolée.
+  final Widget Function(BuildContext context, int row, bool isStartCols)?
+  hoverIndicatorBuilder;
+
+  /// Indique si une ligne peut déclencher l'indicateur de survol.
+  final bool Function(int row)? canHoverRow;
+
   const FrozenTableView({
     super.key,
     required this.rowCount,
@@ -66,6 +80,10 @@ class FrozenTableView extends StatefulWidget {
     this.onHeaderActionTap,
     this.onColumnWidthsChanged,
     this.initialSelectedRow,
+    this.animateSelectionAndHover = false,
+    this.selectionIndicatorBuilder,
+    this.hoverIndicatorBuilder,
+    this.canHoverRow,
   });
 
   @override
@@ -114,11 +132,37 @@ class FrozenTableViewState extends State<FrozenTableView> {
   }
 
   void setHoveredRow(int? targetRow) {
+    if (targetRow != null &&
+        widget.canHoverRow != null &&
+        !widget.canHoverRow!(targetRow)) {
+      return;
+    }
     final previous = hoveredRowNotifier.value;
     if (previous == targetRow) return;
     hoveredRowNotifier.value = targetRow;
     _notifyRowStates(previous);
     _notifyRowStates(targetRow);
+  }
+
+  double? computeBodyRowTopOffset(int? targetRow) {
+    if (targetRow == null) return null;
+    final startRow = widget.rowCountTop;
+    final endRow = widget.rowCount - widget.rowCountBottom;
+    if (targetRow < startRow || targetRow >= endRow) return null;
+    final itemExtent = widget.getRowHeight(startRow);
+    if (itemExtent != null) {
+      return (targetRow - startRow) * itemExtent;
+    }
+    double top = 0.0;
+    for (int r = startRow; r < targetRow; r++) {
+      top += widget.getRowHeight(r) ?? 30.0;
+    }
+    return top;
+  }
+
+  double computeBodyRowExtent(int? targetRow) {
+    final row = targetRow ?? widget.rowCountTop;
+    return widget.getRowHeight(row) ?? 30.0;
   }
 
   void selectRow(int targetRow) {
@@ -787,51 +831,79 @@ class FrozenTableViewState extends State<FrozenTableView> {
 
     var witdh = getWitdhL(0, widget.colFreezeLeftCount);
     var heightRowCache = widget.getRowHeight(widget.rowCountTop);
+    final listView = ListView.builder(
+      cacheExtent: 250,
+      primary: false,
+      controller: vertical,
+      itemExtent: heightRowCache,
+      itemCount: _bodyRowCount,
+      itemBuilder: (_, row) {
+        final targetRow = row + widget.rowCountTop;
+        final heightRow = widget.getRowHeight(targetRow);
+        CwRowCache? cacheRow;
+        if (withWidgetCache) {
+          cacheRow = visibleRowKeyA.putIfAbsent(targetRow, CwRowCache.new);
+        }
+        final colLimit = widget.colFreezeLeftCount;
+        var cells = cacheRow?.rowCells;
+        if (cells == null || cells.length != colLimit) {
+          cells = List<Widget?>.filled(colLimit, null);
+          cacheRow?.rowCells = cells;
+        }
+        return RepaintBoundary(
+          child: SizedBox(
+            height: heightRow,
+            width: witdh,
+            child: widget.buildRow(
+              targetRow,
+              true,
+              Row(
+                children: [
+                  for (int col = 0; col < colLimit; col++)
+                    SizedBox(
+                      width: getColWidth(col),
+                      height: heightRow,
+                      child:
+                          cells[col] ??= widget.buildLeftCell(targetRow, col),
+                    ),
+                ],
+              ),
+              this,
+            ),
+          ),
+        );
+      },
+    );
     return SizedBox(
       width: witdh,
-      child: ListView.builder(
-        cacheExtent: 250,
-        primary: false,
-        controller: vertical,
-        itemExtent: heightRowCache,
-        itemCount: _bodyRowCount,
-        itemBuilder: (_, row) {
-          final targetRow = row + widget.rowCountTop;
-          final heightRow = widget.getRowHeight(targetRow);
-          CwRowCache? cacheRow;
-          if (withWidgetCache) {
-            cacheRow = visibleRowKeyA.putIfAbsent(targetRow, CwRowCache.new);
-          }
-          final colLimit = widget.colFreezeLeftCount;
-          var cells = cacheRow?.rowCells;
-          if (cells == null || cells.length != colLimit) {
-            cells = List<Widget?>.filled(colLimit, null);
-            cacheRow?.rowCells = cells;
-          }
-          return RepaintBoundary(
-            child: SizedBox(
-              height: heightRow,
-              width: witdh,
-              child: widget.buildRow(
-                targetRow,
-                true,
-                Row(
-                  children: [
-                    for (int col = 0; col < colLimit; col++)
-                      SizedBox(
-                        width: getColWidth(col),
-                        height: heightRow,
-                        child:
-                            cells[col] ??= widget.buildLeftCell(targetRow, col),
+      child: widget.animateSelectionAndHover
+          ? Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ListenableBuilder(
+                      listenable: vertical,
+                      builder: (context, child) {
+                        final scrollOffset = vertical.hasClients
+                            ? vertical.offset
+                            : 0.0;
+                        return Transform.translate(
+                          offset: Offset(0, -scrollOffset),
+                          child: child,
+                        );
+                      },
+                      child: _TableSlidingIndicatorsLayer(
+                        tableState: this,
+                        isStartCols: true,
                       ),
-                  ],
+                    ),
+                  ),
                 ),
-                this,
-              ),
-            ),
-          );
-        },
-      ),
+                listView,
+              ],
+            )
+          : listView,
     );
   }
 
@@ -839,24 +911,52 @@ class FrozenTableViewState extends State<FrozenTableView> {
   Widget _body() {
     var witdhRow = getWitdhR(widget.colFreezeLeftCount, widget.colCount);
     var heightRowCache = widget.getRowHeight(widget.rowCountTop);
+    final listView = ValueListenableBuilder<double>(
+      valueListenable: _horizontalOffset,
+      builder: (context, _, _) => ListView.builder(
+        cacheExtent: 250,
+        controller: vertical2,
+        primary: false,
+        itemExtent: heightRowCache,
+        itemCount: _bodyRowCount,
+        itemBuilder: (_, row) {
+          return getRow(row, widget.rowCountTop, witdhRow);
+        },
+      ),
+    );
     return SingleChildScrollView(
       controller: horizontal3,
       scrollDirection: Axis.horizontal,
       child: SizedBox(
         width: witdhRow,
-        child: ValueListenableBuilder<double>(
-          valueListenable: _horizontalOffset,
-          builder: (context, _, _) => ListView.builder(
-            cacheExtent: 250,
-            controller: vertical2,
-            primary: false,
-            itemExtent: heightRowCache,
-            itemCount: _bodyRowCount,
-            itemBuilder: (_, row) {
-              return getRow(row, widget.rowCountTop, witdhRow);
-            },
-          ),
-        ),
+        child: widget.animateSelectionAndHover
+            ? Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ListenableBuilder(
+                        listenable: vertical2,
+                        builder: (context, child) {
+                          final scrollOffset = vertical2.hasClients
+                              ? vertical2.offset
+                              : 0.0;
+                          return Transform.translate(
+                            offset: Offset(0, -scrollOffset),
+                            child: child,
+                          );
+                        },
+                        child: _TableSlidingIndicatorsLayer(
+                          tableState: this,
+                          isStartCols: false,
+                        ),
+                      ),
+                    ),
+                  ),
+                  listView,
+                ],
+              )
+            : listView,
       ),
     );
   }
@@ -1050,6 +1150,192 @@ class _TableHeaderCellState extends State<_TableHeaderCell> {
                 ),
               ),
             ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _TableSlidingIndicatorsLayer extends StatefulWidget {
+  const _TableSlidingIndicatorsLayer({
+    required this.tableState,
+    required this.isStartCols,
+  });
+
+  final FrozenTableViewState tableState;
+  final bool isStartCols;
+
+  @override
+  State<_TableSlidingIndicatorsLayer> createState() =>
+      _TableSlidingIndicatorsLayerState();
+}
+
+class _TableSlidingIndicatorsLayerState
+    extends State<_TableSlidingIndicatorsLayer> {
+  int? _lastHoveredRow;
+  double _lastHoveredTop = 0.0;
+  bool _wasHoverVisible = false;
+  bool _shouldAnimateHoverSlide = false;
+
+  int? _lastSelectedRow;
+  double _lastSelectedTop = 0.0;
+  bool _wasSelectionVisible = false;
+  bool _shouldAnimateSelectionSlide = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tableState = widget.tableState;
+    final isStartCols = widget.isStartCols;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: ValueListenableBuilder<int?>(
+            valueListenable: tableState.hoveredRowNotifier,
+            builder: (context, hoveredRow, _) {
+              final hoveredTop = tableState.computeBodyRowTopOffset(hoveredRow);
+              final isHoverVisible = hoveredRow != null && hoveredTop != null;
+              if (isHoverVisible != _wasHoverVisible ||
+                  (hoveredTop != null &&
+                      (hoveredTop - _lastHoveredTop).abs() > 0.5)) {
+                _shouldAnimateHoverSlide =
+                    _wasHoverVisible &&
+                    isHoverVisible &&
+                    (hoveredTop - _lastHoveredTop).abs() > 0.5;
+                if (hoveredTop != null) {
+                  _lastHoveredTop = hoveredTop;
+                }
+                _wasHoverVisible = isHoverVisible;
+              }
+              if (hoveredRow != null) {
+                _lastHoveredRow = hoveredRow;
+              }
+              final effectiveHoverRow = hoveredRow ?? _lastHoveredRow;
+              final extent = tableState.computeBodyRowExtent(effectiveHoverRow);
+              final hoverChild = effectiveHoverRow == null
+                  ? const SizedBox.shrink()
+                  : (tableState.widget.hoverIndicatorBuilder != null
+                        ? tableState.widget.hoverIndicatorBuilder!(
+                            context,
+                            effectiveHoverRow,
+                            isStartCols,
+                          )
+                        : Container(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.06),
+                          ));
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedPositioned(
+                    key: ValueKey(
+                      isStartCols
+                          ? 'table-view-hover-positioned-left'
+                          : 'table-view-hover-positioned',
+                    ),
+                    duration: _shouldAnimateHoverSlide
+                        ? const Duration(milliseconds: 180)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    top: _lastHoveredTop,
+                    left: 0,
+                    right: 0,
+                    height: extent,
+                    child: AnimatedOpacity(
+                      key: ValueKey(
+                        isStartCols
+                            ? 'table-view-hover-opacity-left'
+                            : 'table-view-hover-opacity',
+                      ),
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      opacity: isHoverVisible ? 1.0 : 0.0,
+                      child: hoverChild,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: ValueListenableBuilder<int?>(
+            valueListenable: tableState.selectedRowNotifier,
+            builder: (context, selectedRow, _) {
+              final selectedTop = tableState.computeBodyRowTopOffset(
+                selectedRow,
+              );
+              final isSelectionVisible =
+                  selectedRow != null && selectedTop != null;
+              if (isSelectionVisible != _wasSelectionVisible ||
+                  (selectedTop != null &&
+                      (selectedTop - _lastSelectedTop).abs() > 0.5)) {
+                _shouldAnimateSelectionSlide =
+                    _wasSelectionVisible &&
+                    isSelectionVisible &&
+                    (selectedTop - _lastSelectedTop).abs() > 0.5;
+                if (selectedTop != null) {
+                  _lastSelectedTop = selectedTop;
+                }
+                _wasSelectionVisible = isSelectionVisible;
+              }
+              if (selectedRow != null) {
+                _lastSelectedRow = selectedRow;
+              }
+              final effectiveSelectedRow = selectedRow ?? _lastSelectedRow;
+              final extent = tableState.computeBodyRowExtent(
+                effectiveSelectedRow,
+              );
+              final selectionChild = effectiveSelectedRow == null
+                  ? const SizedBox.shrink()
+                  : (tableState.widget.selectionIndicatorBuilder != null
+                        ? tableState.widget.selectionIndicatorBuilder!(
+                            context,
+                            effectiveSelectedRow,
+                            isStartCols,
+                          )
+                        : Container(
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.primary.withValues(alpha: 0.14),
+                          ));
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedPositioned(
+                    key: ValueKey(
+                      isStartCols
+                          ? 'table-view-selection-positioned-left'
+                          : 'table-view-selection-positioned',
+                    ),
+                    duration: _shouldAnimateSelectionSlide
+                        ? const Duration(milliseconds: 200)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    top: _lastSelectedTop,
+                    left: 0,
+                    right: 0,
+                    height: extent,
+                    child: AnimatedOpacity(
+                      key: ValueKey(
+                        isStartCols
+                            ? 'table-view-selection-opacity-left'
+                            : 'table-view-selection-opacity',
+                      ),
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      opacity: isSelectionVisible ? 1.0 : 0.0,
+                      child: selectionChild,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
       ],

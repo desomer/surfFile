@@ -128,6 +128,8 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
   late bool _showBottomRow = widget.config.showBottomRow;
   late bool _allowAdd = widget.config.allowAdd;
   late bool _allowRemove = widget.config.allowRemove;
+  late bool _animateSelectionAndHover =
+      widget.config.animateSelectionAndHover;
   List<JsonRepositoryEntry> _repositories = [];
   String? _error;
   bool _busy = false;
@@ -259,6 +261,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
       bottomRowHeight: number(_bottomHeight),
       allowAdd: _allowAdd,
       allowRemove: _allowRemove,
+      animateSelectionAndHover: _animateSelectionAndHover,
       emptyText: _empty.text,
       placements: nextPlacements,
       slotTypes: {
@@ -562,6 +565,16 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
                   title: const Text('Autoriser la suppression d’éléments'),
                   value: _allowRemove,
                   onChanged: (value) => setState(() => _allowRemove = value),
+                ),
+                SwitchListTile(
+                  key: const ValueKey('super-table-animate-selection-hover'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Animer le déplacement de la sélection et du survol',
+                  ),
+                  value: _animateSelectionAndHover,
+                  onChanged: (value) =>
+                      setState(() => _animateSelectionAndHover = value),
                 ),
                 TextFormField(
                   key: const ValueKey('super-table-empty'),

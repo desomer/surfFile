@@ -113,6 +113,7 @@ class SuperTableConfig extends ComponentConfig {
     this.bottomRowHeight = 40.0,
     this.allowAdd = false,
     this.allowRemove = false,
+    this.animateSelectionAndHover = true,
     this.emptyText = 'Aucun élément',
     this.itemId,
     Map<String, List<String>> placements = const {},
@@ -210,6 +211,9 @@ class SuperTableConfig extends ComponentConfig {
   /// Autorise la suppression d'une ligne du tableau JSON lié.
   final bool allowRemove;
 
+  /// Anime verticalement le déplacement du fond de la ligne sélectionnée et survolée.
+  final bool animateSelectionAndHover;
+
   /// Message affiché lorsque le tableau est vide.
   final String emptyText;
 
@@ -287,6 +291,7 @@ class SuperTableConfig extends ComponentConfig {
     double? bottomRowHeight,
     bool? allowAdd,
     bool? allowRemove,
+    bool? animateSelectionAndHover,
     String? emptyText,
     String? itemId,
     Map<String, List<String>>? placements,
@@ -307,6 +312,8 @@ class SuperTableConfig extends ComponentConfig {
     bottomRowHeight: bottomRowHeight ?? this.bottomRowHeight,
     allowAdd: allowAdd ?? this.allowAdd,
     allowRemove: allowRemove ?? this.allowRemove,
+    animateSelectionAndHover:
+        animateSelectionAndHover ?? this.animateSelectionAndHover,
     emptyText: emptyText ?? this.emptyText,
     itemId: itemId ?? this.itemId,
     placements: placements ?? this.placements,
@@ -444,6 +451,7 @@ class SuperTableConfig extends ComponentConfig {
       'bottomRowHeight': bottomRowHeight,
       'allowAdd': allowAdd,
       'allowRemove': allowRemove,
+      'animateSelectionAndHover': animateSelectionAndHover,
       'emptyText': emptyText,
       if (itemId != null) 'itemId': itemId,
       if (placements.isNotEmpty)
@@ -508,6 +516,8 @@ class SuperTableConfig extends ComponentConfig {
         'bottomRowHeight': bottomRowHeight,
       if (allowAdd != d.allowAdd) 'allowAdd': allowAdd,
       if (allowRemove != d.allowRemove) 'allowRemove': allowRemove,
+      if (animateSelectionAndHover != d.animateSelectionAndHover)
+        'animateSelectionAndHover': animateSelectionAndHover,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
       if (itemId != null) 'itemId': itemId,
       if (placements.isNotEmpty)
@@ -578,6 +588,7 @@ class SuperTableConfig extends ComponentConfig {
     final showBottomRow = value['showBottomRow'] ?? false;
     final allowAdd = value['allowAdd'] ?? false;
     final allowRemove = value['allowRemove'] ?? false;
+    final animateSelectionAndHover = value['animateSelectionAndHover'] ?? true;
     final emptyText = value['emptyText'] ?? 'Aucun élément';
     final itemId = value['itemId'];
 
@@ -586,6 +597,7 @@ class SuperTableConfig extends ComponentConfig {
         showBottomRow is! bool ||
         allowAdd is! bool ||
         allowRemove is! bool ||
+        animateSelectionAndHover is! bool ||
         emptyText is! String ||
         (itemId != null && itemId is! String)) {
       throw const FormatException('Options de Table invalides.');
@@ -693,6 +705,7 @@ class SuperTableConfig extends ComponentConfig {
         bottomRowHeight: bottomRowHeight,
         allowAdd: allowAdd,
         allowRemove: allowRemove,
+        animateSelectionAndHover: animateSelectionAndHover,
         emptyText: emptyText,
         itemId: itemId as String?,
         placements: placements,
@@ -727,6 +740,7 @@ class SuperTableConfig extends ComponentConfig {
         bottomRowHeight != other.bottomRowHeight ||
         allowAdd != other.allowAdd ||
         allowRemove != other.allowRemove ||
+        animateSelectionAndHover != other.animateSelectionAndHover ||
         emptyText != other.emptyText ||
         itemId != other.itemId ||
         placements.length != other.placements.length ||
@@ -756,6 +770,7 @@ class SuperTableConfig extends ComponentConfig {
     bottomRowHeight,
     allowAdd,
     allowRemove,
+    animateSelectionAndHover,
     emptyText,
     itemId,
     Object.hashAllUnordered(

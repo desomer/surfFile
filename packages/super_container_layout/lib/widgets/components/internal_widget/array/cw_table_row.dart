@@ -130,13 +130,14 @@ class CwTableRowState extends State<CwTableRow> {
     final hasRightEdge = !isStartCols || nbColFreeze == 0;
     final baseStyle = widget.info.style;
 
+    final animateIndicators = tableState.widget.animateSelectionAndHover;
     final isHovered = tableState.hoveredRowNotifier.value == row;
     final isSelected = tableState.selectedRowNotifier.value == row;
     final resolvedStyle =
         baseStyle?.states?.resolve(
           baseStyle,
-          isHovered: isHovered,
-          isSelected: isSelected,
+          isHovered: !animateIndicators && isHovered,
+          isSelected: !animateIndicators && isSelected,
         ) ??
         baseStyle;
 
@@ -205,10 +206,11 @@ class CwTableRowState extends State<CwTableRow> {
           )
         : null;
 
-    final effectiveColor =
-        (isSelected ? selColor : null) ??
-        (isHovered ? hoverColor : null) ??
-        baseColor;
+    final effectiveColor = animateIndicators
+        ? ((isSelected || isHovered) ? null : baseColor)
+        : ((isSelected ? selColor : null) ??
+              (isHovered ? hoverColor : null) ??
+              baseColor);
 
     final margin = EdgeInsets.fromLTRB(
       hasLeftEdge ? mleft : 0,

@@ -41,10 +41,13 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
 import '../../theme/appearance.dart';
+import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
+import '../../theme/style_extras.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_table_editor.dart';
 import '../editing/history/editor_history.dart';
+import '../surfaces/super_container.dart';
 import 'internal_widget/array/cw_table_layout.dart';
 import 'internal_widget/array/cw_table_row.dart';
 import 'super_layout/iterable_content.dart';
@@ -836,6 +839,139 @@ class _SuperTableState extends State<SuperTable> {
     );
   }
 
+  ContainerStyle _adaptRowStyleForEdge(
+    ContainerStyle style, {
+    required bool isStartCols,
+    required int freezeCount,
+  }) {
+    final hasLeftEdge = isStartCols || freezeCount == 0;
+    final hasRightEdge = !isStartCols || freezeCount == 0;
+    if (hasLeftEdge && hasRightEdge) {
+      return style;
+    }
+    final r = style.radii ?? Quad.all(style.radius);
+    final bw = style.sideWidths;
+    return style.copyWith(
+      radii: Quad(
+        hasLeftEdge ? r.top : 0,
+        hasRightEdge ? r.right : 0,
+        hasRightEdge ? r.bottom : 0,
+        hasLeftEdge ? r.left : 0,
+      ),
+      borderWidths: Quad(
+        bw.top,
+        hasRightEdge ? bw.right : 0,
+        bw.bottom,
+        hasLeftEdge ? bw.left : 0,
+      ),
+    );
+  }
+
+  Widget _buildSelectionIndicator(
+    BuildContext context,
+    ContainerStyle currentRowStyle, {
+    required bool isStartCols,
+    required int freezeCount,
+  }) {
+    final defaultColor = Theme.of(
+      context,
+    ).colorScheme.primary.withValues(alpha: 0.14);
+    final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
+    final resolved = hasCustomSelected
+        ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
+        : currentRowStyle.copyWith(clearStates: true);
+    final hasFill =
+        resolved.fill.type != FillType.solid || resolved.hasImage;
+    final effectiveStyle = _adaptRowStyleForEdge(
+      resolved.copyWith(
+        clearStates: true,
+        margin: 0,
+        marginInsets: null,
+        hoverEffect: false,
+        color: hasCustomSelected
+            ? (resolved.color ?? (hasFill ? null : defaultColor))
+            : defaultColor,
+      ),
+      isStartCols: isStartCols,
+      freezeCount: freezeCount,
+    );
+    final hasLeftEdge = isStartCols || freezeCount == 0;
+    final hasRightEdge = !isStartCols || freezeCount == 0;
+    final m = resolved.outerMargin;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        hasLeftEdge ? m.left : 0,
+        m.top,
+        hasRightEdge ? m.right : 0,
+        m.bottom,
+      ),
+      child: SuperContainer(
+        key: ValueKey(
+          isStartCols
+              ? 'super-table-selection-indicator-left-${widget.id}'
+              : 'super-table-selection-indicator-${widget.id}',
+        ),
+        style: effectiveStyle,
+        fallbackColor: Colors.transparent,
+        borderColor: Colors.transparent,
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
+  Widget _buildHoverIndicator(
+    BuildContext context,
+    ContainerStyle currentRowStyle, {
+    required bool isStartCols,
+    required int freezeCount,
+  }) {
+    final accent = AppearanceScope.of(context).accent;
+    final hoverBase = currentRowStyle.hoverBase(accent);
+    final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
+        .withValues(alpha: 0.08);
+    final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
+    final resolved = hasCustomHover
+        ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
+        : currentRowStyle.copyWith(clearStates: true);
+    final hasFill =
+        resolved.fill.type != FillType.solid || resolved.hasImage;
+    final effectiveStyle = _adaptRowStyleForEdge(
+      resolved.copyWith(
+        clearStates: true,
+        margin: 0,
+        marginInsets: null,
+        hoverEffect: false,
+        color: hasCustomHover
+            ? (resolved.color ?? (hasFill ? null : defaultColor))
+            : defaultColor,
+      ),
+      isStartCols: isStartCols,
+      freezeCount: freezeCount,
+    );
+    final hasLeftEdge = isStartCols || freezeCount == 0;
+    final hasRightEdge = !isStartCols || freezeCount == 0;
+    final m = resolved.outerMargin;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        hasLeftEdge ? m.left : 0,
+        m.top,
+        hasRightEdge ? m.right : 0,
+        m.bottom,
+      ),
+      child: SuperContainer(
+        key: ValueKey(
+          isStartCols
+              ? 'super-table-hover-indicator-left-${widget.id}'
+              : 'super-table-hover-indicator-${widget.id}',
+        ),
+        style: effectiveStyle,
+        fallbackColor: Colors.transparent,
+        borderColor: Colors.transparent,
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = SuperApp.maybeOf(context);
@@ -960,6 +1096,25 @@ class _SuperTableState extends State<SuperTable> {
                     rowWidthBorderL: 0,
                     rowWidthBorderR: 0,
                     initialSelectedRow: initialSelectedTableRow,
+                    animateSelectionAndHover: config.animateSelectionAndHover,
+                    selectionIndicatorBuilder: (ctx, _, isStartCols) =>
+                        _buildSelectionIndicator(
+                          ctx,
+                          currentRowStyle,
+                          isStartCols: isStartCols,
+                          freezeCount: freezeCount,
+                        ),
+                    hoverIndicatorBuilder: (ctx, _, isStartCols) =>
+                        _buildHoverIndicator(
+                          ctx,
+                          currentRowStyle,
+                          isStartCols: isStartCols,
+                          freezeCount: freezeCount,
+                        ),
+                    canHoverRow: (tableRow) =>
+                        !templateMode &&
+                        tableRow >= rowCountTop &&
+                        tableRow < totalRowCount - rowCountBottom,
                     onRowTap: (tableRow) {
                       final dataIndex = tableRow - rowCountTop;
                       if (!templateMode &&
