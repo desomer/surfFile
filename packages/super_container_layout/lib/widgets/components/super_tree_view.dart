@@ -389,6 +389,16 @@ class _SuperTreeViewState extends State<SuperTreeView> {
         ? null
         : store.bindingOf(binding.repositoryId!).array(template);
     _listen([?_selection, ...source.arrays]);
+    if (binding != null && store != null) {
+      final cached = store.peekTreeNodes(binding.repositoryId!, binding.path);
+      if (cached != null) {
+        _rawNodes = cached.nodes;
+        _singleRootObject = cached.singleRootObject;
+        _error = null;
+        _loading = false;
+        _renderRevision++;
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _reload();
     });
@@ -412,7 +422,9 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       });
       return;
     }
-    setState(() => _loading = true);
+    if (_rawNodes == null) {
+      setState(() => _loading = true);
+    }
     try {
       final loaded = await store.readTreeNodes(
         binding.repositoryId!,

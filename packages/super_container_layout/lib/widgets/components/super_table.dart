@@ -326,6 +326,14 @@ class _SuperTableState extends State<SuperTable> {
         ? null
         : store.bindingOf(binding.repositoryId!).array(template);
     _listen([?_selection, ...source.arrays]);
+    if (binding != null && store != null) {
+      final cached = store.peekArray(binding.repositoryId!, binding.path);
+      if (cached != null) {
+        _items = cached;
+        _error = null;
+        _loading = false;
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _reload();
     });
@@ -347,7 +355,9 @@ class _SuperTableState extends State<SuperTable> {
       });
       return;
     }
-    setState(() => _loading = true);
+    if (_items == null) {
+      setState(() => _loading = true);
+    }
     try {
       final items = await store.readArray(binding.repositoryId!, binding.path);
       if (!mounted || generation != _generation) return;

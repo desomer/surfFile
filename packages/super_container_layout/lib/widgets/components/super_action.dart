@@ -509,6 +509,7 @@ class _SuperActionState extends State<SuperAction>
   Map<SuperActionProperty, JsonTextBinding>? _requestedPropertyBindings;
   JsonRepositoryStore? _requestedPropertyStore;
   String? _requestedPropertyRepositoryId;
+  String? _requestedPropertyNodePath;
   List<int> _requestedPropertyIndices = const [];
   bool _requestedPropertyPlaceholder = false;
   bool _refreshPropertyBindings = true;
@@ -633,6 +634,7 @@ class _SuperActionState extends State<SuperAction>
         mapEquals(_requestedPropertyBindings, bindings) &&
         identical(_requestedPropertyStore, store) &&
         _requestedPropertyRepositoryId == scope?.repositoryId &&
+        _requestedPropertyNodePath == scope?.nodePath &&
         listEquals(_requestedPropertyIndices, scope?.indices ?? const []) &&
         _requestedPropertyPlaceholder == (scope?.placeholder ?? false);
     if (!_refreshPropertyBindings && sameBindingContext) {
@@ -647,6 +649,7 @@ class _SuperActionState extends State<SuperAction>
       _requestedPropertyStore = store;
     }
     _requestedPropertyRepositoryId = scope?.repositoryId;
+    _requestedPropertyNodePath = scope?.nodePath;
     _requestedPropertyIndices = List.of(scope?.indices ?? const []);
     _requestedPropertyPlaceholder = scope?.placeholder ?? false;
     final generation = ++_propertyBindingGeneration;
@@ -682,7 +685,6 @@ class _SuperActionState extends State<SuperAction>
       _boundPropertyValues = const {};
       return;
     }
-    if (!sameBindingContext) _boundPropertyValues = const {};
     if (store == null) {
       _boundPropertyValues = const {};
       _propertyBindingErrors = {
@@ -692,6 +694,26 @@ class _SuperActionState extends State<SuperAction>
       };
       return;
     }
+    final syncedValues = <SuperActionProperty, Object>{
+      for (final entry in _boundPropertyValues.entries)
+        if (resolved.containsKey(entry.key)) entry.key: entry.value,
+    };
+    for (final entry in resolved.entries) {
+      final cached = store.peekAttribute(entry.value);
+      if (cached == null) continue;
+      try {
+        final value = _parseBoundActionProperty(entry.key, cached.value);
+        if (entry.key == SuperActionProperty.fontFamily &&
+            widget.availableFontFamilies.isNotEmpty &&
+            !widget.availableFontFamilies.contains(value)) {
+          continue;
+        }
+        syncedValues[entry.key] = value;
+      } on FormatException {
+        // Error will be reported by _loadPropertyBindings.
+      }
+    }
+    _boundPropertyValues = syncedValues;
     unawaited(_loadPropertyBindings(resolved, store, generation));
   }
 
@@ -702,25 +724,44 @@ class _SuperActionState extends State<SuperAction>
   ) async {
     final values = <SuperActionProperty, Object>{};
     final errors = Map<SuperActionProperty, String>.of(_propertyBindingErrors);
-    for (final entry in bindings.entries) {
-      try {
-        final result = await store.readAttribute(entry.value);
-        final value = _parseBoundActionProperty(entry.key, result.value);
-        if (entry.key == SuperActionProperty.fontFamily &&
-            widget.availableFontFamilies.isNotEmpty &&
-            !widget.availableFontFamilies.contains(value)) {
-          throw FormatException(
-            'La police liée « $value » n’est pas disponible.',
-          );
-        }
-        values[entry.key] = value;
-        errors.remove(entry.key);
-      } on FormatException catch (error) {
-        errors[entry.key] = error.message;
-      } on FileSystemException {
-        errors[entry.key] = 'Impossible de lire le repository lié.';
+    final entries = bindings.entries.toList();
+    final outcomes = await Future.wait([
+      for (final entry in entries)
+        () async {
+          try {
+            final result = await store.readAttribute(entry.value);
+            final value = _parseBoundActionProperty(entry.key, result.value);
+            if (entry.key == SuperActionProperty.fontFamily &&
+                widget.availableFontFamilies.isNotEmpty &&
+                !widget.availableFontFamilies.contains(value)) {
+              throw FormatException(
+                'La police liée « $value » n’est pas disponible.',
+              );
+            }
+            return (property: entry.key, value: value, error: null);
+          } on FormatException catch (error) {
+            return (property: entry.key, value: null, error: error.message);
+          } on FileSystemException {
+            return (
+              property: entry.key,
+              value: null,
+              error: 'Impossible de lire le repository lié.',
+            );
+          }
+        }(),
+    ]);
+    if (!mounted || generation != _propertyBindingGeneration) return;
+    for (final outcome in outcomes) {
+      if (outcome.error != null) {
+        errors[outcome.property] = outcome.error!;
+      } else if (outcome.value != null) {
+        values[outcome.property] = outcome.value!;
+        errors.remove(outcome.property);
       }
-      if (!mounted || generation != _propertyBindingGeneration) return;
+    }
+    if (mapEquals(_boundPropertyValues, values) &&
+        mapEquals(_propertyBindingErrors, errors)) {
+      return;
     }
     setState(() {
       _boundPropertyValues = values;

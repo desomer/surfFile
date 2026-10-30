@@ -447,7 +447,8 @@ class _SuperValueState extends State<SuperValue>
         !resolved.placeholder &&
         resolved.binding != null &&
         store != null &&
-        (_binding == null || !_binding!.dirty)) {
+        _binding == null &&
+        _pendingBindingFlush == null) {
       final cached = store.peekAttribute(resolved.binding!);
       if (cached != null &&
           (!asBool || cached.value == null || cached.value is bool)) {
@@ -483,7 +484,12 @@ class _SuperValueState extends State<SuperValue>
       oldBinding?.dispose();
       _binding = null;
       final flushed = _pendingBindingFlush;
-      if (flushed != null) await flushed;
+      if (flushed != null) {
+        await flushed;
+        if (identical(_pendingBindingFlush, flushed)) {
+          _pendingBindingFlush = null;
+        }
+      }
       if (!mounted || generation != _bindingGeneration) return;
       _bindingError = resolved.error;
       _unselected = resolved.placeholder && !(scope?.placeholder ?? false);
@@ -647,25 +653,44 @@ class _SuperValueState extends State<SuperValue>
   ) async {
     final values = <SuperValueProperty, Object>{};
     final errors = Map<SuperValueProperty, String>.of(_propertyBindingErrors);
-    for (final entry in bindings.entries) {
-      try {
-        final result = await store.readAttribute(entry.value);
-        final value = _parseBoundProperty(entry.key, result.value);
-        if (entry.key == SuperValueProperty.fontFamily &&
-            widget.availableFontFamilies.isNotEmpty &&
-            !widget.availableFontFamilies.contains(value)) {
-          throw FormatException(
-            'La police liée « $value » n’est pas disponible.',
-          );
-        }
-        values[entry.key] = value;
-        errors.remove(entry.key);
-      } on FormatException catch (error) {
-        errors[entry.key] = error.message;
-      } on FileSystemException {
-        errors[entry.key] = 'Impossible de lire le repository lié.';
+    final entries = bindings.entries.toList();
+    final outcomes = await Future.wait([
+      for (final entry in entries)
+        () async {
+          try {
+            final result = await store.readAttribute(entry.value);
+            final value = _parseBoundProperty(entry.key, result.value);
+            if (entry.key == SuperValueProperty.fontFamily &&
+                widget.availableFontFamilies.isNotEmpty &&
+                !widget.availableFontFamilies.contains(value)) {
+              throw FormatException(
+                'La police liée « $value » n’est pas disponible.',
+              );
+            }
+            return (property: entry.key, value: value, error: null);
+          } on FormatException catch (error) {
+            return (property: entry.key, value: null, error: error.message);
+          } on FileSystemException {
+            return (
+              property: entry.key,
+              value: null,
+              error: 'Impossible de lire le repository lié.',
+            );
+          }
+        }(),
+    ]);
+    if (!mounted || generation != _propertyBindingGeneration) return;
+    for (final outcome in outcomes) {
+      if (outcome.error != null) {
+        errors[outcome.property] = outcome.error!;
+      } else if (outcome.value != null) {
+        values[outcome.property] = outcome.value!;
+        errors.remove(outcome.property);
       }
-      if (!mounted || generation != _propertyBindingGeneration) return;
+    }
+    if (mapEquals(_boundPropertyValues, values) &&
+        mapEquals(_propertyBindingErrors, errors)) {
+      return;
     }
     setState(() {
       _boundPropertyValues = values;

@@ -305,6 +305,14 @@ class _SuperListViewState extends State<SuperListView> {
         ? null
         : store.bindingOf(binding.repositoryId!).array(_template!);
     _listen([?_selection, ...source.arrays]);
+    if (binding != null && store != null) {
+      final cached = store.peekArray(binding.repositoryId!, binding.path);
+      if (cached != null) {
+        _items = cached;
+        _error = null;
+        _loading = false;
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _reload();
     });
@@ -558,7 +566,9 @@ class _SuperListViewState extends State<SuperListView> {
       });
       return;
     }
-    setState(() => _loading = true);
+    if (_items == null) {
+      setState(() => _loading = true);
+    }
     try {
       final items = await store.readArray(binding.repositoryId!, binding.path);
       if (!mounted || generation != _generation) return;

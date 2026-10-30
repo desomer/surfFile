@@ -36,6 +36,21 @@ class JsonRepositoryStore extends ChangeNotifier {
   final _bindings = <String, JsonRepositoryBinding>{};
   final _activeBindings = <Object, Set<String>>{};
   final _documentCache = <String, Object?>{};
+  final _loadingDocuments = <String, Future<Object?>>{};
+  Map<String, String>? _idToNameCache;
+  Future<Map<String, String>>? _loadingCatalog;
+  int _activeMutations = 0;
+
+  /// Vide le cache mémoire des documents JSON (ou uniquement celui de
+  /// [repositoryId] s'il est précisé) afin de forcer une relecture sur disque.
+  void invalidateCache([String? repositoryId]) {
+    if (repositoryId == null) {
+      _documentCache.clear();
+      _idToNameCache = null;
+    } else {
+      _documentCache.remove(repositoryId);
+    }
+  }
 
   /// Runtime selections and bound components of [repositoryId]'s arrays.
   JsonRepositoryBinding bindingOf(String repositoryId) => _bindings.putIfAbsent(
@@ -85,11 +100,14 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   Future<T> _exclusive<T>(Future<T> Function() action) {
     final result = Completer<T>();
+    _activeMutations++;
     _pending = _pending.then((_) async {
       try {
         result.complete(await action());
       } catch (error, stack) {
         result.completeError(error, stack);
+      } finally {
+        _activeMutations--;
       }
     });
     return result.future;
@@ -147,7 +165,14 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<String> idOf(String name) => _exclusive(() => _idOf(name));
 
   Future<String> _idOf(String name) async {
-    await read(name);
+    final jsonFile = _file(name);
+    if (await FileSystemEntity.type(jsonFile.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw FileSystemException(
+        'Fichier JSON introuvable ou lien refusé.',
+        jsonFile.path,
+      );
+    }
     final file = _idFile(name);
     final type = await FileSystemEntity.type(file.path, followLinks: false);
     if (type == FileSystemEntityType.notFound) {
@@ -188,16 +213,50 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<List<JsonRepositoryEntry>> catalog() => _exclusive(_catalog);
 
   Future<List<JsonRepositoryEntry>> _catalog() async {
+    final names = await list();
     final entries = <JsonRepositoryEntry>[];
     final ids = <String>{};
-    for (final name in await list()) {
+    final idToName = <String, String>{};
+    for (final name in names) {
       final id = await _idOf(name);
       if (!ids.add(id)) {
+        _idToNameCache = null;
+        _documentCache.clear();
         throw const FormatException('ID technique de repository dupliqué.');
       }
       entries.add((name: name, id: id));
+      idToName[id] = name;
     }
+    _idToNameCache = idToName;
     return entries;
+  }
+
+  Future<Map<String, String>> _ensureCatalogMap() {
+    final cached = _idToNameCache;
+    if (cached != null) return Future.value(cached);
+    final inFlight = _loadingCatalog;
+    if (inFlight != null) return inFlight;
+    final future = () async {
+      try {
+        await _catalog();
+        return _idToNameCache!;
+      } finally {
+        _loadingCatalog = null;
+      }
+    }();
+    _loadingCatalog = future;
+    return future;
+  }
+
+  Future<String> _resolveNameOf(String id) async {
+    final cached = _idToNameCache?[id];
+    if (cached != null) return cached;
+    final map = await _ensureCatalogMap();
+    final name = map[id];
+    if (name == null) {
+      throw const FormatException('Repository lié introuvable.');
+    }
+    return name;
   }
 
   Future<String> _nameOf(String id) async {
@@ -214,6 +273,50 @@ class JsonRepositoryStore extends ChangeNotifier {
     } on FormatException {
       // Parser diagnostics can contain repository data, including passwords.
       throw const FormatException('Le repository contient un JSON invalide.');
+    }
+  }
+
+  Future<Object?> _getDocument(String repoId) async {
+    if (_activeMutations > 0) {
+      await _pending;
+      await Future<void>.delayed(Duration.zero);
+    }
+    if (_documentCache.containsKey(repoId)) {
+      return _documentCache[repoId];
+    }
+    final inFlight = _loadingDocuments[repoId];
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final future = () async {
+      try {
+        final name = await _resolveNameOf(repoId);
+        final root = _decode(await read(name));
+        _documentCache[repoId] = root;
+        return root;
+      } finally {
+        _loadingDocuments.remove(repoId);
+      }
+    }();
+    _loadingDocuments[repoId] = future;
+    return future;
+  }
+
+  /// Précharge en mémoire le catalogue et les documents JSON des repositories
+  /// existants afin de permettre un binding synchrone dès le premier frame.
+  Future<void> preload() async {
+    try {
+      if (await FileSystemEntity.type(directory.path, followLinks: false) !=
+          FileSystemEntityType.directory) {
+        return;
+      }
+      final map = await _ensureCatalogMap();
+      await Future.wait([
+        for (final id in map.keys)
+          _getDocument(id).then<void>((_) {}, onError: (_) {}),
+      ]);
+    } catch (_) {
+      // Les erreurs de lecture ou de format sont gérées par les composants liés.
     }
   }
 
@@ -235,15 +338,68 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
-  Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) =>
-      _exclusive(() async {
-        binding.validateResolved();
-        final repoId = binding.repositoryId!;
-        final root = _decode(await read(await _nameOf(repoId)));
-        _documentCache[repoId] = root;
-        final value = JsonAttributePath(binding.path).read(root);
-        return (value: value, text: value?.toString() ?? '');
-      });
+  /// Lit de manière synchrone le tableau à [path] depuis le cache mémoire
+  /// du repository lorsque le document JSON a déjà été chargé.
+  ///
+  /// Retourne `null` si le repository n'est pas encore en cache ou si le
+  /// chemin ne peut pas être résolu sans erreur.
+  List<Object?>? peekArray(String repositoryId, String path) {
+    if (!_documentCache.containsKey(repositoryId)) return null;
+    try {
+      final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
+        ..validateResolved();
+      final root = _documentCache[repositoryId];
+      return List<Object?>.unmodifiable(
+        _array(JsonAttributePath(binding.path).readNode(root)),
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// Lit de manière synchrone la racine d'un arbre JSON à [path] depuis le
+  /// cache mémoire lorsque le document JSON a déjà été chargé.
+  ///
+  /// Retourne `null` si le repository n'est pas encore en cache ou si le
+  /// chemin ne peut pas être résolu sans erreur.
+  ({List<Object?> nodes, bool singleRootObject})? peekTreeNodes(
+    String repositoryId,
+    String path,
+  ) {
+    if (!_documentCache.containsKey(repositoryId)) return null;
+    try {
+      final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
+        ..validateResolved();
+      final root = _documentCache[repositoryId];
+      final node = JsonAttributePath(binding.path).readNode(root);
+      if (node == null) {
+        return (nodes: const <Object?>[], singleRootObject: false);
+      }
+      if (node is List) {
+        return (
+          nodes: List<Object?>.unmodifiable(node),
+          singleRootObject: false,
+        );
+      }
+      if (node is Map<String, dynamic>) {
+        return (
+          nodes: List<Object?>.unmodifiable([node]),
+          singleRootObject: true,
+        );
+      }
+      return null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) async {
+    binding.validateResolved();
+    final repoId = binding.repositoryId!;
+    final root = await _getDocument(repoId);
+    final value = JsonAttributePath(binding.path).read(root);
+    return (value: value, text: value?.toString() ?? '');
+  }
 
   Future<JsonAttributeValue> writeAttribute(
     JsonTextBinding binding,
@@ -274,16 +430,14 @@ class JsonRepositoryStore extends ChangeNotifier {
   });
 
   /// Elements of the array at [path]; a missing attribute is an empty list.
-  Future<List<Object?>> readArray(String repositoryId, String path) =>
-      _exclusive(() async {
-        final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
-          ..validateResolved();
-        final root = _decode(await read(await _nameOf(repositoryId)));
-        _documentCache[repositoryId] = root;
-        return List<Object?>.unmodifiable(
-          _array(JsonAttributePath(binding.path).readNode(root)),
-        );
-      });
+  Future<List<Object?>> readArray(String repositoryId, String path) async {
+    final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
+      ..validateResolved();
+    final root = await _getDocument(repositoryId);
+    return List<Object?>.unmodifiable(
+      _array(JsonAttributePath(binding.path).readNode(root)),
+    );
+  }
 
   static List<Object?> _array(Object? node) {
     if (node == null) return const [];
@@ -300,11 +454,10 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<({List<Object?> nodes, bool singleRootObject})> readTreeNodes(
     String repositoryId,
     String path,
-  ) => _exclusive(() async {
+  ) async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
-    final root = _decode(await read(await _nameOf(repositoryId)));
-    _documentCache[repositoryId] = root;
+    final root = await _getDocument(repositoryId);
     final node = JsonAttributePath(binding.path).readNode(root);
     if (node == null) {
       return (nodes: const <Object?>[], singleRootObject: false);
@@ -324,7 +477,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     throw const FormatException(
       'Le chemin du TreeView doit désigner un tableau ou un objet JSON.',
     );
-  });
+  }
 
   /// Appends a blank copy of the last element, or `{}` to an empty array.
   Future<int> appendArrayItem(
@@ -434,8 +587,9 @@ class JsonRepositoryStore extends ChangeNotifier {
     await _checkAvailable(name);
     await _file(name).create(exclusive: true);
     await _file(name).writeAsString('{}\n', flush: true);
-    final id = await _idOf(name);
-    _documentCache[id] = <String, dynamic>{};
+    await _idOf(name);
+    _idToNameCache = null;
+    _documentCache.clear();
     _changed();
   });
 
@@ -457,6 +611,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     final id = await _idOf(name);
     await _file(name).writeAsString(text, flush: true);
     _documentCache[id] = decoded;
+    _idToNameCache?[id] = validateName(name);
     _changed();
   }
 
@@ -472,6 +627,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       await metadata.rename(_idFile(name).path);
       rethrow;
     }
+    _idToNameCache = null;
     _changed();
   });
 
@@ -518,6 +674,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         if (id != null) {
           _documentCache.remove(id);
         }
+        _idToNameCache = null;
         final binding = id == null ? null : _bindings[id];
         if (binding != null) {
           for (final array in binding.arrays) {

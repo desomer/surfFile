@@ -149,6 +149,21 @@ class SurfaceStateBinding extends ChangeNotifier {
       return;
     }
 
+    final cached = store.peekAttribute(concrete);
+    if (cached != null) {
+      final value = cached.value;
+      if (value == null) {
+        stateName = null;
+      } else if (value is String) {
+        stateName = value;
+      } else {
+        error = 'Surface state name must be a string.';
+      }
+      loading = false;
+      notifyListeners();
+      return;
+    }
+
     loading = true;
     notifyListeners();
     _read(store, concrete, generation);

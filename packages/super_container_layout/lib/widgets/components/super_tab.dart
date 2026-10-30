@@ -544,6 +544,14 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         ? null
         : store.bindingOf(binding.repositoryId!).array(templatePath);
     _listenDynamic([?_dynamicSelection, ...source.arrays]);
+    if (binding != null && store != null) {
+      final cached = store.peekArray(binding.repositoryId!, binding.path);
+      if (cached != null) {
+        _dynamicItems = cached;
+        _dynamicError = null;
+        _dynamicLoading = false;
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _reloadDynamic();
     });
@@ -572,7 +580,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       });
       return;
     }
-    setState(() => _dynamicLoading = true);
+    if (_dynamicItems == null) {
+      setState(() => _dynamicLoading = true);
+    }
     try {
       final items = await store.readArray(binding.repositoryId!, binding.path);
       if (!mounted || generation != _dynamicGeneration) return;

@@ -81,9 +81,13 @@ class JsonTextControllerBinding extends ChangeNotifier {
 
   Future<void> reload({bool showLoading = true}) async {
     final generation = ++_generation;
-    loading = showLoading && !_ready;
-    if (!dirty) error = null;
-    _notify();
+    final nextLoading = showLoading && !_ready;
+    final nextError = dirty ? error : null;
+    if (loading != nextLoading || error != nextError) {
+      loading = nextLoading;
+      error = nextError;
+      _notify();
+    }
     try {
       final result = await store.readAttribute(binding);
       if (_disposed || generation != _generation) return;
