@@ -67,9 +67,12 @@ class SuperLayout extends StatefulWidget {
   static SuperLayoutConfig defaultSlotAddition(SlotAddition addition) {
     final zone = addition.zone;
     if (!zone.isSide) return addition.config;
-    if (addition.component.tags
-        .intersection(const {'action', 'button', 'text', 'input'})
-        .isNotEmpty) {
+    if (addition.component.tags.intersection(const {
+      'action',
+      'button',
+      'text',
+      'input',
+    }).isNotEmpty) {
       return addition.config;
     }
     final width = zone == SuperLayoutZone.west || zone == SuperLayoutZone.east;
@@ -481,6 +484,35 @@ class SuperLayoutState extends State<SuperLayout> {
         ? instance!.label
         : _config.value.label ?? widget.label;
   }
+
+  /// Display label of this layout in the editor.
+  String get displayLabel => _displayLabel;
+
+  /// Effective persisted identifier of this layout, when available.
+  String? get effectiveLayoutId => _resolveEffectiveLayoutId(context);
+
+  /// Live [BuildContext] of the placed slot [slotId], when mounted.
+  BuildContext? slotContextOf(String slotId) =>
+      _slotFocusKeys[slotId]?.currentContext;
+
+  /// Returns the zone whose [EditorSlotState] is [slot], or `null` if [slot]
+  /// is not one of this layout's zone slots.
+  SuperLayoutZone? zoneForEditorSlot(EditorSlotState slot) {
+    for (final entry in _zoneSlotKeys.entries) {
+      if (identical(entry.value.currentState, slot)) {
+        return entry.key;
+      }
+    }
+    return null;
+  }
+
+  /// Visible slots placed in [contentZone], in placement order.
+  List<SlotImplementation> slotsInZone(SuperLayoutZone contentZone) =>
+      _slotsOf(_config.value, contentZone);
+
+  /// Updates the layout configuration and notifies [SuperLayout.onChanged].
+  void updateConfig(SuperLayoutConfig value, {bool validateTags = true}) =>
+      _update(value, validateTags: validateTags);
 
   void _rename(String label) {
     final instance = editorComponentLabelOf(context);

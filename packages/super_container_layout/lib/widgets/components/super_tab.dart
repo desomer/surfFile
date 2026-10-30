@@ -875,26 +875,34 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   }
 
   Future<void> _openSettings(ValueNotifier<SuperTabConfig> controller) async {
-    final result = await showSuperTabEditor(
-      context: context,
-      config: controller.value,
-    );
-    if (result == null || !mounted || result == controller.value) return;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
+    SuperTabConfig? result;
     try {
-      controller.value = result;
-      _selectedIndex = result.initialIndex;
-      _lastValidIndex = result.initialIndex;
+      result = await showSuperTabEditor(
+        context: context,
+        config: controller.value,
+      );
+      if (result != null && mounted && result != controller.value) {
+        controller.value = result;
+        _selectedIndex = result.initialIndex;
+        _lastValidIndex = result.initialIndex;
+        widget.onConfigChanged?.call(result);
+      }
     } finally {
-      history?.commitTransaction();
+      if (result != null) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
     }
-    widget.onConfigChanged?.call(result);
   }
 
   Future<void> _openTabBarStyleEditor(
     ValueNotifier<SuperTabConfig> controller,
   ) async {
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
     SuperTabConfig? result;
     try {
       result = await showSuperTabBarStyleEditor(
@@ -906,22 +914,22 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
           setState(() => _previewConfig = draft);
         },
       );
+      if (result != null && mounted && result != controller.value) {
+        controller.value = result;
+        _selectedIndex = result.initialIndex;
+        _lastValidIndex = result.initialIndex;
+        widget.onConfigChanged?.call(result);
+      }
     } finally {
       if (mounted) {
         setState(() => _previewConfig = null);
       }
+      if (result != null) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
     }
-    if (result == null || !mounted || result == controller.value) return;
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    try {
-      controller.value = result;
-      _selectedIndex = result.initialIndex;
-      _lastValidIndex = result.initialIndex;
-    } finally {
-      history?.commitTransaction();
-    }
-    widget.onConfigChanged?.call(result);
   }
 
   String configLabelForTabBar(SuperTabConfig config) =>

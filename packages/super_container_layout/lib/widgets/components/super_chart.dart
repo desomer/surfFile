@@ -279,19 +279,25 @@ class _SuperChartState extends State<SuperChart> {
   }
 
   Future<void> _edit(ValueNotifier<SuperChartConfig> configuration) async {
-    final result = await showSuperChartEditor(
-      context: context,
-      config: configuration.value,
-    );
-    if (result == null || !mounted || result == configuration.value) return;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
+    SuperChartConfig? result;
     try {
-      configuration.value = result;
+      result = await showSuperChartEditor(
+        context: context,
+        config: configuration.value,
+      );
+      if (result != null && mounted && result != configuration.value) {
+        configuration.value = result;
+        widget.onConfigChanged?.call(result);
+      }
     } finally {
-      history?.commitTransaction();
+      if (result != null) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
     }
-    widget.onConfigChanged?.call(result);
   }
 
   static double? _toDouble(Object? raw) {

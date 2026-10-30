@@ -574,19 +574,25 @@ class _SuperTableState extends State<SuperTable> {
   }
 
   Future<void> _openSettings(ValueNotifier<SuperTableConfig> controller) async {
-    final result = await showSuperTableEditor(
-      context: context,
-      config: controller.value,
-    );
-    if (result == null || !mounted || result == controller.value) return;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
+    SuperTableConfig? result;
     try {
-      controller.value = result;
+      result = await showSuperTableEditor(
+        context: context,
+        config: controller.value,
+      );
+      if (result != null && mounted && result != controller.value) {
+        controller.value = result;
+        widget.onConfigChanged?.call(result);
+      }
     } finally {
-      history?.commitTransaction();
+      if (result != null) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
     }
-    widget.onConfigChanged?.call(result);
   }
 
   Widget _buildZoneContent(

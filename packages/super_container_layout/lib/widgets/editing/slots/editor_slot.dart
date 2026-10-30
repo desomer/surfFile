@@ -1264,16 +1264,15 @@ class EditorSlotState extends State<EditorSlot> {
                                   'Taille et flux de la zone ${state.widget.axisAction!().zoneLabel}',
                               icon: const Icon(Icons.straighten),
                               style: _menuIconButtonStyle(context),
-                              onPressed: () =>
-                                  Navigator.of(context)
-                                      .pop<Future<void> Function()>(() async {
-                                        if (state.mounted) {
-                                          await EditorWizardNavigation.openWithTab(
-                                            EditorWizardTab.dimensions,
-                                            editFlow,
-                                          );
-                                        }
-                                      }),
+                              onPressed: () => Navigator.of(context)
+                                  .pop<Future<void> Function()>(() async {
+                                    if (state.mounted) {
+                                      await EditorWizardNavigation.openWithTab(
+                                        EditorWizardTab.dimensions,
+                                        editFlow,
+                                      );
+                                    }
+                                  }),
                             ),
                         ],
                         if ((StyleEditScope.controllerOf(state.context)
@@ -1302,34 +1301,30 @@ class EditorSlotState extends State<EditorSlot> {
                               tooltip: action.tooltip ?? action.label,
                               icon: const Icon(Icons.straighten),
                               style: _menuIconButtonStyle(context),
-                              onPressed: () =>
-                                  Navigator.of(context)
-                                      .pop<Future<void> Function()>(() async {
-                                        if (state.mounted &&
-                                            state.widget.onEdit != null &&
-                                            EditorWizardNavigation
-                                                    .findDirectSlotSizeAction(
-                                                      state.context,
-                                                    )
-                                                    ?.label ==
-                                                action.label) {
-                                          await state.openEditor(
-                                            initialTab:
-                                                EditorWizardTab.dimensions,
-                                            dimensionDelegate: action
-                                                .dimensionDelegateBuilder
-                                                ?.call(),
-                                          );
-                                        } else {
-                                          await EditorWizardNavigation.openWithTab(
-                                            EditorWizardTab.dimensions,
-                                            action.onEdit,
-                                            delegate: action
-                                                .dimensionDelegateBuilder
-                                                ?.call(),
-                                          );
-                                        }
-                                      }),
+                              onPressed: () => Navigator.of(context)
+                                  .pop<Future<void> Function()>(() async {
+                                    if (state.mounted &&
+                                        state.widget.onEdit != null &&
+                                        EditorWizardNavigation.findDirectSlotSizeAction(
+                                              state.context,
+                                            )?.label ==
+                                            action.label) {
+                                      await state.openEditor(
+                                        initialTab: EditorWizardTab.dimensions,
+                                        dimensionDelegate: action
+                                            .dimensionDelegateBuilder
+                                            ?.call(),
+                                      );
+                                    } else {
+                                      await EditorWizardNavigation.openWithTab(
+                                        EditorWizardTab.dimensions,
+                                        action.onEdit,
+                                        delegate: action
+                                            .dimensionDelegateBuilder
+                                            ?.call(),
+                                      );
+                                    }
+                                  }),
                             ),
                           if (action.onRemove case final remove?)
                             IconButton(
@@ -1461,6 +1456,7 @@ class EditorSlotState extends State<EditorSlot> {
                                           targets: latest,
                                           sourceLabel: state.titleLabel,
                                           target: state.context,
+                                          rootSlot: state,
                                         );
                                       }),
                                   child: const Text('Extraire & lier en JSON…'),

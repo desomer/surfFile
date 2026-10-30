@@ -866,6 +866,8 @@ class _SuperActionState extends State<SuperAction>
 
           Future<void> editAction() async {
             final initial = configuration.value;
+            final history = EditorHistoryScope.controllerOf(context);
+            history?.beginTransaction();
             SuperActionConfig? result;
             try {
               result = await showSuperActionEditor(
@@ -883,24 +885,22 @@ class _SuperActionState extends State<SuperAction>
                   setState(() => _editorConfig = draft);
                 },
               );
+              if (result != null &&
+                  context.mounted &&
+                  result != configuration.value) {
+                configuration.value = result;
+                widget.onConfigChanged?.call(result);
+              }
             } finally {
               if (mounted) {
                 setState(() => _editorConfig = null);
               }
+              if (result != null) {
+                history?.commitTransaction();
+              } else {
+                history?.cancelTransaction();
+              }
             }
-            if (result == null ||
-                !context.mounted ||
-                result == configuration.value) {
-              return;
-            }
-            final history = EditorHistoryScope.controllerOf(context);
-            history?.beginTransaction();
-            try {
-              configuration.value = result;
-            } finally {
-              history?.commitTransaction();
-            }
-            widget.onConfigChanged?.call(result);
           }
 
           if (navScope?.part == SuperActionNavigationPart.icon) {

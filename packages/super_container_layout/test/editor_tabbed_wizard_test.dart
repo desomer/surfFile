@@ -119,7 +119,7 @@ void main() {
 
       // 1. Right-click on the SuperValue component and click the component row -> opens on Propriétés tab
       await tester.tapAt(
-        tester.getTopLeft(find.byType(SuperValue)) + const Offset(10, 5),
+        tester.getTopLeft(find.byType(SuperValue)) + const Offset(100, 10),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
@@ -154,7 +154,7 @@ void main() {
 
       // 2. Right-click on the SuperValue component and click the ruler icon -> opens on Taille et marge tab
       await tester.tapAt(
-        tester.getTopLeft(find.byType(SuperValue)) + const Offset(10, 5),
+        tester.getTopLeft(find.byType(SuperValue)) + const Offset(100, 10),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
@@ -321,8 +321,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byKey(const ValueKey('raw-box')),
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('raw-box'))) +
+            const Offset(40, 40),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
@@ -338,6 +339,149 @@ void main() {
       expect(isTabEnabled(tester, 'editor-wizard-tab-properties'), isFalse);
       expect(isTabEnabled(tester, 'editor-wizard-tab-dimensions'), isTrue);
 
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'zone flow and native region context menu links position on the right tab and cancel restores both tabs',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final mode = ValueNotifier(true);
+      final config = ValueNotifier(
+        const SuperLayoutConfig(
+          north: true,
+          south: false,
+          east: false,
+          west: false,
+          placements: {
+            SuperLayoutZone.north: ['card-slot'],
+          },
+        ),
+      );
+      final cardStyle = ValueNotifier(const ContainerStyle(radius: 8));
+      addTearDown(() {
+        cardStyle.dispose();
+        config.dispose();
+        mode.dispose();
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: mode,
+            child: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: ValueListenableBuilder<SuperLayoutConfig>(
+                  valueListenable: config,
+                  builder: (context, layoutValue, _) => SuperLayout(
+                    config: layoutValue,
+                    onChanged: (next) => config.value = next,
+                    slots: [
+                      BuilderSlot(
+                        id: 'card-slot',
+                        label: 'MaCarte',
+                        builder: (_) => ValueListenableBuilder<ContainerStyle>(
+                          valueListenable: cardStyle,
+                          builder: (context, styleValue, _) => EditableSurface(
+                            label: 'MaCarte',
+                            style: styleValue,
+                            onStyleChanged: (next) => cardStyle.value = next,
+                            child: const SizedBox(
+                              key: ValueKey('card-inner'),
+                              width: 100,
+                              height: 60,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Open via ruler icon on MaCarte -> opens on Taille et marge tab
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('card-inner'))) +
+            const Offset(40, 20),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey('style-menu-size-Taille et marge préférées : MaCarte'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(isTabSelected(tester, 'editor-wizard-tab-dimensions'), isTrue);
+      await tester.enterText(
+        find.byKey(const ValueKey('slot-preferred-width')),
+        '300',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        config.value.slotPreferredSizes['card-slot']?.width ??
+            config
+                .value
+                .slotSizeConstraints['card-slot']
+                ?.preferredWidth
+                ?.value,
+        300,
+      );
+
+      // Switch to Propriétés tab, modify style radius, then Cancel -> restores both
+      await tester.tap(tabInkWell('editor-wizard-tab-properties'));
+      await tester.pumpAndSettle();
+      expect(isTabSelected(tester, 'editor-wizard-tab-properties'), isTrue);
+
+      final styleEditor = tester.widget<ContainerStyleEditor>(
+        find.byType(ContainerStyleEditor),
+      );
+      styleEditor.onRadiusChanged!(24);
+      await tester.pumpAndSettle();
+      expect(cardStyle.value.radius, 24);
+
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      expect(cardStyle.value.radius, 8);
+      expect(config.value.slotSizeConstraints['card-slot'], isNull);
+
+      // Open zone Nord via zone row -> opens on Propriétés tab; via ruler icon -> opens on Taille et marge tab
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('card-inner'))) +
+            const Offset(40, 20),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-Nord')));
+      await tester.pumpAndSettle();
+
+      expect(isTabSelected(tester, 'editor-wizard-tab-properties'), isTrue);
+      await tester.tap(find.text('Annuler'));
+      await tester.pumpAndSettle();
+
+      await tester.tapAt(
+        tester.getTopLeft(find.byKey(const ValueKey('card-inner'))) +
+            const Offset(40, 20),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-zone-flow-Nord')));
+      await tester.pumpAndSettle();
+
+      expect(isTabSelected(tester, 'editor-wizard-tab-dimensions'), isTrue);
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
     },

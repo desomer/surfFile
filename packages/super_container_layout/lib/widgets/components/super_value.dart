@@ -829,6 +829,8 @@ class _SuperValueState extends State<SuperValue>
               final initial = configuration.value;
               final originalText = _text.text;
               _editorText = TextEditingController.fromValue(_text.value);
+              final history = EditorHistoryScope.controllerOf(context);
+              history?.beginTransaction();
               SuperValueConfig? result;
               try {
                 result = await showSuperValueEditor(
@@ -861,6 +863,12 @@ class _SuperValueState extends State<SuperValue>
                     setState(() => _editorConfig = draft);
                   },
                 );
+                if (result != null &&
+                    context.mounted &&
+                    result != configuration.value) {
+                  configuration.value = result;
+                  widget.onConfigChanged?.call(result);
+                }
               } finally {
                 final previewText = _editorText;
                 if (mounted) {
@@ -872,20 +880,12 @@ class _SuperValueState extends State<SuperValue>
                     (_) => previewText?.dispose(),
                   );
                 }
+                if (result != null) {
+                  history?.commitTransaction();
+                } else {
+                  history?.cancelTransaction();
+                }
               }
-              if (result == null ||
-                  !context.mounted ||
-                  result == configuration.value) {
-                return;
-              }
-              final history = EditorHistoryScope.controllerOf(context);
-              history?.beginTransaction();
-              try {
-                configuration.value = result;
-              } finally {
-                history?.commitTransaction();
-              }
-              widget.onConfigChanged?.call(result);
             },
             child: ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,

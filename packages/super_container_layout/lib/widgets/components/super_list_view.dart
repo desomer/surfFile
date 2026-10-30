@@ -432,19 +432,25 @@ class _SuperListViewState extends State<SuperListView> {
   }
 
   Future<void> _edit(ValueNotifier<SuperListViewConfig> configuration) async {
-    final result = await showSuperListViewEditor(
-      context: context,
-      config: configuration.value,
-    );
-    if (result == null || !mounted || result == configuration.value) return;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
+    SuperListViewConfig? result;
     try {
-      configuration.value = result;
+      result = await showSuperListViewEditor(
+        context: context,
+        config: configuration.value,
+      );
+      if (result != null && mounted && result != configuration.value) {
+        configuration.value = result;
+        widget.onConfigChanged?.call(result);
+      }
     } finally {
-      history?.commitTransaction();
+      if (result != null) {
+        history?.commitTransaction();
+      } else {
+        history?.cancelTransaction();
+      }
     }
-    widget.onConfigChanged?.call(result);
   }
 
   SlotSizeConstraints _initialItemSize(SuperListViewConfig config) {
@@ -703,6 +709,9 @@ class _SuperListViewState extends State<SuperListView> {
         ),
       ),
     );
+    final rowWidth =
+        width ??
+        (!config.wrap && config.axis == Axis.vertical ? maxWidth : null);
     final rowHeight =
         height ??
         (!config.wrap && config.axis == Axis.horizontal ? maxHeight : null);
@@ -716,27 +725,29 @@ class _SuperListViewState extends State<SuperListView> {
         maxHeight: maxHeight,
       ),
       child: SizedBox(
-        width:
-            width ??
-            (!config.wrap && config.axis == Axis.vertical ? maxWidth : null),
+        width: rowWidth,
         height: rowHeight,
         child: Padding(
           padding: dimensions.contentPadding,
-          child: Column(
-            mainAxisSize: rowHeight == null
-                ? MainAxisSize.min
-                : MainAxisSize.max,
-            crossAxisAlignment: (!config.wrap && config.axis == Axis.vertical)
-                ? CrossAxisAlignment.stretch
-                : CrossAxisAlignment.start,
-            children: [
-              Flexible(
-                fit: natural && rowHeight == null
-                    ? FlexFit.loose
-                    : FlexFit.tight,
-                child: item,
-              ),
-            ],
+          child: SlotContentFitScope(
+            fitWidth: rowWidth == null,
+            fitHeight: rowHeight == null,
+            child: Column(
+              mainAxisSize: rowHeight == null
+                  ? MainAxisSize.min
+                  : MainAxisSize.max,
+              crossAxisAlignment: rowWidth != null
+                  ? CrossAxisAlignment.stretch
+                  : CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  fit: natural && rowHeight == null
+                      ? FlexFit.loose
+                      : FlexFit.tight,
+                  child: item,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -821,36 +832,33 @@ class _SuperListViewState extends State<SuperListView> {
         final vertical = config.wrap || config.axis == Axis.vertical;
         final isSliver = SliverSlotScope.isSliver(context);
 
-        Widget buildItem(
-          BuildContext context,
-          int index,
-          Size viewport,
-        ) => SliverSlotScope(
-          enabled: false,
-          child: index == count
-              ? Align(
-                  widthFactor: config.wrap ? 1 : null,
-                  heightFactor: config.wrap ? 1 : null,
-                  alignment: vertical
-                      ? Alignment.centerLeft
-                      : Alignment.center,
-                  child: TextButton.icon(
-                    key: ValueKey('super-list-add-${widget.id}'),
-                    onPressed: _busy ? null : _add,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Ajouter'),
-                  ),
-                )
-              : _row(
-                  layout,
-                  style,
-                  configuration,
-                  config,
-                  scope,
-                  template ? null : index,
-                  viewport,
-                ),
-        );
+        Widget buildItem(BuildContext context, int index, Size viewport) =>
+            SliverSlotScope(
+              enabled: false,
+              child: index == count
+                  ? Align(
+                      widthFactor: config.wrap ? 1 : null,
+                      heightFactor: config.wrap ? 1 : null,
+                      alignment: vertical
+                          ? Alignment.centerLeft
+                          : Alignment.center,
+                      child: TextButton.icon(
+                        key: ValueKey('super-list-add-${widget.id}'),
+                        onPressed: _busy ? null : _add,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Ajouter'),
+                      ),
+                    )
+                  : _row(
+                      layout,
+                      style,
+                      configuration,
+                      config,
+                      scope,
+                      template ? null : index,
+                      viewport,
+                    ),
+            );
 
         final error = _error != null || config.binding == null;
 
@@ -924,7 +932,11 @@ class _SuperListViewState extends State<SuperListView> {
                                 spacing: config.spacing,
                                 runSpacing: config.spacing,
                                 children: [
-                                  for (var index = 0; index < totalCount; index++)
+                                  for (
+                                    var index = 0;
+                                    index < totalCount;
+                                    index++
+                                  )
                                     if (index == count &&
                                         config.wrapSizing ==
                                             ListWrapSizing.fixed &&
@@ -988,12 +1000,19 @@ class _SuperListViewState extends State<SuperListView> {
                 )
               : LayoutBuilder(
                   builder: (context, constraints) {
-                    final fill = constraints.hasBoundedHeight;
+                    final hasBoundedWidth = constraints.hasBoundedWidth;
+                    final hasBoundedHeight = constraints.hasBoundedHeight;
+                    final fill = vertical ? hasBoundedHeight : hasBoundedWidth;
+                    final fallbackSize = _parentLayoutSize(
+                      MediaQuery.sizeOf(context),
+                    );
                     final viewport = Size(
-                      constraints.maxWidth,
-                      fill
+                      hasBoundedWidth
+                          ? constraints.maxWidth
+                          : fallbackSize.width,
+                      hasBoundedHeight
                           ? constraints.maxHeight
-                          : MediaQuery.sizeOf(context).height,
+                          : fallbackSize.height,
                     );
                     Widget item(BuildContext context, int index) =>
                         buildItem(context, index, viewport);
@@ -1028,7 +1047,7 @@ class _SuperListViewState extends State<SuperListView> {
                         : ListView.builder(
                             key: ValueKey('super-list-${widget.id}'),
                             primary: false,
-                            shrinkWrap: vertical && !fill,
+                            shrinkWrap: !fill,
                             scrollDirection: config.axis,
                             itemExtent: config.itemSize == null
                                 ? config.itemExtent + config.spacing
@@ -1036,9 +1055,13 @@ class _SuperListViewState extends State<SuperListView> {
                             itemCount: count + (add ? 1 : 0),
                             itemBuilder: item,
                           );
-                    return Column(
-                      mainAxisSize: fill ? MainAxisSize.max : MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    final column = Column(
+                      mainAxisSize: hasBoundedHeight
+                          ? MainAxisSize.max
+                          : MainAxisSize.min,
+                      crossAxisAlignment: hasBoundedWidth
+                          ? CrossAxisAlignment.stretch
+                          : CrossAxisAlignment.start,
                       children: [
                         if (message != null) _message(message, error: error),
                         if (_error != null && config.binding != null)
@@ -1051,7 +1074,7 @@ class _SuperListViewState extends State<SuperListView> {
                             ),
                           ),
                         if (count > 0 || add)
-                          if (fill)
+                          if (hasBoundedHeight)
                             Expanded(child: list)
                           else if (vertical)
                             list
@@ -1060,6 +1083,9 @@ class _SuperListViewState extends State<SuperListView> {
                             SizedBox(height: config.itemExtent, child: list),
                       ],
                     );
+                    return hasBoundedWidth
+                        ? column
+                        : SizedBox(width: viewport.width, child: column);
                   },
                 ),
         );
