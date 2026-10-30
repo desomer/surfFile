@@ -163,6 +163,7 @@ final listViewAddConfigurator = ComponentAddConfigurator<SuperListViewConfig>(
       'Ajout / suppression',
       '${_yes(draft.allowAdd)} / ${_yes(draft.allowRemove)}',
     ),
+    if (draft.showScrollbar) ('ScrollBar', draft.scrollbarStyle.summary),
     ('Liste vide', draft.emptyText),
     ('Liaison', _bindingLabel(draft.binding)),
   ],
@@ -176,42 +177,40 @@ final listViewAddConfigurator = ComponentAddConfigurator<SuperListViewConfig>(
 );
 
 /// Add wizard settings of a `SuperTreeView`, written to `Registry.treeViewController`.
-final treeViewAddConfigurator =
-    ComponentAddConfigurator<SuperTreeViewConfig>(
-      initial: (_) => SuperTreeViewConfig(),
-      builder: (context, draft, onChanged) =>
-          TreeViewAddForm(draft: draft, onChanged: onChanged),
-      validate: (draft) {
-        if (draft.binding?.path.trim().isEmpty ?? false) {
-          return 'Chemin de liaison requis.';
-        }
-        try {
-          draft.validate();
-          return null;
-        } on FormatException catch (error) {
-          return error.message;
-        } on Object {
-          return 'Configuration du TreeView invalide.';
-        }
-      },
-      summary: (draft) => [
-        ('Clé enfants', draft.childrenKey),
-        ('Largeur Header', '${draft.headerSize}'),
-        ('Hauteur ligne', '${draft.rowHeight}'),
-        ('Déplié par défaut', _yes(draft.initiallyExpanded)),
-        ('Connecteurs', _yes(draft.showConnectors)),
-        ('Liaison', _bindingLabel(draft.binding)),
-      ],
-      apply: (registry, id, draft) =>
-          registry.treeViewController(id).value = draft,
-      readBinding: (draft) => draft.binding,
-      writeBinding: (draft, binding) =>
-          draft.copyWith(binding: binding, clearBinding: binding == null),
-      bindingKeyPrefix: 'add-tree',
-      bindingPathHint: 'nodes ou clients[?].categories',
-      bindingHelp:
-          'Tableau ou objet JSON de nœuds récursifs affichés dans le TreeView.',
-    );
+final treeViewAddConfigurator = ComponentAddConfigurator<SuperTreeViewConfig>(
+  initial: (_) => SuperTreeViewConfig(),
+  builder: (context, draft, onChanged) =>
+      TreeViewAddForm(draft: draft, onChanged: onChanged),
+  validate: (draft) {
+    if (draft.binding?.path.trim().isEmpty ?? false) {
+      return 'Chemin de liaison requis.';
+    }
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration du TreeView invalide.';
+    }
+  },
+  summary: (draft) => [
+    ('Clé enfants', draft.childrenKey),
+    ('Largeur Header', '${draft.headerSize}'),
+    ('Hauteur ligne', '${draft.rowHeight}'),
+    ('Déplié par défaut', _yes(draft.initiallyExpanded)),
+    ('Connecteurs', _yes(draft.showConnectors)),
+    ('Liaison', _bindingLabel(draft.binding)),
+  ],
+  apply: (registry, id, draft) => registry.treeViewController(id).value = draft,
+  readBinding: (draft) => draft.binding,
+  writeBinding: (draft, binding) =>
+      draft.copyWith(binding: binding, clearBinding: binding == null),
+  bindingKeyPrefix: 'add-tree',
+  bindingPathHint: 'nodes ou clients[?].categories',
+  bindingHelp:
+      'Tableau ou objet JSON de nœuds récursifs affichés dans le TreeView.',
+);
 
 /// Add wizard settings of a `SuperTable`, written to `Registry.tableController`.
 final tableAddConfigurator = ComponentAddConfigurator<SuperTableConfig>(
@@ -235,7 +234,10 @@ final tableAddConfigurator = ComponentAddConfigurator<SuperTableConfig>(
     ('Colonnes', '${draft.columns.length}'),
     ('Figées à gauche', '${draft.colFreezeLeftCount}'),
     ('Hauteur ligne', '${draft.rowHeight}'),
-    ('En-tête / Pied', '${_yes(draft.showHeaderRow)} / ${_yes(draft.showBottomRow)}'),
+    (
+      'En-tête / Pied',
+      '${_yes(draft.showHeaderRow)} / ${_yes(draft.showBottomRow)}',
+    ),
     ('Liaison', _bindingLabel(draft.binding)),
   ],
   apply: (registry, id, draft) => registry.tableController(id).value = draft,
@@ -338,52 +340,50 @@ final expansibleAddConfigurator =
     );
 
 /// Add wizard settings of a `SuperMenuAnchor`, written to `Registry.nativeComponentController`.
-final menuAnchorAddConfigurator =
-    ComponentAddConfigurator<NativeComponentConfig>(
-      initial: (_) =>
-          NativeComponentConfig(regions: const {'header': true, 'body': true}),
-      builder: (context, draft, onChanged) =>
-          MenuAnchorAddForm(draft: draft, onChanged: onChanged),
-      validate: (draft) {
-        if (draft.binding?.path.trim().isEmpty ?? false) {
-          return 'Chemin de liaison requis.';
-        }
-        try {
-          draft.validate();
-          return null;
-        } on FormatException catch (error) {
-          return error.message;
-        } on Object {
-          return 'Configuration du menu invalide.';
-        }
-      },
-      summary: (draft) => [
-        ('Ouvert par défaut', _yes(draft.initiallyExpanded ?? false)),
-        ('Clic sur l’en-tête', _yes(draft.headerClickToggles ?? true)),
-        ('Consommer clic extérieur', _yes(draft.consumeOutsideTap ?? false)),
-        if (draft.toggleIcon != null && draft.toggleIcon != 'none') ...[
-          ('Icône ouvert/fermé', nativeToggleIconLabel(draft.toggleIcon)),
-          (
-            'Position de l’icône',
-            nativeToggleIconPositionLabel(draft.toggleIconPosition),
-          ),
-        ],
-        if (draft.alignmentOffset != null)
-          (
-            'Décalage',
-            '(${draft.alignmentOffset!.dx.toStringAsFixed(0)}, ${draft.alignmentOffset!.dy.toStringAsFixed(0)})',
-          ),
-        ('Liaison', _bindingLabel(draft.binding)),
-      ],
-      apply: (registry, id, draft) =>
-          registry.nativeComponentController(id).value = draft,
-      readBinding: (draft) => draft.binding,
-      writeBinding: (draft, binding) => draft.withBinding(binding),
-      bindingKeyPrefix: 'add-menu-anchor',
-      bindingPathHint: 'ui.menuOuvert ou clients[?].menuOuvert',
-      bindingHelp:
-          'Le repository fournit et persiste l’état ouvert/fermé du menu (booléen).',
-    );
+final menuAnchorAddConfigurator = ComponentAddConfigurator<NativeComponentConfig>(
+  initial: (_) =>
+      NativeComponentConfig(regions: const {'header': true, 'body': true}),
+  builder: (context, draft, onChanged) =>
+      MenuAnchorAddForm(draft: draft, onChanged: onChanged),
+  validate: (draft) {
+    if (draft.binding?.path.trim().isEmpty ?? false) {
+      return 'Chemin de liaison requis.';
+    }
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration du menu invalide.';
+    }
+  },
+  summary: (draft) => [
+    ('Ouvert par défaut', _yes(draft.initiallyExpanded ?? false)),
+    ('Clic sur l’en-tête', _yes(draft.headerClickToggles ?? true)),
+    ('Consommer clic extérieur', _yes(draft.consumeOutsideTap ?? false)),
+    if (draft.toggleIcon != null && draft.toggleIcon != 'none') ...[
+      ('Icône ouvert/fermé', nativeToggleIconLabel(draft.toggleIcon)),
+      (
+        'Position de l’icône',
+        nativeToggleIconPositionLabel(draft.toggleIconPosition),
+      ),
+    ],
+    if (draft.alignmentOffset != null)
+      (
+        'Décalage',
+        '(${draft.alignmentOffset!.dx.toStringAsFixed(0)}, ${draft.alignmentOffset!.dy.toStringAsFixed(0)})',
+      ),
+    ('Liaison', _bindingLabel(draft.binding)),
+  ],
+  apply: (registry, id, draft) =>
+      registry.nativeComponentController(id).value = draft,
+  readBinding: (draft) => draft.binding,
+  writeBinding: (draft, binding) => draft.withBinding(binding),
+  bindingKeyPrefix: 'add-menu-anchor',
+  bindingPathHint: 'ui.menuOuvert ou clients[?].menuOuvert',
+  bindingHelp: 'Le repository fournit et persiste l’état ouvert/fermé du menu (booléen).',
+);
 
 /// Add wizard settings of a `SuperTab`, written to `Registry.tabController`.
 final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
@@ -404,10 +404,7 @@ final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
     }
   },
   summary: (draft) => [
-    (
-      'Mode',
-      draft.mode == SuperTabMode.dynamic ? 'Dynamique' : 'Statique',
-    ),
+    ('Mode', draft.mode == SuperTabMode.dynamic ? 'Dynamique' : 'Statique'),
     (
       'Position de la barre',
       draft.tabBarPosition == SuperTabBarPosition.bottom ? 'En bas' : 'En haut',
@@ -427,8 +424,7 @@ final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
       draft.copyWith(binding: binding, clearBinding: binding == null),
   bindingKeyPrefix: 'add-tab',
   bindingPathHint: 'categories ou ui.ongletActif',
-  bindingHelp:
-      'En mode dynamique : tableau JSON générant les onglets. En mode statique : index actif.',
+  bindingHelp: 'En mode dynamique : tableau JSON générant les onglets. En mode statique : index actif.',
 );
 
 /// Add wizard settings of a `SuperChart`, written to `Registry.chartController`.
@@ -452,7 +448,10 @@ final chartAddConfigurator = ComponentAddConfigurator<SuperChartConfig>(
   summary: (draft) => [
     ('Type', draft.kind.label),
     if (draft.labelPath.isNotEmpty) ('Axe X / Libellé', draft.labelPath),
-    ('Séries', draft.series.map((s) => '${s.label} (${s.valuePath})').join(', ')),
+    (
+      'Séries',
+      draft.series.map((s) => '${s.label} (${s.valuePath})').join(', '),
+    ),
     ('Légende', _yes(draft.showLegend)),
     ('Grille', _yes(draft.showGrid)),
     ('Sélection synchronisée', _yes(draft.enableSelection)),
@@ -464,8 +463,7 @@ final chartAddConfigurator = ComponentAddConfigurator<SuperChartConfig>(
       draft.copyWith(binding: binding, clearBinding: binding == null),
   bindingKeyPrefix: 'add-chart',
   bindingPathHint: 'ventes ou clients[?].commandes',
-  bindingHelp:
-      'Chaque élément du tableau fournit un point ou une catégorie du graphique.',
+  bindingHelp: 'Chaque élément du tableau fournit un point ou une catégorie du graphique.',
 );
 
 String _yes(bool value) => value ? 'oui' : 'non';

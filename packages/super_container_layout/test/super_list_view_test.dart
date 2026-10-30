@@ -11,7 +11,8 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -1367,4 +1368,111 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'renders styled RawScrollbar and animates sliding selection and hover indicators',
+    (tester) async {
+      const customScrollbar = ScrollbarStyleConfig(
+        thickness: 12,
+        radius: 6,
+        trackVisibility: true,
+        thumbColor: Color(0xFF112233),
+        side: ScrollbarSide.start,
+      );
+      final config = SuperListViewConfig(
+        binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+        itemExtent: 80,
+        spacing: 10,
+        showScrollbar: true,
+        scrollbarStyle: customScrollbar,
+        animateSelectionAndHover: true,
+      );
+
+      final roundTripped = SuperListViewConfig.fromJson(
+        jsonDecode(jsonEncode(config.toJson())),
+      );
+      expect(roundTripped, config);
+      expect(roundTripped.showScrollbar, isTrue);
+      expect(roundTripped.scrollbarStyle, customScrollbar);
+      expect(roundTripped.animateSelectionAndHover, isTrue);
+
+      await mount(
+        tester,
+        SuperListView(
+          id: 'clients',
+          config: config,
+          template: center(['name']),
+          slots: [text('name', 'clients[?].name')],
+        ),
+      );
+
+      // Verify custom RawScrollbar is rendered with the configured style
+      final scrollbarFinder = find.byKey(
+        const ValueKey('super-list-scrollbar-clients'),
+      );
+      expect(scrollbarFinder, findsOneWidget);
+      final rawScrollbar = tester.widget<RawScrollbar>(scrollbarFinder);
+      expect(rawScrollbar.thickness, 12);
+      expect(rawScrollbar.radius, const Radius.circular(6));
+      expect(rawScrollbar.trackVisibility, isTrue);
+      expect(rawScrollbar.thumbColor, const Color(0xFF112233));
+      expect(rawScrollbar.scrollbarOrientation, ScrollbarOrientation.left);
+
+      // Verify sliding selection indicator starts hidden and animates between rows
+      final selPositionedFinder = find.byKey(
+        const ValueKey('super-list-selection-positioned-clients'),
+      );
+      final selOpacityFinder = find.byKey(
+        const ValueKey('super-list-selection-opacity-clients'),
+      );
+      expect(selPositionedFinder, findsOneWidget);
+      expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 0.0);
+
+      // Click first row ('Alice') -> appears at top: 0 without slide animation
+      await tester.tap(find.text('Alice'));
+      await tester.pump();
+      var selPos = tester.widget<AnimatedPositioned>(selPositionedFinder);
+      expect(selPos.top, 0.0);
+      expect(selPos.height, 80.0);
+      expect(selPos.duration, Duration.zero);
+      expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 1.0);
+      await tester.pumpAndSettle();
+
+      // Click second row ('Bob') -> slides from top: 0 to top: 90 (80 + 10 spacing) with 200ms duration
+      await tester.tap(find.text('Bob'));
+      await tester.pump();
+      selPos = tester.widget<AnimatedPositioned>(selPositionedFinder);
+      expect(selPos.top, 90.0);
+      expect(selPos.height, 80.0);
+      expect(selPos.duration, const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+
+      // Hover over first row ('Alice') -> hover indicator appears
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+      await gesture.moveTo(tester.getCenter(find.text('Alice')));
+      await tester.pump();
+
+      final hoverPositionedFinder = find.byKey(
+        const ValueKey('super-list-hover-positioned-clients'),
+      );
+      final hoverOpacityFinder = find.byKey(
+        const ValueKey('super-list-hover-opacity-clients'),
+      );
+      var hoverPos = tester.widget<AnimatedPositioned>(hoverPositionedFinder);
+      expect(hoverPos.top, 0.0);
+      expect(tester.widget<AnimatedOpacity>(hoverOpacityFinder).opacity, 1.0);
+
+      // Move pointer to second row ('Bob') -> hover indicator slides with 180ms duration
+      await gesture.moveTo(tester.getCenter(find.text('Bob')));
+      await tester.pump();
+      hoverPos = tester.widget<AnimatedPositioned>(hoverPositionedFinder);
+      expect(hoverPos.top, 90.0);
+      expect(hoverPos.duration, const Duration(milliseconds: 180));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

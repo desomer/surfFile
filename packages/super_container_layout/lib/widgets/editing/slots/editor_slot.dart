@@ -821,7 +821,7 @@ class EditorSlotState extends State<EditorSlot> {
             overlay.globalToLocal(bannerGlobalRect.topLeft),
             overlay.globalToLocal(bannerGlobalRect.bottomRight),
           );
-    var menuConstraints = const BoxConstraints(minWidth: 240, maxWidth: 420);
+    var menuConstraints = const BoxConstraints(minWidth: 420, maxWidth: 620);
     var menuPosition = RelativeRect.fromLTRB(
       position.dx,
       position.dy,

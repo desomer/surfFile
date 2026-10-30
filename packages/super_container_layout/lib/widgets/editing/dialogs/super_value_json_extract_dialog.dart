@@ -1937,6 +1937,7 @@ class _SuperValueJsonExtractDialogState
       );
     }
 
+    final zoneFlow = currentParentConfig.flowOf(group.displayZone);
     final listConfig = SuperListViewConfig(
       binding: JsonTextBinding(
         repositoryId: group.isNestedInList ? null : repoId,
@@ -1949,6 +1950,8 @@ class _SuperValueJsonExtractDialogState
       spacing: group.inferredSpacing,
       allowAdd: userConfig.allowAdd,
       allowRemove: userConfig.allowRemove,
+      showScrollbar: zoneFlow.showScrollbar,
+      scrollbarStyle: zoneFlow.scrollbarStyle,
       template: templateLayout,
     );
 
@@ -1979,7 +1982,6 @@ class _SuperValueJsonExtractDialogState
 
     // Ensure the new ListView gets flex: 1 (fitContent: false) when the zone
     // does not expand slots by default, so it receives a bounded main-axis viewport.
-    final zoneFlow = currentParentConfig.flowOf(group.displayZone);
     final listConstraints =
         !zoneFlow.expandSlots ||
             zoneFlow.mainAxisAlignment != MainAxisAlignment.start

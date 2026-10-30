@@ -40,6 +40,9 @@ class SuperListViewConfig extends ComponentConfig {
     this.spacing = 0,
     this.allowAdd = false,
     this.allowRemove = false,
+    this.showScrollbar = false,
+    this.scrollbarStyle = const ScrollbarStyleConfig(),
+    this.animateSelectionAndHover = true,
     this.emptyText = 'Aucun élément',
     this.template = const SuperLayoutConfig(),
     this.itemId,
@@ -79,6 +82,15 @@ class SuperListViewConfig extends ComponentConfig {
 
   /// Affiche un bouton de suppression (avec confirmation) sur chaque ligne.
   final bool allowRemove;
+
+  /// Affiche une barre de défilement personnalisable sur la liste.
+  final bool showScrollbar;
+
+  /// Style visuel de la barre de défilement lorsque [showScrollbar] est activé.
+  final ScrollbarStyleConfig scrollbarStyle;
+
+  /// Active l'animation de déplacement des indicateurs de sélection et de survol.
+  final bool animateSelectionAndHover;
 
   /// Message affiché quand le tableau est vide.
   final String emptyText;
@@ -136,6 +148,9 @@ class SuperListViewConfig extends ComponentConfig {
     double? spacing,
     bool? allowAdd,
     bool? allowRemove,
+    bool? showScrollbar,
+    ScrollbarStyleConfig? scrollbarStyle,
+    bool? animateSelectionAndHover,
     String? emptyText,
     SuperLayoutConfig? template,
     String? itemId,
@@ -150,6 +165,10 @@ class SuperListViewConfig extends ComponentConfig {
     spacing: spacing ?? this.spacing,
     allowAdd: allowAdd ?? this.allowAdd,
     allowRemove: allowRemove ?? this.allowRemove,
+    showScrollbar: showScrollbar ?? this.showScrollbar,
+    scrollbarStyle: scrollbarStyle ?? this.scrollbarStyle,
+    animateSelectionAndHover:
+        animateSelectionAndHover ?? this.animateSelectionAndHover,
     emptyText: emptyText ?? this.emptyText,
     template: template ?? this.template,
     itemId: itemId ?? this.itemId,
@@ -170,6 +189,11 @@ class SuperListViewConfig extends ComponentConfig {
       'spacing': spacing,
       'allowAdd': allowAdd,
       'allowRemove': allowRemove,
+      if (showScrollbar) 'showScrollbar': showScrollbar,
+      if (!scrollbarStyle.isDefault)
+        'scrollbarStyle': scrollbarStyle.toJson(),
+      if (!animateSelectionAndHover)
+        'animateSelectionAndHover': animateSelectionAndHover,
       'emptyText': emptyText,
       if (template != const SuperLayoutConfig()) 'template': template.toJson(),
       if (itemId != null) 'itemId': itemId,
@@ -192,6 +216,11 @@ class SuperListViewConfig extends ComponentConfig {
       if (spacing != d.spacing) 'spacing': spacing,
       if (allowAdd != d.allowAdd) 'allowAdd': allowAdd,
       if (allowRemove != d.allowRemove) 'allowRemove': allowRemove,
+      if (showScrollbar != d.showScrollbar) 'showScrollbar': showScrollbar,
+      if (!scrollbarStyle.isDefault)
+        'scrollbarStyle': scrollbarStyle.toJson(),
+      if (animateSelectionAndHover != d.animateSelectionAndHover)
+        'animateSelectionAndHover': animateSelectionAndHover,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
       if (template != d.template) 'template': template.toCompactJson(),
       if (itemId != null) 'itemId': itemId,
@@ -213,6 +242,9 @@ class SuperListViewConfig extends ComponentConfig {
     'spacing',
     'allowAdd',
     'allowRemove',
+    'showScrollbar',
+    'scrollbarStyle',
+    'animateSelectionAndHover',
     'emptyText',
     'template',
     'row',
@@ -283,6 +315,14 @@ class SuperListViewConfig extends ComponentConfig {
       spacing: read<num>('spacing', fallback.spacing).toDouble(),
       allowAdd: read<bool>('allowAdd', fallback.allowAdd),
       allowRemove: read<bool>('allowRemove', fallback.allowRemove),
+      showScrollbar: read<bool>('showScrollbar', fallback.showScrollbar),
+      scrollbarStyle: !value.containsKey('scrollbarStyle')
+          ? fallback.scrollbarStyle
+          : ScrollbarStyleConfig.fromJson(value['scrollbarStyle']),
+      animateSelectionAndHover: read<bool>(
+        'animateSelectionAndHover',
+        fallback.animateSelectionAndHover,
+      ),
       emptyText: read<String>('emptyText', fallback.emptyText),
       template: resolvedTemplate,
       itemId: value.containsKey('itemId')
@@ -306,6 +346,9 @@ class SuperListViewConfig extends ComponentConfig {
       spacing == other.spacing &&
       allowAdd == other.allowAdd &&
       allowRemove == other.allowRemove &&
+      showScrollbar == other.showScrollbar &&
+      scrollbarStyle == other.scrollbarStyle &&
+      animateSelectionAndHover == other.animateSelectionAndHover &&
       emptyText == other.emptyText &&
       template == other.template &&
       itemId == other.itemId;
@@ -322,6 +365,9 @@ class SuperListViewConfig extends ComponentConfig {
     spacing,
     allowAdd,
     allowRemove,
+    showScrollbar,
+    scrollbarStyle,
+    animateSelectionAndHover,
     emptyText,
     template,
     itemId,
@@ -349,6 +395,7 @@ String formatSuperListViewTooltip({
   final optionsLine = <String>[
     'Ajout : ${config.allowAdd ? 'Activé' : 'Désactivé'}',
     'Suppression : ${config.allowRemove ? 'Activée' : 'Désactivée'}',
+    if (config.showScrollbar) 'ScrollBar : ${config.scrollbarStyle.summary}',
     if (config.emptyText.isNotEmpty) 'Vide : ${config.emptyText}',
   ].join(' · ');
   return [

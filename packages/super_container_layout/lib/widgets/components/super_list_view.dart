@@ -62,6 +62,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart'
+    show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/json_text_binding.dart';
@@ -73,6 +75,7 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
 import '../../theme/appearance.dart';
+import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/components/super_list_view_editor.dart';
@@ -81,6 +84,7 @@ import 'super_layout/super_layout.dart';
 import 'super_layout/iterable_content.dart';
 import '../editing/slots/editor_slot.dart';
 import '../editing/slots/slot_size_editor.dart';
+import '../surfaces/super_container.dart';
 
 /// Répète une disposition [SuperLayout] pour chaque élément d'un tableau de
 /// repository.
@@ -187,6 +191,11 @@ class _SuperListViewState extends State<SuperListView> {
   late final ValueNotifier<SuperListViewConfig> _localConfig;
   late final ValueNotifier<SuperLayoutConfig> _localLayout;
   late final ValueNotifier<ContainerStyle> _localStyle;
+  final ScrollController _scrollController = ScrollController();
+  final ValueNotifier<int?> _hoveredRowNotifier = ValueNotifier<int?>(null);
+  final Map<int, GlobalKey> _rowBoxKeys = {};
+  final GlobalKey _viewportStackKey = GlobalKey();
+  final GlobalKey _scrollableHostKey = GlobalKey();
   JsonRepositoryStore? _store;
   _Source? _source;
 
@@ -228,6 +237,8 @@ class _SuperListViewState extends State<SuperListView> {
     _generation++;
     _store?.removeListener(_reload);
     _listen(const []);
+    _hoveredRowNotifier.dispose();
+    _scrollController.dispose();
     _localConfig.dispose();
     _localLayout.dispose();
     _localStyle.dispose();
@@ -306,6 +317,223 @@ class _SuperListViewState extends State<SuperListView> {
   bool _isSelected(int index) {
     final source = _source;
     return source != null && _selection?.indexFor(source.parents) == index;
+  }
+
+  int? get _selectedRowIndex {
+    final source = _source;
+    if (source == null) return null;
+    final idx = _selection?.indexFor(source.parents);
+    final len = _items?.length ?? 0;
+    if (idx == null || idx < 0 || idx >= len) return null;
+    return idx;
+  }
+
+  void _setHoveredRow(int? index) {
+    if (_hoveredRowNotifier.value != index) {
+      _hoveredRowNotifier.value = index;
+    }
+  }
+
+  ScrollPosition? get _primaryScrollPosition =>
+      _scrollController.positions.lastOrNull;
+
+  double get _currentScrollOffset => _primaryScrollPosition?.pixels ?? 0.0;
+
+  void _handleHorizontalPointerSignal(PointerSignalEvent event) {
+    final position = _primaryScrollPosition;
+    if (event is! PointerScrollEvent ||
+        event.scrollDelta.dx != 0 ||
+        event.scrollDelta.dy == 0 ||
+        position == null) {
+      return;
+    }
+    if (position.maxScrollExtent <= position.minScrollExtent) return;
+    final target = (position.pixels + event.scrollDelta.dy).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (target == position.pixels) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (
+      PointerSignalEvent resolved,
+    ) {
+      final activePosition = _primaryScrollPosition;
+      if (!mounted || activePosition == null) return;
+      activePosition.pointerScroll(
+        (resolved as PointerScrollEvent).scrollDelta.dy,
+      );
+    });
+  }
+
+  Widget _wrapWithScrollbar(
+    BuildContext context,
+    SuperListViewConfig config,
+    Widget child,
+  ) {
+    final scrollAxis = config.wrap ? Axis.vertical : config.axis;
+    Widget scrollView = ScrollConfiguration(
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+      child: child,
+    );
+    if (config.showScrollbar) {
+      final sbStyle = config.scrollbarStyle;
+      final colors = Theme.of(context).colorScheme;
+      scrollView = RawScrollbar(
+        key: ValueKey('super-list-scrollbar-${widget.id}'),
+        controller: _scrollController,
+        thumbVisibility: sbStyle.thumbVisibility,
+        trackVisibility: sbStyle.trackVisibility,
+        interactive: sbStyle.interactive,
+        thickness: sbStyle.thickness,
+        radius: Radius.circular(sbStyle.radius),
+        mainAxisMargin: sbStyle.mainAxisMargin,
+        crossAxisMargin: sbStyle.crossAxisMargin,
+        thumbColor:
+            sbStyle.thumbColor ??
+            colors.onSurfaceVariant.withValues(alpha: 0.45),
+        trackColor:
+            sbStyle.trackColor ??
+            colors.surfaceContainerHighest.withValues(alpha: 0.35),
+        trackBorderColor:
+            sbStyle.trackBorderColor ??
+            (sbStyle.trackVisibility
+                ? colors.outlineVariant.withValues(alpha: 0.5)
+                : const Color(0x00000000)),
+        scrollbarOrientation: sbStyle.side.resolveOrientation(scrollAxis),
+        child: scrollView,
+      );
+    }
+    if (scrollAxis == Axis.horizontal) {
+      scrollView = Listener(
+        onPointerSignal: _handleHorizontalPointerSignal,
+        child: scrollView,
+      );
+    }
+    return scrollView;
+  }
+
+  Rect? _computeItemRect(
+    int? targetIndex,
+    SuperListViewConfig config,
+    Size viewport,
+  ) {
+    if (targetIndex == null || targetIndex < 0) return null;
+    final rowKey = _rowBoxKeys[targetIndex];
+    final rowCtx = rowKey?.currentContext;
+    final stackCtx = _viewportStackKey.currentContext;
+    if (rowCtx != null &&
+        rowCtx.mounted &&
+        stackCtx != null &&
+        stackCtx.mounted) {
+      final rowBox = rowCtx.findRenderObject();
+      final stackBox = stackCtx.findRenderObject();
+      if (rowBox is RenderBox &&
+          rowBox.hasSize &&
+          stackBox is RenderBox &&
+          stackBox.hasSize) {
+        final localOffset = rowBox.localToGlobal(
+          Offset.zero,
+          ancestor: stackBox,
+        );
+        final scrollOffset = _currentScrollOffset;
+        final scrollAxis = config.wrap ? Axis.vertical : config.axis;
+        final contentOffset = scrollAxis == Axis.vertical
+            ? localOffset.translate(0, scrollOffset)
+            : localOffset.translate(scrollOffset, 0);
+        return contentOffset & rowBox.size;
+      }
+    }
+    if (config.wrap) {
+      return Rect.fromLTWH(0, 0, config.itemWidth, config.itemExtent);
+    }
+    final step = config.itemExtent + config.spacing;
+    if (config.axis == Axis.vertical) {
+      return Rect.fromLTWH(
+        0,
+        targetIndex * step,
+        viewport.width,
+        config.itemExtent,
+      );
+    }
+    return Rect.fromLTWH(
+      targetIndex * step,
+      0,
+      config.itemExtent,
+      viewport.height,
+    );
+  }
+
+  Widget _buildSelectionIndicator(
+    BuildContext context,
+    ContainerStyle currentRowStyle,
+  ) {
+    final defaultColor = Theme.of(context).colorScheme.primary
+        .withValues(alpha: 0.14);
+    final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
+    final resolved = hasCustomSelected
+        ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
+        : currentRowStyle.copyWith(clearStates: true);
+    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
+    final effectiveStyle = resolved.copyWith(
+      clearStates: true,
+      margin: 0,
+      marginInsets: null,
+      hoverEffect: false,
+      radius: resolved.radius > 0 ? resolved.radius : 4,
+      color: hasCustomSelected
+          ? (resolved.color ?? (hasFill ? null : defaultColor))
+          : defaultColor,
+      borderWidth: hasCustomSelected ? resolved.borderWidth : 1,
+      borderColor: hasCustomSelected
+          ? resolved.borderColor
+          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
+    );
+    final m = resolved.outerMargin;
+    return Padding(
+      padding: m,
+      child: SuperContainer(
+        key: ValueKey('super-list-selection-indicator-${widget.id}'),
+        style: effectiveStyle,
+        fallbackColor: Colors.transparent,
+        borderColor: Colors.transparent,
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+
+  Widget _buildHoverIndicator(
+    BuildContext context,
+    ContainerStyle currentRowStyle,
+  ) {
+    final accent = AppearanceScope.of(context).accent;
+    final hoverBase = currentRowStyle.hoverBase(accent);
+    final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
+        .withValues(alpha: 0.08);
+    final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
+    final resolved = hasCustomHover
+        ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
+        : currentRowStyle.copyWith(clearStates: true);
+    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
+    final effectiveStyle = resolved.copyWith(
+      clearStates: true,
+      margin: 0,
+      marginInsets: null,
+      hoverEffect: false,
+      radius: resolved.radius > 0 ? resolved.radius : 4,
+      color: hasCustomHover
+          ? (resolved.color ?? (hasFill ? null : defaultColor))
+          : defaultColor,
+    );
+    final m = resolved.outerMargin;
+    return Padding(
+      padding: m,
+      child: SuperContainer(
+        key: ValueKey('super-list-hover-indicator-${widget.id}'),
+        style: effectiveStyle,
+        fallbackColor: Colors.transparent,
+        borderColor: Colors.transparent,
+        child: const SizedBox.expand(),
+      ),
+    );
   }
 
   void _select(int index) {
@@ -670,27 +898,41 @@ class _SuperListViewState extends State<SuperListView> {
               Positioned.fill(
                 key: ValueKey('super-list-selected-${widget.id}-$index'),
                 child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primary
-                          .withValues(alpha: .12),
-                      border: Border.all(
-                        color: Theme.of(context).colorScheme.primary
-                            .withValues(alpha: .6),
-                      ),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
+                  child: config.animateSelectionAndHover
+                      ? const SizedBox.shrink()
+                      : DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary
+                                .withValues(alpha: .12),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary
+                                  .withValues(alpha: .6),
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
                 ),
               ),
             // A Listener leaves the row's fields and buttons interactive.
             if (index == null || (scope?.placeholder ?? false))
               row
             else
-              Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: (_) => _select(index),
-                child: row,
+              MouseRegion(
+                opaque: false,
+                onEnter: (_) => _setHoveredRow(index),
+                onExit: (_) {
+                  if (_hoveredRowNotifier.value == index) {
+                    _setHoveredRow(null);
+                  }
+                },
+                child: KeyedSubtree(
+                  key: _rowBoxKeys.putIfAbsent(index, GlobalKey.new),
+                  child: Listener(
+                    behavior: HitTestBehavior.opaque,
+                    onPointerDown: (_) => _select(index),
+                    child: row,
+                  ),
+                ),
               ),
             if (index != null && config.allowRemove)
               Positioned(
@@ -1017,9 +1259,10 @@ class _SuperListViewState extends State<SuperListView> {
                     Widget item(BuildContext context, int index) =>
                         buildItem(context, index, viewport);
 
-                    final Widget list = config.wrap
+                    final Widget rawList = config.wrap
                         ? SingleChildScrollView(
                             key: ValueKey('super-list-${widget.id}'),
+                            controller: _scrollController,
                             primary: false,
                             child: Wrap(
                               spacing: config.spacing,
@@ -1046,6 +1289,7 @@ class _SuperListViewState extends State<SuperListView> {
                           )
                         : ListView.builder(
                             key: ValueKey('super-list-${widget.id}'),
+                            controller: _scrollController,
                             primary: false,
                             shrinkWrap: !fill,
                             scrollDirection: config.axis,
@@ -1055,6 +1299,60 @@ class _SuperListViewState extends State<SuperListView> {
                             itemCount: count + (add ? 1 : 0),
                             itemBuilder: item,
                           );
+                    final scrollAxis = config.wrap
+                        ? Axis.vertical
+                        : config.axis;
+                    final scrollableList = KeyedSubtree(
+                      key: _scrollableHostKey,
+                      child: _wrapWithScrollbar(context, config, rawList),
+                    );
+                    final Widget list = Stack(
+                      key: _viewportStackKey,
+                      clipBehavior: Clip.none,
+                      fit: StackFit.passthrough,
+                      children: [
+                        scrollableList,
+                        if (config.animateSelectionAndHover && !template)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: ListenableBuilder(
+                                listenable: Listenable.merge([
+                                  _scrollController,
+                                  style,
+                                ]),
+                                builder: (context, _) {
+                                  final scrollOffset = _currentScrollOffset;
+                                  return Transform.translate(
+                                    offset: scrollAxis == Axis.vertical
+                                        ? Offset(0, -scrollOffset)
+                                        : Offset(-scrollOffset, 0),
+                                    child: _ListSlidingIndicatorsLayer(
+                                      listId: widget.id,
+                                      hoveredRowNotifier: _hoveredRowNotifier,
+                                      selectedRow: _selectedRowIndex,
+                                      computeRect: (rowIdx) => _computeItemRect(
+                                        rowIdx,
+                                        config,
+                                        viewport,
+                                      ),
+                                      hoverBuilder: (ctx) =>
+                                          _buildHoverIndicator(
+                                            ctx,
+                                            style.value,
+                                          ),
+                                      selectionBuilder: (ctx) =>
+                                          _buildSelectionIndicator(
+                                            ctx,
+                                            style.value,
+                                          ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
                     final column = Column(
                       mainAxisSize: hasBoundedHeight
                           ? MainAxisSize.max
@@ -1090,6 +1388,162 @@ class _SuperListViewState extends State<SuperListView> {
                 ),
         );
       },
+    );
+  }
+}
+
+class _ListSlidingIndicatorsLayer extends StatefulWidget {
+  const _ListSlidingIndicatorsLayer({
+    required this.listId,
+    required this.hoveredRowNotifier,
+    required this.selectedRow,
+    required this.computeRect,
+    required this.hoverBuilder,
+    required this.selectionBuilder,
+  });
+
+  final String listId;
+  final ValueNotifier<int?> hoveredRowNotifier;
+  final int? selectedRow;
+  final Rect? Function(int? index) computeRect;
+  final WidgetBuilder hoverBuilder;
+  final WidgetBuilder selectionBuilder;
+
+  @override
+  State<_ListSlidingIndicatorsLayer> createState() =>
+      _ListSlidingIndicatorsLayerState();
+}
+
+class _ListSlidingIndicatorsLayerState
+    extends State<_ListSlidingIndicatorsLayer> {
+  int? _lastHoveredRow;
+  Rect _lastHoveredRect = Rect.zero;
+  bool _wasHoverVisible = false;
+  bool _shouldAnimateHoverSlide = false;
+
+  int? _lastSelectedRow;
+  Rect _lastSelectedRect = Rect.zero;
+  bool _wasSelectionVisible = false;
+  bool _shouldAnimateSelectionSlide = false;
+
+  static bool _rectMoved(Rect a, Rect b) =>
+      (a.left - b.left).abs() > 0.5 ||
+      (a.top - b.top).abs() > 0.5 ||
+      (a.width - b.width).abs() > 0.5 ||
+      (a.height - b.height).abs() > 0.5;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedRow = widget.selectedRow;
+    final selectedRect = widget.computeRect(selectedRow);
+    final isSelectionVisible = selectedRow != null && selectedRect != null;
+    if (isSelectionVisible != _wasSelectionVisible ||
+        (selectedRect != null && _rectMoved(selectedRect, _lastSelectedRect))) {
+      _shouldAnimateSelectionSlide =
+          _wasSelectionVisible &&
+          isSelectionVisible &&
+          _rectMoved(selectedRect, _lastSelectedRect);
+      if (selectedRect != null) {
+        _lastSelectedRect = selectedRect;
+      }
+      _wasSelectionVisible = isSelectionVisible;
+    }
+    if (selectedRow != null) {
+      _lastSelectedRow = selectedRow;
+    }
+    final effectiveSelectedRow = selectedRow ?? _lastSelectedRow;
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(
+          child: ValueListenableBuilder<int?>(
+            valueListenable: widget.hoveredRowNotifier,
+            builder: (context, hoveredRow, _) {
+              final hoveredRect = widget.computeRect(hoveredRow);
+              final isHoverVisible = hoveredRow != null && hoveredRect != null;
+              if (isHoverVisible != _wasHoverVisible ||
+                  (hoveredRect != null &&
+                      _rectMoved(hoveredRect, _lastHoveredRect))) {
+                _shouldAnimateHoverSlide =
+                    _wasHoverVisible &&
+                    isHoverVisible &&
+                    _rectMoved(hoveredRect, _lastHoveredRect);
+                if (hoveredRect != null) {
+                  _lastHoveredRect = hoveredRect;
+                }
+                _wasHoverVisible = isHoverVisible;
+              }
+              if (hoveredRow != null) {
+                _lastHoveredRow = hoveredRow;
+              }
+              final effectiveHoverRow = hoveredRow ?? _lastHoveredRow;
+              final hoverChild = effectiveHoverRow == null
+                  ? const SizedBox.shrink()
+                  : widget.hoverBuilder(context);
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedPositioned(
+                    key: ValueKey(
+                      'super-list-hover-positioned-${widget.listId}',
+                    ),
+                    duration: _shouldAnimateHoverSlide
+                        ? const Duration(milliseconds: 180)
+                        : Duration.zero,
+                    curve: Curves.easeOutCubic,
+                    top: _lastHoveredRect.top,
+                    left: _lastHoveredRect.left,
+                    width: _lastHoveredRect.width,
+                    height: _lastHoveredRect.height,
+                    child: AnimatedOpacity(
+                      key: ValueKey(
+                        'super-list-hover-opacity-${widget.listId}',
+                      ),
+                      duration: const Duration(milliseconds: 150),
+                      curve: Curves.easeOut,
+                      opacity: isHoverVisible ? 1.0 : 0.0,
+                      child: hoverChild,
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        Positioned.fill(
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              AnimatedPositioned(
+                key: ValueKey(
+                  'super-list-selection-positioned-${widget.listId}',
+                ),
+                duration: _shouldAnimateSelectionSlide
+                    ? const Duration(milliseconds: 200)
+                    : Duration.zero,
+                curve: Curves.easeOutCubic,
+                top: _lastSelectedRect.top,
+                left: _lastSelectedRect.left,
+                width: _lastSelectedRect.width,
+                height: _lastSelectedRect.height,
+                child: AnimatedOpacity(
+                  key: ValueKey(
+                    'super-list-selection-opacity-${widget.listId}',
+                  ),
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOut,
+                  opacity: isSelectionVisible ? 1.0 : 0.0,
+                  child: effectiveSelectedRow == null
+                      ? const SizedBox.shrink()
+                      : widget.selectionBuilder(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

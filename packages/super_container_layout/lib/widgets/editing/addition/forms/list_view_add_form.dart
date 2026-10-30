@@ -241,6 +241,35 @@ class _ListViewAddFormState extends State<ListViewAddForm> {
                     onChanged: (value) =>
                         widget.onChanged(draft.copyWith(allowRemove: value)),
                   ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    key: const ValueKey('add-list-animate-selection-hover'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.animation_outlined),
+                    title: const Text('Animer sélection et survol'),
+                    subtitle: const Text(
+                      'Déplacement glissant entre les éléments',
+                    ),
+                    value: draft.animateSelectionAndHover,
+                    onChanged: (value) => widget.onChanged(
+                      draft.copyWith(animateSelectionAndHover: value),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  SwitchListTile(
+                    key: const ValueKey('add-list-show-scrollbar'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.linear_scale_rounded),
+                    title: const Text('Barre de défilement (ScrollBar)'),
+                    subtitle: const Text(
+                      'Affiche un ascenseur personnalisable',
+                    ),
+                    value: draft.showScrollbar,
+                    onChanged: (value) =>
+                        widget.onChanged(draft.copyWith(showScrollbar: value)),
+                  ),
                 ],
               ),
             ),
