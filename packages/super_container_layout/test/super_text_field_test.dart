@@ -629,9 +629,9 @@ void main() {
       );
       await tester.ensureVisible(dropdown);
       await tester.pumpAndSettle();
-      await tester.tap(dropdown);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Outlined').last);
+      await tester.tap(
+        find.descendant(of: dropdown, matching: find.text('Outlined')),
+      );
       await tester.pumpAndSettle();
       final preview = find.descendant(
         of: find.byKey(const ValueKey('super-value-preview')),
@@ -689,9 +689,12 @@ void main() {
     final filter = find.byKey(const ValueKey('text-field-setting-filter-none'));
     await tester.ensureVisible(filter);
     await tester.pumpAndSettle();
-    await tester.tap(filter);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Expression régulière').last);
+    await tester.tap(
+      find.descendant(
+        of: filter,
+        matching: find.text('Expression régulière'),
+      ),
+    );
     await tester.pumpAndSettle();
     final pattern = find.byKey(const ValueKey('text-field-setting-pattern'));
     await tester.ensureVisible(pattern);
@@ -761,9 +764,9 @@ void main() {
       final field = find.byKey(const ValueKey('super-value-setting-mode'));
       await tester.ensureVisible(field);
       await tester.pumpAndSettle();
-      await tester.tap(field);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(label).last);
+      await tester.tap(
+        find.descendant(of: field, matching: find.text(label)),
+      );
       await tester.pumpAndSettle();
     }
 

@@ -44,42 +44,81 @@ class MenuAnchorAddForm extends StatelessWidget {
           onChanged: (value) => onChanged(draft.withConsumeOutsideTap(value)),
         ),
         const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
+        const Text(
+          'Icône ouvert / fermé',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        const SizedBox(height: 4),
+        SegmentedButton<String>(
           key: const ValueKey('add-menu-anchor-toggle-icon'),
-          isExpanded: true,
-          initialValue: toggleIcon,
-          decoration: const InputDecoration(
-            labelText: 'Icône ouvert / fermé',
-            isDense: true,
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          items: [
+          segments: [
             for (final option in toggleIconPropertyDescriptor.options)
-              DropdownMenuItem<String>(
+              ButtonSegment<String>(
                 value: option.value,
-                child: Text(option.label),
+                tooltip: option.label,
+                icon: Flexible(
+                  flex: 0,
+                  child: Icon(
+                    switch (option.value) {
+                      'none' => Icons.block,
+                      'chevron' => Icons.expand_more,
+                      'arrow' => Icons.arrow_downward,
+                      'plusMinus' => Icons.add,
+                      'triangle' => Icons.arrow_drop_down,
+                      _ => Icons.tune,
+                    },
+                    size: 14,
+                  ),
+                ),
+                label: Text(option.label, overflow: TextOverflow.ellipsis),
               ),
           ],
-          onChanged: (value) => onChanged(draft.withToggleIcon(value)),
+          selected: {toggleIcon},
+          onSelectionChanged: (selected) {
+            if (selected.isNotEmpty) {
+              onChanged(draft.withToggleIcon(selected.first));
+            }
+          },
         ),
         if (toggleIcon != 'none') ...[
           const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
+          const Text(
+            'Position de l’icône',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 4),
+          SegmentedButton<String>(
             key: const ValueKey('add-menu-anchor-toggle-icon-position'),
-            isExpanded: true,
-            initialValue: toggleIconPosition,
-            decoration: const InputDecoration(
-              labelText: 'Position de l’icône',
-              isDense: true,
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            items: [
+            segments: [
               for (final option in toggleIconPositionPropertyDescriptor.options)
-                DropdownMenuItem<String>(
+                ButtonSegment<String>(
                   value: option.value,
-                  child: Text(option.label),
+                  tooltip: option.label,
+                  icon: Icon(
+                    option.value == 'leading'
+                        ? Icons.first_page
+                        : Icons.last_page,
+                    size: 16,
+                  ),
+                  label: Text(option.label, overflow: TextOverflow.ellipsis),
                 ),
             ],
-            onChanged: (value) =>
-                onChanged(draft.withToggleIconPosition(value)),
+            selected: {toggleIconPosition},
+            onSelectionChanged: (selected) {
+              if (selected.isNotEmpty) {
+                onChanged(draft.withToggleIconPosition(selected.first));
+              }
+            },
           ),
         ],
         const SizedBox(height: 8),

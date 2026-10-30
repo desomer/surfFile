@@ -84,16 +84,19 @@ class _ListViewAddFormState extends State<ListViewAddForm> {
                     segments: const [
                       ButtonSegment(
                         value: 'vertical',
+                        tooltip: 'Verticale',
                         label: Text('Verticale'),
                         icon: Icon(Icons.view_agenda_outlined),
                       ),
                       ButtonSegment(
                         value: 'horizontal',
+                        tooltip: 'Horizontale',
                         label: Text('Horizontale'),
                         icon: Icon(Icons.view_week_outlined),
                       ),
                       ButtonSegment(
                         value: 'wrap',
+                        tooltip: 'Wrap',
                         label: Text('Wrap'),
                         icon: Icon(Icons.wrap_text),
                       ),

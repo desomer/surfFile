@@ -1292,29 +1292,50 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                   icon: Icons.text_fields,
                   tag: 'kind · mode · initialText',
                   child: _group([
-                    DropdownButtonFormField<SuperValueKind>(
-                      isExpanded: true,
-                      key: const ValueKey('super-value-setting-kind'),
-                      initialValue: _draft.kind,
-                      decoration: const InputDecoration(
-                        labelText: 'Type de valeur',
+                    const Text(
+                      'Type de valeur',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
-                      items: const [
-                        DropdownMenuItem(
+                    ),
+                    SegmentedButton<SuperValueKind>(
+                      key: const ValueKey('super-value-setting-kind'),
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: const [
+                        ButtonSegment(
                           value: SuperValueKind.text,
-                          child: Text('Texte'),
+                          tooltip: 'Texte',
+                          icon: Icon(Icons.text_fields, size: 16),
+                          label: Text('Texte', overflow: TextOverflow.ellipsis),
                         ),
-                        DropdownMenuItem(
+                        ButtonSegment(
                           value: SuperValueKind.checkbox,
-                          child: Text('Case à cocher (Checkbox)'),
+                          tooltip: 'Case à cocher (Checkbox)',
+                          icon: Icon(Icons.check_box_outlined, size: 16),
+                          label: Text(
+                            'Case à cocher (Checkbox)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        DropdownMenuItem(
+                        ButtonSegment(
                           value: SuperValueKind.switchControl,
-                          child: Text('Interrupteur (Switch)'),
+                          tooltip: 'Interrupteur (Switch)',
+                          icon: Icon(Icons.toggle_on_outlined, size: 16),
+                          label: Text(
+                            'Interrupteur (Switch)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
-                      onChanged: (kind) {
-                        if (kind != null) {
+                      selected: {_draft.kind},
+                      onSelectionChanged: (selected) {
+                        if (selected.isNotEmpty) {
+                          final kind = selected.first;
                           setState(() {
                             _draft = _draft.copyWith(
                               kind: kind,
@@ -1330,23 +1351,44 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                         }
                       },
                     ),
-                    DropdownButtonFormField<SuperValueMode>(
-                      isExpanded: true,
+                    const Text(
+                      'Mode',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SegmentedButton<SuperValueMode>(
                       key: const ValueKey('super-value-setting-mode'),
-                      initialValue: _draft.mode,
-                      decoration: const InputDecoration(labelText: 'Mode'),
-                      items: const [
-                        DropdownMenuItem(
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: const [
+                        ButtonSegment(
                           value: SuperValueMode.display,
-                          child: Text('Affichage'),
+                          tooltip: 'Affichage',
+                          icon: Icon(Icons.visibility_outlined, size: 16),
+                          label: Text(
+                            'Affichage',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        DropdownMenuItem(
+                        ButtonSegment(
                           value: SuperValueMode.input,
-                          child: Text('Saisie'),
+                          tooltip: 'Saisie',
+                          icon: Icon(Icons.edit_outlined, size: 16),
+                          label: Text(
+                            'Saisie',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
-                      onChanged: (mode) {
-                        if (mode != null) {
+                      selected: {_draft.mode},
+                      onSelectionChanged: (selected) {
+                        if (selected.isNotEmpty) {
+                          final mode = selected.first;
                           setState(
                             () => _draft = _draft.copyWith(
                               mode: mode,
@@ -1534,40 +1576,72 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                     _withBinding(
                       SuperValueProperty.italic,
                       'le style italique',
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        key: const ValueKey('super-value-setting-italic'),
-                        initialValue: _draft.italic == null
-                            ? 'inherit'
-                            : _draft.italic!
-                            ? 'italic'
-                            : 'normal',
-                        decoration: const InputDecoration(
-                          labelText: 'Style de police',
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'inherit',
-                            child: Text('Style du parent'),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 4,
+                        children: [
+                          const Text(
+                            'Style de police',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                          DropdownMenuItem(
-                            value: 'normal',
-                            child: Text('Normal'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'italic',
-                            child: Text('Italique'),
+                          SegmentedButton<String>(
+                            key: const ValueKey('super-value-setting-italic'),
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: const [
+                              ButtonSegment(
+                                value: 'inherit',
+                                tooltip: 'Style du parent',
+                                icon: Icon(Icons.hdr_auto_outlined, size: 16),
+                                label: Text(
+                                  'Style du parent',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              ButtonSegment(
+                                value: 'normal',
+                                tooltip: 'Normal',
+                                icon: Icon(Icons.text_format, size: 16),
+                                label: Text(
+                                  'Normal',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              ButtonSegment(
+                                value: 'italic',
+                                tooltip: 'Italique',
+                                icon: Icon(Icons.format_italic, size: 16),
+                                label: Text(
+                                  'Italique',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                            selected: {
+                              _draft.italic == null
+                                  ? 'inherit'
+                                  : _draft.italic!
+                                  ? 'italic'
+                                  : 'normal',
+                            },
+                            onSelectionChanged: (selected) {
+                              if (selected.isEmpty) return;
+                              final value = selected.first;
+                              setState(
+                                () => _draft = _draft.copyWith(
+                                  italic: value == 'italic',
+                                  inheritItalic: value == 'inherit',
+                                ),
+                              );
+                            },
                           ),
                         ],
-                        onChanged: (value) {
-                          if (value == null) return;
-                          setState(
-                            () => _draft = _draft.copyWith(
-                              italic: value == 'italic',
-                              inheritItalic: value == 'inherit',
-                            ),
-                          );
-                        },
                       ),
                     ),
                   ]),
@@ -1621,26 +1695,57 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                     _withBinding(
                       SuperValueProperty.textAlign,
                       'l’alignement',
-                      DropdownButtonFormField<TextAlign>(
-                        isExpanded: true,
-                        initialValue: _draft.textAlign,
-                        decoration: const InputDecoration(
-                          labelText: 'Alignement',
-                        ),
-                        items: [
-                          for (final align in TextAlign.values)
-                            DropdownMenuItem(
-                              value: align,
-                              child: Text(align.name),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: 4,
+                        children: [
+                          const Text(
+                            'Alignement',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
+                          ),
+                          SegmentedButton<TextAlign>(
+                            key: const ValueKey(
+                              'super-value-setting-textAlign',
+                            ),
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: [
+                              for (final align in TextAlign.values)
+                                ButtonSegment<TextAlign>(
+                                  value: align,
+                                  tooltip: align.name,
+                                  icon: Icon(switch (align) {
+                                    TextAlign.left => Icons.format_align_left,
+                                    TextAlign.right => Icons.format_align_right,
+                                    TextAlign.center =>
+                                      Icons.format_align_center,
+                                    TextAlign.justify =>
+                                      Icons.format_align_justify,
+                                    TextAlign.start =>
+                                      Icons.align_horizontal_left,
+                                    TextAlign.end =>
+                                      Icons.align_horizontal_right,
+                                  }, size: 16),
+                                ),
+                            ],
+                            selected: {_draft.textAlign},
+                            onSelectionChanged: (selected) {
+                              if (selected.isNotEmpty) {
+                                setState(
+                                  () => _draft = _draft.copyWith(
+                                    textAlign: selected.first,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
                         ],
-                        onChanged: (align) {
-                          if (align != null) {
-                            setState(
-                              () => _draft = _draft.copyWith(textAlign: align),
-                            );
-                          }
-                        },
                       ),
                     ),
                     _field(

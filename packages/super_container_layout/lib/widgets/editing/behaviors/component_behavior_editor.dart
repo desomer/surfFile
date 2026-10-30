@@ -650,11 +650,13 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               segments: const [
                 ButtonSegment(
                   value: false,
+                  tooltip: 'Page du catalogue',
                   label: Text('Page du catalogue'),
                   icon: Icon(Icons.pages_outlined),
                 ),
                 ButtonSegment(
                   value: true,
+                  tooltip: 'Chemin personnalise',
                   label: Text('Chemin personnalise'),
                   icon: Icon(Icons.link),
                 ),

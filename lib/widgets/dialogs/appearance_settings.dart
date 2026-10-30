@@ -95,19 +95,37 @@ Widget _fileDrag(BuildContext context) {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      DropdownButtonFormField<FileDragMode>(
+      const Text(
+        'Déplacer des fichiers par glisser-déposer',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      ),
+      const SizedBox(height: 6),
+      SegmentedButton<FileDragMode>(
         key: const ValueKey('file-drag-mode'),
-        initialValue: preferences.value.fileDragMode,
-        decoration: const InputDecoration(
-          labelText: 'Déplacer des fichiers par glisser-déposer',
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
-        items: [
+        segments: [
           for (final mode in FileDragMode.values)
-            DropdownMenuItem(value: mode, child: Text(mode.label)),
+            ButtonSegment<FileDragMode>(
+              value: mode,
+              tooltip: mode.label,
+              icon: Icon(switch (mode) {
+                FileDragMode.never => Icons.block,
+                FileDragMode.selected => Icons.check_box_outlined,
+                FileDragMode.nameAndIcon => Icons.drag_indicator,
+              }, size: 16),
+              label: Text(mode.label, overflow: TextOverflow.ellipsis),
+            ),
         ],
-        onChanged: (value) {
-          if (value != null) {
-            preferences.value = preferences.value.copyWith(fileDragMode: value);
+        selected: {preferences.value.fileDragMode},
+        onSelectionChanged: (selected) {
+          if (selected.isNotEmpty) {
+            preferences.value = preferences.value.copyWith(
+              fileDragMode: selected.first,
+            );
           }
         },
       ),

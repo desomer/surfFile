@@ -153,9 +153,12 @@ void main() {
     );
     await tester.tap(find.text('Test'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<FillType>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Radial').last);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(SegmentedButton<FillType>),
+        matching: find.text('Radial'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(fill.type, FillType.radial);
     final preview = tester.widget<Container>(

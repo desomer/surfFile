@@ -1060,43 +1060,148 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           ),
         );
       }(),
-      NativePropertyEditorType.select => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        child: DropdownButtonFormField<String?>(
-          key: propKey,
-          isExpanded: true,
-          initialValue:
-              config.stringProperty(descriptor.id) ??
-              (!descriptor.nullable && descriptor.defaultValue is String
-                  ? descriptor.defaultValue as String
-                  : null),
-          decoration: InputDecoration(
-            labelText: descriptor.label,
-            helperText: descriptor.subtitle,
-            isDense: true,
-          ),
-          items: [
-            if (descriptor.nullable)
-              const DropdownMenuItem<String?>(
-                value: null,
-                child: Text('Par défaut (Thème)'),
+      NativePropertyEditorType.select => () {
+        final effectiveValue =
+            config.stringProperty(descriptor.id) ??
+            (!descriptor.nullable && descriptor.defaultValue is String
+                ? descriptor.defaultValue as String
+                : null);
+        final totalOptions =
+            descriptor.options.length + (descriptor.nullable ? 1 : 0);
+        IconData optionIcon(String? val) => switch (val) {
+          null => Icons.hdr_auto_outlined,
+          'none' => Icons.block,
+          'hardEdge' => Icons.crop_sharp,
+          'antiAlias' => Icons.blur_linear,
+          'antiAliasWithSaveLayer' => Icons.layers_outlined,
+          'light' => Icons.light_mode_outlined,
+          'dark' => Icons.dark_mode_outlined,
+          'fixed' => Icons.push_pin_outlined,
+          'shifting' => Icons.swap_horiz,
+          'spread' => Icons.space_bar,
+          'centered' => Icons.format_align_center,
+          'linear' => Icons.view_headline,
+          'click' => Icons.touch_app_outlined,
+          'basic' => Icons.mouse_outlined,
+          'defer' => Icons.subdirectory_arrow_right,
+          'chevron' => Icons.expand_more,
+          'arrow' => Icons.arrow_downward,
+          'plusMinus' => Icons.add,
+          'triangle' => Icons.arrow_drop_down,
+          'trailing' => Icons.last_page,
+          'leading' => Icons.first_page,
+          'standard' => Icons.crop_16_9,
+          'singleChildScrollView' => Icons.swap_vert,
+          'customScrollView' => Icons.view_day_outlined,
+          'vertical' => Icons.swap_vert,
+          'horizontal' => Icons.swap_horiz,
+          _ => Icons.tune,
+        };
+        if (totalOptions <= 5) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              spacing: 4,
+              children: [
+                Text(
+                  descriptor.label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (descriptor.subtitle != null)
+                  Text(
+                    descriptor.subtitle!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                SegmentedButton<String?>(
+                  key: propKey,
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  segments: [
+                    if (descriptor.nullable)
+                      ButtonSegment<String?>(
+                        value: null,
+                        tooltip: 'Par défaut (Thème)',
+                        icon: Flexible(
+                          flex: 0,
+                          child: Icon(optionIcon(null), size: 14),
+                        ),
+                        label: const Text(
+                          'Par défaut (Thème)',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    for (final option in descriptor.options)
+                      ButtonSegment<String?>(
+                        value: option.value,
+                        tooltip: option.label,
+                        icon: Flexible(
+                          flex: 0,
+                          child: Icon(optionIcon(option.value), size: 14),
+                        ),
+                        label: Text(
+                          option.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  selected: {effectiveValue},
+                  onSelectionChanged: (selected) {
+                    final value = selected.first;
+                    _update(
+                      _config.value.withProperty(
+                        descriptor.id,
+                        !descriptor.nullable && value == descriptor.defaultValue
+                            ? null
+                            : value,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: DropdownButtonFormField<String?>(
+            key: propKey,
+            isExpanded: true,
+            initialValue: effectiveValue,
+            decoration: InputDecoration(
+              labelText: descriptor.label,
+              helperText: descriptor.subtitle,
+              isDense: true,
+            ),
+            items: [
+              if (descriptor.nullable)
+                const DropdownMenuItem<String?>(
+                  value: null,
+                  child: Text('Par défaut (Thème)'),
+                ),
+              for (final option in descriptor.options)
+                DropdownMenuItem<String?>(
+                  value: option.value,
+                  child: Text(option.label),
+                ),
+            ],
+            onChanged: (value) => _update(
+              _config.value.withProperty(
+                descriptor.id,
+                !descriptor.nullable && value == descriptor.defaultValue
+                    ? null
+                    : value,
               ),
-            for (final option in descriptor.options)
-              DropdownMenuItem<String?>(
-                value: option.value,
-                child: Text(option.label),
-              ),
-          ],
-          onChanged: (value) => _update(
-            _config.value.withProperty(
-              descriptor.id,
-              !descriptor.nullable && value == descriptor.defaultValue
-                  ? null
-                  : value,
             ),
           ),
-        ),
-      ),
+        );
+      }(),
       NativePropertyEditorType.shape => () {
         final currentShape = config.shapeProperty(descriptor.id);
         return ListTile(

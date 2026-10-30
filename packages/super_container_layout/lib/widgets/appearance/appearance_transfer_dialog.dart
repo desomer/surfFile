@@ -313,11 +313,13 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
               segments: const [
                 ButtonSegment(
                   value: false,
+                  tooltip: 'Exporter',
                   icon: Icon(Icons.upload),
                   label: Text('Exporter'),
                 ),
                 ButtonSegment(
                   value: true,
+                  tooltip: 'Importer',
                   icon: Icon(Icons.download),
                   label: Text('Importer'),
                 ),

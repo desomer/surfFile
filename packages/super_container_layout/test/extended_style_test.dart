@@ -549,12 +549,12 @@ void main() {
 
     testWidgets('border type and pattern selectors apply', (tester) async {
       await open(tester);
-      Future<void> choose(Finder dropdown, String text) async {
-        await tester.ensureVisible(dropdown);
+      Future<void> choose(Finder segmented, String text) async {
+        await tester.ensureVisible(segmented);
         await tester.pumpAndSettle();
-        await tester.tap(dropdown);
-        await tester.pumpAndSettle();
-        await tester.tap(find.text(text).last);
+        await tester.tap(
+          find.descendant(of: segmented, matching: find.text(text)),
+        );
         await tester.pumpAndSettle();
       }
 

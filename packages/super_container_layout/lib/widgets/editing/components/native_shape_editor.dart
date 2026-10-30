@@ -76,24 +76,54 @@ Future<void> showNativeShapeEditor({
                           ),
                         ),
                         const SizedBox(height: 12),
-                        DropdownButtonFormField<NativeShapeKind>(
-                          key: ValueKey('$keyPrefix-kind'),
-                          isExpanded: true,
-                          initialValue: shape.kind,
-                          decoration: const InputDecoration(
-                            labelText: 'Type de forme (ShapeBorder)',
-                            isDense: true,
+                        const Text(
+                          'Type de forme (ShapeBorder)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
                           ),
-                          items: [
+                        ),
+                        const SizedBox(height: 6),
+                        SegmentedButton<NativeShapeKind>(
+                          key: ValueKey('$keyPrefix-kind'),
+                          showSelectedIcon: false,
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          segments: [
                             for (final kind in NativeShapeKind.values)
-                              DropdownMenuItem<NativeShapeKind>(
+                              ButtonSegment<NativeShapeKind>(
                                 value: kind,
-                                child: Text(kind.label),
+                                tooltip: kind.label,
+                                icon: Flexible(
+                                  flex: 0,
+                                  child: Icon(
+                                    switch (kind) {
+                                      NativeShapeKind.rounded =>
+                                        Icons.rounded_corner,
+                                      NativeShapeKind.continuous =>
+                                        Icons.crop_square,
+                                      NativeShapeKind.beveled =>
+                                        Icons.content_cut,
+                                      NativeShapeKind.stadium =>
+                                        Icons.stadium_outlined,
+                                      NativeShapeKind.linear =>
+                                        Icons.horizontal_rule,
+                                    },
+                                    size: 14,
+                                  ),
+                                ),
+                                label: Text(
+                                  kind.label,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                           ],
-                          onChanged: (kind) {
-                            if (kind != null) {
-                              update(shape.copyWith(kind: kind));
+                          selected: {shape.kind},
+                          onSelectionChanged: (selected) {
+                            if (selected.isNotEmpty) {
+                              update(shape.copyWith(kind: selected.first));
                             }
                           },
                         ),

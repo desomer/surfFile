@@ -930,30 +930,46 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                 icon: Icons.smart_button_outlined,
                 tag: 'kind · variant · label · icon',
                 child: _group([
-                  DropdownButtonFormField<SuperActionKind>(
-                    isExpanded: true,
+                  const Text(
+                    'Type de bouton',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  SegmentedButton<SuperActionKind>(
                     key: const ValueKey('super-action-setting-kind'),
-                    initialValue: _draft.kind,
-                    decoration: const InputDecoration(
-                      labelText: 'Type de bouton',
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    items: const [
-                      DropdownMenuItem(
+                    segments: const [
+                      ButtonSegment(
                         value: SuperActionKind.text,
-                        child: Text('Texte'),
+                        tooltip: 'Texte',
+                        icon: Icon(Icons.text_fields, size: 16),
+                        label: Text('Texte', overflow: TextOverflow.ellipsis),
                       ),
-                      DropdownMenuItem(
+                      ButtonSegment(
                         value: SuperActionKind.icon,
-                        child: Text('Icône'),
+                        tooltip: 'Icône',
+                        icon: Icon(Icons.interests_outlined, size: 16),
+                        label: Text('Icône', overflow: TextOverflow.ellipsis),
                       ),
-                      DropdownMenuItem(
+                      ButtonSegment(
                         value: SuperActionKind.textAndIcon,
-                        child: Text('Texte et icône'),
+                        tooltip: 'Texte et icône',
+                        icon: Icon(Icons.smart_button_outlined, size: 16),
+                        label: Text(
+                          'Texte et icône',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
-                    onChanged: (kind) {
-                      if (kind != null) {
-                        setState(() => _draft = _draft.copyWith(kind: kind));
+                    selected: {_draft.kind},
+                    onSelectionChanged: (selected) {
+                      if (selected.isNotEmpty) {
+                        setState(
+                          () => _draft = _draft.copyWith(kind: selected.first),
+                        );
                       }
                     },
                   ),
@@ -1026,34 +1042,53 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                         ),
                       ),
                     ),
-                  if (_draft.kind == SuperActionKind.textAndIcon)
-                    DropdownButtonFormField<SuperActionIconPosition>(
-                      isExpanded: true,
-                      key: const ValueKey('super-action-setting-iconPosition'),
-                      initialValue: _draft.iconPosition,
-                      decoration: const InputDecoration(
-                        labelText: 'Position de l’icône',
+                  if (_draft.kind == SuperActionKind.textAndIcon) ...[
+                    const Text(
+                      'Position de l’icône',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
-                      items: const [
-                        DropdownMenuItem(
+                    ),
+                    SegmentedButton<SuperActionIconPosition>(
+                      key: const ValueKey('super-action-setting-iconPosition'),
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: const [
+                        ButtonSegment(
                           value: SuperActionIconPosition.leading,
-                          child: Text('Début (avant le texte)'),
+                          tooltip: 'Début (avant le texte)',
+                          icon: Icon(Icons.first_page, size: 16),
+                          label: Text(
+                            'Début (avant le texte)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                        DropdownMenuItem(
+                        ButtonSegment(
                           value: SuperActionIconPosition.trailing,
-                          child: Text('Fin (après le texte)'),
+                          tooltip: 'Fin (après le texte)',
+                          icon: Icon(Icons.last_page, size: 16),
+                          label: Text(
+                            'Fin (après le texte)',
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
-                      onChanged: (position) {
-                        if (position != null) {
+                      selected: {_draft.iconPosition},
+                      onSelectionChanged: (selected) {
+                        if (selected.isNotEmpty) {
                           setState(
                             () => _draft = _draft.copyWith(
-                              iconPosition: position,
+                              iconPosition: selected.first,
                             ),
                           );
                         }
                       },
                     ),
+                  ],
                   _withBinding(
                     SuperActionProperty.tooltip,
                     'l’infobulle',
@@ -1177,66 +1212,129 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                   _withBinding(
                     SuperActionProperty.italic,
                     'le style italique',
-                    DropdownButtonFormField<String>(
-                      isExpanded: true,
-                      key: const ValueKey('super-action-setting-italic'),
-                      initialValue: _draft.italic == null
-                          ? 'inherit'
-                          : _draft.italic!
-                          ? 'italic'
-                          : 'normal',
-                      decoration: const InputDecoration(
-                        labelText: 'Style de police',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'inherit',
-                          child: Text('Style du parent'),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 4,
+                      children: [
+                        const Text(
+                          'Style de police',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                        DropdownMenuItem(
-                          value: 'normal',
-                          child: Text('Normal'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'italic',
-                          child: Text('Italique'),
+                        SegmentedButton<String>(
+                          key: const ValueKey('super-action-setting-italic'),
+                          showSelectedIcon: false,
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          segments: const [
+                            ButtonSegment(
+                              value: 'inherit',
+                              tooltip: 'Style du parent',
+                              icon: Icon(Icons.hdr_auto_outlined, size: 16),
+                              label: Text(
+                                'Style du parent',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: 'normal',
+                              tooltip: 'Normal',
+                              icon: Icon(Icons.text_format, size: 16),
+                              label: Text(
+                                'Normal',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: 'italic',
+                              tooltip: 'Italique',
+                              icon: Icon(Icons.format_italic, size: 16),
+                              label: Text(
+                                'Italique',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                          selected: {
+                            _draft.italic == null
+                                ? 'inherit'
+                                : _draft.italic!
+                                ? 'italic'
+                                : 'normal',
+                          },
+                          onSelectionChanged: (selected) {
+                            if (selected.isEmpty) return;
+                            final value = selected.first;
+                            setState(
+                              () => _draft = _draft.copyWith(
+                                italic: value == 'italic',
+                                inheritItalic: value == 'inherit',
+                              ),
+                            );
+                          },
                         ),
                       ],
-                      onChanged: (value) {
-                        if (value == null) return;
-                        setState(
-                          () => _draft = _draft.copyWith(
-                            italic: value == 'italic',
-                            inheritItalic: value == 'inherit',
-                          ),
-                        );
-                      },
                     ),
                   ),
                   _withBinding(
                     SuperActionProperty.textAlign,
                     'l’alignement',
-                    DropdownButtonFormField<TextAlign>(
-                      isExpanded: true,
-                      key: const ValueKey('super-action-setting-textAlign'),
-                      initialValue: _draft.textAlign,
-                      decoration: const InputDecoration(
-                        labelText: 'Alignement',
-                      ),
-                      items: [
-                        for (final align in TextAlign.values)
-                          DropdownMenuItem(
-                            value: align,
-                            child: Text(align.name),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      spacing: 4,
+                      children: [
+                        const Text(
+                          'Alignement',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
                           ),
+                        ),
+                        SegmentedButton<TextAlign>(
+                          key: const ValueKey('super-action-setting-textAlign'),
+                          showSelectedIcon: false,
+                          style: const ButtonStyle(
+                            visualDensity: VisualDensity.compact,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          segments: [
+                            for (final align in TextAlign.values)
+                              ButtonSegment<TextAlign>(
+                                value: align,
+                                tooltip: align.name,
+                                icon: Icon(
+                                  switch (align) {
+                                    TextAlign.left => Icons.format_align_left,
+                                    TextAlign.right => Icons.format_align_right,
+                                    TextAlign.center =>
+                                      Icons.format_align_center,
+                                    TextAlign.justify =>
+                                      Icons.format_align_justify,
+                                    TextAlign.start =>
+                                      Icons.align_horizontal_left,
+                                    TextAlign.end =>
+                                      Icons.align_horizontal_right,
+                                  },
+                                  size: 16,
+                                ),
+                              ),
+                          ],
+                          selected: {_draft.textAlign},
+                          onSelectionChanged: (selected) {
+                            if (selected.isNotEmpty) {
+                              setState(
+                                () => _draft = _draft.copyWith(
+                                  textAlign: selected.first,
+                                ),
+                              );
+                            }
+                          },
+                        ),
                       ],
-                      onChanged: (align) {
-                        if (align != null) {
-                          setState(
-                            () => _draft = _draft.copyWith(textAlign: align),
-                          );
-                        }
-                      },
                     ),
                   ),
                   _field(
@@ -1340,59 +1438,99 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                 icon: Icons.auto_fix_high_outlined,
                 tag: 'ContainerStyle',
                 child: _group([
-                  DropdownButtonFormField<DesignSystem>(
-                    isExpanded: true,
+                  const Text(
+                    'Système de design (Surface)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  SegmentedButton<DesignSystem>(
                     key: const ValueKey('super-action-setting-designSystem'),
-                    initialValue: _draft.style.designSystem,
-                    decoration: const InputDecoration(
-                      labelText: 'Système de design (Surface)',
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    items: const [
-                      DropdownMenuItem(
+                    segments: const [
+                      ButtonSegment(
                         value: DesignSystem.material,
-                        child: Text('Material'),
+                        tooltip: 'Material',
+                        icon: Icon(Icons.layers_outlined, size: 16),
+                        label: Text(
+                          'Material',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      DropdownMenuItem(
+                      ButtonSegment(
                         value: DesignSystem.liquidGlass,
-                        child: Text('Liquid Glass'),
+                        tooltip: 'Liquid Glass',
+                        icon: Icon(Icons.blur_on, size: 16),
+                        label: Text(
+                          'Liquid Glass',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                      DropdownMenuItem(
+                      ButtonSegment(
                         value: DesignSystem.neumorphism,
-                        child: Text('Neumorphism'),
+                        tooltip: 'Neumorphism',
+                        icon: Icon(Icons.wb_twilight, size: 16),
+                        label: Text(
+                          'Neumorphism',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
-                    onChanged: (ds) {
-                      if (ds != null) {
+                    selected: {_draft.style.designSystem},
+                    onSelectionChanged: (selected) {
+                      if (selected.isNotEmpty) {
                         setState(
                           () => _draft = _draft.copyWith(
-                            style: _draft.style.copyWith(designSystem: ds),
+                            style: _draft.style.copyWith(
+                              designSystem: selected.first,
+                            ),
                           ),
                         );
                       }
                     },
                   ),
-                  DropdownButtonFormField<InteractionEffect>(
-                    isExpanded: true,
+                  const Text(
+                    'Effet d’interaction (Surface)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  SegmentedButton<InteractionEffect>(
                     key: const ValueKey(
                       'super-action-setting-interactionEffect',
                     ),
-                    initialValue: _draft.style.interactionEffect,
-                    decoration: const InputDecoration(
-                      labelText: 'Effet d’interaction (Surface)',
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    items: [
+                    segments: [
                       for (final effect in InteractionEffect.values)
-                        DropdownMenuItem(
+                        ButtonSegment<InteractionEffect>(
                           value: effect,
-                          child: Text(effect.label),
+                          tooltip: effect.label,
+                          icon: Icon(
+                            switch (effect) {
+                              InteractionEffect.ripple =>
+                                Icons.touch_app_outlined,
+                              InteractionEffect.pressed => Icons.compress,
+                              InteractionEffect.elevation => Icons.trending_up,
+                            },
+                            size: 16,
+                          ),
+                          label: Text(
+                            effect.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                     ],
-                    onChanged: (effect) {
-                      if (effect != null) {
+                    selected: {_draft.style.interactionEffect},
+                    onSelectionChanged: (selected) {
+                      if (selected.isNotEmpty) {
                         setState(
                           () => _draft = _draft.copyWith(
                             style: _draft.style.copyWith(
-                              interactionEffect: effect,
+                              interactionEffect: selected.first,
                             ),
                           ),
                         );

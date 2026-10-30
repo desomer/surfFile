@@ -844,29 +844,29 @@ void main() {
       find.byKey(const ValueKey('slot-preferred-height')),
       '25',
     );
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('slot-unit-preferred-width')),
+    final unitWidth = find.byKey(const ValueKey('slot-unit-preferred-width'));
+    await tester.ensureVisible(unitWidth);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(of: unitWidth, matching: find.text('%')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('slot-unit-preferred-width')));
+    final unitHeight = find.byKey(const ValueKey('slot-unit-preferred-height'));
+    await tester.ensureVisible(unitHeight);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('%').last);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('slot-unit-preferred-height')),
+    await tester.tap(
+      find.descendant(of: unitHeight, matching: find.text('%')),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('slot-unit-preferred-height')));
+    final basisSelector = find.byKey(const ValueKey('slot-percent-basis'));
+    await tester.ensureVisible(basisSelector);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('%').last);
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('slot-percent-basis')),
+    await tester.tap(
+      find.descendant(
+        of: basisSelector,
+        matching: find.text('Toute la place du layout'),
+      ),
     );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('slot-percent-basis')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Toute la place du layout').last);
     await tester.pumpAndSettle();
     expect(
       tester.getSize(find.byKey(const ValueKey('content-first'))),
@@ -1550,10 +1550,11 @@ void main() {
     await openEditor(tester);
     expect(
       tester
-          .widget<DropdownButton<SlotPercentBasis>>(
+          .widget<SegmentedButton<SlotPercentBasis>>(
             find.byKey(const ValueKey('slot-percent-basis')),
           )
-          .value,
+          .selected
+          .single,
       SlotPercentBasis.zone,
     );
     for (final key in [
@@ -1594,10 +1595,11 @@ void main() {
     await openEditor(tester);
     expect(
       tester
-          .widget<DropdownButton<SlotPercentBasis>>(
+          .widget<SegmentedButton<SlotPercentBasis>>(
             find.byKey(const ValueKey('slot-percent-basis')),
           )
-          .value,
+          .selected
+          .single,
       SlotPercentBasis.layout,
     );
     final layoutPreview = find.byKey(const ValueKey('slot-preview-layout'));
@@ -1710,10 +1712,11 @@ void main() {
       await openEditor(tester);
       expect(
         tester
-            .widget<DropdownButton<SlotPercentBasis>>(
+            .widget<SegmentedButton<SlotPercentBasis>>(
               find.byKey(const ValueKey('slot-percent-basis')),
             )
-            .value,
+            .selected
+            .single,
         basis,
       );
       await tester.tap(find.text('Annuler'));

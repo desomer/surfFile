@@ -309,7 +309,9 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        final controls = tester.widget<ContainerStyleEditor>(find.byType(ContainerStyleEditor));
+        final controls = tester.widget<ContainerStyleEditor>(
+          find.byType(ContainerStyleEditor),
+        );
         controls.onRadiusChanged!(36);
         controls.onBorderWidthChanged!(4);
         controls.onElevationChanged!(16);
@@ -333,12 +335,13 @@ void main() {
         await tester.tap(find.text('Couleur unie automatique'));
         await tester.pumpAndSettle();
         expect(current().color, isNull);
-        await tester.ensureVisible(
-          find.byType(DropdownButtonFormField<FillType>),
+        await tester.ensureVisible(find.byType(SegmentedButton<FillType>));
+        await tester.tap(
+          find.descendant(
+            of: find.byType(SegmentedButton<FillType>),
+            matching: find.text('Radial'),
+          ),
         );
-        await tester.tap(find.byType(DropdownButtonFormField<FillType>));
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Radial').last);
         await tester.pumpAndSettle();
         expect(current().fill.type, FillType.radial);
         await tester.ensureVisible(find.text('Réinitialiser ce style'));

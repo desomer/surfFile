@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/disk_gauge_style.dart';
 import 'package:super_container_layout/widgets/editing/styles/container_style_editor.dart';
+
 import 'disk_gauge.dart';
 
 /// Ouvre l'éditeur des jauges du panneau des disques. Les changements sont
@@ -43,7 +44,9 @@ Future<void> showDiskGaugeStyleEditor(BuildContext context) async {
     ),
   );
   if (confirmed != true && preferences.value != initial) {
-    preferences.value = preferences.value.copyWith(diskGaugeStyle: initial.diskGaugeStyle);
+    preferences.value = preferences.value.copyWith(
+      diskGaugeStyle: initial.diskGaugeStyle,
+    );
   }
 }
 
@@ -141,7 +144,11 @@ class DiskGaugeStyleEditor extends StatelessWidget {
         SegmentedButton<DiskGaugeShape>(
           segments: [
             for (final shape in DiskGaugeShape.values)
-              ButtonSegment(value: shape, label: Text(shape.label)),
+              ButtonSegment(
+                value: shape,
+                tooltip: shape.label,
+                label: Text(shape.label),
+              ),
           ],
           selected: {value.shape},
           onSelectionChanged: (s) => onChanged(value.copyWith(shape: s.first)),
@@ -174,7 +181,11 @@ class DiskGaugeStyleEditor extends StatelessWidget {
           SegmentedButton<DiskGaugeStart>(
             segments: [
               for (final start in DiskGaugeStart.values)
-                ButtonSegment(value: start, label: Text(start.label)),
+                ButtonSegment(
+                  value: start,
+                  tooltip: start.label,
+                  label: Text(start.label),
+                ),
             ],
             selected: {value.start},
             onSelectionChanged: (s) =>
@@ -346,9 +357,9 @@ class DiskGaugeStyleEditor extends StatelessWidget {
         const SizedBox(height: 4),
         SegmentedButton<int>(
           segments: const [
-            ButtonSegment(value: 1, label: Text('1')),
-            ButtonSegment(value: 2, label: Text('2')),
-            ButtonSegment(value: 3, label: Text('3')),
+            ButtonSegment(value: 1, tooltip: '1', label: Text('1')),
+            ButtonSegment(value: 2, tooltip: '2', label: Text('2')),
+            ButtonSegment(value: 3, tooltip: '3', label: Text('3')),
           ],
           selected: {value.columns},
           onSelectionChanged: (s) =>

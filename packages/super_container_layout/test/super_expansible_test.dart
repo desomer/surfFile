@@ -653,10 +653,11 @@ void main() {
         findsNothing,
       );
       await tester.tap(
-        find.byKey(const ValueKey('add-expansible-toggle-icon')),
+        find.descendant(
+          of: find.byKey(const ValueKey('add-expansible-toggle-icon')),
+          matching: find.text('Flèche (arrow_downward / arrow_upward)'),
+        ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Flèche (arrow_downward / arrow_upward)').last);
       await tester.pumpAndSettle();
       expect(draft.toggleIcon, 'arrow');
       expect(
@@ -664,10 +665,11 @@ void main() {
         findsOneWidget,
       );
       await tester.tap(
-        find.byKey(const ValueKey('add-expansible-toggle-icon-position')),
+        find.descendant(
+          of: find.byKey(const ValueKey('add-expansible-toggle-icon-position')),
+          matching: find.text('Début / Gauche (leading)'),
+        ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Début / Gauche (leading)').last);
       await tester.pumpAndSettle();
       expect(draft.toggleIconPosition, 'leading');
     },

@@ -1397,17 +1397,33 @@ class _SizeFields extends StatelessWidget {
           onChanged: (_) => onChanged(),
         ),
       ),
-      DropdownButton<SlotSizeUnit>(
+      const SizedBox(width: 6),
+      SegmentedButton<SlotSizeUnit>(
         key: ValueKey('$keyPrefix-add-size-unit-$key'),
-        value: draft.units[key],
-        underline: const SizedBox.shrink(),
-        items: const [
-          DropdownMenuItem(value: SlotSizeUnit.pixels, child: Text('px')),
-          DropdownMenuItem(value: SlotSizeUnit.percent, child: Text('%')),
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 6)),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: SlotSizeUnit.pixels,
+            tooltip: 'Pixels (px)',
+            icon: Icon(Icons.straighten, size: 14),
+            label: Text('px'),
+          ),
+          ButtonSegment(
+            value: SlotSizeUnit.percent,
+            tooltip: 'Pourcentage (%)',
+            icon: Icon(Icons.percent, size: 14),
+            label: Text('%'),
+          ),
         ],
-        onChanged: (value) {
-          if (value == null) return;
-          draft.units[key] = value;
+        selected: {draft.units[key]!},
+        onSelectionChanged: (selected) {
+          if (selected.isEmpty) return;
+          draft.units[key] = selected.first;
           onChanged();
         },
       ),
@@ -1438,13 +1454,22 @@ class _SizeFields extends StatelessWidget {
           padding: const EdgeInsets.only(top: 8),
           child: SegmentedButton<SlotPercentBasis>(
             key: ValueKey('$keyPrefix-add-size-basis'),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             segments: const [
               ButtonSegment(
                 value: SlotPercentBasis.zone,
+                tooltip: '% de la zone',
+                icon: Icon(Icons.crop_free, size: 16),
                 label: Text('% de la zone'),
               ),
               ButtonSegment(
                 value: SlotPercentBasis.layout,
+                tooltip: '% du layout',
+                icon: Icon(Icons.aspect_ratio, size: 16),
                 label: Text('% du layout'),
               ),
             ],

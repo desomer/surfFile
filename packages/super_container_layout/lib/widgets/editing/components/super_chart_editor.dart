@@ -270,26 +270,52 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
               spacing: 14,
               children: [
                 // 1. Type de graphique
-                DropdownButtonFormField<SuperChartKind>(
+                const Text(
+                  'Type de graphique (fl_chart)',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                ),
+                SegmentedButton<SuperChartKind>(
                   key: const ValueKey('super-chart-kind'),
-                  initialValue: _draft.kind,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Type de graphique (fl_chart)',
-                    prefixIcon: Icon(Icons.insert_chart_outlined),
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  items: [
+                  segments: [
                     for (final item in SuperChartKind.values)
-                      DropdownMenuItem(
+                      ButtonSegment<SuperChartKind>(
                         value: item,
-                        child: Text(item.label),
+                        tooltip: item.label,
+                        icon: Flexible(
+                          flex: 0,
+                          child: Icon(
+                            switch (item) {
+                              SuperChartKind.line => Icons.show_chart,
+                              SuperChartKind.bar => Icons.bar_chart,
+                              SuperChartKind.pie => Icons.pie_chart_outline,
+                              SuperChartKind.scatter =>
+                                Icons.scatter_plot_outlined,
+                              SuperChartKind.radar => Icons.radar,
+                            },
+                            size: 14,
+                          ),
+                        ),
+                        label: Text(
+                          item.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                   ],
-                  onChanged: _busy
+                  selected: {_draft.kind},
+                  onSelectionChanged: _busy
                       ? null
-                      : (value) {
-                          if (value != null) {
-                            setState(() => _draft = _draft.copyWith(kind: value));
+                      : (selected) {
+                          if (selected.isNotEmpty) {
+                            setState(
+                              () => _draft = _draft.copyWith(
+                                kind: selected.first,
+                              ),
+                            );
                           }
                         },
                 ),

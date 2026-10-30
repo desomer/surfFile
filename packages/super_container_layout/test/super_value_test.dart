@@ -527,9 +527,9 @@ void main() {
       await tester.pumpAndSettle();
       final dropdown = find.byKey(const ValueKey('super-value-setting-italic'));
       await tester.ensureVisible(dropdown);
-      await tester.tap(dropdown);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(choice).last);
+      await tester.tap(
+        find.descendant(of: dropdown, matching: find.text(choice)),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();
@@ -1288,9 +1288,9 @@ void main() {
       );
       final modeField = find.byKey(const ValueKey('super-value-setting-mode'));
       await tester.ensureVisible(modeField);
-      await tester.tap(modeField);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Saisie').last);
+      await tester.tap(
+        find.descendant(of: modeField, matching: find.text('Saisie')),
+      );
       await tester.pumpAndSettle();
       await tester.ensureVisible(
         find.byKey(const ValueKey('super-value-setting-obscureText')),
@@ -1347,9 +1347,9 @@ void main() {
       await tester.pumpAndSettle();
       final modeField = find.byKey(const ValueKey('super-value-setting-mode'));
       await tester.ensureVisible(modeField);
-      await tester.tap(modeField);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Affichage').last);
+      await tester.tap(
+        find.descendant(of: modeField, matching: find.text('Affichage')),
+      );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('super-value-setting-obscureText')),
@@ -1483,9 +1483,12 @@ void main() {
     await tester.pumpAndSettle();
     final kindDropdown = find.byKey(const ValueKey('super-value-setting-kind'));
     await tester.ensureVisible(kindDropdown);
-    await tester.tap(kindDropdown);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Case à cocher (Checkbox)').last);
+    await tester.tap(
+      find.descendant(
+        of: kindDropdown,
+        matching: find.text('Case à cocher (Checkbox)'),
+      ),
+    );
     await tester.pumpAndSettle();
     final initBool = find.byKey(
       const ValueKey('super-value-setting-initialBool'),

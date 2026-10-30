@@ -50,14 +50,28 @@ class _SuperValueAddFormState extends State<SuperValueAddForm> {
         children: [
           SegmentedButton<SuperValueKind>(
             key: const ValueKey('add-value-kind'),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             segments: const [
-              ButtonSegment(value: SuperValueKind.text, label: Text('Texte')),
+              ButtonSegment(
+                value: SuperValueKind.text,
+                tooltip: 'Texte',
+                icon: Icon(Icons.text_fields, size: 16),
+                label: Text('Texte'),
+              ),
               ButtonSegment(
                 value: SuperValueKind.checkbox,
+                tooltip: 'Checkbox',
+                icon: Icon(Icons.check_box_outlined, size: 16),
                 label: Text('Checkbox'),
               ),
               ButtonSegment(
                 value: SuperValueKind.switchControl,
+                tooltip: 'Switch',
+                icon: Icon(Icons.toggle_on_outlined, size: 16),
                 label: Text('Switch'),
               ),
             ],
@@ -77,12 +91,24 @@ class _SuperValueAddFormState extends State<SuperValueAddForm> {
           const SizedBox(height: 8),
           SegmentedButton<SuperValueMode>(
             key: const ValueKey('add-value-mode'),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             segments: const [
               ButtonSegment(
                 value: SuperValueMode.display,
+                tooltip: 'Affichage',
+                icon: Icon(Icons.visibility_outlined, size: 16),
                 label: Text('Affichage'),
               ),
-              ButtonSegment(value: SuperValueMode.input, label: Text('Saisie')),
+              ButtonSegment(
+                value: SuperValueMode.input,
+                tooltip: 'Saisie',
+                icon: Icon(Icons.edit_outlined, size: 16),
+                label: Text('Saisie'),
+              ),
             ],
             selected: {draft.mode},
             onSelectionChanged: (value) {
@@ -174,14 +200,17 @@ class _SuperValueAddFormState extends State<SuperValueAddForm> {
             segments: const [
               ButtonSegment(
                 value: TextAlign.start,
+                tooltip: 'Aligner à gauche',
                 icon: Icon(Icons.format_align_left),
               ),
               ButtonSegment(
                 value: TextAlign.center,
+                tooltip: 'Centrer',
                 icon: Icon(Icons.format_align_center),
               ),
               ButtonSegment(
                 value: TextAlign.end,
+                tooltip: 'Aligner à droite',
                 icon: Icon(Icons.format_align_right),
               ),
             ],

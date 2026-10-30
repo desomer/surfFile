@@ -159,10 +159,19 @@ class AppearanceSettings extends StatelessWidget {
             children: [
               SegmentedButton<ThemeMode>(
                 segments: const [
-                  ButtonSegment(value: ThemeMode.light, label: Text('Clair')),
-                  ButtonSegment(value: ThemeMode.dark, label: Text('Sombre')),
+                  ButtonSegment(
+                    value: ThemeMode.light,
+                    tooltip: 'Clair',
+                    label: Text('Clair'),
+                  ),
+                  ButtonSegment(
+                    value: ThemeMode.dark,
+                    tooltip: 'Sombre',
+                    label: Text('Sombre'),
+                  ),
                   ButtonSegment(
                     value: ThemeMode.system,
+                    tooltip: 'Système',
                     label: Text('Système'),
                   ),
                 ],

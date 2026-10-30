@@ -195,25 +195,54 @@ Future<void> showSlotSizeEditor({
                     const Text(' Occupation sur l’axe principal (flex)'),
                     ValueListenableBuilder<bool?>(
                       valueListenable: fitContent,
-                      builder: (context, value, _) => DropdownButton<bool?>(
+                      builder: (context, value, _) => SegmentedButton<bool?>(
                         key: const ValueKey('slot-fit-content'),
-                        isExpanded: true,
-                        value: value,
-                        onChanged: (next) => fitContent.value = next,
-                        items: const [
-                          DropdownMenuItem<bool?>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        segments: const [
+                          ButtonSegment<bool?>(
                             value: null,
-                            child: Text('Auto (selon le flux de la zone)'),
+                            tooltip: 'Auto (selon le flux de la zone)',
+                            icon: Flexible(
+                              flex: 0,
+                              child: Icon(Icons.hdr_auto_outlined, size: 14),
+                            ),
+                            label: Text(
+                              'Auto (selon le flux de la zone)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          DropdownMenuItem<bool?>(
+                          ButtonSegment<bool?>(
                             value: true,
-                            child: Text('Taille du contenu (flex : 0)'),
+                            tooltip: 'Taille du contenu (flex : 0)',
+                            icon: Flexible(
+                              flex: 0,
+                              child: Icon(Icons.fit_screen_outlined, size: 14),
+                            ),
+                            label: Text(
+                              'Taille du contenu (flex : 0)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
-                          DropdownMenuItem<bool?>(
+                          ButtonSegment<bool?>(
                             value: false,
-                            child: Text('Remplir l’espace (flex : 1)'),
+                            tooltip: 'Remplir l’espace (flex : 1)',
+                            icon: Flexible(
+                              flex: 0,
+                              child: Icon(Icons.open_in_full, size: 14),
+                            ),
+                            label: Text(
+                              'Remplir l’espace (flex : 1)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
+                        selected: {value},
+                        onSelectionChanged: (selected) =>
+                            fitContent.value = selected.first,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -221,26 +250,40 @@ Future<void> showSlotSizeEditor({
                     ValueListenableBuilder<SlotPercentBasis>(
                       valueListenable: percentBasis,
                       builder: (context, value, _) =>
-                          DropdownButton<SlotPercentBasis>(
+                          SegmentedButton<SlotPercentBasis>(
                             key: const ValueKey('slot-percent-basis'),
-                            isExpanded: true,
-                            value: value,
-                            onChanged: (basis) {
-                              if (basis != null) {
-                                percentBasisChanged = true;
-                                percentBasis.value = basis;
-                              }
-                            },
-                            items: const [
-                              DropdownMenuItem(
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: const [
+                              ButtonSegment(
                                 value: SlotPercentBasis.zone,
-                                child: Text('Espace disponible de la zone'),
+                                tooltip: 'Espace disponible de la zone',
+                                icon: Icon(Icons.crop_free, size: 16),
+                                label: Text(
+                                  'Espace disponible de la zone',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              DropdownMenuItem(
+                              ButtonSegment(
                                 value: SlotPercentBasis.layout,
-                                child: Text('Toute la place du layout'),
+                                tooltip: 'Toute la place du layout',
+                                icon: Icon(Icons.aspect_ratio, size: 16),
+                                label: Text(
+                                  'Toute la place du layout',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
                             ],
+                            selected: {value},
+                            onSelectionChanged: (selected) {
+                              if (selected.isNotEmpty) {
+                                percentBasisChanged = true;
+                                percentBasis.value = selected.first;
+                              }
+                            },
                           ),
                     ),
                     _SlotSizePreview(
@@ -348,24 +391,34 @@ Future<void> showSlotSizeEditor({
                           ValueListenableBuilder<SlotSizeUnit>(
                             valueListenable: units[entry.key]!,
                             builder: (context, unit, _) =>
-                                DropdownButton<SlotSizeUnit>(
+                                SegmentedButton<SlotSizeUnit>(
                                   key: ValueKey('slot-unit-${entry.key}'),
-                                  value: unit,
-                                  onChanged: (value) {
-                                    if (value != null) {
-                                      units[entry.key]!.value = value;
-                                    }
-                                  },
-                                  items: const [
-                                    DropdownMenuItem(
+                                  showSelectedIcon: false,
+                                  style: const ButtonStyle(
+                                    visualDensity: VisualDensity.compact,
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  segments: const [
+                                    ButtonSegment(
                                       value: SlotSizeUnit.pixels,
-                                      child: Text('px'),
+                                      tooltip: 'Pixels (px)',
+                                      icon: Icon(Icons.straighten, size: 14),
+                                      label: Text('px'),
                                     ),
-                                    DropdownMenuItem(
+                                    ButtonSegment(
                                       value: SlotSizeUnit.percent,
-                                      child: Text('%'),
+                                      tooltip: 'Pourcentage (%)',
+                                      icon: Icon(Icons.percent, size: 14),
+                                      label: Text('%'),
                                     ),
                                   ],
+                                  selected: {unit},
+                                  onSelectionChanged: (selected) {
+                                    if (selected.isNotEmpty) {
+                                      units[entry.key]!.value = selected.first;
+                                    }
+                                  },
                                 ),
                           ),
                         ],

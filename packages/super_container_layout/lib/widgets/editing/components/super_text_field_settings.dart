@@ -100,28 +100,118 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
     super.dispose();
   }
 
+  static const _compactSegmentStyle = ButtonStyle(
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
+  static IconData _choiceIcon(String key, String value) =>
+      switch ((key, value)) {
+        (_, '') => Icons.hdr_auto_outlined,
+        ('variant', 'theme') => Icons.hdr_auto_outlined,
+        ('variant', 'filled') => Icons.format_color_fill,
+        ('variant', 'outlined') => Icons.crop_16_9,
+        ('variant', 'underline') => Icons.border_bottom,
+        ('variant', 'borderless') => Icons.border_clear,
+        ('suffix', 'decoration') => Icons.image_outlined,
+        ('suffix', 'clear') => Icons.clear,
+        ('suffix', 'visibility') => Icons.visibility_outlined,
+        ('filter', 'none') => Icons.filter_none,
+        ('filter', 'digits') => Icons.pin_outlined,
+        ('filter', 'decimal') => Icons.numbers,
+        ('filter', 'letters') => Icons.sort_by_alpha,
+        ('filter', 'pattern') => Icons.code,
+        ('capitalization', 'none') => Icons.text_rotation_none,
+        ('capitalization', 'words') => Icons.title,
+        ('capitalization', 'sentences') => Icons.short_text,
+        ('capitalization', 'characters') => Icons.text_fields,
+        ('verticalAlign', 'automatic') => Icons.hdr_auto_outlined,
+        ('verticalAlign', 'top') => Icons.vertical_align_top,
+        ('verticalAlign', 'center') => Icons.vertical_align_center,
+        ('verticalAlign', 'bottom') => Icons.vertical_align_bottom,
+        ('floatingLabel', 'auto') => Icons.motion_photos_auto_outlined,
+        ('floatingLabel', 'always') => Icons.label_outlined,
+        ('floatingLabel', 'never') => Icons.label_off_outlined,
+        _ => Icons.tune,
+      };
+
   Widget _choice<T extends Enum>(
     String key,
     String label,
     List<T> values, {
     Map<String, String> labels = const {},
     bool nullable = false,
-  }) => DropdownButtonFormField<String>(
-    key: ValueKey('text-field-setting-$key-${_values[key]}'),
-    initialValue: _values[key] as String? ?? '',
-    isExpanded: true,
-    decoration: InputDecoration(labelText: label),
-    items: [
-      if (nullable)
-        const DropdownMenuItem(value: '', child: Text('Thème / aucune')),
-      for (final value in values)
-        DropdownMenuItem(
-          value: value.name,
-          child: Text(labels[value.name] ?? value.name),
-        ),
-    ],
-    onChanged: (value) => _update(key, value == '' ? null : value),
-  );
+  }) {
+    final totalOptions = values.length + (nullable ? 1 : 0);
+    final current = _values[key] as String? ?? '';
+    if (totalOptions <= 5) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 4,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+          SegmentedButton<String>(
+            key: ValueKey('text-field-setting-$key-${_values[key]}'),
+            showSelectedIcon: false,
+            style: _compactSegmentStyle,
+            segments: [
+              if (nullable)
+                ButtonSegment<String>(
+                  value: '',
+                  tooltip: 'Thème / aucune',
+                  icon: Flexible(
+                    flex: 0,
+                    child: Icon(_choiceIcon(key, ''), size: 14),
+                  ),
+                  label: const Text(
+                    'Thème / aucune',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              for (final value in values)
+                ButtonSegment<String>(
+                  value: value.name,
+                  tooltip: labels[value.name] ?? value.name,
+                  icon: Flexible(
+                    flex: 0,
+                    child: Icon(_choiceIcon(key, value.name), size: 14),
+                  ),
+                  label: Text(
+                    labels[value.name] ?? value.name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+            selected: {current},
+            onSelectionChanged: (selected) {
+              if (selected.isEmpty) return;
+              final next = selected.first;
+              _update(key, next == '' ? null : next);
+            },
+          ),
+        ],
+      );
+    }
+    return DropdownButtonFormField<String>(
+      key: ValueKey('text-field-setting-$key-${_values[key]}'),
+      initialValue: current,
+      isExpanded: true,
+      decoration: InputDecoration(labelText: label),
+      items: [
+        if (nullable)
+          const DropdownMenuItem(value: '', child: Text('Thème / aucune')),
+        for (final value in values)
+          DropdownMenuItem(
+            value: value.name,
+            child: Text(labels[value.name] ?? value.name),
+          ),
+      ],
+      onChanged: (value) => _update(key, value == '' ? null : value),
+    );
+  }
 
   Widget _text(String key, String label, {bool numeric = false}) =>
       TextFormField(
@@ -212,18 +302,49 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
           'Marge interne verticale (vide = thème)',
           numeric: true,
         ),
-        DropdownButtonFormField<String>(
+        const Text(
+          'Densité',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        SegmentedButton<String>(
           key: ValueKey('text-field-setting-dense-${_values['dense']}'),
-          isExpanded: true,
-          initialValue: _values['dense']?.toString() ?? '',
-          decoration: const InputDecoration(labelText: 'Densité'),
-          items: const [
-            DropdownMenuItem(value: '', child: Text('Par défaut')),
-            DropdownMenuItem(value: 'true', child: Text('Dense')),
-            DropdownMenuItem(value: 'false', child: Text('Confortable')),
+          showSelectedIcon: false,
+          style: _compactSegmentStyle,
+          segments: const [
+            ButtonSegment(
+              value: '',
+              tooltip: 'Par défaut',
+              icon: Flexible(
+                flex: 0,
+                child: Icon(Icons.hdr_auto_outlined, size: 14),
+              ),
+              label: Text('Par défaut', overflow: TextOverflow.ellipsis),
+            ),
+            ButtonSegment(
+              value: 'true',
+              tooltip: 'Dense',
+              icon: Flexible(
+                flex: 0,
+                child: Icon(Icons.density_small, size: 14),
+              ),
+              label: Text('Dense', overflow: TextOverflow.ellipsis),
+            ),
+            ButtonSegment(
+              value: 'false',
+              tooltip: 'Confortable',
+              icon: Flexible(
+                flex: 0,
+                child: Icon(Icons.density_medium, size: 14),
+              ),
+              label: Text('Confortable', overflow: TextOverflow.ellipsis),
+            ),
           ],
-          onChanged: (value) =>
-              _update('dense', value == '' ? null : value == 'true'),
+          selected: {_values['dense']?.toString() ?? ''},
+          onSelectionChanged: (selected) {
+            if (selected.isEmpty) return;
+            final value = selected.first;
+            _update('dense', value == '' ? null : value == 'true');
+          },
         ),
       ]),
     ),

@@ -997,10 +997,10 @@ void main() {
     expect(tester.getSize(row('clients', 1)).width, 220);
     await openSize();
     tester
-        .widget<DropdownButton<SlotSizeUnit>>(
+        .widget<SegmentedButton<SlotSizeUnit>>(
           find.byKey(const ValueKey('slot-unit-preferred-width')),
         )
-        .onChanged!(SlotSizeUnit.percent);
+        .onSelectionChanged!({SlotSizeUnit.percent});
     await tester.enterText(
       find.byKey(const ValueKey('slot-preferred-width')),
       '40',

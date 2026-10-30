@@ -47,11 +47,28 @@ class _SuperActionAddFormState extends State<SuperActionAddForm> {
         children: [
           SegmentedButton<SuperActionKind>(
             key: const ValueKey('add-action-kind'),
+            showSelectedIcon: false,
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             segments: const [
-              ButtonSegment(value: SuperActionKind.text, label: Text('Texte')),
-              ButtonSegment(value: SuperActionKind.icon, label: Text('Icône')),
+              ButtonSegment(
+                value: SuperActionKind.text,
+                tooltip: 'Texte',
+                icon: Icon(Icons.text_fields, size: 16),
+                label: Text('Texte'),
+              ),
+              ButtonSegment(
+                value: SuperActionKind.icon,
+                tooltip: 'Icône',
+                icon: Icon(Icons.interests_outlined, size: 16),
+                label: Text('Icône'),
+              ),
               ButtonSegment(
                 value: SuperActionKind.textAndIcon,
+                tooltip: 'Texte + Icône',
+                icon: Icon(Icons.smart_button_outlined, size: 16),
                 label: Text('Texte + Icône'),
               ),
             ],

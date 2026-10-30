@@ -196,10 +196,10 @@ void main() {
         await open();
         await enter('min-width', '40');
         await enter('preferred-width', '50');
-        final unit = tester.widget<DropdownButton<SlotSizeUnit>>(
+        final unit = tester.widget<SegmentedButton<SlotSizeUnit>>(
           find.byKey(const ValueKey('slot-unit-preferred-width')),
         );
-        unit.onChanged!(SlotSizeUnit.percent);
+        unit.onSelectionChanged!({SlotSizeUnit.percent});
         await tester.pumpAndSettle();
         await enter('max-width', '180');
         await tester.tap(find.text('Appliquer'));

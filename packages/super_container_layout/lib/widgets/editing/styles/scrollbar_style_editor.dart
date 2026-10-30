@@ -177,6 +177,21 @@ class ScrollbarStyleEditor extends StatelessWidget {
               for (final option in ScrollbarSide.values)
                 ButtonSegment<ScrollbarSide>(
                   value: option,
+                  tooltip: option.labelForAxis(axis),
+                  icon: Icon(
+                    switch ((axis, option)) {
+                      (_, ScrollbarSide.auto) => Icons.hdr_auto_outlined,
+                      (Axis.vertical, ScrollbarSide.start) =>
+                        Icons.align_horizontal_left,
+                      (Axis.vertical, ScrollbarSide.end) =>
+                        Icons.align_horizontal_right,
+                      (Axis.horizontal, ScrollbarSide.start) =>
+                        Icons.align_vertical_top,
+                      (Axis.horizontal, ScrollbarSide.end) =>
+                        Icons.align_vertical_bottom,
+                    },
+                    size: 16,
+                  ),
                   label: Text(
                     option.labelForAxis(axis),
                     style: const TextStyle(fontSize: 12),

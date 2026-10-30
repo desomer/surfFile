@@ -103,17 +103,42 @@ class StyleExtrasControls {
           max: 4,
           onChanged: (v) => onStyle(style.copyWith(borderWidths: v)),
         ),
-      DropdownButtonFormField<BorderLine>(
+      const Text(
+        'Type de trait',
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      ),
+      const SizedBox(height: 6),
+      SegmentedButton<BorderLine>(
         key: ValueKey('border-line-$label'),
-        initialValue: style.borderLine,
-        isExpanded: true,
-        decoration: const InputDecoration(labelText: 'Type de trait'),
-        items: [
+        showSelectedIcon: false,
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        segments: [
           for (final line in BorderLine.values)
-            DropdownMenuItem(value: line, child: Text(line.label)),
+            ButtonSegment<BorderLine>(
+              value: line,
+              tooltip: line.label,
+              icon: Flexible(
+                flex: 0,
+                child: Icon(
+                  switch (line) {
+                    BorderLine.solid => Icons.horizontal_rule,
+                    BorderLine.dashed => Icons.power_input,
+                    BorderLine.dotted => Icons.more_horiz,
+                  },
+                  size: 14,
+                ),
+              ),
+              label: Text(line.label, overflow: TextOverflow.ellipsis),
+            ),
         ],
-        onChanged: (line) {
-          if (line != null) onStyle(style.copyWith(borderLine: line));
+        selected: {style.borderLine},
+        onSelectionChanged: (selected) {
+          if (selected.isNotEmpty) {
+            onStyle(style.copyWith(borderLine: selected.first));
+          }
         },
       ),
     ];
@@ -325,17 +350,43 @@ class StyleExtrasControls {
   }
 
   List<Widget> pattern() => [
-    DropdownButtonFormField<SurfacePattern>(
+    const Text(
+      'Motif de fond',
+      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+    ),
+    const SizedBox(height: 6),
+    SegmentedButton<SurfacePattern>(
       key: ValueKey('pattern-$label'),
-      initialValue: style.pattern,
-      isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Motif de fond'),
-      items: [
+      showSelectedIcon: false,
+      style: const ButtonStyle(
+        visualDensity: VisualDensity.compact,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      segments: [
         for (final kind in SurfacePattern.values)
-          DropdownMenuItem(value: kind, child: Text(kind.label)),
+          ButtonSegment<SurfacePattern>(
+            value: kind,
+            tooltip: kind.label,
+            icon: Flexible(
+              flex: 0,
+              child: Icon(
+                switch (kind) {
+                  SurfacePattern.none => Icons.block,
+                  SurfacePattern.grain => Icons.grain,
+                  SurfacePattern.lines => Icons.dehaze,
+                  SurfacePattern.dots => Icons.blur_circular,
+                },
+                size: 14,
+              ),
+            ),
+            label: Text(kind.label, overflow: TextOverflow.ellipsis),
+          ),
       ],
-      onChanged: (kind) {
-        if (kind != null) onStyle(style.copyWith(pattern: kind));
+      selected: {style.pattern},
+      onSelectionChanged: (selected) {
+        if (selected.isNotEmpty) {
+          onStyle(style.copyWith(pattern: selected.first));
+        }
       },
     ),
     if (style.pattern != SurfacePattern.none)

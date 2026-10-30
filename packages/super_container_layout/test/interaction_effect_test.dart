@@ -252,7 +252,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(PopupMenuItem<EditorSlotState>).first);
     await tester.pumpAndSettle();
-    final selector = find.byType(DropdownButtonFormField<InteractionEffect>);
+    final selector = find.byType(SegmentedButton<InteractionEffect>);
     expect(selector, findsOneWidget);
     final checkbox = find.byType(CheckboxListTile);
     expect(checkbox, findsOneWidget);
@@ -269,9 +269,12 @@ void main() {
     );
     await tester.ensureVisible(selector);
     await tester.pumpAndSettle();
-    await tester.tap(selector);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(InteractionEffect.elevation.label).last);
+    await tester.tap(
+      find.descendant(
+        of: selector,
+        matching: find.text(InteractionEffect.elevation.label),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(
       tester

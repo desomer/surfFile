@@ -68,15 +68,15 @@ void main() {
 
     EditableSurfaceState state() =>
         tester.state<EditableSurfaceState>(find.byType(EditableSurface));
-    final selector = find.byType(DropdownButtonFormField<DesignSystem>);
+    final selector = find.byType(SegmentedButton<DesignSystem>);
     expect(selector, findsOneWidget);
 
     Future<void> choose(DesignSystem system) async {
       await tester.ensureVisible(selector);
       await tester.pumpAndSettle();
-      await tester.tap(selector);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(system.label).last);
+      await tester.tap(
+        find.descendant(of: selector, matching: find.text(system.label)),
+      );
       await tester.pumpAndSettle();
     }
 

@@ -189,9 +189,12 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('super-layout-side-north')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('super-layout-corner-sw')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Fusionné avec Ouest').last);
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('super-layout-corner-sw')),
+        matching: find.text('Fusionné avec Ouest'),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(changes.last.sw, CornerMerge.column);
     expect(find.byKey(const ValueKey('super-layout-sw')), findsNothing);

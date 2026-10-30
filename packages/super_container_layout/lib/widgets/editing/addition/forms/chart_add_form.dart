@@ -73,23 +73,54 @@ class _ChartAddFormState extends State<ChartAddForm> {
           children: [
             sectionCard(
               title: 'Type de graphique',
-              child: DropdownButtonFormField<SuperChartKind>(
-                key: const ValueKey('add-chart-kind'),
-                initialValue: draft.kind,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: 'Représentation (fl_chart)',
-                ),
-                items: [
-                  for (final item in SuperChartKind.values)
-                    DropdownMenuItem(value: item, child: Text(item.label)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 6,
+                children: [
+                  const Text(
+                    'Représentation (fl_chart)',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                  SegmentedButton<SuperChartKind>(
+                    key: const ValueKey('add-chart-kind'),
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    segments: [
+                      for (final item in SuperChartKind.values)
+                        ButtonSegment<SuperChartKind>(
+                          value: item,
+                          tooltip: item.label,
+                          icon: Flexible(
+                            flex: 0,
+                            child: Icon(
+                              switch (item) {
+                                SuperChartKind.line => Icons.show_chart,
+                                SuperChartKind.bar => Icons.bar_chart,
+                                SuperChartKind.pie => Icons.pie_chart_outline,
+                                SuperChartKind.scatter =>
+                                  Icons.scatter_plot_outlined,
+                                SuperChartKind.radar => Icons.radar,
+                              },
+                              size: 14,
+                            ),
+                          ),
+                          label: Text(
+                            item.label,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    selected: {draft.kind},
+                    onSelectionChanged: (selected) {
+                      if (selected.isNotEmpty) {
+                        widget.onChanged(draft.copyWith(kind: selected.first));
+                      }
+                    },
+                  ),
                 ],
-                onChanged: (value) {
-                  if (value != null) {
-                    widget.onChanged(draft.copyWith(kind: value));
-                  }
-                },
               ),
             ),
             sectionCard(

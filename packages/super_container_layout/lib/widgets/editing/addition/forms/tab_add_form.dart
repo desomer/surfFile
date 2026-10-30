@@ -19,66 +19,118 @@ class TabAddForm extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 12,
       children: [
-        DropdownButtonFormField<SuperTabMode>(
+        const Text(
+          'Mode des onglets',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        SegmentedButton<SuperTabMode>(
           key: const ValueKey('add-tab-mode'),
-          initialValue: draft.mode,
-          decoration: const InputDecoration(labelText: 'Mode des onglets'),
-          items: const [
-            DropdownMenuItem(
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          segments: const [
+            ButtonSegment(
               value: SuperTabMode.static,
-              child: Text('Statique (onglets fixes)'),
+              tooltip: 'Statique (onglets fixes)',
+              icon: Icon(Icons.tab, size: 16),
+              label: Text(
+                'Statique (onglets fixes)',
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            DropdownMenuItem(
+            ButtonSegment(
               value: SuperTabMode.dynamic,
-              child: Text('Dynamique (tableau JSON du repository)'),
+              tooltip: 'Dynamique (tableau JSON du repository)',
+              icon: Icon(Icons.dynamic_feed, size: 16),
+              label: Text(
+                'Dynamique (tableau JSON du repository)',
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
-          onChanged: (mode) {
-            if (mode != null) onChanged(draft.copyWith(mode: mode));
+          selected: {draft.mode},
+          onSelectionChanged: (selected) {
+            if (selected.isNotEmpty) {
+              onChanged(draft.copyWith(mode: selected.first));
+            }
           },
         ),
-        DropdownButtonFormField<SuperTabBarPosition>(
+        const Text(
+          'Position de la barre d’onglets',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        SegmentedButton<SuperTabBarPosition>(
           key: const ValueKey('add-tab-position'),
-          initialValue: draft.tabBarPosition,
-          decoration: const InputDecoration(
-            labelText: 'Position de la barre d’onglets',
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          items: const [
-            DropdownMenuItem(
+          segments: const [
+            ButtonSegment(
               value: SuperTabBarPosition.top,
-              child: Text('En haut'),
+              tooltip: 'En haut',
+              icon: Icon(Icons.vertical_align_top, size: 16),
+              label: Text('En haut', overflow: TextOverflow.ellipsis),
             ),
-            DropdownMenuItem(
+            ButtonSegment(
               value: SuperTabBarPosition.bottom,
-              child: Text('En bas'),
+              tooltip: 'En bas',
+              icon: Icon(Icons.vertical_align_bottom, size: 16),
+              label: Text('En bas', overflow: TextOverflow.ellipsis),
             ),
           ],
-          onChanged: (pos) {
-            if (pos != null) onChanged(draft.copyWith(tabBarPosition: pos));
+          selected: {draft.tabBarPosition},
+          onSelectionChanged: (selected) {
+            if (selected.isNotEmpty) {
+              onChanged(draft.copyWith(tabBarPosition: selected.first));
+            }
           },
         ),
-        DropdownButtonFormField<SuperTabIndicatorKind>(
+        const Text(
+          'Style de l’indicateur',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+        ),
+        SegmentedButton<SuperTabIndicatorKind>(
           key: const ValueKey('add-tab-indicator-kind'),
-          initialValue: draft.indicatorKind,
-          decoration: const InputDecoration(
-            labelText: 'Style de l’indicateur',
+          showSelectedIcon: false,
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          items: const [
-            DropdownMenuItem(
+          segments: const [
+            ButtonSegment(
               value: SuperTabIndicatorKind.underline,
-              child: Text('Soulignement (Underline)'),
+              tooltip: 'Soulignement (Underline)',
+              icon: Icon(Icons.horizontal_rule, size: 16),
+              label: Text(
+                'Soulignement (Underline)',
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            DropdownMenuItem(
+            ButtonSegment(
               value: SuperTabIndicatorKind.box,
-              child: Text('Pilule / Boîte remplie (Box)'),
+              tooltip: 'Pilule / Boîte remplie (Box)',
+              icon: Icon(Icons.check_box_outline_blank, size: 16),
+              label: Text(
+                'Pilule / Boîte remplie (Box)',
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            DropdownMenuItem(
+            ButtonSegment(
               value: SuperTabIndicatorKind.none,
-              child: Text('Aucun indicateur'),
+              tooltip: 'Aucun indicateur',
+              icon: Icon(Icons.block, size: 16),
+              label: Text('Aucun indicateur', overflow: TextOverflow.ellipsis),
             ),
           ],
-          onChanged: (kind) {
-            if (kind != null) onChanged(draft.copyWith(indicatorKind: kind));
+          selected: {draft.indicatorKind},
+          onSelectionChanged: (selected) {
+            if (selected.isNotEmpty) {
+              onChanged(draft.copyWith(indicatorKind: selected.first));
+            }
           },
         ),
         SwitchListTile(

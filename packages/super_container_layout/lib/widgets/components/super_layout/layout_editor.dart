@@ -78,11 +78,13 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
           segments: const [
             ButtonSegment(
               value: SuperLayoutPositioning.zones,
+              tooltip: 'Zones',
               label: Text('Zones'),
               icon: Icon(Icons.view_quilt_outlined),
             ),
             ButtonSegment(
               value: SuperLayoutPositioning.grid,
+              tooltip: 'Grille',
               label: Text('Grille'),
               icon: Icon(Icons.grid_view),
             ),
@@ -162,22 +164,54 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
           if (activeCorners.isNotEmpty) ...[
             const Divider(),
             for (final corner in activeCorners)
-              Row(
-                children: [
-                  Expanded(child: Text(_zoneLabel(corner))),
-                  DropdownButton<CornerMerge>(
-                    key: ValueKey('super-layout-corner-${corner.name}'),
-                    value: config.mergeOf(corner),
-                    onChanged: (v) => onChanged(config.withCorner(corner, v!)),
-                    items: [
-                      for (final merge in CornerMerge.values)
-                        DropdownMenuItem(
-                          value: merge,
-                          child: Text(_mergeLabel(corner, merge)),
-                        ),
-                    ],
-                  ),
-                ],
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 4,
+                  children: [
+                    Text(
+                      _zoneLabel(corner),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SegmentedButton<CornerMerge>(
+                      key: ValueKey('super-layout-corner-${corner.name}'),
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      segments: [
+                        for (final merge in CornerMerge.values)
+                          ButtonSegment<CornerMerge>(
+                            value: merge,
+                            tooltip: _mergeLabel(corner, merge),
+                            icon: Icon(
+                              switch (merge) {
+                                CornerMerge.none => Icons.crop_square,
+                                CornerMerge.row => Icons.swap_horiz,
+                                CornerMerge.column => Icons.swap_vert,
+                              },
+                              size: 16,
+                            ),
+                            label: Text(
+                              _mergeLabel(corner, merge),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      selected: {config.mergeOf(corner)},
+                      onSelectionChanged: (selected) {
+                        if (selected.isNotEmpty) {
+                          onChanged(config.withCorner(corner, selected.first));
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
           ],
         ],
@@ -441,11 +475,13 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                   segments: const [
                     ButtonSegment(
                       value: Axis.horizontal,
+                      tooltip: 'Ligne (Row)',
                       label: Text('Ligne (Row)'),
                       icon: Icon(Icons.view_week_outlined),
                     ),
                     ButtonSegment(
                       value: Axis.vertical,
+                      tooltip: 'Colonne (Column)',
                       label: Text('Colonne (Column)'),
                       icon: Icon(Icons.view_agenda_outlined),
                     ),

@@ -153,46 +153,97 @@ class ContainerStyleEditor extends StatelessWidget {
     ],
   );
 
-  List<Widget> _designSystemControls() => [
-    DropdownButtonFormField<DesignSystem>(
-      key: ValueKey('design-system-$label'),
-      initialValue: designSystem,
-      isExpanded: true,
-      decoration: const InputDecoration(
-        labelText: 'Système de design',
-        helperText: 'Règle l’arrondi, la bordure, l’ombre et le fond.',
+  Widget _fieldLabel(String title, {String? helper}) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
       ),
-      items: [
+      if (helper != null)
+        Text(
+          helper,
+          style: const TextStyle(fontSize: 11),
+        ),
+    ],
+  );
+
+  static const _compactSegmentStyle = ButtonStyle(
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
+  static IconData _designSystemIcon(DesignSystem system) => switch (system) {
+    DesignSystem.material => Icons.layers_outlined,
+    DesignSystem.neumorphism => Icons.wb_twilight,
+    DesignSystem.liquidGlass => Icons.blur_on,
+  };
+
+  static IconData _interactionEffectIcon(InteractionEffect effect) =>
+      switch (effect) {
+        InteractionEffect.ripple => Icons.touch_app_outlined,
+        InteractionEffect.pressed => Icons.compress,
+        InteractionEffect.elevation => Icons.trending_up,
+      };
+
+  static IconData _hoverTintIcon(HoverTint tint) => switch (tint) {
+    HoverTint.material => Icons.tonality,
+    HoverTint.accent => Icons.color_lens_outlined,
+    HoverTint.custom => Icons.palette_outlined,
+  };
+
+  List<Widget> _designSystemControls() => [
+    _fieldLabel(
+      'Système de design',
+      helper: 'Règle l’arrondi, la bordure, l’ombre et le fond.',
+    ),
+    SegmentedButton<DesignSystem>(
+      key: ValueKey('design-system-$label'),
+      showSelectedIcon: false,
+      style: _compactSegmentStyle,
+      segments: [
         for (final system in DesignSystem.values)
-          DropdownMenuItem(
+          ButtonSegment<DesignSystem>(
             value: system,
-            child: Text(system.label, overflow: TextOverflow.ellipsis),
+            tooltip: system.label,
+            icon: Flexible(
+              flex: 0,
+              child: Icon(_designSystemIcon(system), size: 14),
+            ),
+            label: Text(system.label, overflow: TextOverflow.ellipsis),
           ),
       ],
-      onChanged: (system) {
-        if (system != null) onDesignSystemChanged!(system);
+      selected: {designSystem},
+      onSelectionChanged: (selected) {
+        if (selected.isNotEmpty) onDesignSystemChanged!(selected.first);
       },
     ),
   ];
 
   List<Widget> _interactionControls() => [
-    DropdownButtonFormField<InteractionEffect>(
+    _fieldLabel(
+      'Effet d’interaction',
+      helper: interactionEffect.description,
+    ),
+    SegmentedButton<InteractionEffect>(
       key: ValueKey('interaction-effect-$label'),
-      initialValue: interactionEffect,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: 'Effet d’interaction',
-        helperText: interactionEffect.description,
-      ),
-      items: [
+      showSelectedIcon: false,
+      style: _compactSegmentStyle,
+      segments: [
         for (final effect in InteractionEffect.values)
-          DropdownMenuItem(
+          ButtonSegment<InteractionEffect>(
             value: effect,
-            child: Text(effect.label, overflow: TextOverflow.ellipsis),
+            tooltip: effect.label,
+            icon: Flexible(
+              flex: 0,
+              child: Icon(_interactionEffectIcon(effect), size: 14),
+            ),
+            label: Text(effect.label, overflow: TextOverflow.ellipsis),
           ),
       ],
-      onChanged: (effect) {
-        if (effect != null) onInteractionEffectChanged!(effect);
+      selected: {interactionEffect},
+      onSelectionChanged: (selected) {
+        if (selected.isNotEmpty) onInteractionEffectChanged!(selected.first);
       },
     ),
   ];
@@ -211,20 +262,26 @@ class ContainerStyleEditor extends StatelessWidget {
     if (hoverEffect &&
         onHoverEffectChanged != null &&
         onHoverTintChanged != null) ...[
-      DropdownButtonFormField<HoverTint>(
+      _fieldLabel('Couleur du survol'),
+      SegmentedButton<HoverTint>(
         key: ValueKey('hover-tint-$label'),
-        initialValue: hoverTint,
-        isExpanded: true,
-        decoration: const InputDecoration(labelText: 'Couleur du survol'),
-        items: [
+        showSelectedIcon: false,
+        style: _compactSegmentStyle,
+        segments: [
           for (final tint in HoverTint.values)
-            DropdownMenuItem(
+            ButtonSegment<HoverTint>(
               value: tint,
-              child: Text(tint.label, overflow: TextOverflow.ellipsis),
+              tooltip: tint.label,
+              icon: Flexible(
+                flex: 0,
+                child: Icon(_hoverTintIcon(tint), size: 14),
+              ),
+              label: Text(tint.label, overflow: TextOverflow.ellipsis),
             ),
         ],
-        onChanged: (tint) {
-          if (tint != null) onHoverTintChanged!(tint);
+        selected: {hoverTint},
+        onSelectionChanged: (selected) {
+          if (selected.isNotEmpty) onHoverTintChanged!(selected.first);
         },
       ),
       if (hoverTint == HoverTint.custom && onHoverColorChanged != null)
@@ -244,18 +301,45 @@ class ContainerStyleEditor extends StatelessWidget {
   ];
 
   List<Widget> _fillControls() => [
-    DropdownButtonFormField<FillType>(
-      initialValue: value.type,
-      isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Type de fond'),
-      items: const [
-        DropdownMenuItem(value: FillType.solid, child: Text('Couleur unie')),
-        DropdownMenuItem(value: FillType.linear, child: Text('Linéaire')),
-        DropdownMenuItem(value: FillType.radial, child: Text('Radial')),
-        DropdownMenuItem(value: FillType.sweep, child: Text('Circulaire')),
+    _fieldLabel('Type de fond'),
+    SegmentedButton<FillType>(
+      key: ValueKey('fill-type-$label'),
+      showSelectedIcon: false,
+      style: _compactSegmentStyle,
+      segments: const [
+        ButtonSegment(
+          value: FillType.solid,
+          tooltip: 'Couleur unie',
+          icon: Flexible(
+            flex: 0,
+            child: Icon(Icons.format_color_fill, size: 14),
+          ),
+          label: Text('Couleur unie', overflow: TextOverflow.ellipsis),
+        ),
+        ButtonSegment(
+          value: FillType.linear,
+          tooltip: 'Linéaire',
+          icon: Flexible(flex: 0, child: Icon(Icons.gradient, size: 14)),
+          label: Text('Linéaire', overflow: TextOverflow.ellipsis),
+        ),
+        ButtonSegment(
+          value: FillType.radial,
+          tooltip: 'Radial',
+          icon: Flexible(flex: 0, child: Icon(Icons.lens_blur, size: 14)),
+          label: Text('Radial', overflow: TextOverflow.ellipsis),
+        ),
+        ButtonSegment(
+          value: FillType.sweep,
+          tooltip: 'Circulaire',
+          icon: Flexible(flex: 0, child: Icon(Icons.track_changes, size: 14)),
+          label: Text('Circulaire', overflow: TextOverflow.ellipsis),
+        ),
       ],
-      onChanged: (type) {
-        if (type != null) onChanged(value.copyWith(type: type));
+      selected: {value.type},
+      onSelectionChanged: (selected) {
+        if (selected.isNotEmpty) {
+          onChanged(value.copyWith(type: selected.first));
+        }
       },
     ),
     if (value.type == FillType.solid && onSolidColorChanged != null)

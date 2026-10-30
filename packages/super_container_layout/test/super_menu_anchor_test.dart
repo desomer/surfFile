@@ -552,10 +552,11 @@ void main() {
         findsNothing,
       );
       await tester.tap(
-        find.byKey(const ValueKey('add-menu-anchor-toggle-icon')),
+        find.descendant(
+          of: find.byKey(const ValueKey('add-menu-anchor-toggle-icon')),
+          matching: find.text('Chevron (expand_more / expand_less)'),
+        ),
       );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Chevron (expand_more / expand_less)').last);
       await tester.pumpAndSettle();
       expect(draft.toggleIcon, 'chevron');
       expect(
