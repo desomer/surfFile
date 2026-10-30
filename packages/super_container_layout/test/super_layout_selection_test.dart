@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_selection_region.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
@@ -1953,6 +1954,145 @@ void main() {
 
       await tester.tapAt(const Offset(10, 10));
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'hovering banner path segments and chevron tree popup nodes highlights target EditorSlot with emphasized EditorSelectionOutline',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: mode,
+          child: MaterialApp(
+            builder: (context, child) => Stack(
+              children: [
+                child!,
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+            home: Scaffold(
+              body: SuperLayout(
+                name: 'Main',
+                label: 'Main',
+                config: config.copyWith(
+                  placements: {
+                    SuperLayoutZone.center: ['card-slot'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'card-slot',
+                    label: 'Ma Carte',
+                    builder: (_) => EditableSurface(
+                      id: 'card-slot',
+                      label: 'Ma Carte',
+                      child: Align(
+                        alignment: Alignment.bottomRight,
+                        child: SizedBox(
+                          width: 120,
+                          height: 48,
+                          child: EditorSlot(
+                            id: 'btn-slot',
+                            label: 'Mon Bouton',
+                            onEdit: () async {},
+                            child: const Center(child: Text('Action')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Select 'Main > Centre > Ma Carte > Mon Bouton'.
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-0')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(
+          const ValueKey(
+            'style-edit-banner-tree-node-Main/Centre/Ma Carte/Mon Bouton',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      EditorSelectionOutline? activeOutlineForLabel(String targetLabel) {
+        final slotFinder = find.byWidgetPredicate(
+          (w) => w is EditorSlot && w.label == targetLabel,
+        );
+        if (slotFinder.evaluate().isEmpty) return null;
+        final paintFinder = find.descendant(
+          of: slotFinder.first,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is CustomPaint &&
+                w.foregroundPainter is EditorSelectionOutline &&
+                (w.foregroundPainter! as EditorSelectionOutline).label ==
+                    targetLabel,
+          ),
+        );
+        if (paintFinder.evaluate().isEmpty) return null;
+        return tester.widget<CustomPaint>(paintFinder.first).foregroundPainter
+            as EditorSelectionOutline?;
+      }
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+
+      // 1. Hover path segment 2 ('Ma Carte') in StyleEditBanner
+      await gesture.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('style-edit-banner-path-2')),
+        ),
+      );
+      await tester.pump();
+      final cardOutline = activeOutlineForLabel('Ma Carte');
+      expect(cardOutline, isNotNull);
+      expect(cardOutline!.emphasized, isTrue);
+
+      // Move pointer away -> outline disappears
+      await gesture.moveTo(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      expect(activeOutlineForLabel('Ma Carte'), isNull);
+
+      // 2. Open chevron popup and hover 'Mon Bouton' node
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-0')),
+      );
+      await tester.pumpAndSettle();
+      await gesture.moveTo(
+        tester.getCenter(
+          find.byKey(
+            const ValueKey(
+              'style-edit-banner-tree-node-Main/Centre/Ma Carte/Mon Bouton',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final btnOutline = activeOutlineForLabel('Mon Bouton');
+      expect(btnOutline, isNotNull);
+      expect(btnOutline!.emphasized, isTrue);
+
+      // Close chevron popup -> outline is cleared
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-tree-close')),
+      );
+      await tester.pumpAndSettle();
+      expect(activeOutlineForLabel('Mon Bouton'), isNull);
       expect(tester.takeException(), isNull);
     },
   );

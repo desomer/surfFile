@@ -409,8 +409,7 @@ class LayoutSelection {
       if (target != null &&
           !target.delegateToParent &&
           listEquals(target.path, prefix)) {
-        final ctx =
-            getCtx?.call() ?? (owner is StatefulElement ? owner : null);
+        final ctx = getCtx?.call() ?? (owner is StatefulElement ? owner : null);
         if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
           return slot;
         }
