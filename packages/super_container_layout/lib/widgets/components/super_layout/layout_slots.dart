@@ -625,6 +625,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
             }
           : null,
       onEditPreferredSize: canEditSlots ? _editSlotPreferredSize : null,
+      dimensionDelegateForSlot: canEditSlots ? _buildSlotSizeDelegate : null,
       wrapActionsForSlot: canEditSlots ? _wrapActionsForSlot : null,
       insertionForSlot: canEditSlots ? _insertionForSlot : null,
       onRemoveSlot: canEditSlots

@@ -551,10 +551,7 @@ void main() {
       );
 
       // Right-click on SuperValue inside Centre zone -> Layout -> EditableSurface
-      await tester.tap(
-        find.byType(SuperValue),
-        buttons: kSecondaryMouseButton,
-      );
+      await tester.tap(find.byType(SuperValue), buttons: kSecondaryMouseButton);
       await tester.pumpAndSettle();
 
       final valueTooltip = tester.widget<Tooltip>(
@@ -664,6 +661,90 @@ void main() {
           contains('Zones actives : Titre (1)'),
         ),
       );
+
+      await tester.tapAt(const Offset(10, 500));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'context menu property summary tooltips display a color swatch next to color values',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              body: EditableSurface(
+                label: 'Carte colorée',
+                style: const ContainerStyle(
+                  color: Color(0xFF1E88E5),
+                  borderWidth: 2,
+                  borderColor: Color(0xFFFF7043),
+                ),
+                child: const SuperValue(
+                  id: 'val-colored',
+                  config: SuperValueConfig(
+                    initialText: 'Texte coloré',
+                    color: Color(0xFF43A047),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.byType(SuperValue), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      final valueTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Valeur')),
+      );
+      expect(valueTooltip.message, isNull);
+      expect(valueTooltip.richMessage, isNotNull);
+      expect(
+        valueTooltip.richMessage!.toPlainText(),
+        contains('Couleur : #43A047'),
+      );
+
+      final surfaceTooltip = tester.widget<Tooltip>(
+        find.byKey(const ValueKey('style-menu-tooltip-Carte colorée')),
+      );
+      expect(surfaceTooltip.message, isNull);
+      expect(surfaceTooltip.richMessage, isNotNull);
+      expect(
+        surfaceTooltip.richMessage!.toPlainText(),
+        allOf(contains('Fond : #1E88E5'), contains('Bordure : 2 px #FF7043')),
+      );
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+      await gesture.moveTo(
+        tester.getCenter(
+          find.descendant(
+            of: find.byKey(const ValueKey('style-menu-Carte colorée')),
+            matching: find.text('Carte colorée'),
+          ),
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.textContaining('Fond : #1E88E5'), findsOneWidget);
+      final swatches = tester
+          .widgetList<EditorTooltipColorSwatch>(
+            find.byType(EditorTooltipColorSwatch),
+          )
+          .toList();
+      expect(swatches.map((s) => s.color), [
+        const Color(0xFF1E88E5),
+        const Color(0xFFFF7043),
+      ]);
 
       await tester.tapAt(const Offset(10, 500));
       await tester.pumpAndSettle();

@@ -140,7 +140,10 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
               ),
               color: colors.onSurface,
               icon: const Icon(Icons.straighten),
-              onPressed: editFlow,
+              onPressed: () => EditorWizardNavigation.openWithTab(
+                EditorWizardTab.dimensions,
+                editFlow,
+              ),
             ),
         ],
         if (_open && target != null)

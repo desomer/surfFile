@@ -27,6 +27,7 @@ import '../../../services/repositories/json_repository_store.dart';
 import '../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
 import '../dialogs/editor_dialog.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 
 /// Valeur de la liste déroulante pour « Hérité de la liste englobante ».
 /// Ouvre la fenêtre de réglage pour [config].
@@ -40,24 +41,34 @@ Future<SuperListViewConfig?> showSuperListViewEditor({
 }) {
   final repositories = JsonRepositoryScope.maybeOf(context);
   final scope = JsonListScope.maybeOf(context);
-  return showEditorDialog<SuperListViewConfig>(
+  return runWithDimensionDelegate<SuperListViewConfig>(
     context: context,
-    target: context,
-    builder: (_) => _SuperListViewEditor(
-      config: config,
-      repositories: repositories,
-      scope: scope,
-    ),
+    runner: (initialTab, dimensionDelegate) =>
+        showEditorDialog<SuperListViewConfig>(
+          context: context,
+          target: context,
+          builder: (_) => _SuperListViewEditor(
+            initialTab: initialTab,
+            dimensionDelegate: dimensionDelegate,
+            config: config,
+            repositories: repositories,
+            scope: scope,
+          ),
+        ),
   );
 }
 
 class _SuperListViewEditor extends StatefulWidget {
   const _SuperListViewEditor({
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.repositories,
     required this.scope,
   });
 
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperListViewConfig config;
   final JsonRepositoryStore? repositories;
   final JsonListScope? scope;
@@ -153,8 +164,8 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
     return result;
   }
 
-  Future<void> _apply() async {
-    if (!(_form.currentState?.validate() ?? false)) return;
+  Future<bool> _apply() async {
+    if (!(_form.currentState?.validate() ?? true)) return false;
     setState(() {
       _busy = true;
       _error = null;
@@ -179,10 +190,13 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
         }
       }
       if (mounted) Navigator.of(context).pop(config);
+      return true;
     } on FormatException catch (error) {
       if (mounted) setState(() => _error = error.message);
+      return false;
     } on FileSystemException {
       if (mounted) setState(() => _error = 'Impossible de lire le repository.');
+      return false;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -196,14 +210,18 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
         _repository.isEmpty ||
         _repository == inheritedRepositoryValue ||
         _repositories.any((entry) => entry.id == _repository);
-    return AlertDialog(
-      title: const Text('Liste JSON'),
-      content: SizedBox(
-        width: 420,
-        child: Form(
-          key: _form,
-          child: SingleChildScrollView(
-            child: Column(
+    return EditorTabbedAlertDialog(
+      applyButtonKey: const ValueKey('super-list-apply'),
+      initialTab: widget.initialTab,
+      dimensionDelegate: widget.dimensionDelegate,
+      propertiesTitle: const Text('Liste JSON'),
+      propertiesWidth: 420,
+      busy: _busy,
+      onApply: _apply,
+      onCancel: () => Navigator.of(context).pop(),
+      propertiesContentBuilder: (context) => Form(
+        key: _form,
+        child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               spacing: 12,
@@ -342,20 +360,7 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
                   ),
               ],
             ),
-          ),
-        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          key: const ValueKey('super-list-apply'),
-          onPressed: _busy ? null : _apply,
-          child: const Text('Appliquer'),
-        ),
-      ],
     );
   }
 }

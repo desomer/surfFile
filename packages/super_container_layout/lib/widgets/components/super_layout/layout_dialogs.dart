@@ -1,7 +1,44 @@
 part of 'super_layout.dart';
 
+class _SuperLayoutZoneFlowDelegate extends EditorDimensionDelegate {
+  _SuperLayoutZoneFlowDelegate({
+    required this.title,
+    required this.onRestore,
+    required this.onReset,
+    required this.builder,
+  });
+
+  @override
+  final String title;
+  final VoidCallback onRestore;
+  final VoidCallback onReset;
+  final WidgetBuilder builder;
+
+  @override
+  double get contentWidth => 400;
+
+  @override
+  void restore() => onRestore();
+
+  @override
+  Widget buildContent(BuildContext context) => builder(context);
+
+  @override
+  List<Widget> buildExtraActions(
+    BuildContext context, {
+    required VoidCallback onResetAndClose,
+  }) => [
+    TextButton(
+      onPressed: onReset,
+      child: const Text('Réinitialiser'),
+    ),
+  ];
+}
+
 extension _SuperLayoutDialogs on SuperLayoutState {
   Future<void> _openEditor() async {
+    final initialTab = EditorWizardNavigation.consumeInitialTab();
+    final delegate = EditorWizardNavigation.resolveDimensionDelegate(context);
     final initial = _config.value;
     final initialInstance = editorComponentLabelOf(context);
     var label = _displayLabel;
@@ -15,44 +52,42 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             target: context,
             barrierDismissible: true,
             barrierColor: Colors.transparent,
-            builder: (context) => StatefulBuilder(
-              builder: (context, setDialog) => AlertDialog(
-                title: EditorDialogHeader(
+            builder: (dialogContext) => StatefulBuilder(
+              builder: (context, setDialog) => EditorTabbedAlertDialog(
+                initialTab: initialTab,
+                dimensionDelegate: delegate,
+                propertiesTitle: EditorDialogHeader(
                   label: label,
                   onLabelChanged: (value) => setDialog(() {
                     label = value;
                     _rename(value);
+                    delegate?.syncLabel(value);
                   }),
                 ),
-                content: SizedBox(
-                  width: 420,
-                  child: SingleChildScrollView(
-                    child: ListenableBuilder(
-                      listenable: _config,
-                      builder: (context, _) => SuperLayoutEditor(
-                        config: _config.value,
-                        onChanged: _update,
-                        zoneLabels: widget.zoneLabels,
-                      ),
-                    ),
+                propertiesWidth: 420,
+                propertiesContentBuilder: (context) => ListenableBuilder(
+                  listenable: _config,
+                  builder: (context, _) => SuperLayoutEditor(
+                    config: _config.value,
+                    onChanged: _update,
+                    zoneLabels: widget.zoneLabels,
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: const Text('Annuler'),
-                  ),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: const Text('Appliquer'),
-                  ),
-                ],
+                onApply: () async {
+                  delegate?.apply();
+                  Navigator.of(dialogContext).pop(true);
+                  return true;
+                },
+                onCancel: () => Navigator.of(dialogContext).pop(false),
               ),
             ),
           ) ==
           true;
     } finally {
-      if (!confirmed && mounted) _update(initial, validateTags: false);
+      if (!confirmed && mounted) {
+        delegate?.restore();
+        _update(initial, validateTags: false);
+      }
       if (!confirmed && mounted && initialInstance != null) {
         initialInstance.onRestore();
       }
@@ -61,11 +96,72 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       } else {
         history?.cancelTransaction();
       }
+      delegate?.dispose();
     }
   }
 
   Future<void> _openZoneFlowEditor(SuperLayoutZone zone) async {
+    final initialTab = EditorWizardNavigation.consumeInitialTab();
     final initial = _config.value;
+    void resetZoneFlow() {
+      var next = _config.value
+          .withAxis(zone, Axis.vertical)
+          .withZoneFlow(zone, const ZoneFlowConfig());
+      if (zone.isSide) {
+        next = next
+            .withAuto(zone, true)
+            .withSize(
+              zone,
+              zone == SuperLayoutZone.north || zone == SuperLayoutZone.south
+                  ? 50
+                  : 100,
+            )
+            .withSideResizing(zone, next.resizeSides);
+      }
+      _update(next);
+    }
+
+    Widget buildZoneFlowContent(BuildContext context) => ListenableBuilder(
+      listenable: _config,
+      builder: (context, _) {
+        final current = _config.value;
+        return ZoneFlowSettingsEditor(
+          keyPrefix: 'zone-flow-dialog-${zone.name}',
+          axis: current.axisOf(zone),
+          flow: current.flowOf(zone),
+          isSide: zone.isSide,
+          sizeAxis: !zone.isSide
+              ? null
+              : (zone == SuperLayoutZone.north || zone == SuperLayoutZone.south)
+              ? Axis.vertical
+              : Axis.horizontal,
+          autoSize: zone.isSide && current.isAuto(zone),
+          size: zone.isSide ? current.sizeOf(zone) : 100,
+          canResize: zone.isSide && current.canResize(zone),
+          onAutoSizeChanged: zone.isSide
+              ? (v) => _update(current.withAuto(zone, v))
+              : null,
+          onSizeChanged: zone.isSide
+              ? (v) => _update(current.withSize(zone, v))
+              : null,
+          onResizeChanged: zone.isSide
+              ? (v) => _update(current.withSideResizing(zone, v))
+              : null,
+          onAxisChanged: (axis) => _update(current.withAxis(zone, axis)),
+          onFlowChanged: (flow) => _update(current.withZoneFlow(zone, flow)),
+        );
+      },
+    );
+
+    final delegate = _SuperLayoutZoneFlowDelegate(
+      title: 'Flux de la zone : ${widget.zoneLabel(zone)}',
+      onRestore: () {
+        if (mounted) _update(initial, validateTags: false);
+      },
+      onReset: resetZoneFlow,
+      builder: buildZoneFlowContent,
+    );
+
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
     var confirmed = false;
@@ -76,78 +172,25 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             target: _zoneFocusKeys[zone]?.currentContext ?? context,
             barrierDismissible: true,
             barrierColor: Colors.transparent,
-            builder: (context) => AlertDialog(
-              title: Text('Flux de la zone : ${widget.zoneLabel(zone)}'),
-              content: SizedBox(
-                width: 400,
-                child: SingleChildScrollView(
-                  child: ListenableBuilder(
-                    listenable: _config,
-                    builder: (context, _) {
-                      final current = _config.value;
-                      return ZoneFlowSettingsEditor(
-                        keyPrefix: 'zone-flow-dialog-${zone.name}',
-                        axis: current.axisOf(zone),
-                        flow: current.flowOf(zone),
-                        isSide: zone.isSide,
-                        sizeAxis: !zone.isSide
-                            ? null
-                            : (zone == SuperLayoutZone.north ||
-                                  zone == SuperLayoutZone.south)
-                            ? Axis.vertical
-                            : Axis.horizontal,
-                        autoSize: zone.isSide && current.isAuto(zone),
-                        size: zone.isSide ? current.sizeOf(zone) : 100,
-                        canResize: zone.isSide && current.canResize(zone),
-                        onAutoSizeChanged: zone.isSide
-                            ? (v) => _update(current.withAuto(zone, v))
-                            : null,
-                        onSizeChanged: zone.isSide
-                            ? (v) => _update(current.withSize(zone, v))
-                            : null,
-                        onResizeChanged: zone.isSide
-                            ? (v) => _update(current.withSideResizing(zone, v))
-                            : null,
-                        onAxisChanged: (axis) =>
-                            _update(current.withAxis(zone, axis)),
-                        onFlowChanged: (flow) =>
-                            _update(current.withZoneFlow(zone, flow)),
-                      );
-                    },
-                  ),
-                ),
+            builder: (dialogContext) => EditorTabbedAlertDialog(
+              initialTab: initialTab,
+              dimensionDelegate: delegate,
+              propertiesTitle: Text(
+                'Flux de la zone : ${widget.zoneLabel(zone)}',
               ),
-              actions: [
+              propertiesWidth: 400,
+              propertiesContentBuilder: buildZoneFlowContent,
+              propertiesExtraActions: [
                 TextButton(
-                  onPressed: () {
-                    var next = _config.value
-                        .withAxis(zone, Axis.vertical)
-                        .withZoneFlow(zone, const ZoneFlowConfig());
-                    if (zone.isSide) {
-                      next = next
-                          .withAuto(zone, true)
-                          .withSize(
-                            zone,
-                            zone == SuperLayoutZone.north ||
-                                    zone == SuperLayoutZone.south
-                                ? 50
-                                : 100,
-                          )
-                          .withSideResizing(zone, next.resizeSides);
-                    }
-                    _update(next);
-                  },
+                  onPressed: resetZoneFlow,
                   child: const Text('Réinitialiser'),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text('Annuler'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text('Appliquer'),
-                ),
               ],
+              onApply: () async {
+                Navigator.of(dialogContext).pop(true);
+                return true;
+              },
+              onCancel: () => Navigator.of(dialogContext).pop(false),
             ),
           ) ==
           true;
@@ -158,6 +201,7 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       } else {
         history?.cancelTransaction();
       }
+      delegate.dispose();
     }
   }
 

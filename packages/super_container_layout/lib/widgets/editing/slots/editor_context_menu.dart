@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 
+import '../../../models/json_syntax.dart';
 import '../addition/insertion_plan.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 
 enum EditorMenuDestination { style, configuration }
 
@@ -123,6 +125,7 @@ class EditorSlotAction extends InheritedWidget {
     this.showEdit = true,
     this.wrapActions = const [],
     this.insertion,
+    this.dimensionDelegateBuilder,
     this.destination = EditorMenuDestination.configuration,
     required super.child,
     super.key,
@@ -140,6 +143,9 @@ class EditorSlotAction extends InheritedWidget {
 
   /// Adds a component around this child through the contextual wizard.
   final EditorSlotInsertion? insertion;
+
+  /// Builds the dimension delegate for the unified 2-tab wizard.
+  final EditorDimensionDelegate Function()? dimensionDelegateBuilder;
   final EditorMenuDestination destination;
 
   static List<EditorSlotAction> of(BuildContext context) {
@@ -166,6 +172,7 @@ class EditorSlotAction extends InheritedWidget {
       onSelect != oldWidget.onSelect ||
       wrapActions != oldWidget.wrapActions ||
       insertion != oldWidget.insertion ||
+      dimensionDelegateBuilder != oldWidget.dimensionDelegateBuilder ||
       inline != oldWidget.inline ||
       showEdit != oldWidget.showEdit ||
       destination != oldWidget.destination;
@@ -197,3 +204,85 @@ class EditorContextMenuEntry extends InheritedWidget {
       enabled != oldWidget.enabled ||
       destination != oldWidget.destination;
 }
+
+final RegExp _tooltipHexColorPattern = RegExp(
+  r'#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6})\b',
+);
+
+/// Petite pastille de couleur affichée à côté d'une valeur de couleur
+/// hexadécimale dans l'infobulle de résumé du menu contextuel de l'éditeur.
+class EditorTooltipColorSwatch extends StatelessWidget {
+  const EditorTooltipColorSwatch({
+    required this.color,
+    this.size = 10,
+    super.key,
+  });
+
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: const Color(0x99FFFFFF),
+          width: 1,
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x55000000),
+            blurRadius: 1,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ColorSwatchWidgetSpan extends WidgetSpan {
+  const _ColorSwatchWidgetSpan({required super.child})
+    : super(alignment: PlaceholderAlignment.middle);
+
+  @override
+  void computeToPlainText(
+    StringBuffer buffer, {
+    bool includeSemanticsLabels = true,
+    bool includePlaceholders = true,
+  }) {}
+}
+
+/// Construit un [InlineSpan] enrichi avec une pastille [EditorTooltipColorSwatch]
+/// devant chaque code couleur hexadécimal (`#RRGGBB` ou `#AARRGGBB`), ou `null`
+/// si [message] ne contient aucune valeur de couleur.
+InlineSpan? buildEditorTooltipRichMessage(String message) {
+  final matches = _tooltipHexColorPattern.allMatches(message).toList();
+  if (matches.isEmpty) return null;
+
+  final children = <InlineSpan>[];
+  var cursor = 0;
+  for (final match in matches) {
+    if (match.start > cursor) {
+      children.add(TextSpan(text: message.substring(cursor, match.start)));
+    }
+    final token = match.group(0)!;
+    final color = JsonColor.parse(token);
+    children.add(
+      _ColorSwatchWidgetSpan(
+        child: EditorTooltipColorSwatch(color: color),
+      ),
+    );
+    children.add(TextSpan(text: token));
+    cursor = match.end;
+  }
+  if (cursor < message.length) {
+    children.add(TextSpan(text: message.substring(cursor)));
+  }
+  return TextSpan(children: children);
+}
+

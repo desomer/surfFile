@@ -60,122 +60,122 @@ class _TestAppState extends State<TestApp> {
   void initState() {
     super.initState();
 
-    var tree = TreeViewData(
-      nodes: [
-        TreeNodeData<Map<String, dynamic>>(
-          data: {'key': 'value', 'data': 'someData'},
-          children: [
-            TreeNodeData<Map<String, dynamic>>(
-              data: {'key': 'value2', 'data': 'someData2'},
-              children: [],
-            ),
-          ],
-        ),
-      ],
-      headerSize: 300,
-    );
+    // var tree = TreeViewData(
+    //   nodes: [
+    //     TreeNodeData<Map<String, dynamic>>(
+    //       data: {'key': 'value', 'data': 'someData'},
+    //       children: [
+    //         TreeNodeData<Map<String, dynamic>>(
+    //           data: {'key': 'value2', 'data': 'someData2'},
+    //           children: [],
+    //         ),
+    //       ],
+    //     ),
+    //   ],
+    //   headerSize: 300,
+    // );
 
-    _registry.registerFactory(
-      'A',
-      EditableSurface(
-        label: "AB",
-        child: Builder(
-          builder: (context) {
-            return TreeView<Map<String, dynamic>>(
-              getNodes: () {
-                return tree;
-              },
-              getHeader: (TreeNodeData<Map<String, dynamic>> node) {
-                return InkWell(
-                  onTap: () {
-                    node.doToogleChild();
-                  },
-                  child: Text('Header: ${node.data['key']}'),
-                );
-              },
-              getDataRow: (TreeNodeData<Map<String, dynamic>> node) {
-                return Text('Data: ${node.data['data']}');
-              },
-              isSelected:
-                  (
-                    TreeNodeData<Map<String, dynamic>> node,
-                    State<StatefulWidget>? current,
-                    State<StatefulWidget>? oldSelectedState,
-                  ) {
-                    return false;
-                  },
-            );
-          },
-        ),
-      ),
-    );
+    // _registry.registerFactory(
+    //   'A',
+    //   EditableSurface(
+    //     label: "AB",
+    //     child: Builder(
+    //       builder: (context) {
+    //         return TreeView<Map<String, dynamic>>(
+    //           getNodes: () {
+    //             return tree;
+    //           },
+    //           getHeader: (TreeNodeData<Map<String, dynamic>> node) {
+    //             return InkWell(
+    //               onTap: () {
+    //                 node.doToogleChild();
+    //               },
+    //               child: Text('Header: ${node.data['key']}'),
+    //             );
+    //           },
+    //           getDataRow: (TreeNodeData<Map<String, dynamic>> node) {
+    //             return Text('Data: ${node.data['data']}');
+    //           },
+    //           isSelected:
+    //               (
+    //                 TreeNodeData<Map<String, dynamic>> node,
+    //                 State<StatefulWidget>? current,
+    //                 State<StatefulWidget>? oldSelectedState,
+    //               ) {
+    //                 return false;
+    //               },
+    //         );
+    //       },
+    //     ),
+    //   ),
+    // );
 
-    _registry.registerFactory(
-      'B',
-      EditableSurface(
-        label: "Tabbble",
-        child: Builder(
-          builder: (context) {
-            return FrozenTableView(
-              rowCount: 200,
-              colCount: 200,
-              buildTopCell: (int row, int col) {
-                return Container(
-                  width: 100,
-                  height: 50,
-                  color: Colors.grey,
-                  child: Center(child: Text('Top $row,$col')),
-                );
-              },
-              buildBottomCell: (int row, int col) {
-                return Container(
-                  width: 100,
-                  height: 50,
-                  color: Colors.lightBlue,
-                  child: Center(child: Text('Bottom $row,$col')),
-                );
-              },
-              buildLeftCell: (int row, int col) {
-                return Container(
-                  width: 100,
-                  height: 50,
-                  color: Colors.green,
-                  child: Center(child: Text('Left $row,$col')),
-                );
-              },
-              buildBodyCell: (int row, int col) {
-                return Container(
-                  width: 100,
-                  height: 50,
-                  color: Colors.orange,
-                  child: Center(child: Text('Body $row,$col')),
-                );
-              },
-              rowCountTop: 1,
-              rowCountBottom: 1,
-              colFreezeLeftCount: 2,
-              getColWidth:
-                  (int col, double usedWidth, bool isCalc, int nbFillCol) {
-                    return 100.0;
-                  },
-              getRowHeight: (int row) {
-                return 50.0;
-              },
-              buildRow: (
-                int row,
-                bool isStartCols,
-                Widget child,
-                FrozenTableViewState tableState,
-              ) {
-                return child;
-              },
-              rowWidthBorderR: 0,
-              rowWidthBorderL: 0,
-            );
-          },
-        ),
-      ),
-    );
+    // _registry.registerFactory(
+    //   'B',
+    //   EditableSurface(
+    //     label: "Tabbble",
+    //     child: Builder(
+    //       builder: (context) {
+    //         return FrozenTableView(
+    //           rowCount: 200,
+    //           colCount: 200,
+    //           buildTopCell: (int row, int col) {
+    //             return Container(
+    //               width: 100,
+    //               height: 50,
+    //               color: Colors.grey,
+    //               child: Center(child: Text('Top $row,$col')),
+    //             );
+    //           },
+    //           buildBottomCell: (int row, int col) {
+    //             return Container(
+    //               width: 100,
+    //               height: 50,
+    //               color: Colors.lightBlue,
+    //               child: Center(child: Text('Bottom $row,$col')),
+    //             );
+    //           },
+    //           buildLeftCell: (int row, int col) {
+    //             return Container(
+    //               width: 100,
+    //               height: 50,
+    //               color: Colors.green,
+    //               child: Center(child: Text('Left $row,$col')),
+    //             );
+    //           },
+    //           buildBodyCell: (int row, int col) {
+    //             return Container(
+    //               width: 100,
+    //               height: 50,
+    //               color: Colors.orange,
+    //               child: Center(child: Text('Body $row,$col')),
+    //             );
+    //           },
+    //           rowCountTop: 1,
+    //           rowCountBottom: 1,
+    //           colFreezeLeftCount: 2,
+    //           getColWidth:
+    //               (int col, double usedWidth, bool isCalc, int nbFillCol) {
+    //                 return 100.0;
+    //               },
+    //           getRowHeight: (int row) {
+    //             return 50.0;
+    //           },
+    //           buildRow: (
+    //             int row,
+    //             bool isStartCols,
+    //             Widget child,
+    //             FrozenTableViewState tableState,
+    //           ) {
+    //             return child;
+    //           },
+    //           rowWidthBorderR: 0,
+    //           rowWidthBorderL: 0,
+    //         );
+    //       },
+    //     ),
+    //   ),
+    // );
 
     _pageRouting = EditorPageRouter(
       baseConfig: RoutingConfig(

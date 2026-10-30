@@ -1027,13 +1027,24 @@ String formatSuperTabTooltip({
           'Index initial : ${config.initialIndex}',
           if (bindingLabel != null) 'Liaison : $bindingLabel',
         ].join(' · ');
+  final indicatorColorSuffix = config.indicatorColor != null
+      ? ' ${JsonColor.toHex(config.indicatorColor!)}'
+      : '';
   final indicatorLabel = switch (config.indicatorKind) {
     SuperTabIndicatorKind.underline =>
-      'Souligné (${_formatTabNumber(config.indicatorWeight)} px)',
+      'Souligné (${_formatTabNumber(config.indicatorWeight)} px$indicatorColorSuffix)',
     SuperTabIndicatorKind.box =>
-      'Boîte (rayon ${_formatTabNumber(config.indicatorRadius)} px)',
+      'Boîte (rayon ${_formatTabNumber(config.indicatorRadius)} px$indicatorColorSuffix)',
     SuperTabIndicatorKind.none => 'Aucun',
   };
+  final colorParts = <String>[
+    if (config.labelColor != null)
+      'Texte actif : ${JsonColor.toHex(config.labelColor!)}',
+    if (config.unselectedLabelColor != null)
+      'Texte inactif : ${JsonColor.toHex(config.unselectedLabelColor!)}',
+    if (config.dividerColor != null)
+      'Séparateur : ${JsonColor.toHex(config.dividerColor!)}',
+  ];
   return [
     title,
     [
@@ -1042,7 +1053,10 @@ String formatSuperTabTooltip({
       if (config.isScrollable) 'Défilable',
     ].join(' · '),
     contentLine,
-    'Indicateur : $indicatorLabel',
+    [
+      'Indicateur : $indicatorLabel',
+      ...colorParts,
+    ].join(' · '),
   ].join('\n');
 }
 

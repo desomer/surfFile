@@ -17,6 +17,7 @@ import 'editor_context_menu.dart';
 import 'editor_selection_region.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 import '../dialogs/super_value_json_extract_dialog.dart';
 import '../overlay/editor_overlay.dart';
 import '../overlay/editor_zoom.dart';
@@ -27,7 +28,9 @@ export 'editor_context_menu.dart'
         EditorSlotAction,
         EditorSlotWrapAction,
         EditorMenuDestination,
-        VibeChatScope;
+        EditorTooltipColorSwatch,
+        VibeChatScope,
+        buildEditorTooltipRichMessage;
 
 /// Enables/disables editor gestures below this scope.
 ///
@@ -403,6 +406,9 @@ class EditorSlotState extends State<EditorSlot> {
       maxLines: 1,
     );
     final resolvedTooltip = tooltip?.trim();
+    final richTooltip = resolvedTooltip != null && resolvedTooltip.isNotEmpty
+        ? buildEditorTooltipRichMessage(resolvedTooltip)
+        : null;
     return Row(
       children: [
         if (destination != null) ...[
@@ -424,7 +430,9 @@ class EditorSlotState extends State<EditorSlot> {
           child: resolvedTooltip != null && resolvedTooltip.isNotEmpty
               ? Tooltip(
                   key: tooltipKey,
-                  message: resolvedTooltip,
+                  message: richTooltip == null ? resolvedTooltip : null,
+                  richMessage: richTooltip,
+                  ignorePointer: true,
                   child: textWidget,
                 )
               : textWidget,
@@ -1260,7 +1268,10 @@ class EditorSlotState extends State<EditorSlot> {
                                   Navigator.of(context)
                                       .pop<Future<void> Function()>(() async {
                                         if (state.mounted) {
-                                          await editFlow();
+                                          await EditorWizardNavigation.openWithTab(
+                                            EditorWizardTab.dimensions,
+                                            editFlow,
+                                          );
                                         }
                                       }),
                             ),
@@ -1292,7 +1303,33 @@ class EditorSlotState extends State<EditorSlot> {
                               icon: const Icon(Icons.straighten),
                               style: _menuIconButtonStyle(context),
                               onPressed: () =>
-                                  Navigator.of(context).pop(action.onEdit),
+                                  Navigator.of(context)
+                                      .pop<Future<void> Function()>(() async {
+                                        if (state.mounted &&
+                                            state.widget.onEdit != null &&
+                                            EditorWizardNavigation
+                                                    .findDirectSlotSizeAction(
+                                                      state.context,
+                                                    )
+                                                    ?.label ==
+                                                action.label) {
+                                          await state.openEditor(
+                                            initialTab:
+                                                EditorWizardTab.dimensions,
+                                            dimensionDelegate: action
+                                                .dimensionDelegateBuilder
+                                                ?.call(),
+                                          );
+                                        } else {
+                                          await EditorWizardNavigation.openWithTab(
+                                            EditorWizardTab.dimensions,
+                                            action.onEdit,
+                                            delegate: action
+                                                .dimensionDelegateBuilder
+                                                ?.call(),
+                                          );
+                                        }
+                                      }),
                             ),
                           if (action.onRemove case final remove?)
                             IconButton(
@@ -1481,9 +1518,18 @@ class EditorSlotState extends State<EditorSlot> {
   }
 
   /// Opens this slot's specialized editor, when supplied.
-  Future<void> openEditor() async {
+  Future<void> openEditor({
+    EditorWizardTab? initialTab,
+    EditorDimensionDelegate? dimensionDelegate,
+  }) async {
     final callback = widget.onEdit;
-    if (callback != null) await callback();
+    if (callback != null) {
+      await EditorWizardNavigation.openWithTab(
+        initialTab,
+        callback,
+        delegate: dimensionDelegate,
+      );
+    }
   }
 
   @override

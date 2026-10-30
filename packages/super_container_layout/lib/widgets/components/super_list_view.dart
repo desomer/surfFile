@@ -479,6 +479,48 @@ class _SuperListViewState extends State<SuperListView> {
     );
   }
 
+  SlotSizeDimensionDelegate _buildItemSizeDelegate(
+    BuildContext target,
+    ValueNotifier<SuperListViewConfig> configuration,
+    Size viewport,
+  ) {
+    final initial = configuration.value.itemSize;
+    return SlotSizeDimensionDelegate(
+      context: context,
+      slot: BuilderSlot(
+        id: widget.id,
+        label: 'Iterable Content',
+        builder: (_) => const SizedBox(),
+      ),
+      saved: _initialItemSize(configuration.value),
+      legacy: null,
+      changes: configuration,
+      measure: () {
+        if (!target.mounted) return null;
+        final box = target.findRenderObject();
+        if (box is! RenderBox || !box.hasSize) return null;
+        return (
+          layout: _parentLayoutSize(viewport),
+          zone: Offset.zero & viewport,
+          slot: Offset.zero & box.size,
+        );
+      },
+      onApply: (dimensions, _) {
+        configuration.value = configuration.value.copyWith(
+          itemSize: dimensions,
+        );
+        widget.onConfigChanged?.call(configuration.value);
+      },
+      onRestore: () {
+        configuration.value = configuration.value.copyWith(
+          itemSize: initial,
+          clearItemSize: initial == null,
+        );
+        widget.onConfigChanged?.call(configuration.value);
+      },
+    );
+  }
+
   Future<void> _editItemSize(
     BuildContext target,
     ValueNotifier<SuperListViewConfig> configuration,
@@ -548,6 +590,8 @@ class _SuperListViewState extends State<SuperListView> {
           shrinkWrap: natural,
           sizeConstraints: dimensions,
           onEditSize: () => _editItemSize(context, configuration, viewport),
+          dimensionDelegateBuilder: () =>
+              _buildItemSizeDelegate(context, configuration, viewport),
           onChanged: (next) => layout.value = next,
           onStyleChanged: (next) => style.value = next,
         ),

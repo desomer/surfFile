@@ -648,6 +648,12 @@ String formatSuperActionTooltip({
     if (config.elevation != null)
       'Élévation : ${_formatActionNumber(config.elevation!)}',
     if (config.color != null) 'Couleur : ${JsonColor.toHex(config.color!)}',
+    if (config.iconColor != null)
+      'Couleur icône : ${JsonColor.toHex(config.iconColor!)}',
+    if (config.backgroundColor != null)
+      'Fond : ${JsonColor.toHex(config.backgroundColor!)}',
+    if (config.borderColor != null)
+      'Bordure : ${JsonColor.toHex(config.borderColor!)}',
   ];
   return [
     title,

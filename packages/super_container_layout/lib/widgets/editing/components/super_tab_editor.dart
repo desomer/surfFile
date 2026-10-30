@@ -11,6 +11,8 @@ import '../../../theme/appearance.dart';
 import '../../../theme/container_style.dart';
 import '../../../theme/neon_style.dart';
 import '../dialogs/editor_dialog.dart';
+import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/container_style_editor.dart';
 import '../styles/style_editor_panel.dart';
@@ -23,24 +25,33 @@ Future<SuperTabConfig?> showSuperTabEditor({
 }) {
   final repositories = JsonRepositoryScope.maybeOf(context);
   final scope = JsonListScope.maybeOf(context);
-  return showEditorDialog<SuperTabConfig>(
+  return runWithDimensionDelegate<SuperTabConfig>(
     context: context,
-    target: context,
-    builder: (_) => _SuperTabSimpleEditor(
-      config: config,
-      repositories: repositories,
-      scope: scope,
+    runner: (initialTab, dimensionDelegate) => showEditorDialog<SuperTabConfig>(
+      context: context,
+      target: context,
+      builder: (_) => _SuperTabSimpleEditor(
+        initialTab: initialTab,
+        dimensionDelegate: dimensionDelegate,
+        config: config,
+        repositories: repositories,
+        scope: scope,
+      ),
     ),
   );
 }
 
 class _SuperTabSimpleEditor extends StatefulWidget {
   const _SuperTabSimpleEditor({
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.repositories,
     required this.scope,
   });
 
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperTabConfig config;
   final JsonRepositoryStore? repositories;
   final JsonListScope? scope;
@@ -67,11 +78,11 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
     super.dispose();
   }
 
-  Future<void> _apply() async {
+  Future<bool> _apply() async {
     final parsedIndex = int.tryParse(_initialIndex.text.trim());
     if (parsedIndex == null || parsedIndex < 0) {
       setState(() => _error = 'L’index initial doit être un entier >= 0.');
-      return;
+      return false;
     }
     setState(() {
       _busy = true;
@@ -101,10 +112,13 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
         }
       }
       if (mounted) Navigator.of(context).pop(config);
+      return true;
     } on FormatException catch (error) {
       if (mounted) setState(() => _error = error.message);
+      return false;
     } on FileSystemException {
       if (mounted) setState(() => _error = 'Impossible de lire le repository.');
+      return false;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -113,13 +127,16 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
   @override
   Widget build(BuildContext context) {
     final isDynamic = _draft.mode == SuperTabMode.dynamic;
-    return AlertDialog(
-      key: const ValueKey('super-tab-settings'),
-      title: const Text('Configurer les onglets'),
-      content: SizedBox(
-        width: 440,
-        child: SingleChildScrollView(
-          child: Column(
+    return EditorTabbedAlertDialog(
+      dialogKey: const ValueKey('super-tab-settings'),
+      initialTab: widget.initialTab,
+      dimensionDelegate: widget.dimensionDelegate,
+      propertiesTitle: const Text('Configurer les onglets'),
+      propertiesWidth: 440,
+      busy: _busy,
+      onApply: _apply,
+      onCancel: () => Navigator.of(context).pop(),
+      propertiesContentBuilder: (context) => Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             spacing: 12,
@@ -275,19 +292,6 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
                 ),
             ],
           ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          key: const ValueKey('super-tab-apply'),
-          onPressed: _busy ? null : _apply,
-          child: const Text('Appliquer'),
-        ),
-      ],
     );
   }
 }
@@ -305,19 +309,25 @@ Future<SuperTabConfig?> showSuperTabBarStyleEditor({
     StyleEditorPanel.preferredDense ? 680.0 : 1080.0,
   );
   try {
-    return await showEditorDialog<SuperTabConfig>(
+    return await runWithDimensionDelegate<SuperTabConfig>(
       context: context,
-      target: context,
-      preferredWidth: dockWidth,
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      builder: (_) => _SuperTabBarStyleEditor(
-        config: config,
-        label: label,
-        accent: accent,
-        dockWidth: dockWidth,
-        onPreviewChanged: onPreviewChanged,
-      ),
+      runner: (initialTab, dimensionDelegate) =>
+          showEditorDialog<SuperTabConfig>(
+            context: context,
+            target: context,
+            preferredWidth: dockWidth,
+            barrierDismissible: true,
+            barrierColor: Colors.transparent,
+            builder: (_) => _SuperTabBarStyleEditor(
+              initialTab: initialTab,
+              dimensionDelegate: dimensionDelegate,
+              config: config,
+              label: label,
+              accent: accent,
+              dockWidth: dockWidth,
+              onPreviewChanged: onPreviewChanged,
+            ),
+          ),
     );
   } finally {
     onPreviewChanged?.call(null);
@@ -327,6 +337,8 @@ Future<SuperTabConfig?> showSuperTabBarStyleEditor({
 
 class _SuperTabBarStyleEditor extends StatefulWidget {
   const _SuperTabBarStyleEditor({
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.label,
     required this.accent,
@@ -334,6 +346,8 @@ class _SuperTabBarStyleEditor extends StatefulWidget {
     this.onPreviewChanged,
   });
 
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperTabConfig config;
   final String label;
   final Color accent;
@@ -346,6 +360,11 @@ class _SuperTabBarStyleEditor extends StatefulWidget {
 }
 
 class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
+  late EditorWizardTab _tab =
+      widget.initialTab == EditorWizardTab.dimensions &&
+          widget.dimensionDelegate != null
+      ? EditorWizardTab.dimensions
+      : EditorWizardTab.properties;
   late SuperTabConfig _draft = widget.config;
   late bool _dense = StyleEditorPanel.preferredDense;
 
@@ -359,6 +378,13 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
   }
 
   void _apply() {
+    final delegate = widget.dimensionDelegate;
+    if (delegate != null && !delegate.validate()) {
+      if (_tab != EditorWizardTab.dimensions) {
+        setState(() => _tab = EditorWizardTab.dimensions);
+      }
+      return;
+    }
     Navigator.of(context).pop(_draft..validate());
   }
 
@@ -793,7 +819,8 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
     final height = math.max(320.0, math.min(680.0, screen.height - 260));
     final colors = Theme.of(context).colorScheme;
     final style = _draft.tabBarStyle;
-
+    final delegate = widget.dimensionDelegate;
+    final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
     return AlertDialog(
       key: const ValueKey('super-tab-bar-style-settings'),
       insetPadding: const EdgeInsets.all(24),
@@ -801,9 +828,45 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
       content: SizedBox(
         width: width,
         height: height,
-        child: ContainerStyleEditor(
-          label: widget.label,
-          collapsible: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EditorWizardTabBar(
+              selectedTab: _tab,
+              propertiesEnabled: true,
+              dimensionsEnabled: delegate != null,
+              onTabSelected: (next) {
+                if (next != _tab) setState(() => _tab = next);
+              },
+            ),
+            const SizedBox(height: 12),
+            if (onDimensions) ...[
+              if (delegate.labelListenable case final listenable?)
+                ValueListenableBuilder<String>(
+                  valueListenable: listenable,
+                  builder: (context, _, _) => EditorDialogHeader(
+                    label: delegate.title,
+                    editableLabel: delegate.editableLabel,
+                    onLabelChanged: delegate.onLabelChanged,
+                  ),
+                )
+              else
+                EditorDialogHeader(
+                  label: delegate.title,
+                  editableLabel: delegate.editableLabel,
+                  onLabelChanged: delegate.onLabelChanged,
+                ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: delegate.buildContent(context),
+                ),
+              ),
+            ] else
+              Expanded(
+                child: ContainerStyleEditor(
+                  label: widget.label,
+                  collapsible: false,
           dense: _dense,
           onDenseChanged: (value) => setState(() {
             _dense = value;
@@ -886,8 +949,16 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
           ),
           extraSections: _buildTabBarSections(context),
         ),
+              ),
+          ],
+        ),
       ),
       actions: [
+        if (onDimensions)
+          ...delegate.buildExtraActions(
+            context,
+            onResetAndClose: _apply,
+          ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Annuler'),

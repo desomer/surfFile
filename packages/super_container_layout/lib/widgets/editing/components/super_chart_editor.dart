@@ -12,12 +12,14 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/json_syntax.dart';
 import '../../../models/super_chart_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 
 /// Palette de couleurs proposées pour les séries d'un graphique.
@@ -42,7 +44,13 @@ String formatSuperChartTooltip({
       : config.binding!.repositoryId == null
       ? 'Hérité · ${config.binding!.path}'
       : config.binding!.path;
-  final seriesNames = config.series.map((s) => s.label).join(', ');
+  final seriesNames = config.series
+      .map(
+        (s) => s.color != null
+            ? '${s.label} (${JsonColor.toHex(s.color!)})'
+            : s.label,
+      )
+      .join(', ');
   return '$title\n'
       'Type : ${config.kind.label}\n'
       'Source : $bindingText\n'
@@ -56,24 +64,34 @@ Future<SuperChartConfig?> showSuperChartEditor({
 }) {
   final repositories = JsonRepositoryScope.maybeOf(context);
   final scope = JsonListScope.maybeOf(context);
-  return showEditorDialog<SuperChartConfig>(
+  return runWithDimensionDelegate<SuperChartConfig>(
     context: context,
-    target: context,
-    builder: (_) => _SuperChartEditorDialog(
-      config: config,
-      repositories: repositories,
-      scope: scope,
-    ),
+    runner: (initialTab, dimensionDelegate) =>
+        showEditorDialog<SuperChartConfig>(
+          context: context,
+          target: context,
+          builder: (_) => _SuperChartEditorDialog(
+            initialTab: initialTab,
+            dimensionDelegate: dimensionDelegate,
+            config: config,
+            repositories: repositories,
+            scope: scope,
+          ),
+        ),
   );
 }
 
 class _SuperChartEditorDialog extends StatefulWidget {
   const _SuperChartEditorDialog({
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.repositories,
     required this.scope,
   });
 
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperChartConfig config;
   final JsonRepositoryStore? repositories;
   final JsonListScope? scope;
@@ -178,8 +196,8 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
     return result;
   }
 
-  Future<void> _apply() async {
-    if (!(_form.currentState?.validate() ?? false)) return;
+  Future<bool> _apply() async {
+    if (!(_form.currentState?.validate() ?? true)) return false;
     setState(() {
       _busy = true;
       _error = null;
@@ -206,10 +224,13 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
         }
       }
       if (mounted) Navigator.of(context).pop(config);
+      return true;
     } on FormatException catch (error) {
       if (mounted) setState(() => _error = error.message);
+      return false;
     } on FileSystemException {
       if (mounted) setState(() => _error = 'Impossible de lire le repository.');
+      return false;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -256,15 +277,21 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
         kind == SuperChartKind.bar ||
         kind == SuperChartKind.scatter;
 
-    return AlertDialog(
-      key: const ValueKey('super-chart-editor'),
-      title: const EditorDialogHeader(label: 'Configurer le graphique'),
-      content: SizedBox(
-        width: 540,
-        child: Form(
-          key: _form,
-          child: SingleChildScrollView(
-            child: Column(
+    return EditorTabbedAlertDialog(
+      dialogKey: const ValueKey('super-chart-editor'),
+      applyButtonKey: const ValueKey('super-chart-apply'),
+      initialTab: widget.initialTab,
+      dimensionDelegate: widget.dimensionDelegate,
+      propertiesTitle: const EditorDialogHeader(
+        label: 'Configurer le graphique',
+      ),
+      propertiesWidth: 540,
+      busy: _busy,
+      onApply: _apply,
+      onCancel: () => Navigator.of(context).pop(),
+      propertiesContentBuilder: (context) => Form(
+        key: _form,
+        child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               spacing: 14,
@@ -609,20 +636,7 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
                   ),
               ],
             ),
-          ),
-        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          key: const ValueKey('super-chart-apply'),
-          onPressed: _busy ? null : _apply,
-          child: const Text('Appliquer'),
-        ),
-      ],
     );
   }
 }

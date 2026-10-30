@@ -406,6 +406,8 @@ class _GridSurfaceState extends State<_GridSurface> {
                           inline: true,
                           onSelect: () => _select(slot.id),
                           onEdit: () => widget.owner._editGridSlot(slot),
+                          dimensionDelegateBuilder: () =>
+                              widget.owner._buildGridSlotDelegate(slot),
                           onRemove: () async =>
                               widget.owner._removeSlot(slot.id),
                           wrapActions: widget.owner._wrapActionsForSlot(slot),

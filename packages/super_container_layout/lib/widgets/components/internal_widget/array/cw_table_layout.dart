@@ -968,6 +968,7 @@ class FrozenTableViewState extends State<FrozenTableView> {
           ? Stack(
               clipBehavior: Clip.none,
               children: [
+                listView,
                 Positioned.fill(
                   child: IgnorePointer(
                     child: ListenableBuilder(
@@ -988,7 +989,6 @@ class FrozenTableViewState extends State<FrozenTableView> {
                     ),
                   ),
                 ),
-                listView,
               ],
             )
           : listView,
@@ -1021,6 +1021,7 @@ class FrozenTableViewState extends State<FrozenTableView> {
             ? Stack(
                 clipBehavior: Clip.none,
                 children: [
+                  listView,
                   Positioned.fill(
                     child: IgnorePointer(
                       child: ListenableBuilder(
@@ -1041,7 +1042,6 @@ class FrozenTableViewState extends State<FrozenTableView> {
                       ),
                     ),
                   ),
-                  listView,
                 ],
               )
             : listView,

@@ -17,6 +17,7 @@ import '../../editing/addition/component_add_wizard.dart';
 import '../../editing/addition/insertion_plan.dart';
 import '../../editing/dialogs/editor_dialog.dart';
 import '../../editing/dialogs/editor_dialog_header.dart';
+import '../../editing/dialogs/editor_tabbed_wizard.dart';
 import '../../editing/overlay/editor_overlay.dart';
 import '../../editing/overlay/editor_resize_handle.dart';
 import '../../editing/overlay/editor_zone_badge.dart';

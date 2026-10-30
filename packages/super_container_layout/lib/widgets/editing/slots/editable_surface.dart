@@ -305,10 +305,6 @@ class EditableSurfaceState extends State<EditableSurface>
           listenable: Listenable.merge([_preview, _hovered, ?_stateBinding]),
           builder: (context, _) {
             final base = style;
-            final isDelegatedActive =
-                !widget.resolveSelectionAndHover &&
-                _preview.value == null &&
-                ((scope?.selected ?? false) || _hovered.value);
             final surfaceStyle =
                 _preview.value ??
                 base.states?.resolve(
@@ -326,7 +322,6 @@ class EditableSurfaceState extends State<EditableSurface>
             final renderStyle = surfaceStyle.copyWith(
               margin: 0,
               marginInsets: null,
-              resetColor: isDelegatedActive,
               hoverEffect: widget.resolveSelectionAndHover
                   ? surfaceStyle.hoverEffect
                   : false,

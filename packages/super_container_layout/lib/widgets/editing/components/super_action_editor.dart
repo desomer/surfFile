@@ -15,6 +15,8 @@ import '../../../theme/interaction_effect.dart';
 import '../../../theme/neon_style.dart';
 import '../../components/super_action.dart';
 import '../dialogs/editor_dialog.dart';
+import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 import '../icons/material_icon_picker.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../states/editor_state_controls.dart';
@@ -39,27 +41,33 @@ Future<SuperActionConfig?> showSuperActionEditor({
   final repositories = JsonRepositoryScope.maybeOf(context);
   final listScope = JsonListScope.maybeOf(context);
   try {
-    return await showEditorDialog<SuperActionConfig>(
+    return await runWithDimensionDelegate<SuperActionConfig>(
       context: context,
-      target: context,
-      preferredWidth: width,
-      builder: (_) => _ActionStateEditor(
-        ownerContext: context,
-        activeState: activeState,
-        stateError: stateError,
-        isHovered: isHovered,
-        isSelected: isSelected,
-        allowContentHover: allowContentHover,
-        activeAutomatic: activeAutomatic,
-        config: config,
-        availableFontFamilies: availableFontFamilies,
-        textStyle: textStyle,
-        onWidthChanged: (value) => width.value = value,
-        repositories: repositories,
-        listScope: listScope,
-        allowBinding: allowBinding,
-        onPreviewChanged: onPreviewChanged,
-      ),
+      runner: (initialTab, dimensionDelegate) =>
+          showEditorDialog<SuperActionConfig>(
+            context: context,
+            target: context,
+            preferredWidth: width,
+            builder: (_) => _ActionStateEditor(
+              ownerContext: context,
+              initialTab: initialTab,
+              dimensionDelegate: dimensionDelegate,
+              activeState: activeState,
+              stateError: stateError,
+              isHovered: isHovered,
+              isSelected: isSelected,
+              allowContentHover: allowContentHover,
+              activeAutomatic: activeAutomatic,
+              config: config,
+              availableFontFamilies: availableFontFamilies,
+              textStyle: textStyle,
+              onWidthChanged: (value) => width.value = value,
+              repositories: repositories,
+              listScope: listScope,
+              allowBinding: allowBinding,
+              onPreviewChanged: onPreviewChanged,
+            ),
+          ),
     );
   } finally {
     width.dispose();
@@ -69,6 +77,8 @@ Future<SuperActionConfig?> showSuperActionEditor({
 class _ActionStateEditor extends StatefulWidget {
   const _ActionStateEditor({
     required this.ownerContext,
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.availableFontFamilies,
     required this.textStyle,
@@ -86,6 +96,8 @@ class _ActionStateEditor extends StatefulWidget {
   });
 
   final BuildContext ownerContext;
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperActionConfig config;
   final List<String> availableFontFamilies;
   final TextStyle textStyle;
@@ -289,6 +301,8 @@ class _ActionStateEditorState extends State<_ActionStateEditor> {
         : states.selected;
     return _SuperActionEditor(
       key: _leafKey,
+      initialTab: widget.initialTab,
+      dimensionDelegate: widget.dimensionDelegate,
       config: _leaf,
       availableFontFamilies: widget.availableFontFamilies,
       textStyle: widget.textStyle,
@@ -488,6 +502,8 @@ class _ActionStateEditorState extends State<_ActionStateEditor> {
 
 class _SuperActionEditor extends StatefulWidget {
   const _SuperActionEditor({
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.availableFontFamilies,
     required this.textStyle,
@@ -501,6 +517,8 @@ class _SuperActionEditor extends StatefulWidget {
     super.key,
   });
 
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperActionConfig config;
   final List<String> availableFontFamilies;
   final TextStyle textStyle;
@@ -518,6 +536,11 @@ class _SuperActionEditor extends StatefulWidget {
 
 class _SuperActionEditorState extends State<_SuperActionEditor> {
   final _form = GlobalKey<FormState>();
+  late EditorWizardTab _tab =
+      widget.initialTab == EditorWizardTab.dimensions &&
+          widget.dimensionDelegate != null
+      ? EditorWizardTab.dimensions
+      : EditorWizardTab.properties;
   late SuperActionConfig _draft;
   late final Map<String, TextEditingController> _fields;
   late bool _dense = StyleEditorPanel.preferredDense;
@@ -897,6 +920,40 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
     );
     final height = math.min(680.0, math.max(0.0, screen.height - 180));
     final scheme = Theme.of(context).colorScheme;
+    final delegate = widget.dimensionDelegate;
+    final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
+    void handleApply() {
+      if (delegate != null && !delegate.validate()) {
+        if (_tab != EditorWizardTab.dimensions) {
+          setState(() => _tab = EditorWizardTab.dimensions);
+        }
+        return;
+      }
+      if (_form.currentState != null && !_form.currentState!.validate()) {
+        if (_tab != EditorWizardTab.properties) {
+          setState(() => _tab = EditorWizardTab.properties);
+        }
+        return;
+      }
+      SuperActionConfig result;
+      try {
+        final leaf = _configuration();
+        result = widget.onSave?.call(leaf) ?? leaf;
+      } on FormatException catch (e) {
+        setState(() {
+          _liveError = e.message;
+          _tab = EditorWizardTab.properties;
+        });
+        return;
+      } on ArgumentError {
+        setState(() {
+          _liveError = 'Combinaison de propriétés invalide.';
+          _tab = EditorWizardTab.properties;
+        });
+        return;
+      }
+      Navigator.of(context).pop(result);
+    }
 
     return AlertDialog(
       key: const ValueKey('super-action-settings'),
@@ -905,16 +962,53 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
       content: SizedBox(
         width: width,
         height: height,
-        child: Form(
-          key: _form,
-          onChanged: () => setState(() {}),
-          child: StyleEditorPanel(
-            label: 'Configurer l’action',
-            dense: _dense,
-            onDenseChanged: (value) => setState(() {
-              _dense = value;
-              widget.onWidthChanged(value ? 680 : 1080);
-            }),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EditorWizardTabBar(
+              selectedTab: _tab,
+              propertiesEnabled: true,
+              dimensionsEnabled: delegate != null,
+              onTabSelected: (next) {
+                if (next != _tab) setState(() => _tab = next);
+              },
+            ),
+            const SizedBox(height: 12),
+            if (onDimensions) ...[
+              if (delegate.labelListenable case final listenable?)
+                ValueListenableBuilder<String>(
+                  valueListenable: listenable,
+                  builder: (context, _, _) => EditorDialogHeader(
+                    label: delegate.title,
+                    editableLabel: delegate.editableLabel,
+                    onLabelChanged: delegate.onLabelChanged,
+                  ),
+                )
+              else
+                EditorDialogHeader(
+                  label: delegate.title,
+                  editableLabel: delegate.editableLabel,
+                  onLabelChanged: delegate.onLabelChanged,
+                ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: delegate.buildContent(context),
+                ),
+              ),
+            ] else
+              Expanded(
+                child: Form(
+                  key: _form,
+                  onChanged: () => setState(() {}),
+                  child: StyleEditorPanel(
+                    label: delegate?.editableLabel ?? 'Configurer l’action',
+                    onLabelChanged: delegate?.onLabelChanged,
+                    dense: _dense,
+                    onDenseChanged: (value) => setState(() {
+                      _dense = value;
+                      widget.onWidthChanged(value ? 680 : 1080);
+                    }),
             preview: _preview(unavailable),
             sections: [
               if (widget.header != null)
@@ -1580,8 +1674,16 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
             ],
           ),
         ),
+              ),
+          ],
+        ),
       ),
       actions: [
+        if (onDimensions)
+          ...delegate.buildExtraActions(
+            context,
+            onResetAndClose: handleApply,
+          ),
         if (_liveError != null)
           Text(
             _liveError!,
@@ -1593,23 +1695,7 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
           child: const Text('Annuler'),
         ),
         FilledButton(
-          onPressed: () {
-            if (!_form.currentState!.validate()) return;
-            SuperActionConfig result;
-            try {
-              final leaf = _configuration();
-              result = widget.onSave?.call(leaf) ?? leaf;
-            } on FormatException catch (e) {
-              setState(() => _liveError = e.message);
-              return;
-            } on ArgumentError {
-              setState(
-                () => _liveError = 'Combinaison de propriétés invalide.',
-              );
-              return;
-            }
-            Navigator.of(context).pop(result);
-          },
+          onPressed: handleApply,
           child: const Text('Appliquer'),
         ),
       ],

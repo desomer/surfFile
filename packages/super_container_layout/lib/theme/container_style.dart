@@ -597,9 +597,12 @@ String formatContainerStyleTooltip({
   final baseFillLabel = switch (style.fill.type) {
     FillType.solid =>
       style.color != null ? JsonColor.toHex(style.color!) : 'Auto',
-    FillType.linear => 'Dégradé linéaire',
-    FillType.radial => 'Dégradé radial',
-    FillType.sweep => 'Dégradé conique',
+    FillType.linear =>
+      'Dégradé linéaire (${JsonColor.toHex(style.fill.start)} → ${JsonColor.toHex(style.fill.end)})',
+    FillType.radial =>
+      'Dégradé radial (${JsonColor.toHex(style.fill.start)} → ${JsonColor.toHex(style.fill.end)})',
+    FillType.sweep =>
+      'Dégradé conique (${JsonColor.toHex(style.fill.start)} → ${JsonColor.toHex(style.fill.end)})',
   };
   final imageTarget = style.fill.imageUrl.trim().isNotEmpty
       ? style.fill.imageUrl.trim()

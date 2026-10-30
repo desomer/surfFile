@@ -713,6 +713,20 @@ void main() {
       await tester.tap(find.text('Parent 1'));
       await tester.pump();
       expect(tester.widget<AnimatedOpacity>(selOpacityFinder).opacity, 1.0);
+
+      // Verify selection/hover indicator overlay is painted above the row/cell ListView
+      final treeStackFinder = find.ancestor(
+        of: selIndicatorFinder,
+        matching: find.byWidgetPredicate(
+          (w) =>
+              w is Stack &&
+              w.children.length == 2 &&
+              w.children.first is Scrollbar,
+        ),
+      );
+      expect(treeStackFinder, findsOneWidget);
+      final treeStack = tester.widget<Stack>(treeStackFinder);
+      expect(treeStack.children.last, isA<Positioned>());
       expect(
         tester
             .widget<SuperContainer>(selIndicatorFinder)

@@ -15,6 +15,8 @@ import '../../../services/repositories/json_repository_store.dart';
 import '../../../services/states/surface_state_binding.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../dialogs/editor_dialog.dart';
+import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/style_editor_panel.dart';
 import '../states/editor_state_controls.dart';
@@ -48,27 +50,33 @@ Future<SuperValueConfig?> showSuperValueEditor({
   final repositories = JsonRepositoryScope.maybeOf(context);
   final listScope = JsonListScope.maybeOf(context);
   try {
-    return await showEditorDialog<SuperValueConfig>(
+    return await runWithDimensionDelegate<SuperValueConfig>(
       context: context,
-      target: context,
-      preferredWidth: width,
-      builder: (_) => _ValueStateEditor(
-        ownerContext: context,
-        activeState: activeState,
-        stateError: stateError,
-        isHovered: isHovered,
-        isSelected: isSelected,
-        allowContentHover: allowContentHover,
-        activeAutomatic: activeAutomatic,
-        config: config,
-        availableFontFamilies: availableFontFamilies,
-        textStyle: textStyle,
-        onWidthChanged: (value) => width.value = value,
-        repositories: repositories,
-        listScope: listScope,
-        allowBinding: allowBinding,
-        onPreviewChanged: onPreviewChanged,
-      ),
+      runner: (initialTab, dimensionDelegate) =>
+          showEditorDialog<SuperValueConfig>(
+            context: context,
+            target: context,
+            preferredWidth: width,
+            builder: (_) => _ValueStateEditor(
+              ownerContext: context,
+              initialTab: initialTab,
+              dimensionDelegate: dimensionDelegate,
+              activeState: activeState,
+              stateError: stateError,
+              isHovered: isHovered,
+              isSelected: isSelected,
+              allowContentHover: allowContentHover,
+              activeAutomatic: activeAutomatic,
+              config: config,
+              availableFontFamilies: availableFontFamilies,
+              textStyle: textStyle,
+              onWidthChanged: (value) => width.value = value,
+              repositories: repositories,
+              listScope: listScope,
+              allowBinding: allowBinding,
+              onPreviewChanged: onPreviewChanged,
+            ),
+          ),
     );
   } finally {
     width.dispose();
@@ -85,6 +93,8 @@ class _ValueStateEditor extends StatefulWidget {
   /// Crée l'éditeur multi-états pour la configuration [config].
   const _ValueStateEditor({
     required this.ownerContext,
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.availableFontFamilies,
     required this.textStyle,
@@ -101,6 +111,8 @@ class _ValueStateEditor extends StatefulWidget {
     required this.activeAutomatic,
   });
   final BuildContext ownerContext;
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperValueConfig config;
   final List<String> availableFontFamilies;
   final TextStyle textStyle;
@@ -358,6 +370,8 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
 
     return _SuperValueEditor(
       key: _leafKey,
+      initialTab: widget.initialTab,
+      dimensionDelegate: widget.dimensionDelegate,
       config: _leaf,
       availableFontFamilies: widget.availableFontFamilies,
       textStyle: widget.textStyle,
@@ -562,6 +576,8 @@ class _ValueStateEditorState extends State<_ValueStateEditor> {
 class _SuperValueEditor extends StatefulWidget {
   /// Crée le formulaire d'édition pour une feuille [config] de `SuperValue`.
   const _SuperValueEditor({
+    required this.initialTab,
+    required this.dimensionDelegate,
     required this.config,
     required this.availableFontFamilies,
     required this.textStyle,
@@ -574,6 +590,8 @@ class _SuperValueEditor extends StatefulWidget {
     this.onSave,
     super.key,
   });
+  final EditorWizardTab initialTab;
+  final EditorDimensionDelegate? dimensionDelegate;
   final SuperValueConfig config;
   final List<String> availableFontFamilies;
   final TextStyle textStyle;
@@ -596,6 +614,11 @@ class _SuperValueEditor extends StatefulWidget {
 class _SuperValueEditorState extends State<_SuperValueEditor> {
   final _form = GlobalKey<FormState>();
   final _fieldSettings = GlobalKey<SuperTextFieldSettingsState>();
+  late EditorWizardTab _tab =
+      widget.initialTab == EditorWizardTab.dimensions &&
+          widget.dimensionDelegate != null
+      ? EditorWizardTab.dimensions
+      : EditorWizardTab.properties;
   late SuperTextFieldConfig _fieldConfig;
   String? _fieldError;
   late SuperValueConfig _draft;
@@ -1246,6 +1269,122 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
       math.max(0.0, screen.width - 96),
     );
     final height = math.min(680.0, math.max(0.0, screen.height - 180));
+    final delegate = widget.dimensionDelegate;
+    final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
+    Future<void> handleApply() async {
+      if (delegate != null && !delegate.validate()) {
+        if (_tab != EditorWizardTab.dimensions) {
+          setState(() => _tab = EditorWizardTab.dimensions);
+        }
+        return;
+      }
+      if (_form.currentState != null && !_form.currentState!.validate()) {
+        if (_tab != EditorWizardTab.properties) {
+          setState(() => _tab = EditorWizardTab.properties);
+        }
+        return;
+      }
+      if (_hasFieldSettings &&
+          _fieldSettings.currentState?.validate() == false) {
+        if (_tab != EditorWizardTab.properties) {
+          setState(() => _tab = EditorWizardTab.properties);
+        }
+        return;
+      }
+      final field = _hasFieldSettings
+          ? _fieldSettings.currentState?.value() ?? _fieldConfig
+          : _fieldConfig;
+      try {
+        field.validateFor(
+          obscureText: _draft.obscureText,
+          maxLines: _draft.obscureText || _draft.kind.isBoolean
+              ? 1
+              : int.parse(_fields['maxLines']!.text),
+        );
+      } on FormatException catch (error) {
+        setState(() {
+          _fieldError = error.message;
+          _tab = EditorWizardTab.properties;
+        });
+        return;
+      }
+      final binding = _binding;
+      if (binding != null) {
+        if (!widget.allowBinding || widget.repositories == null) {
+          setState(() {
+            _repositoryError =
+                'La liaison nécessite le service et un contrôleur interne.';
+            _tab = EditorWizardTab.properties;
+          });
+          return;
+        }
+        setState(() {
+          _validating = true;
+          _repositoryError = null;
+        });
+        try {
+          final scope = widget.listScope;
+          // A template row has no element to read yet.
+          if (!(scope?.placeholder ?? false)) {
+            final resolved = JsonListScope.resolveSelected(
+              binding,
+              scope,
+              widget.repositories,
+            ).binding;
+            // Without selected row, only the path is checked.
+            if (resolved != null) {
+              final attr = await widget.repositories!.readAttribute(resolved);
+              if (_draft.kind.isBoolean &&
+                  attr.value != null &&
+                  attr.value is! bool) {
+                throw const FormatException(
+                  'L’attribut lié doit être un booléen.',
+                );
+              }
+            }
+          }
+        } on FormatException catch (error) {
+          if (mounted) {
+            setState(() {
+              _repositoryError = error.message;
+              _tab = EditorWizardTab.properties;
+            });
+          }
+          return;
+        } on FileSystemException {
+          if (mounted) {
+            setState(() {
+              _repositoryError = 'Impossible de lire le repository.';
+              _tab = EditorWizardTab.properties;
+            });
+          }
+          return;
+        } finally {
+          if (mounted) setState(() => _validating = false);
+        }
+        if (!mounted) return;
+      }
+      SuperValueConfig result;
+      try {
+        final leaf = _configuration(field, binding);
+        result = widget.onSave?.call(leaf) ?? leaf;
+      } on FormatException catch (e) {
+        setState(() {
+          _liveError = e.message;
+          _tab = EditorWizardTab.properties;
+        });
+        return;
+      } on ArgumentError {
+        setState(() {
+          _liveError = 'Combinaison de propriétés invalide.';
+          _tab = EditorWizardTab.properties;
+        });
+        return;
+      }
+      if (!context.mounted) return;
+      Navigator.of(context).pop(result);
+    }
+
     return AlertDialog(
       key: const ValueKey('super-value-settings'),
       insetPadding: const EdgeInsets.all(24),
@@ -1253,21 +1392,58 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
       content: SizedBox(
         width: width,
         height: height,
-        child: Form(
-          key: _form,
-          onChanged: () => setState(() {}),
-          child: SuperTextFieldSettings(
-            key: _fieldSettings,
-            value: _draft.field,
-            onChanged: (value) => setState(() {
-              _fieldConfig = value;
-              _fieldError = null;
-            }),
-            builder: (fieldSections) => StyleEditorPanel(
-              label: 'Configurer la valeur',
-              dense: _dense,
-              onDenseChanged: (value) => setState(() {
-                _dense = value;
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EditorWizardTabBar(
+              selectedTab: _tab,
+              propertiesEnabled: true,
+              dimensionsEnabled: delegate != null,
+              onTabSelected: (next) {
+                if (next != _tab) setState(() => _tab = next);
+              },
+            ),
+            const SizedBox(height: 12),
+            if (onDimensions) ...[
+              if (delegate.labelListenable case final listenable?)
+                ValueListenableBuilder<String>(
+                  valueListenable: listenable,
+                  builder: (context, _, _) => EditorDialogHeader(
+                    label: delegate.title,
+                    editableLabel: delegate.editableLabel,
+                    onLabelChanged: delegate.onLabelChanged,
+                  ),
+                )
+              else
+                EditorDialogHeader(
+                  label: delegate.title,
+                  editableLabel: delegate.editableLabel,
+                  onLabelChanged: delegate.onLabelChanged,
+                ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: delegate.buildContent(context),
+                ),
+              ),
+            ] else
+              Expanded(
+                child: Form(
+                  key: _form,
+                  onChanged: () => setState(() {}),
+                  child: SuperTextFieldSettings(
+                    key: _fieldSettings,
+                    value: _draft.field,
+                    onChanged: (value) => setState(() {
+                      _fieldConfig = value;
+                      _fieldError = null;
+                    }),
+                    builder: (fieldSections) => StyleEditorPanel(
+                      label: delegate?.editableLabel ?? 'Configurer la valeur',
+                      onLabelChanged: delegate?.onLabelChanged,
+                      dense: _dense,
+                      onDenseChanged: (value) => setState(() {
+                        _dense = value;
                 widget.onWidthChanged(value ? 680 : 1080);
               }),
               preview: _preview(unavailable),
@@ -1765,8 +1941,16 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
             ),
           ),
         ),
+              ),
+          ],
+        ),
       ),
       actions: [
+        if (onDimensions)
+          ...delegate.buildExtraActions(
+            context,
+            onResetAndClose: handleApply,
+          ),
         if (_liveError != null)
           Text(
             _liveError!,
@@ -1783,97 +1967,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
           child: const Text('Annuler'),
         ),
         FilledButton(
-          onPressed: _validating
-              ? null
-              : () async {
-                  if (!_form.currentState!.validate()) return;
-                  if (_hasFieldSettings &&
-                      _fieldSettings.currentState?.validate() == false) {
-                    return;
-                  }
-                  final field = _hasFieldSettings
-                      ? _fieldSettings.currentState?.value() ?? _fieldConfig
-                      : _fieldConfig;
-                  try {
-                    field.validateFor(
-                      obscureText: _draft.obscureText,
-                      maxLines: _draft.obscureText || _draft.kind.isBoolean
-                          ? 1
-                          : int.parse(_fields['maxLines']!.text),
-                    );
-                  } on FormatException catch (error) {
-                    setState(() => _fieldError = error.message);
-                    return;
-                  }
-                  final binding = _binding;
-                  if (binding != null) {
-                    if (!widget.allowBinding || widget.repositories == null) {
-                      setState(
-                        () => _repositoryError = 'La liaison nécessite le service et un contrôleur interne.',
-                      );
-                      return;
-                    }
-                    setState(() {
-                      _validating = true;
-                      _repositoryError = null;
-                    });
-                    try {
-                      final scope = widget.listScope;
-                      // A template row has no element to read yet.
-                      if (!(scope?.placeholder ?? false)) {
-                        final resolved = JsonListScope.resolveSelected(
-                          binding,
-                          scope,
-                          widget.repositories,
-                        ).binding;
-                        // Without selected row, only the path is checked.
-                        if (resolved != null) {
-                          final attr = await widget.repositories!.readAttribute(
-                            resolved,
-                          );
-                          if (_draft.kind.isBoolean &&
-                              attr.value != null &&
-                              attr.value is! bool) {
-                            throw const FormatException(
-                              'L’attribut lié doit être un booléen.',
-                            );
-                          }
-                        }
-                      }
-                    } on FormatException catch (error) {
-                      if (mounted) {
-                        setState(() => _repositoryError = error.message);
-                      }
-                      return;
-                    } on FileSystemException {
-                      if (mounted) {
-                        setState(
-                          () => _repositoryError =
-                              'Impossible de lire le repository.',
-                        );
-                      }
-                      return;
-                    } finally {
-                      if (mounted) setState(() => _validating = false);
-                    }
-                    if (!mounted) return;
-                  }
-                  SuperValueConfig result;
-                  try {
-                    final leaf = _configuration(field, binding);
-                    result = widget.onSave?.call(leaf) ?? leaf;
-                  } on FormatException catch (e) {
-                    setState(() => _liveError = e.message);
-                    return;
-                  } on ArgumentError {
-                    setState(
-                      () => _liveError = 'Combinaison de propriétés invalide.',
-                    );
-                    return;
-                  }
-                  if (!context.mounted) return;
-                  Navigator.of(context).pop(result);
-                },
+          onPressed: _validating ? null : handleApply,
           child: const Text('Appliquer'),
         ),
       ],

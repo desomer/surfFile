@@ -489,6 +489,23 @@ void main() {
       await tester.tap(find.text('Alice'));
       await tester.pump();
       expect(tester.widget<AnimatedOpacity>(selOpacityRight).opacity, 1.0);
+
+      // Verify selection/hover indicator overlays are painted above the row/cell ListView
+      for (final indicatorFinder in [selIndicatorLeft, selIndicatorRight]) {
+        final stackFinder = find.ancestor(
+          of: indicatorFinder,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Stack &&
+                w.children.length == 2 &&
+                (w.children.first is ListView ||
+                    w.children.first is ValueListenableBuilder<double>),
+          ),
+        );
+        expect(stackFinder, findsOneWidget);
+        final stack = tester.widget<Stack>(stackFinder);
+        expect(stack.children.last, isA<Positioned>());
+      }
       expect(
         tester
             .widget<SuperContainer>(selIndicatorRight)

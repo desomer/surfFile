@@ -4,6 +4,7 @@ import '../../../models/super_layout_config.dart';
 import '../../../services/states/content_hover_scope.dart';
 import '../../../super_app.dart';
 import '../../../theme/container_style.dart';
+import '../../editing/dialogs/editor_tabbed_wizard.dart';
 import '../../editing/slots/editable_surface.dart';
 import '../../editing/slots/editor_slot.dart';
 import 'slot_implementation.dart';
@@ -26,6 +27,7 @@ class IterableContent extends StatefulWidget {
     this.applyMargin = true,
     this.resolveSelectionAndHover = true,
     this.onEditSize,
+    this.dimensionDelegateBuilder,
     this.sizeConstraints,
     this.child,
     super.key,
@@ -45,6 +47,7 @@ class IterableContent extends StatefulWidget {
   final bool applyMargin;
   final bool resolveSelectionAndHover;
   final Future<void> Function()? onEditSize;
+  final EditorDimensionDelegate Function()? dimensionDelegateBuilder;
   final SlotSizeConstraints? sizeConstraints;
   final Widget? child;
 
@@ -134,6 +137,7 @@ class _IterableContentState extends State<IterableContent> {
               constraints: widget.sizeConstraints,
             ),
             onEdit: editSize,
+            dimensionDelegateBuilder: widget.dimensionDelegateBuilder,
             enabled:
                 widget.editable &&
                 (StyleEditScope.controllerOf(context)?.value ?? true),

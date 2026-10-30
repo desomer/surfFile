@@ -18,6 +18,7 @@ import '../../editing/history/editor_history.dart';
 import '../../editing/overlay/editor_overlay.dart';
 import '../../editing/overlay/editor_zoom.dart';
 import '../../editing/dialogs/editor_dialog_header.dart';
+import '../../editing/dialogs/editor_tabbed_wizard.dart';
 import '../../editing/overlay/editor_resize_handle.dart';
 import '../../editing/addition/insertion_plan.dart';
 import '../../editing/slots/editor_slot.dart';
@@ -306,6 +307,7 @@ class SlotStack extends StatelessWidget {
     this.sizeConstraints = const {},
     this.layoutSize = Size.zero,
     this.onEditPreferredSize,
+    this.dimensionDelegateForSlot,
     this.onRemoveSlot,
     this.wrapActionsForSlot,
     this.insertionForSlot,
@@ -353,6 +355,8 @@ class SlotStack extends StatelessWidget {
   final Map<String, SlotSizeConstraints> sizeConstraints;
   final Size layoutSize;
   final Future<void> Function(SlotImplementation)? onEditPreferredSize;
+  final EditorDimensionDelegate Function(SlotImplementation)?
+  dimensionDelegateForSlot;
   final Future<void> Function(SlotImplementation)? onRemoveSlot;
   final List<EditorSlotWrapAction> Function(SlotImplementation)?
   wrapActionsForSlot;
@@ -505,6 +509,9 @@ class SlotStack extends StatelessWidget {
           : null,
       wrapActions: wrapActionsForSlot?.call(slot) ?? const [],
       insertion: insertionForSlot?.call(slot),
+      dimensionDelegateBuilder: dimensionDelegateForSlot == null
+          ? null
+          : () => dimensionDelegateForSlot!(slot),
       child: KeyedSubtree(
         key: focusKeys?.putIfAbsent(slot.id, GlobalKey.new),
         child: SlotContentFitScope(

@@ -207,7 +207,7 @@ class CwTableRowState extends State<CwTableRow> {
         : null;
 
     final effectiveColor = animateIndicators
-        ? ((isSelected || isHovered) ? null : baseColor)
+        ? baseColor
         : ((isSelected ? selColor : null) ??
               (isHovered ? hoverColor : null) ??
               baseColor);

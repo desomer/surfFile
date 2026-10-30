@@ -11,6 +11,8 @@ import '../../../theme/container_style.dart';
 import '../../../theme/neon_style.dart';
 import 'container_style_editor.dart';
 import '../dialogs/editor_dialog.dart';
+import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_tabbed_wizard.dart';
 import '../history/editor_history.dart';
 import 'style_editor_panel.dart';
 import 'surface_state_controls.dart';
@@ -161,6 +163,16 @@ class ContainerStyleDialog {
     }
 
     final tabbed = selectedSlot != null;
+    final initialWizardTab = EditorWizardNavigation.consumeInitialTab();
+    final dimensionDelegate = EditorWizardNavigation.resolveDimensionDelegate(
+      context,
+    );
+    var wizardTab =
+        initialWizardTab == EditorWizardTab.dimensions &&
+            dimensionDelegate != null
+        ? EditorWizardTab.dimensions
+        : EditorWizardTab.properties;
+    var currentLabel = label;
     var dense = StyleEditorPanel.preferredDense;
     final dockWidth = ValueNotifier(dense ? 680.0 : 1080.0);
     bool? confirmed;
@@ -179,16 +191,56 @@ class ContainerStyleDialog {
               320.0,
               math.min(680.0, screen.height - 260),
             );
+            final onDimensions =
+                wizardTab == EditorWizardTab.dimensions &&
+                dimensionDelegate != null;
             return AlertDialog(
               insetPadding: const EdgeInsets.all(24),
               constraints: BoxConstraints(maxWidth: width + 48),
               content: SizedBox(
                 width: width,
                 height: height,
-                child: StatefulBuilder(
-                  builder: (context, setTab) => Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    EditorWizardTabBar(
+                      selectedTab: wizardTab,
+                      propertiesEnabled: true,
+                      dimensionsEnabled: dimensionDelegate != null,
+                      onTabSelected: (next) {
+                        if (next != wizardTab) {
+                          setDialog(() => wizardTab = next);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    if (onDimensions) ...[
+                      if (dimensionDelegate.labelListenable case final listenable?)
+                        ValueListenableBuilder<String>(
+                          valueListenable: listenable,
+                          builder: (context, _, _) => EditorDialogHeader(
+                            label: dimensionDelegate.title,
+                            editableLabel: dimensionDelegate.editableLabel ?? currentLabel,
+                            onLabelChanged: (value) {
+                              currentLabel = value;
+                              dimensionDelegate.onLabelChanged?.call(value);
+                              onLabelChanged(value);
+                            },
+                          ),
+                        )
+                      else
+                        EditorDialogHeader(
+                          label: dimensionDelegate.title,
+                          editableLabel: dimensionDelegate.editableLabel,
+                          onLabelChanged: dimensionDelegate.onLabelChanged,
+                        ),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          child: dimensionDelegate.buildContent(context),
+                        ),
+                      ),
+                    ] else ...[
                       if (tabbed) ...[
                         DefaultTabController(
                           length: 2,
@@ -196,7 +248,7 @@ class ContainerStyleDialog {
                           child: TabBar(
                             key: const ValueKey('style-editor-tabs'),
                             onTap: (index) {
-                              setTab(() {
+                              setDialog(() {
                                 editState = null;
                                 editSlot = index == 1
                                     ? selectedSlot
@@ -231,8 +283,12 @@ class ContainerStyleDialog {
                                 updateStyle(value);
                             return ContainerStyleEditor(
                               ownerContext: ownerContext,
-                              label: label,
-                              onLabelChanged: onLabelChanged,
+                              label: currentLabel,
+                              onLabelChanged: (value) {
+                                currentLabel = value;
+                                onLabelChanged(value);
+                                dimensionDelegate?.syncLabel(value);
+                              },
                               collapsible: false,
                               dense: dense,
                               onDenseChanged: (value) => setDialog(() {
@@ -398,7 +454,7 @@ class ContainerStyleDialog {
                                           ].join(' + '),
                                           error: stateError?.call(),
                                           onSelect: (value) {
-                                            setTab(() => editState = value);
+                                            setDialog(() => editState = value);
                                             preview();
                                           },
                                           onChanged: (states) => updateRoot(
@@ -493,16 +549,31 @@ class ContainerStyleDialog {
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
               ),
               actions: [
+                if (onDimensions)
+                  ...dimensionDelegate.buildExtraActions(
+                    context,
+                    onResetAndClose: () => Navigator.of(context).pop(true),
+                  ),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
                   child: const Text('Annuler'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.of(context).pop(true),
+                  onPressed: () {
+                    if (dimensionDelegate != null &&
+                        !dimensionDelegate.validate()) {
+                      if (wizardTab != EditorWizardTab.dimensions) {
+                        setDialog(() => wizardTab = EditorWizardTab.dimensions);
+                      }
+                      return;
+                    }
+                    dimensionDelegate?.apply();
+                    Navigator.of(context).pop(true);
+                  },
                   child: const Text('Appliquer'),
                 ),
               ],
@@ -510,8 +581,12 @@ class ContainerStyleDialog {
           },
         ),
       );
+      if (confirmed != true) {
+        dimensionDelegate?.restore();
+      }
     } finally {
       onPreview?.call(null);
+      dimensionDelegate?.dispose();
       dockWidth.dispose();
     }
     return confirmed;
