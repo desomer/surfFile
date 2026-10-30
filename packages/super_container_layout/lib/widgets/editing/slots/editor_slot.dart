@@ -382,9 +382,13 @@ class EditorSlotState extends State<EditorSlot> {
   }
 
   static void _refreshHoveredTarget() {
+    final previous = _hoveredTarget.value;
     final menuTarget = _menuHoveredTarget;
     if (menuTarget != null && menuTarget.mounted && menuTarget.canEdit) {
       _hoveredTarget.value = menuTarget;
+      if (!identical(previous, menuTarget)) {
+        EditorSelectionOutline.triggerAnimation();
+      }
       return;
     }
     EditorSlotState? deepest;
@@ -398,6 +402,9 @@ class EditorSlotState extends State<EditorSlot> {
       }
     }
     _hoveredTarget.value = deepest;
+    if (deepest != null && !identical(previous, deepest)) {
+      EditorSelectionOutline.triggerAnimation();
+    }
   }
 
   Widget _menuIconBadge(
@@ -902,6 +909,40 @@ class EditorSlotState extends State<EditorSlot> {
             overlay.globalToLocal(bannerGlobalRect.topLeft),
             overlay.globalToLocal(bannerGlobalRect.bottomRight),
           );
+    Rect? resolveAvoidRect() {
+      if (!selectTarget) return null;
+      final overlayRect = Offset.zero & overlay.size;
+      final candidateContexts = <BuildContext>[
+        if (targetContext != null) targetContext,
+        context,
+        ?LayoutSelection.focus.value?.context,
+      ];
+      Rect? fallbackRect;
+      for (final candidate in candidateContexts) {
+        if (!candidate.mounted) continue;
+        final box = candidate.findRenderObject();
+        if (box is RenderBox &&
+            box.attached &&
+            box.hasSize &&
+            !box.size.isEmpty) {
+          final rect = Rect.fromPoints(
+            overlay.globalToLocal(box.localToGlobal(Offset.zero)),
+            overlay.globalToLocal(
+              box.localToGlobal(box.size.bottomRight(Offset.zero)),
+            ),
+          ).intersect(overlayRect);
+          if (!rect.isEmpty && rect.isFinite) {
+            fallbackRect ??= rect;
+            if (rect.width < overlay.size.width * .92 ||
+                rect.height < overlay.size.height * .92) {
+              return rect;
+            }
+          }
+        }
+      }
+      return fallbackRect;
+    }
+
     var menuConstraints = const BoxConstraints(minWidth: 420, maxWidth: 620);
     if (!selectTarget && bannerLocal != null) {
       final spaceAbove = bannerLocal.top;
@@ -970,7 +1011,8 @@ class EditorSlotState extends State<EditorSlot> {
       selected = await _showEditorContextMenuDialog<Object>(
         context: context,
         initialPosition: position,
-        bannerLocal: !selectTarget ? bannerLocal : null,
+        bannerLocal: bannerLocal,
+        avoidRectResolver: selectTarget ? resolveAvoidRect : null,
         constraints: menuConstraints,
         color: colors.surfaceContainerHigh.withAlpha(240),
         surfaceTintColor: Colors.transparent,
@@ -1667,12 +1709,8 @@ class EditorSlotState extends State<EditorSlot> {
       } else if (_hovered.contains(this)) {
         _removeHoveredSafely();
       }
-      final painter = canEdit && editMode != null
-          ? EditorSelectionOutline(
-              color: AppearanceScope.of(context).accent.withValues(alpha: .8),
-              radius: widget.outlineRadius,
-            )
-          : null;
+      final accentColor = AppearanceScope.of(context).accent
+          .withValues(alpha: .85);
       return ValueListenableBuilder<EditorSlotState?>(
         valueListenable: _hoveredTarget,
         builder: (context, target, child) => ListenableBuilder(
@@ -1680,66 +1718,76 @@ class EditorSlotState extends State<EditorSlot> {
             EditorOverlayVisibility.openDialogs,
             EditorSelectionRegion.hoverTarget,
           ]),
-          builder: (context, child) => SliverPointerRegion(
-            cursor: hasClickBehaviors
-                ? SystemMouseCursors.click
-                : MouseCursor.defer,
-            onEnter: canEdit && editMode != null
-                ? (_) => _setHovered(true)
-                : null,
-            onExit: canEdit && editMode != null
-                ? (_) => _setHovered(false)
-                : null,
-            onPointerDown: (event) {
-              _sliverDown = event;
-              _sliverButtons = event.buttons;
-              _sliverMoved = false;
-            },
-            onPointerMove: (event) {
-              final down = _sliverDown;
-              if (down != null &&
-                  down.pointer == event.pointer &&
-                  (event.position - down.position).distance > kTouchSlop) {
-                _sliverMoved = true;
-              }
-            },
-            onPointerUp: (event) async {
-              final down = _sliverDown;
-              final buttons = _sliverButtons;
-              final moved = _sliverMoved;
-              _sliverDown = null;
-              _sliverButtons = 0;
-              _sliverMoved = false;
-              if (down == null ||
-                  down.pointer != event.pointer ||
-                  moved ||
-                  (event.position - down.position).distance > kTouchSlop) {
-                return;
-              }
-              if (buttons == kSecondaryMouseButton && canEdit) {
-                await openMenu(event.position);
-              } else if (buttons == kPrimaryButton && hasClickBehaviors) {
-                for (final b in clickBehaviors) {
-                  await b.execute(context);
+          builder: (context, child) {
+            final isMenuHighlighted = identical(_menuHoveredTarget, this);
+            final showOutline =
+                canEdit &&
+                editMode != null &&
+                (EditorOverlayVisibility.openDialogs.value == 0 ||
+                    isMenuHighlighted) &&
+                identical(target, this) &&
+                (EditorSelectionRegion.hoverTarget.value == null ||
+                    _menuHoveredTarget != null);
+            return SliverPointerRegion(
+              cursor: hasClickBehaviors
+                  ? SystemMouseCursors.click
+                  : MouseCursor.defer,
+              onEnter: canEdit && editMode != null
+                  ? (_) => _setHovered(true)
+                  : null,
+              onExit: canEdit && editMode != null
+                  ? (_) => _setHovered(false)
+                  : null,
+              onPointerDown: (event) {
+                _sliverDown = event;
+                _sliverButtons = event.buttons;
+                _sliverMoved = false;
+              },
+              onPointerMove: (event) {
+                final down = _sliverDown;
+                if (down != null &&
+                    down.pointer == event.pointer &&
+                    (event.position - down.position).distance > kTouchSlop) {
+                  _sliverMoved = true;
                 }
-              }
-            },
-            onPointerCancel: (_) {
-              _sliverDown = null;
-              _sliverButtons = 0;
-              _sliverMoved = false;
-            },
-            foregroundPainter:
-                painter != null &&
-                    (EditorOverlayVisibility.openDialogs.value == 0 ||
-                        identical(_menuHoveredTarget, this)) &&
-                    identical(target, this) &&
-                    (EditorSelectionRegion.hoverTarget.value == null ||
-                        _menuHoveredTarget != null)
-                ? painter
-                : null,
-            child: child,
-          ),
+              },
+              onPointerUp: (event) async {
+                final down = _sliverDown;
+                final buttons = _sliverButtons;
+                final moved = _sliverMoved;
+                _sliverDown = null;
+                _sliverButtons = 0;
+                _sliverMoved = false;
+                if (down == null ||
+                    down.pointer != event.pointer ||
+                    moved ||
+                    (event.position - down.position).distance > kTouchSlop) {
+                  return;
+                }
+                if (buttons == kSecondaryMouseButton && canEdit) {
+                  await openMenu(event.position);
+                } else if (buttons == kPrimaryButton && hasClickBehaviors) {
+                  for (final b in clickBehaviors) {
+                    await b.execute(context);
+                  }
+                }
+              },
+              onPointerCancel: (_) {
+                _sliverDown = null;
+                _sliverButtons = 0;
+                _sliverMoved = false;
+              },
+              foregroundPainter: showOutline
+                  ? EditorSelectionOutline(
+                      color: accentColor,
+                      radius: widget.outlineRadius,
+                      emphasized: isMenuHighlighted,
+                      label: titleLabel,
+                    )
+                  : null,
+              child: child,
+            );
+          },
           child: child,
         ),
         child: child,
@@ -1749,10 +1797,8 @@ class EditorSlotState extends State<EditorSlot> {
     Widget content = widget.child ?? const SizedBox.expand();
     if (canEdit && editMode != null) {
       _cachedDepth = _depth;
-      final painter = EditorSelectionOutline(
-        color: AppearanceScope.of(context).accent.withValues(alpha: .8),
-        radius: widget.outlineRadius,
-      );
+      final accentColor = AppearanceScope.of(context).accent
+          .withValues(alpha: .85);
       content = MouseRegion(
         onEnter: (_) => _setHovered(true),
         onExit: (_) => _setHovered(false),
@@ -1763,17 +1809,26 @@ class EditorSlotState extends State<EditorSlot> {
               EditorOverlayVisibility.openDialogs,
               EditorSelectionRegion.hoverTarget,
             ]),
-            builder: (context, child) => CustomPaint(
-              foregroundPainter:
+            builder: (context, child) {
+              final isMenuHighlighted = identical(_menuHoveredTarget, this);
+              final showOutline =
                   (EditorOverlayVisibility.openDialogs.value == 0 ||
-                          identical(_menuHoveredTarget, this)) &&
-                      identical(target, this) &&
-                      (EditorSelectionRegion.hoverTarget.value == null ||
-                          _menuHoveredTarget != null)
-                  ? painter
-                  : null,
-              child: child,
-            ),
+                      isMenuHighlighted) &&
+                  identical(target, this) &&
+                  (EditorSelectionRegion.hoverTarget.value == null ||
+                      _menuHoveredTarget != null);
+              return CustomPaint(
+                foregroundPainter: showOutline
+                    ? EditorSelectionOutline(
+                        color: accentColor,
+                        radius: widget.outlineRadius,
+                        emphasized: isMenuHighlighted,
+                        label: titleLabel,
+                      )
+                    : null,
+                child: child,
+              );
+            },
             child: child,
           ),
           child: content,
@@ -1818,6 +1873,7 @@ Future<T?> _showEditorContextMenuDialog<T>({
   required Clip clipBehavior,
   required List<PopupMenuEntry<T>> items,
   Rect? bannerLocal,
+  Rect? Function()? avoidRectResolver,
   ValueChanged<Route<T>>? onRouteCreated,
 }) async {
   final navigator = Navigator.of(context);
@@ -1828,6 +1884,7 @@ Future<T?> _showEditorContextMenuDialog<T>({
     barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
     initialPosition: initialPosition,
     bannerLocal: bannerLocal,
+    avoidRectResolver: avoidRectResolver,
     constraints: constraints,
     color: color,
     surfaceTintColor: surfaceTintColor,
@@ -1852,6 +1909,9 @@ Future<T?> _showEditorContextMenuDialog<T>({
   } finally {
     if (hasZoom && !zoomController.disposed) {
       zoomController.openContextMenus.value--;
+      if (zoomController.openContextMenus.value == 0) {
+        zoomController.contextMenuAvailable.value = null;
+      }
     }
   }
 }
@@ -1862,6 +1922,7 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
     required this.barrierLabel,
     required this.initialPosition,
     required this.bannerLocal,
+    required this.avoidRectResolver,
     required this.constraints,
     required this.color,
     required this.surfaceTintColor,
@@ -1879,6 +1940,7 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
   final String barrierLabel;
   final Offset initialPosition;
   final Rect? bannerLocal;
+  final Rect? Function()? avoidRectResolver;
   final BoxConstraints constraints;
   final Color color;
   final Color surfaceTintColor;
@@ -1909,6 +1971,7 @@ class _EditorContextMenuRoute<T> extends PopupRoute<T> {
       animation: animation,
       initialPosition: initialPosition,
       bannerLocal: bannerLocal,
+      avoidRectResolver: avoidRectResolver,
       constraints: constraints,
       color: color,
       surfaceTintColor: surfaceTintColor,
@@ -1928,6 +1991,7 @@ class _EditorContextMenuDialog<T> extends StatefulWidget {
     required this.animation,
     required this.initialPosition,
     required this.bannerLocal,
+    required this.avoidRectResolver,
     required this.constraints,
     required this.color,
     required this.surfaceTintColor,
@@ -1943,6 +2007,7 @@ class _EditorContextMenuDialog<T> extends StatefulWidget {
   final Animation<double> animation;
   final Offset initialPosition;
   final Rect? bannerLocal;
+  final Rect? Function()? avoidRectResolver;
   final BoxConstraints constraints;
   final Color color;
   final Color surfaceTintColor;
@@ -1961,15 +2026,46 @@ class _EditorContextMenuDialog<T> extends StatefulWidget {
 
 class _EditorContextMenuDialogState<T>
     extends State<_EditorContextMenuDialog<T>> {
+  final _viewportKey = GlobalKey();
   late Offset _position = widget.initialPosition;
   bool _dragged = false;
+  late final Rect? _initialAvoidRect = widget.avoidRectResolver?.call();
   late _ContextMenuDialogLayout _layout = _ContextMenuDialogLayout(
     position: _position,
     dragged: _dragged,
     bannerLocal: widget.bannerLocal,
+    avoidRect: _initialAvoidRect,
     menuConstraints: widget.constraints,
   );
   ZoomToolbarLayout _zoomToolbarLayout = ZoomToolbarLayout(null);
+
+  void _syncZoomAvailable() {
+    final zoom = widget.zoomController;
+    if (zoom == null ||
+        zoom.disposed ||
+        !zoom.enabled ||
+        zoom.dialog.value != null ||
+        widget.avoidRectResolver == null) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          zoom.disposed ||
+          ModalRoute.of(context)?.isCurrent != true) {
+        return;
+      }
+      final box = _viewportKey.currentContext?.findRenderObject();
+      final available = _layout.availableViewport;
+      if (box is! RenderBox || !box.hasSize || available == null) return;
+      final screen = Rect.fromPoints(
+        box.localToGlobal(available.topLeft),
+        box.localToGlobal(available.bottomRight),
+      );
+      if (zoom.contextMenuAvailable.value != screen) {
+        zoom.contextMenuAvailable.value = screen;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1985,9 +2081,11 @@ class _EditorContextMenuDialogState<T>
         position: _position,
         dragged: _dragged,
         bannerLocal: widget.bannerLocal,
+        avoidRect: _initialAvoidRect ?? widget.avoidRectResolver?.call(),
         menuConstraints: widget.constraints,
       );
     }
+    _syncZoomAvailable();
     final dialogCard = FadeTransition(
       opacity: CurvedAnimation(parent: widget.animation, curve: Curves.easeOut),
       child: Listener(
@@ -2020,6 +2118,7 @@ class _EditorContextMenuDialogState<T>
                         position: _position,
                         dragged: _dragged,
                         bannerLocal: widget.bannerLocal,
+                        avoidRect: null,
                         menuConstraints: widget.constraints,
                       );
                     }),
@@ -2102,6 +2201,7 @@ class _EditorContextMenuDialogState<T>
       ),
     );
     return Stack(
+      key: _viewportKey,
       fit: StackFit.expand,
       children: [
         Positioned.fill(
@@ -2176,14 +2276,17 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
     required this.position,
     required this.dragged,
     required this.bannerLocal,
+    required this.avoidRect,
     required this.menuConstraints,
   }) : resolvedPosition = position;
 
   final Offset position;
   final bool dragged;
   final Rect? bannerLocal;
+  final Rect? avoidRect;
   final BoxConstraints menuConstraints;
   Offset resolvedPosition;
+  Rect? availableViewport;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
@@ -2214,12 +2317,14 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
       return resolvedPosition;
     }
     const margin = 8.0;
+    const gap = 12.0;
     final maxX = math.max(margin, size.width - childSize.width - margin);
-    final dx = position.dx.clamp(margin, maxX);
     var minY = margin;
     var maxY = math.max(margin, size.height - childSize.height - margin);
+    var desiredX = position.dx;
     var desiredY = position.dy;
-    if (bannerLocal case final banner?) {
+    if (avoidRect == null && bannerLocal != null) {
+      final banner = bannerLocal!;
       final spaceAbove = banner.top;
       final spaceBelow = size.height - banner.bottom;
       if (spaceBelow >= spaceAbove || spaceBelow >= 220) {
@@ -2231,9 +2336,93 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
         maxY = math.max(margin, maxBottom - childSize.height);
         desiredY = math.min(position.dy, maxBottom) - childSize.height;
       }
+    } else if (avoidRect case final rawTarget?) {
+      if (bannerLocal case final banner? when banner.top < 120) {
+        minY = math.max(minY, banner.bottom + 6);
+        maxY = math.max(minY, size.height - childSize.height - margin);
+      }
+      final screenRect = Offset.zero & size;
+      final target = rawTarget.intersect(screenRect);
+      if (!target.isEmpty &&
+          (target.width < size.width * .92 ||
+              target.height < size.height * .92)) {
+        final alignedY = target.top.clamp(minY, maxY);
+        final alignedX = target.left.clamp(margin, maxX);
+        final horizontalCandidates = <Offset>[
+          if (target.right + gap + childSize.width <= size.width - margin)
+            Offset(target.right + gap, alignedY),
+          if (target.left - gap - childSize.width >= margin)
+            Offset(target.left - gap - childSize.width, alignedY),
+        ];
+        final verticalCandidates = <Offset>[
+          if (target.bottom + gap + childSize.height <= size.height - margin)
+            Offset(alignedX, target.bottom + gap),
+          if (target.top - gap - childSize.height >= minY)
+            Offset(alignedX, target.top - gap - childSize.height),
+        ];
+        final candidates = horizontalCandidates.isNotEmpty
+            ? horizontalCandidates
+            : verticalCandidates;
+        if (candidates.isNotEmpty) {
+          Offset? best;
+          var bestDist = double.infinity;
+          for (final candidate in candidates) {
+            final dist = (candidate - position).distanceSquared;
+            if (dist < bestDist) {
+              bestDist = dist;
+              best = candidate;
+            }
+          }
+          desiredX = best!.dx;
+          desiredY = best.dy;
+        } else {
+          final spaceRight = size.width - margin - target.right;
+          final spaceLeft = target.left - margin;
+          desiredX = spaceRight >= spaceLeft ? maxX : margin;
+          desiredY = alignedY;
+        }
+      }
     }
+    final dx = desiredX.clamp(margin, maxX);
     final dy = desiredY.clamp(minY, maxY);
     resolvedPosition = Offset(dx, dy);
+    if (avoidRect case final target?) {
+      final dialogRect = resolvedPosition & childSize;
+      final candidateViewports = <Rect>[
+        Rect.fromLTWH(0, 0, math.max(0.0, dialogRect.left - gap), size.height),
+        Rect.fromLTWH(
+          math.min(size.width, dialogRect.right + gap),
+          0,
+          math.max(0.0, size.width - dialogRect.right - gap),
+          size.height,
+        ),
+        Rect.fromLTWH(0, 0, size.width, math.max(0.0, dialogRect.top - gap)),
+        Rect.fromLTWH(
+          0,
+          math.min(size.height, dialogRect.bottom + gap),
+          size.width,
+          math.max(0.0, size.height - dialogRect.bottom - gap),
+        ),
+      ];
+      Rect? bestViewport;
+      var bestOverlapArea = -1.0;
+      var bestTotalArea = -1.0;
+      for (final viewport in candidateViewports) {
+        if (viewport.width < 80 || viewport.height < 80) continue;
+        final overlap = viewport.intersect(target);
+        final overlapArea = overlap.isEmpty
+            ? 0.0
+            : overlap.width * overlap.height;
+        final totalArea = viewport.width * viewport.height;
+        if (overlapArea > bestOverlapArea ||
+            (overlapArea == bestOverlapArea && totalArea > bestTotalArea)) {
+          bestOverlapArea = overlapArea;
+          bestTotalArea = totalArea;
+          bestViewport = viewport;
+        }
+      }
+      availableViewport = bestViewport;
+    }
     return resolvedPosition;
   }
 
@@ -2242,5 +2431,6 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
       position != oldDelegate.position ||
       dragged != oldDelegate.dragged ||
       bannerLocal != oldDelegate.bannerLocal ||
+      avoidRect != oldDelegate.avoidRect ||
       menuConstraints != oldDelegate.menuConstraints;
 }

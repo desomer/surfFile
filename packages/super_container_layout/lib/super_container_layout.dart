@@ -95,6 +95,8 @@ export 'widgets/editing/styles/style_extras_controls.dart';
 export 'widgets/surfaces/styled_surface.dart';
 export 'widgets/surfaces/super_container.dart';
 export 'widgets/editing/slots/editor_slot.dart';
+export 'widgets/editing/slots/editor_selection_region.dart'
+    show EditorSelectionOutline, EditorSelectionRegion;
 export 'widgets/editing/slots/editor_context_menu.dart';
 export 'widgets/editing/slots/editable_surface.dart';
 export 'widgets/components/super_layout/super_layout.dart';

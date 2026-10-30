@@ -793,16 +793,20 @@ void main() {
       final dialog = find.byKey(const ValueKey('editor-context-menu-dialog'));
       expect(dialog, findsOneWidget);
 
-      // 1. Context menu dialog is draggable via its header handle.
+      // 0. Context menu dialog avoids overlapping the selected target zone.
       final initialDialogRect = screenRect(tester, dialog);
+      final initialTargetRect = screenRect(tester, target);
+      expect(initialDialogRect.overlaps(initialTargetRect), isFalse);
+
+      // 1. Context menu dialog is draggable via its header handle.
       await tester.drag(
         find.byKey(const ValueKey('editor-context-menu-drag')),
-        const Offset(-60, 45),
+        const Offset(60, 80),
       );
       await tester.pumpAndSettle();
       final draggedDialogRect = screenRect(tester, dialog);
-      expect(draggedDialogRect.left, closeTo(initialDialogRect.left - 60, 1));
-      expect(draggedDialogRect.top, closeTo(initialDialogRect.top + 45, 1));
+      expect(draggedDialogRect.left, closeTo(initialDialogRect.left + 60, 1));
+      expect(draggedDialogRect.top, closeTo(initialDialogRect.top + 80, 1));
 
       // 2. Zoom toolbar and slider remain interactive while context menu is open.
       expect(find.byKey(const ValueKey('editor-zoom-toolbar')), findsOneWidget);

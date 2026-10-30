@@ -85,6 +85,7 @@ class _EditorZoomState extends State<EditorZoom>
     };
     LayoutSelection.focus.addListener(_schedule);
     _controller.dialog.addListener(_schedule);
+    _controller.contextMenuAvailable.addListener(_schedule);
     EditorInsertionPreview.active.addListener(_schedule);
   }
 
@@ -133,7 +134,9 @@ class _EditorZoomState extends State<EditorZoom>
     if (_controller.enabled && !_viewport.isEmpty) {
       var available = Offset.zero & _viewport;
       final viewport = _viewportKey.currentContext?.findRenderObject();
-      if (dialog?.available case final screen? when viewport is RenderBox) {
+      final reservedScreen =
+          dialog?.available ?? _controller.contextMenuAvailable.value;
+      if (reservedScreen case final screen? when viewport is RenderBox) {
         available = Rect.fromPoints(
           viewport.globalToLocal(screen.topLeft),
           viewport.globalToLocal(screen.bottomRight),
@@ -200,13 +203,15 @@ class _EditorZoomState extends State<EditorZoom>
             (rect.width >= widget.maxAutoZoomExtent ||
                 rect.height >= widget.maxAutoZoomExtent);
         if (!tooLarge) {
+          final hasReserved =
+              dialog != null || _controller.contextMenuAvailable.value != null;
           final automaticScale = math
               .min(
                 available.width * .7 / rect.width,
                 available.height * .7 / rect.height,
               )
               .clamp(
-                dialog == null ? EditorZoom.minScale : 0.0,
+                !hasReserved ? EditorZoom.minScale : 0.0,
                 EditorZoom.maxScale,
               );
           final scale = automaticScale;
@@ -423,6 +428,7 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.sliderScaleHandler = null;
     LayoutSelection.focus.removeListener(_schedule);
     _controller.dialog.removeListener(_schedule);
+    _controller.contextMenuAvailable.removeListener(_schedule);
     EditorInsertionPreview.active.removeListener(_schedule);
     _controller.dispose();
     _editMode?.removeListener(_schedule);
@@ -711,6 +717,7 @@ class EditorZoomController {
 
   final scale = ValueNotifier<double>(1.0);
   final openContextMenus = ValueNotifier<int>(0);
+  final contextMenuAvailable = ValueNotifier<Rect?>(null);
   Offset? toolbarPosition;
   final transform = ValueNotifier<({double scale, Offset offset})>((
     scale: 1.0,
@@ -772,6 +779,7 @@ class EditorZoomController {
       });
     }
     openContextMenus.dispose();
+    contextMenuAvailable.dispose();
     dialog.dispose();
     transform.dispose();
   }
