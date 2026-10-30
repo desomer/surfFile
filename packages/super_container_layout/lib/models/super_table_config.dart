@@ -3,6 +3,7 @@ import 'dart:ui' show Size;
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart' show Axis;
 
+import '../theme/container_style.dart';
 import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
@@ -120,6 +121,7 @@ class SuperTableConfig extends ComponentConfig {
     Map<String, String> slotTypes = const {},
     Map<String, Axis> zoneAxes = const {},
     Map<String, ZoneFlowConfig> zoneFlows = const {},
+    Map<String, ContainerStyle> zoneStyles = const {},
     Map<String, Size?> slotPreferredSizes = const {},
     Map<String, SlotSizeConstraints> slotSizeConstraints = const {},
     Map<String, String> slotLabels = const {},
@@ -134,6 +136,10 @@ class SuperTableConfig extends ComponentConfig {
        zoneFlows = Map.unmodifiable({
          for (final entry in zoneFlows.entries)
            if (!entry.value.isDefault) entry.key: entry.value,
+       }),
+       zoneStyles = Map.unmodifiable({
+         for (final entry in zoneStyles.entries)
+           if (entry.value != const ContainerStyle()) entry.key: entry.value,
        }),
        slotPreferredSizes = Map.unmodifiable(slotPreferredSizes),
        slotSizeConstraints = Map.unmodifiable(slotSizeConstraints),
@@ -151,6 +157,7 @@ class SuperTableConfig extends ComponentConfig {
         placements.keys.any((id) => id.trim().isEmpty) ||
         zoneAxes.keys.any((id) => id.trim().isEmpty) ||
         zoneFlows.keys.any((id) => id.trim().isEmpty) ||
+        zoneStyles.keys.any((id) => id.trim().isEmpty) ||
         slotTypes.keys.any((id) => id.trim().isEmpty) ||
         slotTypes.values.any((type) => type.trim().isEmpty) ||
         slotPreferredSizes.keys.any((id) => id.trim().isEmpty) ||
@@ -224,6 +231,7 @@ class SuperTableConfig extends ComponentConfig {
   final Map<String, String> slotTypes;
   final Map<String, Axis> zoneAxes;
   final Map<String, ZoneFlowConfig> zoneFlows;
+  final Map<String, ContainerStyle> zoneStyles;
   final Map<String, Size?> slotPreferredSizes;
   final Map<String, SlotSizeConstraints> slotSizeConstraints;
   final Map<String, String> slotLabels;
@@ -272,6 +280,8 @@ class SuperTableConfig extends ComponentConfig {
   Axis? zoneAxisOf(String zone) => zoneAxes[zone];
   ZoneFlowConfig zoneFlowOf(String zone) =>
       zoneFlows[zone] ?? const ZoneFlowConfig();
+  ContainerStyle zoneStyleOf(String zone) =>
+      zoneStyles[zone] ?? const ContainerStyle();
 
   Set<String> get placedSlotIds => {
     for (final ids in placements.values) ...ids,
@@ -298,6 +308,7 @@ class SuperTableConfig extends ComponentConfig {
     Map<String, String>? slotTypes,
     Map<String, Axis>? zoneAxes,
     Map<String, ZoneFlowConfig>? zoneFlows,
+    Map<String, ContainerStyle>? zoneStyles,
     Map<String, Size?>? slotPreferredSizes,
     Map<String, SlotSizeConstraints>? slotSizeConstraints,
     Map<String, String>? slotLabels,
@@ -320,6 +331,7 @@ class SuperTableConfig extends ComponentConfig {
     slotTypes: slotTypes ?? this.slotTypes,
     zoneAxes: zoneAxes ?? this.zoneAxes,
     zoneFlows: zoneFlows ?? this.zoneFlows,
+    zoneStyles: zoneStyles ?? this.zoneStyles,
     slotPreferredSizes: slotPreferredSizes ?? this.slotPreferredSizes,
     slotSizeConstraints: slotSizeConstraints ?? this.slotSizeConstraints,
     slotLabels: slotLabels ?? this.slotLabels,
@@ -410,6 +422,16 @@ class SuperTableConfig extends ComponentConfig {
     return copyWith(zoneFlows: next);
   }
 
+  SuperTableConfig withZoneStyle(String zone, ContainerStyle style) {
+    final next = {...zoneStyles};
+    if (style == const ContainerStyle()) {
+      next.remove(zone);
+    } else {
+      next[zone] = style;
+    }
+    return copyWith(zoneStyles: next);
+  }
+
   SuperTableConfig withSlotSize(String id, Size? size) => copyWith(
     slotPreferredSizes: {...slotPreferredSizes, id: size},
     slotSizeConstraints: {...slotSizeConstraints}..remove(id),
@@ -478,6 +500,12 @@ class SuperTableConfig extends ComponentConfig {
           for (final entry in zoneFlows.entries)
             if (!entry.value.isDefault) entry.key: entry.value.toJson(),
         },
+      if (zoneStyles.isNotEmpty)
+        'zoneStyles': {
+          for (final entry in zoneStyles.entries)
+            if (entry.value != const ContainerStyle())
+              entry.key: entry.value.toJson(),
+        },
       if (slotPreferredSizes.isNotEmpty)
         'slotPreferredSizes': {
           for (final entry in slotPreferredSizes.entries)
@@ -540,6 +568,12 @@ class SuperTableConfig extends ComponentConfig {
         'zoneFlows': {
           for (final entry in zoneFlows.entries)
             if (!entry.value.isDefault) entry.key: entry.value.toJson(),
+        },
+      if (zoneStyles.isNotEmpty)
+        'zoneStyles': {
+          for (final entry in zoneStyles.entries)
+            if (entry.value != const ContainerStyle())
+              entry.key: entry.value.toCompactJson(),
         },
       if (slotPreferredSizes.isNotEmpty)
         'slotPreferredSizes': {
@@ -649,11 +683,13 @@ class SuperTableConfig extends ComponentConfig {
       final rawLabels = value['slotLabels'] ?? const {};
       final rawAxes = value['zoneAxes'] ?? const {};
       final rawFlows = value['zoneFlows'] ?? const {};
+      final rawStyles = value['zoneStyles'] ?? const {};
       if (rawSizes is! Map ||
           rawConstraints is! Map ||
           rawLabels is! Map ||
           rawAxes is! Map ||
-          rawFlows is! Map) {
+          rawFlows is! Map ||
+          rawStyles is! Map) {
         throw const FormatException('Métadonnées de slots de Table invalides.');
       }
       if (rawLabels.entries.any(
@@ -680,6 +716,13 @@ class SuperTableConfig extends ComponentConfig {
           throw const FormatException('Flux de zone de Table invalide.');
         }
         parsedFlows[entry.key as String] = ZoneFlowConfig.fromJson(entry.value);
+      }
+      final parsedStyles = <String, ContainerStyle>{};
+      for (final entry in rawStyles.entries) {
+        if (entry.key is! String) {
+          throw const FormatException('Style de zone de Table invalide.');
+        }
+        parsedStyles[entry.key as String] = ContainerStyle.fromJson(entry.value);
       }
       if (rawConstraints.keys.any((key) => key is! String)) {
         throw const FormatException('Contrainte de slot de Table invalide.');
@@ -712,6 +755,7 @@ class SuperTableConfig extends ComponentConfig {
         slotTypes: types,
         zoneAxes: parsedAxes,
         zoneFlows: parsedFlows,
+        zoneStyles: parsedStyles,
         slotPreferredSizes: sizes,
         slotSizeConstraints: SlotSizeConstraints.parseMap(
           rawConstraints,
@@ -747,6 +791,7 @@ class SuperTableConfig extends ComponentConfig {
         !mapEquals(slotTypes, other.slotTypes) ||
         !mapEquals(zoneAxes, other.zoneAxes) ||
         !mapEquals(zoneFlows, other.zoneFlows) ||
+        !mapEquals(zoneStyles, other.zoneStyles) ||
         !mapEquals(slotPreferredSizes, other.slotPreferredSizes) ||
         !mapEquals(slotSizeConstraints, other.slotSizeConstraints) ||
         !mapEquals(slotLabels, other.slotLabels)) {
@@ -784,6 +829,9 @@ class SuperTableConfig extends ComponentConfig {
     ),
     Object.hashAllUnordered(
       zoneFlows.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    Object.hashAllUnordered(
+      zoneStyles.entries.map((e) => Object.hash(e.key, e.value)),
     ),
     Object.hashAllUnordered(
       slotPreferredSizes.entries.map((e) => Object.hash(e.key, e.value)),

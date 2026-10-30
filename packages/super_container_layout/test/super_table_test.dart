@@ -129,6 +129,10 @@ void main() {
         'cell:col_1': ['c1'],
       },
       slotTypes: const {'c0': 'registry:Value', 'c1': 'registry:Value'},
+      zoneStyles: const {
+        'header:col_0': ContainerStyle(color: Colors.indigo, radius: 6),
+        'bottom:col_1': ContainerStyle(color: Colors.teal, borderWidth: 1),
+      },
     );
 
     final encoded = config.toTypedJson();
@@ -136,6 +140,10 @@ void main() {
     expect(decoded, equals(config));
     expect(config.toCompactJson()['colFreezeLeftCount'], 1);
     expect(config.toCompactJson()['animateSelectionAndHover'], isFalse);
+    expect(
+      (config.toCompactJson()['zoneStyles'] as Map)['header:col_0'],
+      isNotNull,
+    );
   });
 
   testWidgets(
@@ -551,6 +559,107 @@ void main() {
       expect(
         tester.getTopLeft(hoverIndicatorRight).dy,
         closeTo(finalHoverTop, 0.5),
+      );
+    },
+  );
+
+  testWidgets(
+    'SuperTable header and bottom cells have no default background/border and support per-cell ContainerStyle',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      SuperTableConfig? lastConfig;
+
+      await mount(
+        tester,
+        SuperTable(
+          id: 'clients-table',
+          onConfigChanged: (cfg) => lastConfig = cfg,
+          config: SuperTableConfig(
+            binding: JsonTextBinding(repositoryId: repository, path: 'clients'),
+            colFreezeLeftCount: 1,
+            showHeaderRow: true,
+            showBottomRow: true,
+            columns: const [
+              SuperTableColumnConfig(id: 'col_0', title: 'Nom', width: 180),
+              SuperTableColumnConfig(id: 'col_1', title: 'Ville', width: 180),
+            ],
+            zoneStyles: const {
+              'header:col_1': ContainerStyle(color: Colors.deepPurple, radius: 6),
+              'bottom:col_0': ContainerStyle(color: Colors.orange, borderWidth: 2),
+            },
+            placements: const {
+              'cell:col_0': ['cell:col_0'],
+              'cell:col_1': ['cell:col_1'],
+              'bottom:col_0': ['bottom:col_0'],
+            },
+          ),
+          cells: const {
+            'col_0': SuperValue(
+              id: 'val-nom',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                binding: JsonTextBinding(path: 'nom'),
+              ),
+            ),
+            'col_1': SuperValue(
+              id: 'val-ville',
+              config: SuperValueConfig(
+                mode: SuperValueMode.display,
+                binding: JsonTextBinding(path: 'ville'),
+              ),
+            ),
+          },
+          bottoms: const {'col_0': Text('Total: 2 clients')},
+        ),
+        registry: registry,
+      );
+
+      final headerCol0 = tester.widget<EditableSurface>(
+        find.byKey(const ValueKey('super-table-header-cell-clients-table-col_0')),
+      );
+      expect(headerCol0.style, const ContainerStyle());
+      expect(headerCol0.fallbackColor, Colors.transparent);
+      expect(headerCol0.borderColor, Colors.transparent);
+
+      final bottomCol1 = tester.widget<EditableSurface>(
+        find.byKey(const ValueKey('super-table-bottom-cell-clients-table-col_1')),
+      );
+      expect(bottomCol1.style, const ContainerStyle());
+      expect(bottomCol1.fallbackColor, Colors.transparent);
+      expect(bottomCol1.borderColor, Colors.transparent);
+
+      final headerCol1 = tester.widget<EditableSurface>(
+        find.byKey(const ValueKey('super-table-header-cell-clients-table-col_1')),
+      );
+      expect(
+        headerCol1.style,
+        const ContainerStyle(color: Colors.deepPurple, radius: 6),
+      );
+
+      final bottomCol0 = tester.widget<EditableSurface>(
+        find.byKey(const ValueKey('super-table-bottom-cell-clients-table-col_0')),
+      );
+      expect(
+        bottomCol0.style,
+        const ContainerStyle(color: Colors.orange, borderWidth: 2),
+      );
+
+      // Update header cell style via EditableSurface callback
+      headerCol0.onStyleChanged?.call(
+        const ContainerStyle(color: Colors.cyan, borderWidth: 1),
+      );
+      await tester.pump();
+
+      expect(
+        lastConfig?.zoneStyleOf('header:col_0'),
+        const ContainerStyle(color: Colors.cyan, borderWidth: 1),
+      );
+      final updatedHeaderCol0 = tester.widget<EditableSurface>(
+        find.byKey(const ValueKey('super-table-header-cell-clients-table-col_0')),
+      );
+      expect(
+        updatedHeaderCol0.style,
+        const ContainerStyle(color: Colors.cyan, borderWidth: 1),
       );
     },
   );

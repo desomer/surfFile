@@ -64,14 +64,11 @@ String formatSuperTableTooltip({
 }
 
 class _ColumnDraft {
-  _ColumnDraft({
-    required this.id,
-    required String title,
-    required double width,
-  }) : title = TextEditingController(text: title),
-       width = TextEditingController(
-         text: width == width.roundToDouble() ? '${width.toInt()}' : '$width',
-       );
+  _ColumnDraft({required this.id, required String title, required double width})
+    : title = TextEditingController(text: title),
+      width = TextEditingController(
+        text: width == width.roundToDouble() ? '${width.toInt()}' : '$width',
+      );
 
   final String id;
   final TextEditingController title;
@@ -128,8 +125,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
   late bool _showBottomRow = widget.config.showBottomRow;
   late bool _allowAdd = widget.config.allowAdd;
   late bool _allowRemove = widget.config.allowRemove;
-  late bool _animateSelectionAndHover =
-      widget.config.animateSelectionAndHover;
+  late bool _animateSelectionAndHover = widget.config.animateSelectionAndHover;
   List<JsonRepositoryEntry> _repositories = [];
   String? _error;
   bool _busy = false;
@@ -276,6 +272,10 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
         for (final entry in widget.config.zoneFlows.entries)
           if (validZones.contains(entry.key)) entry.key: entry.value,
       },
+      zoneStyles: {
+        for (final entry in widget.config.zoneStyles.entries)
+          if (validZones.contains(entry.key)) entry.key: entry.value,
+      },
       slotPreferredSizes: {
         for (final entry in widget.config.slotPreferredSizes.entries)
           if (keptSlots.contains(entry.key)) entry.key: entry.value,
@@ -386,9 +386,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
                   enabled: _repository.isNotEmpty && !_busy,
                   decoration: InputDecoration(
                     labelText: 'Chemin du tableau JSON',
-                    hintText: _depth == 0
-                        ? 'clients'
-                        : 'clients[?].commandes',
+                    hintText: _depth == 0 ? 'clients' : 'clients[?].commandes',
                     helperText:
                         'Tableau JSON dont chaque élément devient une ligne.',
                   ),

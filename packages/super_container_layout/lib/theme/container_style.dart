@@ -567,6 +567,14 @@ class ContainerStyle {
           : TransformSpec.fromJson(value['transform']),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ContainerStyle && _sameStyleValue(toJson(), other.toJson()));
+
+  @override
+  int get hashCode => _styleValueHash(toJson());
 }
 
 String _formatStyleNumber(double value) =>
@@ -624,4 +632,3 @@ String formatContainerStyleTooltip({
     if (extras.isNotEmpty) extras.join(' · '),
   ].join('\n');
 }
-

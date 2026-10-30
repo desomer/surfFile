@@ -47,6 +47,7 @@ import '../../theme/style_extras.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_table_editor.dart';
 import '../editing/history/editor_history.dart';
+import '../editing/slots/editable_surface.dart';
 import '../surfaces/super_container.dart';
 import 'internal_widget/array/cw_table_layout.dart';
 import 'internal_widget/array/cw_table_row.dart';
@@ -622,8 +623,20 @@ class _SuperTableState extends State<SuperTable> {
     );
   }
 
+  void _updateZoneStyle(
+    ValueNotifier<SuperTableConfig> controller,
+    String zoneId,
+    ContainerStyle nextStyle,
+  ) {
+    final updated = controller.value.withZoneStyle(zoneId, nextStyle);
+    if (updated == controller.value) return;
+    controller.value = updated;
+    widget.onConfigChanged?.call(updated);
+  }
+
   Widget _buildHeaderCell(
     BuildContext context,
+    ValueNotifier<SuperTableConfig> controller,
     NativeComponentEditorState editor,
     SuperTableConfig config,
     int colIndex,
@@ -634,18 +647,17 @@ class _SuperTableState extends State<SuperTable> {
     final col = config.columns[colIndex];
     final zoneId = SuperTableConfig.headerZoneFor(col.id);
     final slots = editor.slotsFor(zoneId);
-    final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
+    final label = 'En-tête ${col.title.isEmpty ? col.id : col.title}';
+    return EditableSurface(
       key: ValueKey('super-table-header-cell-${widget.id}-${col.id}'),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest.withValues(alpha: 0.45),
-        border: Border(
-          bottom: BorderSide(color: colors.outlineVariant),
-          right: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
+      singleChild: false,
+      label: label,
+      menuType: 'En-tête',
+      menuIcon: Icons.table_rows_outlined,
+      style: config.zoneStyleOf(zoneId),
+      fallbackColor: Colors.transparent,
+      borderColor: Colors.transparent,
+      onStyleChanged: (next) => _updateZoneStyle(controller, zoneId, next),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -680,6 +692,7 @@ class _SuperTableState extends State<SuperTable> {
 
   Widget _buildBottomCell(
     BuildContext context,
+    ValueNotifier<SuperTableConfig> controller,
     NativeComponentEditorState editor,
     SuperTableConfig config,
     int colIndex,
@@ -689,18 +702,17 @@ class _SuperTableState extends State<SuperTable> {
     }
     final col = config.columns[colIndex];
     final zoneId = SuperTableConfig.bottomZoneFor(col.id);
-    final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
+    final label = 'Pied ${col.title.isEmpty ? col.id : col.title}';
+    return EditableSurface(
       key: ValueKey('super-table-bottom-cell-${widget.id}-${col.id}'),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        border: Border(
-          top: BorderSide(color: colors.outlineVariant),
-          right: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.5),
-          ),
-        ),
-      ),
+      singleChild: false,
+      label: label,
+      menuType: 'Pied',
+      menuIcon: Icons.table_rows_outlined,
+      style: config.zoneStyleOf(zoneId),
+      fallbackColor: Colors.transparent,
+      borderColor: Colors.transparent,
+      onStyleChanged: (next) => _updateZoneStyle(controller, zoneId, next),
       child: _buildZoneContent(
         context,
         editor,
@@ -1140,16 +1152,38 @@ class _SuperTableState extends State<SuperTable> {
                       }
                       return effectiveDataRowHeight;
                     },
-                    buildTopCell: (row, col) =>
-                        _buildHeaderCell(context, editor, config, col),
-                    buildBottomCell: (row, col) =>
-                        _buildBottomCell(context, editor, config, col),
+                    buildTopCell: (row, col) => _buildHeaderCell(
+                      context,
+                      controller,
+                      editor,
+                      config,
+                      col,
+                    ),
+                    buildBottomCell: (row, col) => _buildBottomCell(
+                      context,
+                      controller,
+                      editor,
+                      config,
+                      col,
+                    ),
                     buildLeftCell: (row, col) {
                       if (row < rowCountTop) {
-                        return _buildHeaderCell(context, editor, config, col);
+                        return _buildHeaderCell(
+                          context,
+                          controller,
+                          editor,
+                          config,
+                          col,
+                        );
                       }
                       if (row >= totalRowCount - rowCountBottom) {
-                        return _buildBottomCell(context, editor, config, col);
+                        return _buildBottomCell(
+                          context,
+                          controller,
+                          editor,
+                          config,
+                          col,
+                        );
                       }
                       return _buildBodyCell(
                         context,
