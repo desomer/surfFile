@@ -179,6 +179,10 @@ String uniqueInstanceId(
       ...registry.valueConfigById.keys,
       ...registry.actionConfigById.keys,
       ...registry.listConfigById.keys,
+      ...registry.tabConfigById.keys,
+      ...registry.chartConfigById.keys,
+      ...registry.treeViewConfigById.keys,
+      ...registry.tableConfigById.keys,
     ],
     for (final config in appearance.layouts.values) ...config.placedSlotIds,
     for (final config in appearance.components.values)

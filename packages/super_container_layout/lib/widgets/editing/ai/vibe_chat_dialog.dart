@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/call_gemini.dart';
-import '../../../ai/vibe_chat_attachment.dart';
 import '../../../models/component_config.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
@@ -12,6 +11,8 @@ import '../../../models/scaffold_page_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
+import '../../../models/super_table_config.dart';
+import '../../../models/super_tree_view_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
@@ -115,6 +116,8 @@ class VibeChatDialog extends StatefulWidget {
               : list.template.placementsOf(list.template.contentZone(zone));
         }(),
         final SuperTabConfig tab => tab.slotsOf(onlyZoneId),
+        final SuperTreeViewConfig tree => tree.slotsOf(onlyZoneId),
+        final SuperTableConfig table => table.slotsOf(onlyZoneId),
         final NativeComponentConfig native => native.slotsOf(onlyZoneId),
         final ScaffoldPageConfig scaffold =>
           scaffold.native.slotsOf(onlyZoneId),
@@ -125,6 +128,8 @@ class VibeChatDialog extends StatefulWidget {
       final SuperLayoutConfig layout => layout.placedSlotIds,
       final SuperListViewConfig list => list.template.placedSlotIds,
       final SuperTabConfig tab => tab.placedSlotIds,
+      final SuperTreeViewConfig tree => tree.placedSlotIds,
+      final SuperTableConfig table => table.placedSlotIds,
       final NativeComponentConfig native =>
         native.placements.values.expand((ids) => ids),
       final ScaffoldPageConfig scaffold =>

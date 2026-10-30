@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_layout.dart';
@@ -56,6 +57,9 @@ class CwTableRowState extends State<CwTableRow> {
   @override
   void didUpdateWidget(covariant CwTableRow oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.child != widget.child) {
+      newChild = null;
+    }
     if (oldWidget.info.row != widget.info.row ||
         oldWidget.info.isStartCols != widget.info.isStartCols ||
         oldWidget.info.tableState != widget.info.tableState) {
@@ -258,10 +262,18 @@ class CwTableRowState extends State<CwTableRow> {
           tableState.setHoveredRow(null);
         }
       },
-      child: GestureDetector(
+      child: Listener(
         behavior: HitTestBehavior.translucent,
-        onTap: () => tableState.selectRow(row),
-        child: styledRow,
+        onPointerDown: (event) {
+          if (event.buttons == kPrimaryButton) {
+            tableState.selectRow(row);
+          }
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => tableState.selectRow(row),
+          child: styledRow,
+        ),
       ),
     );
   }

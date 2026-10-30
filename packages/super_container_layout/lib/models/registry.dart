@@ -4,12 +4,14 @@ import 'component_config.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
+import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
 import 'super_chart_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_tab.dart';
+import '../widgets/components/super_table.dart';
 import '../widgets/components/super_tree_view.dart';
 import '../widgets/components/super_chart.dart';
 import '../widgets/components/super_value.dart';
@@ -55,6 +57,7 @@ enum EditorConfigKind {
   tab,
   chart,
   treeView,
+  table,
 }
 
 /// Key of one persisted configuration entry, e.g. `layouts[id]`.
@@ -75,6 +78,7 @@ class EditorConfigRef {
   const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
   const EditorConfigRef.chart(this.id) : kind = EditorConfigKind.chart;
   const EditorConfigRef.treeView(this.id) : kind = EditorConfigKind.treeView;
+  const EditorConfigRef.table(this.id) : kind = EditorConfigKind.table;
 
   final EditorConfigKind kind;
   final String id;
@@ -156,6 +160,10 @@ class ComponentDuplicationContract {
     EditorConfigRef.style(id),
     EditorConfigRef.treeView(id),
   ];
+  static List<EditorConfigRef> _table(String id) => [
+    EditorConfigRef.style(id),
+    EditorConfigRef.table(id),
+  ];
 
   /// Contracts of the components installed by [Registry.bootstrap].
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
@@ -166,6 +174,9 @@ class ComponentDuplicationContract {
   static const superChart = ComponentDuplicationContract(ownedConfigs: _chart);
   static const superTreeView = ComponentDuplicationContract(
     ownedConfigs: _treeView,
+  );
+  static const superTable = ComponentDuplicationContract(
+    ownedConfigs: _table,
   );
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _native,
@@ -296,6 +307,8 @@ class Registry {
   final Map<String, SuperChartConfig> _chartDefaults = {};
   final Map<String, ValueNotifier<SuperTreeViewConfig>> treeViewConfigById = {};
   final Map<String, SuperTreeViewConfig> _treeViewDefaults = {};
+  final Map<String, ValueNotifier<SuperTableConfig>> tableConfigById = {};
+  final Map<String, SuperTableConfig> _tableDefaults = {};
   final Map<String, NativeComponentConfig> _nativeDefaults = {};
   final Map<String, NativeComponentConfig? Function(Appearance)>
   _nativeMigrations = {};
@@ -312,6 +325,7 @@ class Registry {
     ...tabConfigById.keys,
     ...chartConfigById.keys,
     ...treeViewConfigById.keys,
+    ...tableConfigById.keys,
   };
 
   /// Includes runtime defaults that have not yet been persisted.
@@ -331,6 +345,8 @@ class Registry {
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
       for (final entry in chartConfigById.entries) entry.key: entry.value.value,
       for (final entry in treeViewConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in tableConfigById.entries)
         entry.key: entry.value.value,
       ...current.components,
     };
@@ -394,6 +410,10 @@ class Registry {
     for (final entry in treeViewConfigById.entries.toList()) {
       _treeViewDefaults[entry.key] = entry.value.value;
       treeViewController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in tableConfigById.entries.toList()) {
+      _tableDefaults[entry.key] = entry.value.value;
+      tableController(entry.key, fallback: entry.value.value);
     }
     _readAppearance();
   }
@@ -562,6 +582,12 @@ class Registry {
         entry.value.value = appearance.treeViewComponent(
           entry.key,
           fallback: _treeViewDefaults[entry.key]!,
+        );
+      }
+      for (final entry in tableConfigById.entries) {
+        entry.value.value = appearance.tableComponent(
+          entry.key,
+          fallback: _tableDefaults[entry.key]!,
         );
       }
     } finally {
@@ -783,6 +809,36 @@ class Registry {
         notifier.value.validate();
         if (!_syncing) {
           _appearance!.value = _appearance!.value.withTreeViewComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperTableConfig> tableController(
+    String id, {
+    SuperTableConfig? fallback,
+  }) {
+    final initial = fallback ?? SuperTableConfig();
+    initial.validate();
+    _tableDefaults.putIfAbsent(id, () => initial);
+    final notifier = tableConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.tableComponent(id, fallback: initial) ?? initial,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withTableComponent(
             id,
             notifier.value,
           );
@@ -1026,6 +1082,16 @@ class Registry {
       addConfigurator: treeViewAddConfigurator,
       previewBuilder: _buildTreeViewPreview,
       dynamicBuilder: (ctx) => SuperTreeView(id: ctx.id),
+    );
+
+    registry['Table'] = ComponentBuilderDynamic(
+      menuIcon: Icons.table_chart_outlined,
+      label: 'Table',
+      duplication: ComponentDuplicationContract.superTable,
+      tags: const {'table', 'list', 'layout', 'data'},
+      addConfigurator: tableAddConfigurator,
+      previewBuilder: _buildTablePreview,
+      dynamicBuilder: (ctx) => SuperTable(id: ctx.id),
     );
   }
 
@@ -1699,6 +1765,53 @@ Widget _buildTreeViewPreview(BuildContext context) {
         nodeRow('Header (Parent)', 'Data'),
         const SizedBox(height: 4),
         nodeRow('Header (Enfant)', 'Data', depth: 1),
+      ],
+    ),
+  );
+}
+
+Widget _buildTablePreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget tableRow(List<String> cells, {bool header = false}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: header ? colors.surfaceContainerHighest : colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(4),
+      border: Border.all(color: colors.outlineVariant),
+    ),
+    child: Row(
+      children: [
+        for (var i = 0; i < cells.length; i++) ...[
+          if (i > 0)
+            Container(
+              width: 1,
+              height: 12,
+              color: colors.outlineVariant,
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+            ),
+          Expanded(
+            child: Text(
+              cells[i],
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: header ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+  return IgnorePointer(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        tableRow(const ['Col 1', 'Col 2', 'Col 3'], header: true),
+        const SizedBox(height: 3),
+        tableRow(const ['Val A1', 'Val A2', 'Val A3']),
+        const SizedBox(height: 3),
+        tableRow(const ['Val B1', 'Val B2', 'Val B3']),
       ],
     ),
   );

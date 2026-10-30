@@ -10,6 +10,7 @@ import '../models/super_value_config.dart';
 import '../models/super_action_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/super_tab_config.dart';
+import '../models/super_table_config.dart';
 import '../models/super_tree_view_config.dart';
 import '../models/super_chart_config.dart';
 import '../models/editor_page_config.dart';
@@ -192,6 +193,17 @@ class Appearance {
   );
 
   Appearance withTreeViewComponent(String id, SuperTreeViewConfig value) =>
+      withComponent(id, value);
+
+  SuperTableConfig tableComponent(
+    String id, {
+    SuperTableConfig? fallback,
+  }) => component<SuperTableConfig>(
+    id,
+    fallback: fallback ?? SuperTableConfig(),
+  );
+
+  Appearance withTableComponent(String id, SuperTableConfig value) =>
       withComponent(id, value);
 
   SuperListViewConfig listComponent(

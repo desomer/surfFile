@@ -6,6 +6,7 @@ import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
+import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
 import '../../../models/super_chart_config.dart';
 import '../../../models/super_value_config.dart';
@@ -21,6 +22,7 @@ import 'forms/menu_anchor_add_form.dart';
 import 'forms/super_action_add_form.dart';
 import 'forms/super_value_add_form.dart';
 import 'forms/tab_add_form.dart';
+import 'forms/table_add_form.dart';
 import 'forms/tree_view_add_form.dart';
 
 export '../repositories/repository_binding_fields.dart'
@@ -33,6 +35,7 @@ export 'forms/menu_anchor_add_form.dart' show MenuAnchorAddForm;
 export 'forms/super_action_add_form.dart' show SuperActionAddForm;
 export 'forms/super_value_add_form.dart' show SuperValueAddForm;
 export 'forms/tab_add_form.dart' show TabAddForm;
+export 'forms/table_add_form.dart' show TableAddForm;
 export 'forms/tree_view_add_form.dart' show TreeViewAddForm;
 
 /// Add wizard settings of a `SuperValue`, written to `Registry.valueController`.
@@ -209,6 +212,40 @@ final treeViewAddConfigurator =
       bindingHelp:
           'Tableau ou objet JSON de nœuds récursifs affichés dans le TreeView.',
     );
+
+/// Add wizard settings of a `SuperTable`, written to `Registry.tableController`.
+final tableAddConfigurator = ComponentAddConfigurator<SuperTableConfig>(
+  initial: (_) => SuperTableConfig(),
+  builder: (context, draft, onChanged) =>
+      TableAddForm(draft: draft, onChanged: onChanged),
+  validate: (draft) {
+    if (draft.binding?.path.trim().isEmpty ?? false) {
+      return 'Chemin de liaison requis.';
+    }
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration de la Table invalide.';
+    }
+  },
+  summary: (draft) => [
+    ('Colonnes', '${draft.columns.length}'),
+    ('Figées à gauche', '${draft.colFreezeLeftCount}'),
+    ('Hauteur ligne', '${draft.rowHeight}'),
+    ('En-tête / Pied', '${_yes(draft.showHeaderRow)} / ${_yes(draft.showBottomRow)}'),
+    ('Liaison', _bindingLabel(draft.binding)),
+  ],
+  apply: (registry, id, draft) => registry.tableController(id).value = draft,
+  readBinding: (draft) => draft.binding,
+  writeBinding: (draft, binding) =>
+      draft.copyWith(binding: binding, clearBinding: binding == null),
+  bindingKeyPrefix: 'add-table',
+  bindingPathHint: 'clients ou clients[?].commandes',
+  bindingHelp: 'Chaque élément du tableau JSON devient une ligne de la table.',
+);
 
 /// Add wizard settings of a nested `SuperLayout`.
 final layoutAddConfigurator = ComponentAddConfigurator<SuperLayoutConfig>(

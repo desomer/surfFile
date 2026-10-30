@@ -308,6 +308,24 @@ class FrozenTableViewState extends State<FrozenTableView> {
   }
 
   @override
+  void didUpdateWidget(covariant FrozenTableView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialSelectedRow != oldWidget.initialSelectedRow &&
+        selectedRowNotifier.value != widget.initialSelectedRow) {
+      final previous = selectedRowNotifier.value;
+      selectedRowNotifier.value = widget.initialSelectedRow;
+      _notifyRowStates(previous);
+      _notifyRowStates(widget.initialSelectedRow);
+    }
+    for (final cache in visibleRowKeyA.values) {
+      cache.rowCells = null;
+    }
+    for (final cache in visibleRowKeyB.values) {
+      cache.rowCells = null;
+    }
+  }
+
+  @override
   void dispose() {
     _horizontalOffset.dispose();
     hoveredRowNotifier.dispose();

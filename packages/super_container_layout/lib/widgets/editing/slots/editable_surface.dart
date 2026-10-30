@@ -38,6 +38,7 @@ class EditableSurface extends StatefulWidget {
     this.horizontalBorder = false,
     this.decorate = true,
     this.applyPadding,
+    this.applyMargin = true,
     this.editable = true,
     this.resolveSelectionAndHover = true,
     this.onEdit,
@@ -74,6 +75,7 @@ class EditableSurface extends StatefulWidget {
   /// Disables visual decoration while retaining style padding and margins.
   final bool decorate;
   final bool? applyPadding;
+  final bool applyMargin;
   final bool editable;
 
   /// When false, delegates visual `selected` and `hover` state resolution to an
@@ -334,7 +336,9 @@ class EditableSurfaceState extends State<EditableSurface>
                 ? 0.0
                 : surfaceStyle.maxRadius;
             return Padding(
-              padding: surfaceStyle.outerMargin,
+              padding: widget.applyMargin
+                  ? surfaceStyle.outerMargin
+                  : EdgeInsets.zero,
               child: MouseRegion(
                 opaque: false,
                 onEnter: (_) => _setHovered(true),

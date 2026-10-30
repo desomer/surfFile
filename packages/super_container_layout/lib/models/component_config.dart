@@ -7,6 +7,7 @@ import 'super_chart_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
+import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
 import 'super_value_config.dart';
 
@@ -61,6 +62,10 @@ abstract final class ComponentConfigCatalog {
     'treeView': ComponentConfigCodec<SuperTreeViewConfig>(
       type: 'treeView',
       fromJson: SuperTreeViewConfig.fromJson,
+    ),
+    'table': ComponentConfigCodec<SuperTableConfig>(
+      type: 'table',
+      fromJson: SuperTableConfig.fromJson,
     ),
   };
 

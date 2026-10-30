@@ -21,6 +21,9 @@ class IterableContent extends StatefulWidget {
     this.onStyleChanged,
     this.editable = true,
     this.shrinkWrap = false,
+    this.decorate = true,
+    this.applyPadding,
+    this.applyMargin = true,
     this.resolveSelectionAndHover = true,
     this.onEditSize,
     this.sizeConstraints,
@@ -37,6 +40,9 @@ class IterableContent extends StatefulWidget {
   final ValueChanged<ContainerStyle>? onStyleChanged;
   final bool editable;
   final bool shrinkWrap;
+  final bool decorate;
+  final bool? applyPadding;
+  final bool applyMargin;
   final bool resolveSelectionAndHover;
   final Future<void> Function()? onEditSize;
   final SlotSizeConstraints? sizeConstraints;
@@ -83,6 +89,9 @@ class _IterableContentState extends State<IterableContent> {
         menuType: 'IterableContent',
         menuIcon: Icons.loop,
         editable: widget.editable,
+        decorate: widget.decorate,
+        applyPadding: widget.applyPadding,
+        applyMargin: widget.applyMargin,
         resolveSelectionAndHover: widget.resolveSelectionAndHover,
         fallbackColor: Colors.transparent,
         style: value,
