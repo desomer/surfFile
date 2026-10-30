@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import '../history/editor_history.dart';
-import '../slots/editor_context_menu.dart';
 import '../slots/editor_slot.dart';
 import 'editor_dialog_header.dart';
 

@@ -10,8 +10,6 @@ import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/services/pages/editor_page_router.dart';
 import 'package:super_container_layout/theme/appearance_slot.dart';
 import 'package:super_container_layout/widgets/appearance/appearance_settings.dart';
-import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_layout.dart';
-import 'package:super_container_layout/widgets/components/internal_widget/treeview/tree_view.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';

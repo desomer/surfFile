@@ -263,7 +263,9 @@ void main() {
       final store = AppearanceStore();
       await store.save(appearance.value);
       expect(
-        (await store.load()).tryComponent<SuperActionConfig>('persisted-action')?.label,
+        (await store.load())
+            .tryComponent<SuperActionConfig>('persisted-action')
+            ?.label,
         'Bouton Modifié',
       );
 
@@ -403,72 +405,73 @@ void main() {
       sourcePageId: 'home',
       targetPageId: 'copy',
     );
-    expect(
-      duplicated.componentsOfType<SuperActionConfig>().length,
-      2,
-    );
+    expect(duplicated.componentsOfType<SuperActionConfig>().length, 2);
   });
 
-  testWidgets('superActionAddConfigurator configures draft in add wizard and surface variant renders StyledSurface', (
-    tester,
-  ) async {
-    final registry = Registry()..bootstrap(availableFontFamilies: ['Roboto']);
-    final configurator = superActionAddConfigurator(const ['Roboto']);
-    var draft = const SuperActionConfig();
+  testWidgets(
+    'superActionAddConfigurator configures draft in add wizard and surface variant renders StyledSurface',
+    (tester) async {
+      final registry = Registry()..bootstrap(availableFontFamilies: ['Roboto']);
+      final configurator = superActionAddConfigurator(const ['Roboto']);
+      var draft = const SuperActionConfig();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, setState) => configurator.buildDraft(
-              context,
-              draft,
-              (next) => setState(() => draft = next as SuperActionConfig),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: StatefulBuilder(
+              builder: (context, setState) => configurator.buildDraft(
+                context,
+                draft,
+                (next) => setState(() => draft = next as SuperActionConfig),
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('Texte + Icône'));
-    await tester.pumpAndSettle();
-    expect(draft.kind, SuperActionKind.textAndIcon);
+      await tester.tap(find.text('Texte + Icône'));
+      await tester.pumpAndSettle();
+      expect(draft.kind, SuperActionKind.textAndIcon);
 
-    await tester.enterText(
-      find.byKey(const ValueKey('add-action-label')),
-      'Nouveau Bouton',
-    );
-    await tester.pump();
-    expect(draft.label, 'Nouveau Bouton');
-    expect(configurator.validateDraft(draft), isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('add-action-label')),
+        'Nouveau Bouton',
+      );
+      await tester.pump();
+      expect(draft.label, 'Nouveau Bouton');
+      expect(configurator.validateDraft(draft), isNull);
 
-    configurator.applyDraft(registry, 'new-act', draft);
-    expect(registry.actionController('new-act').value.label, 'Nouveau Bouton');
-    expect(
-      registry.actionController('new-act').value.kind,
-      SuperActionKind.textAndIcon,
-    );
+      configurator.applyDraft(registry, 'new-act', draft);
+      expect(
+        registry.actionController('new-act').value.label,
+        'Nouveau Bouton',
+      );
+      expect(
+        registry.actionController('new-act').value.kind,
+        SuperActionKind.textAndIcon,
+      );
 
-    // Render surface variant with custom style
-    await tester.pumpWidget(
-      host(
-        SuperAction(
-          id: 'surface-act',
-          config: const SuperActionConfig(
-            kind: SuperActionKind.textAndIcon,
-            variant: SuperActionVariant.surface,
-            label: 'Surface Action',
-            icon: 'check',
-            radius: 20,
-            style: ContainerStyle(hoverEffect: true),
+      // Render surface variant with custom style
+      await tester.pumpWidget(
+        host(
+          SuperAction(
+            id: 'surface-act',
+            config: const SuperActionConfig(
+              kind: SuperActionKind.textAndIcon,
+              variant: SuperActionVariant.surface,
+              label: 'Surface Action',
+              icon: 'check',
+              radius: 20,
+              style: ContainerStyle(hoverEffect: true),
+            ),
           ),
         ),
-      ),
-    );
-    expect(find.byType(StyledSurface), findsOneWidget);
-    expect(find.text('Surface Action'), findsOneWidget);
-    expect(find.byIcon(Icons.check), findsOneWidget);
-  });
+      );
+      expect(find.byType(StyledSurface), findsOneWidget);
+      expect(find.text('Surface Action'), findsOneWidget);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+    },
+  );
 
   test('Unified Appearance.components map and ComponentConfig polymorphism round-trip through codec', () {
     final appearance = Appearance(
@@ -522,4 +525,117 @@ void main() {
     expect(decoded.nativeComponent('n1').slotsOf('child'), ['v1']);
     expect(decoded.scaffoldPage('s1').slotsOf(ScaffoldPageRegion.body), ['l1']);
   });
+
+  testWidgets(
+    'SuperAction editor displays visual binding indicators and supports quick clear',
+    (tester) async {
+      late Directory tempDir;
+      late JsonRepositoryStore repoStore;
+      late String repoId;
+      await tester.runAsync(() async {
+        tempDir = await Directory.systemTemp.createTemp(
+          'super_action_editor_bind_',
+        );
+        repoStore = JsonRepositoryStore(tempDir);
+        await repoStore.create('Main');
+        repoId = await repoStore.idOf('Main');
+      });
+      addTearDown(() async {
+        repoStore.dispose();
+        await tempDir.delete(recursive: true);
+      });
+
+      SuperActionConfig? saved;
+      final initial = SuperActionConfig(
+        label: 'Valider',
+        propertyBindings: {
+          SuperActionProperty.label: JsonTextBinding(
+            repositoryId: repoId,
+            path: 'btn.label',
+          ),
+        },
+        states: ActionConfigStates(
+          binding: JsonTextBinding(repositoryId: repoId, path: 'btn.state'),
+        ),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: JsonRepositoryScope(
+            store: repoStore,
+            child: Scaffold(
+              body: Builder(
+                builder: (context) => TextButton(
+                  onPressed: () async {
+                    saved = await showSuperActionEditor(
+                      context: context,
+                      config: initial,
+                      availableFontFamilies: const ['Roboto'],
+                    );
+                  },
+                  child: const Text('Open Action Editor'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Action Editor'));
+      await tester.pumpAndSettle();
+
+      // State binding visual indicators
+      expect(
+        find.byKey(const ValueKey('super-action-state-binding-badge')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-action-state-binding-banner')),
+        findsOneWidget,
+      );
+      expect(find.text('Lié à : btn.state'), findsOneWidget);
+
+      // Bound property ('label') visual indicators vs unbound ('tooltip')
+      expect(
+        find.byKey(const ValueKey('super-action-bind-label-badge')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-action-bind-label-bound-tile')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-action-bind-label-binding-banner')),
+        findsOneWidget,
+      );
+      expect(find.text('Lié à : btn.label'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('super-action-bind-tooltip-badge')),
+        findsNothing,
+      );
+
+      // Quick clear button removes the property binding
+      final clearBtn = find.byKey(
+        const ValueKey('super-action-bind-label-binding-clear'),
+      );
+      await tester.ensureVisible(clearBtn);
+      await tester.tap(clearBtn);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('super-action-bind-label-badge')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('super-action-bind-label-bound-tile')),
+        findsNothing,
+      );
+      expect(find.text('Lié à : btn.label'), findsNothing);
+
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      expect(saved, isNotNull);
+      expect(saved!.propertyBindings, isEmpty);
+    },
+  );
 }

@@ -1909,8 +1909,7 @@ class _SuperValueJsonExtractDialogState
             },
             slotTypes: {singleChildId: cardNative.slotTypeOf(singleChildId)},
             slotLabels: {
-              if (cardNative.slotLabels[singleChildId] case final lbl?)
-                singleChildId: lbl,
+              singleChildId: ?cardNative.slotLabels[singleChildId],
             },
           );
           unwrappedOuterId = firstNode.slotId;
@@ -2021,7 +2020,7 @@ class _SuperValueJsonExtractDialogState
       slotSizeConstraints: {
         for (final entry in currentParentConfig.slotSizeConstraints.entries)
           if (!removedFromParent.contains(entry.key)) entry.key: entry.value,
-        if (listConstraints != null) listId: listConstraints,
+        listId: ?listConstraints,
       },
       grid: currentParentConfig.grid?.copyWith(
         items: {
@@ -3052,10 +3051,15 @@ class DataTargetElement implements EditorTargetItem {
     this.existingBindings = const [],
   });
 
+  @override
   final String id;
+  @override
   final String label;
+  @override
   final EditorSlotState slot;
+  @override
   final IconData? icon;
+  @override
   final int depth;
   final List<ExtractableComponentTarget> extractableTargets;
   final List<DetectedRecurringBlockGroup> recurringGroups;

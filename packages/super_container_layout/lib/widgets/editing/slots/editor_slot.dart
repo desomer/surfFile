@@ -962,7 +962,7 @@ class EditorSlotState extends State<EditorSlot> {
       if (!selectTarget) return null;
       final overlayRect = Offset.zero & overlay.size;
       final candidateContexts = <BuildContext>[
-        if (targetContext != null) targetContext,
+        ?targetContext,
         context,
         ?LayoutSelection.focus.value?.context,
       ];
