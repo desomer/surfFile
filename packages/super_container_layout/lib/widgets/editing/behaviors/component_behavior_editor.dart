@@ -6,11 +6,12 @@ import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import '../dialogs/editor_target_selector.dart';
 import '../history/editor_history.dart';
 
 /// Element cible pouvant recevoir un comportement.
 @immutable
-class BehaviorTargetElement {
+class BehaviorTargetElement implements EditorTargetItem {
   const BehaviorTargetElement({
     required this.id,
     required this.label,
@@ -333,115 +334,29 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'Choisir l’élément cible',
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+          EditorTargetSelector<BehaviorTargetElement>(
+            targets: widget.targets,
+            selected: _selectedTarget,
+            onSelected: (target) => setState(() => _selectedTarget = target),
+            subtitle:
+                'Sélectionnez le composant qui déclenchera ce comportement :',
+            itemKeyBuilder: (target) =>
+                ValueKey('${widget.keyPrefix}-target-${target.id}'),
+            isSelectedPredicate: (target, selected) => target.id == selected.id,
+            trailingBuilder: (context, target) {
+              final existing =
+                  appearance?.behaviorsFor(target.id) ??
+                  target.existingBehaviors;
+              if (existing.isEmpty) return null;
+              return Chip(
+                label: Text(
+                  '${existing.length} comportement${existing.length > 1 ? 's' : ''}',
+                  style: theme.textTheme.labelSmall,
+                ),
+                padding: EdgeInsets.zero,
+              );
+            },
           ),
-          const SizedBox(height: 4),
-          Text(
-            'Sélectionnez le composant qui déclenchera ce comportement :',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 12),
-          for (final target in widget.targets) ...[
-            Builder(
-              builder: (context) {
-                final isSelected = _selectedTarget.id == target.id;
-                final existing =
-                    appearance?.behaviorsFor(target.id) ??
-                    target.existingBehaviors;
-
-                return Card(
-                  key: ValueKey('${widget.keyPrefix}-target-${target.id}'),
-                  elevation: isSelected ? 2 : 0,
-                  color: isSelected
-                      ? colors.secondaryContainer.withValues(alpha: .4)
-                      : colors.surfaceContainerLow,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    side: BorderSide(
-                      color: isSelected
-                          ? colors.primary
-                          : colors.outlineVariant,
-                      width: isSelected ? 2 : 1,
-                    ),
-                  ),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => setState(() => _selectedTarget = target),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Row(
-                        children: [
-                          Icon(
-                            isSelected
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            color: isSelected ? colors.primary : colors.outline,
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? colors.primary
-                                  : colors.surfaceContainerHigh,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              target.icon ??
-                                  (target.depth == 0
-                                      ? Icons.widgets_outlined
-                                      : Icons.folder_outlined),
-                              size: 18,
-                              color: isSelected
-                                  ? colors.onPrimary
-                                  : colors.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  target.label,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                Text(
-                                  'ID : ${target.id}',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (existing.isNotEmpty)
-                            Chip(
-                              label: Text(
-                                '${existing.length} comportement${existing.length > 1 ? 's' : ''}',
-                                style: theme.textTheme.labelSmall,
-                              ),
-                              padding: EdgeInsets.zero,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
           Builder(
             builder: (context) {
               final existing =

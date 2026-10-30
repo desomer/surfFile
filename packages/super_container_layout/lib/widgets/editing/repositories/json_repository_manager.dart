@@ -12,14 +12,23 @@ import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
 
 class JsonRepositoryManager extends StatefulWidget {
-  const JsonRepositoryManager({this.store, this.appearance, super.key});
+  const JsonRepositoryManager({
+    this.store,
+    this.appearance,
+    this.initialRepositoryId,
+    super.key,
+  });
 
   static const _preferredWidth = AlwaysStoppedAnimation<double>(900);
 
   final JsonRepositoryStore? store;
   final ValueNotifier<Appearance>? appearance;
+  final String? initialRepositoryId;
 
-  static Future<void> show(BuildContext context) {
+  static Future<void> show(
+    BuildContext context, {
+    String? initialRepositoryId,
+  }) {
     final store = JsonRepositoryScope.maybeOf(context);
     final appearance = AppearanceScope.controllerOf(context);
     final zoom = EditorZoomScope.controllerOf(context);
@@ -28,8 +37,11 @@ class JsonRepositoryManager extends StatefulWidget {
       target: zoom?.contentContext,
       preferredWidth: _preferredWidth,
       barrierDismissible: false,
-      builder: (_) =>
-          JsonRepositoryManager(store: store, appearance: appearance),
+      builder: (_) => JsonRepositoryManager(
+        store: store,
+        appearance: appearance,
+        initialRepositoryId: initialRepositoryId,
+      ),
     );
   }
 
@@ -60,7 +72,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
       final store = widget.store ?? JsonRepositoryStore.defaultStore();
       if (widget.store == null) _ownedStore = store;
       _folder.text = store.directory.path;
-      await _loadDirectory(store);
+      await _loadDirectory(store, initialId: widget.initialRepositoryId);
     });
   }
 
@@ -121,18 +133,33 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     return result == true && mounted;
   }
 
-  Future<void> _loadDirectory(JsonRepositoryStore store) async {
+  Future<void> _loadDirectory(
+    JsonRepositoryStore store, {
+    String? initialId,
+  }) async {
     final names = await store.list();
+    String? preselectedName;
+    String? preselectedId;
+    String preselectedText = '';
+    if (initialId != null && initialId.isNotEmpty) {
+      final catalog = await store.catalog();
+      final match = catalog.where((entry) => entry.id == initialId).firstOrNull;
+      if (match != null) {
+        preselectedName = match.name;
+        preselectedId = match.id;
+        preselectedText = await store.read(match.name);
+      }
+    }
     if (!mounted) return;
     _store?.removeListener(_repositoryChanged);
     store.addListener(_repositoryChanged);
     setState(() {
       _store = store;
       _names = names;
-      _selected = null;
-      _selectedId = null;
-      _savedText = '';
-      _text.clear();
+      _selected = preselectedName;
+      _selectedId = preselectedId;
+      _savedText = preselectedText;
+      _text.text = preselectedText;
     });
   }
 

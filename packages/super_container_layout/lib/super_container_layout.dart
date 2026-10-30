@@ -82,6 +82,7 @@ export 'widgets/editing/history/editor_history.dart';
 export 'widgets/editing/repositories/json_repository_manager.dart';
 export 'widgets/editing/repositories/repository_binding_fields.dart';
 export 'widgets/editing/dialogs/editor_tabbed_wizard.dart';
+export 'widgets/editing/dialogs/editor_target_selector.dart';
 export 'widgets/editing/dialogs/super_value_json_extract_dialog.dart';
 export 'widgets/surfaces/interaction_effect_box.dart';
 export 'widgets/components/super_layout/layout_selection.dart';

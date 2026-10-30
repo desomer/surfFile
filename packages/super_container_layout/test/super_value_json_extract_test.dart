@@ -1544,4 +1544,176 @@ void main() {
       expect(find.text('Carte Beta'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'top-bar Donnée… button opens target selector, allows extracting JSON or opening JsonRepositoryManager when already bound',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final tempDir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('data_button_wizard_test_'),
+      ))!;
+      addTearDown(() async {
+        await tester.runAsync(() async {
+          if (await tempDir.exists()) {
+            await tempDir.delete(recursive: true);
+          }
+        });
+      });
+      final repoStore = JsonRepositoryStore(tempDir);
+      addTearDown(repoStore.dispose);
+
+      await tester.runAsync(() async {
+        await repoStore.create('existing_repo');
+        await repoStore.save(
+          'existing_repo',
+          '{"Ville": "Lyon"}\n',
+          expectedText: '{}\n',
+        );
+      });
+      final existingRepoId = (await tester.runAsync(
+        () => repoStore.idOf('existing_repo'),
+      ))!;
+
+      final registry = Registry()..bootstrap();
+      const initialLayout = SuperLayoutConfig(
+        placements: {
+          SuperLayoutZone.center: ['v_unbound', 'v_bound'],
+        },
+        slotTypes: {'v_unbound': 'factory:Value', 'v_bound': 'factory:Value'},
+        slotLabels: {'v_unbound': 'Pays', 'v_bound': 'VilleLiee'},
+      );
+      final layoutController = registry.layoutController(
+        'root',
+        fallback: initialLayout,
+      );
+
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => JsonRepositoryScope(
+              store: repoStore,
+              child: Scaffold(
+                body: Center(
+                  child: SizedBox(
+                    key: hostKey,
+                    width: 800,
+                    height: 600,
+                    child: ValueListenableBuilder<SuperLayoutConfig>(
+                      valueListenable: layoutController,
+                      builder: (_, config, _) => SuperLayout(
+                        id: 'root',
+                        label: 'FormulaireDonnees',
+                        config: config,
+                        onChanged: (value) => layoutController.value = value,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+
+      final context = tester.element(find.byKey(hostKey));
+      final appearance = AppearanceScope.controllerOf(context)!;
+      appearance.value = appearance.value.copyWith(
+        layouts: {'root': initialLayout},
+        components: {
+          'v_unbound': const SuperValueConfig(
+            mode: SuperValueMode.display,
+            initialText: 'France',
+          ),
+          'v_bound': SuperValueConfig(
+            mode: SuperValueMode.display,
+            initialText: 'Paris',
+            binding: JsonTextBinding(
+              repositoryId: existingRepoId,
+              path: 'Ville',
+            ),
+          ),
+        },
+      );
+      await tester.runAsync(() async {
+        for (var i = 0; i < 15; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+
+      // Right-click on the bound SuperValue ('Lyon') and click 'Donnée…' in the top bar
+      await tester.tap(find.text('Lyon'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('style-menu-data')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('style-menu-data')));
+      await tester.pumpAndSettle();
+
+      // Verify the Data Wizard opens with the hierarchy of targets and shows the active binding badge
+      expect(find.byKey(const ValueKey('data-wizard-dialog')), findsOneWidget);
+      expect(find.textContaining('1 liaison active (Ville)'), findsWidgets);
+
+      // Select 'Gestionnaire de repositories…' action and continue
+      await tester.tap(
+        find.byKey(const ValueKey('data-wizard-action-repo-manager')),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const ValueKey('data-wizard-continue')));
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+
+      // Verify JsonRepositoryManager opened and preselected 'existing_repo'
+      expect(find.byType(JsonRepositoryManager), findsOneWidget);
+      expect(find.textContaining('"Lyon"'), findsWidgets);
+
+      // Close JsonRepositoryManager
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+
+      // Now right-click again, click 'Donnée…', select parent 'FormulaireDonnees' and extract JSON
+      await tester.tap(find.text('France'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-data')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('data-target-FormulaireDonnees')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('data-wizard-continue')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('super-value-extract-dialog')),
+        findsOneWidget,
+      );
+      final jsonField = tester.widget<TextField>(
+        find.byKey(const ValueKey('super-value-extract-json')),
+      );
+      expect(jsonDecode(jsonField.controller!.text), {
+        'Pays': 'France',
+        'VilleLiee': 'Lyon',
+      });
+
+      await tester.tap(find.byKey(const ValueKey('super-value-extract-close')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

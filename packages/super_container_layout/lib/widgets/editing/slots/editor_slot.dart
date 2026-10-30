@@ -648,6 +648,61 @@ class EditorSlotState extends State<EditorSlot> {
     return targets;
   }
 
+  List<DataTargetElement> _dataTargets(List<(int, Object)> entries) {
+    final targets = <DataTargetElement>[];
+    final titles = <String, int>{};
+    String unique(String title) {
+      final count = titles[title] = (titles[title] ?? 0) + 1;
+      return switch (count) {
+        1 => title,
+        2 => '$title (parent)',
+        _ => '$title (parent ${count - 1})',
+      };
+    }
+
+    for (final (index, entry) in entries) {
+      if (entry is EditorSlotState && entry.mounted) {
+        final id = entry.effectiveComponentId;
+        targets.add(
+          DataTargetElement(
+            id: id,
+            label: unique(entry.label),
+            slot: entry,
+            icon:
+                entry.widget.menuIcon ??
+                entry.componentLabel?.menuIcon ??
+                (index == 0 ? Icons.widgets_outlined : Icons.folder_outlined),
+            depth: index,
+            extractableTargets: collectExtractableTargetsFromSlot(entry),
+            recurringGroups: detectRecurringBlockGroups(entry),
+            existingBindings: collectExistingBindingsFromSlot(entry),
+          ),
+        );
+      }
+    }
+
+    if (targets.isEmpty && mounted) {
+      final id = effectiveComponentId;
+      targets.add(
+        DataTargetElement(
+          id: id,
+          label: label,
+          slot: this,
+          icon:
+              widget.menuIcon ??
+              componentLabel?.menuIcon ??
+              Icons.widgets_outlined,
+          depth: 0,
+          extractableTargets: collectExtractableTargetsFromSlot(this),
+          recurringGroups: detectRecurringBlockGroups(this),
+          existingBindings: collectExistingBindingsFromSlot(this),
+        ),
+      );
+    }
+
+    return targets;
+  }
+
   /// Opens the context menu for the editable target rooted at [targetContext]
   /// without changing the current selection path.
   static Future<void> openMenuFromContext(
@@ -809,6 +864,7 @@ class EditorSlotState extends State<EditorSlot> {
     final hasMenuActions = extraActions.any((action) => !action.inline);
     final insertions = _insertionLevels(actions);
     final behaviorTargets = _behaviorTargets(entries);
+    final dataTargets = _dataTargets(entries);
     // Inline actions only render inside an editable entry, never on their own.
     if (entries.isEmpty && !hasMenuActions && insertions.isEmpty) return;
     final overlay =
@@ -836,8 +892,8 @@ class EditorSlotState extends State<EditorSlot> {
         final top = math.max(position.dy, minTop);
         final maxHeight = math.max(120.0, overlay.size.height - minTop - 8);
         menuConstraints = BoxConstraints(
-          minWidth: 240,
-          maxWidth: 420,
+          minWidth: 420,
+          maxWidth: 620,
           maxHeight: maxHeight,
         );
         menuPosition = RelativeRect.fromLTRB(
@@ -851,8 +907,8 @@ class EditorSlotState extends State<EditorSlot> {
         final bottomEdge = math.min(position.dy, maxBottom);
         final maxHeight = math.max(120.0, bottomEdge - 8);
         menuConstraints = BoxConstraints(
-          minWidth: 240,
-          maxWidth: 420,
+          minWidth: 420,
+          maxWidth: 620,
           maxHeight: maxHeight,
         );
         menuPosition = RelativeRect.fromLTRB(
@@ -1039,6 +1095,60 @@ class EditorSlotState extends State<EditorSlot> {
                                 Flexible(
                                   child: _menuTitle(
                                     'Comportement…',
+                                    destination: null,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelLarge,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 5,
+                      child: Tooltip(
+                        message: 'Extraire ou gérer les données JSON',
+                        child: InkWell(
+                          key: const ValueKey('style-menu-data'),
+                          borderRadius: BorderRadius.circular(6),
+                          onTap: () => Navigator.of(context)
+                              .pop<Future<void> Function()>(
+                                () => showComponentDataWizard(
+                                  context: context,
+                                  targets: dataTargets,
+                                  target: context,
+                                ),
+                              ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 3,
+                              horizontal: 2,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 22,
+                                  height: 22,
+                                  decoration: BoxDecoration(
+                                    color: colors.secondary,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.data_object,
+                                    size: 14,
+                                    color: colors.onSecondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: _menuTitle(
+                                    'Donnée…',
                                     destination: null,
                                     style: Theme.of(context)
                                         .textTheme

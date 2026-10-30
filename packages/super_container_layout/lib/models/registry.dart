@@ -934,6 +934,30 @@ class Registry {
       ),
     );
 
+    registry['Card'] = ComponentBuilderDynamic(
+      menuIcon: Icons.crop_square,
+      label: 'Card / Container / Image',
+      duplication: ComponentDuplicationContract.newContainer,
+      tags: const {'container'},
+      addConfigurator: containerAddConfigurator,
+      previewBuilder: _buildCardPreview,
+      dynamicBuilder: (xuiCtx) => Builder(
+        builder: (context) {
+          final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
+          return ValueListenableBuilder<ContainerStyle>(
+            valueListenable: style,
+            builder: (context, value, _) => EditableSurface(
+              id: xuiCtx.id,
+              label: 'Card',
+              menuType: 'Card',
+              style: value,
+              onStyleChanged: (value) => style.value = value,
+            ),
+          );
+        },
+      ),
+    );
+
     registry['Value'] = ComponentBuilderDynamic(
       menuIcon: Icons.text_fields,
       label: 'Text / Input',
@@ -954,30 +978,6 @@ class Registry {
       previewBuilder: _buildActionPreview,
       dynamicBuilder: (ctx) =>
           SuperAction(id: ctx.id, availableFontFamilies: availableFontFamilies),
-    );
-
-    registry['Card'] = ComponentBuilderDynamic(
-      menuIcon: Icons.crop_square,
-      label: 'Card / Image',
-      duplication: ComponentDuplicationContract.newContainer,
-      tags: const {'container'},
-      addConfigurator: containerAddConfigurator,
-      previewBuilder: _buildCardPreview,
-      dynamicBuilder: (xuiCtx) => Builder(
-        builder: (context) {
-          final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
-          return ValueListenableBuilder<ContainerStyle>(
-            valueListenable: style,
-            builder: (context, value, _) => EditableSurface(
-              id: xuiCtx.id,
-              label: 'Card',
-              menuType: 'Card',
-              style: value,
-              onStyleChanged: (value) => style.value = value,
-            ),
-          );
-        },
-      ),
     );
 
     registry['ApplicationBar'] = ComponentBuilderDynamic(

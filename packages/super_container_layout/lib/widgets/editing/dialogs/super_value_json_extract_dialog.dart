@@ -7,20 +7,29 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
 import '../../../models/registry.dart';
+import '../../../models/super_action_config.dart';
+import '../../../models/super_chart_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
+import '../../../models/super_tab_config.dart';
+import '../../../models/super_table_config.dart';
+import '../../../models/super_tree_view_config.dart';
+import '../../../models/super_value_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../../../super_app.dart';
+import '../../../theme/appearance.dart';
 import '../../../theme/container_style.dart';
 import '../../components/super_layout/super_layout.dart';
 import '../history/editor_history.dart';
+import '../repositories/json_repository_manager.dart';
 import '../slots/editable_surface.dart';
 import '../slots/editor_slot.dart';
 import '../slots/slot_wrapping.dart';
 import 'editor_dialog.dart';
 import 'editor_dialog_header.dart';
+import 'editor_target_selector.dart';
 
 enum ExtractableComponentKind {
   superValue('SuperValue'),
@@ -3025,6 +3034,509 @@ class _SuperValueJsonExtractDialogState
           child: const Text('Fermer'),
         ),
       ],
+    );
+  }
+}
+
+/// Élément cible affiché dans le sélecteur « Donnée… » de la barre du menu contextuel.
+@immutable
+class DataTargetElement implements EditorTargetItem {
+  const DataTargetElement({
+    required this.id,
+    required this.label,
+    required this.slot,
+    this.icon,
+    this.depth = 0,
+    this.extractableTargets = const [],
+    this.recurringGroups = const [],
+    this.existingBindings = const [],
+  });
+
+  final String id;
+  final String label;
+  final EditorSlotState slot;
+  final IconData? icon;
+  final int depth;
+  final List<ExtractableComponentTarget> extractableTargets;
+  final List<DetectedRecurringBlockGroup> recurringGroups;
+  final List<JsonTextBinding> existingBindings;
+
+  bool get hasExtractable =>
+      extractableTargets.isNotEmpty || recurringGroups.isNotEmpty;
+
+  bool get hasExistingBindings => existingBindings.isNotEmpty;
+
+  String? get firstBoundRepositoryId {
+    for (final b in existingBindings) {
+      if (b.repositoryId != null && b.repositoryId!.isNotEmpty) {
+        return b.repositoryId;
+      }
+    }
+    return null;
+  }
+}
+
+/// Collecte toutes les liaisons [JsonTextBinding] déjà configurées sur [slot]
+/// ou dans le sous-arbre de [slot].
+List<JsonTextBinding> collectExistingBindingsFromSlot(EditorSlotState slot) {
+  if (!slot.mounted) return const [];
+  final appearance =
+      AppearanceScope.controllerOf(slot.context)?.value ??
+      AppearanceScope.of(slot.context);
+  final bindings = <JsonTextBinding>[];
+  final seen = <JsonTextBinding>{};
+
+  void addBinding(JsonTextBinding? b) {
+    if (b != null && b.path.trim().isNotEmpty && seen.add(b)) {
+      bindings.add(b);
+    }
+  }
+
+  // Enclosing list/tree scope repository if inherited
+  final enclosingScope = JsonListScope.maybeOf(slot.context);
+
+  void inspectId(String id) {
+    if (id.isEmpty) return;
+    final comp = appearance.components[id];
+    switch (comp) {
+      case final SuperValueConfig v:
+        addBinding(v.binding);
+        v.propertyBindings.values.forEach(addBinding);
+        addBinding(v.states?.binding);
+      case final SuperActionConfig a:
+        a.propertyBindings.values.forEach(addBinding);
+        addBinding(a.states?.binding);
+      case final SuperListViewConfig l:
+        addBinding(l.binding);
+      case final SuperTableConfig t:
+        addBinding(t.binding);
+      case final SuperTreeViewConfig tr:
+        addBinding(tr.binding);
+      case final SuperChartConfig c:
+        addBinding(c.binding);
+      case final SuperTabConfig tb:
+        addBinding(tb.binding);
+      default:
+        break;
+    }
+    final st = appearance.styles[id];
+    if (st != null) {
+      addBinding(st.imageBinding);
+      st.propertyBindings.values.forEach(addBinding);
+      addBinding(st.states?.binding);
+    }
+  }
+
+  inspectId(slot.effectiveComponentId);
+  void visit(Element el) {
+    if (el is StatefulElement) {
+      final st = el.state;
+      if (st is EditorSlotState && st.mounted) {
+        inspectId(st.effectiveComponentId);
+      } else if (st case final JsonExtractableState extractable
+          when extractable.isExtractableMounted) {
+        inspectId(extractable.extractableId);
+      }
+    }
+    el.visitChildren(visit);
+  }
+
+  slot.context.visitChildElements(visit);
+
+  // Resolve inherited repository IDs from enclosing JsonListScope when possible
+  if (enclosingScope?.repositoryId != null) {
+    return [
+      for (final b in bindings)
+        b.repositoryId == null
+            ? JsonTextBinding(
+                repositoryId: enclosingScope!.repositoryId,
+                path: b.path,
+              )
+            : b,
+    ];
+  }
+  return bindings;
+}
+
+enum _DataWizardAction { extractAndBind, openRepositoryManager }
+
+/// Ouvre le sélecteur d'élément cible « Donnée… » permettant de choisir sur
+/// quel composant (ou parent) extraire & lier en JSON, ou d'ouvrir le
+/// gestionnaire de repositories JSON (notamment lorsqu'un binding existe déjà).
+Future<void> showComponentDataWizard({
+  required BuildContext context,
+  required List<DataTargetElement> targets,
+  BuildContext? target,
+}) async {
+  if (targets.isEmpty) {
+    await JsonRepositoryManager.show(context);
+    return;
+  }
+
+  final chosen = await showEditorDialog<(DataTargetElement, _DataWizardAction)>(
+    context: context,
+    target: target,
+    builder: (_) =>
+        _ComponentDataWizardDialog(ownerContext: context, targets: targets),
+  );
+
+  if (chosen == null || !context.mounted) return;
+  final (selectedTarget, action) = chosen;
+  if (action == _DataWizardAction.openRepositoryManager) {
+    await JsonRepositoryManager.show(
+      context,
+      initialRepositoryId: selectedTarget.firstBoundRepositoryId,
+    );
+    return;
+  }
+
+  if (!selectedTarget.slot.mounted) return;
+  final latestTargets = collectExtractableTargetsFromSlot(selectedTarget.slot);
+  await SuperValueJsonExtractDialog.show(
+    selectedTarget.slot.context,
+    targets: latestTargets,
+    sourceLabel: selectedTarget.slot.titleLabel,
+    target: selectedTarget.slot.context,
+    rootSlot: selectedTarget.slot,
+  );
+}
+
+class _ComponentDataWizardDialog extends StatefulWidget {
+  const _ComponentDataWizardDialog({
+    required this.ownerContext,
+    required this.targets,
+  });
+
+  final BuildContext ownerContext;
+  final List<DataTargetElement> targets;
+
+  @override
+  State<_ComponentDataWizardDialog> createState() =>
+      _ComponentDataWizardDialogState();
+}
+
+class _ComponentDataWizardDialogState
+    extends State<_ComponentDataWizardDialog> {
+  late DataTargetElement _selectedTarget;
+  late _DataWizardAction _selectedAction;
+
+  @override
+  void initState() {
+    super.initState();
+    // Default to the first target that has extractable data or existing bindings,
+    // or fallback to targets.first.
+    _selectedTarget =
+        widget.targets
+            .where((t) => t.hasExtractable || t.hasExistingBindings)
+            .firstOrNull ??
+        widget.targets.first;
+    _selectedAction = _defaultActionFor(_selectedTarget);
+  }
+
+  _DataWizardAction _defaultActionFor(DataTargetElement target) {
+    if (target.hasExtractable) return _DataWizardAction.extractAndBind;
+    return _DataWizardAction.openRepositoryManager;
+  }
+
+  void _selectTarget(DataTargetElement target) {
+    setState(() {
+      _selectedTarget = target;
+      if (!_selectedTarget.hasExtractable &&
+          _selectedAction == _DataWizardAction.extractAndBind) {
+        _selectedAction = _DataWizardAction.openRepositoryManager;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    return AlertDialog(
+      key: const ValueKey('data-wizard-dialog'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      title: const EditorDialogHeader(label: 'Données & Liaisons JSON'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: SingleChildScrollView(
+                  child: EditorTargetSelector<DataTargetElement>(
+                    targets: widget.targets,
+                    selected: _selectedTarget,
+                    onSelected: _selectTarget,
+                    subtitle:
+                        'Sélectionnez le composant ou le conteneur parent sur lequel '
+                        'extraire des données ou gérer les liaisons existantes :',
+                    itemKeyBuilder: (target) =>
+                        ValueKey('data-target-${target.label}'),
+                    subtitleBuilder: (context, target) {
+                      final extractCount = target.extractableTargets.length;
+                      final recurringCount = target.recurringGroups.length;
+                      final bindingCount = target.existingBindings.length;
+                      return Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          if (extractCount > 0)
+                            _DataBadge(
+                              icon: Icons.data_object,
+                              label:
+                                  '$extractCount propriété${extractCount > 1 ? 's' : ''} extractible${extractCount > 1 ? 's' : ''}',
+                              background: colors.primaryContainer,
+                              foreground: colors.onPrimaryContainer,
+                            ),
+                          if (recurringCount > 0)
+                            _DataBadge(
+                              icon: Icons.repeat,
+                              label:
+                                  '$recurringCount bloc${recurringCount > 1 ? 's' : ''} récurrent${recurringCount > 1 ? 's' : ''}',
+                              background: colors.tertiaryContainer,
+                              foreground: colors.onTertiaryContainer,
+                            ),
+                          if (bindingCount > 0)
+                            _DataBadge(
+                              icon: Icons.link,
+                              label:
+                                  '$bindingCount liaison${bindingCount > 1 ? 's' : ''} active${bindingCount > 1 ? 's' : ''} (${target.existingBindings.first.path})',
+                              background: colors.secondaryContainer,
+                              foreground: colors.onSecondaryContainer,
+                            ),
+                          if (extractCount == 0 &&
+                              recurringCount == 0 &&
+                              bindingCount == 0)
+                            Text(
+                              'Aucune propriété extractible directe',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: colors.onSurfaceVariant,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Action à effectuer',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _ActionOptionCard(
+                      cardKey: const ValueKey('data-wizard-action-extract'),
+                      icon: Icons.data_object,
+                      title: 'Extraire & lier en JSON…',
+                      subtitle: _selectedTarget.hasExtractable
+                          ? 'Extrait les valeurs, détecte les répétitions et crée une ListView'
+                          : 'Aucune propriété extractible sur cet élément',
+                      selected:
+                          _selectedAction == _DataWizardAction.extractAndBind,
+                      enabled: _selectedTarget.hasExtractable,
+                      onTap: () => setState(
+                        () =>
+                            _selectedAction = _DataWizardAction.extractAndBind,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ActionOptionCard(
+                      cardKey: const ValueKey(
+                        'data-wizard-action-repo-manager',
+                      ),
+                      icon: Icons.storage_outlined,
+                      title: 'Gestionnaire de repositories…',
+                      subtitle: _selectedTarget.hasExistingBindings
+                          ? 'Modifier le repository lié (${_selectedTarget.existingBindings.first.path})'
+                          : 'Parcourir, créer ou éditer les fichiers JSON',
+                      selected:
+                          _selectedAction ==
+                          _DataWizardAction.openRepositoryManager,
+                      enabled: true,
+                      highlighted: _selectedTarget.hasExistingBindings,
+                      onTap: () => setState(
+                        () => _selectedAction =
+                            _DataWizardAction.openRepositoryManager,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          key: const ValueKey('data-wizard-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuler'),
+        ),
+        FilledButton.icon(
+          key: const ValueKey('data-wizard-continue'),
+          onPressed: () =>
+              Navigator.of(context).pop((_selectedTarget, _selectedAction)),
+          icon: Icon(
+            _selectedAction == _DataWizardAction.extractAndBind
+                ? Icons.data_object
+                : Icons.storage_outlined,
+            size: 18,
+          ),
+          label: Text(
+            _selectedAction == _DataWizardAction.extractAndBind
+                ? 'Extraire & lier…'
+                : 'Ouvrir le gestionnaire…',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DataBadge extends StatelessWidget {
+  const _DataBadge({
+    required this.icon,
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: foreground),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: foreground,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionOptionCard extends StatelessWidget {
+  const _ActionOptionCard({
+    required this.cardKey,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+    this.highlighted = false,
+  });
+
+  final Key cardKey;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final bool enabled;
+  final bool highlighted;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Opacity(
+      opacity: enabled ? 1.0 : 0.5,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: selected
+              ? colors.primaryContainer.withValues(alpha: 0.45)
+              : highlighted
+              ? colors.tertiaryContainer.withValues(alpha: 0.25)
+              : colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: selected
+                ? colors.primary
+                : highlighted
+                ? colors.tertiary
+                : colors.outlineVariant,
+            width: selected ? 2 : 1,
+          ),
+        ),
+        child: InkWell(
+          key: cardKey,
+          borderRadius: BorderRadius.circular(12),
+          onTap: enabled ? onTap : null,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      icon,
+                      size: 18,
+                      color: selected
+                          ? colors.primary
+                          : highlighted
+                          ? colors.tertiary
+                          : colors.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
