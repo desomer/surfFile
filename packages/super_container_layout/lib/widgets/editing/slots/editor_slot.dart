@@ -735,6 +735,32 @@ class EditorSlotState extends State<EditorSlot> {
     return targets;
   }
 
+  /// Resolves the editable [EditorSlotState] rooted at or enclosing [targetContext].
+  static EditorSlotState? resolveFromContext(BuildContext? targetContext) {
+    if (targetContext is! Element || !targetContext.mounted) return null;
+    if (targetContext is StatefulElement &&
+        targetContext.state is EditorSlotState) {
+      final state = targetContext.state as EditorSlotState;
+      if (state.canEdit) return state;
+    }
+    EditorSlotState? found;
+    void visit(Element element) {
+      if (found != null) return;
+      if (element is StatefulElement && element.state is EditorSlotState) {
+        final state = element.state as EditorSlotState;
+        if (state.canEdit) {
+          found = state;
+          return;
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    targetContext.visitChildElements(visit);
+    if (found != null) return found;
+    return targetContext.findAncestorStateOfType<EditorSlotState>();
+  }
+
   /// Opens the context menu for the editable target rooted at [targetContext]
   /// without changing the current selection path.
   static Future<void> openMenuFromContext(
