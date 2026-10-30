@@ -737,7 +737,7 @@ void main() {
         Appearance(),
         jsonEncode({
           'components': {
-            'mainLayout': {
+            'outerLayout': {
               'type': 'layout',
               'west': true,
               'westSize': 200,
@@ -745,6 +745,11 @@ void main() {
                 'west': [
                   {'id': 'west-label', 'type': 'registry:Value'},
                 ],
+              },
+            },
+            'mainLayout': {
+              'type': 'layout',
+              'placements': {
                 'center': [
                   {'id': 'center-label', 'type': 'registry:Value'},
                 ],

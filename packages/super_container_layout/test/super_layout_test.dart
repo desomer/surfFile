@@ -6,10 +6,28 @@ import 'package:super_container_layout/widgets/components/super_layout/slot_impl
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 
+const _allSidesConfig = SuperLayoutConfig(
+  north: true,
+  south: true,
+  west: true,
+  east: true,
+);
+
+const _fullGridConfig = SuperLayoutConfig(
+  north: true,
+  south: true,
+  west: true,
+  east: true,
+  northSize: 80,
+  southSize: 80,
+  westSize: 120,
+  eastSize: 120,
+);
+
 /// Un slot par zone, pour tester le placement sans écrire les ids à la main.
 Widget zonedLayout({
   required Map<SuperLayoutZone, Widget> zones,
-  SuperLayoutConfig config = const SuperLayoutConfig(),
+  SuperLayoutConfig config = _allSidesConfig,
   ValueChanged<SuperLayoutConfig>? onChanged,
 }) => SuperLayout(
   config: config.copyWith(
@@ -30,7 +48,7 @@ void main() {
 
   group('SuperLayoutConfig.resolve', () {
     test('full grid has nine distinct cells', () {
-      final rects = const SuperLayoutConfig().resolve(size);
+      final rects = _fullGridConfig.resolve(size);
       expect(rects.keys.toSet(), z.toSet());
       expect(
         rects[SuperLayoutZone.center],
@@ -44,10 +62,9 @@ void main() {
     });
 
     test('missing sides drop their cells and corners', () {
-      final rects = const SuperLayoutConfig(
-        north: false,
-        west: false,
-      ).resolve(size);
+      final rects = _fullGridConfig
+          .copyWith(north: false, west: false)
+          .resolve(size);
       expect(rects.keys.toSet(), {
         SuperLayoutZone.center,
         SuperLayoutZone.south,
@@ -63,10 +80,9 @@ void main() {
     test('shrunk tracks never yield a negative extent', () {
       for (var i = 0; i <= 2000; i++) {
         final height = i * 0.137;
-        final rects = const SuperLayoutConfig(
-          northSize: 83.3,
-          southSize: 61.7,
-        ).resolve(Size(2170, height));
+        final rects = _fullGridConfig
+            .copyWith(northSize: 83.3, southSize: 61.7)
+            .resolve(Size(2170, height));
         for (final rect in rects.values) {
           expect(rect.width.isNegative, isFalse, reason: 'h=$height');
           expect(rect.height.isNegative, isFalse, reason: 'h=$height');
@@ -75,7 +91,7 @@ void main() {
     });
 
     test('corner merges into the row side', () {
-      final rects = const SuperLayoutConfig(sw: CornerMerge.row).resolve(size);
+      final rects = _fullGridConfig.copyWith(sw: CornerMerge.row).resolve(size);
       expect(rects.containsKey(SuperLayoutZone.sw), isFalse);
       expect(
         rects[SuperLayoutZone.south],
@@ -85,7 +101,8 @@ void main() {
     });
 
     test('corner merges into the column side', () {
-      final rects = const SuperLayoutConfig(sw: CornerMerge.column)
+      final rects = _fullGridConfig
+          .copyWith(sw: CornerMerge.column)
           .resolve(size);
       expect(rects.containsKey(SuperLayoutZone.sw), isFalse);
       expect(rects[SuperLayoutZone.west], const Rect.fromLTRB(0, 80, 120, 400));
@@ -96,12 +113,14 @@ void main() {
     });
 
     test('all corners merged span full sides without overlap', () {
-      final rects = const SuperLayoutConfig(
-        nw: CornerMerge.row,
-        ne: CornerMerge.row,
-        sw: CornerMerge.column,
-        se: CornerMerge.column,
-      ).resolve(size);
+      final rects = _fullGridConfig
+          .copyWith(
+            nw: CornerMerge.row,
+            ne: CornerMerge.row,
+            sw: CornerMerge.column,
+            se: CornerMerge.column,
+          )
+          .resolve(size);
       expect(rects[SuperLayoutZone.north], const Rect.fromLTRB(0, 0, 600, 80));
       expect(rects[SuperLayoutZone.west], const Rect.fromLTRB(0, 80, 120, 400));
       expect(
@@ -121,10 +140,9 @@ void main() {
     });
 
     test('oversized sides shrink to fit', () {
-      final rects = const SuperLayoutConfig(
-        westSize: 600,
-        eastSize: 600,
-      ).resolve(size);
+      final rects = _fullGridConfig
+          .copyWith(westSize: 600, eastSize: 600)
+          .resolve(size);
       expect(rects[SuperLayoutZone.west]!.width, 300);
       expect(rects[SuperLayoutZone.center]!.width, 0);
     });
@@ -132,7 +150,7 @@ void main() {
 
   Future<List<SuperLayoutConfig>> pump(
     WidgetTester tester, {
-    SuperLayoutConfig config = const SuperLayoutConfig(),
+    SuperLayoutConfig config = _allSidesConfig,
   }) async {
     final changes = <SuperLayoutConfig>[];
     await tester.pumpWidget(
@@ -166,7 +184,27 @@ void main() {
   testWidgets('renders zones with placeholders for the missing ones', (
     tester,
   ) async {
-    await pump(tester, config: const SuperLayoutConfig(east: false));
+    final editMode = ValueNotifier(true);
+    addTearDown(editMode.dispose);
+    await tester.pumpWidget(
+      StyleEditScope(
+        controller: editMode,
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 600,
+              height: 400,
+              child: zonedLayout(
+                config: _allSidesConfig.copyWith(east: false),
+                zones: const {SuperLayoutZone.center: Text('Contenu')},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Contenu'));
+    await tester.pumpAndSettle();
     expect(find.text('Contenu'), findsOneWidget);
     expect(find.text('Nord'), findsOneWidget);
     expect(find.text('Est'), findsNothing);
@@ -211,8 +249,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       changes.last,
-      const SuperLayoutConfig(
-        placements: {
+      _allSidesConfig.copyWith(
+        placements: const {
           SuperLayoutZone.center: ['center'],
         },
       ),
@@ -335,6 +373,10 @@ void main() {
     WidgetTester tester, {
     required ValueNotifier<bool> editMode,
     SuperLayoutConfig config = const SuperLayoutConfig(
+      north: true,
+      south: true,
+      west: true,
+      east: true,
       placements: {
         SuperLayoutZone.center: ['placed'],
       },
@@ -586,6 +628,9 @@ void main() {
 
   test('swapping with a missing side moves it with its size and corners', () {
     const config = SuperLayoutConfig(
+      north: true,
+      south: true,
+      west: true,
       east: false,
       westSize: 200,
       nw: CornerMerge.row,
@@ -600,7 +645,12 @@ void main() {
     expect(moved.withSwap(SuperLayoutZone.east), config);
     expect(config.canSwap(SuperLayoutZone.center), isFalse);
     expect(
-      const SuperLayoutConfig(south: false).canSwap(SuperLayoutZone.nw),
+      const SuperLayoutConfig(
+        north: true,
+        west: true,
+        east: true,
+        south: false,
+      ).canSwap(SuperLayoutZone.nw),
       isFalse,
     );
   });
@@ -620,7 +670,7 @@ void main() {
               width: 600,
               height: 400,
               child: zonedLayout(
-                config: const SuperLayoutConfig(east: false),
+                config: _allSidesConfig.copyWith(east: false),
                 onChanged: changes.add,
                 zones: const {
                   SuperLayoutZone.west: Text('Panneau'),
@@ -673,6 +723,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     final before = tester.getCenter(find.text('Panneau'));
+    await tester.tap(find.text('Panneau'));
+    await tester.pumpAndSettle();
 
     // Lâché hors du centre : rien ne change.
     await tester.drag(find.text('Ouest'), const Offset(0, 100));

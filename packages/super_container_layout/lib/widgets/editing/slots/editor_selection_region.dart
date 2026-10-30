@@ -675,11 +675,38 @@ class _EditorOutlineAnimation extends ChangeNotifier {
     progress = 0.0;
     _startTimeStamp = null;
     notifyListeners();
-    _scheduleNextFrame();
+    if (hasListeners) {
+      _scheduleNextFrame();
+    }
+  }
+
+  @override
+  void addListener(VoidCallback listener) {
+    super.addListener(listener);
+    if (progress < 1.0) {
+      _scheduleNextFrame();
+    }
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    if (!hasListeners) {
+      _cancelScheduledFrame();
+    }
+  }
+
+  void _cancelScheduledFrame() {
+    if (_scheduledFrameId case final id?) {
+      _scheduledFrameId = null;
+      SchedulerBinding.instance.cancelFrameCallbackWithId(id);
+    }
+    progress = 1.0;
+    _startTimeStamp = null;
   }
 
   void _scheduleNextFrame() {
-    if (_scheduledFrameId != null) return;
+    if (_scheduledFrameId != null || !hasListeners) return;
     _scheduledFrameId = SchedulerBinding.instance.scheduleFrameCallback(
       _onFrame,
     );
@@ -687,6 +714,11 @@ class _EditorOutlineAnimation extends ChangeNotifier {
 
   void _onFrame(Duration timeStamp) {
     _scheduledFrameId = null;
+    if (!hasListeners) {
+      progress = 1.0;
+      _startTimeStamp = null;
+      return;
+    }
     _startTimeStamp ??= timeStamp;
     final elapsed = timeStamp - _startTimeStamp!;
     if (elapsed >= _duration || elapsed.isNegative) {

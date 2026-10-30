@@ -51,6 +51,19 @@ BuilderSlot _slot(
 void main() {
   const size = Size(600, 400);
 
+  Future<void> doubleClickAt(
+    WidgetTester tester,
+    Offset point, {
+    int count = 2,
+  }) async {
+    for (var i = 0; i < count; i++) {
+      await tester.tapAt(point);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(point);
+      await tester.pumpAndSettle();
+    }
+  }
+
   group('SuperLayoutConfig auto sides and placements', () {
     test('new layouts default to four automatic sides', () {
       const config = SuperLayoutConfig();
@@ -116,8 +129,12 @@ void main() {
     test('measured sizes replace fixed sizes of auto sides only', () {
       final rects =
           const SuperLayoutConfig(
+            north: true,
+            west: true,
             south: false,
             east: false,
+            northSize: 80,
+            westSize: 120,
             autoSides: {SuperLayoutZone.north},
           ).resolve(
             size,
@@ -135,18 +152,29 @@ void main() {
     });
 
     test('an auto side without measure keeps its fixed size', () {
-      final rects = const SuperLayoutConfig(autoSides: {SuperLayoutZone.north})
-          .resolve(size);
+      final rects = const SuperLayoutConfig(
+        north: true,
+        northSize: 80,
+        autoSides: {SuperLayoutZone.north},
+      ).resolve(size);
       expect(rects[SuperLayoutZone.north]!.height, 80);
     });
 
     test('visibleZones lists the zones whatever the size', () {
-      expect(const SuperLayoutConfig(north: false, west: false).visibleZones, {
-        SuperLayoutZone.center,
-        SuperLayoutZone.south,
-        SuperLayoutZone.east,
-        SuperLayoutZone.se,
-      });
+      expect(
+        const SuperLayoutConfig(
+          north: false,
+          west: false,
+          south: true,
+          east: true,
+        ).visibleZones,
+        {
+          SuperLayoutZone.center,
+          SuperLayoutZone.south,
+          SuperLayoutZone.east,
+          SuperLayoutZone.se,
+        },
+      );
     });
 
     test('json round trip keeps auto sides and placements', () {
@@ -293,6 +321,10 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
+          north: true,
+          south: true,
+          west: true,
+          east: true,
           placements: {
             SuperLayoutZone.north: ['north'],
             SuperLayoutZone.south: ['south'],
@@ -339,6 +371,7 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
+          north: true,
           south: false,
           west: false,
           east: false,
@@ -361,6 +394,7 @@ void main() {
 
     testWidgets('the north grows when a slot becomes taller', (tester) async {
       SuperLayoutConfig config() => const SuperLayoutConfig(
+        north: true,
         south: false,
         west: false,
         east: false,
@@ -391,6 +425,7 @@ void main() {
         config: const SuperLayoutConfig(
           north: false,
           south: false,
+          west: true,
           east: false,
           autoSides: {SuperLayoutZone.west},
           placements: {
@@ -408,6 +443,8 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
+          north: true,
+          west: true,
           south: false,
           east: false,
           autoSides: {SuperLayoutZone.north, SuperLayoutZone.west},
@@ -433,6 +470,7 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
+          north: true,
           south: false,
           west: false,
           east: false,
@@ -459,6 +497,7 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
+          north: true,
           south: false,
           west: false,
           east: false,
@@ -479,6 +518,10 @@ void main() {
       await pump(
         tester,
         config: const SuperLayoutConfig(
+          north: true,
+          south: true,
+          west: true,
+          east: true,
           northSize: 45,
           southSize: 50,
           westSize: 90,
@@ -574,6 +617,7 @@ void main() {
       tester,
     ) async {
       const config = SuperLayoutConfig(
+        north: true,
         south: false,
         west: false,
         east: false,
@@ -601,6 +645,8 @@ void main() {
       tester,
     ) async {
       const config = SuperLayoutConfig(
+        north: true,
+        west: true,
         south: false,
         east: false,
         autoSides: {SuperLayoutZone.north, SuperLayoutZone.west},
@@ -633,6 +679,7 @@ void main() {
       tester,
     ) async {
       const config = SuperLayoutConfig(
+        north: true,
         south: true,
         west: true,
         east: false,
@@ -707,6 +754,7 @@ void main() {
     addTearDown(editMode.dispose);
     final inner = <SuperLayoutConfig>[];
     const innerConfig = SuperLayoutConfig(
+      north: true,
       south: false,
       west: false,
       east: false,
@@ -728,6 +776,7 @@ void main() {
                 config: const SuperLayoutConfig(
                   north: false,
                   south: false,
+                  west: true,
                   east: false,
                   placements: {
                     SuperLayoutZone.west: ['side'],
@@ -757,11 +806,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tapAt(
+    await doubleClickAt(
+      tester,
       tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
           const Offset(20, 20),
     );
-    await tester.pumpAndSettle();
     expect(tester.getRect(find.byKey(const ValueKey('box-bar'))).top, 0);
 
     final gesture = await tester.startGesture(
@@ -839,8 +888,11 @@ void main() {
 
   group('moving slots by their label', () {
     const config = SuperLayoutConfig(
+      north: true,
+      south: true,
       west: false,
       east: false,
+      southSize: 80,
       autoSides: {SuperLayoutZone.north},
       placements: {
         SuperLayoutZone.north: ['a', 'b', 'c'],
@@ -1084,6 +1136,8 @@ void main() {
       await pumpMovable(tester);
       double width(Finder finder) =>
           (tester.getBottomRight(finder) - tester.getTopLeft(finder)).dx;
+      bool highlighted(Finder finder) =>
+          tester.widget<ComponentDragLabel>(finder).highlighted;
       final chipB = find.byKey(const ValueKey('slot-label-b'));
       final zoneName = find.text('Nord');
       final chipBefore = width(chipB);
@@ -1095,29 +1149,30 @@ void main() {
       addTearDown(mouse.removePointer);
       await tester.pump();
 
-      // Survol d'une étiquette de slot : les slots et les zones grossissent.
+      // Survol d'une étiquette de slot : les zones grossissent et les slots de la zone sont surlignés.
       await mouse.moveTo(
         tester.getCenter(find.byKey(const ValueKey('slot-label-a'))),
       );
       await tester.pumpAndSettle();
-      expect(width(chipB), closeTo(chipBefore * 1.3, .5));
+      expect(highlighted(chipB), isTrue);
+      expect(width(chipB), closeTo(chipBefore, .5));
       expect(width(zoneName), closeTo(zoneBefore * 1.3, .5));
       expect(tester.getTopLeft(chipB), topLeft);
 
       await mouse.moveTo(const Offset(500, 300));
       await tester.pumpAndSettle();
-      expect(width(chipB), closeTo(chipBefore, .5));
+      expect(highlighted(chipB), isFalse);
       expect(width(zoneName), closeTo(zoneBefore, .5));
 
-      // Survol d'un nom de zone : les étiquettes de slot grossissent aussi.
+      // Survol d'un nom de zone : les étiquettes de slot sont aussi surlignées.
       await mouse.moveTo(tester.getCenter(zoneName));
       await tester.pumpAndSettle();
-      expect(width(chipB), closeTo(chipBefore * 1.3, .5));
+      expect(highlighted(chipB), isTrue);
       expect(width(zoneName), closeTo(zoneBefore * 1.3, .5));
 
       await mouse.moveTo(const Offset(500, 300));
       await tester.pumpAndSettle();
-      expect(width(chipB), closeTo(chipBefore, .5));
+      expect(highlighted(chipB), isFalse);
     });
 
     testWidgets('only the slot labels of the hovered zone grow', (
@@ -1126,10 +1181,10 @@ void main() {
       await pumpMovable(tester);
       double width(Finder finder) =>
           (tester.getBottomRight(finder) - tester.getTopLeft(finder)).dx;
+      bool highlighted(Finder finder) =>
+          tester.widget<ComponentDragLabel>(finder).highlighted;
       final north = find.byKey(const ValueKey('slot-label-b'));
       final centre = find.byKey(const ValueKey('slot-label-content'));
-      final northBefore = width(north);
-      final centreBefore = width(centre);
       final northName = find.text('Nord');
       final centreName = find.text('Centre');
       final northNameBefore = width(northName);
@@ -1138,22 +1193,22 @@ void main() {
       addTearDown(mouse.removePointer);
       await tester.pump();
 
-      // Une étiquette du Nord : les slots du Nord grossissent, pas ceux du centre.
+      // Une étiquette du Nord : les slots du Nord sont surlignés, pas ceux du centre.
       await mouse.moveTo(
         tester.getCenter(find.byKey(const ValueKey('slot-label-a'))),
       );
       await tester.pumpAndSettle();
-      expect(width(north), closeTo(northBefore * 1.3, .5));
-      expect(width(centre), closeTo(centreBefore, .5));
+      expect(highlighted(north), isTrue);
+      expect(highlighted(centre), isFalse);
       expect(width(northName), closeTo(northNameBefore * 1.3, .5));
 
-      // Le nom du centre : les slots du centre grossissent, pas ceux du Nord.
+      // Le nom du centre : les slots du centre sont surlignés, pas ceux du Nord.
       await mouse.moveTo(const Offset(500, 300));
       await tester.pumpAndSettle();
       await mouse.moveTo(tester.getCenter(centreName));
       await tester.pumpAndSettle();
-      expect(width(centre), closeTo(centreBefore * 1.3, .5));
-      expect(width(north), closeTo(northBefore, .5));
+      expect(highlighted(centre), isTrue);
+      expect(highlighted(north), isFalse);
       expect(width(northName), closeTo(northNameBefore * 1.3, .5));
     });
 
@@ -1162,8 +1217,7 @@ void main() {
     ) async {
       await pumpMovable(tester);
       final chipB = find.byKey(const ValueKey('slot-label-b'));
-      final before =
-          (tester.getBottomRight(chipB) - tester.getTopLeft(chipB)).dx;
+      expect(tester.widget<ComponentDragLabel>(chipB).highlighted, isFalse);
       final gesture = await tester.startGesture(
         tester.getCenter(find.byKey(const ValueKey('slot-label-a'))),
         kind: PointerDeviceKind.mouse,
@@ -1171,17 +1225,14 @@ void main() {
       await gesture.moveBy(const Offset(0, 25));
       await gesture.moveTo(const Offset(450, 300));
       await tester.pumpAndSettle();
-      expect(
-        (tester.getBottomRight(chipB) - tester.getTopLeft(chipB)).dx,
-        closeTo(before * 1.3, .5),
-      );
+      expect(tester.widget<ComponentDragLabel>(chipB).highlighted, isTrue);
       await gesture.up();
       await tester.pumpAndSettle();
       expect(
-        (tester.getBottomRight(find.byKey(const ValueKey('slot-label-b'))) -
-                tester.getTopLeft(find.byKey(const ValueKey('slot-label-b'))))
-            .dx,
-        closeTo(before, .5),
+        tester
+            .widget<ComponentDragLabel>(find.byKey(const ValueKey('slot-label-b')))
+            .highlighted,
+        isFalse,
       );
     });
 
@@ -1205,6 +1256,8 @@ void main() {
                     south: false,
                     west: false,
                     east: false,
+                    northSize: 80,
+                    autoSides: {},
                     placements: {
                       SuperLayoutZone.center: ['main'],
                     },
@@ -1213,10 +1266,11 @@ void main() {
                     BuilderSlot(
                       id: 'main',
                       label: 'Explorateur',
-                      labelAlignment: Alignment.topRight,
+                      labelAlignment: Alignment.topLeft,
                       builder: (_) => SuperLayout(
                         editable: false,
                         config: const SuperLayoutConfig(
+                          north: true,
                           south: false,
                           west: false,
                           east: false,
@@ -1249,16 +1303,15 @@ void main() {
         tester.getTopLeft(container),
         tester.getBottomRight(container),
       );
-      expect(rect.right, 596);
+      expect(rect.left, 4);
       expect(rect.top, 84);
-      // Les étiquettes de la disposition interne restent à gauche, sans
+      // Les étiquettes de la disposition interne restent à droite, sans
       // recouvrement, et le conteneur est dessiné au-dessus du contenu.
       expect(find.byKey(const ValueKey('slot-label-bar')), findsNothing);
-      await tester.tapAt(const Offset(500, 150));
-      await tester.pumpAndSettle();
+      await doubleClickAt(tester, const Offset(500, 150));
       expect(container, findsNothing);
       final bar = tester.getRect(find.byKey(const ValueKey('slot-label-bar')));
-      expect(bar.topLeft, const Offset(4, 84));
+      expect(bar.topRight, const Offset(596, 84));
       expect(rect.overlaps(bar), isFalse);
       // Le Centre de la disposition qui contient main et celui de la
       // disposition interne affichent chacun leur nom.
@@ -1284,7 +1337,9 @@ void main() {
                   config: const SuperLayoutConfig(
                     north: false,
                     south: false,
+                    west: true,
                     east: false,
+                    autoSides: {},
                     placements: {
                       SuperLayoutZone.west: ['side'],
                       SuperLayoutZone.center: ['main'],
@@ -1298,8 +1353,10 @@ void main() {
                         editable: false,
                         config: const SuperLayoutConfig(
                           north: false,
+                          south: true,
                           west: false,
                           east: false,
+                          autoSides: {},
                           placements: {
                             SuperLayoutZone.center: ['places'],
                             SuperLayoutZone.south: ['disks'],
@@ -1317,6 +1374,7 @@ void main() {
                       builder: (_) => SuperLayout(
                         editable: false,
                         config: const SuperLayoutConfig(
+                          north: true,
                           south: false,
                           west: false,
                           east: false,
@@ -1348,34 +1406,39 @@ void main() {
       expect(mainChild, findsNothing);
       expect(sideChild, findsNothing);
 
-      await tester.tapAt(
+      await doubleClickAt(
+        tester,
         tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
             const Offset(20, 20),
       );
-      await tester.pumpAndSettle();
       expect(mainChild, findsOneWidget);
       expect(find.text('Nord'), findsOneWidget);
       expect(sideChild, findsNothing);
 
-      await tester.tapAt(
-        tester.getTopLeft(find.byKey(const ValueKey('box-places'))) +
-            const Offset(20, 20),
-      );
-      await tester.pumpAndSettle();
+      final placesPoint =
+          tester.getTopLeft(find.byKey(const ValueKey('box-places'))) +
+          const Offset(20, 20);
+      await doubleClickAt(tester, placesPoint);
       expect(
         find.byKey(const ValueKey('super-layout-zone-selected-center')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(mainChild, findsNothing);
       expect(sideChild, findsOneWidget);
 
-      // Un clic sur le nom selectionne la zone, sans deselectionner le layout.
+      // Un clic sur le nom deselectionne le slot et garde la zone, puis un second clic deselectionne la zone.
       await tester.tap(find.text('Centre'));
       await tester.pumpAndSettle();
       expect(sideChild, findsOneWidget);
       expect(
         find.byKey(const ValueKey('super-layout-zone-selected-center')),
         findsOneWidget,
+      );
+      await tester.tap(find.text('Centre'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('super-layout-zone-selected-center')),
+        findsNothing,
       );
     });
 
@@ -1434,8 +1497,10 @@ void main() {
                         config: const SuperLayoutConfig(
                           north: false,
                           south: false,
+                          west: true,
                           east: false,
                           westSize: 300,
+                          autoSides: {},
                           placements: {
                             SuperLayoutZone.west: ['l3'],
                             SuperLayoutZone.center: ['content'],
@@ -1451,6 +1516,8 @@ void main() {
                                 north: false,
                                 south: false,
                                 west: false,
+                                east: true,
+                                autoSides: {},
                                 placements: {
                                   SuperLayoutZone.east: ['y'],
                                   SuperLayoutZone.center: ['z'],
@@ -1490,9 +1557,16 @@ void main() {
       expect(find.text('Mode édition'), findsOneWidget);
       expect(path(), isNull);
 
-      await tester.tapAt(
+      await doubleClickAt(
+        tester,
         tester.getTopLeft(find.byKey(const ValueKey('box-y'))) +
-            const Offset(20, 20),
+            const Offset(20, 100),
+        count: 3,
+      );
+      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
+
+      await tester.tap(
+        find.descendant(of: name('east'), matching: find.text('Est')),
       );
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau');
@@ -1503,22 +1577,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
 
-      // Un clic sur une zone du chemin selectionne sa disposition et sa zone.
-      await tester.tap(segment('Est'));
+      // Un clic sur une zone ancêtre du chemin selectionne sa disposition et sa zone.
+      await tester.tap(segment('Ouest'));
       await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur > Ouest > Panneau > Est');
+      expect(path(), 'Page > Centre > Explorateur > Ouest');
       expect(
-        find.byKey(const ValueKey('super-layout-zone-selected-east')),
+        find.byKey(const ValueKey('super-layout-zone-selected-west')),
         findsOneWidget,
       );
 
-      // Selectionner le contenu de l'autre layout change le chemin actif.
+      // Selectionner le contenu de l'autre zone change le chemin actif.
       await tester.tapAt(
         tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
             const Offset(20, 100),
       );
       await tester.pumpAndSettle();
-      expect(path(), 'Page > Centre > Explorateur');
+      expect(path(), 'Page > Centre > Explorateur > Centre');
       editMode.value = false;
       await tester.pumpAndSettle();
       expect(path(), isNull);
@@ -1546,7 +1620,9 @@ void main() {
                   config: const SuperLayoutConfig(
                     north: false,
                     south: false,
+                    west: true,
                     east: false,
+                    autoSides: {},
                     placements: {
                       SuperLayoutZone.west: ['side'],
                       SuperLayoutZone.center: ['main'],
@@ -1561,6 +1637,7 @@ void main() {
                       labelAlignment: Alignment.topRight,
                       builder: (_) => SuperLayout(
                         config: const SuperLayoutConfig(
+                          north: true,
                           south: false,
                           west: false,
                           east: false,
@@ -1585,11 +1662,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tapAt(
+      await doubleClickAt(
+        tester,
         tester.getTopLeft(find.byKey(const ValueKey('box-content'))) +
             const Offset(20, 20),
       );
-      await tester.pumpAndSettle();
       final gesture = await tester.startGesture(
         tester.getCenter(find.byKey(const ValueKey('slot-label-bar'))),
       );
@@ -1606,6 +1683,7 @@ void main() {
   });
   group('slot labels in edit mode', () {
     const config = SuperLayoutConfig(
+      north: true,
       south: false,
       west: false,
       east: false,
@@ -1665,7 +1743,7 @@ void main() {
       final label = tester.getRect(
         find.byKey(const ValueKey('slot-label-bar')),
       );
-      expect(label.topLeft, const Offset(4, 4));
+      expect(label.topRight, const Offset(596, 4));
       expect(tester.getRect(find.byKey(const ValueKey('box-content'))), before);
 
       editMode.value = false;
@@ -1708,6 +1786,7 @@ void main() {
                 height: size.height,
                 child: SuperLayout(
                   config: const SuperLayoutConfig(
+                    north: true,
                     south: false,
                     west: false,
                     east: false,

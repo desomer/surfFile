@@ -21,10 +21,20 @@ Future<T?> showEditorDialog<T>({
   final nested =
       EditorOverlayVisibility.openDialogs.value > 0 ||
       ModalRoute.of(context) is PopupRoute;
+  var active = true;
+  void release() {
+    if (!active) return;
+    active = false;
+    if (EditorOverlayVisibility.openDialogs.value > 0) {
+      EditorOverlayVisibility.openDialogs.value--;
+    }
+  }
+
   EditorOverlayVisibility.openDialogs.value++;
   try {
     return await _showEditorDialog<T>(
       context: context,
+      onDispose: () => Future.microtask(release),
       builder: nested
           ? (context) {
               final theme = Theme.of(context);
@@ -59,13 +69,14 @@ Future<T?> showEditorDialog<T>({
           barrierColor ?? (nested ? Colors.black.withValues(alpha: .24) : null),
     );
   } finally {
-    EditorOverlayVisibility.openDialogs.value--;
+    release();
   }
 }
 
 Future<T?> _showEditorDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,
+  required VoidCallback onDispose,
   BuildContext? target,
   ValueListenable<double>? preferredWidth,
   bool barrierDismissible = true,
@@ -85,12 +96,15 @@ Future<T?> _showEditorDialog<T>({
   if (controller == null || !controller.enabled) {
     return await showDialog<T>(
       context: context,
-      builder: (context) => Stack(
-        fit: StackFit.expand,
-        children: [
-          const IgnorePointer(child: EditorInsertionPreviewOverlay()),
-          Builder(builder: builder),
-        ],
+      builder: (context) => _DialogDisposeGuard(
+        onDispose: onDispose,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const IgnorePointer(child: EditorInsertionPreviewOverlay()),
+            Builder(builder: builder),
+          ],
+        ),
       ),
       barrierDismissible: barrierDismissible,
       barrierColor: barrierColor,
@@ -111,29 +125,60 @@ Future<T?> _showEditorDialog<T>({
           .where((candidate) => controller.targetBounds(candidate) != null)
           .firstOrNull;
   final request = EditorDialogFocus(target: focus);
-  try {
-    return await showDialog<T>(
-      context: context,
-      barrierDismissible: barrierDismissible,
-      barrierColor: barrierColor ?? Colors.transparent,
-      builder: (context) => EditorZoomScope(
-        scale: 1,
-        offset: Offset.zero,
-        controller: controller,
-        child: _EditorDialog(
-          builder: builder,
-          controller: controller,
-          request: request,
-          preferredWidth: preferredWidth,
-        ),
-      ),
-    );
-  } finally {
+  void releaseFocus() {
     if (!controller.disposed && identical(controller.dialog.value, request)) {
       controller.dialog.value = previous;
       LayoutSelection.editorViewport.value = previous?.available;
     }
   }
+
+  try {
+    return await showDialog<T>(
+      context: context,
+      barrierDismissible: barrierDismissible,
+      barrierColor: barrierColor ?? Colors.transparent,
+      builder: (context) => _DialogDisposeGuard(
+        onDispose: () {
+          onDispose();
+          Future.microtask(releaseFocus);
+        },
+        child: EditorZoomScope(
+          scale: 1,
+          offset: Offset.zero,
+          controller: controller,
+          child: _EditorDialog(
+            builder: builder,
+            controller: controller,
+            request: request,
+            preferredWidth: preferredWidth,
+          ),
+        ),
+      ),
+    );
+  } finally {
+    releaseFocus();
+  }
+}
+
+class _DialogDisposeGuard extends StatefulWidget {
+  const _DialogDisposeGuard({required this.onDispose, required this.child});
+
+  final VoidCallback onDispose;
+  final Widget child;
+
+  @override
+  State<_DialogDisposeGuard> createState() => _DialogDisposeGuardState();
+}
+
+class _DialogDisposeGuardState extends State<_DialogDisposeGuard> {
+  @override
+  void dispose() {
+    widget.onDispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _EditorDialog extends StatefulWidget {

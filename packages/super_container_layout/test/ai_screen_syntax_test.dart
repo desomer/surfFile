@@ -493,7 +493,7 @@ void main() {
                     {'id': 'card-left', 'type': 'registry:Card'},
                   ],
                   'center': [
-                    {'id': 'card-right', 'type': 'registry:Card'},
+                    {'id': 'right-section', 'type': 'registry:Layout'},
                   ],
                 },
               },
@@ -507,6 +507,14 @@ void main() {
                 },
               },
               'left-title': {'type': 'value', 'text': 'Menu gauche'},
+              'right-section': {
+                'type': 'layout',
+                'placements': {
+                  'center': [
+                    {'id': 'card-right', 'type': 'registry:Card'},
+                  ],
+                },
+              },
               'card-right': {
                 'type': 'native',
                 'regions': {'child': true},
@@ -608,13 +616,13 @@ void main() {
     );
 
     test(
-      'filterPatchToScope on a specific layout zone preserves all other zones of the same container',
+      'filterPatchToScope on a specific layout zone preserves out-of-scope containers and updates the target layout',
       () {
         final initial = AppearanceTransfer.applyVibe(
           Appearance(),
           jsonEncode({
             'components': {
-              'mainLayout': {
+              'outerLayout': {
                 'type': 'layout',
                 'north': true,
                 'northSize': 70,
@@ -622,6 +630,11 @@ void main() {
                   'north': [
                     {'id': 'header-val', 'type': 'registry:Value'},
                   ],
+                },
+              },
+              'mainLayout': {
+                'type': 'layout',
+                'placements': {
                   'center': [
                     {'id': 'center-val', 'type': 'registry:Value'},
                   ],
@@ -642,13 +655,19 @@ void main() {
 
         final aiPatch = <String, dynamic>{
           'components': {
-            'mainLayout': {
+            'outerLayout': {
               'northSize': 200,
+              'placements': {
+                'north': <Object?>[],
+              },
+            },
+            'mainLayout': {
               'west': true,
               'westSize': 260,
               'placements': {
-                'north': <Object?>[],
-                'center': <Object?>[],
+                'center': [
+                  {'id': 'center-val', 'type': 'registry:Value'},
+                ],
                 'west': [
                   {'id': 'west-nav', 'type': 'registry:Value'},
                 ],
@@ -669,11 +688,12 @@ void main() {
           jsonEncode(filtered),
         );
 
+        final outer = updated.layout('outerLayout');
         final layout = updated.layout('mainLayout');
-        // North and Center zones are preserved intact
-        expect(layout.north, isTrue);
-        expect(layout.northSize, 70);
-        expect(layout.placementsOf(SuperLayoutZone.north), ['header-val']);
+        // Outer layout and its header zone are preserved intact
+        expect(outer.north, isTrue);
+        expect(outer.northSize, 70);
+        expect(outer.placementsOf(SuperLayoutZone.north), ['header-val']);
         expect(layout.placementsOf(SuperLayoutZone.center), ['center-val']);
         expect(updated.valueComponent('header-val').initialText, 'En-tête');
         expect(
