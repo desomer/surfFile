@@ -10,7 +10,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
-
 void main() {
   late Directory directory;
   late JsonRepositoryStore store;
@@ -18,7 +17,9 @@ void main() {
 
   setUp(() async {
     StyleEditorPanel.preferredDense = false;
-    directory = await Directory.systemTemp.createTemp('super-value-repository-');
+    directory = await Directory.systemTemp.createTemp(
+      'super-value-repository-',
+    );
     store = JsonRepositoryStore(directory);
     await store.create('People');
     binding = JsonTextBinding(
@@ -89,7 +90,10 @@ void main() {
         tester,
         SuperValue(
           id: 'live',
-          config: SuperValueConfig(mode: SuperValueMode.input, binding: binding),
+          config: SuperValueConfig(
+            mode: SuperValueMode.input,
+            binding: binding,
+          ),
           onChanged: (_) => changes++,
         ),
       );
@@ -635,6 +639,14 @@ void main() {
       );
       await real(tester, () => tester.tap(find.text('Edit')));
       final bind = find.byKey(const ValueKey('super-value-bind-label'));
+      expect(
+        find.byKey(const ValueKey('super-value-bind-label-badge')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('super-value-bind-label-bound-tile')),
+        findsNothing,
+      );
       await real(tester, () => tester.ensureVisible(bind));
       await real(tester, () => tester.tap(bind));
       final repository = find.byKey(
@@ -668,6 +680,19 @@ void main() {
         find.byKey(const ValueKey('super-value-bind-label')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey('super-value-bind-label-badge')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-value-bind-label-bound-tile')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('super-value-bind-label-binding-banner')),
+        findsOneWidget,
+      );
+      expect(find.text('Lié à : client.name'), findsOneWidget);
       await real(tester, () => tester.tap(find.text('Appliquer').last));
       expect(
         result?.propertyBindings[SuperValueProperty.label],
@@ -980,50 +1005,51 @@ void main() {
       final swFinder = find.byKey(const ValueKey('super-value-switch-sw'));
       expect(tester.widget<Checkbox>(cbFinder).value, isFalse);
       expect(tester.widget<Switch>(swFinder).value, isFalse);
-      var doc =
-          jsonDecode((await tester.runAsync(() => store.read('People')))!)
-              as Map<String, dynamic>;
+      var doc = jsonDecode(
+        (await tester.runAsync(() => store.read('People')))!,
+      ) as Map<String, dynamic>;
       expect((doc['client'] as Map).containsKey('active'), isFalse);
 
       await real(tester, () => tester.tap(cbFinder), save: true);
       expect(tester.widget<Checkbox>(cbFinder).value, isTrue);
       expect(tester.widget<Switch>(swFinder).value, isTrue);
       expect(boolEvents, contains(true));
-      doc =
-          jsonDecode((await tester.runAsync(() => store.read('People')))!)
-              as Map<String, dynamic>;
+      doc = jsonDecode(
+        (await tester.runAsync(() => store.read('People')))!,
+      ) as Map<String, dynamic>;
       expect((doc['client'] as Map)['active'], isTrue);
 
       await real(tester, () => tester.tap(cbFinder), save: true);
       expect(tester.widget<Checkbox>(cbFinder).value, isFalse);
       expect(tester.widget<Switch>(swFinder).value, isFalse);
-      doc =
-          jsonDecode((await tester.runAsync(() => store.read('People')))!)
-              as Map<String, dynamic>;
+      doc = jsonDecode(
+        (await tester.runAsync(() => store.read('People')))!,
+      ) as Map<String, dynamic>;
       expect((doc['client'] as Map)['active'], isFalse);
       expect(tester.takeException(), isNull);
     },
   );
 
-  testWidgets('boolean binding reports an error when JSON value is not a bool', (
-    tester,
-  ) async {
-    await mount(
-      tester,
-      SuperValue(
-        id: 'bad-bool',
-        config: SuperValueConfig(
-          mode: SuperValueMode.input,
-          kind: SuperValueKind.switchControl,
-          binding: binding,
+  testWidgets(
+    'boolean binding reports an error when JSON value is not a bool',
+    (tester) async {
+      await mount(
+        tester,
+        SuperValue(
+          id: 'bad-bool',
+          config: SuperValueConfig(
+            mode: SuperValueMode.input,
+            kind: SuperValueKind.switchControl,
+            binding: binding,
+          ),
         ),
-      ),
-    );
-    expect(
-      find.byKey(const ValueKey('super-value-binding-error-bad-bool')),
-      findsOneWidget,
-    );
-    expect(find.text('L’attribut lié doit être un booléen.'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      );
+      expect(
+        find.byKey(const ValueKey('super-value-binding-error-bad-bool')),
+        findsOneWidget,
+      );
+      expect(find.text('L’attribut lié doit être un booléen.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

@@ -128,6 +128,8 @@ class LayoutSelection {
   static final _targetContexts = <Object, BuildContext? Function()>{};
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
+  static LayoutFocus? _leafFocus;
+  static bool _preserveLeafOnNextReport = false;
   static bool _activating = false;
 
   /// The container currently owning the deepest reported selection path.
@@ -167,13 +169,28 @@ class LayoutSelection {
         : List<String>.unmodifiable([...best, ..._leafSuffix]);
     if (!listEquals(path.value, fullPath)) path.value = fullPath;
     axisAction.value = _axisActions[bestOwner];
-    focus.value = _focusTargets[bestOwner];
+    if (_leafSuffix.isNotEmpty) {
+      final resolvedLeafSlot = resolveSlotForPath(fullPath);
+      focus.value =
+          _leafFocus ??
+          (resolvedLeafSlot != null && resolvedLeafSlot.mounted
+              ? LayoutFocus(resolvedLeafSlot.context)
+              : _focusTargets[bestOwner]);
+    } else {
+      focus.value = _focusTargets[bestOwner];
+    }
   }
 
   /// Appends deeper leaf `EditorSlot` labels below the active container's slot.
-  static void setLeafSuffix(List<String> labels) {
-    if (listEquals(_leafSuffix, labels)) return;
+  static void setLeafSuffix(List<String> labels, {BuildContext? focusContext}) {
+    final nextFocus = focusContext == null ? null : LayoutFocus(focusContext);
+    _preserveLeafOnNextReport = labels.isNotEmpty;
+    if (listEquals(_leafSuffix, labels) &&
+        _leafFocus?.context == nextFocus?.context) {
+      return;
+    }
     _leafSuffix = labels.isEmpty ? const [] : List.unmodifiable(labels);
+    _leafFocus = labels.isEmpty ? null : nextFocus;
     _syncReported();
   }
 
@@ -299,9 +316,12 @@ class LayoutSelection {
                 children: grandChildren,
                 onSelect: () {
                   selectSlot();
-                  setLeafSuffix(leafLabels);
+                  setLeafSuffix(leafLabels, focusContext: state.context);
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    setLeafSuffix(leafLabels);
+                    setLeafSuffix(
+                      leafLabels,
+                      focusContext: state.mounted ? state.context : null,
+                    );
                   });
                 },
                 onContextMenu: (position) =>
@@ -534,6 +554,7 @@ class LayoutSelection {
   /// zone or slot selections.
   static void deselectDescendants(Object owner) {
     _leafSuffix = const [];
+    _leafFocus = null;
     var removedReported = false;
     for (final entry in _targets.entries.toList()) {
       if (_isAncestor(owner, entry.key)) {
@@ -551,6 +572,7 @@ class LayoutSelection {
   /// active non-ancestor containers and removing stale ancestor reports.
   static void activate(Object owner) {
     _leafSuffix = const [];
+    _leafFocus = null;
     _activeOwner = owner;
     var changed = false;
     _activating = true;
@@ -604,6 +626,7 @@ class LayoutSelection {
     }
     if (_leafSuffix.isNotEmpty && prefix.length > 1) {
       _leafSuffix = _leafSuffix.sublist(0, _leafSuffix.length - 1);
+      _leafFocus = null;
       _syncReported();
       return;
     }
@@ -627,6 +650,7 @@ class LayoutSelection {
   /// Active la disposition du segment, et sa zone si le segment en est une.
   static void select(List<String> prefix) {
     _leafSuffix = const [];
+    _leafFocus = null;
     Object? active;
     var depth = -1;
     for (final entry in _reported.entries) {
@@ -677,6 +701,20 @@ class LayoutSelection {
         return;
       }
     }
+    // Fallback for deeper leaf nodes registered via treeBuilder
+    for (final owner in _candidateOwners()) {
+      final target = _targets[owner];
+      final builder = _treeBuilders[owner];
+      if (target == null || builder == null) continue;
+      if (prefix.length > target.path.length &&
+          listEquals(prefix.take(target.path.length).toList(), target.path)) {
+        if (_findNode(builder(), prefix) case final node?
+            when node.onSelect != null) {
+          node.onSelect!();
+          return;
+        }
+      }
+    }
   }
 
   /// Désélectionne les dispositions dont le chemin prolonge [prefix] : le
@@ -705,10 +743,21 @@ class LayoutSelection {
       _axisActions.remove(owner);
       _focusTargets.remove(owner);
       if (_reported.remove(owner) == null) return;
-      if (identical(_activeOwner, owner)) _leafSuffix = const [];
+      if (identical(_activeOwner, owner)) {
+        _leafSuffix = const [];
+        _leafFocus = null;
+        _preserveLeafOnNextReport = false;
+      }
       if (_activating) return;
     } else {
-      if (!listEquals(previous, value)) _leafSuffix = const [];
+      if (!listEquals(previous, value)) {
+        if (_preserveLeafOnNextReport) {
+          _preserveLeafOnNextReport = false;
+        } else {
+          _leafSuffix = const [];
+          _leafFocus = null;
+        }
+      }
       if (clear != null) _clears[owner] = clear;
       if (focusContext == null) {
         _focusTargets.remove(owner);

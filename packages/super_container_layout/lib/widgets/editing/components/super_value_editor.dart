@@ -1049,33 +1049,36 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
 
   /// Enveloppe un champ de réglage [child] dans une ligne comportant à sa
   /// droite un bouton d'icône permettant de configurer ou modifier la liaison
-  /// repository de la propriété [property] via [_editPropertyBinding].
+  /// repository de la propriété [property] via [_editPropertyBinding], ainsi
+  /// qu'un encadrement et un bandeau d'indication visuelle si une liaison est active.
   Widget _withBinding(
     SuperValueProperty property,
     String label,
     Widget child,
-  ) => Row(
-    crossAxisAlignment: CrossAxisAlignment.center,
-    children: [
-      Expanded(child: child),
-      IconButton(
-        key: ValueKey('super-value-bind-${property.name}'),
-        tooltip: _draft.propertyBindings.containsKey(property)
-            ? 'Modifier la liaison de $label'
-            : 'Lier $label à un repository',
-        visualDensity: VisualDensity.compact,
-        onPressed: !widget.allowBinding || widget.repositories == null
-            ? null
-            : () => _editPropertyBinding(property, label),
-        icon: Icon(
-          _draft.propertyBindings.containsKey(property)
-              ? Icons.link
-              : Icons.add_link,
-          size: 18,
-        ),
-      ),
-    ],
-  );
+  ) {
+    final binding = _draft.propertyBindings[property];
+    final canBind = widget.allowBinding && widget.repositories != null;
+    return RepositoryBoundPropertyTile(
+      buttonKey: ValueKey('super-value-bind-${property.name}'),
+      keyPrefix: 'super-value-bind-${property.name}',
+      binding: binding,
+      tooltip: binding != null
+          ? 'Modifier la liaison de $label'
+          : 'Lier $label à un repository',
+      onPressed: !canBind ? null : () => _editPropertyBinding(property, label),
+      onClear: !canBind || binding == null
+          ? null
+          : () {
+              final bindings = Map<SuperValueProperty, JsonTextBinding>.of(
+                _draft.propertyBindings,
+              )..remove(property);
+              setState(
+                () => _draft = _draft.copyWith(propertyBindings: bindings),
+              );
+            },
+      child: child,
+    );
+  }
 
   /// Dispose verticalement une liste de widgets [children] avec un espacement
   /// uniforme de 12 pixels entre chaque élément.

@@ -742,10 +742,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       );
       return;
     }
-    await configure(
-      regionId: id,
-      initialTab: EditorWizardTab.dimensions,
-    );
+    await configure(regionId: id, initialTab: EditorWizardTab.dimensions);
   }
 
   void selectSlot(
@@ -765,6 +762,11 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       _selectedSlot = slot.id;
     });
     widget.onRegionSelected?.call(region);
+    final customSlotCtx = widget.slotContextFor?.call(slot);
+    final resolvedCustomCtx = customSlotCtx == null
+        ? null
+        : (EditorSlotState.resolveFromContext(customSlotCtx)?.context ??
+              customSlotCtx);
     LayoutSelection.report(
       this,
       [
@@ -775,6 +777,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       clear: _clear,
       focusContext:
           target ??
+          resolvedCustomCtx ??
           _slotContext(slot.id, region) ??
           _regionContext(region) ??
           context,
@@ -1458,9 +1461,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               preview: _regionPreview(option.id),
               previewFor: (beforeId) {
                 if (beforeId == null) return _regionPreview(option.id);
-                final siblingLabel = slotsFor(
-                  option.id,
-                ).where((s) => s.id == beforeId).firstOrNull?.label;
+                final siblingLabel = slotsFor(option.id)
+                    .where((s) => s.id == beforeId)
+                    .firstOrNull
+                    ?.label;
                 return _regionPreview(
                   option.id,
                   beforeId: beforeId,
@@ -1617,7 +1621,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             _slotContext(last.id, regionId);
       },
       label: label ?? spec.label,
-      icon: beforeId == null ? Icons.add_box_outlined : Icons.vertical_align_top,
+      icon: beforeId == null
+          ? Icons.add_box_outlined
+          : Icons.vertical_align_top,
     );
   }
 
@@ -2983,10 +2989,5 @@ class _NativeRegionFlowDimensionDelegate extends EditorDimensionDelegate {
   List<Widget> buildExtraActions(
     BuildContext context, {
     required VoidCallback onResetAndClose,
-  }) => [
-    TextButton(
-      onPressed: onReset,
-      child: const Text('Réinitialiser'),
-    ),
-  ];
+  }) => [TextButton(onPressed: onReset, child: const Text('Réinitialiser'))];
 }

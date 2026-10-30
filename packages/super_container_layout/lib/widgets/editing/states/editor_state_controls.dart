@@ -243,10 +243,13 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
                 icon: const Icon(Icons.delete_outline),
                 onPressed: () => onDeleteAutomatic?.call(automatic),
               ),
-            IconButton(
-              key: ValueKey('$keyPrefix-binding'),
-              tooltip: 'Attribut JSON de l’état',
-              icon: const Icon(Icons.link),
+            RepositoryBindingIconButton(
+              buttonKey: ValueKey('$keyPrefix-binding'),
+              binding: binding,
+              tooltip: binding != null
+                  ? 'Modifier la liaison de l’état'
+                  : 'Attribut JSON de l’état',
+              iconSize: 20,
               onPressed: () async {
                 final result = await showRepositoryBindingDialog(
                   context: ownerContext,
@@ -263,6 +266,28 @@ class EditorStateControls<P extends Enum> extends StatelessWidget {
             ),
           ],
         ),
+        if (binding != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, bottom: 4),
+            child: RepositoryBindingBanner(
+              binding: binding!,
+              keyPrefix: keyPrefix,
+              onTap: () async {
+                final result = await showRepositoryBindingDialog(
+                  context: ownerContext,
+                  title: 'Liaison de l’état',
+                  keyPrefix: '$keyPrefix-binding',
+                  pathHint: 'clients[?].statut',
+                  binding: binding,
+                  helper: 'Une valeur texte doit correspondre exactement au nom d’un état.',
+                );
+                if (result != null && context.mounted) {
+                  onBindingChanged(result.binding);
+                }
+              },
+              onClear: () => onBindingChanged(null),
+            ),
+          ),
         Text(
           'Aperçu local • État réel : ${activeState ?? 'Par défaut'}',
           key: ValueKey('$keyPrefix-active'),

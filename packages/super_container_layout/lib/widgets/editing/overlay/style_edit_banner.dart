@@ -657,9 +657,9 @@ class _TreePopupLayout extends SingleChildLayoutDelegate {
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
     final bounds = _bounds(constraints.biggest);
     return BoxConstraints(
-      minWidth: math.min(200.0, bounds.width),
-      maxWidth: bounds.width.clamp(0.0, 340.0),
-      maxHeight: bounds.height.clamp(0.0, 360.0),
+      minWidth: math.min(400.0, bounds.width),
+      maxWidth: bounds.width.clamp(0.0, 800.0),
+      maxHeight: bounds.height.clamp(0.0, 560.0),
     );
   }
 
@@ -726,7 +726,6 @@ class _PathTreeDialog extends StatelessWidget {
       widgets.add(
         MouseRegion(
           onEnter: (_) => LayoutSelection.highlightNode(node),
-          onExit: (_) => LayoutSelection.highlightNode(null),
           child: InkWell(
             key: occurrence == 0
                 ? ValueKey(baseKey)
@@ -740,17 +739,17 @@ class _PathTreeDialog extends StatelessWidget {
                   ? scheme.primaryContainer.withValues(alpha: .55)
                   : Colors.transparent,
               child: Padding(
-                padding: EdgeInsets.fromLTRB(10.0 + depth * 16.0, 6, 12, 6),
+                padding: EdgeInsets.fromLTRB(8.0 + depth * 7.0, 6, 12, 6),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (depth > 0) ...[
                       Icon(
                         Icons.subdirectory_arrow_right,
-                        size: 14,
+                        size: 13,
                         color: scheme.onSurfaceVariant.withValues(alpha: .7),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 2),
                     ],
                     Icon(
                       node.icon ??
@@ -796,70 +795,73 @@ class _PathTreeDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Material(
-      key: const ValueKey('style-edit-banner-tree-dialog'),
-      color: scheme.surfaceContainerHigh,
-      elevation: 8,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: .6)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: IntrinsicWidth(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.account_tree, size: 15, color: scheme.primary),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      parentLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.onSurfaceVariant,
+    return MouseRegion(
+      onExit: (_) => LayoutSelection.highlightNode(null),
+      child: Material(
+        key: const ValueKey('style-edit-banner-tree-dialog'),
+        color: scheme.surfaceContainerHigh,
+        elevation: 8,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: scheme.outlineVariant.withValues(alpha: .6)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: IntrinsicWidth(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.account_tree, size: 15, color: scheme.primary),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        parentLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  IconButton(
-                    key: const ValueKey('style-edit-banner-tree-close'),
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 15,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 24,
-                      height: 24,
+                    const SizedBox(width: 4),
+                    IconButton(
+                      key: const ValueKey('style-edit-banner-tree-close'),
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 15,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 24,
+                        height: 24,
+                      ),
+                      icon: const Icon(Icons.close),
+                      onPressed: onClose,
                     ),
-                    icon: const Icon(Icons.close),
-                    onPressed: onClose,
-                  ),
-                ],
-              ),
-            ),
-            Divider(
-              height: 1,
-              color: scheme.outlineVariant.withValues(alpha: .5),
-            ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: _buildNodes(context, nodes, 0),
+                  ],
                 ),
               ),
-            ),
-          ],
+              Divider(
+                height: 1,
+                color: scheme.outlineVariant.withValues(alpha: .5),
+              ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: _buildNodes(context, nodes, 0),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

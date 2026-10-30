@@ -1279,6 +1279,7 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
 
   @override
   Widget build(BuildContext context) {
+    final hasBindingCallback = widget.onBindingChanged != null;
     final field = TextFormField(
       key: widget.fieldKey,
       controller: _controller,
@@ -1286,9 +1287,9 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
       decoration: InputDecoration(
         labelText: 'Image de fond (URL)',
         hintText: 'https://...',
-        helperText: widget.binding == null
-            ? null
-            : 'Lié à : ${widget.binding!.toCompactJson()}',
+        helperText: !hasBindingCallback && widget.binding != null
+            ? 'Lié à : ${widget.binding!.toCompactJson()}'
+            : null,
         suffixIcon: widget.value.isEmpty
             ? null
             : IconButton(
@@ -1303,7 +1304,7 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
       ),
       onChanged: widget.onChanged,
     );
-    if (widget.onBindingChanged == null) return field;
+    if (!hasBindingCallback) return field;
     final targetContext =
         widget.ownerContext != null && widget.ownerContext!.mounted
         ? widget.ownerContext!
@@ -1314,40 +1315,35 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
     final listScope =
         JsonListScope.maybeOf(targetContext) ??
         JsonListScope.maybeOf(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(child: field),
-        IconButton(
-          key: widget.bindKey,
-          tooltip: widget.binding != null
-              ? 'Modifier la liaison de l’image de fond'
-              : 'Lier l’image de fond à un repository',
-          visualDensity: VisualDensity.compact,
-          icon: Icon(
-            widget.binding != null ? Icons.link : Icons.add_link,
-            size: 18,
-          ),
-          onPressed: repositories == null
-              ? null
-              : () async {
-                  final result = await showRepositoryBindingDialog(
-                    context: targetContext,
-                    title: 'Lier l’image de fond',
-                    keyPrefix: widget.bindingKeyPrefix ?? 'image-url-binding',
-                    pathHint: 'client.imageUrl',
-                    binding: widget.binding,
-                    store: repositories,
-                    listScope: listScope,
-                    helper:
-                        'Lecture seule : la valeur du repository remplace ce paramètre.',
-                  );
-                  if (result != null && mounted) {
-                    widget.onBindingChanged!(result.binding);
-                  }
-                },
-        ),
-      ],
+    return RepositoryBoundPropertyTile(
+      buttonKey: widget.bindKey,
+      keyPrefix: widget.bindingKeyPrefix ?? 'image-url-binding',
+      binding: widget.binding,
+      tooltip: widget.binding != null
+          ? 'Modifier la liaison de l’image de fond'
+          : 'Lier l’image de fond à un repository',
+      onPressed: repositories == null
+          ? null
+          : () async {
+              final result = await showRepositoryBindingDialog(
+                context: targetContext,
+                title: 'Lier l’image de fond',
+                keyPrefix: widget.bindingKeyPrefix ?? 'image-url-binding',
+                pathHint: 'client.imageUrl',
+                binding: widget.binding,
+                store: repositories,
+                listScope: listScope,
+                helper:
+                    'Lecture seule : la valeur du repository remplace ce paramètre.',
+              );
+              if (result != null && mounted) {
+                widget.onBindingChanged!(result.binding);
+              }
+            },
+      onClear: repositories == null || widget.binding == null
+          ? null
+          : () => widget.onBindingChanged!(null),
+      child: field,
     );
   }
 }

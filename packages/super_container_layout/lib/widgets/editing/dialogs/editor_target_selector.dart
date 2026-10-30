@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../overlay/editor_zoom.dart';
 import '../slots/editor_slot.dart';
 
 /// Élément de base affiché dans le sélecteur de cible d'un assistant d'édition
@@ -125,7 +126,14 @@ class _EditorTargetSelectorState<T extends EditorTargetItem>
                   margin: const EdgeInsets.only(bottom: 8),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: () => widget.onSelected(target),
+                    onTap: () {
+                      final slotCtx = target.slot?.context;
+                      if (slotCtx != null && slotCtx.mounted) {
+                        EditorZoomScope.controllerOf(context)?.dialog
+                            .retarget(slotCtx);
+                      }
+                      widget.onSelected(target);
+                    },
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Row(

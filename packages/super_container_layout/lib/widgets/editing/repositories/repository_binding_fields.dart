@@ -341,3 +341,222 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
     );
   }
 }
+
+/// Bouton d'icône permettant de créer ou modifier une liaison repository.
+///
+/// Lorsqu'une [binding] est active, le bouton est mis en évidence par un fond
+/// coloré (`primaryContainer`), une bordure `primary`, l'icône `Icons.link`
+/// ainsi qu'une pastille ([Badge]).
+class RepositoryBindingIconButton extends StatelessWidget {
+  const RepositoryBindingIconButton({
+    required this.binding,
+    required this.tooltip,
+    required this.onPressed,
+    this.buttonKey,
+    this.iconSize = 18,
+    super.key,
+  });
+
+  final Key? buttonKey;
+  final JsonTextBinding? binding;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final double iconSize;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isBound = binding != null;
+    final keyVal = buttonKey is ValueKey<String>
+        ? (buttonKey! as ValueKey<String>).value
+        : null;
+    final effectiveTooltip = isBound
+        ? '$tooltip (${binding!.path})'
+        : tooltip;
+    return IconButton(
+      key: buttonKey,
+      tooltip: effectiveTooltip,
+      visualDensity: VisualDensity.compact,
+      style: isBound
+          ? IconButton.styleFrom(
+              backgroundColor: scheme.primaryContainer,
+              foregroundColor: scheme.primary,
+              side: BorderSide(color: scheme.primary, width: 1.5),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            )
+          : null,
+      onPressed: onPressed,
+      icon: isBound
+          ? Badge(
+              key: keyVal != null ? ValueKey('$keyVal-badge') : null,
+              backgroundColor: scheme.primary,
+              smallSize: 7,
+              child: Icon(
+                Icons.link,
+                size: iconSize,
+                color: scheme.primary,
+              ),
+            )
+          : Icon(Icons.add_link, size: iconSize),
+    );
+  }
+}
+
+/// Bandeau compact affichant le chemin de liaison actif (`Lié à : ...`)
+/// avec possibilité de modifier ou supprimer rapidement la liaison.
+class RepositoryBindingBanner extends StatelessWidget {
+  const RepositoryBindingBanner({
+    required this.binding,
+    this.keyPrefix,
+    this.onTap,
+    this.onClear,
+    super.key,
+  });
+
+  final JsonTextBinding binding;
+  final String? keyPrefix;
+  final VoidCallback? onTap;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      key: keyPrefix != null ? ValueKey('$keyPrefix-binding-banner') : null,
+      color: scheme.primaryContainer.withValues(alpha: 0.45),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(6),
+        side: BorderSide(color: scheme.primary.withValues(alpha: 0.5)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              Icon(Icons.link, size: 14, color: scheme.primary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Lié à : ${binding.path}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Consolas',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              if (onClear != null) ...[
+                const SizedBox(width: 4),
+                Tooltip(
+                  message: 'Supprimer la liaison',
+                  child: InkWell(
+                    key: keyPrefix != null
+                        ? ValueKey('$keyPrefix-binding-clear')
+                        : null,
+                    borderRadius: BorderRadius.circular(4),
+                    onTap: onClear,
+                    child: Padding(
+                      padding: const EdgeInsets.all(2),
+                      child: Icon(
+                        Icons.link_off,
+                        size: 14,
+                        color: scheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Enveloppe un champ de propriété avec son bouton de liaison et, lorsqu'une
+/// liaison est active, un encadrement visuel coloré ainsi qu'un bandeau
+/// affichant la cible de la liaison.
+class RepositoryBoundPropertyTile extends StatelessWidget {
+  const RepositoryBoundPropertyTile({
+    required this.binding,
+    required this.tooltip,
+    required this.onPressed,
+    required this.child,
+    this.buttonKey,
+    this.keyPrefix,
+    this.onClear,
+    super.key,
+  });
+
+  final Key? buttonKey;
+  final String? keyPrefix;
+  final JsonTextBinding? binding;
+  final String tooltip;
+  final VoidCallback? onPressed;
+  final VoidCallback? onClear;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final isBound = binding != null;
+    final effectivePrefix =
+        keyPrefix ??
+        (buttonKey is ValueKey<String>
+            ? (buttonKey! as ValueKey<String>).value
+            : null);
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: child),
+        const SizedBox(width: 4),
+        RepositoryBindingIconButton(
+          buttonKey: buttonKey,
+          binding: binding,
+          tooltip: tooltip,
+          onPressed: onPressed,
+        ),
+      ],
+    );
+    if (!isBound) return row;
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      key: effectivePrefix != null
+          ? ValueKey('$effectivePrefix-bound-tile')
+          : null,
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: scheme.primary.withValues(alpha: 0.55),
+          width: 1.2,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 6, 6, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            row,
+            const SizedBox(height: 6),
+            RepositoryBindingBanner(
+              binding: binding!,
+              keyPrefix: effectivePrefix,
+              onTap: onPressed,
+              onClear: onClear,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+

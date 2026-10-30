@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -51,6 +52,9 @@ class _EditorZoomState extends State<EditorZoom>
   final _viewportKey = GlobalKey();
   BuildContext? _zoomTarget;
   EditorDialogFocus? _zoomDialog;
+  EditorSlotState? _debouncedHighlight;
+  Timer? _hoverZoomTimer;
+  static const _hoverZoomDelay = Duration(milliseconds: 160);
   double? _manualScale;
   Offset? _manualOffset;
   bool _framingHeld = false;
@@ -61,6 +65,18 @@ class _EditorZoomState extends State<EditorZoom>
   Offset? _lastSecondaryPosition;
   bool _isSecondaryPanning = false;
   bool _isSecondaryZooming = false;
+
+  void _onHighlightChanged() {
+    _hoverZoomTimer?.cancel();
+    final next = EditorSlotState.highlightedTarget.value;
+    if (identical(next, _debouncedHighlight)) return;
+    _hoverZoomTimer = Timer(_hoverZoomDelay, () {
+      _hoverZoomTimer = null;
+      if (!mounted) return;
+      _debouncedHighlight = EditorSlotState.highlightedTarget.value;
+      _schedule();
+    });
+  }
 
   @override
   void initState() {
@@ -84,6 +100,7 @@ class _EditorZoomState extends State<EditorZoom>
       }
     };
     LayoutSelection.focus.addListener(_schedule);
+    EditorSlotState.highlightedTarget.addListener(_onHighlightChanged);
     _controller.dialog.addListener(_schedule);
     _controller.contextMenuAvailable.addListener(_schedule);
     EditorInsertionPreview.active.addListener(_schedule);
@@ -118,7 +135,12 @@ class _EditorZoomState extends State<EditorZoom>
     if (_framingHeld && _controller.enabled) return;
     _controller.contentContext = _content.currentContext;
     final dialog = _controller.dialog.value;
+    final highlighted = _debouncedHighlight;
+    final highlightedCtx = highlighted != null && highlighted.mounted
+        ? highlighted.context
+        : null;
     final focus =
+        highlightedCtx ??
         dialog?.target ??
         LayoutSelection.focus.value?.context ??
         (dialog != null ? _content.currentContext : null);
@@ -197,28 +219,65 @@ class _EditorZoomState extends State<EditorZoom>
       } else if (_manualOffset case final manualOffset?) {
         destination = (scale: _to.scale, offset: manualOffset);
       } else if (rect != null && !rect.isEmpty && rect.isFinite) {
+        final viewportBounds = Offset.zero & _viewport;
+        final isOutOfView =
+            rect.left < viewportBounds.left ||
+            rect.top < viewportBounds.top ||
+            rect.right > viewportBounds.right ||
+            rect.bottom > viewportBounds.bottom;
+        final isHoverFraming = highlightedCtx != null;
+        final maxExtent = isHoverFraming && widget.maxAutoZoomExtent > 0
+            ? math.max(
+                widget.maxAutoZoomExtent,
+                math.min(available.width, available.height) * 0.75,
+              )
+            : widget.maxAutoZoomExtent;
         final tooLarge =
             dialog == null &&
             _manualScale == null &&
-            (rect.width >= widget.maxAutoZoomExtent ||
-                rect.height >= widget.maxAutoZoomExtent);
+            (widget.maxAutoZoomExtent <= 0 ||
+                (rect.width >= maxExtent &&
+                    rect.height >= maxExtent &&
+                    !isOutOfView));
         if (!tooLarge) {
           final hasReserved =
               dialog != null || _controller.contextMenuAvailable.value != null;
-          final automaticScale = math
-              .min(
-                available.width * .7 / rect.width,
-                available.height * .7 / rect.height,
-              )
-              .clamp(
-                !hasReserved ? EditorZoom.minScale : 0.0,
-                EditorZoom.maxScale,
-              );
-          final scale = automaticScale;
-          destination = (
-            scale: scale,
-            offset: available.center - rect.center * scale,
+          var rawScale = math.min(
+            available.width * .7 / rect.width,
+            available.height * .7 / rect.height,
           );
+          if (rawScale <= EditorZoom.minScale &&
+              rect.shortestSide > 0 &&
+              rect.shortestSide < maxExtent &&
+              (rect.width < _viewport.width * .88 ||
+                  rect.height < _viewport.height * .88)) {
+            final targetShort = isHoverFraming
+                ? math.min(available.shortestSide * .45, 220.0)
+                : math.min(widget.maxAutoZoomExtent * .85, 180.0);
+            rawScale = math.max(
+              rawScale,
+              (targetShort / rect.shortestSide).clamp(
+                isHoverFraming ? 1.35 : EditorZoom.minScale,
+                2.2,
+              ),
+            );
+          }
+          final scale = rawScale.clamp(
+            !hasReserved || isHoverFraming ? EditorZoom.minScale : 0.0,
+            EditorZoom.maxScale,
+          );
+          if (hasReserved ||
+              scale > EditorZoom.minScale ||
+              isOutOfView ||
+              isHoverFraming) {
+            destination = (
+              scale: scale,
+              offset:
+                  scale <= EditorZoom.minScale && !hasReserved && !isOutOfView
+                  ? Offset.zero
+                  : available.center - rect.center * scale,
+            );
+          }
         }
       }
     }
@@ -425,8 +484,10 @@ class _EditorZoomState extends State<EditorZoom>
 
   @override
   void dispose() {
+    _hoverZoomTimer?.cancel();
     _controller.sliderScaleHandler = null;
     LayoutSelection.focus.removeListener(_schedule);
+    EditorSlotState.highlightedTarget.removeListener(_onHighlightChanged);
     _controller.dialog.removeListener(_schedule);
     _controller.contextMenuAvailable.removeListener(_schedule);
     EditorInsertionPreview.active.removeListener(_schedule);
@@ -798,11 +859,18 @@ class EditorDialogNotifier extends ValueNotifier<EditorDialogFocus?> {
     }
   }
 
+  void retarget(BuildContext? target) {
+    final current = value;
+    if (current == null || identical(current.target, target)) return;
+    current.target = target;
+    notifyListeners();
+  }
+
   void geometryChanged() => notifyListeners();
 }
 
 class EditorDialogFocus {
   EditorDialogFocus({required this.target});
-  final BuildContext? target;
+  BuildContext? target;
   Rect? available;
 }

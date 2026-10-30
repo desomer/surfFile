@@ -774,28 +774,30 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
     SuperActionProperty property,
     String label,
     Widget child,
-  ) => Row(
-    crossAxisAlignment: CrossAxisAlignment.center,
-    children: [
-      Expanded(child: child),
-      IconButton(
-        key: ValueKey('super-action-bind-${property.name}'),
-        tooltip: _draft.propertyBindings.containsKey(property)
-            ? 'Modifier la liaison de $label'
-            : 'Lier $label à un repository',
-        visualDensity: VisualDensity.compact,
-        onPressed: !widget.allowBinding || widget.repositories == null
-            ? null
-            : () => _editPropertyBinding(property, label),
-        icon: Icon(
-          _draft.propertyBindings.containsKey(property)
-              ? Icons.link
-              : Icons.add_link,
-          size: 18,
-        ),
-      ),
-    ],
-  );
+  ) {
+    final binding = _draft.propertyBindings[property];
+    final canBind = widget.allowBinding && widget.repositories != null;
+    return RepositoryBoundPropertyTile(
+      buttonKey: ValueKey('super-action-bind-${property.name}'),
+      keyPrefix: 'super-action-bind-${property.name}',
+      binding: binding,
+      tooltip: binding != null
+          ? 'Modifier la liaison de $label'
+          : 'Lier $label à un repository',
+      onPressed: !canBind ? null : () => _editPropertyBinding(property, label),
+      onClear: !canBind || binding == null
+          ? null
+          : () {
+              final bindings = Map<SuperActionProperty, JsonTextBinding>.of(
+                _draft.propertyBindings,
+              )..remove(property);
+              setState(
+                () => _draft = _draft.copyWith(propertyBindings: bindings),
+              );
+            },
+      child: child,
+    );
+  }
 
   Widget _colorSetting({
     required String fieldKey,

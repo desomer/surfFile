@@ -1974,37 +1974,39 @@ void main() {
               ],
             ),
             home: Scaffold(
-              body: SuperLayout(
-                name: 'Main',
-                label: 'Main',
-                config: config.copyWith(
-                  placements: {
-                    SuperLayoutZone.center: ['card-slot'],
-                  },
-                ),
-                slots: [
-                  BuilderSlot(
-                    id: 'card-slot',
-                    label: 'Ma Carte',
-                    builder: (_) => EditableSurface(
+              body: EditorZoom(
+                child: SuperLayout(
+                  name: 'Main',
+                  label: 'Main',
+                  config: config.copyWith(
+                    placements: {
+                      SuperLayoutZone.center: ['card-slot'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
                       id: 'card-slot',
                       label: 'Ma Carte',
-                      child: Align(
-                        alignment: Alignment.bottomRight,
-                        child: SizedBox(
-                          width: 120,
-                          height: 48,
-                          child: EditorSlot(
-                            id: 'btn-slot',
-                            label: 'Mon Bouton',
-                            onEdit: () async {},
-                            child: const Center(child: Text('Action')),
+                      builder: (_) => EditableSurface(
+                        id: 'card-slot',
+                        label: 'Ma Carte',
+                        child: Align(
+                          alignment: Alignment.bottomRight,
+                          child: SizedBox(
+                            width: 120,
+                            height: 48,
+                            child: EditorSlot(
+                              id: 'btn-slot',
+                              label: 'Mon Bouton',
+                              onEdit: () async {},
+                              child: const Center(child: Text('Action')),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -2026,6 +2028,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+
+      // Verify EditorZoom automatically zoomed in on the small 'Mon Bouton' leaf (120x48 -> 300%)
+      final zoomController = EditorZoomScope.controllerOf(
+        tester.element(find.text('Action')),
+      )!;
+      expect(zoomController.scale.value, closeTo(3.0, 0.01));
 
       EditorSelectionOutline? activeOutlineForLabel(String targetLabel) {
         final slotFinder = find.byWidgetPredicate(

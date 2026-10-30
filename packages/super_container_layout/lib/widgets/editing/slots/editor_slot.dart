@@ -306,7 +306,21 @@ class EditorSlotState extends State<EditorSlot> {
     null,
   );
   static bool _hoveredTargetUpdateScheduled = false;
-  static EditorSlotState? _menuHoveredTarget;
+  static final ValueNotifier<EditorSlotState?> _highlightedTarget =
+      ValueNotifier(null);
+
+  /// Target currently highlighted from a context menu, banner path segment,
+  /// chevron tree popup, or target selector dialog.
+  static ValueNotifier<EditorSlotState?> get highlightedTarget =>
+      _highlightedTarget;
+
+  static EditorSlotState? get _menuHoveredTarget => _highlightedTarget.value;
+  static set _menuHoveredTarget(EditorSlotState? value) {
+    if (!identical(_highlightedTarget.value, value)) {
+      _highlightedTarget.value = value;
+    }
+  }
+
   static bool _menuOpen = false;
   static bool _openingMenuThisTurn = false;
   static int _menuGeneration = 0;
@@ -502,7 +516,7 @@ class EditorSlotState extends State<EditorSlot> {
           _refreshHoveredTarget();
         },
         onExit: (_) {
-          if (identical(_menuHoveredTarget, target)) {
+          if (!_menuOpen && identical(_menuHoveredTarget, target)) {
             _menuHoveredTarget = null;
             _refreshHoveredTarget();
           }
@@ -889,12 +903,21 @@ class EditorSlotState extends State<EditorSlot> {
           return !foundSlotBoundary;
         });
         if (slotStates.length > 1) {
+          final deepestLeaf = slotStates.first;
           final leaves = [
             for (final state in slotStates.reversed.skip(1)) state.label,
           ];
-          LayoutSelection.setLeafSuffix(leaves);
+          LayoutSelection.setLeafSuffix(
+            leaves,
+            focusContext: deepestLeaf.context,
+          );
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) LayoutSelection.setLeafSuffix(leaves);
+            if (mounted) {
+              LayoutSelection.setLeafSuffix(
+                leaves,
+                focusContext: deepestLeaf.mounted ? deepestLeaf.context : null,
+              );
+            }
           });
         }
       }
@@ -1246,7 +1269,7 @@ class EditorSlotState extends State<EditorSlot> {
           ],
           for (final (actionIndex, action)
               in extraActions.where((action) => !action.inline).indexed) ...[
-            if (actionIndex > 0) const PopupMenuDivider(height: 12),
+            if (actionIndex > 0) const PopupMenuDivider(height: 4),
             PopupMenuItem<Future<void> Function()>(
               height: 40,
               value: action.onEdit,
@@ -1286,9 +1309,9 @@ class EditorSlotState extends State<EditorSlot> {
             ),
           ],
           if (hasMenuActions && entries.isNotEmpty)
-            const PopupMenuDivider(height: 12),
+            const PopupMenuDivider(height: 4),
           for (final (entryIndex, (index, entry)) in entries.indexed) ...[
-            if (entryIndex > 0) const PopupMenuDivider(height: 12),
+            if (entryIndex > 0) const PopupMenuDivider(height: 4),
             if (entry is EditorContextMenuEntry)
               PopupMenuItem<Future<void> Function()>(
                 height: 40,
@@ -2114,113 +2137,118 @@ class _EditorContextMenuDialogState<T>
     _syncZoomAvailable();
     final dialogCard = FadeTransition(
       opacity: CurvedAnimation(parent: widget.animation, curve: Curves.easeOut),
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerSignal: (event) => zoom?.handlePointerSignal(event),
-        child: Material(
-          key: const ValueKey('editor-context-menu-dialog'),
-          color: widget.color,
-          surfaceTintColor: widget.surfaceTintColor,
-          shadowColor: widget.shadowColor,
-          elevation: widget.elevation,
-          shape: widget.shape,
-          clipBehavior: widget.clipBehavior,
-          child: IntrinsicWidth(
-            stepWidth: 56.0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                MouseRegion(
-                  cursor: SystemMouseCursors.move,
-                  child: GestureDetector(
-                    key: const ValueKey('editor-context-menu-drag'),
-                    behavior: HitTestBehavior.opaque,
-                    dragStartBehavior: DragStartBehavior.down,
-                    onPanUpdate: (details) => setState(() {
-                      _dragged = true;
-                      _position = _layout.resolvedPosition + details.delta;
-                      _layout = _ContextMenuDialogLayout(
-                        position: _position,
-                        dragged: _dragged,
-                        bannerLocal: widget.bannerLocal,
-                        avoidRect: null,
-                        menuConstraints: widget.constraints,
-                      );
-                    }),
-                    child: ColoredBox(
-                      color: colors.surfaceContainerHighest.withValues(
-                        alpha: .45,
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 2, 4, 2),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.drag_indicator,
-                              size: 16,
-                              color: colors.onSurfaceVariant,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Center(
-                                child: Container(
-                                  width: 32,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: colors.onSurfaceVariant.withValues(
-                                      alpha: .35,
+      child: MouseRegion(
+        onExit: (_) => EditorSlotState.clearHighlightedTarget(),
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerSignal: (event) => zoom?.handlePointerSignal(event),
+          child: Material(
+            key: const ValueKey('editor-context-menu-dialog'),
+            color: widget.color,
+            surfaceTintColor: widget.surfaceTintColor,
+            shadowColor: widget.shadowColor,
+            elevation: widget.elevation,
+            shape: widget.shape,
+            clipBehavior: widget.clipBehavior,
+            child: IntrinsicWidth(
+              stepWidth: 56.0,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  MouseRegion(
+                    cursor: SystemMouseCursors.move,
+                    child: GestureDetector(
+                      key: const ValueKey('editor-context-menu-drag'),
+                      behavior: HitTestBehavior.opaque,
+                      dragStartBehavior: DragStartBehavior.down,
+                      onPanUpdate: (details) => setState(() {
+                        _dragged = true;
+                        _position = _layout.resolvedPosition + details.delta;
+                        _layout = _ContextMenuDialogLayout(
+                          position: _position,
+                          dragged: _dragged,
+                          bannerLocal: widget.bannerLocal,
+                          avoidRect: null,
+                          menuConstraints: widget.constraints,
+                        );
+                      }),
+                      child: ColoredBox(
+                        color: colors.surfaceContainerHighest.withValues(
+                          alpha: .45,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 2, 4, 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.drag_indicator,
+                                size: 16,
+                                color: colors.onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Center(
+                                  child: Container(
+                                    width: 32,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: colors.onSurfaceVariant.withValues(
+                                        alpha: .35,
+                                      ),
+                                      borderRadius: BorderRadius.circular(999),
                                     ),
-                                    borderRadius: BorderRadius.circular(999),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                            IconButton(
-                              key: const ValueKey('editor-context-menu-close'),
-                              tooltip: 'Fermer',
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 16,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 24,
-                                height: 24,
+                              const SizedBox(width: 6),
+                              IconButton(
+                                key: const ValueKey(
+                                  'editor-context-menu-close',
+                                ),
+                                tooltip: 'Fermer',
+                                visualDensity: VisualDensity.compact,
+                                iconSize: 16,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints.tightFor(
+                                  width: 24,
+                                  height: 24,
+                                ),
+                                color: colors.onSurfaceVariant,
+                                icon: const Icon(Icons.close),
+                                onPressed: () => Navigator.of(context).pop(),
                               ),
-                              color: colors.onSurfaceVariant,
-                              icon: const Icon(Icons.close),
-                              onPressed: () => Navigator.of(context).pop(),
-                            ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 1,
+                    child: ColoredBox(
+                      color: colors.outlineVariant.withValues(alpha: .4),
+                    ),
+                  ),
+                  Flexible(
+                    child: Semantics(
+                      scopesRoute: true,
+                      namesRoute: true,
+                      explicitChildNodes: true,
+                      role: SemanticsRole.menu,
+                      child: SingleChildScrollView(
+                        padding: widget.menuPadding,
+                        child: ListBody(
+                          children: [
+                            for (final item in widget.items)
+                              Builder(builder: (_) => item),
                           ],
                         ),
                       ),
                     ),
                   ),
-                ),
-                SizedBox(
-                  height: 1,
-                  child: ColoredBox(
-                    color: colors.outlineVariant.withValues(alpha: .4),
-                  ),
-                ),
-                Flexible(
-                  child: Semantics(
-                    scopesRoute: true,
-                    namesRoute: true,
-                    explicitChildNodes: true,
-                    role: SemanticsRole.menu,
-                    child: SingleChildScrollView(
-                      padding: widget.menuPadding,
-                      child: ListBody(
-                        children: [
-                          for (final item in widget.items)
-                            Builder(builder: (_) => item),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
