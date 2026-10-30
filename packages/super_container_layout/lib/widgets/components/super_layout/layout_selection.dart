@@ -68,6 +68,7 @@ class LayoutSelectionNode {
     this.children = const [],
     this.onSelect,
     this.onContextMenu,
+    this.targetContext,
   });
 
   final String label;
@@ -76,6 +77,7 @@ class LayoutSelectionNode {
   final List<LayoutSelectionNode> children;
   final VoidCallback? onSelect;
   final ValueChanged<Offset>? onContextMenu;
+  final BuildContext? Function()? targetContext;
 }
 
 /// Chemin des zones sélectionnées (parent > ... > enfant) dans les dispositions
@@ -123,6 +125,7 @@ class LayoutSelection {
   static final _deselects = <Object, VoidCallback>{};
   static final _treeBuilders = <Object, List<LayoutSelectionNode> Function()>{};
   static final _contextMenus = <Object, ValueChanged<Offset>>{};
+  static final _targetContexts = <Object, BuildContext? Function()>{};
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
   static bool _activating = false;
@@ -184,6 +187,7 @@ class LayoutSelection {
     bool delegateToParent = false,
     List<LayoutSelectionNode> Function()? treeBuilder,
     ValueChanged<Offset>? onContextMenu,
+    BuildContext? Function()? targetContext,
   }) {
     if (onDeselect == null) {
       _deselects.remove(owner);
@@ -205,6 +209,11 @@ class LayoutSelection {
     } else {
       _contextMenus[owner] = onContextMenu;
     }
+    if (targetContext == null) {
+      _targetContexts.remove(owner);
+    } else {
+      _targetContexts[owner] = targetContext;
+    }
     _targets[owner] = (
       path: List.unmodifiable(path),
       select: select,
@@ -219,6 +228,7 @@ class LayoutSelection {
     _deselects.remove(owner);
     _treeBuilders.remove(owner);
     _contextMenus.remove(owner);
+    _targetContexts.remove(owner);
   }
 
   /// Extracts nested selectable `LayoutSelectionNode`s from a slot's widget
@@ -262,6 +272,7 @@ class LayoutSelection {
                   _contextMenus[state] ??
                   (position) =>
                       EditorSlotState.openMenuFromContext(element, position),
+              targetContext: _targetContexts[state] ?? () => element,
             ),
           ];
         }
@@ -295,6 +306,7 @@ class LayoutSelection {
                 },
                 onContextMenu: (position) =>
                     state.openMenu(position, selectTarget: false),
+                targetContext: () => state.context,
               ),
             ];
           }
@@ -382,6 +394,84 @@ class LayoutSelection {
         return;
       }
     }
+  }
+
+  /// Resolves the [EditorSlotState] corresponding to [prefix] in the selection
+  /// hierarchy, or `null` if none matches.
+  static EditorSlotState? resolveSlotForPath(List<String> prefix) {
+    if (prefix.isEmpty) return null;
+    final owners = _candidateOwners();
+
+    // 1. Direct match on a non-delegating registered container's root path.
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final getCtx = _targetContexts[owner];
+      if (target != null &&
+          !target.delegateToParent &&
+          listEquals(target.path, prefix)) {
+        final ctx =
+            getCtx?.call() ?? (owner is StatefulElement ? owner : null);
+        if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
+          return slot;
+        }
+      }
+    }
+
+    // 2. Match a zone, region, or slot inside an ancestor container's tree.
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final builder = _treeBuilders[owner];
+      if (target == null || builder == null) continue;
+      if (prefix.length > target.path.length &&
+          listEquals(prefix.take(target.path.length).toList(), target.path)) {
+        final roots = builder();
+        if (_findNode(roots, prefix) case final node?) {
+          final ctx = node.targetContext?.call();
+          if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
+            return slot;
+          }
+        }
+      }
+    }
+
+    // 3. Fallback on delegating container root path.
+    for (final owner in owners) {
+      final target = _targets[owner];
+      final getCtx = _targetContexts[owner];
+      if (target != null && listEquals(target.path, prefix)) {
+        final ctx = getCtx?.call();
+        if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
+          return slot;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /// Highlights the component at [prefix] with the editor overlay outline, or
+  /// clears the highlight when [prefix] is `null`.
+  static void highlightPath(List<String>? prefix) {
+    if (prefix == null || prefix.isEmpty) {
+      EditorSlotState.clearHighlightedTarget();
+      return;
+    }
+    EditorSlotState.setHighlightedTarget(resolveSlotForPath(prefix));
+  }
+
+  /// Highlights [node] with the editor overlay outline, or clears the highlight
+  /// when [node] is `null`.
+  static void highlightNode(LayoutSelectionNode? node) {
+    if (node == null) {
+      EditorSlotState.clearHighlightedTarget();
+      return;
+    }
+    final fromCtx = EditorSlotState.resolveFromContext(
+      node.targetContext?.call(),
+    );
+    EditorSlotState.setHighlightedTarget(
+      fromCtx ?? resolveSlotForPath(node.path),
+    );
   }
 
   /// Returns the complete tree of selectable children under [prefix].

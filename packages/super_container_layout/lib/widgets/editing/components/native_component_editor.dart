@@ -428,6 +428,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             : context,
         position,
       ),
+      targetContext: () => !widget.editSurface && widget.showRegionInPath
+          ? (_regionContext(_selected) ?? _regionContext('body') ?? context)
+          : context,
       treeBuilder: () {
         if (!widget.showRegionInPath) {
           final regionId = widget.regions.first.id;
@@ -450,6 +453,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     onSelect: selectThisSlot,
                     onContextMenu: (position) =>
                         EditorSlotState.openMenuFromContext(slotCtx, position),
+                    targetContext: () =>
+                        widget.slotContextFor?.call(slot) ??
+                        _slotContext(slot.id, regionId) ??
+                        _regionContext(regionId),
                     children: LayoutSelection.childrenFromContext(
                       slotCtx,
                       slotPath,
@@ -486,6 +493,9 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                               slotCtx,
                               position,
                             ),
+                        targetContext: () =>
+                            widget.slotContextFor?.call(slot) ??
+                            _slotContext(slot.id, region.id),
                         children: LayoutSelection.childrenFromContext(
                           slotCtx,
                           slotPath,
@@ -515,6 +525,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                         _regionContext(region.id),
                         position,
                       ),
+                  targetContext: () => _regionContext(region.id),
                   children: slotNodes,
                 );
               }(),

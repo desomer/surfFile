@@ -120,6 +120,7 @@ extension _SuperLayoutView on SuperLayoutState {
             },
             onContextMenu: (position) =>
                 EditorSlotState.openMenuFromContext(this.context, position),
+            targetContext: () => this.context,
             treeBuilder: () {
               final currentConfig = _config.value;
               final layoutPath = [...parentPath, name];
@@ -140,6 +141,7 @@ extension _SuperLayoutView on SuperLayoutState {
                       onContextMenu: (position) => _zoneSlotKeys[zone]
                           ?.currentState
                           ?.openMenu(position, selectTarget: false),
+                      targetContext: () => _zoneSlotKeys[zone]?.currentContext,
                       children: [
                         for (final slot in slots)
                           () {
@@ -162,6 +164,8 @@ extension _SuperLayoutView on SuperLayoutState {
                                     slotCtx,
                                     position,
                                   ),
+                              targetContext: () =>
+                                  _slotFocusKeys[slot.id]?.currentContext,
                               children: LayoutSelection.childrenFromContext(
                                 slotCtx,
                                 slotPath,

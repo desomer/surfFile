@@ -49,6 +49,7 @@ extension _SuperLayoutGrid on SuperLayoutState {
       },
       onContextMenu: (position) =>
           EditorSlotState.openMenuFromContext(this.context, position),
+      targetContext: () => this.context,
       treeBuilder: () {
         final layoutPath = [...parentPath, name];
         final currentSlots = [
@@ -73,6 +74,7 @@ extension _SuperLayoutGrid on SuperLayoutState {
                 onSelect: selectThisSlot,
                 onContextMenu: (position) =>
                     EditorSlotState.openMenuFromContext(slotCtx, position),
+                targetContext: () => _slotFocusKeys[slot.id]?.currentContext,
                 children: LayoutSelection.childrenFromContext(
                   slotCtx,
                   slotPath,

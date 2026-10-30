@@ -371,7 +371,14 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                         ),
                                         label: label,
                                         current: index == path.length - 1,
+                                        onHover: (hovered) =>
+                                            LayoutSelection.highlightPath(
+                                              hovered
+                                                  ? path.sublist(0, index + 1)
+                                                  : null,
+                                            ),
                                         onTap: () {
+                                          LayoutSelection.highlightPath(null);
                                           EditorSlotState.closeActiveMenu();
                                           if (_treePopup != null) {
                                             setState(() => _treePopup = null);
@@ -381,6 +388,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                                           );
                                         },
                                         onSecondaryTap: (position) {
+                                          LayoutSelection.highlightPath(null);
                                           EditorSlotState.closeActiveMenu();
                                           if (_treePopup != null) {
                                             setState(() => _treePopup = null);
@@ -426,7 +434,10 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
             child: GestureDetector(
               key: const ValueKey('style-edit-banner-tree-barrier'),
               behavior: HitTestBehavior.translucent,
-              onTap: () => setState(() => _treePopup = null),
+              onTap: () {
+                LayoutSelection.highlightNode(null);
+                setState(() => _treePopup = null);
+              },
             ),
           ),
         banner,
@@ -440,8 +451,12 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               parentLabel: popup.prefix.last,
               nodes: popup.nodes,
               currentPath: LayoutSelection.path.value,
-              onClose: () => setState(() => _treePopup = null),
+              onClose: () {
+                LayoutSelection.highlightNode(null);
+                setState(() => _treePopup = null);
+              },
               onSelectNode: (node) {
+                LayoutSelection.highlightNode(null);
                 EditorSlotState.closeActiveMenu();
                 setState(() => _treePopup = null);
                 if (node.onSelect != null) {
@@ -451,6 +466,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                 }
               },
               onContextMenuNode: (node, position) {
+                LayoutSelection.highlightNode(null);
                 EditorSlotState.closeActiveMenu();
                 setState(() => _treePopup = null);
                 final targetPosition = _menuPositionForBanner(position);
@@ -708,59 +724,63 @@ class _PathTreeDialog extends StatelessWidget {
         ifAbsent: () => 0,
       );
       widgets.add(
-        InkWell(
-          key: occurrence == 0
-              ? ValueKey(baseKey)
-              : ValueKey('$baseKey#$occurrence'),
-          onTap: () => onSelectNode(node),
-          onSecondaryTapUp: onContextMenuNode == null
-              ? null
-              : (details) => onContextMenuNode!(node, details.globalPosition),
-          child: ColoredBox(
-            color: isSelected
-                ? scheme.primaryContainer.withValues(alpha: .55)
-                : Colors.transparent,
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(10.0 + depth * 16.0, 6, 12, 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (depth > 0) ...[
+        MouseRegion(
+          onEnter: (_) => LayoutSelection.highlightNode(node),
+          onExit: (_) => LayoutSelection.highlightNode(null),
+          child: InkWell(
+            key: occurrence == 0
+                ? ValueKey(baseKey)
+                : ValueKey('$baseKey#$occurrence'),
+            onTap: () => onSelectNode(node),
+            onSecondaryTapUp: onContextMenuNode == null
+                ? null
+                : (details) => onContextMenuNode!(node, details.globalPosition),
+            child: ColoredBox(
+              color: isSelected
+                  ? scheme.primaryContainer.withValues(alpha: .55)
+                  : Colors.transparent,
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(10.0 + depth * 16.0, 6, 12, 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (depth > 0) ...[
+                      Icon(
+                        Icons.subdirectory_arrow_right,
+                        size: 14,
+                        color: scheme.onSurfaceVariant.withValues(alpha: .7),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                     Icon(
-                      Icons.subdirectory_arrow_right,
-                      size: 14,
-                      color: scheme.onSurfaceVariant.withValues(alpha: .7),
+                      node.icon ??
+                          (node.children.isNotEmpty
+                              ? Icons.account_tree_outlined
+                              : Icons.widgets_outlined),
+                      size: 16,
+                      color: isSelected || isActiveBranch
+                          ? scheme.primary
+                          : scheme.onSurfaceVariant,
                     ),
-                    const SizedBox(width: 4),
-                  ],
-                  Icon(
-                    node.icon ??
-                        (node.children.isNotEmpty
-                            ? Icons.account_tree_outlined
-                            : Icons.widgets_outlined),
-                    size: 16,
-                    color: isSelected || isActiveBranch
-                        ? scheme.primary
-                        : scheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      node.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isSelected || isActiveBranch
-                            ? scheme.primary
-                            : scheme.onSurface,
-                        fontWeight: isSelected || isActiveBranch
-                            ? FontWeight.w600
-                            : FontWeight.normal,
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        node.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isSelected || isActiveBranch
+                              ? scheme.primary
+                              : scheme.onSurface,
+                          fontWeight: isSelected || isActiveBranch
+                              ? FontWeight.w600
+                              : FontWeight.normal,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -853,6 +873,7 @@ class _PathSegment extends StatelessWidget {
     required this.label,
     required this.current,
     required this.onTap,
+    this.onHover,
     this.onSecondaryTap,
     super.key,
   });
@@ -860,27 +881,32 @@ class _PathSegment extends StatelessWidget {
   final String label;
   final bool current;
   final VoidCallback? onTap;
+  final ValueChanged<bool>? onHover;
   final ValueChanged<Offset>? onSecondaryTap;
 
   @override
   Widget build(BuildContext context) {
     final color = Theme.of(context).colorScheme.onPrimary;
-    return InkWell(
-      onTap: onTap,
-      onSecondaryTapUp: onSecondaryTap == null
-          ? null
-          : (details) => onSecondaryTap!(details.globalPosition),
-      borderRadius: BorderRadius.circular(6),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-        child: Text(
-          label,
-          maxLines: 1,
-          style: TextStyle(
-            color: current ? color : color.withValues(alpha: .85),
-            fontWeight: current ? FontWeight.w700 : FontWeight.normal,
-            decoration: onTap == null ? null : TextDecoration.underline,
-            decorationColor: color.withValues(alpha: .6),
+    return MouseRegion(
+      onEnter: onHover == null ? null : (_) => onHover!(true),
+      onExit: onHover == null ? null : (_) => onHover!(false),
+      child: InkWell(
+        onTap: onTap,
+        onSecondaryTapUp: onSecondaryTap == null
+            ? null
+            : (details) => onSecondaryTap!(details.globalPosition),
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              color: current ? color : color.withValues(alpha: .85),
+              fontWeight: current ? FontWeight.w700 : FontWeight.normal,
+              decoration: onTap == null ? null : TextDecoration.underline,
+              decorationColor: color.withValues(alpha: .6),
+            ),
           ),
         ),
       ),
