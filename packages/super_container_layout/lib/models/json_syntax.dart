@@ -1,7 +1,9 @@
-import 'dart:ui' show Color, Size;
+import 'dart:ui' show Color, FontWeight, Size;
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/painting.dart' show EdgeInsets;
 
+import 'json_text_binding.dart';
 import 'super_layout_config.dart'
     show SlotDimension, SlotPercentBasis, SlotSizeConstraints, SlotSizeUnit;
 
@@ -311,3 +313,169 @@ abstract final class JsonDimension {
     throw const FormatException('Marge de slot invalide.');
   }
 }
+
+/// Shared JSON parsing, encoding, and slot-layout equality/hash helpers.
+abstract final class JsonReader {
+  static T field<T>(
+    Map<Object?, Object?> map,
+    String key,
+    T fallback, {
+    required String context,
+  }) {
+    if (!map.containsKey(key)) return fallback;
+    final result = map[key];
+    if (result is! T) throw FormatException('Invalid $context "$key".');
+    return result;
+  }
+
+  static double? nullableDouble(
+    Map<Object?, Object?> map,
+    String key,
+    double? fallback, {
+    required String context,
+  }) {
+    if (!map.containsKey(key)) return fallback;
+    final result = map[key];
+    if (result == null) return null;
+    if (result is! num || !result.isFinite) {
+      throw FormatException('Invalid $context "$key".');
+    }
+    return result.toDouble();
+  }
+
+  static Color? nullableColor(
+    Map<Object?, Object?> map,
+    String key,
+    Color? fallback, {
+    required String errorMessage,
+  }) {
+    if (!map.containsKey(key)) return fallback;
+    try {
+      return JsonColor.parseNullable(map[key], key);
+    } on FormatException {
+      throw FormatException(errorMessage);
+    }
+  }
+
+  static T? enumByName<T extends Enum>(
+    Iterable<T> values,
+    Object? raw, [
+    Map<String, T> aliases = const {},
+  ]) {
+    if (raw is! String) return null;
+    final aliased = aliases[raw];
+    if (aliased != null) return aliased;
+    return values.where((candidate) => candidate.name == raw).firstOrNull;
+  }
+
+  static FontWeight? parseFontWeight(Object? weight) {
+    if (weight == null) return null;
+    if (weight is int) {
+      return FontWeight.values.where((w) => w.value == weight).firstOrNull;
+    }
+    if (weight is String) {
+      return switch (weight.trim().toLowerCase()) {
+        'thin' || 'w100' || '100' => FontWeight.w100,
+        'extralight' || 'w200' || '200' => FontWeight.w200,
+        'light' || 'w300' || '300' => FontWeight.w300,
+        'normal' || 'regular' || 'w400' || '400' => FontWeight.w400,
+        'medium' || 'w500' || '500' => FontWeight.w500,
+        'semibold' || 'w600' || '600' => FontWeight.w600,
+        'bold' || 'w700' || '700' => FontWeight.w700,
+        'extrabold' || 'w800' || '800' => FontWeight.w800,
+        'black' || 'w900' || '900' => FontWeight.w900,
+        _ => null,
+      };
+    }
+    return null;
+  }
+
+  static Map<E, JsonTextBinding> readPropertyBindings<E extends Enum>(
+    Map<Object?, Object?> map,
+    Iterable<E> values,
+    Map<E, JsonTextBinding> fallback, {
+    required String context,
+  }) {
+    final raw = map['propertyBindings'];
+    if (raw != null && raw is! Map) {
+      throw FormatException('Invalid $context property bindings.');
+    }
+    if (!map.containsKey('propertyBindings')) {
+      return fallback;
+    }
+    final result = <E, JsonTextBinding>{};
+    for (final entry in (raw as Map? ?? {}).entries) {
+      if (entry.key is! String) {
+        throw FormatException('Invalid $context property binding.');
+      }
+      final property = values
+          .where((candidate) => candidate.name == entry.key)
+          .firstOrNull;
+      if (property == null ||
+          (entry.value is! Map && entry.value is! String)) {
+        throw FormatException('Invalid $context property binding.');
+      }
+      result[property] = JsonTextBinding.fromJson(entry.value);
+    }
+    return result;
+  }
+
+  static Map<String, Object?> encodePropertyBindings<E extends Enum>(
+    Map<E, JsonTextBinding> bindings, {
+    bool compact = false,
+  }) => {
+    for (final entry in bindings.entries)
+      entry.key.name: compact
+          ? entry.value.toCompactJson()
+          : entry.value.toJson(),
+  };
+
+  static bool sameSlotPlacements<K>(
+    Map<K, List<String>> a,
+    Map<K, List<String>> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (final entry in a.entries) {
+      if (!listEquals(entry.value, b[entry.key])) return false;
+    }
+    return true;
+  }
+
+  static List<Object?> slotLayoutHashParts({
+    required Map<Object?, List<String>> placements,
+    required Map<Object?, Object?> slotTypes,
+    required Map<Object?, Object?> zoneAxes,
+    required Map<Object?, Object?> zoneFlows,
+    Map<Object?, Object?>? zoneStyles,
+    required Map<Object?, Object?> slotPreferredSizes,
+    required Map<Object?, Object?> slotSizeConstraints,
+    required Map<Object?, Object?> slotLabels,
+  }) => [
+    Object.hashAllUnordered(
+      placements.entries.map((e) => Object.hash(e.key, Object.hashAll(e.value))),
+    ),
+    Object.hashAllUnordered(
+      slotTypes.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    Object.hashAllUnordered(
+      zoneAxes.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    Object.hashAllUnordered(
+      zoneFlows.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    if (zoneStyles != null)
+      Object.hashAllUnordered(
+        zoneStyles.entries.map((e) => Object.hash(e.key, e.value)),
+      ),
+    Object.hashAllUnordered(
+      slotPreferredSizes.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    Object.hashAllUnordered(
+      slotSizeConstraints.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    Object.hashAllUnordered(
+      slotLabels.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+  ];
+}
+

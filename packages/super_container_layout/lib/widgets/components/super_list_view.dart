@@ -74,10 +74,9 @@ import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
-import '../../theme/appearance.dart';
-import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
 import '../editing/history/editor_history.dart';
+import 'component_common.dart';
 import '../editing/components/super_list_view_editor.dart';
 import 'super_layout/slot_implementation.dart';
 import 'super_layout/super_layout.dart';
@@ -474,33 +473,18 @@ class _SuperListViewState extends State<SuperListView> {
     BuildContext context,
     ContainerStyle currentRowStyle,
   ) {
-    final defaultColor = Theme.of(context).colorScheme.primary
-        .withValues(alpha: 0.14);
-    final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
-    final resolved = hasCustomSelected
-        ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
-        : currentRowStyle.copyWith(clearStates: true);
-    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
-    final effectiveStyle = resolved.copyWith(
-      clearStates: true,
-      margin: 0,
-      marginInsets: null,
-      hoverEffect: false,
-      radius: resolved.radius > 0 ? resolved.radius : 4,
-      color: hasCustomSelected
-          ? (resolved.color ?? (hasFill ? null : defaultColor))
-          : defaultColor,
-      borderWidth: hasCustomSelected ? resolved.borderWidth : 1,
-      borderColor: hasCustomSelected
-          ? resolved.borderColor
-          : Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
+    final styles = resolveRowIndicatorStyle(
+      context,
+      currentRowStyle,
+      isHover: false,
+      fallbackRadius: 4,
+      fallbackSelectedBorder: true,
     );
-    final m = resolved.outerMargin;
     return Padding(
-      padding: m,
+      padding: styles.resolved.outerMargin,
       child: SuperContainer(
         key: ValueKey('super-list-selection-indicator-${widget.id}'),
-        style: effectiveStyle,
+        style: styles.effective,
         fallbackColor: Colors.transparent,
         borderColor: Colors.transparent,
         child: const SizedBox.expand(),
@@ -512,31 +496,17 @@ class _SuperListViewState extends State<SuperListView> {
     BuildContext context,
     ContainerStyle currentRowStyle,
   ) {
-    final accent = AppearanceScope.of(context).accent;
-    final hoverBase = currentRowStyle.hoverBase(accent);
-    final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
-        .withValues(alpha: 0.08);
-    final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
-    final resolved = hasCustomHover
-        ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
-        : currentRowStyle.copyWith(clearStates: true);
-    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
-    final effectiveStyle = resolved.copyWith(
-      clearStates: true,
-      margin: 0,
-      marginInsets: null,
-      hoverEffect: false,
-      radius: resolved.radius > 0 ? resolved.radius : 4,
-      color: hasCustomHover
-          ? (resolved.color ?? (hasFill ? null : defaultColor))
-          : defaultColor,
+    final styles = resolveRowIndicatorStyle(
+      context,
+      currentRowStyle,
+      isHover: true,
+      fallbackRadius: 4,
     );
-    final m = resolved.outerMargin;
     return Padding(
-      padding: m,
+      padding: styles.resolved.outerMargin,
       child: SuperContainer(
         key: ValueKey('super-list-hover-indicator-${widget.id}'),
-        style: effectiveStyle,
+        style: styles.effective,
         fallbackColor: Colors.transparent,
         borderColor: Colors.transparent,
         child: const SizedBox.expand(),
@@ -1035,22 +1005,20 @@ class _SuperListViewState extends State<SuperListView> {
     final app = SuperApp.maybeOf(context);
     final registry = app?.registry;
     final rowId = effectiveItemId;
-    final rowStyleFallback = app == null
-        ? widget.templateStyle
-        : (app.registry?.containerStyleById[rowId]?.value ??
-              app.registry?.containerStyleById[widget.id]?.value ??
-              AppearanceScope.controllerOf(context)?.value.styles[rowId] ??
-              AppearanceScope.controllerOf(context)?.value.styles[widget.id] ??
-              widget.templateStyle);
     final configuration =
         registry?.listController(widget.id, fallback: widget.config) ??
         _localConfig;
     final layout =
         registry?.layoutController(widget.id, fallback: widget.template) ??
         _localLayout;
-    final style =
-        registry?.styleController(rowId, fallback: rowStyleFallback) ??
-        _localStyle;
+    final style = resolveRowStyleController(
+      context,
+      app: app,
+      componentId: widget.id,
+      rowId: rowId,
+      fallback: widget.templateStyle,
+      localStyle: _localStyle,
+    );
     final scope = JsonListScope.maybeOf(context);
     final store = JsonRepositoryScope.maybeOf(context);
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;

@@ -2,9 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_table_config.dart';
 import '../../components/super_table_editor.dart';
+import 'add_form_common.dart';
 
-double? _parse(String text) =>
-    double.tryParse(text.trim().replaceAll(',', '.'));
+double? _parse(String text) => parseAddFormDouble(text);
 
 class TableAddForm extends StatefulWidget {
   const TableAddForm({
@@ -20,18 +20,12 @@ class TableAddForm extends StatefulWidget {
   State<TableAddForm> createState() => _TableAddFormState();
 }
 
-class _TableAddFormState extends State<TableAddForm> {
-  int _revision = 0;
-
-  Future<void> _more() async {
-    final result = await showSuperTableEditor(
-      context: context,
-      config: widget.draft,
-    );
-    if (result == null || !mounted) return;
-    setState(() => _revision++);
-    widget.onChanged(result);
-  }
+class _TableAddFormState extends State<TableAddForm>
+    with DraftAddFormStateMixin {
+  Future<void> _more() => openAdvancedDraftEditor(
+    () => showSuperTableEditor(context: context, config: widget.draft),
+    widget.onChanged,
+  );
 
   void _updateColumnCount(int count) {
     final clamped = count.clamp(1, 20);
@@ -59,9 +53,8 @@ class _TableAddFormState extends State<TableAddForm> {
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
-    return KeyedSubtree(
-      key: ValueKey(_revision),
-      child: Column(
+    return buildRevisionSubtree(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 12,
         children: [

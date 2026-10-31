@@ -11,7 +11,6 @@ import '../../../theme/appearance.dart';
 import '../../../theme/container_style.dart';
 import '../../../theme/neon_style.dart';
 import '../dialogs/editor_dialog.dart';
-import '../dialogs/editor_dialog_header.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/container_style_editor.dart';
@@ -360,11 +359,10 @@ class _SuperTabBarStyleEditor extends StatefulWidget {
 }
 
 class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
-  late EditorWizardTab _tab =
-      widget.initialTab == EditorWizardTab.dimensions &&
-          widget.dimensionDelegate != null
-      ? EditorWizardTab.dimensions
-      : EditorWizardTab.properties;
+  late EditorWizardTab _tab = EditorWizardNavigation.resolveInitialTab(
+    widget.initialTab,
+    widget.dimensionDelegate,
+  );
   late SuperTabConfig _draft = widget.config;
   late bool _dense = StyleEditorPanel.preferredDense;
 
@@ -840,29 +838,9 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               },
             ),
             const SizedBox(height: 12),
-            if (onDimensions) ...[
-              if (delegate.labelListenable case final listenable?)
-                ValueListenableBuilder<String>(
-                  valueListenable: listenable,
-                  builder: (context, _, _) => EditorDialogHeader(
-                    label: delegate.title,
-                    editableLabel: delegate.editableLabel,
-                    onLabelChanged: delegate.onLabelChanged,
-                  ),
-                )
-              else
-                EditorDialogHeader(
-                  label: delegate.title,
-                  editableLabel: delegate.editableLabel,
-                  onLabelChanged: delegate.onLabelChanged,
-                ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: delegate.buildContent(context),
-                ),
-              ),
-            ] else
+            if (onDimensions)
+              Expanded(child: EditorDimensionTabView(delegate: delegate))
+            else
               Expanded(
                 child: ContainerStyleEditor(
                   label: widget.label,

@@ -11,17 +11,35 @@ import '../models/super_action_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'appearance.dart';
+import 'container_fill.dart';
 import 'container_style.dart';
 
 /// Reusable appearance preferences without an application-specific catalog.
 @immutable
 class DefaultAppearance extends Appearance {
+  static const minCardHeight = 142.0;
+  static const maxCardHeight = 300.0;
+  static const minCardWidth = 180.0;
+  static const maxCardWidth = 360.0;
   static const minRowHeight = 20.0;
   static const maxRowHeight = 100.0;
   static const minSpacing = 4.0;
   static const maxSpacing = 64.0;
+  static const minFontSize = 10.0;
+  static const maxFontSize = 16.0;
+  static const minIconSize = 24.0;
+  static const maxIconSize = 64.0;
   static const minScrollFadeExtent = 8.0;
   static const maxScrollFadeExtent = 100.0;
+
+  static const defaultCardHeight = 142.0;
+  static const defaultCardWidth = 180.0;
+  static const defaultRowHeight = 48.0;
+  static const defaultSpacing = 12.0;
+  static const defaultFontSize = 12.0;
+  static const defaultIconSize = 49.0;
+  static const defaultScrollFadeEnabled = true;
+  static const defaultScrollFadeExtent = 28.0;
 
   DefaultAppearance({
     super.mode,
@@ -34,14 +52,14 @@ class DefaultAppearance extends Appearance {
     super.components,
     super.behaviors,
     super.pageCatalog,
-    this.cardHeight = 142,
-    this.cardWidth = 180,
-    this.rowHeight = 48,
-    this.spacing = 12,
-    this.fontSize = 12,
-    this.iconSize = 49,
-    this.scrollFadeEnabled = true,
-    this.scrollFadeExtent = 28,
+    this.cardHeight = defaultCardHeight,
+    this.cardWidth = defaultCardWidth,
+    this.rowHeight = defaultRowHeight,
+    this.spacing = defaultSpacing,
+    this.fontSize = defaultFontSize,
+    this.iconSize = defaultIconSize,
+    this.scrollFadeEnabled = defaultScrollFadeEnabled,
+    this.scrollFadeExtent = defaultScrollFadeExtent,
   });
 
   final double cardHeight;
@@ -180,3 +198,30 @@ class DefaultAppearance extends Appearance {
     );
   }
 }
+
+/// Automatic solid color of unselected cards whose style has none.
+Color defaultCardColor(BuildContext context) {
+  final scheme = Theme.of(context).colorScheme;
+  return scheme.brightness == Brightness.dark
+      ? scheme.surfaceContainerLow
+      : Colors.white;
+}
+
+/// Solid color of a card drawn with the resolved [style].
+Color cardColor(
+  BuildContext context,
+  ContainerStyle style, {
+  bool selected = false,
+}) {
+  if (style.fill.type != FillType.solid) {
+    return Color.lerp(style.fill.start, style.fill.end, .5)!;
+  }
+  return style.color ??
+      (selected
+          ? Theme.of(context).colorScheme.primaryContainer
+          : defaultCardColor(context));
+}
+
+Color foregroundForCard(Color background) =>
+    ContainerStyle.foregroundFor(background);
+

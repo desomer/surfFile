@@ -15,7 +15,6 @@ import '../../../services/repositories/json_repository_store.dart';
 import '../../../services/states/surface_state_binding.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../dialogs/editor_dialog.dart';
-import '../dialogs/editor_dialog_header.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/style_editor_panel.dart';
@@ -614,11 +613,10 @@ class _SuperValueEditor extends StatefulWidget {
 class _SuperValueEditorState extends State<_SuperValueEditor> {
   final _form = GlobalKey<FormState>();
   final _fieldSettings = GlobalKey<SuperTextFieldSettingsState>();
-  late EditorWizardTab _tab =
-      widget.initialTab == EditorWizardTab.dimensions &&
-          widget.dimensionDelegate != null
-      ? EditorWizardTab.dimensions
-      : EditorWizardTab.properties;
+  late EditorWizardTab _tab = EditorWizardNavigation.resolveInitialTab(
+    widget.initialTab,
+    widget.dimensionDelegate,
+  );
   late SuperTextFieldConfig _fieldConfig;
   String? _fieldError;
   late SuperValueConfig _draft;
@@ -1407,29 +1405,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
               },
             ),
             const SizedBox(height: 12),
-            if (onDimensions) ...[
-              if (delegate.labelListenable case final listenable?)
-                ValueListenableBuilder<String>(
-                  valueListenable: listenable,
-                  builder: (context, _, _) => EditorDialogHeader(
-                    label: delegate.title,
-                    editableLabel: delegate.editableLabel,
-                    onLabelChanged: delegate.onLabelChanged,
-                  ),
-                )
-              else
-                EditorDialogHeader(
-                  label: delegate.title,
-                  editableLabel: delegate.editableLabel,
-                  onLabelChanged: delegate.onLabelChanged,
-                ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: delegate.buildContent(context),
-                ),
-              ),
-            ] else
+            if (onDimensions)
+              Expanded(child: EditorDimensionTabView(delegate: delegate))
+            else
               Expanded(
                 child: Form(
                   key: _form,

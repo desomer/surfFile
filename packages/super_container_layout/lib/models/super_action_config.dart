@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
+import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 
 import '../theme/container_style.dart';
 import 'automatic_state.dart';
@@ -269,10 +269,7 @@ class SuperActionConfig extends ComponentConfig {
       'letterSpacing': letterSpacing,
       if (style != const ContainerStyle()) 'style': style.toJson(),
       if (propertyBindings.isNotEmpty)
-        'propertyBindings': {
-          for (final entry in propertyBindings.entries)
-            entry.key.name: entry.value.toJson(),
-        },
+        'propertyBindings': JsonReader.encodePropertyBindings(propertyBindings),
       if (states != null) 'states': states!.toJson(),
     };
   }
@@ -309,10 +306,10 @@ class SuperActionConfig extends ComponentConfig {
       if (letterSpacing != null) 'letterSpacing': letterSpacing,
       if (style != const ContainerStyle()) 'style': style.toCompactJson(),
       if (propertyBindings.isNotEmpty)
-        'propertyBindings': {
-          for (final entry in propertyBindings.entries)
-            entry.key.name: entry.value.toCompactJson(),
-        },
+        'propertyBindings': JsonReader.encodePropertyBindings(
+          propertyBindings,
+          compact: true,
+        ),
       if (states != null) 'states': states!.toCompactJson(),
     };
   }
@@ -322,28 +319,6 @@ class SuperActionConfig extends ComponentConfig {
   @override
   SuperActionConfig patchFromJson(Map<Object?, Object?> patch) =>
       SuperActionConfig.fromJson(patch, fallback: this);
-
-  static FontWeight? _parseFontWeight(Object? weight) {
-    if (weight == null) return null;
-    if (weight is int) {
-      return FontWeight.values.where((w) => w.value == weight).firstOrNull;
-    }
-    if (weight is String) {
-      return switch (weight.trim().toLowerCase()) {
-        'thin' || 'w100' || '100' => FontWeight.w100,
-        'extralight' || 'w200' || '200' => FontWeight.w200,
-        'light' || 'w300' || '300' => FontWeight.w300,
-        'normal' || 'regular' || 'w400' || '400' => FontWeight.w400,
-        'medium' || 'w500' || '500' => FontWeight.w500,
-        'semibold' || 'w600' || '600' => FontWeight.w600,
-        'bold' || 'w700' || '700' => FontWeight.w700,
-        'extrabold' || 'w800' || '800' => FontWeight.w800,
-        'black' || 'w900' || '900' => FontWeight.w900,
-        _ => null,
-      };
-    }
-    return null;
-  }
 
   factory SuperActionConfig.fromJson(
     Object? value, {
@@ -386,57 +361,43 @@ class SuperActionConfig extends ComponentConfig {
       throw const FormatException('Unknown Action preference.');
     }
 
-    T field<T>(String key, T fallbackVal) {
-      if (!value.containsKey(key)) return fallbackVal;
-      final result = value[key];
-      if (result is! T) throw FormatException('Invalid Action "$key".');
-      return result;
-    }
+    T field<T>(String key, T fallbackVal) =>
+        JsonReader.field(value, key, fallbackVal, context: 'Action');
+    double? number(String key, double? fallbackVal) =>
+        JsonReader.nullableDouble(value, key, fallbackVal, context: 'Action');
+    Color? colorField(String key, Color? fallbackVal) =>
+        JsonReader.nullableColor(
+          value,
+          key,
+          fallbackVal,
+          errorMessage: 'Invalid Action style.',
+        );
 
-    double? number(String key, double? fallbackVal) {
-      if (!value.containsKey(key)) return fallbackVal;
-      final result = value[key];
-      if (result == null) return null;
-      if (result is! num || !result.isFinite) {
-        throw FormatException('Invalid Action "$key".');
-      }
-      return result.toDouble();
-    }
-
-    Color? colorField(String key, Color? fallbackVal) {
-      if (!value.containsKey(key)) return fallbackVal;
-      try {
-        return JsonColor.parseNullable(value[key], key);
-      } on FormatException {
-        throw const FormatException('Invalid Action style.');
-      }
-    }
-
-    final rawKind = field('kind', fallback.kind.name);
-    final kind = switch (rawKind) {
-      'both' || 'text_icon' || 'textIcon' => SuperActionKind.textAndIcon,
-      _ =>
-        SuperActionKind.values
-            .where((candidate) => candidate.name == rawKind)
-            .firstOrNull,
-    };
-    final rawVariant = field('variant', fallback.variant.name);
-    final variant = SuperActionVariant.values
-        .where((candidate) => candidate.name == rawVariant)
-        .firstOrNull;
-    final rawIconPos = field('iconPosition', fallback.iconPosition.name);
-    final iconPosition = SuperActionIconPosition.values
-        .where((candidate) => candidate.name == rawIconPos)
-        .firstOrNull;
-    final align = TextAlign.values
-        .where(
-          (align) => align.name == field('textAlign', fallback.textAlign.name),
-        )
-        .firstOrNull;
+    final kind = JsonReader.enumByName(
+      SuperActionKind.values,
+      field('kind', fallback.kind.name),
+      const {
+        'both': SuperActionKind.textAndIcon,
+        'text_icon': SuperActionKind.textAndIcon,
+        'textIcon': SuperActionKind.textAndIcon,
+      },
+    );
+    final variant = JsonReader.enumByName(
+      SuperActionVariant.values,
+      field('variant', fallback.variant.name),
+    );
+    final iconPosition = JsonReader.enumByName(
+      SuperActionIconPosition.values,
+      field('iconPosition', fallback.iconPosition.name),
+    );
+    final align = JsonReader.enumByName(
+      TextAlign.values,
+      field('textAlign', fallback.textAlign.name),
+    );
     final hasWeight = value.containsKey('fontWeight');
     final weight = value['fontWeight'];
     final fontWeight = hasWeight
-        ? _parseFontWeight(weight)
+        ? JsonReader.parseFontWeight(weight)
         : fallback.fontWeight;
     final hasFamily = value.containsKey('fontFamily');
     final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
@@ -449,29 +410,12 @@ class SuperActionConfig extends ComponentConfig {
       throw const FormatException('Invalid Action style.');
     }
 
-    final rawPropertyBindings = value['propertyBindings'];
-    if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
-      throw const FormatException('Invalid Action property bindings.');
-    }
-    final Map<SuperActionProperty, JsonTextBinding> propertyBindings;
-    if (!value.containsKey('propertyBindings')) {
-      propertyBindings = fallback.propertyBindings;
-    } else {
-      propertyBindings = <SuperActionProperty, JsonTextBinding>{};
-      for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Invalid Action property binding.');
-        }
-        final property = SuperActionProperty.values
-            .where((candidate) => candidate.name == entry.key)
-            .firstOrNull;
-        if (property == null ||
-            (entry.value is! Map && entry.value is! String)) {
-          throw const FormatException('Invalid Action property binding.');
-        }
-        propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
-      }
-    }
+    final propertyBindings = JsonReader.readPropertyBindings(
+      value,
+      SuperActionProperty.values,
+      fallback.propertyBindings,
+      context: 'Action',
+    );
 
     final resolvedLabel = value.containsKey('label')
         ? field('label', fallback.label)
@@ -571,7 +515,10 @@ class SuperActionConfig extends ComponentConfig {
       verticalPadding == other.verticalPadding &&
       textAlign == other.textAlign &&
       letterSpacing == other.letterSpacing &&
-      _sameActionStateValue(style.toJson(), other.style.toJson()) &&
+      ComponentStateHelpers.sameJsonValue(
+        style.toJson(),
+        other.style.toJson(),
+      ) &&
       mapEquals(propertyBindings, other.propertyBindings) &&
       states == other.states;
 

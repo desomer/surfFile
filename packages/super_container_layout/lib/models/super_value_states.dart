@@ -64,7 +64,10 @@ class ValueConfigOverride {
         ...properties,
         for (final property in ValueStateProperty.values)
           if (property.keys.any(
-                (key) => !_sameValueStateValue(before[key], after[key]),
+                (key) => !ComponentStateHelpers.sameJsonValue(
+                  before[key],
+                  after[key],
+                ),
               ) ||
               (property.bindingProperty != null &&
                   config.propertyBindings[property.bindingProperty] !=
@@ -145,22 +148,13 @@ class ValueConfigOverride {
   };
 
   factory ValueConfigOverride.fromJson(Object? value) {
-    if (value is! Map ||
-        value.keys.any((key) => key != 'config' && key != 'properties') ||
-        value['properties'] is! List) {
-      throw const FormatException('Invalid Value override.');
-    }
-    final properties = <ValueStateProperty>{};
-    for (final name in value['properties'] as List) {
-      final property = ValueStateProperty.values
-          .where((property) => property.name == name)
-          .firstOrNull;
-      if (property == null || !properties.add(property)) {
-        throw const FormatException('Invalid Value override property.');
-      }
-    }
+    final properties = ComponentStateHelpers.parseOverrideProperties(
+      value,
+      ValueStateProperty.values,
+      'Value',
+    );
     return ValueConfigOverride(
-      config: _readValueStateLeaf(value['config']),
+      config: _readValueStateLeaf((value as Map)['config']),
       properties: properties,
     );
   }
@@ -197,7 +191,12 @@ class ValueConfigStates {
            ),
        }),
        order = List.unmodifiable(
-         _valueStateOrder(named.keys, order, automatic.keys),
+         ComponentStateHelpers.normalizeStateOrder(
+           named.keys,
+           order,
+           automatic.keys,
+           'Value',
+         ),
        ) {
     binding?.validate();
     if (namedProperties.keys.any((name) => !named.containsKey(name))) {
@@ -210,8 +209,8 @@ class ValueConfigStates {
     }
   }
 
-  static const hoverKey = '\u0000hover';
-  static const selectedKey = '\u0000selected';
+  static const hoverKey = ComponentStateHelpers.hoverKey;
+  static const selectedKey = ComponentStateHelpers.selectedKey;
 
   final JsonTextBinding? binding;
   final Map<String, SuperValueConfig> named;
@@ -253,17 +252,11 @@ class ValueConfigStates {
       order: clearOrder
           ? null
           : order ??
-                this.order
-                    .where(
-                      (key) =>
-                          key == hoverKey ||
-                          key == selectedKey ||
-                          (automatic ?? this.automatic).keys.any(
-                            (s) => s.key == key,
-                          ) ||
-                          nextNamed.containsKey(key),
-                    )
-                    .toList(),
+                ComponentStateHelpers.filterCopiedOrder(
+                  this.order,
+                  (automatic ?? this.automatic).keys,
+                  nextNamed,
+                ),
     );
   }
 
@@ -418,34 +411,32 @@ class ValueConfigStates {
   @override
   bool operator ==(Object other) =>
       other is ValueConfigStates &&
-      binding == other.binding &&
-      mapEquals(named, other.named) &&
-      namedProperties.length == other.namedProperties.length &&
-      namedProperties.entries.every(
-        (e) => setEquals(e.value, other.namedProperties[e.key]),
-      ) &&
-      hover == other.hover &&
-      selected == other.selected &&
-      mapEquals(automatic, other.automatic) &&
-      listEquals(order, other.order);
+      ComponentStateHelpers.equalsStateCollection(
+        bindingA: binding,
+        bindingB: other.binding,
+        namedA: named,
+        namedB: other.named,
+        propsA: namedProperties,
+        propsB: other.namedProperties,
+        hoverA: hover,
+        hoverB: other.hover,
+        selectedA: selected,
+        selectedB: other.selected,
+        autoA: automatic,
+        autoB: other.automatic,
+        orderA: order,
+        orderB: other.order,
+      );
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => ComponentStateHelpers.hashStateCollection(
     binding,
-    Object.hashAllUnordered(
-      named.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      namedProperties.entries.map(
-        (e) => Object.hash(e.key, Object.hashAllUnordered(e.value)),
-      ),
-    ),
+    named,
+    namedProperties,
     hover,
     selected,
-    Object.hashAllUnordered(
-      automatic.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAll(order),
+    automatic,
+    order,
   );
 }
 
@@ -466,25 +457,12 @@ Map<String, Set<ValueStateProperty>> _readValueNamedProperties(
   };
 }
 
-Map<AutomaticState, ValueConfigOverride> _readValueAutomatic(Object? value) {
-  if (value == null) return {};
-  if (value is! Map) {
-    throw const FormatException('Invalid automatic Value states.');
-  }
-  return {
-    for (final entry in value.entries)
-      (AutomaticState.values
-                  .where(
-                    (s) =>
-                        s.name == entry.key &&
-                        s != AutomaticState.hover &&
-                        s != AutomaticState.selected,
-                  )
-                  .firstOrNull ??
-              (throw const FormatException('Unknown automatic Value state.'))):
-          ValueConfigOverride.fromJson(entry.value),
-  };
-}
+Map<AutomaticState, ValueConfigOverride> _readValueAutomatic(Object? value) =>
+    ComponentStateHelpers.readAutomaticStates(
+      value,
+      ValueConfigOverride.fromJson,
+      'Value',
+    );
 
 SuperValueConfig _valueStateLeaf(SuperValueConfig config) {
   if (config.states != null) {
@@ -502,56 +480,5 @@ SuperValueConfig _readValueStateLeaf(Object? value) {
   return _valueStateLeaf(SuperValueConfig.fromJson(value));
 }
 
-String _valueStateName(String name) {
-  if (name.isEmpty ||
-      name.trim() != name ||
-      name.contains('\u0000') ||
-      {
-        'default',
-        'selected',
-        'hover',
-        'hovered',
-        'par défaut',
-        'par defaut',
-        'sélectionné',
-        'selectionne',
-        'survol',
-      }.contains(name.toLowerCase())) {
-    throw const FormatException('Empty or reserved Value state name.');
-  }
-  return name;
-}
-
-List<String> _valueStateOrder(
-  Iterable<String> names,
-  List<String>? order,
-  Iterable<AutomaticState> automatic,
-) {
-  final defaults = [
-    ...names,
-    ValueConfigStates.hoverKey,
-    ValueConfigStates.selectedKey,
-    ...automatic.map((s) => s.key),
-  ];
-  if (order == null) return defaults;
-  if (order.toSet().length != order.length ||
-      order.any((key) => !defaults.contains(key))) {
-    throw const FormatException('Invalid Value state order.');
-  }
-  return [...order, ...defaults.where((key) => !order.contains(key))];
-}
-
-bool _sameValueStateValue(Object? a, Object? b) {
-  if (a is Map && b is Map) {
-    return a.length == b.length &&
-        a.keys.every(
-          (key) => b.containsKey(key) && _sameValueStateValue(a[key], b[key]),
-        );
-  }
-  if (a is List && b is List) {
-    return a.length == b.length &&
-        Iterable.generate(a.length)
-            .every((i) => _sameValueStateValue(a[i], b[i]));
-  }
-  return a == b;
-}
+String _valueStateName(String name) =>
+    ComponentStateHelpers.validateStateName(name, 'Value');

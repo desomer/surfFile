@@ -58,6 +58,15 @@ class EditorWizardNavigation {
     return explicit ?? pending ?? fallback;
   }
 
+  /// Résout l'onglet initial effectif en revenant à [EditorWizardTab.properties]
+  /// si aucun [delegate] de dimension n'est fourni.
+  static EditorWizardTab resolveInitialTab(
+    EditorWizardTab initialTab,
+    EditorDimensionDelegate? delegate,
+  ) => initialTab == EditorWizardTab.dimensions && delegate != null
+      ? EditorWizardTab.dimensions
+      : EditorWizardTab.properties;
+
   /// Consomme le délégué de dimension explicite ou résout celui attaché au
   /// [context] via l'[EditorSlotAction] inline directe.
   static EditorDimensionDelegate? resolveDimensionDelegate(
@@ -283,6 +292,53 @@ class EditorWizardTabBar extends StatelessWidget {
   }
 }
 
+/// En-tête réactif d'un [EditorDimensionDelegate] écoutant [EditorDimensionDelegate.labelListenable].
+class EditorDimensionHeader extends StatelessWidget {
+  const EditorDimensionHeader({required this.delegate, super.key});
+
+  final EditorDimensionDelegate delegate;
+
+  @override
+  Widget build(BuildContext context) {
+    if (delegate.labelListenable case final listenable?) {
+      return ValueListenableBuilder<String>(
+        valueListenable: listenable,
+        builder: (context, _, _) => EditorDialogHeader(
+          label: delegate.title,
+          editableLabel: delegate.editableLabel,
+          onLabelChanged: delegate.onLabelChanged,
+        ),
+      );
+    }
+    return EditorDialogHeader(
+      label: delegate.title,
+      editableLabel: delegate.editableLabel,
+      onLabelChanged: delegate.onLabelChanged,
+    );
+  }
+}
+
+/// Vue complète de l'onglet « Taille et marge » (en-tête + contenu défilant).
+class EditorDimensionTabView extends StatelessWidget {
+  const EditorDimensionTabView({required this.delegate, super.key});
+
+  final EditorDimensionDelegate delegate;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      EditorDimensionHeader(delegate: delegate),
+      const SizedBox(height: 8),
+      Expanded(
+        child: SingleChildScrollView(
+          child: delegate.buildContent(context),
+        ),
+      ),
+    ],
+  );
+}
+
 /// Enveloppe générique d'`AlertDialog` à 2 onglets pour les éditeurs de
 /// propriétés qui retournent une configuration ou un booléen.
 class EditorTabbedAlertDialog extends StatefulWidget {
@@ -363,26 +419,9 @@ class _EditorTabbedAlertDialogState extends State<EditorTabbedAlertDialog> {
   Widget build(BuildContext context) {
     final delegate = widget.dimensionDelegate;
     final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
-    final Widget headerWidget;
-    if (onDimensions) {
-      final listenable = delegate.labelListenable;
-      headerWidget = listenable != null
-          ? ValueListenableBuilder<String>(
-              valueListenable: listenable,
-              builder: (context, _, _) => EditorDialogHeader(
-                label: delegate.title,
-                editableLabel: delegate.editableLabel,
-                onLabelChanged: delegate.onLabelChanged,
-              ),
-            )
-          : EditorDialogHeader(
-              label: delegate.title,
-              editableLabel: delegate.editableLabel,
-              onLabelChanged: delegate.onLabelChanged,
-            );
-    } else {
-      headerWidget = widget.propertiesTitle;
-    }
+    final Widget headerWidget = onDimensions
+        ? EditorDimensionHeader(delegate: delegate)
+        : widget.propertiesTitle;
 
     return AlertDialog(
       key: widget.dialogKey,

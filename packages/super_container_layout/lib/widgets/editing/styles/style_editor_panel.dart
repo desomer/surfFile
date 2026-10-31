@@ -524,6 +524,7 @@ class StyleSliderField extends StatelessWidget {
     required this.max,
     required this.onChanged,
     this.unit = ' dp',
+    this.formatValue,
     this.sliderKey,
     super.key,
   });
@@ -534,11 +535,13 @@ class StyleSliderField extends StatelessWidget {
   final double max;
   final ValueChanged<double> onChanged;
   final String unit;
+  final String Function(double value)? formatValue;
   final Key? sliderKey;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final text = formatValue?.call(value) ?? '${value.toStringAsFixed(1)}$unit';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -559,7 +562,7 @@ class StyleSliderField extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                '${value.toStringAsFixed(1)}$unit',
+                text,
                 style: const TextStyle(fontFamily: 'Consolas', fontSize: 11),
               ),
             ),

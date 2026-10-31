@@ -1,8 +1,5 @@
-import 'package:material_ui/material_ui.dart';
-
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/theme/default_appearance.dart';
-import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'disk_gauge_style.dart';
 import 'file_drag_mode.dart';
@@ -27,14 +24,14 @@ abstract final class SurfFileAppearanceDefaults {
   static const folderTransition = FolderTransition.none;
   static const fileDragMode = FileDragMode.nameAndIcon;
   static const diskGaugeStyle = DiskGaugeStyle();
-  static const cardHeight = 142.0;
-  static const cardWidth = 180.0;
-  static const rowHeight = 48.0;
-  static const spacing = 12.0;
-  static const fontSize = 12.0;
-  static const iconSize = 49.0;
-  static const scrollFadeEnabled = true;
-  static const scrollFadeExtent = 28.0;
+  static const cardHeight = DefaultAppearance.defaultCardHeight;
+  static const cardWidth = DefaultAppearance.defaultCardWidth;
+  static const rowHeight = DefaultAppearance.defaultRowHeight;
+  static const spacing = DefaultAppearance.defaultSpacing;
+  static const fontSize = DefaultAppearance.defaultFontSize;
+  static const iconSize = DefaultAppearance.defaultIconSize;
+  static const scrollFadeEnabled = DefaultAppearance.defaultScrollFadeEnabled;
+  static const scrollFadeExtent = DefaultAppearance.defaultScrollFadeExtent;
 
   static const defaultCardStyle = ContainerStyle(
     radius: 13,
@@ -123,31 +120,5 @@ DefaultAppearance defaultSurfFileAppearance({
   styles: {...SurfFileAppearanceDefaults.defaultStyles, ...?styles},
   layouts: {...SurfFileAppearanceDefaults.defaultLayouts, ...?layouts},
 );
-
-/// Automatic solid color of unselected cards whose style has none.
-Color defaultCardColor(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return scheme.brightness == Brightness.dark
-        ? scheme.surfaceContainerLow
-        : Colors.white;
-  }
-
-  /// Solid color of a card drawn with the resolved [style].
-Color cardColor(
-    BuildContext context,
-    ContainerStyle style, {
-    bool selected = false,
-  }) {
-    if (style.fill.type != FillType.solid) {
-      return Color.lerp(style.fill.start, style.fill.end, .5)!;
-    }
-    return style.color ??
-        (selected
-            ? Theme.of(context).colorScheme.primaryContainer
-            : defaultCardColor(context));
-  }
-
-Color foregroundForCard(Color background) =>
-      ContainerStyle.foregroundFor(background);
 
 typedef Appearance = DefaultAppearance;

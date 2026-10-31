@@ -4,8 +4,8 @@ import '../../../models/scrollbar_style_config.dart';
 import '../../components/super_layout/slot_implementation.dart'
     show ZoneScrollableViewport;
 import '../dialogs/editor_dialog.dart';
-import '../history/editor_history.dart';
 import 'container_style_editor.dart' show styleColorTile;
+import 'style_editor_panel.dart' show StyleSliderField;
 
 /// Ouvre l'éditeur dédié de [ScrollbarStyleConfig] pour styler la `ScrollBar`
 /// d'une zone en défilement automatique.
@@ -363,49 +363,16 @@ class _ScrollbarSlider extends StatelessWidget {
   final ValueChanged<double> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final formatted = value == value.roundToDouble()
-        ? '${value.round()} px'
-        : '${value.toStringAsFixed(1)} px';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: colors.secondaryContainer,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                formatted,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: colors.onSecondaryContainer,
-                ),
-              ),
-            ),
-          ],
-        ),
-        EditorHistorySlider(
-          key: sliderKey,
-          min: min,
-          max: max,
-          value: value.clamp(min, max),
-          label: formatted,
-          onChanged: onChanged,
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => StyleSliderField(
+    sliderKey: sliderKey,
+    label: label,
+    value: value,
+    min: min,
+    max: max,
+    formatValue: (v) =>
+        v == v.roundToDouble() ? '${v.round()} px' : '${v.toStringAsFixed(1)} px',
+    onChanged: onChanged,
+  );
 }
 
 class _ColorControlRow extends StatelessWidget {

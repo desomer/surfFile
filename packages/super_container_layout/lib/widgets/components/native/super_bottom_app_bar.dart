@@ -8,6 +8,7 @@ import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_layout/slot_implementation.dart';
+import 'native_component_common.dart';
 
 /// A native BottomAppBar with three editable, free-widget regions.
 ///
@@ -168,17 +169,11 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
         builder: (context, constraints) {
           final baseHeight = widget._height(config);
           final bottomPadding = MediaQuery.paddingOf(context).bottom;
-          final targetHeight = constraints.hasTightHeight
-              ? constraints.maxHeight
-              : (baseHeight + bottomPadding).clamp(
-                  constraints.minHeight,
-                  constraints.maxHeight,
-                );
-          final resolvedHeight = targetHeight - bottomPadding;
-          final effectiveHeight =
-              resolvedHeight.isFinite && resolvedHeight > 0
-              ? resolvedHeight
-              : baseHeight;
+          final (:targetHeight, :effectiveHeight) = resolveBottomBarHeights(
+            constraints,
+            baseHeight,
+            bottomPadding,
+          );
           return NativeComponentEditor(
             id: widget.id,
             label: widget.label,

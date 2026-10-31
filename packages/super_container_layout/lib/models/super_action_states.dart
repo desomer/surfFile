@@ -72,7 +72,10 @@ class ActionConfigOverride {
         ...properties,
         for (final property in ActionStateProperty.values)
           if (property.keys.any(
-                (key) => !_sameActionStateValue(before[key], after[key]),
+                (key) => !ComponentStateHelpers.sameJsonValue(
+                  before[key],
+                  after[key],
+                ),
               ) ||
               (property.bindingProperty != null &&
                   config.propertyBindings[property.bindingProperty] !=
@@ -165,22 +168,13 @@ class ActionConfigOverride {
   };
 
   factory ActionConfigOverride.fromJson(Object? value) {
-    if (value is! Map ||
-        value.keys.any((key) => key != 'config' && key != 'properties') ||
-        value['properties'] is! List) {
-      throw const FormatException('Invalid Action override.');
-    }
-    final properties = <ActionStateProperty>{};
-    for (final name in value['properties'] as List) {
-      final property = ActionStateProperty.values
-          .where((property) => property.name == name)
-          .firstOrNull;
-      if (property == null || !properties.add(property)) {
-        throw const FormatException('Invalid Action override property.');
-      }
-    }
+    final properties = ComponentStateHelpers.parseOverrideProperties(
+      value,
+      ActionStateProperty.values,
+      'Action',
+    );
     return ActionConfigOverride(
-      config: _readActionStateLeaf(value['config']),
+      config: _readActionStateLeaf((value as Map)['config']),
       properties: properties,
     );
   }
@@ -217,7 +211,12 @@ class ActionConfigStates {
            ),
        }),
        order = List.unmodifiable(
-         _actionStateOrder(named.keys, order, automatic.keys),
+         ComponentStateHelpers.normalizeStateOrder(
+           named.keys,
+           order,
+           automatic.keys,
+           'Action',
+         ),
        ) {
     binding?.validate();
     if (namedProperties.keys.any((name) => !named.containsKey(name))) {
@@ -230,8 +229,8 @@ class ActionConfigStates {
     }
   }
 
-  static const hoverKey = '\u0000hover';
-  static const selectedKey = '\u0000selected';
+  static const hoverKey = ComponentStateHelpers.hoverKey;
+  static const selectedKey = ComponentStateHelpers.selectedKey;
 
   final JsonTextBinding? binding;
   final Map<String, SuperActionConfig> named;
@@ -273,17 +272,11 @@ class ActionConfigStates {
       order: clearOrder
           ? null
           : order ??
-                this.order
-                    .where(
-                      (key) =>
-                          key == hoverKey ||
-                          key == selectedKey ||
-                          (automatic ?? this.automatic).keys.any(
-                            (s) => s.key == key,
-                          ) ||
-                          nextNamed.containsKey(key),
-                    )
-                    .toList(),
+                ComponentStateHelpers.filterCopiedOrder(
+                  this.order,
+                  (automatic ?? this.automatic).keys,
+                  nextNamed,
+                ),
     );
   }
 
@@ -438,34 +431,32 @@ class ActionConfigStates {
   @override
   bool operator ==(Object other) =>
       other is ActionConfigStates &&
-      binding == other.binding &&
-      mapEquals(named, other.named) &&
-      namedProperties.length == other.namedProperties.length &&
-      namedProperties.entries.every(
-        (e) => setEquals(e.value, other.namedProperties[e.key]),
-      ) &&
-      hover == other.hover &&
-      selected == other.selected &&
-      mapEquals(automatic, other.automatic) &&
-      listEquals(order, other.order);
+      ComponentStateHelpers.equalsStateCollection(
+        bindingA: binding,
+        bindingB: other.binding,
+        namedA: named,
+        namedB: other.named,
+        propsA: namedProperties,
+        propsB: other.namedProperties,
+        hoverA: hover,
+        hoverB: other.hover,
+        selectedA: selected,
+        selectedB: other.selected,
+        autoA: automatic,
+        autoB: other.automatic,
+        orderA: order,
+        orderB: other.order,
+      );
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => ComponentStateHelpers.hashStateCollection(
     binding,
-    Object.hashAllUnordered(
-      named.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      namedProperties.entries.map(
-        (e) => Object.hash(e.key, Object.hashAllUnordered(e.value)),
-      ),
-    ),
+    named,
+    namedProperties,
     hover,
     selected,
-    Object.hashAllUnordered(
-      automatic.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAll(order),
+    automatic,
+    order,
   );
 }
 
@@ -486,25 +477,12 @@ Map<String, Set<ActionStateProperty>> _readActionNamedProperties(
   };
 }
 
-Map<AutomaticState, ActionConfigOverride> _readActionAutomatic(Object? value) {
-  if (value == null) return {};
-  if (value is! Map) {
-    throw const FormatException('Invalid automatic Action states.');
-  }
-  return {
-    for (final entry in value.entries)
-      (AutomaticState.values
-                  .where(
-                    (s) =>
-                        s.name == entry.key &&
-                        s != AutomaticState.hover &&
-                        s != AutomaticState.selected,
-                  )
-                  .firstOrNull ??
-              (throw const FormatException('Unknown automatic Action state.'))):
-          ActionConfigOverride.fromJson(entry.value),
-  };
-}
+Map<AutomaticState, ActionConfigOverride> _readActionAutomatic(Object? value) =>
+    ComponentStateHelpers.readAutomaticStates(
+      value,
+      ActionConfigOverride.fromJson,
+      'Action',
+    );
 
 SuperActionConfig _actionStateLeaf(SuperActionConfig config) {
   if (config.states != null) {
@@ -522,68 +500,7 @@ SuperActionConfig _readActionStateLeaf(Object? value) {
   return _actionStateLeaf(SuperActionConfig.fromJson(value));
 }
 
-String _actionStateName(String name) {
-  if (name.isEmpty ||
-      name.trim() != name ||
-      name.contains('\u0000') ||
-      {
-        'default',
-        'selected',
-        'hover',
-        'hovered',
-        'par défaut',
-        'par defaut',
-        'sélectionné',
-        'selectionne',
-        'survol',
-      }.contains(name.toLowerCase())) {
-    throw const FormatException('Empty or reserved Action state name.');
-  }
-  return name;
-}
+String _actionStateName(String name) =>
+    ComponentStateHelpers.validateStateName(name, 'Action');
 
-List<String> _actionStateOrder(
-  Iterable<String> names,
-  List<String>? order,
-  Iterable<AutomaticState> automatic,
-) {
-  final defaults = [
-    ...names,
-    ActionConfigStates.hoverKey,
-    ActionConfigStates.selectedKey,
-    ...automatic.map((s) => s.key),
-  ];
-  if (order == null) return defaults;
-  if (order.toSet().length != order.length ||
-      order.any((key) => !defaults.contains(key))) {
-    throw const FormatException('Invalid Action state order.');
-  }
-  return [...order, ...defaults.where((key) => !order.contains(key))];
-}
-
-bool _sameActionStateValue(Object? a, Object? b) {
-  if (a is Map && b is Map) {
-    return a.length == b.length &&
-        a.keys.every(
-          (key) => b.containsKey(key) && _sameActionStateValue(a[key], b[key]),
-        );
-  }
-  if (a is List && b is List) {
-    return a.length == b.length &&
-        Iterable.generate(a.length)
-            .every((i) => _sameActionStateValue(a[i], b[i]));
-  }
-  return a == b;
-}
-
-int _hashActionStateValue(Object? v) {
-  if (v is Map) {
-    return Object.hashAllUnordered(
-      v.entries.map((e) => Object.hash(e.key, _hashActionStateValue(e.value))),
-    );
-  }
-  if (v is List) {
-    return Object.hashAll(v.map(_hashActionStateValue));
-  }
-  return v.hashCode;
-}
+int _hashActionStateValue(Object? v) => ComponentStateHelpers.hashJsonValue(v);

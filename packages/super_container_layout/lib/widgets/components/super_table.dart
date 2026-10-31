@@ -38,10 +38,9 @@ import '../../models/super_table_config.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
+import 'component_common.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
-import '../../theme/appearance.dart';
-import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
 import '../../theme/style_extras.dart';
 import '../editing/components/native_component_editor.dart';
@@ -907,29 +906,19 @@ class _SuperTableState extends State<SuperTable> {
     required bool isStartCols,
     required int freezeCount,
   }) {
-    final defaultColor = Theme.of(context).colorScheme.primary
-        .withValues(alpha: 0.14);
-    final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
-    final resolved = hasCustomSelected
-        ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
-        : currentRowStyle.copyWith(clearStates: true);
-    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
+    final styles = resolveRowIndicatorStyle(
+      context,
+      currentRowStyle,
+      isHover: false,
+    );
     final effectiveStyle = _adaptRowStyleForEdge(
-      resolved.copyWith(
-        clearStates: true,
-        margin: 0,
-        marginInsets: null,
-        hoverEffect: false,
-        color: hasCustomSelected
-            ? (resolved.color ?? (hasFill ? null : defaultColor))
-            : defaultColor,
-      ),
+      styles.effective,
       isStartCols: isStartCols,
       freezeCount: freezeCount,
     );
     final hasLeftEdge = isStartCols || freezeCount == 0;
     final hasRightEdge = !isStartCols || freezeCount == 0;
-    final m = resolved.outerMargin;
+    final m = styles.resolved.outerMargin;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         hasLeftEdge ? m.left : 0,
@@ -957,31 +946,19 @@ class _SuperTableState extends State<SuperTable> {
     required bool isStartCols,
     required int freezeCount,
   }) {
-    final accent = AppearanceScope.of(context).accent;
-    final hoverBase = currentRowStyle.hoverBase(accent);
-    final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
-        .withValues(alpha: 0.08);
-    final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
-    final resolved = hasCustomHover
-        ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
-        : currentRowStyle.copyWith(clearStates: true);
-    final hasFill = resolved.fill.type != FillType.solid || resolved.hasImage;
+    final styles = resolveRowIndicatorStyle(
+      context,
+      currentRowStyle,
+      isHover: true,
+    );
     final effectiveStyle = _adaptRowStyleForEdge(
-      resolved.copyWith(
-        clearStates: true,
-        margin: 0,
-        marginInsets: null,
-        hoverEffect: false,
-        color: hasCustomHover
-            ? (resolved.color ?? (hasFill ? null : defaultColor))
-            : defaultColor,
-      ),
+      styles.effective,
       isStartCols: isStartCols,
       freezeCount: freezeCount,
     );
     final hasLeftEdge = isStartCols || freezeCount == 0;
     final hasRightEdge = !isStartCols || freezeCount == 0;
-    final m = resolved.outerMargin;
+    final m = styles.resolved.outerMargin;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         hasLeftEdge ? m.left : 0,
@@ -1017,18 +994,14 @@ class _SuperTableState extends State<SuperTable> {
       valueListenable: controller,
       builder: (context, config, _) {
         final rowId = widget.itemId ?? config.itemId ?? widget.id;
-        final rowStyleFallback = app == null
-            ? widget.templateStyle
-            : (app.registry?.containerStyleById[rowId]?.value ??
-                  app.registry?.containerStyleById[widget.id]?.value ??
-                  AppearanceScope.controllerOf(context)?.value.styles[rowId] ??
-                  AppearanceScope.controllerOf(context)
-                      ?.value
-                      .styles[widget.id] ??
-                  widget.templateStyle);
-        final style =
-            registry?.styleController(rowId, fallback: rowStyleFallback) ??
-            _localStyle;
+        final style = resolveRowStyleController(
+          context,
+          app: app,
+          componentId: widget.id,
+          rowId: rowId,
+          fallback: widget.templateStyle,
+          localStyle: _localStyle,
+        );
 
         _observe(config, listScope, repositoryStore);
         final nativeConfig = _toNativeConfig(config);

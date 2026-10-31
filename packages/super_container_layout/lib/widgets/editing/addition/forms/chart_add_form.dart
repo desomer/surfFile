@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_chart_config.dart';
 import '../../components/super_chart_editor.dart';
+import 'add_form_common.dart';
 
 class ChartAddForm extends StatefulWidget {
   const ChartAddForm({
@@ -17,56 +18,23 @@ class ChartAddForm extends StatefulWidget {
   State<ChartAddForm> createState() => _ChartAddFormState();
 }
 
-class _ChartAddFormState extends State<ChartAddForm> {
-  int _revision = 0;
-
-  Future<void> _more() async {
-    final result = await showSuperChartEditor(
-      context: context,
-      config: widget.draft,
-    );
-    if (result == null || !mounted) return;
-    setState(() => _revision++);
-    widget.onChanged(result);
-  }
+class _ChartAddFormState extends State<ChartAddForm>
+    with DraftAddFormStateMixin {
+  Future<void> _more() => openAdvancedDraftEditor(
+    () => showSuperChartEditor(context: context, config: widget.draft),
+    widget.onChanged,
+  );
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final draft = widget.draft;
     final primarySeries = draft.series.first;
 
-    Card sectionCard({required String title, required Widget child}) => Card(
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: .5)),
-      ),
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          spacing: 10,
-          children: [
-            Text(
-              title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            child,
-          ],
-        ),
-      ),
-    );
+    Widget sectionCard({required String title, required Widget child}) =>
+        AddFormSectionCard(title: title, child: child);
 
-    return KeyedSubtree(
-      key: ValueKey(_revision),
-      child: SingleChildScrollView(
+    return buildRevisionSubtree(
+      SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 12,

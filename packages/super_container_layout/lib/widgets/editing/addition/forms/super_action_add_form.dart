@@ -3,9 +3,9 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../models/super_action_config.dart';
 import '../../components/super_action_editor.dart';
 import '../../icons/material_icon_picker.dart';
+import 'add_form_common.dart';
 
-double? _parse(String text) =>
-    double.tryParse(text.trim().replaceAll(',', '.'));
+double? _parse(String text) => parseAddFormDouble(text);
 
 class SuperActionAddForm extends StatefulWidget {
   const SuperActionAddForm({
@@ -23,26 +23,22 @@ class SuperActionAddForm extends StatefulWidget {
   State<SuperActionAddForm> createState() => _SuperActionAddFormState();
 }
 
-class _SuperActionAddFormState extends State<SuperActionAddForm> {
-  int _revision = 0;
-
-  Future<void> _more() async {
-    final result = await showSuperActionEditor(
+class _SuperActionAddFormState extends State<SuperActionAddForm>
+    with DraftAddFormStateMixin {
+  Future<void> _more() => openAdvancedDraftEditor(
+    () => showSuperActionEditor(
       context: context,
       config: widget.draft,
       availableFontFamilies: widget.availableFontFamilies,
-    );
-    if (result == null || !mounted) return;
-    setState(() => _revision++);
-    widget.onChanged(result);
-  }
+    ),
+    widget.onChanged,
+  );
 
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
-    return KeyedSubtree(
-      key: ValueKey(_revision),
-      child: Column(
+    return buildRevisionSubtree(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SegmentedButton<SuperActionKind>(

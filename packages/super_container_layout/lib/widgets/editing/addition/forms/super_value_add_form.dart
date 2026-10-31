@@ -4,9 +4,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_value_config.dart';
 import '../../components/super_value_editor.dart';
+import 'add_form_common.dart';
 
-double? _parse(String text) =>
-    double.tryParse(text.trim().replaceAll(',', '.'));
+double? _parse(String text) => parseAddFormDouble(text);
 
 class SuperValueAddForm extends StatefulWidget {
   const SuperValueAddForm({
@@ -24,28 +24,23 @@ class SuperValueAddForm extends StatefulWidget {
   State<SuperValueAddForm> createState() => _SuperValueAddFormState();
 }
 
-class _SuperValueAddFormState extends State<SuperValueAddForm> {
-  /// Recreates the text fields after the full editor changed the draft.
-  int _revision = 0;
-
-  Future<void> _more() async {
-    final result = await showSuperValueEditor(
+class _SuperValueAddFormState extends State<SuperValueAddForm>
+    with DraftAddFormStateMixin {
+  Future<void> _more() => openAdvancedDraftEditor(
+    () => showSuperValueEditor(
       context: context,
       config: widget.draft,
       availableFontFamilies: widget.availableFontFamilies,
-    );
-    if (result == null || !mounted) return;
-    setState(() => _revision++);
-    widget.onChanged(result);
-  }
+    ),
+    widget.onChanged,
+  );
 
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
     final input = draft.mode == SuperValueMode.input;
-    return KeyedSubtree(
-      key: ValueKey(_revision),
-      child: Column(
+    return buildRevisionSubtree(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SegmentedButton<SuperValueKind>(

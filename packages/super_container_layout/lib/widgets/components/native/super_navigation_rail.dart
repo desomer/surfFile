@@ -7,6 +7,7 @@ import '../../../super_app.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_action.dart';
 import '../super_layout/slot_implementation.dart';
+import 'native_component_common.dart';
 
 /// A native [NavigationRail] whose destinations are exclusively [SuperAction]
 /// components converted into [NavigationRailDestination] entries.
@@ -98,21 +99,11 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
     }
   }
 
-  Map<String, SuperAction> get _suppliedActions => {
-    for (final action in widget._allDestinations) action.id: action,
-  };
+  Map<String, SuperAction> get _suppliedActions =>
+      suppliedActionDestinationMap(widget._allDestinations);
 
-  List<SlotImplementation> get _slots => [
-    for (final action in widget._allDestinations)
-      BuilderSlot(
-        id: action.id,
-        label: action.config.label,
-        tags: const {'action', 'button', 'input'},
-        sizing: SlotSizing.intrinsic,
-        builder: (_) => action,
-      ),
-    ...widget.slots,
-  ];
+  List<SlotImplementation> get _slots =>
+      buildActionDestinationSlots(widget._allDestinations, widget.slots);
 
   NativeComponentConfig _added(
     NativeComponentConfig config,

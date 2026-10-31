@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
+import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 
 import 'component_config.dart';
 import 'json_syntax.dart';
@@ -198,10 +198,7 @@ class SuperValueConfig extends ComponentConfig {
       'letterSpacing': letterSpacing,
       if (binding != null) 'binding': binding!.toJson(),
       if (propertyBindings.isNotEmpty)
-        'propertyBindings': {
-          for (final entry in propertyBindings.entries)
-            entry.key.name: entry.value.toJson(),
-        },
+        'propertyBindings': JsonReader.encodePropertyBindings(propertyBindings),
       if (field != const SuperTextFieldConfig()) 'field': field.toJson(),
       if (states != null) 'states': states!.toJson(),
     };
@@ -233,10 +230,10 @@ class SuperValueConfig extends ComponentConfig {
       if (letterSpacing != null) 'letterSpacing': letterSpacing,
       if (binding != null) 'binding': binding!.toCompactJson(),
       if (propertyBindings.isNotEmpty)
-        'propertyBindings': {
-          for (final entry in propertyBindings.entries)
-            entry.key.name: entry.value.toCompactJson(),
-        },
+        'propertyBindings': JsonReader.encodePropertyBindings(
+          propertyBindings,
+          compact: true,
+        ),
       if (field != const SuperTextFieldConfig())
         'field': field.toCompactJson(),
       if (states != null) 'states': states!.toCompactJson(),
@@ -248,28 +245,6 @@ class SuperValueConfig extends ComponentConfig {
   @override
   SuperValueConfig patchFromJson(Map<Object?, Object?> patch) =>
       SuperValueConfig.fromJson(patch, fallback: this);
-
-  static FontWeight? _parseFontWeight(Object? weight) {
-    if (weight == null) return null;
-    if (weight is int) {
-      return FontWeight.values.where((w) => w.value == weight).firstOrNull;
-    }
-    if (weight is String) {
-      return switch (weight.trim().toLowerCase()) {
-        'thin' || 'w100' || '100' => FontWeight.w100,
-        'extralight' || 'w200' || '200' => FontWeight.w200,
-        'light' || 'w300' || '300' => FontWeight.w300,
-        'normal' || 'regular' || 'w400' || '400' => FontWeight.w400,
-        'medium' || 'w500' || '500' => FontWeight.w500,
-        'semibold' || 'w600' || '600' => FontWeight.w600,
-        'bold' || 'w700' || '700' => FontWeight.w700,
-        'extrabold' || 'w800' || '800' => FontWeight.w800,
-        'black' || 'w900' || '900' => FontWeight.w900,
-        _ => null,
-      };
-    }
-    return null;
-  }
 
   factory SuperValueConfig.fromJson(
     Object? value, {
@@ -308,54 +283,35 @@ class SuperValueConfig extends ComponentConfig {
     if (value.keys.any((key) => !keys.contains(key))) {
       throw const FormatException('Unknown Value preference.');
     }
-    T field<T>(String key, T fallbackVal) {
-      if (!value.containsKey(key)) return fallbackVal;
-      final result = value[key];
-      if (result is! T) throw FormatException('Invalid Value "$key".');
-      return result;
-    }
+    T field<T>(String key, T fallbackVal) =>
+        JsonReader.field(value, key, fallbackVal, context: 'Value');
+    double? number(String key, double? fallbackVal) =>
+        JsonReader.nullableDouble(value, key, fallbackVal, context: 'Value');
 
-    double? number(String key, double? fallbackVal) {
-      if (!value.containsKey(key)) return fallbackVal;
-      final result = value[key];
-      if (result == null) return null;
-      if (result is! num || !result.isFinite) {
-        throw FormatException('Invalid Value "$key".');
-      }
-      return result.toDouble();
-    }
-
-    final mode = SuperValueMode.values
-        .where((mode) => mode.name == field('mode', fallback.mode.name))
-        .firstOrNull;
-    final rawKind = field('kind', fallback.kind.name);
-    final kind = switch (rawKind) {
-      'switch' => SuperValueKind.switchControl,
-      _ =>
-        SuperValueKind.values
-            .where((candidate) => candidate.name == rawKind)
-            .firstOrNull,
-    };
-    final align = TextAlign.values
-        .where(
-          (align) => align.name == field('textAlign', fallback.textAlign.name),
-        )
-        .firstOrNull;
+    final mode = JsonReader.enumByName(
+      SuperValueMode.values,
+      field('mode', fallback.mode.name),
+    );
+    final kind = JsonReader.enumByName(
+      SuperValueKind.values,
+      field('kind', fallback.kind.name),
+      const {'switch': SuperValueKind.switchControl},
+    );
+    final align = JsonReader.enumByName(
+      TextAlign.values,
+      field('textAlign', fallback.textAlign.name),
+    );
     final hasWeight = value.containsKey('fontWeight');
     final weight = value['fontWeight'];
     final fontWeight = hasWeight
-        ? _parseFontWeight(weight)
+        ? JsonReader.parseFontWeight(weight)
         : fallback.fontWeight;
-    final hasColor = value.containsKey('color');
-    final rawColor = value['color'];
-    final Color? parsedColor;
-    try {
-      parsedColor = hasColor
-          ? JsonColor.parseNullable(rawColor, 'color')
-          : fallback.color;
-    } on FormatException {
-      throw const FormatException('Invalid Value style.');
-    }
+    final parsedColor = JsonReader.nullableColor(
+      value,
+      'color',
+      fallback.color,
+      errorMessage: 'Invalid Value style.',
+    );
     final hasFamily = value.containsKey('fontFamily');
     final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
     if (mode == null ||
@@ -365,29 +321,12 @@ class SuperValueConfig extends ComponentConfig {
         (family != null && family is! String)) {
       throw const FormatException('Invalid Value style.');
     }
-    final rawPropertyBindings = value['propertyBindings'];
-    if (rawPropertyBindings != null && rawPropertyBindings is! Map) {
-      throw const FormatException('Invalid Value property bindings.');
-    }
-    final Map<SuperValueProperty, JsonTextBinding> propertyBindings;
-    if (!value.containsKey('propertyBindings')) {
-      propertyBindings = fallback.propertyBindings;
-    } else {
-      propertyBindings = <SuperValueProperty, JsonTextBinding>{};
-      for (final entry in (rawPropertyBindings as Map? ?? {}).entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Invalid Value property binding.');
-        }
-        final property = SuperValueProperty.values
-            .where((candidate) => candidate.name == entry.key)
-            .firstOrNull;
-        if (property == null ||
-            (entry.value is! Map && entry.value is! String)) {
-          throw const FormatException('Invalid Value property binding.');
-        }
-        propertyBindings[property] = JsonTextBinding.fromJson(entry.value);
-      }
-    }
+    final propertyBindings = JsonReader.readPropertyBindings(
+      value,
+      SuperValueProperty.values,
+      fallback.propertyBindings,
+      context: 'Value',
+    );
 
     var resolvedInitialText = fallback.initialText;
     if (value.containsKey('initialText')) {

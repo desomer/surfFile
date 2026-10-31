@@ -11,6 +11,7 @@ import '../../../theme/appearance.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_action.dart';
 import '../super_layout/slot_implementation.dart';
+import 'native_component_common.dart';
 
 /// A native [BottomNavigationBar] whose items are exclusively [SuperAction]
 /// components converted into [BottomNavigationBarItem] entries.
@@ -184,21 +185,11 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
         _ => widget.mouseCursor,
       };
 
-  Map<String, SuperAction> get _suppliedActions => {
-    for (final action in widget._allDestinations) action.id: action,
-  };
+  Map<String, SuperAction> get _suppliedActions =>
+      suppliedActionDestinationMap(widget._allDestinations);
 
-  List<SlotImplementation> get _slots => [
-    for (final action in widget._allDestinations)
-      BuilderSlot(
-        id: action.id,
-        label: action.config.label,
-        tags: const {'action', 'button', 'input'},
-        sizing: SlotSizing.intrinsic,
-        builder: (_) => action,
-      ),
-    ...widget.slots,
-  ];
+  List<SlotImplementation> get _slots =>
+      buildActionDestinationSlots(widget._allDestinations, widget.slots);
 
   NativeComponentConfig _added(
     NativeComponentConfig config,
@@ -221,17 +212,11 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
         builder: (context, constraints) {
           final baseHeight = widget._height(config);
           final bottomPadding = MediaQuery.paddingOf(context).bottom;
-          final targetHeight = constraints.hasTightHeight
-              ? constraints.maxHeight
-              : (baseHeight + bottomPadding).clamp(
-                  constraints.minHeight,
-                  constraints.maxHeight,
-                );
-          final resolvedHeight = targetHeight - bottomPadding;
-          final effectiveHeight =
-              resolvedHeight.isFinite && resolvedHeight > 0
-              ? resolvedHeight
-              : baseHeight;
+          final (:targetHeight, :effectiveHeight) = resolveBottomBarHeights(
+            constraints,
+            baseHeight,
+            bottomPadding,
+          );
           return NativeComponentEditor(
             id: widget.id,
             label: widget.label,

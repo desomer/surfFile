@@ -73,6 +73,8 @@ export 'theme/style_extras.dart';
 export 'widgets/appearance/appearance_transfer_dialog.dart';
 export 'widgets/appearance/appearance_settings.dart';
 export 'widgets/appearance/appearance_style_section.dart';
+export 'widgets/appearance/appearance_toolbar.dart';
+export 'widgets/surfaces/scroll_edge_fade.dart';
 export 'widgets/editing/styles/container_style_editor.dart';
 export 'widgets/editing/addition/component_add_wizard.dart';
 export 'widgets/editing/addition/component_add_configurators.dart';

@@ -35,9 +35,8 @@ import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
-import '../../theme/appearance.dart';
-import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
+import 'component_common.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tree_view_editor.dart';
 import '../editing/history/editor_history.dart';
@@ -833,29 +832,16 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     BuildContext context,
     ContainerStyle currentRowStyle,
   ) {
-    final defaultColor = Theme.of(
+    final styles = resolveRowIndicatorStyle(
       context,
-    ).colorScheme.primary.withValues(alpha: 0.14);
-    final hasCustomSelected = currentRowStyle.states?.hasSelected == true;
-    final resolved = hasCustomSelected
-        ? currentRowStyle.states!.resolve(currentRowStyle, isSelected: true)
-        : currentRowStyle.copyWith(clearStates: true);
-    final hasFill =
-        resolved.fill.type != FillType.solid || resolved.hasImage;
-    final effectiveStyle = resolved.copyWith(
-      clearStates: true,
-      margin: 0,
-      marginInsets: null,
-      hoverEffect: false,
-      color: hasCustomSelected
-          ? (resolved.color ?? (hasFill ? null : defaultColor))
-          : defaultColor,
+      currentRowStyle,
+      isHover: false,
     );
     return Padding(
-      padding: resolved.outerMargin,
+      padding: styles.resolved.outerMargin,
       child: SuperContainer(
         key: ValueKey('super-tree-selection-indicator-${widget.id}'),
-        style: effectiveStyle,
+        style: styles.effective,
         fallbackColor: Colors.transparent,
         borderColor: Colors.transparent,
         child: const SizedBox.expand(),
@@ -867,30 +853,16 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     BuildContext context,
     ContainerStyle currentRowStyle,
   ) {
-    final accent = AppearanceScope.of(context).accent;
-    final hoverBase = currentRowStyle.hoverBase(accent);
-    final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
-        .withValues(alpha: 0.08);
-    final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
-    final resolved = hasCustomHover
-        ? currentRowStyle.states!.resolve(currentRowStyle, isHovered: true)
-        : currentRowStyle.copyWith(clearStates: true);
-    final hasFill =
-        resolved.fill.type != FillType.solid || resolved.hasImage;
-    final effectiveStyle = resolved.copyWith(
-      clearStates: true,
-      margin: 0,
-      marginInsets: null,
-      hoverEffect: false,
-      color: hasCustomHover
-          ? (resolved.color ?? (hasFill ? null : defaultColor))
-          : defaultColor,
+    final styles = resolveRowIndicatorStyle(
+      context,
+      currentRowStyle,
+      isHover: true,
     );
     return Padding(
-      padding: resolved.outerMargin,
+      padding: styles.resolved.outerMargin,
       child: SuperContainer(
         key: ValueKey('super-tree-hover-indicator-${widget.id}'),
-        style: effectiveStyle,
+        style: styles.effective,
         fallbackColor: Colors.transparent,
         borderColor: Colors.transparent,
         child: const SizedBox.expand(),
@@ -915,18 +887,14 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       valueListenable: controller,
       builder: (context, config, _) {
         final rowId = widget.itemId ?? config.itemId ?? widget.id;
-        final rowStyleFallback = app == null
-            ? widget.templateStyle
-            : (app.registry?.containerStyleById[rowId]?.value ??
-                  app.registry?.containerStyleById[widget.id]?.value ??
-                  AppearanceScope.controllerOf(context)?.value.styles[rowId] ??
-                  AppearanceScope.controllerOf(
-                    context,
-                  )?.value.styles[widget.id] ??
-                  widget.templateStyle);
-        final style =
-            registry?.styleController(rowId, fallback: rowStyleFallback) ??
-            _localStyle;
+        final style = resolveRowStyleController(
+          context,
+          app: app,
+          componentId: widget.id,
+          rowId: rowId,
+          fallback: widget.templateStyle,
+          localStyle: _localStyle,
+        );
 
         _observe(config, listScope, repositoryStore);
         final nativeConfig = _toNativeConfig(config);

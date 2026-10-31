@@ -2,9 +2,9 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_tree_view_config.dart';
 import '../../components/super_tree_view_editor.dart';
+import 'add_form_common.dart';
 
-double? _parse(String text) =>
-    double.tryParse(text.trim().replaceAll(',', '.'));
+double? _parse(String text) => parseAddFormDouble(text);
 
 class TreeViewAddForm extends StatefulWidget {
   const TreeViewAddForm({
@@ -20,25 +20,18 @@ class TreeViewAddForm extends StatefulWidget {
   State<TreeViewAddForm> createState() => _TreeViewAddFormState();
 }
 
-class _TreeViewAddFormState extends State<TreeViewAddForm> {
-  int _revision = 0;
-
-  Future<void> _more() async {
-    final result = await showSuperTreeViewEditor(
-      context: context,
-      config: widget.draft,
-    );
-    if (result == null || !mounted) return;
-    setState(() => _revision++);
-    widget.onChanged(result);
-  }
+class _TreeViewAddFormState extends State<TreeViewAddForm>
+    with DraftAddFormStateMixin {
+  Future<void> _more() => openAdvancedDraftEditor(
+    () => showSuperTreeViewEditor(context: context, config: widget.draft),
+    widget.onChanged,
+  );
 
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
-    return KeyedSubtree(
-      key: ValueKey(_revision),
-      child: Column(
+    return buildRevisionSubtree(
+      Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: 12,
         children: [

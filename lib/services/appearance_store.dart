@@ -4,6 +4,7 @@ import 'package:super_container_layout/services/appearance/appearance_codec.dart
     as shell;
 import 'package:super_container_layout/services/appearance/appearance_store.dart'
     as shell;
+import 'package:super_container_layout/services/appearance/default_appearance_codec.dart';
 import 'package:super_container_layout/theme/appearance.dart' as base;
 import '../theme/surffile_appearance.dart';
 import '../theme/disk_gauge_style.dart';
@@ -116,18 +117,11 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
   Appearance get defaults => defaultSurfFileAppearance();
 
   static const businessKeys = {
+    ...DefaultAppearanceCodec.dimensionKeys,
     'diskGaugeStyle',
-    'cardHeight',
-    'cardWidth',
-    'rowHeight',
-    'spacing',
-    'fontSize',
-    'iconSize',
     'folderTransition',
     'folderTransitionDuration',
     'fileDragMode',
-    'scrollFadeEnabled',
-    'scrollFadeExtent',
   };
 
   @override
@@ -138,17 +132,10 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
       ...super.toJson(prepared),
       'application': {
         'diskGaugeStyle': p.diskGaugeStyle.toJson(),
-        'cardHeight': prepared.cardHeight,
-        'cardWidth': prepared.cardWidth,
-        'rowHeight': prepared.rowHeight,
-        'spacing': prepared.spacing,
-        'fontSize': prepared.fontSize,
-        'iconSize': prepared.iconSize,
+        ...DefaultAppearanceCodec.encodeDimensions(prepared),
         'folderTransition': p.folderTransition.name,
         'folderTransitionDuration': p.folderTransitionDuration,
         'fileDragMode': p.fileDragMode.name,
-        'scrollFadeEnabled': prepared.scrollFadeEnabled,
-        'scrollFadeExtent': prepared.scrollFadeExtent,
       },
     };
   }
@@ -169,13 +156,6 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
     if (payload.keys.any((key) => !businessKeys.contains(key))) {
       throw const FormatException('Préférence SurfFile inconnue.');
     }
-    double number(String key, double fallback, double min, double max) {
-      final value = payload[key] ?? fallback;
-      if (value is! num || !value.isFinite || value < min || value > max) {
-        throw FormatException('Valeur invalide pour "$key".');
-      }
-      return value.toDouble();
-    }
 
     final transition = switch (payload['folderTransition']) {
       null || 'none' => FolderTransition.none,
@@ -195,14 +175,11 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
     if (fileDragMode == null) {
       throw const FormatException('Mode de glisser-déposer invalide.');
     }
-    final fadeEnabled = payload['scrollFadeEnabled'] ?? true;
-    if (fadeEnabled is! bool) {
-      throw const FormatException('Activation du fondu invalide.');
-    }
     final parsedPreferences = SurfFilePreferences(
       diskGaugeStyle: DiskGaugeStyle.fromJson(payload['diskGaugeStyle']),
       folderTransition: transition,
-      folderTransitionDuration: number(
+      folderTransitionDuration: DefaultAppearanceCodec.readBoundedDouble(
+        payload,
         'folderTransitionDuration',
         SurfFileAppearanceDefaults.folderTransitionDuration,
         SurfFileAppearanceDefaults.minTransitionDuration,
@@ -210,39 +187,11 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
       ),
       fileDragMode: fileDragMode,
     );
-    final appearance = DefaultAppearance(
-      mode: generic.mode,
-      accent: generic.accent,
-      backgroundOpacity: generic.backgroundOpacity,
-      windowOpacity: generic.windowOpacity,
-      windowEffect: generic.windowEffect,
-      styles: generic.styles,
-      layouts: generic.layouts,
-      components: generic.components,
-      pageCatalog: generic.pageCatalog,
-      cardHeight: number('cardHeight', 142, 142, 300),
-      cardWidth: number('cardWidth', 180, 180, 360),
-      rowHeight: number(
-        'rowHeight',
-        48,
-        Appearance.minRowHeight,
-        Appearance.maxRowHeight,
-      ),
-      spacing: number(
-        'spacing',
-        12,
-        Appearance.minSpacing,
-        Appearance.maxSpacing,
-      ),
-      fontSize: number('fontSize', 12, 10, 16),
-      iconSize: number('iconSize', 49, 24, 64),
-      scrollFadeEnabled: fadeEnabled,
-      scrollFadeExtent: number(
-        'scrollFadeExtent',
-        28,
-        Appearance.minScrollFadeExtent,
-        Appearance.maxScrollFadeExtent,
-      ),
+    final appearance = DefaultAppearanceCodec.decodeDimensions(
+      payload,
+      base: generic,
+      defaults: defaults,
+      enforceBounds: true,
     );
     return (
       preferences: parsedPreferences,

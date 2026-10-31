@@ -581,7 +581,7 @@ class SuperTreeViewConfig extends ComponentConfig {
         animateSelectionAndHover != other.animateSelectionAndHover ||
         emptyText != other.emptyText ||
         itemId != other.itemId ||
-        placements.length != other.placements.length ||
+        !JsonReader.sameSlotPlacements(placements, other.placements) ||
         !mapEquals(slotTypes, other.slotTypes) ||
         !mapEquals(zoneAxes, other.zoneAxes) ||
         !mapEquals(zoneFlows, other.zoneFlows) ||
@@ -589,9 +589,6 @@ class SuperTreeViewConfig extends ComponentConfig {
         !mapEquals(slotSizeConstraints, other.slotSizeConstraints) ||
         !mapEquals(slotLabels, other.slotLabels)) {
       return false;
-    }
-    for (final entry in placements.entries) {
-      if (!listEquals(entry.value, other.placements[entry.key])) return false;
     }
     return true;
   }
@@ -609,26 +606,14 @@ class SuperTreeViewConfig extends ComponentConfig {
     animateSelectionAndHover,
     emptyText,
     itemId,
-    Object.hashAllUnordered(
-      placements.entries.map((e) => Object.hash(e.key, Object.hashAll(e.value))),
-    ),
-    Object.hashAllUnordered(
-      slotTypes.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      zoneAxes.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      zoneFlows.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      slotPreferredSizes.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      slotSizeConstraints.entries.map((e) => Object.hash(e.key, e.value)),
-    ),
-    Object.hashAllUnordered(
-      slotLabels.entries.map((e) => Object.hash(e.key, e.value)),
+    ...JsonReader.slotLayoutHashParts(
+      placements: placements,
+      slotTypes: slotTypes,
+      zoneAxes: zoneAxes,
+      zoneFlows: zoneFlows,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
     ),
   ]);
 }
