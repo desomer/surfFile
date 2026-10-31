@@ -467,11 +467,13 @@ class SlotStack extends StatelessWidget {
     List<String> ids,
   ) {
     final parentFit = SlotContentFitScope.maybeOf(context);
-    final parentFitMain = !expand ||
+    final parentFitMain =
+        !expand ||
         (axis == Axis.horizontal
             ? (parentFit?.fitWidth ?? false)
             : (parentFit?.fitHeight ?? false));
-    final parentFitCross = !stretch ||
+    final parentFitCross =
+        !stretch ||
         (axis == Axis.horizontal
             ? (parentFit?.fitHeight ?? false)
             : (parentFit?.fitWidth ?? false));
@@ -1394,12 +1396,16 @@ class _LabeledSlotState extends State<_LabeledSlot> {
       widget.showLabel && widget.selected && widget.onResize != null;
 
   void _syncResizeOverlay() {
+    if (_showResizeHandles == _resizeOverlay.isShowing &&
+        (_showResizeHandles || _resizeStart == null)) {
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (_showResizeHandles) {
-        _resizeOverlay.show();
+        if (!_resizeOverlay.isShowing) _resizeOverlay.show();
       } else {
-        _resizeOverlay.hide();
+        if (_resizeOverlay.isShowing) _resizeOverlay.hide();
         _finishResize();
       }
     });

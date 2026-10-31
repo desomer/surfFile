@@ -395,7 +395,16 @@ class EditorSlotState extends State<EditorSlot> {
     _refreshHoveredTarget();
   }
 
+  static bool _hoverTargetListenerAdded = false;
+
+  static void _ensureHoverTargetListener() {
+    if (_hoverTargetListenerAdded) return;
+    _hoverTargetListenerAdded = true;
+    EditorSelectionRegion.hoverTarget.addListener(_refreshHoveredTarget);
+  }
+
   static void _refreshHoveredTarget() {
+    _ensureHoverTargetListener();
     final previous = _hoveredTarget.value;
     final menuTarget = _menuHoveredTarget;
     if (menuTarget != null && menuTarget.mounted && menuTarget.canEdit) {
@@ -403,6 +412,10 @@ class EditorSlotState extends State<EditorSlot> {
       if (!identical(previous, menuTarget)) {
         EditorSelectionOutline.triggerAnimation();
       }
+      return;
+    }
+    if (EditorSelectionRegion.hoverTarget.value != null) {
+      _hoveredTarget.value = null;
       return;
     }
     EditorSlotState? deepest;
@@ -1880,7 +1893,7 @@ class EditorSlotState extends State<EditorSlot> {
             },
             child: child,
           ),
-          child: content,
+          child: RepaintBoundary(child: content),
         ),
       );
     } else if (_hovered.contains(this)) {

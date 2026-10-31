@@ -581,7 +581,8 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
             _refreshHover();
           },
           onHover: (_) {
-            if (widget.enabled) _hovered.add(this);
+            if (!widget.enabled || _hovered.contains(this)) return;
+            _hovered.add(this);
             _refreshHover();
           },
           onExit: (_) {
@@ -620,7 +621,8 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
         _refreshHover();
       },
       onHover: (_) {
-        if (widget.enabled) _hovered.add(this);
+        if (!widget.enabled || _hovered.contains(this)) return;
+        _hovered.add(this);
         _refreshHover();
       },
       onExit: (_) {
@@ -657,7 +659,7 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
                 : null,
             child: child,
           ),
-          child: widget.child,
+          child: RepaintBoundary(child: widget.child),
         ),
       ),
     );
@@ -808,14 +810,10 @@ class EditorSelectionOutline extends CustomPainter {
     final pulseFactor = 1.0 + 0.25 * math.sin(rawProgress * math.pi);
     final glowPaint = Paint()
       ..color = baseColor.withValues(
-        alpha: (emphasized ? 0.52 : 0.28) * fadeCurve,
+        alpha: (emphasized ? 0.26 : 0.14) * fadeCurve,
       )
       ..style = PaintingStyle.stroke
-      ..strokeWidth = (emphasized ? 6.5 : 3.5) * pulseFactor
-      ..maskFilter = MaskFilter.blur(
-        BlurStyle.normal,
-        (emphasized ? 5.0 : 2.2) * pulseFactor,
-      );
+      ..strokeWidth = (emphasized ? 7.5 : 4.5) * pulseFactor;
     canvas.drawRRect(rrect, glowPaint);
 
     // 3. High-contrast white underlay stroke
@@ -850,18 +848,20 @@ class EditorSelectionOutline extends CustomPainter {
     if (!dashed || emphasized) {
       canvas.drawPath(path, borderPaint);
     } else {
+      final dashedPath = Path();
       final dashPhase = (1.0 - rawProgress) * 14.0;
       for (final metric in path.computeMetrics()) {
         for (var offset = dashPhase; offset < metric.length; offset += 12) {
-          canvas.drawPath(
+          dashedPath.addPath(
             metric.extractPath(
               offset,
               (offset + 7.5).clamp(0.0, metric.length),
             ),
-            borderPaint,
+            Offset.zero,
           );
         }
       }
+      canvas.drawPath(dashedPath, borderPaint);
     }
 
     // 5. Dynamic 4-corner Lock-On brackets
