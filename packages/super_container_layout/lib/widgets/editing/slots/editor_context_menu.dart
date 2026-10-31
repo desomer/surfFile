@@ -123,6 +123,9 @@ class EditorSlotAction extends InheritedWidget {
     this.onSelect,
     this.inline = false,
     this.showEdit = true,
+    this.scrollable = false,
+    this.fixedHeight = false,
+    this.fixedWidth = false,
     this.wrapActions = const [],
     this.insertion,
     this.dimensionDelegateBuilder,
@@ -139,6 +142,9 @@ class EditorSlotAction extends InheritedWidget {
   final VoidCallback? onSelect;
   final bool inline;
   final bool showEdit;
+  final bool scrollable;
+  final bool fixedHeight;
+  final bool fixedWidth;
   final List<EditorSlotWrapAction> wrapActions;
 
   /// Adds a component around this child through the contextual wizard.
@@ -175,6 +181,9 @@ class EditorSlotAction extends InheritedWidget {
       dimensionDelegateBuilder != oldWidget.dimensionDelegateBuilder ||
       inline != oldWidget.inline ||
       showEdit != oldWidget.showEdit ||
+      scrollable != oldWidget.scrollable ||
+      fixedHeight != oldWidget.fixedHeight ||
+      fixedWidth != oldWidget.fixedWidth ||
       destination != oldWidget.destination;
 }
 
@@ -185,6 +194,9 @@ class EditorContextMenuEntry extends InheritedWidget {
     required this.onSelected,
     required this.enabled,
     this.tooltip,
+    this.scrollable = false,
+    this.fixedHeight = false,
+    this.fixedWidth = false,
     this.destination = EditorMenuDestination.configuration,
     required super.child,
     super.key,
@@ -194,6 +206,9 @@ class EditorContextMenuEntry extends InheritedWidget {
   final String? tooltip;
   final Future<void> Function() onSelected;
   final bool enabled;
+  final bool scrollable;
+  final bool fixedHeight;
+  final bool fixedWidth;
   final EditorMenuDestination destination;
 
   @override
@@ -202,6 +217,9 @@ class EditorContextMenuEntry extends InheritedWidget {
       tooltip != oldWidget.tooltip ||
       onSelected != oldWidget.onSelected ||
       enabled != oldWidget.enabled ||
+      scrollable != oldWidget.scrollable ||
+      fixedHeight != oldWidget.fixedHeight ||
+      fixedWidth != oldWidget.fixedWidth ||
       destination != oldWidget.destination;
 }
 

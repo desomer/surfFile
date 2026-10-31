@@ -142,6 +142,10 @@ class _IterableContentState extends State<IterableContent> {
                 widget.editable &&
                 (StyleEditScope.controllerOf(context)?.value ?? true),
             inline: true,
+            fixedWidth: hasFixedSlotWidth(constraints: widget.sizeConstraints),
+            fixedHeight: hasFixedSlotHeight(
+              constraints: widget.sizeConstraints,
+            ),
             child: surface,
           );
     return ContentHoverScope(

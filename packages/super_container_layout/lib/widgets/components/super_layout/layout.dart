@@ -266,9 +266,16 @@ class SuperLayoutState extends State<SuperLayout> {
     final current = _config.value;
     final label = widget.zoneLabel(zone);
     final axis = current.axisOf(zone);
+    final flow = current.flowOf(zone);
+    final fixedSide = zone.isSide && !current.isAuto(zone);
+    final isVerticalSide =
+        zone == SuperLayoutZone.north || zone == SuperLayoutZone.south;
     return LayoutAxisAction(
       zoneLabel: label,
       axis: axis,
+      scrollable: flow.scrollable,
+      fixedHeight: fixedSide && isVerticalSide,
+      fixedWidth: fixedSide && !isVerticalSide,
       onToggle: () {
         if (!mounted || !widget.editable) return;
         final config = _config.value;
@@ -286,12 +293,11 @@ class SuperLayoutState extends State<SuperLayout> {
           ? formatZoneFlowTooltip(
               zoneLabel: label,
               axis: axis,
-              flow: current.flowOf(zone),
+              flow: flow,
               isSide: zone.isSide,
               sizeAxis: !zone.isSide
                   ? null
-                  : (zone == SuperLayoutZone.north ||
-                        zone == SuperLayoutZone.south)
+                  : isVerticalSide
                   ? Axis.vertical
                   : Axis.horizontal,
               autoSize: zone.isSide && current.isAuto(zone),

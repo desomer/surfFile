@@ -751,4 +751,395 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'context menu displays small indicator icons for scroll enabled, fixed height, and fixed width',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              body: SizedBox(
+                width: 800,
+                height: 600,
+                child: SuperLayout(
+                  label: 'Disposition',
+                  config: const SuperLayoutConfig(
+                    north: true,
+                    west: true,
+                    south: false,
+                    east: false,
+                    autoSides: {},
+                    northSize: 90,
+                    westSize: 180,
+                    zoneFlows: {
+                      SuperLayoutZone.north: ZoneFlowConfig(scrollable: true),
+                      SuperLayoutZone.center: ZoneFlowConfig(scrollable: true),
+                    },
+                    placements: {
+                      SuperLayoutZone.north: ['slot-north'],
+                      SuperLayoutZone.west: ['slot-west'],
+                      SuperLayoutZone.center: ['slot-center'],
+                    },
+                    slotSizeConstraints: {
+                      'slot-north': SlotSizeConstraints(
+                        preferredWidth: SlotDimension(140, SlotSizeUnit.pixels),
+                      ),
+                      'slot-west': SlotSizeConstraints(
+                        preferredHeight: SlotDimension(60, SlotSizeUnit.pixels),
+                      ),
+                      'slot-center': SlotSizeConstraints(
+                        preferredWidth: SlotDimension(220, SlotSizeUnit.pixels),
+                        preferredHeight: SlotDimension(80, SlotSizeUnit.pixels),
+                      ),
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'slot-north',
+                      label: 'Item Nord',
+                      builder: (_) => EditableSurface(
+                        label: 'Carte Nord',
+                        child: const SizedBox(
+                          width: 100,
+                          height: 40,
+                          child: Text('Cible Nord'),
+                        ),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'slot-west',
+                      label: 'Item Ouest',
+                      builder: (_) => EditableSurface(
+                        label: 'Carte Ouest',
+                        child: const SizedBox(
+                          width: 100,
+                          height: 40,
+                          child: Text('Cible Ouest'),
+                        ),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'slot-center',
+                      label: 'Item Centre',
+                      builder: (_) => EditableSurface(
+                        label: 'Carte Centre',
+                        child: const SizedBox(
+                          width: 100,
+                          height: 40,
+                          child: Text('Cible Centre'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Clic droit sur Cible Nord : Carte Nord (largeur fixe) dans zone Nord (scroll + hauteur fixe)
+      await tester.tap(find.text('Cible Nord'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      final northCardRow = find.byKey(const ValueKey('style-menu-Carte Nord'));
+      final northCardWidthIcon = find.byKey(
+        const ValueKey('style-menu-fixed-width-indicator-Carte Nord'),
+      );
+      expect(northCardWidthIcon, findsOneWidget);
+      expect(
+        tester.widget<Icon>(northCardWidthIcon).icon,
+        EditorSlot.fixedHeightIndicatorIcon,
+      );
+      expect(
+        tester
+            .widget<RotatedBox>(
+              find.ancestor(
+                of: northCardWidthIcon,
+                matching: find.byType(RotatedBox),
+              ),
+            )
+            .quarterTurns,
+        1,
+      );
+      expect(
+        find.descendant(
+          of: northCardRow,
+          matching: find.byTooltip('Largeur fixe'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-height-indicator-Carte Nord'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: northCardRow,
+          matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+        ),
+        findsNothing,
+      );
+
+      final northZoneRow = find.byKey(const ValueKey('style-menu-Nord'));
+      final northScrollIcon = find.descendant(
+        of: northZoneRow,
+        matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+      );
+      final northHeightIcon = find.byKey(
+        const ValueKey('style-menu-fixed-height-indicator-Nord'),
+      );
+      expect(northScrollIcon, findsOneWidget);
+      expect(northHeightIcon, findsOneWidget);
+      expect(tester.widget<Icon>(northScrollIcon).size, 12);
+      expect(tester.widget<Icon>(northHeightIcon).size, 12);
+      expect(
+        find.ancestor(of: northHeightIcon, matching: find.byType(RotatedBox)),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: northZoneRow,
+          matching: find.byTooltip('Scroll activé'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: northZoneRow,
+          matching: find.byTooltip('Hauteur fixe'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-fixed-width-indicator-Nord')),
+        findsNothing,
+      );
+
+      final layoutRow = find.byKey(const ValueKey('style-menu-Disposition'));
+      expect(
+        find.descendant(
+          of: layoutRow,
+          matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-height-indicator-Disposition'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-width-indicator-Disposition'),
+        ),
+        findsNothing,
+      );
+
+      await tester.tapAt(const Offset(10, 580));
+      await tester.pumpAndSettle();
+
+      // Clic droit sur Cible Ouest : Carte Ouest (hauteur fixe) dans zone Ouest (largeur fixe)
+      await tester.tap(
+        find.text('Cible Ouest'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-height-indicator-Carte Ouest'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-width-indicator-Carte Ouest'),
+        ),
+        findsNothing,
+      );
+
+      final westZoneRow = find.byKey(const ValueKey('style-menu-Ouest'));
+      final westZoneWidthIcon = find.byKey(
+        const ValueKey('style-menu-fixed-width-indicator-Ouest'),
+      );
+      expect(westZoneWidthIcon, findsOneWidget);
+      expect(
+        tester
+            .widget<RotatedBox>(
+              find.ancestor(
+                of: westZoneWidthIcon,
+                matching: find.byType(RotatedBox),
+              ),
+            )
+            .quarterTurns,
+        1,
+      );
+      expect(
+        find.descendant(
+          of: westZoneRow,
+          matching: find.byTooltip('Largeur fixe'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-fixed-height-indicator-Ouest')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: westZoneRow,
+          matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+        ),
+        findsNothing,
+      );
+
+      await tester.tapAt(const Offset(10, 580));
+      await tester.pumpAndSettle();
+
+      // Clic droit sur Cible Centre : Carte Centre (largeur fixe + hauteur fixe) dans zone Centre (scroll)
+      await tester.tap(
+        find.text('Cible Centre'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-height-indicator-Carte Centre'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('style-menu-fixed-width-indicator-Carte Centre'),
+        ),
+        findsOneWidget,
+      );
+
+      final centerZoneRow = find.byKey(const ValueKey('style-menu-Centre'));
+      expect(
+        find.descendant(
+          of: centerZoneRow,
+          matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-fixed-height-indicator-Centre')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('style-menu-fixed-width-indicator-Centre')),
+        findsNothing,
+      );
+
+      await tester.tapAt(const Offset(10, 580));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperListView shows scroll indicator when its content overflows even if showScrollbar is unchecked',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      final heightNotifier = ValueNotifier<double>(120);
+      addTearDown(heightNotifier.dispose);
+
+      // 1 ligne template de 200 px de haut dans un viewport de 120 px (puis 300 px)
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StyleEditScope(
+            controller: editing,
+            child: Scaffold(
+              body: ValueListenableBuilder<double>(
+                valueListenable: heightNotifier,
+                builder: (context, viewportHeight, _) => SizedBox(
+                  width: 300,
+                  height: viewportHeight,
+                  child: SuperListView(
+                    id: 'overflow-list',
+                    config: const SuperListViewConfig(
+                      itemExtent: 200,
+                      showScrollbar: false,
+                    ),
+                    template: const SuperLayoutConfig(
+                      placements: {
+                        SuperLayoutZone.center: ['row-text'],
+                      },
+                    ),
+                    slots: [
+                      BuilderSlot(
+                        id: 'row-text',
+                        label: 'Texte ligne',
+                        builder: (_) => const Align(
+                          alignment: Alignment.topLeft,
+                          child: Text('Ligne débordante'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Viewport de 120 px < contenu de 200 px : le contenu est scrollable
+      await tester.tap(
+        find.text('Ligne débordante'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final listRow = find.byKey(const ValueKey('style-menu-Liste'));
+      expect(
+        find.descendant(
+          of: listRow,
+          matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: listRow, matching: find.byTooltip('Scroll activé')),
+        findsOneWidget,
+      );
+
+      await tester.tapAt(const Offset(790, 590));
+      await tester.pumpAndSettle();
+
+      // Viewport de 300 px > contenu de 200 px et showScrollbar == false : non scrollable
+      heightNotifier.value = 300;
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.text('Ligne débordante'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('style-menu-Liste')),
+          matching: find.byIcon(EditorSlot.scrollIndicatorIcon),
+        ),
+        findsNothing,
+      );
+
+      await tester.tapAt(const Offset(790, 590));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

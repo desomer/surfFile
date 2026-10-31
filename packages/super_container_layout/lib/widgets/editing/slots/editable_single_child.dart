@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart' show EditorConfigKind;
+import '../../../models/super_layout_config.dart'
+    show hasFixedSlotHeight, hasFixedSlotWidth;
 import '../../../super_app.dart';
 import '../components/native_component_editor.dart';
 import '../../components/super_layout/layout_selection.dart';
@@ -207,6 +209,16 @@ class EditableSingleChildState extends State<EditableSingleChild> {
                   inline: true,
                   showEdit: false,
                   enabled: slot != null,
+                  fixedWidth: slot != null &&
+                      hasFixedSlotWidth(
+                        constraints: config.slotSizeConstraints[slot.id],
+                        preferredSize: editor.preferredSizeFor(slot),
+                      ),
+                  fixedHeight: slot != null &&
+                      hasFixedSlotHeight(
+                        constraints: config.slotSizeConstraints[slot.id],
+                        preferredSize: editor.preferredSizeFor(slot),
+                      ),
                   onSelect: slot == null
                       ? null
                       : () => editor.selectSlot('child', slot),

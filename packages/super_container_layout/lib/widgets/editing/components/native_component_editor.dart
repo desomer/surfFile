@@ -607,6 +607,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     );
   }
 
+  bool _isRegionScrollable(String id) {
+    if (flowOf(id).scrollable) return true;
+    if (id == 'body') {
+      final bodyMode = _config.value.stringProperty('bodyMode');
+      if (bodyMode != null && bodyMode != 'standard') return true;
+    }
+    return false;
+  }
+
   LayoutAxisAction _axisActionFor(String id) {
     final spec = definition(id);
     final currentAxis = axisOf(id);
@@ -620,6 +629,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     return LayoutAxisAction(
       zoneLabel: spec.label,
       axis: currentAxis,
+      scrollable: _isRegionScrollable(id),
+      fixedHeight: fixedSize != null,
       onToggle: () {
         select(id);
         _update(
@@ -2308,6 +2319,14 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             preferredSize: preferredSize,
           ),
           inline: true,
+          fixedWidth: hasFixedSlotWidth(
+            constraints: constraints,
+            preferredSize: preferredSize,
+          ),
+          fixedHeight: hasFixedSlotHeight(
+            constraints: constraints,
+            preferredSize: preferredSize,
+          ),
           enabled: editing,
           showEdit: editing,
           onSelect: editing && selectable ? () => _selectSlot(id, slot) : null,
@@ -2432,6 +2451,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               menuIcon: EditorSlot.zoneMenuIcon,
               menuDestination: spec.menuDestination,
               editable: true,
+              scrollable: _isRegionScrollable(id),
+              fixedHeight: sizeOf(id) != null,
               axisAction: spec.editableFlow ? () => _axisActionFor(id) : null,
               onEdit: widget.onEditRegion != null
                   ? () => EditorWizardNavigation.openWithTab(
@@ -2725,6 +2746,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             menuIcon: EditorSlot.zoneMenuIcon,
             menuDestination: spec.menuDestination,
             editable: true,
+            scrollable: _isRegionScrollable(id),
+            fixedHeight: fixedSize != null,
             axisAction: spec.editableFlow ? () => _axisActionFor(id) : null,
             onEdit: widget.onEditRegion != null
                 ? () => EditorWizardNavigation.openWithTab(

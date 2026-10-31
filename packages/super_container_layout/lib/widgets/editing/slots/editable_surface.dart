@@ -50,6 +50,9 @@ class EditableSurface extends StatefulWidget {
     this.onContextMenu,
     this.menuIcon,
     this.menuDestination,
+    this.scrollable = false,
+    this.fixedHeight = false,
+    this.fixedWidth = false,
     this.singleChild = true,
     super.key,
   }) : assert(id == null || id != '');
@@ -91,6 +94,9 @@ class EditableSurface extends StatefulWidget {
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
   final EditorMenuDestination? menuDestination;
+  final bool scrollable;
+  final bool fixedHeight;
+  final bool fixedWidth;
 
   @override
   EditableSurfaceState createState() => EditableSurfaceState();
@@ -383,6 +389,9 @@ class EditableSurfaceState extends State<EditableSurface>
                       (widget.onEdit == null
                           ? EditorMenuDestination.style
                           : EditorMenuDestination.configuration),
+                  scrollable: widget.scrollable,
+                  fixedHeight: widget.fixedHeight,
+                  fixedWidth: widget.fixedWidth,
                   identity: widget.slot?.standard,
                   outlineRadius: radius,
                   onRemoveChild: onRemoveChild,

@@ -181,7 +181,7 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
         final selection = _selection;
         return {
           for (final path in selection)
-            if (_indexByPath[path] case final index?) index,
+            ?_indexByPath[path],
         };
       },
       onChanged: (indexes) => onSelectionChanged({

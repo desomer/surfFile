@@ -500,6 +500,14 @@ class SlotStack extends StatelessWidget {
         preferredSize: preferredSize,
       ),
       inline: true,
+      fixedWidth: hasFixedSlotWidth(
+        constraints: constraints,
+        preferredSize: preferredSize,
+      ),
+      fixedHeight: hasFixedSlotHeight(
+        constraints: constraints,
+        preferredSize: preferredSize,
+      ),
       enabled:
           onEditPreferredSize != null ||
           onRemoveSlot != null ||

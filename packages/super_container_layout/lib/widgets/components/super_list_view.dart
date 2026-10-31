@@ -192,8 +192,9 @@ class _SuperListViewState extends State<SuperListView> {
   late final ValueNotifier<ContainerStyle> _localStyle;
   final ScrollController _scrollController = ScrollController();
   final ValueNotifier<int?> _hoveredRowNotifier = ValueNotifier<int?>(null);
-  final Map<int, GlobalKey> _rowBoxKeys = {};
-  final GlobalKey _viewportStackKey = GlobalKey();
+  final Map<int, GlobalKey<_RowMeasureSubtreeState>> _rowBoxKeys = {};
+  final GlobalKey<_RowMeasureSubtreeState> _viewportStackKey =
+      GlobalKey<_RowMeasureSubtreeState>();
   final GlobalKey _scrollableHostKey = GlobalKey();
   JsonRepositoryStore? _store;
   _Source? _source;
@@ -424,19 +425,19 @@ class _SuperListViewState extends State<SuperListView> {
     Size viewport,
   ) {
     if (targetIndex == null || targetIndex < 0) return null;
-    final rowKey = _rowBoxKeys[targetIndex];
-    final rowCtx = rowKey?.currentContext;
-    final stackCtx = _viewportStackKey.currentContext;
-    if (rowCtx != null &&
-        rowCtx.mounted &&
-        stackCtx != null &&
-        stackCtx.mounted) {
-      final rowBox = rowCtx.findRenderObject();
-      final stackBox = stackCtx.findRenderObject();
-      if (rowBox is RenderBox &&
-          rowBox.hasSize &&
-          stackBox is RenderBox &&
-          stackBox.hasSize) {
+    final rowBox = _rowBoxKeys[targetIndex]?.currentState?.activeRenderBox;
+    final stackBox = _viewportStackKey.currentState?.activeRenderBox;
+    if (rowBox != null && stackBox != null) {
+      RenderObject? current = rowBox;
+      var canTransform = true;
+      while (current != null && !identical(current, stackBox)) {
+        if (current is! RenderBox || !current.attached || !current.hasSize) {
+          canTransform = false;
+          break;
+        }
+        current = current.parent;
+      }
+      if (canTransform && identical(current, stackBox)) {
         final localOffset = rowBox.localToGlobal(
           Offset.zero,
           ancestor: stackBox,
@@ -905,8 +906,11 @@ class _SuperListViewState extends State<SuperListView> {
                     _setHoveredRow(null);
                   }
                 },
-                child: KeyedSubtree(
-                  key: _rowBoxKeys.putIfAbsent(index, GlobalKey.new),
+                child: _RowMeasureSubtree(
+                  key: _rowBoxKeys.putIfAbsent(
+                    index,
+                    GlobalKey<_RowMeasureSubtreeState>.new,
+                  ),
                   child: Listener(
                     behavior: HitTestBehavior.opaque,
                     onPointerDown: (_) => _select(index),
@@ -1086,6 +1090,7 @@ class _SuperListViewState extends State<SuperListView> {
           id: widget.id,
           label: 'Liste',
           menuType: 'ListView',
+          scrollable: config.showScrollbar,
           menuTooltip: () => formatSuperListViewTooltip(
             title: editorComponentLabelOf(context)?.label ?? 'Liste',
             config: config,
@@ -1284,52 +1289,55 @@ class _SuperListViewState extends State<SuperListView> {
                       key: _scrollableHostKey,
                       child: _wrapWithScrollbar(context, config, rawList),
                     );
-                    final Widget list = Stack(
+                    final Widget list = _RowMeasureSubtree(
                       key: _viewportStackKey,
-                      clipBehavior: Clip.none,
-                      fit: StackFit.passthrough,
-                      children: [
-                        scrollableList,
-                        if (config.animateSelectionAndHover && !template)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: ListenableBuilder(
-                                listenable: Listenable.merge([
-                                  _scrollController,
-                                  style,
-                                ]),
-                                builder: (context, _) {
-                                  final scrollOffset = _currentScrollOffset;
-                                  return Transform.translate(
-                                    offset: scrollAxis == Axis.vertical
-                                        ? Offset(0, -scrollOffset)
-                                        : Offset(-scrollOffset, 0),
-                                    child: _ListSlidingIndicatorsLayer(
-                                      listId: widget.id,
-                                      hoveredRowNotifier: _hoveredRowNotifier,
-                                      selectedRow: _selectedRowIndex,
-                                      computeRect: (rowIdx) => _computeItemRect(
-                                        rowIdx,
-                                        config,
-                                        viewport,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        fit: StackFit.passthrough,
+                        children: [
+                          scrollableList,
+                          if (config.animateSelectionAndHover && !template)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: ListenableBuilder(
+                                  listenable: Listenable.merge([
+                                    _scrollController,
+                                    style,
+                                  ]),
+                                  builder: (context, _) {
+                                    final scrollOffset = _currentScrollOffset;
+                                    return Transform.translate(
+                                      offset: scrollAxis == Axis.vertical
+                                          ? Offset(0, -scrollOffset)
+                                          : Offset(-scrollOffset, 0),
+                                      child: _ListSlidingIndicatorsLayer(
+                                        listId: widget.id,
+                                        hoveredRowNotifier: _hoveredRowNotifier,
+                                        selectedRow: _selectedRowIndex,
+                                        computeRect: (rowIdx) =>
+                                            _computeItemRect(
+                                              rowIdx,
+                                              config,
+                                              viewport,
+                                            ),
+                                        hoverBuilder: (ctx) =>
+                                            _buildHoverIndicator(
+                                              ctx,
+                                              style.value,
+                                            ),
+                                        selectionBuilder: (ctx) =>
+                                            _buildSelectionIndicator(
+                                              ctx,
+                                              style.value,
+                                            ),
                                       ),
-                                      hoverBuilder: (ctx) =>
-                                          _buildHoverIndicator(
-                                            ctx,
-                                            style.value,
-                                          ),
-                                      selectionBuilder: (ctx) =>
-                                          _buildSelectionIndicator(
-                                            ctx,
-                                            style.value,
-                                          ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     );
                     final column = Column(
                       mainAxisSize: hasBoundedHeight
@@ -1368,6 +1376,40 @@ class _SuperListViewState extends State<SuperListView> {
       },
     );
   }
+}
+
+class _RowMeasureSubtree extends StatefulWidget {
+  const _RowMeasureSubtree({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<_RowMeasureSubtree> createState() => _RowMeasureSubtreeState();
+}
+
+class _RowMeasureSubtreeState extends State<_RowMeasureSubtree> {
+  bool _active = true;
+
+  RenderBox? get activeRenderBox {
+    if (!mounted || !_active) return null;
+    final ro = context.findRenderObject();
+    return ro is RenderBox && ro.attached && ro.hasSize ? ro : null;
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _ListSlidingIndicatorsLayer extends StatefulWidget {

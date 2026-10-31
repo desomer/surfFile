@@ -50,6 +50,9 @@ class LayoutAxisAction {
     required this.onToggle,
     this.onEditFlow,
     this.flowTooltip,
+    this.scrollable = false,
+    this.fixedHeight = false,
+    this.fixedWidth = false,
   });
 
   final String zoneLabel;
@@ -57,6 +60,9 @@ class LayoutAxisAction {
   final VoidCallback onToggle;
   final Future<void> Function()? onEditFlow;
   final String? flowTooltip;
+  final bool scrollable;
+  final bool fixedHeight;
+  final bool fixedWidth;
 }
 
 /// Node in the hierarchy tree under a breadcrumb segment in `StyleEditBanner`.

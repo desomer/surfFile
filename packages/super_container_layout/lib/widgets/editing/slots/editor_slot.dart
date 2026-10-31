@@ -72,6 +72,9 @@ EditorComponentLabel? editorComponentLabelOf(BuildContext context) {
 /// An editor interaction target that can wrap any widget.
 class EditorSlot extends StatefulWidget {
   static const IconData zoneMenuIcon = Icons.view_quilt_outlined;
+  static const IconData scrollIndicatorIcon = Icons.swap_vert_circle_outlined;
+  static const IconData fixedHeightIndicatorIcon = Icons.height;
+  static const IconData fixedWidthIndicatorIcon = Icons.height;
 
   const EditorSlot({
     this.id,
@@ -90,6 +93,9 @@ class EditorSlot extends StatefulWidget {
     this.onContextMenu,
     this.menuIcon,
     this.menuDestination = EditorMenuDestination.configuration,
+    this.scrollable = false,
+    this.fixedHeight = false,
+    this.fixedWidth = false,
     this.identity,
     this.outlineRadius = 0,
     this.onRemoveChild,
@@ -111,6 +117,9 @@ class EditorSlot extends StatefulWidget {
   final ValueChanged<Offset>? onContextMenu;
   final IconData? menuIcon;
   final EditorMenuDestination menuDestination;
+  final bool scrollable;
+  final bool fixedHeight;
+  final bool fixedWidth;
 
   /// Optional semantic identity used to deduplicate equivalent nested slots.
   final Object? identity;
@@ -551,12 +560,106 @@ class EditorSlotState extends State<EditorSlot> {
     child: Icon(icon, size: 19, color: foreground),
   );
 
+  Widget _menuIndicatorIcon(
+    IconData icon, {
+    required String tooltip,
+    int quarterTurns = 0,
+    Key? key,
+  }) {
+    Widget iconWidget = Icon(
+      icon,
+      key: key,
+      size: 12,
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    if (quarterTurns != 0) {
+      iconWidget = RotatedBox(quarterTurns: quarterTurns, child: iconWidget);
+    }
+    return Tooltip(message: tooltip, child: iconWidget);
+  }
+
+  static EditorSlotAction? _findDirectInlineAction(BuildContext context) {
+    if (context is! Element || !context.mounted) return null;
+    EditorSlotAction? found;
+    context.visitAncestorElements((element) {
+      final widget = element.widget;
+      if (widget is EditorSlotAction && widget.inline) {
+        found = widget;
+        return false;
+      }
+      if (widget is EditorSlot) {
+        return false;
+      }
+      return true;
+    });
+    return found;
+  }
+
+  static bool _hasScrollableOverflow(BuildContext context) {
+    if (context is! Element || !context.mounted) return false;
+    var found = false;
+    void visit(Element element) {
+      if (found) return;
+      if (element is StatefulElement) {
+        final state = element.state;
+        if (state is EditorSlotState && !identical(element, context)) {
+          return;
+        }
+        if (state is ScrollableState) {
+          final position = state.position;
+          if (position.hasContentDimensions &&
+              position.maxScrollExtent > position.minScrollExtent) {
+            found = true;
+            return;
+          }
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    context.visitChildElements(visit);
+    return found;
+  }
+
+  ({bool scrollable, bool fixedHeight, bool fixedWidth}) _resolveSlotIndicators(
+    EditorSlotState state,
+    List<EditorSlotAction> stateInlineActions,
+  ) {
+    final axis = state.widget.axisAction?.call();
+    final directInline = _findDirectInlineAction(state.context);
+    final isZone =
+        state.widget.zoneId != null || state.widget.axisAction != null;
+    final actions = <EditorSlotAction>{
+      if (!isZone) ...stateInlineActions,
+      ?directInline,
+    };
+    return (
+      scrollable:
+          state.widget.scrollable ||
+          (axis?.scrollable ?? false) ||
+          actions.any((action) => action.scrollable) ||
+          _hasScrollableOverflow(state.context),
+      fixedHeight:
+          state.widget.fixedHeight ||
+          (axis?.fixedHeight ?? false) ||
+          actions.any((action) => action.fixedHeight),
+      fixedWidth:
+          state.widget.fixedWidth ||
+          (axis?.fixedWidth ?? false) ||
+          actions.any((action) => action.fixedWidth),
+    );
+  }
+
   Widget _menuTitle(
     String label, {
     required EditorMenuDestination? destination,
     TextStyle? style,
     String? tooltip,
     Key? tooltipKey,
+    bool scrollable = false,
+    bool fixedHeight = false,
+    bool fixedWidth = false,
+    String? indicatorKeySuffix,
   }) {
     final textWidget = Text(
       label,
@@ -568,24 +671,21 @@ class EditorSlotState extends State<EditorSlot> {
     final richTooltip = resolvedTooltip != null && resolvedTooltip.isNotEmpty
         ? buildEditorTooltipRichMessage(resolvedTooltip)
         : null;
+    final suffix = indicatorKeySuffix ?? label;
     return Row(
       children: [
         if (destination != null) ...[
-          Tooltip(
-            message: destination == EditorMenuDestination.style
+          _menuIndicatorIcon(
+            destination == EditorMenuDestination.style
+                ? Icons.palette_outlined
+                : Icons.settings_outlined,
+            tooltip: destination == EditorMenuDestination.style
                 ? 'Ouvre le style'
                 : 'Ouvre les paramètres',
-            child: Icon(
-              destination == EditorMenuDestination.style
-                  ? Icons.palette_outlined
-                  : Icons.settings_outlined,
-              size: 12,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
           ),
           const SizedBox(width: 4),
         ],
-        Expanded(
+        Flexible(
           child: resolvedTooltip != null && resolvedTooltip.isNotEmpty
               ? Tooltip(
                   key: tooltipKey,
@@ -596,6 +696,31 @@ class EditorSlotState extends State<EditorSlot> {
                 )
               : textWidget,
         ),
+        if (scrollable) ...[
+          const SizedBox(width: 4),
+          _menuIndicatorIcon(
+            EditorSlot.scrollIndicatorIcon,
+            tooltip: 'Scroll activé',
+            key: ValueKey('style-menu-scroll-indicator-$suffix'),
+          ),
+        ],
+        if (fixedHeight) ...[
+          const SizedBox(width: 4),
+          _menuIndicatorIcon(
+            EditorSlot.fixedHeightIndicatorIcon,
+            tooltip: 'Hauteur fixe',
+            key: ValueKey('style-menu-fixed-height-indicator-$suffix'),
+          ),
+        ],
+        if (fixedWidth) ...[
+          const SizedBox(width: 4),
+          _menuIndicatorIcon(
+            EditorSlot.fixedHeightIndicatorIcon,
+            tooltip: 'Largeur fixe',
+            quarterTurns: 1,
+            key: ValueKey('style-menu-fixed-width-indicator-$suffix'),
+          ),
+        ],
       ],
     );
   }
@@ -1466,6 +1591,9 @@ class EditorSlotState extends State<EditorSlot> {
                         tooltipKey: ValueKey(
                           'style-menu-action-tooltip-${action.label}',
                         ),
+                        scrollable: action.scrollable,
+                        fixedHeight: action.fixedHeight,
+                        fixedWidth: action.fixedWidth,
                       ),
                     ),
                     if (action.onRemove case final remove?)
@@ -1516,6 +1644,9 @@ class EditorSlotState extends State<EditorSlot> {
                             tooltipKey: ValueKey(
                               'style-menu-entry-tooltip-${entry.label}',
                             ),
+                            scrollable: entry.scrollable,
+                            fixedHeight: entry.fixedHeight,
+                            fixedWidth: entry.fixedWidth,
                           ),
                         ),
                       ],
@@ -1552,20 +1683,33 @@ class EditorSlotState extends State<EditorSlot> {
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _menuTitle(
-                                state.titleLabel,
-                                destination: state.widget.onEdit == null
-                                    ? null
-                                    : state.widget.menuDestination,
-                                style: Theme.of(context).textTheme.titleSmall
-                                    ?.copyWith(fontWeight: FontWeight.w600),
-                                tooltip:
-                                    state.widget.menuTooltip?.call() ??
-                                    state.widget.axisAction?.call().flowTooltip,
-                                tooltipKey: ValueKey(
-                                  'style-menu-tooltip-${state.label}',
-                                ),
-                              ),
+                              () {
+                                final indicators = _resolveSlotIndicators(
+                                  state,
+                                  inlineActions[state] ??
+                                      const <EditorSlotAction>[],
+                                );
+                                return _menuTitle(
+                                  state.titleLabel,
+                                  destination: state.widget.onEdit == null
+                                      ? null
+                                      : state.widget.menuDestination,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(fontWeight: FontWeight.w600),
+                                  tooltip:
+                                      state.widget.menuTooltip?.call() ??
+                                      state.widget.axisAction
+                                          ?.call()
+                                          .flowTooltip,
+                                  tooltipKey: ValueKey(
+                                    'style-menu-tooltip-${state.label}',
+                                  ),
+                                  scrollable: indicators.scrollable,
+                                  fixedHeight: indicators.fixedHeight,
+                                  fixedWidth: indicators.fixedWidth,
+                                  indicatorKeySuffix: state.label,
+                                );
+                              }(),
                               if ((state.widget.menuSubtitle?.call() ??
                                       ((StyleEditScope.controllerOf(
                                                     state.context,

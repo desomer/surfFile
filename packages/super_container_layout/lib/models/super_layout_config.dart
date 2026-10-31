@@ -513,6 +513,32 @@ String _formatPaddingSummary(double padding, EdgeInsets? paddingInsets) {
   return '${SlotDimension.formatNumber(padding)} px';
 }
 
+/// Indique si les contraintes ou la taille préférée d'un slot imposent une largeur fixe.
+bool hasFixedSlotWidth({
+  SlotSizeConstraints? constraints,
+  Size? preferredSize,
+}) {
+  final useLegacy = constraints == null || !constraints.hasSizeConstraints;
+  return constraints?.preferredWidth != null ||
+      (constraints?.minWidth != null &&
+          constraints?.maxWidth != null &&
+          constraints!.minWidth == constraints.maxWidth) ||
+      (useLegacy && preferredSize != null && preferredSize.width.isFinite);
+}
+
+/// Indique si les contraintes ou la taille préférée d'un slot imposent une hauteur fixe.
+bool hasFixedSlotHeight({
+  SlotSizeConstraints? constraints,
+  Size? preferredSize,
+}) {
+  final useLegacy = constraints == null || !constraints.hasSizeConstraints;
+  return constraints?.preferredHeight != null ||
+      (constraints?.minHeight != null &&
+          constraints?.maxHeight != null &&
+          constraints!.minHeight == constraints.maxHeight) ||
+      (useLegacy && preferredSize != null && preferredSize.height.isFinite);
+}
+
 /// Résumé des paramètres de taille d'un élément pour l'info-bulle de l'icône règle.
 String formatSlotSizeTooltip({
   required String title,

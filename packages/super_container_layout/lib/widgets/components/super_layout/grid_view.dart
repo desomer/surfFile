@@ -402,6 +402,38 @@ class _GridSurfaceState extends State<_GridSurface> {
                               (StyleEditScope.controllerOf(context)?.value ??
                                   false),
                           inline: true,
+                          fixedWidth: hasFixedSlotWidth(
+                            constraints: widget
+                                .owner
+                                ._config
+                                .value
+                                .slotSizeConstraints[slot.id],
+                            preferredSize:
+                                widget.owner._config.value.slotPreferredSizes
+                                    .containsKey(slot.id)
+                                ? widget
+                                      .owner
+                                      ._config
+                                      .value
+                                      .slotPreferredSizes[slot.id]
+                                : slot.preferredSize,
+                          ),
+                          fixedHeight: hasFixedSlotHeight(
+                            constraints: widget
+                                .owner
+                                ._config
+                                .value
+                                .slotSizeConstraints[slot.id],
+                            preferredSize:
+                                widget.owner._config.value.slotPreferredSizes
+                                    .containsKey(slot.id)
+                                ? widget
+                                      .owner
+                                      ._config
+                                      .value
+                                      .slotPreferredSizes[slot.id]
+                                : slot.preferredSize,
+                          ),
                           onSelect: () => _select(slot.id),
                           onEdit: () => widget.owner._editGridSlot(slot),
                           dimensionDelegateBuilder: () =>

@@ -529,10 +529,10 @@ packages:
     dependency: "direct main"
     description:
       name: pro_image_editor
-      sha256: "2ae623200f5efd967da00f33c1dfc0cc3f6cc08a23c5e671b739f963654b15f0"
+      sha256: aee8ecadb80ccc10b295329e70798315f32f653e77394ad7d3430db265d6b1d3
       url: "https://pub.dev"
     source: hosted
-    version: "14.22.0"
+    version: "14.23.0"
   pub_semver:
     dependency: transitive
     description:
