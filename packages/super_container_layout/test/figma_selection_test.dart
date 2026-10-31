@@ -124,51 +124,61 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('nested double clicks descend exactly one level at a time', (
-    tester,
-  ) async {
-    await pump(
-      tester,
-      layout(
+  testWidgets(
+    'nested double clicks skip zones when double-clicking on a direct child and select the zone only when empty',
+    (tester) async {
+      await pump(
+        tester,
+        layout(
+          'Root',
+          layout(
+            'Nested',
+            SuperLayout(
+              name: 'Grandchild',
+              config: const SuperLayoutConfig(
+                north: false,
+                south: false,
+                west: false,
+                east: false,
+              ),
+              showZoneNames: false,
+            ),
+          ),
+        ),
+      );
+      final history = <List<String>>[];
+      void record() => history.add(List.of(LayoutSelection.path.value));
+      LayoutSelection.path.addListener(record);
+      addTearDown(() => LayoutSelection.path.removeListener(record));
+      const point = Offset(600, 400);
+      await doubleClick(tester, point);
+      expect(LayoutSelection.path.value, ['Root', 'Centre', 'Root child']);
+      await doubleClick(tester, point);
+      expect(LayoutSelection.path.value, [
         'Root',
-        layout('Nested', layout('Grandchild', const SizedBox.expand())),
-      ),
-    );
-    final history = <List<String>>[];
-    void record() => history.add(List.of(LayoutSelection.path.value));
-    LayoutSelection.path.addListener(record);
-    addTearDown(() => LayoutSelection.path.removeListener(record));
-    const point = Offset(600, 400);
-    await doubleClick(tester, point);
-    expect(LayoutSelection.path.value, ['Root', 'Centre', 'Root child']);
-    await doubleClick(tester, point);
-    expect(LayoutSelection.path.value, ['Root', 'Centre', 'Nested', 'Centre']);
-    await doubleClick(tester, point);
-    expect(LayoutSelection.path.value, [
-      'Root',
-      'Centre',
-      'Nested',
-      'Centre',
-      'Nested child',
-    ]);
-    await doubleClick(tester, point);
-    expect(LayoutSelection.path.value, [
-      'Root',
-      'Centre',
-      'Nested',
-      'Centre',
-      'Grandchild',
-      'Centre',
-    ]);
-    expect(history, [
-      ['Root', 'Centre'],
-      ['Root', 'Centre', 'Root child'],
-      ['Root', 'Centre', 'Nested', 'Centre'],
-      ['Root', 'Centre', 'Nested', 'Centre', 'Nested child'],
-      ['Root', 'Centre', 'Nested', 'Centre', 'Grandchild', 'Centre'],
-    ]);
-    expect(tester.takeException(), isNull);
-  });
+        'Centre',
+        'Nested',
+        'Centre',
+        'Nested child',
+      ]);
+      await doubleClick(tester, point);
+      expect(LayoutSelection.path.value, [
+        'Root',
+        'Centre',
+        'Nested',
+        'Centre',
+        'Grandchild',
+        'Centre',
+      ]);
+      expect(history, [
+        ['Root', 'Centre'],
+        ['Root', 'Centre', 'Root child'],
+        ['Root', 'Centre', 'Nested', 'Centre', 'Nested child'],
+        ['Root', 'Centre', 'Nested', 'Centre', 'Grandchild', 'Centre'],
+      ]);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('hover uses a solid zone outline then a dashed direct child', (
     tester,

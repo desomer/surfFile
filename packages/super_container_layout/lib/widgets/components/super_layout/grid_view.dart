@@ -38,6 +38,7 @@ extension _SuperLayoutGrid on SuperLayoutState {
       parent:
           LayoutSelectionScope.of(context)?.owner ??
           this.context.findAncestorStateOfType<SuperLayoutState>(),
+      selectedSlotId: () => _selectedSlot.value,
       onDeselect: () {
         _selectedSlot.value = null;
         _selected.value = null;
@@ -68,6 +69,7 @@ extension _SuperLayoutGrid on SuperLayoutState {
 
               final slotCtx = _slotFocusKeys[slot.id]?.currentContext;
               return LayoutSelectionNode(
+                id: slot.id,
                 label: slot.label,
                 path: slotPath,
                 icon: slot.menuIcon,

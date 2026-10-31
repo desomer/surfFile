@@ -55,9 +55,10 @@ class _EditorZoomState extends State<EditorZoom>
   EditorDialogFocus? _zoomDialog;
   EditorSlotState? _debouncedHighlight;
   Timer? _hoverZoomTimer;
-  static const _hoverZoomDelay = Duration(milliseconds: 160);
   double? _manualScale;
   Offset? _manualOffset;
+  Offset? _anchorViewportPoint;
+  Offset? _anchorContentPoint;
   bool _framingHeld = false;
   ZoomToolbarLayout _toolbarLayout = ZoomToolbarLayout(null);
 
@@ -69,9 +70,7 @@ class _EditorZoomState extends State<EditorZoom>
 
   void _onHighlightChanged() {
     _hoverZoomTimer?.cancel();
-    final next =
-        EditorSlotState.highlightedTarget.value ??
-        EditorSlotState.canvasHoveredParent.value;
+    final next = EditorSlotState.highlightedTarget.value;
     if (identical(next, _debouncedHighlight)) return;
     _debouncedHighlight = next;
     _schedule();
@@ -100,8 +99,6 @@ class _EditorZoomState extends State<EditorZoom>
     };
     LayoutSelection.focus.addListener(_schedule);
     EditorSlotState.highlightedTarget.addListener(_onHighlightChanged);
-    EditorSlotState.canvasHoveredParent.addListener(_onHighlightChanged);
-    _controller.hoveredParentContext.addListener(_schedule);
     _controller.dialog.addListener(_schedule);
     _controller.contextMenuAvailable.addListener(_schedule);
     EditorInsertionPreview.active.addListener(_schedule);
@@ -140,16 +137,14 @@ class _EditorZoomState extends State<EditorZoom>
     final highlightedCtx = highlighted != null && highlighted.mounted
         ? highlighted.context
         : null;
-    final parentHover = _controller.hoveredParentContext.value;
-    final parentHoverCtx = parentHover != null && parentHover.mounted
-        ? parentHover
-        : null;
-    final activeHoverCtx = highlightedCtx ?? parentHoverCtx;
+    final activeHoverCtx = highlightedCtx;
     final focus =
         activeHoverCtx ??
         dialog?.target ??
         LayoutSelection.focus.value?.context ??
         (dialog != null ? _content.currentContext : null);
+    final viewport = _viewportKey.currentContext?.findRenderObject();
+    var rect = _controller.targetBounds(focus);
     if (!_controller.enabled ||
         !identical(focus, _zoomTarget) ||
         !identical(dialog, _zoomDialog)) {
@@ -157,11 +152,31 @@ class _EditorZoomState extends State<EditorZoom>
       _manualOffset = null;
       _zoomTarget = focus;
       _zoomDialog = dialog;
+      final doubleClickPos = LayoutSelection.doubleClickGlobalPosition;
+      LayoutSelection.doubleClickGlobalPosition = null;
+      if (_controller.enabled &&
+          doubleClickPos != null &&
+          activeHoverCtx == null &&
+          dialog == null &&
+          viewport is RenderBox &&
+          viewport.hasSize &&
+          _current.scale > 0) {
+        final localPointer = viewport.globalToLocal(doubleClickPos);
+        final rawContentPt = (localPointer - _current.offset) / _current.scale;
+        _anchorViewportPoint = localPointer;
+        _anchorContentPoint = rect == null
+            ? rawContentPt
+            : Offset(
+                rawContentPt.dx.clamp(rect.left, rect.right),
+                rawContentPt.dy.clamp(rect.top, rect.bottom),
+              );
+      } else {
+        _anchorViewportPoint = null;
+        _anchorContentPoint = null;
+      }
     }
-    var rect = _controller.targetBounds(focus);
     if (_controller.enabled && !_viewport.isEmpty) {
       var available = Offset.zero & _viewport;
-      final viewport = _viewportKey.currentContext?.findRenderObject();
       final reservedScreen =
           dialog?.available ?? _controller.contextMenuAvailable.value;
       if (reservedScreen case final screen? when viewport is RenderBox) {
@@ -275,16 +290,62 @@ class _EditorZoomState extends State<EditorZoom>
               scale > EditorZoom.minScale ||
               isOutOfView ||
               isHoverFraming) {
-            destination = (
-              scale: scale,
-              offset:
-                  scale <= EditorZoom.minScale &&
-                      !hasEditorDialog &&
-                      !isOutOfView &&
-                      !isHoverFraming
-                  ? Offset.zero
-                  : available.center - rect.center * scale,
-            );
+            final Offset targetOffset;
+            if (scale <= EditorZoom.minScale &&
+                !hasEditorDialog &&
+                !isOutOfView &&
+                !isHoverFraming) {
+              targetOffset = Offset.zero;
+            } else if (!hasEditorDialog &&
+                !isHoverFraming &&
+                _anchorViewportPoint != null &&
+                _anchorContentPoint != null) {
+              final desiredOffset =
+                  _anchorViewportPoint! - _anchorContentPoint! * scale;
+              final margin = math.min(
+                16.0,
+                math.min(available.width, available.height) * 0.05,
+              );
+              final safe = available.deflate(margin);
+              final scaledWidth = rect.width * scale;
+              final scaledHeight = rect.height * scale;
+              final double dx;
+              if (scaledWidth <= safe.width) {
+                final minDx = safe.left - rect.left * scale;
+                final maxDx = safe.right - rect.right * scale;
+                dx = desiredOffset.dx.clamp(
+                  math.min(minDx, maxDx),
+                  math.max(minDx, maxDx),
+                );
+              } else {
+                final minDx = available.right - rect.right * scale;
+                final maxDx = available.left - rect.left * scale;
+                dx = desiredOffset.dx.clamp(
+                  math.min(minDx, maxDx),
+                  math.max(minDx, maxDx),
+                );
+              }
+              final double dy;
+              if (scaledHeight <= safe.height) {
+                final minDy = safe.top - rect.top * scale;
+                final maxDy = safe.bottom - rect.bottom * scale;
+                dy = desiredOffset.dy.clamp(
+                  math.min(minDy, maxDy),
+                  math.max(minDy, maxDy),
+                );
+              } else {
+                final minDy = available.bottom - rect.bottom * scale;
+                final maxDy = available.top - rect.top * scale;
+                dy = desiredOffset.dy.clamp(
+                  math.min(minDy, maxDy),
+                  math.max(minDy, maxDy),
+                );
+              }
+              targetOffset = Offset(dx, dy);
+            } else {
+              targetOffset = available.center - rect.center * scale;
+            }
+            destination = (scale: scale, offset: targetOffset);
           }
         }
       }
@@ -496,8 +557,6 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.sliderScaleHandler = null;
     LayoutSelection.focus.removeListener(_schedule);
     EditorSlotState.highlightedTarget.removeListener(_onHighlightChanged);
-    EditorSlotState.canvasHoveredParent.removeListener(_onHighlightChanged);
-    _controller.hoveredParentContext.removeListener(_schedule);
     _controller.dialog.removeListener(_schedule);
     _controller.contextMenuAvailable.removeListener(_schedule);
     EditorInsertionPreview.active.removeListener(_schedule);
@@ -795,7 +854,6 @@ class EditorZoomController {
   final scale = ValueNotifier<double>(1.0);
   final openContextMenus = ValueNotifier<int>(0);
   final contextMenuAvailable = ValueNotifier<Rect?>(null);
-  final hoveredParentContext = ValueNotifier<BuildContext?>(null);
   Offset? toolbarPosition;
   final transform = ValueNotifier<({double scale, Offset offset})>((
     scale: 1.0,
@@ -858,7 +916,6 @@ class EditorZoomController {
     }
     openContextMenus.dispose();
     contextMenuAvailable.dispose();
-    hoveredParentContext.dispose();
     dialog.dispose();
     transform.dispose();
   }

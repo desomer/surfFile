@@ -475,7 +475,7 @@ class EditorSlotState extends State<EditorSlot> {
     if (parent != null &&
         (!parent.mounted ||
             !parent._active ||
-            !LayoutSelection.isAncestorOfFocus(parent.context))) {
+            !LayoutSelection.isStrictParentOfSelected(parent.context))) {
       _canvasHoveredParent.value = null;
       _refreshHoveredTarget(allowCanvasParentUpdate: false);
     }
@@ -509,7 +509,7 @@ class EditorSlotState extends State<EditorSlot> {
       final isParent =
           deepest != null &&
           deepest.canEdit &&
-          LayoutSelection.isAncestorOfFocus(deepest.context);
+          LayoutSelection.isStrictParentOfSelected(deepest.context);
       _canvasHoveredParent.value = isParent ? deepest : null;
     }
     final parentTarget = _canvasHoveredParent.value;
@@ -517,7 +517,7 @@ class EditorSlotState extends State<EditorSlot> {
         parentTarget.mounted &&
         parentTarget._active &&
         parentTarget.canEdit &&
-        LayoutSelection.isAncestorOfFocus(parentTarget.context)) {
+        LayoutSelection.isStrictParentOfSelected(parentTarget.context)) {
       _hoveredTarget.value = parentTarget;
       if (!identical(previous, parentTarget)) {
         EditorSelectionOutline.triggerAnimation();
@@ -878,20 +878,22 @@ class EditorSlotState extends State<EditorSlot> {
   }
 
   /// Resolves the editable [EditorSlotState] rooted at or enclosing [targetContext].
-  static EditorSlotState? resolveFromContext(BuildContext? targetContext) {
+  static EditorSlotState? resolveFromContext(
+    BuildContext? targetContext, {
+    String? preferredId,
+  }) {
     if (targetContext is! Element || !targetContext.mounted) return null;
     if (targetContext is StatefulElement &&
         targetContext.state is EditorSlotState) {
       final state = targetContext.state as EditorSlotState;
       if (state.canEdit) return state;
     }
-    EditorSlotState? found;
+    final candidates = <EditorSlotState>[];
     void visit(Element element) {
-      if (found != null) return;
       if (element is StatefulElement && element.state is EditorSlotState) {
         final state = element.state as EditorSlotState;
         if (state.canEdit) {
-          found = state;
+          candidates.add(state);
           return;
         }
       }
@@ -899,7 +901,28 @@ class EditorSlotState extends State<EditorSlot> {
     }
 
     targetContext.visitChildElements(visit);
-    if (found != null) return found;
+    if (candidates.isNotEmpty) {
+      final focusCtx = LayoutSelection.focus.value?.context;
+      final targetId = preferredId ?? LayoutSelection.activeLeafId;
+      for (final state in candidates) {
+        if (focusCtx != null && identical(state.context, focusCtx)) {
+          return state;
+        }
+      }
+      if (targetId != null && targetId.isNotEmpty) {
+        for (final state in candidates) {
+          if (state.effectiveComponentId == targetId) {
+            return state;
+          }
+        }
+      }
+      for (final state in candidates) {
+        if (LayoutSelection.isAncestorOfFocus(state.context)) {
+          return state;
+        }
+      }
+      return candidates.first;
+    }
     return targetContext.findAncestorStateOfType<EditorSlotState>();
   }
 
@@ -1035,18 +1058,40 @@ class EditorSlotState extends State<EditorSlot> {
           final leaves = [
             for (final state in slotStates.reversed.skip(1)) state.label,
           ];
+          final leafIds = [
+            for (final state in slotStates.reversed.skip(1))
+              state.effectiveComponentId,
+          ];
           LayoutSelection.setLeafSuffix(
             leaves,
             focusContext: deepestLeaf.context,
+            ids: leafIds,
           );
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               LayoutSelection.setLeafSuffix(
                 leaves,
                 focusContext: deepestLeaf.mounted ? deepestLeaf.context : null,
+                ids: leafIds,
               );
             }
           });
+        } else if (slotStates.length == 1) {
+          final leaf = slotStates.first;
+          if (!LayoutSelection.isSelectedSlotContext(leaf.context)) {
+            LayoutSelection.updateActiveFocus(
+              leaf.context,
+              id: leaf.effectiveComponentId,
+            );
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && leaf.mounted) {
+                LayoutSelection.updateActiveFocus(
+                  leaf.context,
+                  id: leaf.effectiveComponentId,
+                );
+              }
+            });
+          }
         }
       }
     }
@@ -1974,6 +2019,13 @@ class EditorSlotState extends State<EditorSlot> {
                       radius: widget.outlineRadius,
                       emphasized: isEmphasizedHighlight,
                       label: titleLabel,
+                      zoomScale:
+                          context
+                              .dependOnInheritedWidgetOfExactType<
+                                EditorZoomScope
+                              >()
+                              ?.scale ??
+                          1.0,
                     )
                   : isSelectedLeaf
                   ? EditorSelectionBorderPainter(
@@ -2034,6 +2086,13 @@ class EditorSlotState extends State<EditorSlot> {
                         radius: widget.outlineRadius,
                         emphasized: isEmphasizedHighlight,
                         label: titleLabel,
+                        zoomScale:
+                            context
+                                .dependOnInheritedWidgetOfExactType<
+                                  EditorZoomScope
+                                >()
+                                ?.scale ??
+                            1.0,
                       )
                     : isSelectedLeaf
                     ? EditorSelectionBorderPainter(

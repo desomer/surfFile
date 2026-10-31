@@ -97,6 +97,9 @@ class LayoutSelection {
 
   /// Identifiant technique du noeud/slot actuellement survolé via le path ou l'arbre.
   static final highlightedSlotId = ValueNotifier<String?>(null);
+
+  /// Position globale du pointeur lors d'une sélection par double-clic.
+  static Offset? doubleClickGlobalPosition;
   static PointerEvent? _pointer;
 
   /// The deepest selection listener claims each pointer event first.
@@ -137,12 +140,17 @@ class LayoutSelection {
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
   static List<String> _leafIds = const [];
+  static String? _activeLeafId;
   static LayoutFocus? _leafFocus;
   static bool _preserveLeafOnNextReport = false;
   static bool _activating = false;
 
   /// The container currently owning the deepest reported selection path.
   static Object? get activeOwner => _activeOwner;
+
+  /// Technical ID of the currently focused leaf `EditorSlot`, if any.
+  static String? get activeLeafId =>
+      _leafIds.isNotEmpty ? _leafIds.last : _activeLeafId;
 
   /// Whether a deeper leaf `EditorSlot` inside the selected slot is currently active.
   static bool get hasLeafSuffix => _leafSuffix.isNotEmpty;
@@ -174,6 +182,44 @@ class LayoutSelection {
     }
     return found;
   }
+
+  /// Whether [candidateContext] represents the currently selected element itself
+  /// (either identical to `focus.value?.context`, or the direct `EditorSlot`
+  /// wrapped by the current container/slot/zone focus key).
+  static bool isSelectedSlotContext(BuildContext candidateContext) {
+    final focusCtx =
+        _leafFocus?.context ??
+        focus.value?.context ??
+        _focusTargets[_activeOwner]?.context;
+    if (focusCtx == null || !focusCtx.mounted || !candidateContext.mounted) {
+      return false;
+    }
+    if (identical(focusCtx, candidateContext)) return true;
+    var foundFocus = false;
+    var hasIntermediateEditorSlot = false;
+    try {
+      candidateContext.visitAncestorElements((element) {
+        if (identical(element, focusCtx)) {
+          foundFocus = true;
+          return false;
+        }
+        if (element is StatefulElement && element.state is EditorSlotState) {
+          hasIntermediateEditorSlot = true;
+          return false;
+        }
+        return true;
+      });
+    } catch (_) {
+      return false;
+    }
+    return foundFocus && !hasIntermediateEditorSlot;
+  }
+
+  /// Whether [candidateContext] is a strict parent/ancestor of the currently
+  /// selected element (and NOT the selected element itself).
+  static bool isStrictParentOfSelected(BuildContext candidateContext) =>
+      isAncestorOfFocus(candidateContext) &&
+      !isSelectedSlotContext(candidateContext);
 
   /// Whether [owner] currently has a non-empty reported path.
   static bool isReported(Object owner) => _reported.containsKey(owner);
@@ -217,8 +263,17 @@ class LayoutSelection {
               ? LayoutFocus(resolvedLeafSlot.context)
               : _focusTargets[bestOwner]);
     } else {
-      focus.value = _focusTargets[bestOwner];
+      focus.value = _leafFocus ?? _focusTargets[bestOwner];
     }
+  }
+
+  /// Updates the active leaf focus context and technical [id] when a single
+  /// leaf `EditorSlot` is selected inside a container region.
+  static void updateActiveFocus(BuildContext? focusContext, {String? id}) {
+    _activeLeafId = id;
+    _leafFocus = focusContext == null ? null : LayoutFocus(focusContext);
+    _preserveLeafOnNextReport = focusContext != null;
+    _syncReported();
   }
 
   /// Appends deeper leaf `EditorSlot` labels below the active container's slot.
@@ -239,6 +294,7 @@ class LayoutSelection {
     }
     _leafSuffix = labels.isEmpty ? const [] : List.unmodifiable(labels);
     _leafIds = nextIds;
+    _activeLeafId = nextIds.isNotEmpty ? nextIds.last : null;
     _leafFocus = labels.isEmpty ? null : nextFocus;
     _syncReported();
   }
@@ -356,7 +412,10 @@ class LayoutSelection {
         if (state is EditorSlotState &&
             state.canEdit &&
             state.widget.onContextMenu == null) {
-          if (rootSlotState == null) {
+          if (rootSlotState == null &&
+              parentLeafIds.isEmpty &&
+              slotPath.isNotEmpty &&
+              state.label == slotPath.last) {
             rootSlotState = state;
           } else {
             final nodePath = List<String>.unmodifiable([
@@ -729,9 +788,10 @@ class LayoutSelection {
   }
 
   /// Highlights the component at [prefix] with the editor overlay outline, or
-  /// clears the highlight when [prefix] is `null`.
+  /// clears the highlight when [prefix] is `null` or equals the already
+  /// selected element path.
   static void highlightPath(List<String>? prefix) {
-    if (prefix == null || prefix.isEmpty) {
+    if (prefix == null || prefix.isEmpty || listEquals(prefix, path.value)) {
       highlightedSlotId.value = null;
       EditorSlotState.clearHighlightedTarget();
       return;
@@ -740,10 +800,17 @@ class LayoutSelection {
     highlightedSlotId.value = node?.id;
     final fromNode = node == null
         ? null
-        : EditorSlotState.resolveFromContext(node.targetContext?.call());
-    EditorSlotState.setHighlightedTarget(
-      fromNode ?? resolveSlotForPath(prefix),
-    );
+        : EditorSlotState.resolveFromContext(
+            node.targetContext?.call(),
+            preferredId: node.id,
+          );
+    final targetSlot = fromNode ?? resolveSlotForPath(prefix);
+    if (targetSlot != null && isSelectedSlotContext(targetSlot.context)) {
+      highlightedSlotId.value = null;
+      EditorSlotState.clearHighlightedTarget();
+      return;
+    }
+    EditorSlotState.setHighlightedTarget(targetSlot);
   }
 
   /// Highlights [node] with the editor overlay outline, or clears the highlight
@@ -757,6 +824,7 @@ class LayoutSelection {
     highlightedSlotId.value = node.id;
     final fromCtx = EditorSlotState.resolveFromContext(
       node.targetContext?.call(),
+      preferredId: node.id,
     );
     EditorSlotState.setHighlightedTarget(
       fromCtx ?? resolveSlotForPath(node.path),
@@ -931,6 +999,7 @@ class LayoutSelection {
 
   /// Active la disposition du segment, et sa zone si le segment en est une.
   static void select(List<String> prefix) {
+    doubleClickGlobalPosition = null;
     final savedFocusCtx =
         _leafFocus?.context ??
         focus.value?.context ??
@@ -1079,6 +1148,7 @@ class LayoutSelection {
         } else {
           _leafSuffix = const [];
           _leafIds = const [];
+          _activeLeafId = null;
           _leafFocus = null;
         }
       }

@@ -927,6 +927,41 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'double-click selection zooms while staying anchored on the mouse pointer',
+    (tester) async {
+      await pumpPage(tester, twoSlots: true);
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      await selectTargetZone(tester);
+      await tester.pumpAndSettle();
+
+      final beforeRect = screenRect(tester, target);
+      // Pick a point inside `target` off-center from the screen center.
+      final clickPoint = beforeRect.topLeft + const Offset(60, 40);
+      final relX = (clickPoint.dx - beforeRect.left) / beforeRect.width;
+      final relY = (clickPoint.dy - beforeRect.top) / beforeRect.height;
+
+      await tester.tapAt(clickPoint);
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(clickPoint);
+      await tester.pumpAndSettle();
+
+      expect(LayoutSelection.path.value.last, 'Target');
+      final afterRect = screenRect(tester, target);
+      expect(afterRect.width, greaterThan(beforeRect.width));
+      // The point that was under the mouse pointer at double-click stays at clickPoint.
+      expect(
+        afterRect.left + relX * afterRect.width,
+        closeTo(clickPoint.dx, 0.5),
+      );
+      expect(
+        afterRect.top + relY * afterRect.height,
+        closeTo(clickPoint.dy, 0.5),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Widget _target(BuildContext context) =>

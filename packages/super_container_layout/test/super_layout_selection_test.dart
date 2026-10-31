@@ -2117,19 +2117,132 @@ void main() {
       expect(activeOutlineForLabel('Mon Bouton'), isNull);
 
       // 3. Hover the parent ('Ma Carte') directly with the mouse pointer on the canvas
-      // (outside 'Mon Bouton'): displays the same emphasized dashed outline + resize anchors + dezoom
+      // (outside 'Mon Bouton'): displays the same emphasized dashed outline + resize anchors without changing zoom
       await gesture.moveTo(const Offset(120, 120));
       await tester.pump();
       final canvasParentOutline = activeOutlineForLabel('Ma Carte');
       expect(canvasParentOutline, isNotNull);
       expect(canvasParentOutline!.emphasized, isTrue);
       expect(canvasParentOutline.dashed, isTrue);
+      expect(canvasParentOutline.zoomScale, closeTo(4.0, 0.01));
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('slot-resize-card-slot-se')),
         findsOneWidget,
       );
-      expect(zoomController.scale.value, lessThan(1.0));
+      expect(zoomController.scale.value, closeTo(4.0, 0.01));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'hovering banner path segments resolves the correct element by ID when siblings share the same label',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: mode,
+          child: MaterialApp(
+            builder: (context, child) => Stack(
+              children: [
+                child!,
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+            home: Scaffold(
+              body: SuperLayout(
+                id: 'main-layout',
+                name: 'Main',
+                label: 'Main',
+                config: config.copyWith(
+                  placements: {
+                    SuperLayoutZone.center: ['card-1', 'card-2'],
+                  },
+                ),
+                slots: [
+                  for (final (cardId, btnId) in [
+                    ('card-1', 'btn-1'),
+                    ('card-2', 'btn-2'),
+                  ])
+                    BuilderSlot(
+                      id: cardId,
+                      label: 'Carte',
+                      builder: (_) => EditableSurface(
+                        id: cardId,
+                        label: 'Carte',
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            for (final subId in ['$btnId-first', btnId])
+                              SizedBox(
+                                width: 100,
+                                height: 48,
+                                child: EditorSlot(
+                                  id: subId,
+                                  label: 'Action',
+                                  onEdit: () async {},
+                                  child: Center(child: Text(subId)),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Select 'btn-2' inside 'card-2' (both share the labels 'Carte' and 'Action' with 'card-1'/'btn-1').
+      await tester.tap(find.text('btn-2'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(5, 590));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, [
+        'Main',
+        'Centre',
+        'Carte',
+        'Action',
+      ]);
+
+      final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(gesture.removePointer);
+      await gesture.addPointer(location: Offset.zero);
+      await tester.pump();
+
+      // Hover segment 2 ('Carte') in StyleEditBanner -> must highlight 'card-2', NOT 'card-1'.
+      await gesture.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('style-edit-banner-path-2')),
+        ),
+      );
+      await tester.pump();
+      expect(EditorSlotState.highlightedTarget.value, isNotNull);
+      expect(
+        EditorSlotState.highlightedTarget.value!.effectiveComponentId,
+        'card-2',
+      );
+      expect(LayoutSelection.highlightedSlotId.value, 'card-2');
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('slot-resize-card-2-se')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('slot-resize-card-1-se')), findsNothing);
+
+      // Hover segment 3 ('Action', the currently selected element itself) in StyleEditBanner
+      // -> must NOT display a parent outline on the already-selected element.
+      await gesture.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('style-edit-banner-path-3')),
+        ),
+      );
+      await tester.pump();
+      expect(EditorSlotState.highlightedTarget.value, isNull);
+      expect(LayoutSelection.highlightedSlotId.value, isNull);
       expect(tester.takeException(), isNull);
     },
   );

@@ -1393,13 +1393,13 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   SlotSizeConstraints? _resizeConstraints;
   Size? _resizeLegacySize;
   EditorHistoryController? _resizeHistory;
-  EditorZoomController? _zoomController;
   bool _resizeBlocked = false;
   bool _active = true;
   late final Listenable _selectionListenable = Listenable.merge([
     EditorSlotState.highlightedTarget,
     EditorSlotState.canvasHoveredParent,
     EditorSelectionRegion.hoverTarget,
+    LayoutSelection.highlightedSlotId,
     LayoutSelection.path,
     LayoutSelection.focus,
   ]);
@@ -1431,21 +1431,25 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     return foundSelf && !hasIntermediateSlot;
   }
 
-  bool get _hasSelectedDescendant =>
-      _active &&
-      ((widget.selected && LayoutSelection.hasLeafSuffix) ||
-          (!widget.showLabel && LayoutSelection.isAncestorOfFocus(context)));
+  bool get _hasSelectedDescendant {
+    if (!_active) return false;
+    final focusCtx = LayoutSelection.focus.value?.context;
+    if (focusCtx == null || !focusCtx.mounted) return false;
+    if (!LayoutSelection.isAncestorOfFocus(context)) return false;
+    return !_isDirectSlotOfThis(focusCtx);
+  }
 
   bool get _isActivelySelected =>
-      widget.showLabel && widget.selected && !LayoutSelection.hasLeafSuffix;
+      widget.showLabel && widget.selected && !_hasSelectedDescendant;
 
-  bool get _isParentOfSelected =>
-      _active &&
-      ((widget.showLabel && widget.selected && LayoutSelection.hasLeafSuffix) ||
-          (!widget.showLabel && LayoutSelection.isAncestorOfFocus(context)));
+  bool get _isParentOfSelected => _hasSelectedDescendant;
 
   bool get _isHighlightedTarget {
-    if (!_active) return false;
+    if (!_active || _isActivelySelected) return false;
+    final highlightedId = LayoutSelection.highlightedSlotId.value;
+    if (highlightedId != null) {
+      return highlightedId == widget.slot.id;
+    }
     final highlighted =
         EditorSlotState.highlightedTarget.value ??
         EditorSlotState.canvasHoveredParent.value;
@@ -1639,14 +1643,6 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         if (slotState != null && _isDirectSlotOfThis(slotState.context)) {
           EditorSlotState.setCanvasHoveredParent(value ? slotState : null);
         }
-        final zoom = _zoomController = EditorZoomScope.controllerOf(context);
-        if (zoom != null) {
-          if (value) {
-            zoom.hoveredParentContext.value = context;
-          } else if (identical(zoom.hoveredParentContext.value, context)) {
-            zoom.hoveredParentContext.value = null;
-          }
-        }
       }
       _reportEmphasis();
     }
@@ -1666,13 +1662,6 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   @override
   void dispose() {
     _selectionListenable.removeListener(_onSelectionOrHoverChanged);
-    final zoom = _zoomController;
-    if (zoom != null &&
-        !zoom.disposed &&
-        identical(zoom.hoveredParentContext.value, context)) {
-      zoom.hoveredParentContext.value = null;
-    }
-    _zoomController = null;
     _finishResize();
     final emphasis = widget.emphasis;
     if (emphasis != null && (_hover || _dragging)) {
@@ -1911,7 +1900,8 @@ class _LabeledSlotState extends State<_LabeledSlot> {
               if (_hover ||
                   _dragging ||
                   _isHighlightedTarget ||
-                  (widget.showLabel && widget.selected))
+                  _isParentOfSelected ||
+                  _isActivelySelected)
                 Positioned.fill(
                   key: ValueKey('slot-highlight-${slot.id}'),
                   child: EditorOverlayVisibility(

@@ -14,6 +14,7 @@ import 'package:flutter/services.dart'
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
+import '../../components/super_layout/layout_selection.dart';
 import '../overlay/editor_overlay.dart';
 import 'editor_slot.dart';
 
@@ -491,7 +492,11 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
       final fromIndex = baseIndex >= 0
           ? baseIndex
           : (currentIndex >= 0 ? currentIndex : chain.indexOf(_zone(chain)));
-      target = chain[(fromIndex + 1).clamp(0, chain.length - 1)];
+      var nextIndex = (fromIndex + 1).clamp(0, chain.length - 1);
+      while (nextIndex + 1 < chain.length && chain[nextIndex].widget.isZone) {
+        nextIndex++;
+      }
+      target = chain[nextIndex];
     } else if (currentIndex >= 0 && !isPassThrough) {
       // Clicking inside the already-selected region/slot keeps it selected
       // instead of resetting back to the parent zone on the first click.
@@ -511,6 +516,9 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     final changed = !identical(target, current) || !target.widget.selected;
     _selected = target;
     if (changed) {
+      LayoutSelection.doubleClickGlobalPosition = doubleClick
+          ? event.position
+          : null;
       target.widget.onSelect();
     }
     _refreshHover();
@@ -760,6 +768,7 @@ class EditorSelectionOutline extends CustomPainter {
     this.radius = 0,
     this.emphasized = false,
     this.label,
+    this.zoomScale = 1.0,
   }) : super(repaint: _EditorOutlineAnimation.instance);
 
   final Color color;
@@ -767,6 +776,10 @@ class EditorSelectionOutline extends CustomPainter {
   final double radius;
   final bool emphasized;
   final String? label;
+
+  /// Facteur de zoom courant (`EditorZoomScope`) afin que le badge de survol
+  /// conserve une taille écran constante (1:1) sans être zoomé.
+  final double zoomScale;
 
   /// Relance l'animation d'entrée (verrouillage des coins + balayage lumineux).
   static void triggerAnimation() {
@@ -911,13 +924,17 @@ class EditorSelectionOutline extends CustomPainter {
       );
     }
 
-    // 6. Modern gradient pill badge at top-left when emphasized
+    // 6. Modern gradient pill badge at top-left when emphasized (kept at constant 1:1 screen size)
     final badgeText = label?.trim();
+    final effectiveZoom = zoomScale > 0 && zoomScale.isFinite ? zoomScale : 1.0;
+    final invZoom = 1.0 / effectiveZoom;
+    final screenWidth = rect.width * effectiveZoom;
+    final screenHeight = rect.height * effectiveZoom;
     if (emphasized &&
         badgeText != null &&
         badgeText.isNotEmpty &&
-        rect.width >= 44 &&
-        rect.height >= 22) {
+        screenWidth >= 44 &&
+        screenHeight >= 22) {
       final textPainter = TextPainter(
         text: TextSpan(
           text: badgeText,
@@ -932,7 +949,7 @@ class EditorSelectionOutline extends CustomPainter {
         textDirection: TextDirection.ltr,
         maxLines: 1,
         ellipsis: '…',
-      )..layout(maxWidth: (rect.width - 24).clamp(24.0, 240.0));
+      )..layout(maxWidth: (screenWidth - 24).clamp(24.0, 240.0));
 
       const hPad = 8.0;
       const vPad = 4.0;
@@ -941,8 +958,8 @@ class EditorSelectionOutline extends CustomPainter {
       final badgeWidth = textPainter.width + hPad * 2 + dotSize + dotGap;
       final badgeHeight = textPainter.height + vPad * 2;
       final slideOffset = (1.0 - fadeCurve) * -6.0;
-      final badgeLeft = rect.left + 6.0;
-      final badgeTop = rect.top + 6.0 + slideOffset;
+      const badgeLeft = 6.0;
+      final badgeTop = 6.0 + slideOffset;
       final badgeRect = Rect.fromLTWH(
         badgeLeft,
         badgeTop,
@@ -953,6 +970,10 @@ class EditorSelectionOutline extends CustomPainter {
         badgeRect,
         Radius.circular(badgeHeight / 2),
       );
+
+      canvas.save();
+      canvas.translate(rect.left, rect.top);
+      canvas.scale(invZoom, invZoom);
 
       // Soft drop shadow
       canvas.drawRRect(
@@ -998,6 +1019,7 @@ class EditorSelectionOutline extends CustomPainter {
         Offset(badgeLeft + hPad + dotSize + dotGap, badgeTop + vPad),
       );
       textPainter.dispose();
+      canvas.restore();
     }
   }
 
@@ -1053,5 +1075,6 @@ class EditorSelectionOutline extends CustomPainter {
       oldDelegate.dashed != dashed ||
       oldDelegate.radius != radius ||
       oldDelegate.emphasized != emphasized ||
-      oldDelegate.label != label;
+      oldDelegate.label != label ||
+      oldDelegate.zoomScale != zoomScale;
 }

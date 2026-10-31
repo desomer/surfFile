@@ -255,6 +255,16 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
   String _resolvedSlotLabel(SlotImplementation slot) =>
       widget.resolveSlotLabel?.call(slot) ?? slot.label;
 
+  String _resolvedSlotId(SlotImplementation slot, BuildContext? slotCtx) {
+    if (slot.id == '__provided-child') {
+      final resolved = EditorSlotState.resolveFromContext(
+        slotCtx,
+      )?.effectiveComponentId;
+      if (resolved != null && resolved.isNotEmpty) return resolved;
+    }
+    return slot.id;
+  }
+
   bool _canSelectSlot(SlotImplementation slot) =>
       !slot.id.startsWith('scaffold:') &&
       (widget.isSlotSelectable?.call(slot) ?? true);
@@ -400,8 +410,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
               ?.id,
         );
       },
+      id: _effectiveComponentId,
       parent: scope?.owner,
       delegateToParent: !widget.showRegionInPath && scope != null,
+      selectedSlotId: () => _selectedSlot,
       selectSlot: widget.showRegionInPath
           ? (slotLabel) {
               final region = _selected;
@@ -447,6 +459,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                       _slotContext(slot.id, regionId) ??
                       _regionContext(regionId);
                   return LayoutSelectionNode(
+                    id: _resolvedSlotId(slot, slotCtx),
                     label: sLabel,
                     path: slotPath,
                     icon: slot.menuIcon,
@@ -484,6 +497,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     void selectThisSlot() => selectSlot(region.id, slot);
                     slotNodes.add(
                       LayoutSelectionNode(
+                        id: _resolvedSlotId(slot, slotCtx),
                         label: sLabel,
                         path: slotPath,
                         icon: slot.menuIcon,
@@ -516,6 +530,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                   }
                 }
                 return LayoutSelectionNode(
+                  id: 'region:${region.id}',
                   label: region.label,
                   path: regionPath,
                   icon: EditorSlot.zoneMenuIcon,

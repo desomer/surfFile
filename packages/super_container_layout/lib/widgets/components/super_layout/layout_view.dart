@@ -88,9 +88,11 @@ extension _SuperLayoutView on SuperLayoutState {
                         .firstOrNull;
               _LayoutEditSelection.activate(this);
             },
+            id: effectiveId,
             parent:
                 LayoutSelectionScope.of(context)?.owner ??
                 this.context.findAncestorStateOfType<SuperLayoutState>(),
+            selectedSlotId: () => _selectedSlot.value,
             selectSlot: (label) {
               final zone = _selected.value;
               if (!mounted || zone == null) return;
@@ -134,6 +136,7 @@ extension _SuperLayoutView on SuperLayoutState {
                       currentConfig.contentZone(zone),
                     );
                     return LayoutSelectionNode(
+                      id: 'zone:${zone.name}',
                       label: zLabel,
                       path: zonePath,
                       icon: EditorSlot.zoneMenuIcon,
@@ -155,6 +158,7 @@ extension _SuperLayoutView on SuperLayoutState {
                             final slotCtx =
                                 _slotFocusKeys[slot.id]?.currentContext;
                             return LayoutSelectionNode(
+                              id: slot.id,
                               label: slot.label,
                               path: slotPath,
                               icon: slot.menuIcon,

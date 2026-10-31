@@ -713,10 +713,11 @@ class _PathTreeDialog extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final widgets = <Widget>[];
     for (final node in items) {
-      final isSelected = listEquals(node.path, currentPath);
-      final isActiveBranch =
-          currentPath.length >= node.path.length &&
-          listEquals(currentPath.take(node.path.length).toList(), node.path);
+      final isSelected = LayoutSelection.isNodeSelected(node, currentPath);
+      final isActiveBranch = LayoutSelection.isNodeInActiveBranch(
+        node,
+        currentPath,
+      );
       final baseKey = 'style-edit-banner-tree-node-${node.path.join("/")}';
       final occurrence = counts.update(
         baseKey,
