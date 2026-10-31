@@ -197,22 +197,23 @@ class ContainerFill {
 
   @override
   bool operator ==(Object other) =>
-      other is ContainerFill &&
-      other.type == type &&
-      other.start == start &&
-      other.end == end &&
-      other.angle == angle &&
-      other.radius == radius &&
-      other.imageUrl == imageUrl &&
-      other.imageBinding == imageBinding &&
-      other.imageFit == imageFit &&
-      other.imageOpacity == imageOpacity;
+      identical(this, other) ||
+      (other is ContainerFill &&
+          other.type == type &&
+          other.start.toARGB32() == start.toARGB32() &&
+          other.end.toARGB32() == end.toARGB32() &&
+          other.angle == angle &&
+          other.radius == radius &&
+          other.imageUrl == imageUrl &&
+          other.imageBinding == imageBinding &&
+          other.imageFit == imageFit &&
+          other.imageOpacity == imageOpacity);
 
   @override
   int get hashCode => Object.hash(
     type,
-    start,
-    end,
+    start.toARGB32(),
+    end.toARGB32(),
     angle,
     radius,
     imageUrl,

@@ -247,25 +247,53 @@ class SurfaceOverlayPainter extends CustomPainter {
       case SurfacePattern.dots:
         paint.strokeCap = StrokeCap.round;
         paint.strokeWidth = 2;
-        final points = <Offset>[];
-        for (var y = _step / 2; y < size.height; y += _step * 1.5) {
-          for (var x = _step / 2; x < size.width; x += _step * 1.5) {
-            points.add(Offset(x, y));
-          }
-        }
-        canvas.drawPoints(ui.PointMode.points, points, paint);
+        canvas.drawPoints(ui.PointMode.points, _dotsFor(size), paint);
       case SurfacePattern.grain:
-        final random = math.Random(7);
-        final count = math.min(4000, (size.width * size.height / 10).round());
-        final points = [
-          for (var i = 0; i < count; i++)
-            Offset(
-              random.nextDouble() * size.width,
-              random.nextDouble() * size.height,
-            ),
-        ];
-        canvas.drawPoints(ui.PointMode.points, points, paint);
+        canvas.drawPoints(ui.PointMode.points, _grainFor(size), paint);
     }
+  }
+
+  static Size? _cachedDotsSize;
+  static List<Offset>? _cachedDotsPoints;
+
+  static List<Offset> _dotsFor(Size size) {
+    if (_cachedDotsSize == size && _cachedDotsPoints != null) {
+      return _cachedDotsPoints!;
+    }
+    final points = <Offset>[];
+    for (var y = _step / 2; y < size.height; y += _step * 1.5) {
+      for (var x = _step / 2; x < size.width; x += _step * 1.5) {
+        points.add(Offset(x, y));
+      }
+    }
+    _cachedDotsSize = size;
+    _cachedDotsPoints = points;
+    return points;
+  }
+
+  static final List<(double, double)> _unitGrain = () {
+    final random = math.Random(7);
+    return List<(double, double)>.generate(
+      4000,
+      (_) => (random.nextDouble(), random.nextDouble()),
+      growable: false,
+    );
+  }();
+  static Size? _cachedGrainSize;
+  static List<Offset>? _cachedGrainPoints;
+
+  static List<Offset> _grainFor(Size size) {
+    if (_cachedGrainSize == size && _cachedGrainPoints != null) {
+      return _cachedGrainPoints!;
+    }
+    final count = math.min(4000, (size.width * size.height / 10).round());
+    final points = List<Offset>.generate(count, (i) {
+      final (ux, uy) = _unitGrain[i];
+      return Offset(ux * size.width, uy * size.height);
+    }, growable: false);
+    _cachedGrainSize = size;
+    _cachedGrainPoints = points;
+    return points;
   }
 
   @override

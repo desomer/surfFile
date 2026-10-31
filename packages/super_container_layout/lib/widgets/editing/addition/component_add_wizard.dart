@@ -867,9 +867,6 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     final theme = Theme.of(context);
     final targets = _targetsFor(candidate);
     final target = _target;
-    final currentPreview = target.resolvePreview(
-      target.replaces ? null : _beforeId,
-    );
     final endPreview = target.resolvePreview(null);
     final siblingPreviews = {
       for (final (id, _) in target.siblings) id: target.resolvePreview(id),

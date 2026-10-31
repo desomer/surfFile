@@ -51,7 +51,10 @@ class SelectedSurfaceStyle {
         ...properties,
         for (final property in SurfaceStyleProperty.values)
           if (property.keys.any(
-                (key) => !_sameStyleValue(before[key], after[key]),
+                (key) => !ComponentStateHelpers.sameJsonValue(
+                  before[key],
+                  after[key],
+                ),
               ) ||
               (property.bindingProperty != null &&
                   style.propertyBindings[property.bindingProperty] !=
@@ -103,11 +106,13 @@ class SelectedSurfaceStyle {
 
   @override
   bool operator ==(Object other) =>
-      other is SelectedSurfaceStyle &&
-      _sameStyleValue(toJson(), other.toJson());
+      identical(this, other) ||
+      (other is SelectedSurfaceStyle &&
+          style == other.style &&
+          setEquals(properties, other.properties));
 
   @override
-  int get hashCode => _styleValueHash(toJson());
+  int get hashCode => Object.hash(style, Object.hashAllUnordered(properties));
 
   factory SelectedSurfaceStyle.fromJson(Object? value) {
     if (value is! Map ||
@@ -174,8 +179,8 @@ class SurfaceStyleStates {
   final SelectedSurfaceStyle? hover;
   final Map<AutomaticState, SelectedSurfaceStyle> automatic;
   final List<String> order;
-  static const hoverKey = '\u0000hover';
-  static const selectedKey = '\u0000selected';
+  static const hoverKey = ComponentStateHelpers.hoverKey;
+  static const selectedKey = ComponentStateHelpers.selectedKey;
   bool get hasSelected => selected?.isEmpty == false;
 
   SurfaceStyleStates copyWith({
@@ -203,15 +208,11 @@ class SurfaceStyleStates {
     automatic: automatic ?? this.automatic,
     order:
         order ??
-        this.order
-            .where(
-              (key) =>
-                  key == hoverKey ||
-                  key == selectedKey ||
-                  (automatic ?? this.automatic).keys.any((s) => s.key == key) ||
-                  (named ?? this.named).containsKey(key),
-            )
-            .toList(),
+        ComponentStateHelpers.filterCopiedOrder(
+          this.order,
+          (automatic ?? this.automatic).keys,
+          named ?? this.named,
+        ),
   );
 
   ContainerStyle resolve(
@@ -355,10 +356,35 @@ class SurfaceStyleStates {
 
   @override
   bool operator ==(Object other) =>
-      other is SurfaceStyleStates && _sameStyleValue(toJson(), other.toJson());
+      identical(this, other) ||
+      (other is SurfaceStyleStates &&
+          ComponentStateHelpers.equalsStateCollection(
+            bindingA: binding,
+            bindingB: other.binding,
+            namedA: named,
+            namedB: other.named,
+            propsA: namedProperties,
+            propsB: other.namedProperties,
+            hoverA: hover,
+            hoverB: other.hover,
+            selectedA: selected,
+            selectedB: other.selected,
+            autoA: automatic,
+            autoB: other.automatic,
+            orderA: order,
+            orderB: other.order,
+          ));
 
   @override
-  int get hashCode => _styleValueHash(toJson());
+  int get hashCode => ComponentStateHelpers.hashStateCollection(
+    binding,
+    named,
+    namedProperties,
+    hover,
+    selected,
+    automatic,
+    order,
+  );
 }
 
 String _name(String name) {
@@ -384,42 +410,16 @@ List<String> _stateOrder(
   List<String>? order,
   Iterable<AutomaticState> automatic,
 ) {
-  final defaults = [
-    ...names,
-    SurfaceStyleStates.hoverKey,
-    SurfaceStyleStates.selectedKey,
-    ...automatic.map((s) => s.key),
-  ];
-  if (order == null) return defaults;
-  if (order.toSet().length != order.length ||
-      order.any((key) => !defaults.contains(key))) {
+  try {
+    return ComponentStateHelpers.normalizeStateOrder(
+      names,
+      order,
+      automatic,
+      'Surface',
+    );
+  } on FormatException {
     throw const FormatException('Ordre des états invalide.');
   }
-  return [...order, ...defaults.where((key) => !order.contains(key))];
-}
-
-bool _sameStyleValue(Object? a, Object? b) {
-  if (a is Map && b is Map) {
-    return a.length == b.length &&
-        a.keys.every(
-          (key) => b.containsKey(key) && _sameStyleValue(a[key], b[key]),
-        );
-  }
-  if (a is List && b is List) {
-    return a.length == b.length &&
-        Iterable.generate(a.length).every((i) => _sameStyleValue(a[i], b[i]));
-  }
-  return a == b;
-}
-
-int _styleValueHash(Object? value) {
-  if (value is Map) {
-    return Object.hashAllUnordered(
-      value.entries.map((e) => Object.hash(e.key, _styleValueHash(e.value))),
-    );
-  }
-  if (value is List) return Object.hashAll(value.map(_styleValueHash));
-  return value.hashCode;
 }
 
 ContainerStyle _leaf(ContainerStyle style) {

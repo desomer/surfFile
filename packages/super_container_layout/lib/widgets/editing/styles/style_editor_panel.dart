@@ -70,7 +70,7 @@ class StyleEditorPanel extends StatefulWidget {
 
 class _StyleEditorPanelState extends State<StyleEditorPanel> {
   final _keys = <String, GlobalKey>{};
-  String? _current;
+  final _current = ValueNotifier<String?>(null);
   late bool _dense = widget.dense ?? StyleEditorPanel.preferredDense;
 
   @override
@@ -79,17 +79,27 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
     if (oldWidget.dense != widget.dense) {
       _dense = widget.dense ?? StyleEditorPanel.preferredDense;
     }
+    final activeIds = {for (final section in widget.sections) section.id};
+    _keys.removeWhere((id, _) => !activeIds.contains(id));
+  }
+
+  @override
+  void dispose() {
+    _current.dispose();
+    super.dispose();
   }
 
   GlobalKey _key(String id) => _keys.putIfAbsent(id, GlobalKey.new);
 
-  String get _selected =>
-      widget.sections.any((section) => section.id == _current)
-      ? _current!
-      : (widget.sections.isEmpty ? '' : widget.sections.first.id);
+  String get _selected {
+    final current = _current.value;
+    return widget.sections.any((section) => section.id == current)
+        ? current!
+        : (widget.sections.isEmpty ? '' : widget.sections.first.id);
+  }
 
   void _go(String id) {
-    setState(() => _current = id);
+    _current.value = id;
     final context = _key(id).currentContext;
     if (context == null) return;
     Scrollable.ensureVisible(
@@ -114,8 +124,8 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
       final top = box.localToGlobal(Offset.zero, ancestor: viewport).dy;
       if (top <= 24 || current == null) current = section.id;
     }
-    if (current != null && current != _current) {
-      setState(() => _current = current);
+    if (current != null && current != _current.value) {
+      _current.value = current;
     }
     return false;
   }
@@ -146,8 +156,9 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
     return rows;
   }
 
-  Widget _card(StyleEditorSection section) =>
-      _StyleCard(key: _key(section.id), section: section);
+  Widget _card(StyleEditorSection section) => RepaintBoundary(
+    child: _StyleCard(key: _key(section.id), section: section),
+  );
 
   Widget _cards({required bool wide}) => LayoutBuilder(
     builder: (context, constraints) => NotificationListener<ScrollNotification>(
@@ -158,7 +169,7 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (!wide && !_dense) ...[
-              widget.preview,
+              RepaintBoundary(child: widget.preview),
               const SizedBox(height: 12),
             ],
             ..._rows(constraints.maxWidth >= 520),
@@ -199,11 +210,14 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _Chips(
-                    sections: widget.sections,
-                    selected: _selected,
-                    onSelected: _go,
-                    onReset: widget.onReset,
+                  ValueListenableBuilder<String?>(
+                    valueListenable: _current,
+                    builder: (context, _, _) => _Chips(
+                      sections: widget.sections,
+                      selected: _selected,
+                      onSelected: _go,
+                      onReset: widget.onReset,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Expanded(child: _cards(wide: false)),
@@ -215,12 +229,15 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
               children: [
                 SizedBox(
                   width: _dense ? 56 : StyleEditorPanel.sidebarWidth,
-                  child: _Sidebar(
-                    sections: widget.sections,
-                    selected: _selected,
-                    onSelected: _go,
-                    onReset: widget.onReset,
-                    dense: _dense,
+                  child: ValueListenableBuilder<String?>(
+                    valueListenable: _current,
+                    builder: (context, _, _) => _Sidebar(
+                      sections: widget.sections,
+                      selected: _selected,
+                      onSelected: _go,
+                      onReset: widget.onReset,
+                      dense: _dense,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 16),
@@ -229,7 +246,9 @@ class _StyleEditorPanelState extends State<StyleEditorPanel> {
                   const SizedBox(width: 16),
                   SizedBox(
                     width: StyleEditorPanel.previewWidth,
-                    child: SingleChildScrollView(child: widget.preview),
+                    child: SingleChildScrollView(
+                      child: RepaintBoundary(child: widget.preview),
+                    ),
                   ),
                 ],
               ],

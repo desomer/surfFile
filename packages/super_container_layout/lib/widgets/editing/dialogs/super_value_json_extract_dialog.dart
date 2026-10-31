@@ -2110,6 +2110,7 @@ class _SuperValueJsonExtractDialogState
       final repoId = await store.idOf(targetName);
       var convertedListsCount = 0;
 
+      if (!mounted) return;
       if (_autoBind &&
           (widget.targets.isNotEmpty || _detectedGroups.isNotEmpty)) {
         final payload = _buildExtractedPayload();
@@ -2118,7 +2119,9 @@ class _SuperValueJsonExtractDialogState
             ? widget.ownerContext!
             : context;
         final history =
-            EditorHistoryScope.controllerOf(ownerCtx) ??
+            (ownerCtx.mounted
+                ? EditorHistoryScope.controllerOf(ownerCtx)
+                : null) ??
             (mounted ? EditorHistoryScope.controllerOf(context) : null);
         history?.beginTransaction();
         try {

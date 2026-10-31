@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/json_syntax.dart';
@@ -571,10 +572,71 @@ class ContainerStyle {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is ContainerStyle && _sameStyleValue(toJson(), other.toJson()));
+      (other is ContainerStyle &&
+          color?.toARGB32() == other.color?.toARGB32() &&
+          fill == other.fill &&
+          radius == other.radius &&
+          borderWidth == other.borderWidth &&
+          borderColor?.toARGB32() == other.borderColor?.toARGB32() &&
+          elevation == other.elevation &&
+          shadowOpacity == other.shadowOpacity &&
+          neon == other.neon &&
+          padding == other.padding &&
+          margin == other.margin &&
+          designSystem == other.designSystem &&
+          interactionEffect == other.interactionEffect &&
+          hoverEffect == other.hoverEffect &&
+          hoverTint == other.hoverTint &&
+          hoverColor?.toARGB32() == other.hoverColor?.toARGB32() &&
+          radii == other.radii &&
+          borderWidths == other.borderWidths &&
+          borderLine == other.borderLine &&
+          shadow == other.shadow &&
+          innerShadow == other.innerShadow &&
+          opacity == other.opacity &&
+          paddingInsets == other.paddingInsets &&
+          marginInsets == other.marginInsets &&
+          backdropBlur == other.backdropBlur &&
+          pattern == other.pattern &&
+          patternOpacity == other.patternOpacity &&
+          transform == other.transform &&
+          mapEquals(propertyBindings, other.propertyBindings) &&
+          states == other.states);
 
   @override
-  int get hashCode => _styleValueHash(toJson());
+  int get hashCode => Object.hashAll([
+    color?.toARGB32(),
+    fill,
+    radius,
+    borderWidth,
+    borderColor?.toARGB32(),
+    elevation,
+    shadowOpacity,
+    neon,
+    padding,
+    margin,
+    designSystem,
+    interactionEffect,
+    hoverEffect,
+    hoverTint,
+    hoverColor?.toARGB32(),
+    radii,
+    borderWidths,
+    borderLine,
+    shadow,
+    innerShadow,
+    opacity,
+    paddingInsets,
+    marginInsets,
+    backdropBlur,
+    pattern,
+    patternOpacity,
+    transform,
+    Object.hashAllUnordered(
+      propertyBindings.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+    states,
+  ]);
 }
 
 String _formatStyleNumber(double value) =>

@@ -63,4 +63,15 @@ class NeonStyle {
       intensity: intensity.toDouble(),
     );
   }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is NeonStyle &&
+          other.enabled == enabled &&
+          other.color?.toARGB32() == color?.toARGB32() &&
+          other.intensity == intensity);
+
+  @override
+  int get hashCode => Object.hash(enabled, color?.toARGB32(), intensity);
 }

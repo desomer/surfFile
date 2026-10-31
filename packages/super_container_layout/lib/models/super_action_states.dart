@@ -502,5 +502,3 @@ SuperActionConfig _readActionStateLeaf(Object? value) {
 
 String _actionStateName(String name) =>
     ComponentStateHelpers.validateStateName(name, 'Action');
-
-int _hashActionStateValue(Object? v) => ComponentStateHelpers.hashJsonValue(v);

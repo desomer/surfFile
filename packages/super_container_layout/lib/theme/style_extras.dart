@@ -214,18 +214,19 @@ class ShadowSpec {
 
   @override
   bool operator ==(Object other) =>
-      other is ShadowSpec &&
-      other.enabled == enabled &&
-      other.color == color &&
-      other.opacity == opacity &&
-      other.blur == blur &&
-      other.spread == spread &&
-      other.dx == dx &&
-      other.dy == dy;
+      identical(this, other) ||
+      (other is ShadowSpec &&
+          other.enabled == enabled &&
+          other.color.toARGB32() == color.toARGB32() &&
+          other.opacity == opacity &&
+          other.blur == blur &&
+          other.spread == spread &&
+          other.dx == dx &&
+          other.dy == dy);
 
   @override
   int get hashCode =>
-      Object.hash(enabled, color, opacity, blur, spread, dx, dy);
+      Object.hash(enabled, color.toARGB32(), opacity, blur, spread, dx, dy);
 }
 
 /// Transformation appliquée à la surface (rotation en degrés).

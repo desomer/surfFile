@@ -1029,7 +1029,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
         break;
 
       case 'copyPath':
-        StringBuffer sb = StringBuffer();
+        // StringBuffer sb = StringBuffer();
         // if (selectedNodes.isEmpty) {
         //   sb.writeln(
         //     (node.data as NodeAttribut).info.getJsonPath(

@@ -876,40 +876,6 @@ class SuperTabConfig extends ComponentConfig {
     }
   }
 
-  static bool _sameJsonValue(Object? a, Object? b) {
-    if (identical(a, b)) return true;
-    if (a is List && b is List) {
-      if (a.length != b.length) return false;
-      for (var i = 0; i < a.length; i++) {
-        if (!_sameJsonValue(a[i], b[i])) return false;
-      }
-      return true;
-    }
-    if (a is Map && b is Map) {
-      if (a.length != b.length) return false;
-      for (final entry in a.entries) {
-        if (!b.containsKey(entry.key) ||
-            !_sameJsonValue(entry.value, b[entry.key])) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return a == b;
-  }
-
-  static int _hashJsonValue(Object? value) {
-    if (value is List) return Object.hashAll(value.map(_hashJsonValue));
-    if (value is Map) {
-      return Object.hashAllUnordered(
-        value.entries.map(
-          (e) => Object.hash(e.key, _hashJsonValue(e.value)),
-        ),
-      );
-    }
-    return value.hashCode;
-  }
-
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -922,7 +888,7 @@ class SuperTabConfig extends ComponentConfig {
         allowAdd != other.allowAdd ||
         allowRemove != other.allowRemove ||
         emptyText != other.emptyText ||
-        !_sameJsonValue(tabBarStyle.toJson(), other.tabBarStyle.toJson()) ||
+        tabBarStyle != other.tabBarStyle ||
         indicatorKind != other.indicatorKind ||
         indicatorSize != other.indicatorSize ||
         indicatorColor != other.indicatorColor ||
@@ -959,7 +925,7 @@ class SuperTabConfig extends ComponentConfig {
     allowAdd,
     allowRemove,
     emptyText,
-    _hashJsonValue(tabBarStyle.toJson()),
+    tabBarStyle,
     indicatorKind,
     indicatorSize,
     indicatorColor,

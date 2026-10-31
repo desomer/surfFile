@@ -515,10 +515,7 @@ class SuperActionConfig extends ComponentConfig {
       verticalPadding == other.verticalPadding &&
       textAlign == other.textAlign &&
       letterSpacing == other.letterSpacing &&
-      ComponentStateHelpers.sameJsonValue(
-        style.toJson(),
-        other.style.toJson(),
-      ) &&
+      style == other.style &&
       mapEquals(propertyBindings, other.propertyBindings) &&
       states == other.states;
 
@@ -548,7 +545,7 @@ class SuperActionConfig extends ComponentConfig {
     verticalPadding,
     textAlign,
     letterSpacing,
-    _hashActionStateValue(style.toJson()),
+    style,
     Object.hashAllUnordered(
       propertyBindings.entries.map(
         (entry) => Object.hash(entry.key, entry.value),

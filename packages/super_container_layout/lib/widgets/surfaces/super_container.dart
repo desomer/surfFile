@@ -78,36 +78,35 @@ class _SuperContainerState extends State<SuperContainer> {
     if (widget.padding != null) {
       content = Padding(padding: widget.padding!, child: content);
     }
-    if (widget.applyPadding ?? widget.decorate) {
-      content = ListenableBuilder(
-        listenable: listenable,
-        builder: (context, child) =>
-            Padding(padding: style.contentPadding, child: child),
-        child: content,
-      );
-    }
-    if (widget.decorate) {
-      content = ListenableBuilder(
-        listenable: listenable,
-        builder: (context, child) => StyledSurface(
-          style: style,
-          fallbackColor:
-              widget.fallbackColor ??
-              Theme.of(context).colorScheme.surfaceContainerLow,
-          borderColor:
-              widget.borderColor ??
-              Theme.of(context).colorScheme.outlineVariant,
-          horizontalBorder: widget.horizontalBorder,
-          child: child!,
-        ),
-        child: content,
-      );
-    }
+    final applyPadding = widget.applyPadding ?? widget.decorate;
+    final decorate = widget.decorate;
     return ListenableBuilder(
       listenable: listenable,
-      builder: (context, child) =>
-          Padding(padding: style.outerMargin, child: child),
       child: content,
+      builder: (context, child) {
+        final resolvedStyle = style;
+        var current = child!;
+        if (applyPadding) {
+          current = Padding(
+            padding: resolvedStyle.contentPadding,
+            child: current,
+          );
+        }
+        if (decorate) {
+          current = StyledSurface(
+            style: resolvedStyle,
+            fallbackColor:
+                widget.fallbackColor ??
+                Theme.of(context).colorScheme.surfaceContainerLow,
+            borderColor:
+                widget.borderColor ??
+                Theme.of(context).colorScheme.outlineVariant,
+            horizontalBorder: widget.horizontalBorder,
+            child: current,
+          );
+        }
+        return Padding(padding: resolvedStyle.outerMargin, child: current);
+      },
     );
   }
 }
