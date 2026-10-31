@@ -137,87 +137,84 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
         appearance.style('diskPanel').foreground ??
         appearance.style('sidebar').foreground ??
         colors.onSurfaceVariant;
-    return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: EditableSurface(
-        key: const ValueKey('disk-panel-surface'),
-        slot: SurfFileAppearanceSlots.diskPanel,
-        fallbackColor: Colors.transparent,
-        borderColor: foreground.withValues(alpha: .12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'DISQUES',
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Actualiser les disques',
-                  onPressed: _loading ? null : _load,
-                  icon: Icon(
-                    Icons.refresh_rounded,
-                    size: 16,
+    return EditableSurface(
+      key: const ValueKey('disk-panel-surface'),
+      slot: SurfFileAppearanceSlots.diskPanel,
+      fallbackColor: Colors.transparent,
+      borderColor: foreground.withValues(alpha: .12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'DISQUES',
+                  style: TextStyle(
                     color: foreground,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
                   ),
-                  visualDensity: VisualDensity.compact,
                 ),
-              ],
-            ),
-            if (_error != null)
-              Column(
-                children: [
-                  Text(
-                    _error!,
-                    style: TextStyle(color: foreground, fontSize: 12),
-                  ),
-                  TextButton(onPressed: _load, child: const Text('Réessayer')),
-                ],
-              )
-            else if (_disks == null)
-              const Center(child: CircularProgressIndicator())
-            else if (_disks!.isEmpty)
-              Text(
-                'Aucun disque disponible.',
-                style: TextStyle(color: foreground, fontSize: 12),
-              )
-            else
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = SurfFilePreferencesScope.of(context).diskGaugeStyle.columns;
-                  final selectedPath = _selectedPath;
-                  return Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final disk in _disks!)
-                        SizedBox(
-                          width:
-                              (constraints.maxWidth - 8 * (columns - 1)) /
-                              columns,
-                          child: _DiskTile(
-                            disk: disk,
-                            revision: _revision,
-                            selected: disk.path == selectedPath,
-                            onTap: () => widget.onNavigate(disk.path),
-                            ejecting: _ejecting.contains(disk.path),
-                            onEject: disk.ejectable ? () => _eject(disk) : null,
-                          ),
-                        ),
-                    ],
-                  );
-                },
               ),
-          ],
-        ),
+              IconButton(
+                tooltip: 'Actualiser les disques',
+                onPressed: _loading ? null : _load,
+                icon: Icon(
+                  Icons.refresh_rounded,
+                  size: 16,
+                  color: foreground,
+                ),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          if (_error != null)
+            Column(
+              children: [
+                Text(
+                  _error!,
+                  style: TextStyle(color: foreground, fontSize: 12),
+                ),
+                TextButton(onPressed: _load, child: const Text('Réessayer')),
+              ],
+            )
+          else if (_disks == null)
+            const Center(child: CircularProgressIndicator())
+          else if (_disks!.isEmpty)
+            Text(
+              'Aucun disque disponible.',
+              style: TextStyle(color: foreground, fontSize: 12),
+            )
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = SurfFilePreferencesScope.of(context).diskGaugeStyle.columns;
+                final selectedPath = _selectedPath;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final disk in _disks!)
+                      SizedBox(
+                        width:
+                            (constraints.maxWidth - 8 * (columns - 1)) /
+                            columns,
+                        child: _DiskTile(
+                          disk: disk,
+                          revision: _revision,
+                          selected: disk.path == selectedPath,
+                          onTap: () => widget.onNavigate(disk.path),
+                          ejecting: _ejecting.contains(disk.path),
+                          onEject: disk.ejectable ? () => _eject(disk) : null,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+        ],
       ),
     );
   }

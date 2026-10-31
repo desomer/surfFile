@@ -170,7 +170,6 @@ void registerExplorerComponents(Registry registry) {
       label: 'Disques',
       menuIcon: Icons.storage_outlined,
       slotId: 'sidebar-disks',
-      sizing: SlotSizing.intrinsic,
       isAvailable: (context) => _available(context, 'explorer_sidebar_disks'),
       builder: (context) => ExplorerSidebarDisks(
         data: ExplorerSidebarScope.of(context).data,
@@ -216,20 +215,21 @@ Widget _main(BuildContext context) {
             ? config.withSide(config.contentZone(SuperLayoutZone.north), false)
             : config,
         slots: [
-          registry.component('explorer_split_indicator').createSlot(
-            'split-indicator',
-            visible: data.split,
-          ),
+          registry
+              .component('explorer_split_indicator')
+              .createSlot('split-indicator', visible: data.split),
           registry.component('explorer_toolbar').createSlot('toolbar'),
           registry.component('explorer_breadcrumbs').createSlot('breadcrumbs'),
           registry
               .component('explorer_view_mode_bar')
               .createSlot('view-mode-bar'),
           registry.component('explorer_filter_bar').createSlot('filter-bar'),
-          registry.component('explorer_sort_header').createSlot(
-            'sort-header',
-            visible: !data.columnView && !data.heatmapView,
-          ),
+          registry
+              .component('explorer_sort_header')
+              .createSlot(
+                'sort-header',
+                visible: !data.columnView && !data.heatmapView,
+              ),
           registry.component('explorer_content').createSlot('content'),
         ],
       ),

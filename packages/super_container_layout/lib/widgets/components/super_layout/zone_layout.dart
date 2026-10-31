@@ -394,6 +394,7 @@ class _RenderZoneLayout extends RenderBox
       }
       final autoAxis =
           overlay ||
+              !_autoSides.contains(zone) ||
               !measured.containsKey(zone) ||
               _emptyAutoSides.contains(zone)
           ? null
@@ -407,30 +408,26 @@ class _RenderZoneLayout extends RenderBox
       // Keep natural content on its measurement constraints so size changes
       // propagate back to the wrapping parent, including asynchronous bindings.
       final naturalLimits = _naturalLimits(zone, constraints);
+      final freeWidth = _shrinkWidth || autoAxis == Axis.horizontal;
+      final freeHeight = _shrinkHeight || autoAxis == Axis.vertical;
       child.layout(
-        _shrinkAny && !overlay
+        !overlay && (freeWidth || freeHeight)
             ? BoxConstraints(
-                minWidth: _shrinkWidth ? 0 : rect.width,
-                maxWidth: _shrinkWidth ? naturalLimits.maxWidth : rect.width,
-                minHeight: _shrinkHeight ? 0 : rect.height,
+                minWidth: freeWidth ? 0 : rect.width,
+                maxWidth: _shrinkWidth
+                    ? naturalLimits.maxWidth
+                    : freeWidth
+                    ? size.width
+                    : rect.width,
+                minHeight: freeHeight ? 0 : rect.height,
                 maxHeight: _shrinkHeight
                     ? naturalLimits.maxHeight
+                    : freeHeight
+                    ? size.height
                     : rect.height,
               )
-            : switch (autoAxis) {
-                null => BoxConstraints.tight(rect.size),
-                Axis.vertical => BoxConstraints(
-                  minWidth: rect.width,
-                  maxWidth: rect.width,
-                  maxHeight: size.height,
-                ),
-                Axis.horizontal => BoxConstraints(
-                  minHeight: rect.height,
-                  maxHeight: rect.height,
-                  maxWidth: size.width,
-                ),
-              },
-        parentUsesSize: _shrinkAny || autoAxis != null,
+            : BoxConstraints.tight(rect.size),
+        parentUsesSize: !overlay && (freeWidth || freeHeight),
       );
       (child.parentData! as _ZoneParentData).offset = rect.topLeft;
     }

@@ -177,23 +177,28 @@ class ExplorerSidebarDisks extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) => ConstrainedBox(
-      // Keep room for places in automatically sized zones.
-      constraints: BoxConstraints(
-        maxHeight: constraints.hasTightHeight
-            ? constraints.maxHeight
-            : constraints.maxHeight / 2,
-      ),
-      child: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: DiskSpacePanel(
-            currentPath: data.currentPath,
-            onNavigate: actions.onLocationSelected,
+    builder: (context, constraints) {
+      final maxHeight = constraints.hasTightHeight
+          ? constraints.maxHeight
+          : constraints.maxHeight / 2;
+      final minHeight = constraints.minHeight.clamp(0.0, maxHeight);
+      return ConstrainedBox(
+        // Keep room for places in automatically sized zones.
+        constraints: BoxConstraints(
+          minHeight: minHeight,
+          maxHeight: maxHeight,
+        ),
+        child: SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: minHeight),
+            child: DiskSpacePanel(
+              currentPath: data.currentPath,
+              onNavigate: actions.onLocationSelected,
+            ),
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
 }
 
