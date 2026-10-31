@@ -2523,7 +2523,6 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       canMove: (slotId) => _canMoveSlot(slotId, id),
       onMove: (slotId) => _moveSlot(slotId, id),
       alignment: alignment,
-      child: keyedChild,
       overlays: [
         if (overlay)
           Positioned.fill(
@@ -2623,6 +2622,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             ),
           ),
       ],
+      child: keyedChild,
     );
   }
 
@@ -2794,39 +2794,6 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     canMove: (slotId) => _canMoveSlot(slotId, id),
                     onMove: (slotId) => _moveSlot(slotId, id),
                     alignment: alignment,
-                    child: slots.isEmpty && editing
-                        ? LayoutBuilder(
-                            builder: (context, constraints) {
-                              final fillWidth =
-                                  (regionAxis == Axis.horizontal
-                                      ? effectiveExpand
-                                      : effectiveStretch) &&
-                                  constraints.hasBoundedWidth;
-                              final fillHeight =
-                                  fixedSize == null &&
-                                  (regionAxis == Axis.vertical
-                                      ? effectiveExpand
-                                      : effectiveStretch) &&
-                                  constraints.hasBoundedHeight;
-                              return SizedBox(
-                                width: fillWidth
-                                    ? double.infinity
-                                    : (spec.emptySize.width.isFinite
-                                          ? spec.emptySize.width
-                                          : (constraints.hasBoundedWidth
-                                                ? double.infinity
-                                                : 120)),
-                                height:
-                                    fixedSize ??
-                                    (fillHeight
-                                        ? double.infinity
-                                        : (spec.emptySize.height.isFinite
-                                              ? spec.emptySize.height
-                                              : kToolbarHeight)),
-                              );
-                            },
-                          )
-                        : content,
                     overlays: [
                       if (overlay)
                         Positioned.fill(
@@ -2939,6 +2906,39 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                           ),
                         ),
                     ],
+                    child: slots.isEmpty && editing
+                        ? LayoutBuilder(
+                            builder: (context, constraints) {
+                              final fillWidth =
+                                  (regionAxis == Axis.horizontal
+                                      ? effectiveExpand
+                                      : effectiveStretch) &&
+                                  constraints.hasBoundedWidth;
+                              final fillHeight =
+                                  fixedSize == null &&
+                                  (regionAxis == Axis.vertical
+                                      ? effectiveExpand
+                                      : effectiveStretch) &&
+                                  constraints.hasBoundedHeight;
+                              return SizedBox(
+                                width: fillWidth
+                                    ? double.infinity
+                                    : (spec.emptySize.width.isFinite
+                                          ? spec.emptySize.width
+                                          : (constraints.hasBoundedWidth
+                                                ? double.infinity
+                                                : 120)),
+                                height:
+                                    fixedSize ??
+                                    (fillHeight
+                                        ? double.infinity
+                                        : (spec.emptySize.height.isFinite
+                                              ? spec.emptySize.height
+                                              : kToolbarHeight)),
+                              );
+                            },
+                          )
+                        : content,
                   ),
           ),
         ),
