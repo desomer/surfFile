@@ -4,6 +4,8 @@ import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
+import '../../components/super_layout/layout_selection.dart';
+import '../slots/editor_slot.dart';
 
 class EditorZoneBadge extends StatelessWidget {
   const EditorZoneBadge({
@@ -193,6 +195,7 @@ class EditorSelectionBorder extends StatelessWidget {
     this.opacity = 1.0,
     this.fillOpacity = 0.10,
     this.color,
+    this.hideOnTargetHighlight = false,
     super.key,
   });
 
@@ -201,6 +204,7 @@ class EditorSelectionBorder extends StatelessWidget {
     this.filled = false,
     this.fillOpacity = 0.10,
     this.color,
+    this.hideOnTargetHighlight = true,
     super.key,
   }) : dashed = false,
        animated = true,
@@ -209,13 +213,16 @@ class EditorSelectionBorder extends StatelessWidget {
 
   /// Bordure de zone ou slot parent lorsqu'un enfant est sélectionné :
   /// néon pointillé statique (non animé).
-  const EditorSelectionBorder.subtleParent({this.color, super.key})
-    : dashed = true,
-      animated = false,
-      filled = false,
-      strokeWidth = 1.0,
-      opacity = 0.45,
-      fillOpacity = 0.0;
+  const EditorSelectionBorder.subtleParent({
+    this.color,
+    this.hideOnTargetHighlight = true,
+    super.key,
+  }) : dashed = true,
+       animated = false,
+       filled = false,
+       strokeWidth = 1.0,
+       opacity = 0.45,
+       fillOpacity = 0.0;
 
   /// Bordure de survol d'un parent ou d'une étiquette : néon pointillé.
   const EditorSelectionBorder.hover({
@@ -226,7 +233,8 @@ class EditorSelectionBorder extends StatelessWidget {
   }) : dashed = true,
        animated = false,
        strokeWidth = 1.5,
-       opacity = 0.85;
+       opacity = 0.85,
+       hideOnTargetHighlight = false;
 
   final bool dashed;
   final bool animated;
@@ -235,6 +243,7 @@ class EditorSelectionBorder extends StatelessWidget {
   final double opacity;
   final double fillOpacity;
   final Color? color;
+  final bool hideOnTargetHighlight;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +251,7 @@ class EditorSelectionBorder extends StatelessWidget {
     final disableAnimations =
         MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final effectiveAnimated = animated && !dashed && !disableAnimations;
-    return IgnorePointer(
+    Widget buildBorder() => IgnorePointer(
       child: CustomPaint(
         painter: EditorSelectionBorderPainter(
           color: baseColor,
@@ -254,6 +263,20 @@ class EditorSelectionBorder extends StatelessWidget {
         ),
         child: const SizedBox.expand(),
       ),
+    );
+    if (!hideOnTargetHighlight) return buildBorder();
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        EditorSlotState.highlightedTarget,
+        LayoutSelection.highlightedSlotId,
+      ]),
+      builder: (context, child) {
+        final hasHighlight =
+            EditorSlotState.highlightedTarget.value != null ||
+            LayoutSelection.highlightedSlotId.value != null;
+        return hasHighlight ? const SizedBox.shrink() : child!;
+      },
+      child: buildBorder(),
     );
   }
 }

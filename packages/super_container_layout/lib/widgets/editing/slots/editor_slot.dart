@@ -1619,15 +1619,10 @@ class EditorSlotState extends State<EditorSlot> {
                 key: ValueKey('style-menu-entry-${entry.label}'),
                 value: entry.onSelected,
                 padding: EdgeInsets.zero,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 40),
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      16 + _defaultIndent * index,
-                      0,
-                      16,
-                      0,
-                    ),
+                child: _menuHover(
+                  this,
+                  Padding(
+                    padding: EdgeInsets.only(left: _defaultIndent * index),
                     child: Row(
                       children: [
                         _menuIconBadge(
@@ -2083,7 +2078,9 @@ class EditorSlotState extends State<EditorSlot> {
           listenable: Listenable.merge([
             EditorOverlayVisibility.openDialogs,
             EditorSelectionRegion.hoverTarget,
+            _highlightedTarget,
             _canvasHoveredParent,
+            LayoutSelection.highlightedSlotId,
             LayoutSelection.focus,
             LayoutSelection.path,
           ]),
@@ -2091,10 +2088,14 @@ class EditorSlotState extends State<EditorSlot> {
             final isEmphasizedHighlight =
                 identical(_menuHoveredTarget, this) ||
                 identical(_canvasHoveredParent.value, this);
+            final hasExternalHighlight =
+                _highlightedTarget.value != null ||
+                LayoutSelection.highlightedSlotId.value != null;
             final isSelectedLeaf =
                 canEdit &&
                 editMode != null &&
                 EditorOverlayVisibility.openDialogs.value == 0 &&
+                !hasExternalHighlight &&
                 LayoutSelection.isLeafFocus(this.context);
             final showOutline =
                 canEdit &&
@@ -2206,7 +2207,9 @@ class EditorSlotState extends State<EditorSlot> {
             listenable: Listenable.merge([
               EditorOverlayVisibility.openDialogs,
               EditorSelectionRegion.hoverTarget,
+              _highlightedTarget,
               _canvasHoveredParent,
+              LayoutSelection.highlightedSlotId,
               LayoutSelection.focus,
               LayoutSelection.path,
             ]),
@@ -2214,8 +2217,12 @@ class EditorSlotState extends State<EditorSlot> {
               final isEmphasizedHighlight =
                   identical(_menuHoveredTarget, this) ||
                   identical(_canvasHoveredParent.value, this);
+              final hasExternalHighlight =
+                  _highlightedTarget.value != null ||
+                  LayoutSelection.highlightedSlotId.value != null;
               final isSelectedLeaf =
                   EditorOverlayVisibility.openDialogs.value == 0 &&
+                  !hasExternalHighlight &&
                   LayoutSelection.isLeafFocus(this.context);
               final showOutline =
                   (EditorOverlayVisibility.openDialogs.value == 0 ||

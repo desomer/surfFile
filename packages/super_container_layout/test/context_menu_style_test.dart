@@ -2,6 +2,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zone_badge.dart';
+import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 
 void main() {
   for (final (name, component, menuLabel) in <(String, Widget, String)>[
@@ -1139,6 +1141,212 @@ void main() {
 
       await tester.tapAt(const Offset(790, 590));
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'hovering context menu, banner path, and chevron sub-path hides the luminous selection overlay of the selected component',
+    (tester) async {
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+
+      await tester.pumpWidget(
+        StyleEditScope(
+          controller: editing,
+          child: MaterialApp(
+            builder: (context, child) => Stack(
+              children: [
+                child!,
+                const Positioned.fill(child: StyleEditBanner()),
+              ],
+            ),
+            home: Scaffold(
+              body: SuperLayout(
+                id: 'main-layout',
+                name: 'Main',
+                label: 'Main',
+                config: const SuperLayoutConfig(
+                  north: false,
+                  south: false,
+                  east: false,
+                  west: false,
+                  placements: {
+                    SuperLayoutZone.center: ['card-slot', 'sibling-slot'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'card-slot',
+                    label: 'Ma Carte',
+                    builder: (_) => EditableSurface(
+                      id: 'card-slot',
+                      label: 'Ma Carte',
+                      child: Align(
+                        alignment: Alignment.bottomRight,
+                        child: SizedBox(
+                          width: 120,
+                          height: 48,
+                          child: EditorSlot(
+                            id: 'btn-slot',
+                            label: 'Mon Bouton',
+                            onEdit: () async {},
+                            child: const Center(child: Text('Action')),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  BuilderSlot(
+                    id: 'sibling-slot',
+                    label: 'Autre Carte',
+                    builder: (_) => EditableSurface(
+                      id: 'sibling-slot',
+                      label: 'Autre Carte',
+                      child: const SizedBox(
+                        width: 120,
+                        height: 48,
+                        child: Center(child: Text('Autre')),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      List<EditorSelectionBorderPainter> activeSelectionBorderPainters() =>
+          tester
+              .widgetList<CustomPaint>(find.byType(CustomPaint))
+              .expand((w) => [w.painter, w.foregroundPainter])
+              .whereType<EditorSelectionBorderPainter>()
+              .toList();
+
+      EditorSelectionOutline? activeOutlineForLabel(String targetLabel) {
+        final slotFinder = find.byWidgetPredicate(
+          (w) => w is EditorSlot && w.label == targetLabel,
+        );
+        if (slotFinder.evaluate().isEmpty) return null;
+        final paintFinder = find.descendant(
+          of: slotFinder.first,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is CustomPaint &&
+                w.foregroundPainter is EditorSelectionOutline &&
+                (w.foregroundPainter! as EditorSelectionOutline).label ==
+                    targetLabel,
+          ),
+        );
+        if (paintFinder.evaluate().isEmpty) return null;
+        return tester.widget<CustomPaint>(paintFinder.first).foregroundPainter
+            as EditorSelectionOutline?;
+      }
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: const Offset(5, 590));
+      await tester.pump();
+
+      // 1. Select 'Ma Carte' slot and verify its luminous selection overlay is shown.
+      LayoutSelection.select(['Main', 'Centre', 'Ma Carte']);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('slot-highlight-card-slot')),
+        findsOneWidget,
+      );
+      expect(activeSelectionBorderPainters(), isNotEmpty);
+
+      // 2. Hover banner path segment 'Centre' -> selection overlay is hidden, 'Centre' is highlighted.
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(const ValueKey('style-edit-banner-path-1')),
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('slot-highlight-card-slot')),
+        findsNothing,
+      );
+      expect(activeSelectionBorderPainters(), isEmpty);
+      expect(activeOutlineForLabel('Centre')?.emphasized, isTrue);
+
+      // Leave path segment -> luminous selection overlay returns.
+      await mouse.moveTo(const Offset(5, 590));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('slot-highlight-card-slot')),
+        findsOneWidget,
+      );
+      expect(activeSelectionBorderPainters(), isNotEmpty);
+
+      // 3. Click chevron and hover sub-path node 'Autre Carte' -> selection overlay is hidden.
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-chevron-1')),
+      );
+      await tester.pumpAndSettle();
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(
+            const ValueKey(
+              'style-edit-banner-tree-node-Main/Centre/Autre Carte',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('slot-highlight-card-slot')),
+        findsNothing,
+      );
+      expect(activeSelectionBorderPainters(), isEmpty);
+      expect(activeOutlineForLabel('Autre Carte')?.emphasized, isTrue);
+
+      // Also hover leaf node 'Mon Bouton' in sub-path -> selection overlay remains hidden.
+      await mouse.moveTo(
+        tester.getCenter(
+          find.byKey(
+            const ValueKey(
+              'style-edit-banner-tree-node-Main/Centre/Ma Carte/Mon Bouton',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(activeSelectionBorderPainters(), isEmpty);
+      expect(activeOutlineForLabel('Mon Bouton')?.emphasized, isTrue);
+
+      // Close chevron popup -> luminous selection overlay returns.
+      await tester.tap(
+        find.byKey(const ValueKey('style-edit-banner-tree-close')),
+      );
+      await tester.pumpAndSettle();
+      expect(activeSelectionBorderPainters(), isNotEmpty);
+
+      // 4. Right-click 'Action' ('Mon Bouton' leaf) to open context menu and hover menu entries.
+      await tester.tap(find.text('Action'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('style-menu-Ma Carte'))),
+      );
+      await tester.pump();
+      expect(activeSelectionBorderPainters(), isEmpty);
+      expect(activeOutlineForLabel('Ma Carte')?.emphasized, isTrue);
+
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('style-menu-Mon Bouton'))),
+      );
+      await tester.pump();
+      expect(activeSelectionBorderPainters(), isEmpty);
+      expect(activeOutlineForLabel('Mon Bouton')?.emphasized, isTrue);
+
+      // Dismiss context menu -> leaf selection overlay returns.
+      await tester.tapAt(const Offset(5, 590));
+      await tester.pumpAndSettle();
+      expect(activeSelectionBorderPainters(), isNotEmpty);
       expect(tester.takeException(), isNull);
     },
   );

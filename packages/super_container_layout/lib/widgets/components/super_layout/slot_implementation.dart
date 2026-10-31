@@ -1447,13 +1447,19 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     return !_isDirectSlotOfThis(focusCtx);
   }
 
+  bool get _hasExternalHighlight =>
+      EditorSlotState.highlightedTarget.value != null ||
+      LayoutSelection.highlightedSlotId.value != null;
+
   bool get _isActivelySelected =>
       widget.showLabel && widget.selected && !_hasSelectedDescendant;
 
   bool get _isParentOfSelected => _hasSelectedDescendant;
 
   bool get _isHighlightedTarget {
-    if (!_active || _isActivelySelected) return false;
+    if (!_active || (_isActivelySelected && !_hasExternalHighlight)) {
+      return false;
+    }
     final highlightedId = LayoutSelection.highlightedSlotId.value;
     if (highlightedId != null) {
       return highlightedId == widget.slot.id;
@@ -1480,7 +1486,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   bool get _showResizeHandles =>
       _active &&
       widget.onResize != null &&
-      (_isActivelySelected || _isHoveredForResize);
+      ((_isActivelySelected && !_hasExternalHighlight) || _isHoveredForResize);
 
   void _onSelectionOrHoverChanged() {
     if (!mounted || !_active) return;
@@ -1907,13 +1913,19 @@ class _LabeledSlotState extends State<_LabeledSlot> {
               ),
               if (_hover ||
                   _dragging ||
-                  _isHighlightedTarget ||
-                  _isParentOfSelected ||
-                  _isActivelySelected)
+                  (!_hasExternalHighlight &&
+                      (_isHighlightedTarget ||
+                          _isParentOfSelected ||
+                          _isActivelySelected)))
                 Positioned.fill(
                   key: ValueKey('slot-highlight-${slot.id}'),
                   child: EditorOverlayVisibility(
-                    child: _isActivelySelected || _dragging
+                    child: _dragging
+                        ? const EditorSelectionBorder.active(
+                            filled: true,
+                            hideOnTargetHighlight: false,
+                          )
+                        : (!_hasExternalHighlight && _isActivelySelected)
                         ? const EditorSelectionBorder.active(filled: true)
                         : (_hover || _isHighlightedTarget)
                         ? const EditorSelectionBorder.hover()

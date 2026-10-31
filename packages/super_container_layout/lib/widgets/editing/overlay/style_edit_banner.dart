@@ -108,12 +108,14 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     final current = LayoutSelection.path.value;
     if (current.length < popup.prefix.length ||
         !listEquals(current.take(popup.prefix.length).toList(), popup.prefix)) {
+      LayoutSelection.highlightNode(null);
       setState(() => _treePopup = null);
     }
   }
 
   void _toggleTreePopup(int chevronIndex, List<String> prefix) {
     EditorSlotState.closeActiveMenu();
+    LayoutSelection.highlightNode(null);
     if (_treePopup?.chevronIndex == chevronIndex) {
       setState(() => _treePopup = null);
       return;
@@ -143,20 +145,28 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     });
   }
 
-  void _reposition() => setState(() {
-    _treePopup = null;
-    _layout = _BannerLayout(
-      _layout.position,
-      available: LayoutSelection.editorViewport.value,
-    );
-    _chatLayout = _VibeChatLayout(
-      _chatLayout.position,
-      available: LayoutSelection.editorViewport.value,
-    );
-  });
+  void _reposition() {
+    if (_treePopup != null) {
+      LayoutSelection.highlightNode(null);
+    }
+    setState(() {
+      _treePopup = null;
+      _layout = _BannerLayout(
+        _layout.position,
+        available: LayoutSelection.editorViewport.value,
+      );
+      _chatLayout = _VibeChatLayout(
+        _chatLayout.position,
+        available: LayoutSelection.editorViewport.value,
+      );
+    });
+  }
 
   @override
   void dispose() {
+    if (_treePopup != null) {
+      LayoutSelection.highlightNode(null);
+    }
     if (identical(LayoutSelection.bannerBounds, _bannerRect)) {
       LayoutSelection.bannerBounds = null;
     }
@@ -190,6 +200,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
         key: _bannerKey,
         onPanUpdate: (details) {
           EditorSlotState.closeActiveMenu();
+          if (_treePopup != null) {
+            LayoutSelection.highlightNode(null);
+          }
           setState(() {
             _treePopup = null;
             _layout = _BannerLayout(

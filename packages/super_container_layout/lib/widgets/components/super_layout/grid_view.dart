@@ -251,6 +251,7 @@ class _GridSurfaceState extends State<_GridSurface> {
                   : null,
               filled: _dragId == slot.id,
               fillOpacity: 0.12,
+              hideOnTargetHighlight: _dragId != slot.id,
             ),
           ),
         Positioned.fill(
