@@ -1,3 +1,9 @@
+/// Boîte de dialogue principale de configuration de l'apparence ([AppearanceSettings]).
+///
+/// Permet de régler le thème clair/sombre, la couleur d'accent, les dimensions,
+/// la typographie, le fondu de défilement, la transparence de fenêtre et les slots de style.
+library;
+
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -13,6 +19,7 @@ import '../editing/dialogs/editor_dialog_header.dart';
 /// Captured by the caller before opening a route, then applied to every dialog.
 typedef AppearanceDialogWrapper = Widget Function(Widget child);
 
+/// Section personnalisée additionnelle affichée dans la boîte de dialogue [AppearanceSettings].
 @immutable
 class AppearanceSettingsSection {
   const AppearanceSettingsSection({
@@ -417,6 +424,7 @@ Widget _window(BuildContext context) {
   ]);
 }
 
+/// Curseur numérique étiqueté utilisé dans les panneaux de réglages d'apparence.
 class AppearanceSettingsSlider extends StatelessWidget {
   const AppearanceSettingsSlider(
     this.label,

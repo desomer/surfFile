@@ -1,3 +1,8 @@
+/// Composant de champ de saisie texte stylable ([SuperTextField]).
+///
+/// Applique les options de [SuperTextFieldConfig] et s'intègre au mode édition.
+library;
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 

@@ -1,3 +1,10 @@
+/// Configuration persistée ([SuperTreeViewConfig]) d'un arbre hiérarchique [SuperTreeView].
+///
+/// Paramètre la liaison JSON récursive (`binding`, `childrenKey`), les dimensions
+/// de la zone `header` et des lignes, l'indentation, les connecteurs et les
+/// placements dans les zones `header` et `data`.
+library;
+
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';

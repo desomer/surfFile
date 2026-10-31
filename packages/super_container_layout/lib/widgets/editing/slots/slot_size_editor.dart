@@ -1,3 +1,6 @@
+/// Contrôles et boîte de dialogue d'édition des contraintes de taille d'un slot ([SlotSizeConstraints]).
+library;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
@@ -9,6 +12,7 @@ import '../dialogs/editor_tabbed_wizard.dart';
 import '../history/editor_history.dart';
 import '../styles/independent_spacing_editor.dart';
 
+/// Dimensions mesurées du slot et de sa zone parente pour convertir entre pixels et pourcentages.
 typedef SlotSizeGeometry = ({Size layout, Rect zone, Rect slot});
 
 /// Délégué d'édition des contraintes de taille et marge d'un slot pour

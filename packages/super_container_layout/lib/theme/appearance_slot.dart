@@ -1,6 +1,13 @@
+/// Descripteur d'un slot de style nommé ([AppearanceSlot]) dans le catalogue d'apparence.
+///
+/// Associe un identifiant de style à son libellé, son rôle de surface
+/// ([AppearanceSurfaceRole]) et ses valeurs par défaut.
+library;
+
 import 'appearance.dart';
 import 'container_style.dart';
 
+/// Rôle sémantique d'un slot de style (surface standard ou arrière-plan global de l'application).
 enum AppearanceSurfaceRole { standard, applicationBackground }
 
 /// Describes how an application-owned style is edited by a EditableSurface.

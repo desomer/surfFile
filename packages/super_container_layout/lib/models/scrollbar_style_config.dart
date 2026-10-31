@@ -1,3 +1,9 @@
+/// Configuration visuelle ([ScrollbarStyleConfig]) des barres de défilement d'une zone.
+///
+/// Contrôle l'épaisseur, le rayon, les marges, la visibilité de la piste/curseur
+/// et les couleurs appliquées par [ZoneScrollableViewport].
+library;
+
 import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter/widgets.dart' show Axis, Color, ScrollbarOrientation;
 

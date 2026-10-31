@@ -1,8 +1,12 @@
+/// Formulaire de configuration initiale ([ExpansibleAddForm]) lors de l'ajout d'un [SuperExpansible].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/native_component_config.dart';
 import '../../../../models/native_property_descriptor.dart';
 
+/// Formulaire de paramétrage initial d'un [SuperExpansible] dans l'assistant d'ajout.
 class ExpansibleAddForm extends StatelessWidget {
   const ExpansibleAddForm({
     required this.draft,

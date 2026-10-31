@@ -1,3 +1,6 @@
+/// Sélecteur visuel d'icônes Material 3 ([MaterialIconPicker]) basé sur [MaterialIconCatalog].
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

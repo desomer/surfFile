@@ -1,3 +1,6 @@
+/// Contrôles génériques d'édition des états conditionnels ([EditorStateControls]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
@@ -8,6 +11,7 @@ import '../repositories/repository_binding_fields.dart';
 const selectedSurfaceStateKey = '\u0000selected';
 const hoverSurfaceStateKey = '\u0000hover';
 
+/// Barre de sélection et de gestion des états conditionnels dans un éditeur de composant.
 class EditorStateControls<P extends Enum> extends StatelessWidget {
   const EditorStateControls({
     required this.names,

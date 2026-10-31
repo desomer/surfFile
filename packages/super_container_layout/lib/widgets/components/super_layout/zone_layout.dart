@@ -1,3 +1,4 @@
+// Algorithme de mise en page des 5 zones cardinales (`north`, `south`, `west`, `east`, `center`).
 part of 'super_layout.dart';
 
 class _ZoneParentData extends ContainerBoxParentData<RenderBox> {

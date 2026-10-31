@@ -1,3 +1,6 @@
+/// En-tête standard déplaçable des boîtes de dialogue d'édition ([EditorDialogHeader]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 /// Compact dialog title; renaming never changes a component's technical ID.

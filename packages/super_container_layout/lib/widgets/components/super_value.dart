@@ -1,3 +1,9 @@
+/// Composant d'affichage ou de saisie de valeur ([SuperValue] : texte, case à cocher, interrupteur).
+///
+/// Se lie bidirectionnellement aux repositories JSON via [JsonTextBinding] et [JsonListScope],
+/// et applique les surcharges d'états ([ValueConfigStates]).
+library;
+
 import 'dart:io';
 import 'dart:async';
 

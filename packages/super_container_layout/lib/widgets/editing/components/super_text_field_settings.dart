@@ -1,3 +1,6 @@
+/// Panneau de configuration d'un champ texte [SuperTextField] ([SuperTextFieldConfig]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_text_field_config.dart';
@@ -21,6 +24,7 @@ class SuperTextFieldSettings extends StatefulWidget {
   State<SuperTextFieldSettings> createState() => SuperTextFieldSettingsState();
 }
 
+/// État interne du dialogue de paramétrage d'un [SuperTextField].
 class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
   late final Map<String, Object?> _values = widget.value.toJson();
   late final Map<String, TextEditingController> _fields = {

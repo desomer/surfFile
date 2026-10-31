@@ -1,3 +1,9 @@
+/// Conteneur stylable de haut niveau ([SuperContainer]) connecté à [AppearanceScope].
+///
+/// Résout son [ContainerStyle], évalue les surcharges d'états ([SurfaceStyleStates])
+/// et les liaisons JSON (`propertyBindings`), puis délègue le rendu à [StyledSurface].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/appearance.dart';

@@ -1,3 +1,6 @@
+// Boîtes de dialogue de paramétrage d'une zone ou d'un [SuperLayout].
+//
+// Configure l'axe, le flux flex ([ZoneFlowConfig]), les barres de défilement et la grille.
 part of 'super_layout.dart';
 
 class _SuperLayoutZoneFlowDelegate extends EditorDimensionDelegate {

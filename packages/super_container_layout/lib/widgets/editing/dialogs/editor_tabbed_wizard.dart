@@ -1,3 +1,6 @@
+/// Structure générique de boîte de dialogue à onglets pour les éditeurs ([EditorTabbedWizard]).
+library;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 

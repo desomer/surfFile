@@ -1,3 +1,8 @@
+/// Actions et menus d'ajout contextuel rapide (`+`) dans le mode édition.
+///
+/// Ouvre [ComponentAddWizard] pour la zone ou région ciblée et applique l'[InsertionPlan].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../super_app.dart';

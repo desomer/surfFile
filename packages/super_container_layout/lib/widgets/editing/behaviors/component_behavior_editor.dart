@@ -1,3 +1,8 @@
+/// Éditeur des comportements interactifs ([ComponentBehaviorWizard]) d'un composant.
+///
+/// Permet d'ajouter ou modifier des déclencheurs ([BehaviorTrigger]) et actions ([GoToPageAction]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
@@ -96,6 +101,7 @@ Future<void> showComponentBehaviorEditor({
   );
 }
 
+/// Interface d'édition des comportements ([ComponentBehavior]) associés à un composant.
 class ComponentBehaviorWizard extends StatefulWidget {
   const ComponentBehaviorWizard({
     required this.ownerContext,

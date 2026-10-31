@@ -1,7 +1,11 @@
+/// Formulaire de configuration initiale ([TabAddForm]) lors de l'ajout d'un [SuperTab].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_tab_config.dart';
 
+/// Formulaire de paramétrage initial d'un [SuperTab] dans l'assistant d'ajout.
 class TabAddForm extends StatelessWidget {
   const TabAddForm({
     required this.draft,

@@ -1,3 +1,10 @@
+/// Primitives de sérialisation et désérialisation JSON compactes (« AI-friendly »).
+///
+/// Fournit [JsonColor], [JsonComponentType], [JsonDimension], [JsonFontWeight],
+/// [JsonSize] et [JsonPlacementEntry] pour convertir entre les raccourcis lisibles
+/// utilisés par l'IA et les structures typées Flutter.
+library;
+
 import 'dart:ui' show Color, FontWeight, Size;
 
 import 'package:flutter/foundation.dart' show listEquals;

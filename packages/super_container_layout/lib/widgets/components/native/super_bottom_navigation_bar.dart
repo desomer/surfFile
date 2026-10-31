@@ -1,3 +1,8 @@
+/// Barre de navigation inférieure éditable ([SuperBottomNavigationBar]).
+///
+/// Convertit les composants [SuperAction] de sa région `destinations` en `BottomNavigationBarItem`.
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

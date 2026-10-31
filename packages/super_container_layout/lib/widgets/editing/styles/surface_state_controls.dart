@@ -1,3 +1,6 @@
+/// Interface d'édition des surcharges d'états d'une surface ([SurfaceStateControls]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/container_style.dart';
@@ -7,6 +10,7 @@ import '../states/editor_state_controls.dart';
 export '../states/editor_state_controls.dart'
     show selectedSurfaceStateKey, hoverSurfaceStateKey;
 
+/// Contrôles d'édition des surcharges d'états ([SurfaceStyleStates]) d'un [ContainerStyle].
 class SurfaceStateControls extends StatelessWidget {
   const SurfaceStateControls({
     required this.style,

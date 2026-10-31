@@ -1,3 +1,6 @@
+/// Point d'entrée public du sous-système `super_layout`.
+library;
+
 import 'package:flutter/foundation.dart'
     show ValueListenable, debugPrint, listEquals, setEquals;
 import 'package:flutter/rendering.dart';

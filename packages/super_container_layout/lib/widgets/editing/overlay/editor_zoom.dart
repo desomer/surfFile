@@ -1,3 +1,6 @@
+/// Contrôleur et barre d'outils de zoom/panoramique du canevas en mode édition ([EditorZoomController]).
+library;
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -658,6 +661,7 @@ class _EditorZoomState extends State<EditorZoom>
   );
 }
 
+/// Contenu des boutons de contrôle du zoom affiché dans la barre d'édition.
 class EditorZoomToolbarContent extends StatelessWidget {
   const EditorZoomToolbarContent({
     required this.scale,
@@ -725,6 +729,7 @@ class EditorZoomToolbarContent extends StatelessWidget {
   }
 }
 
+/// Disposition adaptative de la barre d'outils de zoom en mode édition.
 class ZoomToolbarLayout extends SingleChildLayoutDelegate {
   ZoomToolbarLayout(this.position, {this.available})
     : resolvedPosition = position ?? Offset.zero;
@@ -765,6 +770,7 @@ class ZoomToolbarLayout extends SingleChildLayoutDelegate {
       position != oldDelegate.position || available != oldDelegate.available;
 }
 
+/// Portée `InheritedNotifier` fournissant l'[EditorZoomController] aux widgets enfants.
 class EditorZoomScope extends InheritedWidget {
   const EditorZoomScope({
     required this.scale,
@@ -807,6 +813,7 @@ class EditorZoomScope extends InheritedWidget {
       controller != oldWidget.controller;
 }
 
+/// Contrôleur gérant le facteur d'échelle (zoom) et le décalage (panoramique) du canevas d'édition.
 class EditorZoomController {
   static final List<EditorZoomController> _mounted = [];
   static EditorZoomController? get _active {
@@ -921,6 +928,7 @@ class EditorZoomController {
   }
 }
 
+/// Notifieur suivant l'ouverture et le focus des boîtes de dialogue d'édition flottantes.
 class EditorDialogNotifier extends ValueNotifier<EditorDialogFocus?> {
   EditorDialogNotifier() : super(null);
 
@@ -944,6 +952,7 @@ class EditorDialogNotifier extends ValueNotifier<EditorDialogFocus?> {
   void geometryChanged() => notifyListeners();
 }
 
+/// Portée identifiant la boîte de dialogue d'édition active pour isoler ses événements de pointeur.
 class EditorDialogFocus {
   EditorDialogFocus({required this.target});
   BuildContext? target;

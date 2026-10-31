@@ -1,3 +1,6 @@
+/// Éditeur visuel complet d'un [ContainerStyle] ([ContainerStyleEditor]) et du halo néon ([NeonStyleEditor]).
+library;
+
 import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -18,6 +21,7 @@ import 'style_editor_panel.dart';
 import 'style_extras_controls.dart';
 import '../../surfaces/styled_surface.dart';
 
+/// Panneau d'édition complet de toutes les propriétés visuelles et d'états d'un [ContainerStyle].
 class ContainerStyleEditor extends StatelessWidget {
   const ContainerStyleEditor({
     required this.label,
@@ -862,6 +866,7 @@ class ContainerStyleEditor extends StatelessWidget {
   }
 }
 
+/// Sous-éditeur dédié aux réglages du halo lumineux [NeonStyle].
 class NeonStyleEditor extends StatelessWidget {
   const NeonStyleEditor({
     required this.label,

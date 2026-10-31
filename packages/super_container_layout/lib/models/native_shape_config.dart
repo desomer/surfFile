@@ -1,3 +1,9 @@
+/// Configuration sérialisable ([NativeShapeConfig]) des formes de bordure Material.
+///
+/// Supporte les rectangles arrondis, biseautés, continus (`ContinuousRectangleBorder`),
+/// les stades (`StadiumBorder`) et les cercles pour les barres et composants natifs.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/style_extras.dart' show Quad;

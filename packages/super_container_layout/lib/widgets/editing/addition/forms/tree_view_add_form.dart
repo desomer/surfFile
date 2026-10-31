@@ -1,3 +1,6 @@
+/// Formulaire de configuration initiale ([TreeViewAddForm]) lors de l'ajout d'un [SuperTreeView].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_tree_view_config.dart';
@@ -6,6 +9,7 @@ import 'add_form_common.dart';
 
 double? _parse(String text) => parseAddFormDouble(text);
 
+/// Formulaire de paramétrage initial d'un [SuperTreeView] dans l'assistant d'ajout.
 class TreeViewAddForm extends StatefulWidget {
   const TreeViewAddForm({
     required this.draft,

@@ -1,3 +1,10 @@
+/// Modèle immuable complet du style visuel d'une surface ([ContainerStyle]).
+///
+/// Regroupe le système de design ([DesignSystem]), le remplissage ([ContainerFill]),
+/// les rayons de coins, les bordures par côté, les ombres portées/intérieures,
+/// le halo [NeonStyle], le flou, les motifs, les marges et les états ([SurfaceStyleStates]).
+library;
+
 import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 import 'package:material_ui/material_ui.dart';
 
@@ -16,8 +23,10 @@ part 'surface_style_states.dart';
 
 const Object _keep = Object();
 
+/// Propriétés d'un [ContainerStyle] pouvant être liées dynamiquement à un repository JSON.
 enum ContainerStyleProperty { imageUrl }
 
+/// Configuration visuelle complète et immuable d'une surface (`SuperContainer`, `Card`, `background`).
 @immutable
 class ContainerStyle {
   const ContainerStyle({

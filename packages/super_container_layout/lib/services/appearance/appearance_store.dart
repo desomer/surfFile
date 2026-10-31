@@ -1,3 +1,9 @@
+/// Service de persistance asynchrone ([AppearanceStore]) de l'apparence dans `SharedPreferences`.
+///
+/// Gère la file d'écriture sérialisée sous la clé `appearance.v1`, le contrôleur
+/// persistant ([PersistentAppearanceController]) et la portée [AppearanceServicesScope].
+library;
+
 
 
 import 'package:material_ui/material_ui.dart';
@@ -7,6 +13,7 @@ import '../../theme/appearance.dart';
 import 'appearance_codec.dart';
 
 
+/// Service de lecture et d'écriture persistante du document d'apparence dans `SharedPreferences`.
 class AppearanceStore {
   AppearanceStore({
     this.key = 'super_container_layout.appearance',
@@ -54,6 +61,7 @@ class AppearanceStore {
   }
 }
 
+/// Portée `InheritedWidget` exposant le [AppearanceCodec] et les callbacks de persistance à l'arbre de widgets.
 class AppearanceServicesScope extends InheritedWidget {
   const AppearanceServicesScope({
     required this.codec,
@@ -71,6 +79,7 @@ class AppearanceServicesScope extends InheritedWidget {
       codec != oldWidget.codec;
 }
 
+/// Contrôleur `ValueNotifier` d'apparence synchronisé automatiquement avec un [AppearanceStore].
 class PersistentAppearanceController extends ValueNotifier<Appearance> {
   PersistentAppearanceController(
     this.store,

@@ -1,3 +1,9 @@
+/// Filtrage par catégories de tags ([ComponentTagFilter]) pour les zones et régions d'accueil.
+///
+/// Détermine quels composants du [Registry] peuvent être proposés ou déposés
+/// dans une zone donnée selon ses ensembles `include` et `exclude`.
+library;
+
 /// Code-defined categories accepted by a receiving zone.
 ///
 /// A component restricted by placement tags (for example an application bar,

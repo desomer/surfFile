@@ -1,3 +1,4 @@
+// Résolution et normalisation des listes de slots placés dans un [SuperLayout].
 part of 'super_layout.dart';
 
 extension _SuperLayoutSlots on SuperLayoutState {

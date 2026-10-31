@@ -1,3 +1,6 @@
+/// Gestionnaire et éditeur visuel des repositories JSON ([JsonRepositoryManager]).
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -11,6 +14,7 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
 
+/// Boîte de dialogue de gestion et d'édition des documents du [JsonRepositoryStore].
 class JsonRepositoryManager extends StatefulWidget {
   const JsonRepositoryManager({
     this.store,

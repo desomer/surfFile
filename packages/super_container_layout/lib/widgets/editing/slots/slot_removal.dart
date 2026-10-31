@@ -1,3 +1,6 @@
+/// Utilitaires de suppression propre d'un slot et de nettoyage de ses configurations via [EditorPageGraph].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/registry.dart';

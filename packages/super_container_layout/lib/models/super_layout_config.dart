@@ -1,3 +1,10 @@
+/// Configuration persistée ([SuperLayoutConfig]) d'une disposition modulaire [SuperLayout].
+///
+/// Modélise les 5 zones cardinales (`north`, `south`, `west`, `east`, `center`),
+/// le mode Grille ([GridLayoutConfig]), le flux flex par zone ([ZoneFlowConfig])
+/// et les contraintes de dimension par slot ([SlotSizeConstraints]).
+library;
+
 import 'dart:ui';
 
 import 'package:flutter/painting.dart' show Axis, EdgeInsets;
@@ -73,10 +80,13 @@ enum CornerMerge {
   column,
 }
 
+/// Unité de mesure d'une dimension de slot (pixels ou pourcentage).
 enum SlotSizeUnit { pixels, percent }
 
+/// Référentiel utilisé pour calculer une dimension de slot exprimée en pourcentage.
 enum SlotPercentBasis { zone, layout }
 
+/// Dimension typée d'un slot combinant une valeur numérique, une [SlotSizeUnit] et une [SlotPercentBasis].
 class SlotDimension {
   const SlotDimension(this.value, this.unit);
 
@@ -107,6 +117,7 @@ class SlotDimension {
   int get hashCode => Object.hash(value, unit);
 }
 
+/// Contraintes de taille, d'ajustement (`fitContent`) et de marges intérieures/extérieures d'un slot.
 class SlotSizeConstraints {
   static const maxPadding = 200.0;
 

@@ -1,3 +1,9 @@
+/// Génération et synchronisation dynamique du routeur `GoRouter` ([EditorPageRouter]) depuis [EditorPageCatalog].
+///
+/// Construit les routes correspondant aux pages configurées dans l'apparence
+/// et maintient la navigation synchronisée lors de l'ajout ou du renommage de pages.
+library;
+
 import 'dart:async';
 import 'dart:convert';
 

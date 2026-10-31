@@ -1,5 +1,11 @@
+// Surcharges conditionnelles d'états ([ActionConfigStates]) pour un [SuperAction].
+//
+// Permet de modifier sélectivement des groupes de propriétés ([ActionStateProperty])
+// au survol (`hover`), à la sélection de ligne (`selected`), sur état automatique
+// ou sur état métier nommé lié à un repository JSON.
 part of 'super_action_config.dart';
 
+/// Groupes de propriétés de [SuperActionConfig] surchargeables par état.
 enum ActionStateProperty {
   content('Type et variante', [
     'kind',
@@ -41,6 +47,7 @@ enum ActionStateProperty {
   final SuperActionProperty? bindingProperty;
 }
 
+/// Surcharge partielle d'un [SuperActionConfig] associée à une liste explicite de [ActionStateProperty].
 @immutable
 class ActionConfigOverride {
   ActionConfigOverride({
@@ -189,6 +196,7 @@ class ActionConfigOverride {
   int get hashCode => Object.hash(config, Object.hashAllUnordered(properties));
 }
 
+/// Collection des surcharges d'états (`named`, `hover`, `selected`, `automatic`) d'un [SuperActionConfig].
 @immutable
 class ActionConfigStates {
   ActionConfigStates({

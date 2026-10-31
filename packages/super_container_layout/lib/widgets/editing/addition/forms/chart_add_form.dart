@@ -1,9 +1,13 @@
+/// Formulaire de configuration initiale ([ChartAddForm]) lors de l'ajout d'un [SuperChart].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_chart_config.dart';
 import '../../components/super_chart_editor.dart';
 import 'add_form_common.dart';
 
+/// Formulaire de paramétrage initial d'un [SuperChart] dans l'assistant d'ajout.
 class ChartAddForm extends StatefulWidget {
   const ChartAddForm({
     required this.draft,

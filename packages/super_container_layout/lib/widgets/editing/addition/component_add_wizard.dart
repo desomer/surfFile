@@ -1,3 +1,8 @@
+/// Assistant guidé d'ajout d'un composant ([ComponentAddWizard]) dans une zone ou région.
+///
+/// Permet de choisir le type de composant filtré par [ComponentTagFilter], le mode ([InsertMode]) et ses réglages.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/component_tag_filter.dart';
@@ -286,6 +291,7 @@ Future<ComponentAddRequest?> showComponentAddWizard({
   }
 }
 
+/// Dialogue d'assistant guidé permettant de choisir, prévisualiser et configurer un composant à insérer.
 class ComponentAddWizard extends StatefulWidget {
   const ComponentAddWizard({
     required this.title,

@@ -1,3 +1,6 @@
+/// Superposition visuelle du mode édition pour un [SuperLayout].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'editor_zoom.dart';

@@ -1,3 +1,10 @@
+/// Page standard ([SuperPage]) assemblant la structure `Scaffold` et le `SuperLayout` principal.
+///
+/// Combine [ScaffoldPageLayout] (`root`), [RegisteredSuperLayout] (`mainLayout`),
+/// la surface d'arrière-plan (`background`) et la barre d'outils flottante
+/// ([AppearanceToolbar]) ainsi que la bannière du mode édition ([StyleEditBanner]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'models/scaffold_page_config.dart';

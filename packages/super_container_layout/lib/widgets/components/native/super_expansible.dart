@@ -1,3 +1,8 @@
+/// Panneau dépliable éditable ([SuperExpansible]) basé sur `Expansible`.
+///
+/// Expose les régions `header` et `body`, avec liaison booléenne JSON optionnelle.
+library;
+
 import 'dart:async' show unawaited;
 
 import 'package:flutter/foundation.dart' show listEquals;

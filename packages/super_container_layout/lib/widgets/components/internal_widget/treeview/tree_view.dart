@@ -1,3 +1,9 @@
+/// Moteur interne d'arbre hiérarchique ([TreeView]) utilisé par [SuperTreeView].
+///
+/// Gère l'aplatissement des nœuds, les indentations ([IndentInfo]), les connecteurs ([TreeConnector])
+/// et le redimensionnement entre les zones `header` et `data`.
+library;
+
 import 'package:material_ui/material_ui.dart';
 //import 'package:super_container_layout/widgets/components/treeview/json_browser.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/widget_overflow.dart';
@@ -10,12 +16,14 @@ double rowHeight = 30 * scale;
 PanYamlTree? currentYamlTree;
 final Map<String, List> copiedMapInfoByName = {};
 
+/// Contrôleur de navigation et d'arborescence pour un arbre hiérarchique.
 class PanYamlTree {
   TextSelection? getTextSelection() {
     return null;
   }
 }
 
+/// Données d'un nœud de l'arbre (identifiant, profondeur, état déplié, parent et enfants).
 class TreeNodeData<T> {
   List<TreeNodeData<T>>? children;
   bool _isExpanded;
@@ -116,28 +124,38 @@ class TreeNodeData<T> {
   }
 }
 
+/// Signature de fonction retournant les données [TreeNodeData] d'une ligne visible.
 typedef GetNode<T> = TreeViewData<T> Function();
+/// Signature de fonction construisant le widget d'une zone (`header` ou `data`) pour un nœud.
 typedef GetWidget<Y> = Widget Function(TreeNodeData<Y> node);
+/// Signature de callback déclenché lors d'un clic sur un nœud de l'arbre.
 typedef OnTap<T> = void Function(
   TreeNodeData<T> node,
   BuildContext ctx,
   String type,
 );
+/// Signature de callback appelé lors de la construction d'une ligne de l'arbre.
 typedef OnBuild<T> = void Function(TreeViewState<T> state, BuildContext ctx);
+/// Signature de prédicat indiquant si un nœud de l'arbre est sélectionné.
 typedef IsSelected<T> = bool Function(
   TreeNodeData<T> node,
   State? current,
   State? oldSelectedState,
 );
 
+/// Signature de prédicat indiquant si la ligne d'un nœud est déjà en cache.
 typedef IsRowCached<T> = int Function(TreeNodeData<T> node);
+/// Signature de callback notifiant le changement de sélection dans l'arbre.
 typedef OnSelectionChanged<T> = void Function(Set<TreeNodeData<T>> selected);
+/// Signature de callback pour l'action de copie d'un nœud.
 typedef OnCopy<T> = void Function(Set<TreeNodeData<T>> nodes);
+/// Signature de callback pour l'action de collage sur un nœud.
 typedef OnPaste<T> = void Function(
   Set<TreeNodeData<T>> clipboard,
   TreeNodeData<T> target,
 );
 
+/// Source de données et callbacks alimentant le widget [TreeView].
 class TreeViewData<T> {
   final List<TreeNodeData<T>> nodes;
   final double headerSize;
@@ -145,6 +163,7 @@ class TreeViewData<T> {
   TreeViewData({required this.nodes, required this.headerSize});
 }
 
+/// Widget interne d'affichage d'un arbre hiérarchique à deux colonnes (`header` et `data`).
 class TreeView<T> extends StatefulWidget {
   const TreeView({
     super.key,
@@ -236,6 +255,7 @@ class TreeView<T> extends StatefulWidget {
 
 // final Set<TreeNodeData> _clipboardNodes = {};
 
+/// État interne de [TreeView] gérant le défilement, l'expansion des nœuds et le redimensionnement du `header`.
 class TreeViewState<T> extends State<TreeView<T>> {
   double headerSize = -1;
   int animateDelay = 200;
@@ -1386,6 +1406,7 @@ class TreeViewState<T> extends State<TreeView<T>> {
   }
 }
 
+/// Informations géométriques d'indentation et de branches parentes pour une ligne d'arbre.
 class IndentInfo {
   final double indent;
   final double start;
@@ -1402,6 +1423,7 @@ class IndentInfo {
   });
 }
 
+/// Widget peignant les lignes de connexion hiérarchiques et le bouton d'expansion d'un nœud.
 class TreeConnector extends StatelessWidget {
   final TreeNodeData node;
   final IndentInfo indentInfo;
@@ -1483,6 +1505,7 @@ class _TreeConnectorPainter extends CustomPainter {
   }
 }
 
+/// Pile d'état interne utilisée lors du parcours en profondeur des nœuds de l'arbre.
 class NodeStack {
   final List<TreeNodeData> stack = [];
 

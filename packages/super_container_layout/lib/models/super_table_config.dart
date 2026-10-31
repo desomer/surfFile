@@ -1,3 +1,10 @@
+/// Configuration persistée ([SuperTableConfig]) d'un tableau multi-colonnes [SuperTable].
+///
+/// Définit les colonnes ([SuperTableColumnConfig]), le nombre de colonnes figées
+/// à gauche, les lignes d'en-tête et de pied, la liaison JSON et les placements
+/// par zone (`cell:<colId>`, `header:<colId>`, `bottom:<colId>`).
+library;
+
 import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart';

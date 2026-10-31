@@ -1,3 +1,8 @@
+/// Masque de fondu progressif ([ScrollEdgeFade]) aux extrémités d'une vue défilante.
+///
+/// Atténue visuellement les bords lorsque le contenu dépasse la zone visible.
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -5,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../theme/default_appearance.dart';
 import '../../theme/typed_appearance_scope.dart';
 
+/// Widget appliquant un dégradé d'opacité aux bords d'un contenu défilant.
 class ScrollEdgeFade extends StatefulWidget {
   const ScrollEdgeFade({
     required this.child,

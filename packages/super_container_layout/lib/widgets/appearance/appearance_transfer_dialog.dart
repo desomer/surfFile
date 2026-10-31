@@ -1,3 +1,9 @@
+/// Boîte de dialogue d'importation et d'exportation JSON de l'apparence ([AppearanceTransferDialog]).
+///
+/// Permet de copier/coller ou d'enregistrer/charger un document JSON
+/// en filtrant les groupes ([TransferGroup] : Styles et Dispositions).
+library;
+
 import 'dart:io';
 
 import 'package:flutter/services.dart';

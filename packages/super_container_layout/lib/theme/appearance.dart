@@ -1,3 +1,10 @@
+/// Contrat de base [Appearance] et portées réactives [AppearanceScope] de l'application.
+///
+/// Regroupe l'état global du thème (mode clair/sombre, couleur d'accent, opacités,
+/// effet de fenêtre) et les dictionnaires plats par ID (`styles`, `components`,
+/// `behaviors`, `pageCatalog`, `repositories`).
+library;
+
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
@@ -418,6 +425,7 @@ class Appearance {
       ContainerStyle.foregroundFor(background);
 }
 
+/// Portée `InheritedNotifier` exposant le `ValueNotifier<Appearance>` courant aux widgets enfants.
 class AppearanceScope extends InheritedNotifier<ValueNotifier<Appearance>> {
   const AppearanceScope({
     required ValueNotifier<Appearance> controller,

@@ -1,8 +1,14 @@
+/// Fil d'Ariane visuel ([BreadCrumbNavigator]) pour la navigation hiérarchique.
+///
+/// Affiche une séquence de nœuds ([BreadNode]) séparés par des chevrons ([TriangleClipper]).
+library;
+
 import 'package:assorted_layout_widgets/assorted_layout_widgets.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 
 
+/// Barre de fil d'Ariane interactive affichant une liste de [BreadNode].
 class BreadCrumbNavigator extends StatefulWidget {
   //static NavigationInfo? currentNavigationInfo;
   static GlobalKey keyBreadcrumb = GlobalKey(debugLabel: 'keyBreadcrumb');
@@ -119,8 +125,10 @@ class _BreadCrumbNavigatorState extends State<BreadCrumbNavigator> {
   }
 }
 
+/// Position sémantique d'un élément dans le fil d'Ariane (début, milieu, fin).
 enum BreadNodeType { widget, domain, link }
 
+/// Élément individuel cliquable du fil d'Ariane [BreadCrumbNavigator].
 class BreadNode extends Route {
   BreadNode({
     super.settings,
@@ -194,6 +202,7 @@ class _BreadButton extends StatelessWidget {
   }
 }
 
+/// `CustomClipper` découpant la forme en chevron des éléments du fil d'Ariane.
 class TriangleClipper extends CustomClipper<Path> {
   final bool twoSideClip;
 

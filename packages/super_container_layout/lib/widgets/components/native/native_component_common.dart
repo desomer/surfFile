@@ -1,3 +1,8 @@
+/// Contrat et utilitaires partagés pour les composants Material natifs ([NativePreferredSizeWidget]).
+///
+/// Fournit la résolution des slots par région et l'adaptation des [SuperAction] en destinations.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../super_action.dart';

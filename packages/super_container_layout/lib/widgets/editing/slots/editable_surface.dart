@@ -1,3 +1,6 @@
+/// Surface interactive en mode édition ([EditableSurface]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
@@ -102,6 +105,7 @@ class EditableSurface extends StatefulWidget {
   EditableSurfaceState createState() => EditableSurfaceState();
 }
 
+/// État interne de [EditableSurface] gérant l'ouverture de l'éditeur de style et les actions contextuelles.
 class EditableSurfaceState extends State<EditableSurface>
     implements JsonExtractableState {
   final _editorKey = GlobalKey<EditorSlotState>();

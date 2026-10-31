@@ -1,3 +1,6 @@
+/// Raccourci clavier et action de réinitialisation des dispositions d'un [SuperLayout].
+library;
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 

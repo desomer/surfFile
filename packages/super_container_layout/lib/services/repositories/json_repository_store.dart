@@ -1,3 +1,9 @@
+/// Magasin réactif multi-documents JSON ([JsonRepositoryStore]).
+///
+/// Gère l'ajout, la mise à jour, la suppression et l'indexation des entrées
+/// [JsonRepositoryEntry] ainsi que leurs [JsonRepositoryBinding] associés.
+library;
+
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
@@ -9,7 +15,9 @@ import '../../models/json_text_binding.dart';
 import '../../theme/appearance.dart';
 import 'json_repository_binding.dart';
 
+/// Entrée immuable décrivant un repository JSON enregistré (identifiant, nom et contenu JSON).
 typedef JsonRepositoryEntry = ({String name, String id});
+/// Couple associant un chemin d'attribut JSON à sa valeur brute ou résolue.
 typedef JsonAttributeValue = ({Object? value, String text});
 
 /// One repository is one named JSON file, without an application envelope.

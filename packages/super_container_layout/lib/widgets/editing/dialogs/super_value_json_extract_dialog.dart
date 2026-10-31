@@ -1,3 +1,6 @@
+/// Assistant d'extraction d'une valeur ou propriété de composant vers un repository JSON.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -31,6 +34,7 @@ import 'editor_dialog.dart';
 import 'editor_dialog_header.dart';
 import 'editor_target_selector.dart';
 
+/// Famille du composant source lors d'une extraction de valeur vers un repository JSON.
 enum ExtractableComponentKind {
   superValue('SuperValue'),
   superAction('SuperAction'),
@@ -186,6 +190,7 @@ class JsonExtractRecurrenceOptions {
   );
 }
 
+/// Option décrivant une propriété extractible vers un attribut JSON.
 class ExtractablePropertyOption {
   const ExtractablePropertyOption({
     required this.id,
@@ -200,6 +205,7 @@ class ExtractablePropertyOption {
   final bool defaultSelected;
 }
 
+/// Cible d'extraction JSON regroupant l'identifiant du composant et ses propriétés extractibles.
 class ExtractableComponentTarget {
   const ExtractableComponentTarget({
     required this.id,
@@ -218,6 +224,7 @@ class ExtractableComponentTarget {
   final void Function(Map<String, JsonTextBinding> bindings) applyBindings;
 }
 
+/// Interface implémentée par les états d'éditeurs capables d'extraire une valeur vers un repository JSON.
 abstract interface class JsonExtractableState {
   String get extractableId;
   ExtractableComponentKind get extractableKind;

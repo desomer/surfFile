@@ -1,3 +1,9 @@
+/// Pont réactif typé ([TypedAppearanceScope]) entre un contrôleur d'application et [AppearanceScope].
+///
+/// Adapte un `ValueNotifier<T extends Appearance>` aux widgets génériques du
+/// package en appliquant automatiquement `codec.prepare` et `codec.validate`.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../services/appearance/appearance_codec.dart';

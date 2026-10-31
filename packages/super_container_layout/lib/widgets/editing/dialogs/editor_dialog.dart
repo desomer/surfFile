@@ -1,3 +1,8 @@
+/// Système d'affichage des fenêtres de dialogue du mode édition (`showEditorDialog`).
+///
+/// Positionne la boîte de dialogue à côté du composant cible sans le masquer.
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;

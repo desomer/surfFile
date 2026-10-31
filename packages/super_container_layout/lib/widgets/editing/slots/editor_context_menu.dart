@@ -1,9 +1,13 @@
+/// Menu contextuel du mode édition ([EditorContextMenu]) et portée [VibeChatScope].
+library;
+
 import 'package:flutter/widgets.dart';
 
 import '../../../models/json_syntax.dart';
 import '../addition/insertion_plan.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 
+/// Type de destination ouverte par le clic principal dans le menu contextuel (style ou paramètres).
 enum EditorMenuDestination { style, configuration }
 
 /// Target scope when launching or filtering the Vibe AI assistant from a
@@ -100,6 +104,7 @@ class VibeChatScope {
       'parentComponentId: $parentComponentId, label: $displayLabel)';
 }
 
+/// Action d'encapsulation ou de désencapsulation proposée dans le menu contextuel d'un slot.
 class EditorSlotWrapAction {
   const EditorSlotWrapAction({
     required this.label,

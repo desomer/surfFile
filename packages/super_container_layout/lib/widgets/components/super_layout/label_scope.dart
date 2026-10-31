@@ -1,3 +1,6 @@
+// Portée de visibilité et d'état de survol des badges/labels en mode édition ([LabelScope]).
+//
+// Coordonne la mise en évidence des badges d'une même zone ou d'une même grille.
 part of 'super_layout.dart';
 
 class _LayoutEditSelection {

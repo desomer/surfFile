@@ -1,3 +1,9 @@
+/// Modèle immuable de pièce jointe ([VibeChatAttachment]) pour le chat Vibe IA.
+///
+/// Encapsule un fichier image ou texte/JSON joint à un prompt dans [VibeChatDialog]
+/// et transmis à [callGemini].
+library;
+
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';

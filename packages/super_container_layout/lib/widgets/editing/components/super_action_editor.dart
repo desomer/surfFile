@@ -1,3 +1,6 @@
+/// Fenêtre d'édition complète d'un composant [SuperAction].
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

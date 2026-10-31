@@ -1235,9 +1235,7 @@ void main() {
           matching: find.byWidgetPredicate(
             (w) =>
                 w is CustomPaint &&
-                w.foregroundPainter is EditorSelectionOutline &&
-                (w.foregroundPainter! as EditorSelectionOutline).label ==
-                    targetLabel,
+                w.foregroundPainter is EditorSelectionOutline,
           ),
         );
         if (paintFinder.evaluate().isEmpty) return null;

@@ -1,3 +1,11 @@
+/// Coquille applicative principale ([SuperApp]) du moteur `super_container_layout`.
+///
+/// Orchestre le routeur `go_router` ([EditorPageRouter]), le magasin de persistance
+/// ([AppearanceStore]), le registre de composants ([Registry]), l'historique undo/redo
+/// ([EditorHistoryController]), les repositories JSON ([JsonRepositoryStore]) et
+/// l'adaptation de thème Material 3 / transparence de fenêtre.
+library;
+
 import 'dart:io';
 
 import 'package:flutter/services.dart';

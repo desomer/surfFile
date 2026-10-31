@@ -1,3 +1,9 @@
+/// Barre d'outils flottante et déplaçable de l'application ([AppearanceToolbar]).
+///
+/// Donne accès au basculement de thème, au mode édition, à l'historique Undo/Redo,
+/// au gestionnaire de pages, aux repositories JSON, à l'import/export et au chat Vibe IA.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../editing/slots/editor_slot.dart';

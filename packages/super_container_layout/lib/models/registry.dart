@@ -1,3 +1,10 @@
+/// Registre central des composants ([Registry]) et contrats de duplication du designer.
+///
+/// Maintient le catalogue des constructeurs de composants (`Registry.bootstrap`),
+/// les `ValueNotifier` de configuration par identifiant d'instance et leur
+/// synchronisation bidirectionnelle avec [Appearance].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'component_config.dart';
@@ -38,6 +45,7 @@ import 'package:super_container_layout/widgets/components/super_layout/slot_impl
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 
+/// Contexte d'instanciation contenant l'identifiant unique `id` du composant à construire.
 class XuiBuildCtx {
   XuiBuildCtx({required this.id});
 
@@ -208,6 +216,7 @@ class ComponentDuplicationContract {
   );
 }
 
+/// Descripteur et constructeur de base d'un type de composant enregistré dans le [Registry].
 class ComponentBuilder {
   ComponentBuilder({
     this.label,
@@ -245,6 +254,7 @@ class ComponentBuilder {
   }
 }
 
+/// Implémentation de [ComponentBuilder] retournant une instance de widget préconstruite.
 class RegisteredComponentImpl extends ComponentBuilder {
   RegisteredComponentImpl({
     required this.widget,
@@ -265,6 +275,7 @@ class RegisteredComponentImpl extends ComponentBuilder {
   }
 }
 
+/// Registre central associant les types de composants et synchronisant leurs `ValueNotifier` par ID avec [Appearance].
 class Registry {
   static const List<String> defaultAvailableFontFamilies = [
     'Segoe UI',
@@ -1099,6 +1110,7 @@ class Registry {
       registry[key]?.getWidget(ctx) ?? const SizedBox();
 }
 
+/// Implémentation de [ComponentBuilder] construisant dynamiquement un widget à partir du [XuiBuildCtx].
 class ComponentBuilderDynamic extends ComponentBuilder {
   final Widget Function(XuiBuildCtx) dynamicBuilder;
 
@@ -1117,6 +1129,7 @@ class ComponentBuilderDynamic extends ComponentBuilder {
   Widget getWidget(XuiBuildCtx ctx) => dynamicBuilder(ctx);
 }
 
+/// Définition d'un composant applicatif enregistré dans le [Registry] pour être inséré comme slot.
 class RegisteredComponent {
   const RegisteredComponent({
     required this.label,

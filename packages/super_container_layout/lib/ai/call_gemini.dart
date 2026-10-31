@@ -1,3 +1,9 @@
+/// Client d'appel au modèle génératif Gemini (`google_generative_ai`) pour l'assistant Vibe IA.
+///
+/// Construit la requête multimodale (prompt texte + pièces jointes [VibeChatAttachment])
+/// à partir de la clé `GEMINI_API_KEY` et journalise les métriques de génération.
+library;
+
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';

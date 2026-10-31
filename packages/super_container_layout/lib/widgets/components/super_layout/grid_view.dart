@@ -1,3 +1,6 @@
+// Rendu et interactions de glisser-déposer d'un [SuperLayout] en mode Grille.
+//
+// Calcule la géométrie des cellules de [GridLayoutConfig] et gère le déplacement des slots.
 part of 'super_layout.dart';
 
 extension _SuperLayoutGrid on SuperLayoutState {
@@ -146,6 +149,9 @@ class _GridSurface extends StatefulWidget {
 class _GridSurfaceState extends State<_GridSurface> {
   final _canvas = GlobalKey();
   final _viewport = GlobalKey();
+
+  /// Keeps each cell's element when the edit wrappers are added or removed.
+  final _cellKeys = <String, GlobalKey>{};
   final _hoveredLabels = <String>{};
   String? _dragId;
   Offset? _startPoint;
@@ -240,6 +246,38 @@ class _GridSurfaceState extends State<_GridSurface> {
     final selected = owner._selectedSlot.value == slot.id;
     final p = widget.config.items[slot.id]!;
     final colors = Theme.of(context).colorScheme;
+    final label = Align(
+      alignment: slot.labelAlignment,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 36, left: 32, right: 32),
+        child: GestureDetector(
+          key: ValueKey('grid-slot-label-${slot.id}'),
+          dragStartBehavior: DragStartBehavior.down,
+          onTap: () => _select(slot.id),
+          onPanStart: owner.widget.editable ? (d) => _start(slot.id, d) : null,
+          onPanUpdate: owner.widget.editable ? (d) => _drag(d, null) : null,
+          onPanEnd: owner.widget.editable ? (_) => _end() : null,
+          onPanCancel: owner.widget.editable ? _end : null,
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hoveredLabels.add(slot.id)),
+            onExit: (_) => setState(() => _hoveredLabels.remove(slot.id)),
+            cursor: owner.widget.editable
+                ? editorDragCursor(dragging: _dragId == slot.id)
+                : SystemMouseCursors.click,
+            child: Tooltip(
+              message: 'Glisser pour déplacer ${slot.label}',
+              child: ComponentDragLabel(
+                draggable: owner.widget.editable,
+                dragging: _dragId == slot.id,
+                highlighted: _hoveredLabels.isNotEmpty || _dragId != null,
+                child: Text(slot.label),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!selected && _dragId != slot.id) return label;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -254,43 +292,7 @@ class _GridSurfaceState extends State<_GridSurface> {
               hideOnTargetHighlight: _dragId != slot.id,
             ),
           ),
-        Positioned.fill(
-          child: Align(
-            alignment: slot.labelAlignment,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 36, left: 32, right: 32),
-              child: GestureDetector(
-                key: ValueKey('grid-slot-label-${slot.id}'),
-                dragStartBehavior: DragStartBehavior.down,
-                onTap: () => _select(slot.id),
-                onPanStart: owner.widget.editable
-                    ? (d) => _start(slot.id, d)
-                    : null,
-                onPanUpdate: owner.widget.editable
-                    ? (d) => _drag(d, null)
-                    : null,
-                onPanEnd: owner.widget.editable ? (_) => _end() : null,
-                onPanCancel: owner.widget.editable ? _end : null,
-                child: MouseRegion(
-                  onEnter: (_) => setState(() => _hoveredLabels.add(slot.id)),
-                  onExit: (_) => setState(() => _hoveredLabels.remove(slot.id)),
-                  cursor: owner.widget.editable
-                      ? editorDragCursor(dragging: _dragId == slot.id)
-                      : SystemMouseCursors.click,
-                  child: Tooltip(
-                    message: 'Glisser pour déplacer ${slot.label}',
-                    child: ComponentDragLabel(
-                      draggable: owner.widget.editable,
-                      dragging: _dragId == slot.id,
-                      highlighted: _hoveredLabels.isNotEmpty || _dragId != null,
-                      child: Text(slot.label),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
+        Positioned.fill(child: label),
         if (selected && owner.widget.editable)
           for (final (name, direction) in editorResizeDirections)
             Positioned.fill(
@@ -322,6 +324,48 @@ class _GridSurfaceState extends State<_GridSurface> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _cell(BuildContext context, SlotImplementation slot, Size layoutSize) {
+    final styleEditMode = StyleEditScope.controllerOf(context)?.value ?? false;
+    final cell = KeyedSubtree(
+      key: _cellKeys.putIfAbsent(slot.id, GlobalKey.new),
+      child: EditorSelectionRegion(
+        selected: widget.editing && widget.owner._selectedSlot.value == slot.id,
+        enabled: styleEditMode,
+        onSelect: () => _select(slot.id),
+        child: SlotStack(
+          slots: [slot],
+          focusKeys: widget.owner._gridSlotSizeKeys,
+          preferredSizes: widget.owner.config.slotPreferredSizes,
+          sizeConstraints: widget.owner.config.slotSizeConstraints,
+          layoutSize: layoutSize,
+        ),
+      ),
+    );
+    // Cells receive tight constraints: outside edit mode no wrapper is needed.
+    if (!styleEditMode) return cell;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      excludeFromSemantics: true,
+      onSecondaryTapUp: widget.owner.widget.editable
+          ? (d) => context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
+              d.globalPosition,
+              actions: EditorSlotAction.of(context),
+              targetContext: context,
+            )
+          : null,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          cell,
+          if (widget.editing)
+            Positioned.fill(
+              child: EditorOverlay(clipKey: _viewport, child: _controls(slot)),
+            ),
+        ],
+      ),
     );
   }
 
@@ -455,66 +499,10 @@ class _GridSurfaceState extends State<_GridSurface> {
                                     slot.id,
                                     GlobalKey.new,
                                   ),
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.translucent,
-                                    excludeFromSemantics: true,
-                                    onSecondaryTapUp:
-                                        widget.owner.widget.editable &&
-                                            (StyleEditScope.controllerOf(
-                                                  context,
-                                                )?.value ??
-                                                false)
-                                        ? (d) => context
-                                              .findAncestorStateOfType<
-                                                EditorSlotState
-                                              >()
-                                              ?.openMenu(
-                                                d.globalPosition,
-                                                actions: EditorSlotAction.of(
-                                                  context,
-                                                ),
-                                                targetContext: context,
-                                              )
-                                        : null,
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      EditorSelectionRegion(
-                                        selected:
-                                            widget.editing &&
-                                            widget.owner._selectedSlot.value ==
-                                                slot.id,
-                                        enabled:
-                                            StyleEditScope.controllerOf(context)
-                                                ?.value ??
-                                            false,
-                                        onSelect: () => _select(slot.id),
-                                        child: SlotStack(
-                                          slots: [slot],
-                                          focusKeys:
-                                              widget.owner._gridSlotSizeKeys,
-                                          preferredSizes: widget
-                                              .owner
-                                              .config
-                                              .slotPreferredSizes,
-                                          sizeConstraints: widget
-                                              .owner
-                                              .config
-                                              .slotSizeConstraints,
-                                          layoutSize: Size(
-                                            width,
-                                            constraints.maxHeight,
-                                          ),
-                                        ),
-                                      ),
-                                      if (widget.editing)
-                                        Positioned.fill(
-                                          child: EditorOverlay(
-                                            clipKey: _viewport,
-                                            child: _controls(slot),
-                                          ),
-                                        ),
-                                    ],
+                                  child: _cell(
+                                    context,
+                                    slot,
+                                    Size(width, constraints.maxHeight),
                                   ),
                                 ),
                               ),
@@ -522,7 +510,6 @@ class _GridSurfaceState extends State<_GridSurface> {
                           ),
                         ),
                       ),
-                    ),
                   ],
                 ),
               ),

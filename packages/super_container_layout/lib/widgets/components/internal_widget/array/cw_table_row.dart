@@ -1,8 +1,14 @@
+/// Widget interne de ligne de tableau ([CwTableRow]) utilisé par [SuperTable].
+///
+/// Coordonne le rendu du [ContainerStyle], du survol et de la sélection sur toute la ligne.
+library;
+
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_layout.dart';
 
+/// Métadonnées d'une ligne de tableau (indice, hauteur, état de sélection et de survol).
 class CwRowInfo {
   final int row;
   final bool isStartCols;
@@ -25,6 +31,7 @@ class CwRowInfo {
   });
 }
 
+/// Widget enveloppant une ligne de [SuperTable] pour appliquer son style et synchroniser son survol.
 class CwTableRow extends StatefulWidget {
   const CwTableRow({super.key, required this.info, required this.child});
   final CwRowInfo info;
@@ -34,6 +41,7 @@ class CwTableRow extends StatefulWidget {
   State<CwTableRow> createState() => CwTableRowState();
 }
 
+/// État de [CwTableRow] gérant la notification de survol et de clic sur la ligne.
 class CwTableRowState extends State<CwTableRow> {
   Widget? newChild;
   Widget? cache;
@@ -281,6 +289,7 @@ class CwTableRowState extends State<CwTableRow> {
   }
 }
 
+/// Portée `InheritedWidget` exposant les informations [CwRowInfo] aux cellules de la ligne.
 class CWInheritedRow extends InheritedWidget {
   const CWInheritedRow({
     super.key,

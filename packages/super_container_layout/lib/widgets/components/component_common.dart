@@ -1,3 +1,8 @@
+/// Fonctions utilitaires partagées entre les composants d'exécution (`SuperValue`, `SuperAction`, etc.).
+///
+/// Gère notamment la résolution et le déclenchement des comportements ([ComponentBehavior]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../super_app.dart';

@@ -1,3 +1,10 @@
+/// Modélisation des comportements interactifs ([ComponentBehavior]) attachés aux composants.
+///
+/// Associe un déclencheur ([BehaviorTrigger], ex. clic) à une action polymorphe
+/// ([BehaviorAction], telle que la navigation [GoToPageAction]), stockée dans
+/// `Appearance.behaviors`.
+library;
+
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 

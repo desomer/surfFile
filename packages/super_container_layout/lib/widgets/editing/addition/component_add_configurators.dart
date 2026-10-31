@@ -1,3 +1,8 @@
+/// Catalogue des configurateurs d'ajout ([ComponentAddConfigurator]) des composants standards.
+///
+/// Raccorde chaque composant de `Registry.bootstrap()` à son formulaire dans [ComponentAddWizard].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';

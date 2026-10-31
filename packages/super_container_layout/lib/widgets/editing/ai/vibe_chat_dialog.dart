@@ -1,3 +1,9 @@
+/// Interface de chat IA (« Vibe ») pour la génération et la modification incrémentale d'écrans ([VibeChatDialog]).
+///
+/// Assemble le guide `SCREEN_JSON_AI_GUIDE.md`, l'export JSON courant, interroge Gemini
+/// via [callGemini] et applique la réponse avec `AppearanceTransfer.applyVibe`.
+library;
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -24,6 +30,7 @@ import '../slots/editor_context_menu.dart';
 export '../../../ai/vibe_chat_attachment.dart';
 export '../slots/editor_context_menu.dart' show VibeChatScope;
 
+/// Panneau et boîte de dialogue de chat avec l'IA Vibe pour créer ou modifier l'interface en langage naturel.
 class VibeChatDialog extends StatefulWidget {
   const VibeChatDialog({
     required this.controller,

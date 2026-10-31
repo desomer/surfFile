@@ -1,3 +1,6 @@
+/// Éditeur visuel d'une forme de bordure Material ([NativeShapeConfig]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/native_shape_config.dart';

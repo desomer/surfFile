@@ -1,3 +1,6 @@
+/// Éditeur visuel de la configuration d'une barre de défilement ([ScrollbarStyleConfig]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/scrollbar_style_config.dart';

@@ -1,7 +1,11 @@
+/// Bouton compact de basculement d'axe (`horizontal` / `vertical`) d'une zone ([ZoneAxisButton]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'layout_selection.dart';
 
+/// Bouton permettant de basculer l'axe (`horizontal` / `vertical`) et d'ouvrir les réglages de flux d'une zone.
 class ZoneAxisButton extends StatelessWidget {
   const ZoneAxisButton({
     required this.action,

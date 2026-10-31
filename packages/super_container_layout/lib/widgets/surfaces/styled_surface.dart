@@ -1,3 +1,9 @@
+/// Rendu visuel bas niveau d'un [ContainerStyle] ([StyledSurface]).
+///
+/// Implémente les systèmes de design (`material`, `neumorphism`, `liquidGlass`),
+/// les remplissages ([ContainerFill]), le flou, les bordures, ombres, motifs et transformations.
+library;
+
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
@@ -95,6 +101,7 @@ class _BoundContainerFillState extends State<BoundContainerFill> {
   }
 }
 
+/// Widget appliquant l'ensemble des effets visuels d'un [ContainerStyle] autour de son enfant.
 class StyledSurface extends StatelessWidget {
   const StyledSurface({
     required this.style,

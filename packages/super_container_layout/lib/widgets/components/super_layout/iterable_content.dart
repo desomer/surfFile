@@ -1,3 +1,8 @@
+/// Composant combinant une surface stylisée ([EditableSurface]) et un [SuperLayout] interne ([IterableContent]).
+///
+/// Sert de conteneur de ligne dans [SuperListView] et propage le survol via [ContentHoverScope].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart';

@@ -1,3 +1,8 @@
+// Surcharges conditionnelles d'états ([SurfaceStyleStates]) pour un [ContainerStyle].
+//
+// Permet de redéfinir par groupes de propriétés l'apparence d'une surface
+// au survol (`hover`), à la sélection (`selected`), sur `contentHover` ou
+// selon un état métier nommé lié à un repository JSON.
 part of 'container_style.dart';
 
 /// Related fields share an override switch to keep uniform/independent values
@@ -30,6 +35,7 @@ enum SurfaceStyleProperty {
   final ContainerStyleProperty? bindingProperty;
 }
 
+/// Surcharge partielle d'un [ContainerStyle] limitant son effet aux groupes de propriétés sélectionnés.
 @immutable
 class SelectedSurfaceStyle {
   SelectedSurfaceStyle({
@@ -137,6 +143,7 @@ class SelectedSurfaceStyle {
   }
 }
 
+/// Configuration des surcharges d'états (`named`, `hover`, `selected`, `automatic`) d'un [ContainerStyle].
 @immutable
 class SurfaceStyleStates {
   SurfaceStyleStates({

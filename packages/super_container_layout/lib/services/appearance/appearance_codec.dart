@@ -1,3 +1,9 @@
+/// Contrat de sérialisation, validation et migration ([AppearanceCodec]) d'un modèle [Appearance].
+///
+/// Permet également de composer des préférences applicatives indépendantes
+/// (`additionalPreferences`) au sein du même document de sauvegarde.
+library;
+
 import 'dart:convert';
 
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;

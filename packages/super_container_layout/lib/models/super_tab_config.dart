@@ -1,3 +1,9 @@
+/// Configuration persistée ([SuperTabConfig]) d'un composant d'onglets [SuperTab].
+///
+/// Supporte le mode statique (vues dédiées par onglet `tab_0`, `tab_1`, ...) et
+/// le mode dynamique lié à un tableau JSON, ainsi que le style de la `TabBar`.
+library;
+
 import 'dart:ui' show Color, Size;
 
 import 'package:flutter/foundation.dart';

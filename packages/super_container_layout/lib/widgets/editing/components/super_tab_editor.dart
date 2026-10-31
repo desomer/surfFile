@@ -1,3 +1,6 @@
+/// Fenêtre d'édition d'un composant d'onglets [SuperTab].
+library;
+
 import 'dart:io';
 import 'dart:math' as math;
 

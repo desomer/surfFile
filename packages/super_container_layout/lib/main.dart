@@ -1,3 +1,9 @@
+/// Point d'entrée de l'application autonome de démonstration de `super_container_layout`.
+///
+/// Charge les variables d'environnement (`flutter_dotenv`), initialise [SuperApp]
+/// avec [DefaultAppearanceCodec] et monte une [SuperPage] d'exemple.
+library;
+
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -40,6 +46,7 @@ Future<void> main() async {
   runApp(const TestApp());
 }
 
+/// Widget racine de l'application de démonstration autonome du package.
 class TestApp extends StatefulWidget {
   const TestApp({super.key});
 

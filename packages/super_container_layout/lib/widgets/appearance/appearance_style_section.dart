@@ -1,3 +1,9 @@
+/// Section réutilisable d'édition des slots de style ([AppearanceStyleSection]).
+///
+/// Affiche la liste des [AppearanceSlot] configurables avec un aperçu en direct
+/// et intègre [ContainerStyleEditor] pour modifier le slot sélectionné.
+library;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/editing/styles/container_style_editor.dart';
 import 'package:super_container_layout/widgets/editing/styles/style_editor_panel.dart';

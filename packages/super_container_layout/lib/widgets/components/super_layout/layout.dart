@@ -1,5 +1,9 @@
+// Widget cœur de disposition modulaire ([SuperLayout]) et gestion de son état.
+//
+// Résout les slots depuis [SuperLayoutConfig] et le [Registry], et délègue à [SuperLayoutView].
 part of 'super_layout.dart';
 
+/// Callback invoqué lorsqu'un nouveau slot est ajouté dans une zone du [SuperLayout].
 typedef SlotAddedCallback = SuperLayoutConfig Function(SlotAddition addition);
 
 /// An editor addition, before its configuration is committed.
@@ -175,6 +179,7 @@ class SuperLayout extends StatefulWidget {
   State<SuperLayout> createState() => SuperLayoutState();
 }
 
+/// État interne d'un [SuperLayout] gérant la sélection, le glisser-déposer et les mises à jour de configuration.
 class SuperLayoutState extends State<SuperLayout> {
   late final ValueNotifier<SuperLayoutConfig> _config = ValueNotifier(
     widget.config,

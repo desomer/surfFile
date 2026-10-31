@@ -1,5 +1,13 @@
+/// Définition des états automatiques ([AutomaticState]) évalués par les surfaces et composants.
+///
+/// Permet de déclencher des surcharges de style ou de configuration sur
+/// `contentHover`, `focused`, `disabled` et `readOnly`, et gère leur encodage
+/// dans les listes de priorité d'états (`order`).
+library;
+
 import 'package:flutter/foundation.dart' show listEquals, mapEquals, setEquals;
 
+/// États automatiques gérés nativement par le moteur d'exécution.
 enum AutomaticState {
   hover('Hover', 'Survol du composant'),
   selected('Sélectionné', 'ListView sélectionné'),

@@ -1,3 +1,10 @@
+/// Configuration persistée ([SuperActionConfig]) d'un composant bouton/action [SuperAction].
+///
+/// Définit le type de contenu ([SuperActionKind]), la variante Material 3 ou
+/// surfacique ([SuperActionVariant]), l'icône, la typographie, le style de
+/// surface, les liaisons JSON (`propertyBindings`) et les surcharges d'états.
+library;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 
@@ -10,6 +17,7 @@ import 'material_icon_catalog.dart';
 
 part 'super_action_states.dart';
 
+/// Disposition du contenu d'un [SuperAction] (texte seul, icône seule ou texte et icône).
 enum SuperActionKind {
   text,
   icon,
@@ -19,6 +27,7 @@ enum SuperActionKind {
   bool get hasIcon => this != SuperActionKind.text;
 }
 
+/// Variante visuelle Material 3 ou surfacique d'un [SuperAction].
 enum SuperActionVariant {
   filled,
   tonal,
@@ -29,8 +38,10 @@ enum SuperActionVariant {
   surface,
 }
 
+/// Position de l'icône par rapport au libellé dans un [SuperAction].
 enum SuperActionIconPosition { leading, trailing }
 
+/// Propriétés d'un [SuperAction] pouvant être liées dynamiquement à un repository JSON.
 enum SuperActionProperty {
   label,
   tooltip,
@@ -65,6 +76,7 @@ abstract final class SuperActionIcons {
   static String labelOf(String name) => MaterialIconCatalog.labelOf(name);
 }
 
+/// Modèle immuable de configuration persistée d'un composant [SuperAction].
 @immutable
 class SuperActionConfig extends ComponentConfig {
   const SuperActionConfig({

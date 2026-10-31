@@ -1,3 +1,6 @@
+/// Contrôles d'édition des propriétés avancées de surface (`style_extras.dart`).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/container_style.dart';

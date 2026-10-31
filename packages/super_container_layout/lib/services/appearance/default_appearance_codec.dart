@@ -1,3 +1,9 @@
+/// Codec JSON de référence ([DefaultAppearanceCodec]) pour le modèle [DefaultAppearance].
+///
+/// Assure l'encodage, le décodage, la validation stricte et la migration
+/// ascendante des documents d'apparence (versions 1 à 3).
+library;
+
 import '../../theme/appearance.dart';
 import '../../theme/default_appearance.dart';
 import 'appearance_codec.dart';

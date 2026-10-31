@@ -1,3 +1,8 @@
+/// Assemblage de la structure `Scaffold` d'une page ([ScaffoldPageLayout]).
+///
+/// Monte les régions `appBar`, `body`, `bottomNavigationBar`, `drawer`, `endDrawer` et `bottomSheet`.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/scaffold_page_config.dart';

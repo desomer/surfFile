@@ -1,3 +1,9 @@
+/// Synchronisation bidirectionnelle ([JsonTextControllerBinding]) entre un `TextEditingController` et un repository JSON.
+///
+/// Écoute un [JsonTextBinding] (résolu via [JsonListScope]) pour mettre à jour
+/// le champ texte et répercute les saisies utilisateur dans le document JSON.
+library;
+
 import 'dart:async';
 import 'dart:io';
 

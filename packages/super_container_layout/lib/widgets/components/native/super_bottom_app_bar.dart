@@ -1,3 +1,8 @@
+/// Barre inférieure Material 3 éditable ([SuperBottomAppBar]).
+///
+/// Organise ses slots dans les 3 régions `left`, `center` et `right`.
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

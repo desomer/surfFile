@@ -1,3 +1,6 @@
+/// Région de détection de sélection et de survol d'un composant en mode édition ([EditorSelectionRegion]).
+library;
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -580,17 +583,24 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
     super.dispose();
   }
 
+  /// Keeps the child's element when the edit wrappers are added or removed.
+  final GlobalKey _childKey = GlobalKey();
+
+  static final Listenable _paintListenable = Listenable.merge([
+    _hoverTarget,
+    EditorOverlayVisibility.openDialogs,
+    EditorSlotState.highlightedTarget,
+    EditorSlotState.canvasHoveredParent,
+  ]);
+
   @override
   Widget build(BuildContext context) {
+    final child = KeyedSubtree(key: _childKey, child: widget.child);
+    if (!widget.enabled) return child;
     final isSliver = SliverSlotScope.isSliver(context);
     if (isSliver) {
       return ListenableBuilder(
-        listenable: Listenable.merge([
-          _hoverTarget,
-          EditorOverlayVisibility.openDialogs,
-          EditorSlotState.highlightedTarget,
-          EditorSlotState.canvasHoveredParent,
-        ]),
+        listenable: _paintListenable,
         builder: (context, child) => SliverPointerRegion(
           onEnter: (_) {
             if (widget.enabled) _hovered.add(this);
@@ -629,7 +639,7 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
               : null,
           child: child,
         ),
-        child: widget.child,
+        child: child,
       );
     }
     return MouseRegion(
@@ -661,12 +671,7 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
         onPointerUp: _pointerUp,
         onPointerCancel: (_) => _down = null,
         child: ListenableBuilder(
-          listenable: Listenable.merge([
-            _hoverTarget,
-            EditorOverlayVisibility.openDialogs,
-            EditorSlotState.highlightedTarget,
-            EditorSlotState.canvasHoveredParent,
-          ]),
+          listenable: _paintListenable,
           builder: (context, child) => CustomPaint(
             foregroundPainter:
                 widget.enabled &&
@@ -681,7 +686,7 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
                 : null,
             child: child,
           ),
-          child: RepaintBoundary(child: widget.child),
+          child: child,
         ),
       ),
     );
@@ -761,6 +766,7 @@ class _EditorOutlineAnimation extends ChangeNotifier {
   }
 }
 
+/// Cadre visuel entourant la zone ou le composant sélectionné/survolé dans [EditorSelectionRegion].
 class EditorSelectionOutline extends CustomPainter {
   EditorSelectionOutline({
     required this.color,

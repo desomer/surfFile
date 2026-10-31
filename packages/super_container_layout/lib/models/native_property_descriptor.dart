@@ -1,3 +1,9 @@
+/// Descripteurs déclaratifs de propriétés ([NativePropertyDescriptor]) des composants natifs.
+///
+/// Pilote la génération automatique des contrôles dans [NativeComponentEditor]
+/// ainsi que la validation des valeurs stockées dans [NativeComponentConfig].
+library;
+
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart' show IconData, Icons;
 

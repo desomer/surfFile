@@ -1,3 +1,6 @@
+/// Composants d'interface partagés entre les formulaires de l'assistant d'ajout.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 /// Parses a decimal number from form input supporting both `.` and `,`.

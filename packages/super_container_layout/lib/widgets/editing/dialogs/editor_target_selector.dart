@@ -1,3 +1,6 @@
+/// Sélecteur de cible hiérarchique dans les boîtes de dialogue d'édition ([EditorTargetSelector]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../overlay/editor_zoom.dart';

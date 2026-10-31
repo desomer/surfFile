@@ -1,3 +1,9 @@
+/// Modèle de remplissage de surface ([ContainerFill]) : couleur unie, dégradé et image de fond.
+///
+/// Supporte les dégradés `linear`, `radial` et `sweep` ([FillType]) ainsi que
+/// les images/SVG (URL, Data URI, Base64) avec ajustement `BoxFit` et opacité.
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -12,8 +18,10 @@ import 'package:material_ui/material_ui.dart';
 import '../models/json_syntax.dart';
 import '../models/json_text_binding.dart';
 
+/// Type de remplissage d'une surface (`solid`, `linear`, `radial` ou `sweep`).
 enum FillType { solid, linear, radial, sweep }
 
+/// Spécification immuable du remplissage de fond (dégradé et/ou image) d'un [ContainerStyle].
 @immutable
 class ContainerFill {
   const ContainerFill({

@@ -1,3 +1,9 @@
+/// Effets visuels d'interaction au clic ([InteractionEffect]) et teintes de survol ([HoverTint]).
+///
+/// Paramètre le retour visuel animé par [InteractionEffectBox] lors du survol
+/// ou de la pression sur un [SuperContainer].
+library;
+
 import 'dart:ui' show Offset;
 
 /// Retour visuel d'un conteneur au clic ; un seul effet à la fois. L'effet au

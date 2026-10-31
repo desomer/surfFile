@@ -1,3 +1,9 @@
+/// Catalogue d'icônes Material 3 ([MaterialIconCatalog]) indexées par identifiant `snake_case`.
+///
+/// Permet la sérialisation JSON des icônes de [SuperAction] et la recherche
+/// par mots-clés dans [MaterialIconPicker].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 /// Catégories d'icônes Material pour le filtrage dans le sélecteur.

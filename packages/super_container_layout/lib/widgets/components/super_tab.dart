@@ -1,3 +1,8 @@
+/// Composant de barre d'onglets et vues associées ([SuperTab]).
+///
+/// Fonctionne en mode statique (zones `tab_0`, `tab_1`, ...) ou dynamique lié à un tableau JSON via [JsonListScope].
+library;
+
 import 'dart:async' show unawaited;
 import 'dart:io';
 

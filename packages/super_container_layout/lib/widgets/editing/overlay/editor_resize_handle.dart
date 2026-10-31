@@ -1,3 +1,6 @@
+/// Poignées interactives de redimensionnement d'un slot en mode édition.
+library;
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 

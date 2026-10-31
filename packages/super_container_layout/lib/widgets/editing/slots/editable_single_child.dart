@@ -1,3 +1,6 @@
+/// Conteneur d'édition pour une région monoenfant ([EditableSingleChild], ex. `Card.child`).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/native_component_config.dart';
@@ -41,6 +44,7 @@ class EditableSingleChild extends StatefulWidget {
   State<EditableSingleChild> createState() => EditableSingleChildState();
 }
 
+/// État interne de [EditableSingleChild] gérant le survol et l'ajout d'enfant en mode édition.
 class EditableSingleChildState extends State<EditableSingleChild> {
   final _editor = GlobalKey<NativeComponentEditorState>();
   final _childKey = GlobalKey();

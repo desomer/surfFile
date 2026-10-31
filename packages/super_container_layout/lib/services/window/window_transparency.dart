@@ -1,9 +1,16 @@
+/// Gestionnaire multi-plateforme de la transparence et des effets de fenêtre ([WindowTransparency]).
+///
+/// Encapsule `flutter_acrylic` pour appliquer les effets natifs (`mica`, `acrylic`,
+/// `aero`, `transparent`, etc.) et l'opacité de fenêtre définis dans [Appearance].
+library;
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_acrylic/flutter_acrylic.dart';
 
+/// Utilitaire statique appliquant l'effet de transparence et l'opacité de fenêtre via `flutter_acrylic`.
 class WindowTransparency {
   static const channel = MethodChannel('super_container_layout/window_transparency');
   static Future<void>? _initialization;

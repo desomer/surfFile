@@ -1,3 +1,6 @@
+/// Adaptateur connectant un [SuperLayout] au [Registry] et à [AppearanceScope] ([RegisteredSuperLayout]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart';

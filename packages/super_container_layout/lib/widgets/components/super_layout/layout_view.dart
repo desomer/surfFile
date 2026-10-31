@@ -1,3 +1,6 @@
+// Vue principale d'un [SuperLayout] assemblant zones cardinales ou grille.
+//
+// Gère l'affichage des 5 zones, les poignées ([ZoneResizeHandle]) et les superpositions d'édition.
 part of 'super_layout.dart';
 
 extension _SuperLayoutView on SuperLayoutState {
@@ -23,9 +26,7 @@ extension _SuperLayoutView on SuperLayoutState {
 
   Widget _buildLayout(BuildContext context) {
     final effectiveId = _resolveEffectiveLayoutId(context);
-    return Listener(
-    behavior: HitTestBehavior.translucent,
-    child: EditorSlot(
+    return EditorSlot(
       id: effectiveId,
       label: _displayLabel,
       editable: widget.editable,
@@ -258,72 +259,74 @@ extension _SuperLayoutView on SuperLayoutState {
                           child: _LabelScope(
                             path: [...parentPath, name, widget.zoneLabel(zone)],
                             child: Offstage(
-                            offstage:
-                                config.collapsedSides.containsKey(zone) ||
-                                switch (zone) {
-                                  SuperLayoutZone.nw =>
-                                    config.collapsedSides.containsKey(
-                                          SuperLayoutZone.north,
-                                        ) ||
-                                        config.collapsedSides.containsKey(
-                                          SuperLayoutZone.west,
-                                        ),
-                                  SuperLayoutZone.ne =>
-                                    config.collapsedSides.containsKey(
-                                          SuperLayoutZone.north,
-                                        ) ||
-                                        config.collapsedSides.containsKey(
-                                          SuperLayoutZone.east,
-                                        ),
-                                  SuperLayoutZone.sw =>
-                                    config.collapsedSides.containsKey(
-                                          SuperLayoutZone.south,
-                                        ) ||
-                                        config.collapsedSides.containsKey(
-                                          SuperLayoutZone.west,
-                                        ),
-                                  SuperLayoutZone.se =>
-                                    config.collapsedSides.containsKey(
-                                          SuperLayoutZone.south,
-                                        ) ||
-                                        config.collapsedSides.containsKey(
-                                          SuperLayoutZone.east,
-                                        ),
-                                  _ => false,
-                                },
-                            child: EditorSelectionRegion(
-                              enabled: styleEditMode,
-                              isZone: true,
-                              selected:
-                                  editMode &&
-                                  selected == zone &&
-                                  selectedSlot == null,
-                              onSelect: () => _selectZone(zone),
-                              child: EditorSlot(
-                                key: _zoneSlotKeys.putIfAbsent(
-                                  zone,
-                                  GlobalKey<EditorSlotState>.new,
+                              offstage:
+                                  config.collapsedSides.containsKey(zone) ||
+                                  switch (zone) {
+                                    SuperLayoutZone.nw =>
+                                      config.collapsedSides.containsKey(
+                                            SuperLayoutZone.north,
+                                          ) ||
+                                          config.collapsedSides.containsKey(
+                                            SuperLayoutZone.west,
+                                          ),
+                                    SuperLayoutZone.ne =>
+                                      config.collapsedSides.containsKey(
+                                            SuperLayoutZone.north,
+                                          ) ||
+                                          config.collapsedSides.containsKey(
+                                            SuperLayoutZone.east,
+                                          ),
+                                    SuperLayoutZone.sw =>
+                                      config.collapsedSides.containsKey(
+                                            SuperLayoutZone.south,
+                                          ) ||
+                                          config.collapsedSides.containsKey(
+                                            SuperLayoutZone.west,
+                                          ),
+                                    SuperLayoutZone.se =>
+                                      config.collapsedSides.containsKey(
+                                            SuperLayoutZone.south,
+                                          ) ||
+                                          config.collapsedSides.containsKey(
+                                            SuperLayoutZone.east,
+                                          ),
+                                    _ => false,
+                                  },
+                              child: EditorSelectionRegion(
+                                enabled: styleEditMode,
+                                isZone: true,
+                                selected:
+                                    editMode &&
+                                    selected == zone &&
+                                    selectedSlot == null,
+                                onSelect: () => _selectZone(zone),
+                                child: EditorSlot(
+                                  key: _zoneSlotKeys.putIfAbsent(
+                                    zone,
+                                    GlobalKey<EditorSlotState>.new,
+                                  ),
+                                  id: effectiveId,
+                                  zoneId: config.contentZone(zone).name,
+                                  label: widget.zoneLabel(zone),
+                                  menuTitle: 'zone ${widget.zoneLabel(zone)}',
+                                  menuSubtitle: () => _displayLabel,
+                                  menuIcon: EditorSlot.zoneMenuIcon,
+                                  editable: widget.editable,
+                                  onEdit: () => _openZoneFlowEditor(zone),
+                                  onAdd: () => _addSlot(zone),
+                                  axisAction: () => _axisAction(zone),
+                                  wrapChildrenActions: _wrapActionsForZone(
+                                    zone,
+                                  ),
+                                  onContextMenu: (_) => _selectZone(zone),
+                                  child: _contentOf(
+                                    config,
+                                    zone,
+                                    autoSides,
+                                    editMode,
+                                    layoutSize,
+                                  ),
                                 ),
-                                id: effectiveId,
-                                zoneId: config.contentZone(zone).name,
-                                label: widget.zoneLabel(zone),
-                                menuTitle: 'zone ${widget.zoneLabel(zone)}',
-                                menuSubtitle: () => _displayLabel,
-                                menuIcon: EditorSlot.zoneMenuIcon,
-                                editable: widget.editable,
-                                onEdit: () => _openZoneFlowEditor(zone),
-                                onAdd: () => _addSlot(zone),
-                                axisAction: () => _axisAction(zone),
-                                wrapChildrenActions: _wrapActionsForZone(zone),
-                                onContextMenu: (_) => _selectZone(zone),
-                                child: _contentOf(
-                                  config,
-                                  zone,
-                                  autoSides,
-                                  editMode,
-                                  layoutSize,
-                                ),
-                              ),
                               ),
                             ),
                           ),
@@ -483,7 +486,6 @@ extension _SuperLayoutView on SuperLayoutState {
           );
         },
       ),
-    ),
-  );
+    );
   }
 }

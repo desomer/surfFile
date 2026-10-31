@@ -1,9 +1,13 @@
+/// Contrôleur, portée et raccourcis clavier de l'historique Undo / Redo ([EditorHistoryController]).
+library;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
 
+/// Contrôleur gérant la pile d'historique Undo/Redo des modifications d'[Appearance] et des repositories JSON.
 class EditorHistoryController extends ChangeNotifier {
   EditorHistoryController({
     required ValueNotifier<Appearance> appearance,
@@ -131,6 +135,7 @@ class EditorHistoryController extends ChangeNotifier {
   }
 }
 
+/// Portée `InheritedNotifier` exposant l'[EditorHistoryController] à l'arbre de widgets.
 class EditorHistoryScope extends InheritedNotifier<EditorHistoryController> {
   const EditorHistoryScope({
     required EditorHistoryController controller,
@@ -142,6 +147,7 @@ class EditorHistoryScope extends InheritedNotifier<EditorHistoryController> {
       context.getInheritedWidgetOfExactType<EditorHistoryScope>()?.notifier;
 }
 
+/// Widget interceptant les raccourcis clavier standards (`Ctrl+Z` / `Ctrl+Y`) pour déclencher Undo/Redo.
 class EditorHistoryShortcut extends StatefulWidget {
   const EditorHistoryShortcut({
     required this.editMode,
@@ -197,6 +203,7 @@ class _EditorHistoryShortcutState extends State<EditorHistoryShortcut> {
   Widget build(BuildContext context) => widget.child;
 }
 
+/// Curseur visuel permettant de parcourir chronologiquement les états de l'[EditorHistoryController].
 class EditorHistorySlider extends StatelessWidget {
   const EditorHistorySlider({
     required this.value,

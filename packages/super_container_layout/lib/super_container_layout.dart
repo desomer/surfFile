@@ -1,3 +1,11 @@
+/// Bibliothèque publique principale du package `super_container_layout`.
+///
+/// Réexporte l'ensemble des modèles ([ComponentConfig], [Registry], [JsonTextBinding]),
+/// thèmes ([Appearance], [ContainerStyle], [SurfaceStyleStates]), services
+/// ([AppearanceStore], [JsonRepositoryStore], [EditorPageGraph]), surfaces
+/// ([SuperContainer], [StyledSurface]), composants et éditeurs visuels/IA.
+library;
+
 export 'ai/vibe_chat_attachment.dart';
 export 'widgets/editing/ai/vibe_chat_dialog.dart';
 export 'models/registry.dart';

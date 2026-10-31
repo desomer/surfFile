@@ -1,3 +1,10 @@
+/// Configuration persistée ([NativeComponentConfig]) des composants Material natifs.
+///
+/// Stocke l'activation des régions, les placements par région, les contraintes
+/// de slots et les propriétés natives (`AppBar`, `BottomAppBar`, `BottomNavigationBar`,
+/// `NavigationRail`, `Card`, `Expansible`, `MenuAnchor`).
+library;
+
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show listEquals;

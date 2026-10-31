@@ -1,7 +1,13 @@
+/// Widget de rendu du halo lumineux néon externe ([NeonSurface]).
+///
+/// Peint une lueur diffuse autour d'une surface selon les paramètres de [NeonStyle].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/neon_style.dart';
 
+/// Conteneur peignant un halo lumineux néon autour de son widget enfant selon [NeonStyle].
 class NeonSurface extends StatelessWidget {
   const NeonSurface({
     required this.style,

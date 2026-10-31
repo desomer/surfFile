@@ -1,3 +1,6 @@
+/// Bannière supérieure du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA.
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;

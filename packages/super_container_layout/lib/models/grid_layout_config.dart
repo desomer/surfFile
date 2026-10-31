@@ -1,6 +1,13 @@
+/// Configuration du mode Grille ([GridLayoutConfig]) d'un [SuperLayout].
+///
+/// Définit le nombre de colonnes/lignes, l'espacement et le placement
+/// ([GridSlotPlacement] : colonne, ligne, spans) de chaque slot dans la grille.
+library;
+
 import 'dart:math' as math;
 import 'dart:ui';
 
+/// Mode de positionnement des slots dans un [SuperLayout] (zones cardinales ou grille).
 enum SuperLayoutPositioning { zones, grid }
 
 /// Integer cell coordinates, independent of the viewport's pixel size.
@@ -57,6 +64,7 @@ class GridSlotPosition {
   int get hashCode => Object.hash(x, y, width, height);
 }
 
+/// Paramètres de la grille (nombre de lignes/colonnes, espacements et placements des slots).
 class GridLayoutConfig {
   const GridLayoutConfig({
     this.columns = 12,

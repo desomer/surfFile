@@ -1,3 +1,6 @@
+/// Formulaire de configuration initiale ([TableAddForm]) lors de l'ajout d'un [SuperTable].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_table_config.dart';
@@ -6,6 +9,7 @@ import 'add_form_common.dart';
 
 double? _parse(String text) => parseAddFormDouble(text);
 
+/// Formulaire de paramétrage initial d'un [SuperTable] dans l'assistant d'ajout.
 class TableAddForm extends StatefulWidget {
   const TableAddForm({
     required this.draft,

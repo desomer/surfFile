@@ -1,3 +1,9 @@
+/// Graphe de dépendances des composants et styles ([EditorPageGraph]) d'une page.
+///
+/// Parcourt récursivement les placements pour collecter les identifiants possédés,
+/// dupliquer profondément un sous-graphe ou supprimer un composant sans laisser d'orphelins.
+library;
+
 import 'package:shortid/shortid.dart';
 
 import '../../models/component_config.dart';

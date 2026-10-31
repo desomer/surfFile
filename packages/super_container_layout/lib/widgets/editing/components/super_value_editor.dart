@@ -1,3 +1,6 @@
+/// Fenêtre d'édition complète d'un composant [SuperValue].
+library;
+
 import 'dart:math' as math;
 import 'dart:io';
 

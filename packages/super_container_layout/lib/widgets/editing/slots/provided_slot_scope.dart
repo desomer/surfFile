@@ -1,3 +1,6 @@
+/// Portée `InheritedWidget` ([ProvidedSlotScope]) transmettant les métadonnées du slot parent.
+library;
+
 import 'package:flutter/widgets.dart';
 
 import '../../components/super_layout/slot_implementation.dart';

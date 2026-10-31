@@ -1,3 +1,6 @@
+/// Wrapper d'édition universel ([EditorSlot]) autour d'un slot de composant.
+library;
+
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -144,6 +147,7 @@ class EditorSlot extends StatefulWidget {
   EditorSlotState createState() => EditorSlotState();
 }
 
+/// État interne de [EditorSlot] coordonnant le glisser-déposer, le menu contextuel et le redimensionnement.
 class EditorSlotState extends State<EditorSlot> {
   String? _localLabel;
 
@@ -353,7 +357,7 @@ class EditorSlotState extends State<EditorSlot> {
   }
 
   /// Records a pointer hover position on the canvas viewport so synthetic
-   /// enter/exit events during zoom animations can be distinguished from real
+  /// enter/exit events during zoom animations can be distinguished from real
   /// pointer movements.
   static void recordViewportPointerHover(Offset position) {
     final moved = _recordRealPointerMove(position);
@@ -2049,6 +2053,20 @@ class EditorSlotState extends State<EditorSlot> {
     }
   }
 
+  /// Keeps the child's element when the edit wrappers are added or removed.
+  final GlobalKey _childKey = GlobalKey();
+
+  static final Listenable _paintListenable = Listenable.merge([
+    _hoveredTarget,
+    EditorOverlayVisibility.openDialogs,
+    EditorSelectionRegion.hoverTarget,
+    _highlightedTarget,
+    _canvasHoveredParent,
+    LayoutSelection.highlightedSlotId,
+    LayoutSelection.focus,
+    LayoutSelection.path,
+  ]);
+
   @override
   Widget build(BuildContext context) {
     final editMode = StyleEditScope.controllerOf(context);
@@ -2061,10 +2079,18 @@ class EditorSlotState extends State<EditorSlot> {
         .where((b) => b.enabled && b.trigger == BehaviorTrigger.click)
         .toList();
     final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
+    final interactive = canEdit || hasClickBehaviors;
 
     if (isSliver) {
-      final Widget child =
-          widget.child ?? const SliverToBoxAdapter(child: SizedBox.shrink());
+      final Widget child = KeyedSubtree(
+        key: _childKey,
+        child:
+            widget.child ?? const SliverToBoxAdapter(child: SizedBox.shrink()),
+      );
+      if (!interactive) {
+        if (_hovered.contains(this)) _removeHoveredSafely();
+        return child;
+      }
       if (canEdit && editMode != null) {
         _cachedDepth = _depth;
       } else if (_hovered.contains(this)) {
@@ -2072,204 +2098,193 @@ class EditorSlotState extends State<EditorSlot> {
       }
       final accentColor = AppearanceScope.of(context).accent
           .withValues(alpha: .85);
-      return ValueListenableBuilder<EditorSlotState?>(
-        valueListenable: _hoveredTarget,
-        builder: (context, target, child) => ListenableBuilder(
-          listenable: Listenable.merge([
-            EditorOverlayVisibility.openDialogs,
-            EditorSelectionRegion.hoverTarget,
-            _highlightedTarget,
-            _canvasHoveredParent,
-            LayoutSelection.highlightedSlotId,
-            LayoutSelection.focus,
-            LayoutSelection.path,
-          ]),
-          builder: (context, child) {
-            final isEmphasizedHighlight =
-                identical(_menuHoveredTarget, this) ||
-                identical(_canvasHoveredParent.value, this);
-            final hasExternalHighlight =
-                _highlightedTarget.value != null ||
-                LayoutSelection.highlightedSlotId.value != null;
-            final isSelectedLeaf =
-                canEdit &&
-                editMode != null &&
-                EditorOverlayVisibility.openDialogs.value == 0 &&
-                !hasExternalHighlight &&
-                LayoutSelection.isLeafFocus(this.context);
-            final showOutline =
-                canEdit &&
-                editMode != null &&
-                (EditorOverlayVisibility.openDialogs.value == 0 ||
-                    isEmphasizedHighlight) &&
-                identical(target, this) &&
-                (EditorSelectionRegion.hoverTarget.value == null ||
-                    isEmphasizedHighlight);
-            return SliverPointerRegion(
-              cursor: hasClickBehaviors
-                  ? SystemMouseCursors.click
-                  : MouseCursor.defer,
-              onEnter: canEdit && editMode != null
-                  ? (event) => _setHovered(true, pointerPosition: event.position)
-                  : null,
-              onHover: canEdit && editMode != null
-                  ? (event) => _setHovered(true, pointerPosition: event.position)
-                  : null,
-              onExit: canEdit && editMode != null
-                  ? (event) =>
-                        _setHovered(false, pointerPosition: event.position)
-                  : null,
-              onPointerDown: (event) {
-                _sliverDown = event;
-                _sliverButtons = event.buttons;
-                _sliverMoved = false;
-              },
-              onPointerMove: (event) {
-                final down = _sliverDown;
-                if (down != null &&
-                    down.pointer == event.pointer &&
-                    (event.position - down.position).distance > kTouchSlop) {
-                  _sliverMoved = true;
+      return ListenableBuilder(
+        listenable: _paintListenable,
+        builder: (context, child) {
+          final target = _hoveredTarget.value;
+          final isEmphasizedHighlight =
+              identical(_menuHoveredTarget, this) ||
+              identical(_canvasHoveredParent.value, this);
+          final hasExternalHighlight =
+              _highlightedTarget.value != null ||
+              LayoutSelection.highlightedSlotId.value != null;
+          final isSelectedLeaf =
+              canEdit &&
+              editMode != null &&
+              EditorOverlayVisibility.openDialogs.value == 0 &&
+              !hasExternalHighlight &&
+              LayoutSelection.isLeafFocus(this.context);
+          final showOutline =
+              canEdit &&
+              editMode != null &&
+              (EditorOverlayVisibility.openDialogs.value == 0 ||
+                  isEmphasizedHighlight) &&
+              identical(target, this) &&
+              (EditorSelectionRegion.hoverTarget.value == null ||
+                  isEmphasizedHighlight);
+          return SliverPointerRegion(
+            cursor: hasClickBehaviors
+                ? SystemMouseCursors.click
+                : MouseCursor.defer,
+            onEnter: canEdit && editMode != null
+                ? (event) => _setHovered(true, pointerPosition: event.position)
+                : null,
+            onHover: canEdit && editMode != null
+                ? (event) => _setHovered(true, pointerPosition: event.position)
+                : null,
+            onExit: canEdit && editMode != null
+                ? (event) => _setHovered(false, pointerPosition: event.position)
+                : null,
+            onPointerDown: (event) {
+              _sliverDown = event;
+              _sliverButtons = event.buttons;
+              _sliverMoved = false;
+            },
+            onPointerMove: (event) {
+              final down = _sliverDown;
+              if (down != null &&
+                  down.pointer == event.pointer &&
+                  (event.position - down.position).distance > kTouchSlop) {
+                _sliverMoved = true;
+              }
+            },
+            onPointerUp: (event) async {
+              final down = _sliverDown;
+              final buttons = _sliverButtons;
+              final moved = _sliverMoved;
+              _sliverDown = null;
+              _sliverButtons = 0;
+              _sliverMoved = false;
+              if (down == null ||
+                  down.pointer != event.pointer ||
+                  moved ||
+                  (event.position - down.position).distance > kTouchSlop) {
+                return;
+              }
+              if (buttons == kSecondaryMouseButton && canEdit) {
+                await openMenu(event.position);
+              } else if (buttons == kPrimaryButton && hasClickBehaviors) {
+                for (final b in clickBehaviors) {
+                  await b.execute(context);
                 }
-              },
-              onPointerUp: (event) async {
-                final down = _sliverDown;
-                final buttons = _sliverButtons;
-                final moved = _sliverMoved;
-                _sliverDown = null;
-                _sliverButtons = 0;
-                _sliverMoved = false;
-                if (down == null ||
-                    down.pointer != event.pointer ||
-                    moved ||
-                    (event.position - down.position).distance > kTouchSlop) {
-                  return;
-                }
-                if (buttons == kSecondaryMouseButton && canEdit) {
-                  await openMenu(event.position);
-                } else if (buttons == kPrimaryButton && hasClickBehaviors) {
-                  for (final b in clickBehaviors) {
-                    await b.execute(context);
-                  }
-                }
-              },
-              onPointerCancel: (_) {
-                _sliverDown = null;
-                _sliverButtons = 0;
-                _sliverMoved = false;
-              },
-              foregroundPainter: showOutline
-                  ? EditorSelectionOutline(
-                      color: accentColor,
-                      radius: widget.outlineRadius,
-                      emphasized: isEmphasizedHighlight,
-                      label: titleLabel,
-                      zoomScale:
-                          context
-                              .dependOnInheritedWidgetOfExactType<
-                                EditorZoomScope
-                              >()
-                              ?.scale ??
-                          1.0,
-                    )
-                  : isSelectedLeaf
-                  ? EditorSelectionBorderPainter(
-                      color: AppearanceScope.of(context).accent,
-                      dashed: false,
-                      strokeWidth: 2.0,
-                      fillOpacity: 0.10,
-                      animated:
-                          !(MediaQuery.maybeDisableAnimationsOf(context) ??
-                              false),
-                    )
-                  : null,
-              child: child,
-            );
-          },
-          child: child,
-        ),
+              }
+            },
+            onPointerCancel: (_) {
+              _sliverDown = null;
+              _sliverButtons = 0;
+              _sliverMoved = false;
+            },
+            foregroundPainter: showOutline
+                ? EditorSelectionOutline(
+                    color: accentColor,
+                    radius: widget.outlineRadius,
+                    emphasized: isEmphasizedHighlight,
+                    label: titleLabel,
+                    zoomScale:
+                        context
+                            .dependOnInheritedWidgetOfExactType<
+                              EditorZoomScope
+                            >()
+                            ?.scale ??
+                        1.0,
+                  )
+                : isSelectedLeaf
+                ? EditorSelectionBorderPainter(
+                    color: AppearanceScope.of(context).accent,
+                    dashed: false,
+                    strokeWidth: 2.0,
+                    fillOpacity: 0.10,
+                    animated:
+                        !(MediaQuery.maybeDisableAnimationsOf(context) ??
+                            false),
+                  )
+                : null,
+            child: child,
+          );
+        },
         child: child,
       );
     }
 
-    Widget content = widget.child ?? const SizedBox.expand();
-    if (canEdit && editMode != null) {
+    Widget content = KeyedSubtree(
+      key: _childKey,
+      child: widget.child ?? const SizedBox.expand(),
+    );
+    if (!interactive) {
+      if (_hovered.contains(this)) _removeHoveredSafely();
+      return content;
+    }
+    final trackHover = canEdit && editMode != null;
+    if (trackHover) {
       _cachedDepth = _depth;
       final accentColor = AppearanceScope.of(context).accent
           .withValues(alpha: .85);
-      content = MouseRegion(
-        onEnter: (event) => _setHovered(true, pointerPosition: event.position),
-        onHover: (event) => _setHovered(true, pointerPosition: event.position),
-        onExit: (event) => _setHovered(false, pointerPosition: event.position),
-        child: ValueListenableBuilder<EditorSlotState?>(
-          valueListenable: _hoveredTarget,
-          builder: (context, target, child) => ListenableBuilder(
-            listenable: Listenable.merge([
-              EditorOverlayVisibility.openDialogs,
-              EditorSelectionRegion.hoverTarget,
-              _highlightedTarget,
-              _canvasHoveredParent,
-              LayoutSelection.highlightedSlotId,
-              LayoutSelection.focus,
-              LayoutSelection.path,
-            ]),
-            builder: (context, child) {
-              final isEmphasizedHighlight =
-                  identical(_menuHoveredTarget, this) ||
-                  identical(_canvasHoveredParent.value, this);
-              final hasExternalHighlight =
-                  _highlightedTarget.value != null ||
-                  LayoutSelection.highlightedSlotId.value != null;
-              final isSelectedLeaf =
-                  EditorOverlayVisibility.openDialogs.value == 0 &&
-                  !hasExternalHighlight &&
-                  LayoutSelection.isLeafFocus(this.context);
-              final showOutline =
-                  (EditorOverlayVisibility.openDialogs.value == 0 ||
-                      isEmphasizedHighlight) &&
-                  identical(target, this) &&
-                  (EditorSelectionRegion.hoverTarget.value == null ||
-                      isEmphasizedHighlight);
-              return CustomPaint(
-                foregroundPainter: showOutline
-                    ? EditorSelectionOutline(
-                        color: accentColor,
-                        radius: widget.outlineRadius,
-                        emphasized: isEmphasizedHighlight,
-                        label: titleLabel,
-                        zoomScale:
-                            context
-                                .dependOnInheritedWidgetOfExactType<
-                                  EditorZoomScope
-                                >()
-                                ?.scale ??
-                            1.0,
-                      )
-                    : isSelectedLeaf
-                    ? EditorSelectionBorderPainter(
-                        color: AppearanceScope.of(context).accent,
-                        dashed: false,
-                        strokeWidth: 2.0,
-                        fillOpacity: 0.10,
-                        animated:
-                            !(MediaQuery.maybeDisableAnimationsOf(context) ??
-                                false),
-                      )
-                    : null,
-                child: child,
-              );
-            },
+      content = ListenableBuilder(
+        listenable: _paintListenable,
+        builder: (context, child) {
+          final target = _hoveredTarget.value;
+          final isEmphasizedHighlight =
+              identical(_menuHoveredTarget, this) ||
+              identical(_canvasHoveredParent.value, this);
+          final hasExternalHighlight =
+              _highlightedTarget.value != null ||
+              LayoutSelection.highlightedSlotId.value != null;
+          final isSelectedLeaf =
+              EditorOverlayVisibility.openDialogs.value == 0 &&
+              !hasExternalHighlight &&
+              LayoutSelection.isLeafFocus(this.context);
+          final showOutline =
+              (EditorOverlayVisibility.openDialogs.value == 0 ||
+                  isEmphasizedHighlight) &&
+              identical(target, this) &&
+              (EditorSelectionRegion.hoverTarget.value == null ||
+                  isEmphasizedHighlight);
+          return CustomPaint(
+            foregroundPainter: showOutline
+                ? EditorSelectionOutline(
+                    color: accentColor,
+                    radius: widget.outlineRadius,
+                    emphasized: isEmphasizedHighlight,
+                    label: titleLabel,
+                    zoomScale:
+                        context
+                            .dependOnInheritedWidgetOfExactType<
+                              EditorZoomScope
+                            >()
+                            ?.scale ??
+                        1.0,
+                  )
+                : isSelectedLeaf
+                ? EditorSelectionBorderPainter(
+                    color: AppearanceScope.of(context).accent,
+                    dashed: false,
+                    strokeWidth: 2.0,
+                    fillOpacity: 0.10,
+                    animated:
+                        !(MediaQuery.maybeDisableAnimationsOf(context) ??
+                            false),
+                  )
+                : null,
             child: child,
-          ),
-          child: RepaintBoundary(child: content),
-        ),
+          );
+        },
+        child: RepaintBoundary(child: content),
       );
     } else if (_hovered.contains(this)) {
       _removeHoveredSafely();
     }
 
-    content = MouseRegion(
+    return MouseRegion(
       cursor: hasClickBehaviors ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: trackHover
+          ? (event) => _setHovered(true, pointerPosition: event.position)
+          : null,
+      onHover: trackHover
+          ? (event) => _setHovered(true, pointerPosition: event.position)
+          : null,
+      onExit: trackHover
+          ? (event) => _setHovered(false, pointerPosition: event.position)
+          : null,
       child: GestureDetector(
         excludeFromSemantics: true,
         behavior: HitTestBehavior.translucent,
@@ -2286,7 +2301,6 @@ class EditorSlotState extends State<EditorSlot> {
         child: content,
       ),
     );
-    return content;
   }
 }
 

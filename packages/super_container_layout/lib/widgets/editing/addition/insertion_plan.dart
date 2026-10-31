@@ -1,3 +1,8 @@
+/// Planification et exécution atomique de l'insertion d'un composant ([InsertionPlan]).
+///
+/// Calcule les identifiants uniques, crée les configurations initiales et met à jour le parent.
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/rendering.dart' show RenderSliver;
@@ -32,6 +37,7 @@ enum InsertDirection {
   };
 }
 
+/// Mode d'insertion d'un composant dans la cible (ajout direct ou encapsulation dans un nouveau layout).
 enum InsertMode {
   /// The new component goes next to the target, which keeps its size.
   beside,

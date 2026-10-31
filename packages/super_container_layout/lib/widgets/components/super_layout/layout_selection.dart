@@ -1,3 +1,8 @@
+/// Contrôleur et portée de sélection hiérarchique progressive en mode édition ([LayoutSelectionScope]).
+///
+/// Un clic sélectionne la zone englobante, puis chaque double-clic descend d'un niveau enfant.
+library;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart' show Axis, Offset, Rect;
 import 'package:flutter/widgets.dart'
@@ -37,12 +42,14 @@ class LayoutSelectionScope extends InheritedWidget {
       isSlotScope != oldWidget.isSlotScope;
 }
 
+/// Cible actuellement focalisée/sélectionnée dans la hiérarchie d'un [SuperLayout].
 class LayoutFocus {
   const LayoutFocus(this.context);
 
   final BuildContext context;
 }
 
+/// Action de changement d'orientation ou de flux exposée sur la zone sélectionnée.
 class LayoutAxisAction {
   const LayoutAxisAction({
     required this.zoneLabel,

@@ -1,3 +1,10 @@
+/// Configuration persistée ([SuperValueConfig]) d'un composant d'affichage ou de saisie [SuperValue].
+///
+/// Supporte les modes lecture/saisie ([SuperValueMode]), les types `text`,
+/// `checkbox` et `switchControl` ([SuperValueKind]), la typographie, les liaisons
+/// JSON (`binding`, `propertyBindings`) et les surcharges d'états ([ValueConfigStates]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 
@@ -9,8 +16,10 @@ import 'super_text_field_config.dart';
 
 part 'super_value_states.dart';
 
+/// Mode de fonctionnement d'un [SuperValue] (affichage seul `display` ou champ de saisie `input`).
 enum SuperValueMode { display, input }
 
+/// Nature du contrôle rendu par un [SuperValue] (`text`, `checkbox` ou `switchControl`).
 enum SuperValueKind {
   text,
   checkbox,
@@ -19,6 +28,7 @@ enum SuperValueKind {
   bool get isBoolean => this != SuperValueKind.text;
 }
 
+/// Propriétés d'un [SuperValue] pouvant être liées dynamiquement à un repository JSON.
 enum SuperValueProperty {
   label,
   placeholder,
@@ -30,6 +40,7 @@ enum SuperValueProperty {
   textAlign,
 }
 
+/// Modèle immuable de configuration persistée d'un composant [SuperValue].
 @immutable
 class SuperValueConfig extends ComponentConfig {
   const SuperValueConfig({

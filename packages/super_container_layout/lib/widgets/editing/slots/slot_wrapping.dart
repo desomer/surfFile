@@ -1,3 +1,6 @@
+/// Opérations permettant d'envelopper ou de désenvelopper un slot ([EditorSlotWrapper]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
@@ -9,6 +12,7 @@ import '../../../theme/appearance.dart';
 import '../history/editor_history.dart';
 import 'editor_context_menu.dart';
 
+/// Type de conteneur (`Card` ou `SuperLayout`) dans lequel envelopper un slot existant.
 enum EditorSlotWrapper {
   container('Card', 'Card', Icons.crop_square),
   layout('Layout', 'Layout', Icons.dashboard_outlined),

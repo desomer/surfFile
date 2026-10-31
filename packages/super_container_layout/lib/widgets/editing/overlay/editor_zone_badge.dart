@@ -1,3 +1,6 @@
+/// Badges de zone/composant ([EditorZoneBadge]) et contours de sélection ([EditorSelectionBorder]).
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
@@ -7,6 +10,7 @@ import '../../../theme/appearance.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../slots/editor_slot.dart';
 
+/// Badge affiché sur une zone ou un composant en mode édition (libellé, icône de déplacement et actions).
 class EditorZoneBadge extends StatelessWidget {
   const EditorZoneBadge({
     required this.label,
@@ -281,6 +285,7 @@ class EditorSelectionBorder extends StatelessWidget {
   }
 }
 
+/// `CustomPainter` traçant le contour plein ou pointillé de sélection/survol en mode édition.
 class EditorSelectionBorderPainter extends CustomPainter {
   EditorSelectionBorderPainter({
     required this.color,
@@ -451,6 +456,7 @@ class EditorSelectionBorderPainter extends CustomPainter {
       oldDelegate.strokeWidth != strokeWidth;
 }
 
+/// Surbrillance visuelle appliquée à une zone ou un slot lors du survol ou du glisser-déposer.
 class EditorZoneHighlight extends StatelessWidget {
   const EditorZoneHighlight({super.key});
 

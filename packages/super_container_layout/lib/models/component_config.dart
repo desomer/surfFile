@@ -1,3 +1,9 @@
+/// Classe de base [ComponentConfig] et catalogue polymorphique [ComponentConfigCatalog].
+///
+/// Permet de décoder et valider de manière extensible toutes les entrées de
+/// `Appearance.components` selon leur discriminateur JSON `'type'` (modèle GenUI).
+library;
+
 import 'package:flutter/foundation.dart' show immutable;
 
 import 'native_component_config.dart';

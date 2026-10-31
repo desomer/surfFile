@@ -1,3 +1,4 @@
+// Poignée interactive de redimensionnement d'une zone cardinale ([ZoneResizeHandle]).
 part of 'super_layout.dart';
 
 class _ZoneResizeHandle extends StatefulWidget {

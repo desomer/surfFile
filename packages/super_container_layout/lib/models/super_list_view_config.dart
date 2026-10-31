@@ -23,6 +23,7 @@ import 'json_syntax.dart';
 import 'json_text_binding.dart';
 import 'super_layout_config.dart';
 
+/// Mode de dimensionnement des éléments lorsque la liste est affichée en flux `Wrap`.
 enum ListWrapSizing { fixed, automatic }
 
 /// Réglages d'une `SuperListView` : tableau lié, orientation, taille des

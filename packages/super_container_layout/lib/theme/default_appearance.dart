@@ -1,3 +1,9 @@
+/// Implémentation standard et réutilisable d'[Appearance] ([DefaultAppearance]).
+///
+/// Complète [Appearance] avec les réglages typographiques, les dimensions
+/// d'éléments et le fondu de bord de défilement, sans dépendance métier.
+library;
+
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 

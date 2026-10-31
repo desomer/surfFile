@@ -1,3 +1,7 @@
+// Surcharges conditionnelles d'états ([ValueConfigStates]) pour un [SuperValue].
+//
+// Applique des surcharges partielles ([ValueConfigOverride]) par groupes de
+// propriétés selon les états `hover`, `selected`, `automatic` et `named`.
 part of 'super_value_config.dart';
 
 /// Dependent input settings are atomic. Each bindable property also carries
@@ -33,6 +37,7 @@ enum ValueStateProperty {
   final SuperValueProperty? bindingProperty;
 }
 
+/// Surcharge partielle d'un [SuperValueConfig] appliquée lorsqu'un état est actif.
 @immutable
 class ValueConfigOverride {
   ValueConfigOverride({
@@ -169,6 +174,7 @@ class ValueConfigOverride {
   int get hashCode => Object.hash(config, Object.hashAllUnordered(properties));
 }
 
+/// Collection des surcharges d'états (`named`, `hover`, `selected`, `automatic`) d'un [SuperValueConfig].
 @immutable
 class ValueConfigStates {
   ValueConfigStates({

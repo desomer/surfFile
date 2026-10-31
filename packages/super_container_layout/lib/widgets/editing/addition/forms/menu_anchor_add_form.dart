@@ -1,8 +1,12 @@
+/// Formulaire de configuration initiale ([MenuAnchorAddForm]) lors de l'ajout d'un [SuperMenuAnchor].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/native_component_config.dart';
 import '../../../../models/native_property_descriptor.dart';
 
+/// Formulaire de paramétrage initial d'un [SuperMenuAnchor] dans l'assistant d'ajout.
 class MenuAnchorAddForm extends StatelessWidget {
   const MenuAnchorAddForm({
     required this.draft,

@@ -1,3 +1,9 @@
+/// Énumération des systèmes de design visuels ([DesignSystem]) applicables aux surfaces.
+///
+/// Propose les rendus `material` (plat/élévation standard), `neumorphism`
+/// (double ombre en relief) et `liquidGlass` (verre translucide avec flou).
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

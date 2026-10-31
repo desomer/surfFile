@@ -1,8 +1,15 @@
+/// Service d'import/export JSON ([AppearanceTransfer]) et d'application incrémentale Vibe IA (`applyVibe`).
+///
+/// Permet d'exporter ou d'importer indépendamment les groupes Styles et Dispositions
+/// ([TransferGroup]) et de fusionner les patches JSON générés par l'assistant IA.
+library;
+
 import 'dart:convert';
 
 import 'appearance_codec.dart';
 import '../../theme/appearance.dart';
 
+/// Catégorie de données sélectionnable lors d'un import ou d'un export JSON (Styles ou Dispositions).
 enum TransferGroup {
   styles('Styles'),
   layouts('Dispositions');

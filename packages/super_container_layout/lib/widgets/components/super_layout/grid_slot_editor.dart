@@ -1,3 +1,6 @@
+// Contrôles d'édition du placement d'un slot dans une grille ([GridLayoutConfig]).
+//
+// Permet d'ajuster la colonne, la ligne et les étendues (`colSpan`, `rowSpan`) d'un composant.
 part of 'super_layout.dart';
 
 class _GridSlotDimensionDelegate extends EditorDimensionDelegate {

@@ -1,3 +1,8 @@
+/// Barre d'application Material 3 éditable ([SuperAppBar] : `AppBar` / `SliverAppBar`).
+///
+/// Expose les régions `leading`, `title`, `actions`, `bottom` et `flexibleSpace`.
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;

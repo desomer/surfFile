@@ -1,3 +1,9 @@
+/// Primitives avancées de style de surface ([ShadowSpec], [BorderLineStyle], [SurfacePattern], [SurfaceTransform]).
+///
+/// Complète [ContainerStyle] avec les ombres personnalisées (portées et intérieures),
+/// les traits de bordure tiretés/pointillés, les motifs de texture et les transformations 2D.
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

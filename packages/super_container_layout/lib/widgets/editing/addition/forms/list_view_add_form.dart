@@ -1,3 +1,6 @@
+/// Formulaire de configuration initiale ([ListViewAddForm]) lors de l'ajout d'une [SuperListView].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_list_view_config.dart';
@@ -6,6 +9,7 @@ import 'add_form_common.dart';
 
 double? _parse(String text) => parseAddFormDouble(text);
 
+/// Formulaire de paramétrage initial d'une [SuperListView] dans l'assistant d'ajout.
 class ListViewAddForm extends StatefulWidget {
   const ListViewAddForm({
     required this.draft,

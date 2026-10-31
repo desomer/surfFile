@@ -1,3 +1,4 @@
+// Réexport de l'éditeur de dimensions et contraintes d'un slot pour `super_layout`.
 part of 'super_layout.dart';
 
 extension _SuperLayoutSlotSizeEditor on SuperLayoutState {

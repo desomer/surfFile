@@ -1,3 +1,9 @@
+/// Composant bouton / action configurable ([SuperAction]) du catalogue GenUI.
+///
+/// Supporte les variantes Material 3 et `surface`, les surcharges d'états ([ActionConfigStates]),
+/// les liaisons JSON ([JsonTextBinding]) et les comportements au clic ([ComponentBehavior]).
+library;
+
 import 'dart:async';
 import 'dart:io';
 

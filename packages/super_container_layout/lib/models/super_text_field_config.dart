@@ -1,14 +1,24 @@
+/// Configuration ([SuperTextFieldConfig]) du composant de champ de saisie [SuperTextField].
+///
+/// Regroupe les options de variante visuelle, de filtrage de saisie, de clavier,
+/// d'alignement et de style typographique d'un champ texte.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'json_syntax.dart';
 import 'material_icon_catalog.dart';
 
+/// Style de bordure et de remplissage d'un [SuperTextField].
 enum TextFieldVariant { theme, filled, outlined, underline, borderless }
 
+/// Filtre de caractères appliqué à la saisie d'un [SuperTextField].
 enum TextFieldFilter { none, digits, decimal, letters, pattern }
 
+/// Comportement du bouton suffixe affiché dans un [SuperTextField].
 enum TextFieldSuffix { decoration, clear, visibility }
 
+/// Type de clavier virtuel associé à un [SuperTextField].
 enum TextFieldKeyboard {
   automatic,
   text,
@@ -21,6 +31,7 @@ enum TextFieldKeyboard {
   signedDecimal,
 }
 
+/// Action du bouton de validation du clavier (`TextInputAction`) d'un [SuperTextField].
 enum TextFieldAction {
   automatic,
   done,
@@ -32,6 +43,7 @@ enum TextFieldAction {
   newline,
 }
 
+/// Alignement vertical du texte dans un [SuperTextField].
 enum TextFieldVerticalAlign { automatic, top, center, bottom }
 
 /// Constant icons keep release icon tree-shaking available.
@@ -81,6 +93,7 @@ enum TextFieldIcon {
   String get displayLabel => MaterialIconCatalog.labelOf(name);
 }
 
+/// Modèle immuable de configuration d'un composant [SuperTextField].
 @immutable
 class SuperTextFieldConfig {
   const SuperTextFieldConfig({

@@ -1,8 +1,12 @@
+/// Formulaire de configuration initiale ([ContainerAddForm]) lors de l'ajout d'une `Card` ou d'un [IterableContent].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../theme/container_style.dart';
 import '../../styles/container_style_editor.dart' show styleColorTile;
 
+/// Formulaire de paramétrage initial d'une `Card` ou d'un [IterableContent] dans l'assistant d'ajout.
 class ContainerAddForm extends StatelessWidget {
   const ContainerAddForm({
     required this.draft,

@@ -1,3 +1,8 @@
+/// Abstractions de slots plaçables ([SlotImplementation], [BuilderSlot], [SlotFactory]) et viewport ([ZoneScrollableViewport]).
+///
+/// Encapsule la construction des widgets enfants d'une zone et l'intégration à [EditorSlot].
+library;
+
 import 'dart:async' show scheduleMicrotask;
 import 'dart:math' as math;
 
@@ -663,6 +668,7 @@ class _ZoneScrollableViewportState extends State<ZoneScrollableViewport> {
   }
 }
 
+/// Portée indiquant qu'un conteneur parent gère déjà le défilement de la zone.
 class ScrollViewportHost extends SingleChildRenderObjectWidget {
   const ScrollViewportHost({
     this.padding = EdgeInsets.zero,
@@ -1281,6 +1287,7 @@ class SlotZoneTarget extends StatelessWidget {
     required this.canMove,
     this.alignment = AlignmentDirectional.topStart,
     this.child,
+    this.overlays = const [],
     super.key,
   });
 
@@ -1291,6 +1298,7 @@ class SlotZoneTarget extends StatelessWidget {
   final ValueChanged<String> onMove;
   final AlignmentGeometry alignment;
   final Widget? child;
+  final List<Widget> overlays;
 
   @override
   Widget build(BuildContext context) {
@@ -1311,24 +1319,27 @@ class SlotZoneTarget extends StatelessWidget {
       onLeave: (data) => data?.hint.value = null,
       onAcceptWithDetails: (details) => onMove(details.data.id),
       builder: (context, candidates, _) {
-        final highlight = EditorOverlay(
-          child: IgnorePointer(
-            child: candidates.isEmpty
-                ? const SizedBox.expand()
-                : DecoratedBox(
+        final highlight = candidates.isEmpty
+            ? null
+            : EditorOverlay(
+                child: IgnorePointer(
+                  child: DecoratedBox(
                     decoration: BoxDecoration(
                       color: colors.tertiary.withValues(alpha: .15),
                       border: Border.all(color: colors.tertiary, width: 2),
                     ),
                   ),
-          ),
-        );
-        if (child == null) return highlight;
+                ),
+              );
+        if (child == null && overlays.isEmpty) {
+          return highlight ?? const SizedBox.expand();
+        }
         return Stack(
           alignment: alignment,
           children: [
-            child!,
-            Positioned.fill(child: highlight),
+            ?child,
+            ...overlays,
+            if (highlight != null) Positioned.fill(child: highlight),
           ],
         );
       },
@@ -1488,11 +1499,26 @@ class _LabeledSlotState extends State<_LabeledSlot> {
       widget.onResize != null &&
       ((_isActivelySelected && !_hasExternalHighlight) || _isHoveredForResize);
 
+  (bool, bool, bool, bool, bool) get _selectionVisualState => (
+    _hasExternalHighlight,
+    _isHighlightedTarget,
+    _isParentOfSelected,
+    _isActivelySelected,
+    _showResizeHandles,
+  );
+  (bool, bool, bool, bool, bool)? _lastSelectionVisualState;
+  bool _selectionCheckScheduled = false;
+
   void _onSelectionOrHoverChanged() {
-    if (!mounted || !_active) return;
-    _syncResizeOverlay();
+    if (!mounted || !_active || _selectionCheckScheduled) return;
+    _selectionCheckScheduled = true;
     scheduleMicrotask(() {
-      if (mounted && _active) setState(() {});
+      _selectionCheckScheduled = false;
+      if (!mounted || !_active) return;
+      _syncResizeOverlay();
+      if (_selectionVisualState != _lastSelectionVisualState) {
+        setState(() {});
+      }
     });
   }
 
@@ -1509,8 +1535,9 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   }
 
   void _syncResizeOverlay() {
-    if (_showResizeHandles == _resizeOverlay.isShowing &&
-        (_showResizeHandles || _resizeStart == null)) {
+    final shouldShow = _showResizeHandles;
+    if (shouldShow == _resizeOverlay.isShowing &&
+        (shouldShow || _resizeStart == null)) {
       return;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1518,16 +1545,31 @@ class _LabeledSlotState extends State<_LabeledSlot> {
       if (_showResizeHandles) {
         if (!_resizeOverlay.isShowing) _resizeOverlay.show();
       } else {
-        if (_resizeOverlay.isShowing) _resizeOverlay.hide();
+        final wasShowing = _resizeOverlay.isShowing;
+        if (wasShowing) _resizeOverlay.hide();
         _finishResize();
+        if (wasShowing && mounted) setState(() {});
       }
     });
+  }
+
+  /// Keeps the slot's element when the edit wrappers are added or removed.
+  final _contentKey = GlobalKey();
+  bool _listening = false;
+
+  void _listen(bool value) {
+    if (value == _listening) return;
+    _listening = value;
+    if (value) {
+      _selectionListenable.addListener(_onSelectionOrHoverChanged);
+    } else {
+      _selectionListenable.removeListener(_onSelectionOrHoverChanged);
+    }
   }
 
   @override
   void initState() {
     super.initState();
-    _selectionListenable.addListener(_onSelectionOrHoverChanged);
     _syncResizeOverlay();
   }
 
@@ -1675,7 +1717,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
 
   @override
   void dispose() {
-    _selectionListenable.removeListener(_onSelectionOrHoverChanged);
+    _listen(false);
     _finishResize();
     final emphasis = widget.emphasis;
     if (emphasis != null && (_hover || _dragging)) {
@@ -1752,110 +1794,77 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     final canEditSize =
         (StyleEditScope.controllerOf(context)?.value ?? true) &&
         EditorSlotAction.of(context).isNotEmpty;
-    return OverlayPortal.overlayChildLayoutBuilder(
-      controller: _resizeOverlay,
-      overlayChildBuilder: (context, info) {
-        final handles = Stack(
-          clipBehavior: Clip.none,
-          children: [
-            for (final (name, corner) in editorResizeDirections)
-              Positioned.fill(
-                child: Align(
-                  alignment: corner,
-                  child: _resizeHandle(name, corner, colors),
-                ),
-              ),
-            if (_resizeStart != null)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 34),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colors.tertiaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          child: Text(
-                            '${info.childSize.width.round()} × ${info.childSize.height.round()} px',
-                            key: ValueKey('slot-resize-size-${slot.id}'),
-                            style: TextStyle(
-                              color: colors.onTertiaryContainer,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        );
-        if (EditorZoomScope.contains(context)) {
-          return Positioned.fromRect(
-            rect: MatrixUtils.transformRect(
-              info.childPaintTransform,
-              Offset.zero & info.childSize,
-            ),
-            child: handles,
-          );
-        }
-        return Positioned(
-          left: 0,
-          top: 0,
-          child: Transform(
-            transform: info.childPaintTransform,
-            child: SizedBox.fromSize(size: info.childSize, child: handles),
-          ),
-        );
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        excludeFromSemantics: true,
-        onSecondaryTapUp: canEditSize
-            ? (details) =>
-                  context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
-                    details.globalPosition,
-                    actions: EditorSlotAction.of(context),
-                    targetContext: context,
-                  )
-            : null,
-        child: DragTarget<SlotDragData>(
-          // Déposer un slot sur lui-même est accepté sans effet : la zone qui le
-          // contient ne doit pas le ranger en dernier.
-          onWillAcceptWithDetails: (details) {
-            final accepts = _accepts(details.data);
-            if (accepts) {
-              _track(details.offset);
-              details.data.hint.value = _hintFor(details.data);
-            }
-            return accepts;
-          },
-          onMove: (details) {
-            if (!_accepts(details.data)) return;
+    final content = KeyedSubtree(
+      key: _contentKey,
+      child: widget.padding == EdgeInsets.zero
+          ? slot
+          : Padding(padding: widget.padding, child: slot),
+    );
+    final inert =
+        !canEditSize &&
+        !widget.showLabel &&
+        mover == null &&
+        widget.onResize == null &&
+        widget.onTapContent == null &&
+        widget.onSelectContent == null &&
+        !_hover &&
+        !_dragging &&
+        _resizeStart == null;
+    _listen(!inert);
+    // Outside edit mode only the slot itself is mounted.
+    if (inert) return content;
+    _lastSelectionVisualState = _selectionVisualState;
+    final selectionChild = EditorSelectionRegion(
+      enabled: widget.onSelectContent != null,
+      selected: widget.showLabel && widget.selected,
+      onSelect: () => widget.onSelectContent?.call(),
+      child: content,
+    );
+    final mountResizePortal =
+        _showResizeHandles || _resizeOverlay.isShowing || _resizeStart != null;
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      excludeFromSemantics: true,
+      onSecondaryTapUp: canEditSize
+          ? (details) =>
+                context.findAncestorStateOfType<EditorSlotState>()?.openMenu(
+                  details.globalPosition,
+                  actions: EditorSlotAction.of(context),
+                  targetContext: context,
+                )
+          : null,
+      child: DragTarget<SlotDragData>(
+        // Déposer un slot sur lui-même est accepté sans effet : la zone qui le
+        // contient ne doit pas le ranger en dernier.
+        onWillAcceptWithDetails: (details) {
+          final accepts = _accepts(details.data);
+          if (accepts) {
             _track(details.offset);
             details.data.hint.value = _hintFor(details.data);
-          },
-          onLeave: (data) => data?.hint.value = null,
-          onAcceptWithDetails: (details) {
-            if (details.data.id == slot.id) return;
-            mover!.onMove(
-              details.data.id,
-              beforeId: _after ? null : slot.id,
-              afterId: _after ? slot.id : null,
-            );
-          },
-          builder: (context, candidates, _) => Stack(
-            fit: StackFit.passthrough,
-            clipBehavior: Clip.none,
-            children: [
+          }
+          return accepts;
+        },
+        onMove: (details) {
+          if (!_accepts(details.data)) return;
+          _track(details.offset);
+          details.data.hint.value = _hintFor(details.data);
+        },
+        onLeave: (data) => data?.hint.value = null,
+        onAcceptWithDetails: (details) {
+          if (details.data.id == slot.id) return;
+          mover!.onMove(
+            details.data.id,
+            beforeId: _after ? null : slot.id,
+            afterId: _after ? slot.id : null,
+          );
+        },
+        builder: (context, candidates, _) => Stack(
+          fit: StackFit.passthrough,
+          clipBehavior: Clip.none,
+          children: [
+            if (widget.onTapContent == null)
+              selectionChild
+            else
               Listener(
                 behavior: HitTestBehavior.translucent,
                 onPointerDown: (event) {
@@ -1902,128 +1911,194 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                   _tapAction = null;
                   action?.call();
                 },
-                child: EditorSelectionRegion(
-                  enabled: widget.onSelectContent != null,
-                  selected: widget.showLabel && widget.selected,
-                  onSelect: () => widget.onSelectContent?.call(),
-                  child: widget.padding == EdgeInsets.zero
-                      ? slot
-                      : Padding(padding: widget.padding, child: slot),
-                ),
+                child: selectionChild,
               ),
-              if (_hover ||
-                  _dragging ||
-                  (!_hasExternalHighlight &&
-                      (_isHighlightedTarget ||
-                          _isParentOfSelected ||
-                          _isActivelySelected)))
-                Positioned.fill(
-                  key: ValueKey('slot-highlight-${slot.id}'),
-                  child: EditorOverlayVisibility(
-                    child: _dragging
-                        ? const EditorSelectionBorder.active(
-                            filled: true,
-                            hideOnTargetHighlight: false,
-                          )
-                        : (!_hasExternalHighlight && _isActivelySelected)
-                        ? const EditorSelectionBorder.active(filled: true)
-                        : (_hover || _isHighlightedTarget)
-                        ? const EditorSelectionBorder.hover()
-                        : const EditorSelectionBorder.subtleParent(),
-                  ),
-                ),
-              if (candidates.any((data) => data != null && data.id != slot.id))
-                Positioned.fill(
-                  child: EditorOverlayVisibility(
-                    child: Align(
-                      alignment: widget.axis == Axis.horizontal
-                          ? (_after
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft)
-                          : (_after
-                                ? Alignment.bottomCenter
-                                : Alignment.topCenter),
-                      child: SizedBox(
-                        key: ValueKey('slot-drop-position-${slot.id}'),
-                        width: widget.axis == Axis.horizontal
-                            ? 3
-                            : double.infinity,
-                        height: widget.axis == Axis.vertical
-                            ? 3
-                            : double.infinity,
-                        child: IgnorePointer(
-                          child: ColoredBox(
-                            key: ValueKey('slot-drop-${slot.id}'),
-                            color: colors.tertiary,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              if (widget.showLabel && slot.showLabel)
-                Positioned.fill(
-                  key: ValueKey('slot-label-position-${slot.id}'),
-                  child: EditorOverlay(
-                    child: Align(
-                      alignment: slot.labelAlignment,
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: MouseRegion(
-                          key: _labelKey,
-                          cursor: mover == null
-                              ? SystemMouseCursors.click
-                              : editorDragCursor(dragging: _dragging),
-                          hitTestBehavior: HitTestBehavior.translucent,
-                          onEnter: (_) => _setHover(true),
-                          onExit: (_) => _setHover(false),
-                          child: Listener(
-                            behavior: HitTestBehavior.translucent,
-                            onPointerDown: widget.onSelect == null
-                                ? null
-                                : EditorSelectionRegion.ignorePointer,
-                            child: GestureDetector(
-                              key: ValueKey('slot-label-select-${slot.id}'),
-                              onTap: widget.onSelect,
-                              behavior: HitTestBehavior.translucent,
-                              child: mover == null
-                                  ? IgnorePointer(child: _chip(colors))
-                                  : Draggable<SlotDragData>(
-                                      data: SlotDragData(
-                                        id: slot.id,
-                                        owner: mover.owner,
-                                        hint: _hint,
+            if (mountResizePortal)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: OverlayPortal.overlayChildLayoutBuilder(
+                    controller: _resizeOverlay,
+                    overlayChildBuilder: (context, info) {
+                      final handles = Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          for (final (name, corner) in editorResizeDirections)
+                            Positioned.fill(
+                              child: Align(
+                                alignment: corner,
+                                child: _resizeHandle(name, corner, colors),
+                              ),
+                            ),
+                          if (_resizeStart != null)
+                            Positioned.fill(
+                              child: IgnorePointer(
+                                child: Align(
+                                  alignment: Alignment.bottomCenter,
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(bottom: 34),
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        color: colors.tertiaryContainer,
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
-                                      dragAnchorStrategy:
-                                          pointerDragAnchorStrategy,
-                                      hitTestBehavior:
-                                          HitTestBehavior.translucent,
-                                      onDragStarted: () => _setDragging(true),
-                                      onDragEnd: (_) => _setDragging(false),
-                                      feedback: _chip(
-                                        colors,
-                                        opacity: 1,
-                                        dragged: true,
-                                      ),
-                                      childWhenDragging: Opacity(
-                                        opacity: .35,
-                                        child: _chip(colors),
-                                      ),
-                                      // Le contenu sous l'étiquette reste atteignable (clic
-                                      // droit du style) : seul le Draggable écoute le glisser.
-                                      child: IgnorePointer(
-                                        child: _chip(colors),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 4,
+                                        ),
+                                        child: Text(
+                                          '${info.childSize.width.round()} × ${info.childSize.height.round()} px',
+                                          key: ValueKey(
+                                            'slot-resize-size-${slot.id}',
+                                          ),
+                                          style: TextStyle(
+                                            color: colors.onTertiaryContainer,
+                                            fontSize: 12,
+                                          ),
+                                        ),
                                       ),
                                     ),
+                                  ),
+                                ),
+                              ),
                             ),
+                        ],
+                      );
+                      if (EditorZoomScope.contains(context)) {
+                        return Positioned.fromRect(
+                          rect: MatrixUtils.transformRect(
+                            info.childPaintTransform,
+                            Offset.zero & info.childSize,
+                          ),
+                          child: handles,
+                        );
+                      }
+                      return Positioned(
+                        left: 0,
+                        top: 0,
+                        child: Transform(
+                          transform: info.childPaintTransform,
+                          child: SizedBox.fromSize(
+                            size: info.childSize,
+                            child: handles,
+                          ),
+                        ),
+                      );
+                    },
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+              ),
+            if (_hover ||
+                _dragging ||
+                (!_hasExternalHighlight &&
+                    (_isHighlightedTarget ||
+                        _isParentOfSelected ||
+                        _isActivelySelected)))
+              Positioned.fill(
+                key: ValueKey('slot-highlight-${slot.id}'),
+                child: EditorOverlayVisibility(
+                  child: _dragging
+                      ? const EditorSelectionBorder.active(
+                          filled: true,
+                          hideOnTargetHighlight: false,
+                        )
+                      : (!_hasExternalHighlight && _isActivelySelected)
+                      ? const EditorSelectionBorder.active(filled: true)
+                      : (_hover || _isHighlightedTarget)
+                      ? const EditorSelectionBorder.hover()
+                      : const EditorSelectionBorder.subtleParent(),
+                ),
+              ),
+            if (candidates.any((data) => data != null && data.id != slot.id))
+              Positioned.fill(
+                child: EditorOverlayVisibility(
+                  child: Align(
+                    alignment: widget.axis == Axis.horizontal
+                        ? (_after
+                              ? Alignment.centerRight
+                              : Alignment.centerLeft)
+                        : (_after
+                              ? Alignment.bottomCenter
+                              : Alignment.topCenter),
+                    child: SizedBox(
+                      key: ValueKey('slot-drop-position-${slot.id}'),
+                      width: widget.axis == Axis.horizontal
+                          ? 3
+                          : double.infinity,
+                      height: widget.axis == Axis.vertical
+                          ? 3
+                          : double.infinity,
+                      child: IgnorePointer(
+                        child: ColoredBox(
+                          key: ValueKey('slot-drop-${slot.id}'),
+                          color: colors.tertiary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            if (widget.showLabel && slot.showLabel)
+              Positioned.fill(
+                key: ValueKey('slot-label-position-${slot.id}'),
+                child: EditorOverlay(
+                  child: Align(
+                    alignment: slot.labelAlignment,
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: MouseRegion(
+                        key: _labelKey,
+                        cursor: mover == null
+                            ? SystemMouseCursors.click
+                            : editorDragCursor(dragging: _dragging),
+                        hitTestBehavior: HitTestBehavior.translucent,
+                        onEnter: (_) => _setHover(true),
+                        onExit: (_) => _setHover(false),
+                        child: Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerDown: widget.onSelect == null
+                              ? null
+                              : EditorSelectionRegion.ignorePointer,
+                          child: GestureDetector(
+                            key: ValueKey('slot-label-select-${slot.id}'),
+                            onTap: widget.onSelect,
+                            behavior: HitTestBehavior.translucent,
+                            child: mover == null
+                                ? IgnorePointer(child: _chip(colors))
+                                : Draggable<SlotDragData>(
+                                    data: SlotDragData(
+                                      id: slot.id,
+                                      owner: mover.owner,
+                                      hint: _hint,
+                                    ),
+                                    dragAnchorStrategy:
+                                        pointerDragAnchorStrategy,
+                                    hitTestBehavior:
+                                        HitTestBehavior.translucent,
+                                    onDragStarted: () => _setDragging(true),
+                                    onDragEnd: (_) => _setDragging(false),
+                                    feedback: _chip(
+                                      colors,
+                                      opacity: 1,
+                                      dragged: true,
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: .35,
+                                      child: _chip(colors),
+                                    ),
+                                    // Le contenu sous l'étiquette reste atteignable (clic
+                                    // droit du style) : seul le Draggable écoute le glisser.
+                                    child: IgnorePointer(child: _chip(colors)),
+                                  ),
                           ),
                         ),
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

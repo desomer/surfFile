@@ -1,3 +1,6 @@
+/// Formulaire de configuration initiale ([SuperValueAddForm]) lors de l'ajout d'un [SuperValue].
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -8,6 +11,7 @@ import 'add_form_common.dart';
 
 double? _parse(String text) => parseAddFormDouble(text);
 
+/// Formulaire de paramétrage initial d'un [SuperValue] dans l'assistant d'ajout.
 class SuperValueAddForm extends StatefulWidget {
   const SuperValueAddForm({
     required this.draft,

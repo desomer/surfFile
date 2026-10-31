@@ -1,3 +1,6 @@
+/// Boîte de dialogue de gestion du catalogue de pages ([EditorPageCatalog]).
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';

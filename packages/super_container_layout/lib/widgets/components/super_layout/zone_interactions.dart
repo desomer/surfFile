@@ -1,3 +1,4 @@
+// Interactions de glisser-déposer (`DragTarget` / `Draggable`) entre les zones d'un [SuperLayout].
 part of 'super_layout.dart';
 
 /// Pastille du nom d'une zone, centrée sur celle-ci pendant le mode édition.
@@ -210,54 +211,55 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
                 excludeFromSemantics: true,
                 onSecondaryTapUp: widget.onContextMenu == null
                     ? null
-                    : (details) => widget.onContextMenu!(details.globalPosition),
+                    : (details) =>
+                          widget.onContextMenu!(details.globalPosition),
                 child: Listener(
                   behavior: HitTestBehavior.translucent,
                   onPointerDown: EditorSelectionRegion.ignorePointer,
-                child: MouseRegion(
-                  cursor: target == null
-                      ? SystemMouseCursors.click
-                      : editorDragCursor(dragging: _dragging),
-                  hitTestBehavior: HitTestBehavior.translucent,
-                  onEnter: (_) => _setHover(true),
-                  onExit: (_) => _setHover(false),
-                  // Glisser le nom vers le centre déclenche l'échange.
-                  child: target == null
-                      ? badge
-                      : Draggable<SuperLayoutZone>(
-                          onDragStarted: () => _setDragging(true),
-                          onDragEnd: (_) => _setDragging(false),
-                          data: widget.zone,
-                          feedback: Material(
-                            color: colors.primary.withValues(alpha: .35),
-                            elevation: 4,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              // Pendant le survol du centre, le nom devient la zone future.
-                              child: ValueListenableBuilder<bool>(
-                                valueListenable: widget.overCenter,
-                                builder: (context, over, _) => Text(
-                                  over
-                                      ? widget.zoneLabel(target)
-                                      : widget.label,
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: colors.onSurface,
+                  child: MouseRegion(
+                    cursor: target == null
+                        ? SystemMouseCursors.click
+                        : editorDragCursor(dragging: _dragging),
+                    hitTestBehavior: HitTestBehavior.translucent,
+                    onEnter: (_) => _setHover(true),
+                    onExit: (_) => _setHover(false),
+                    // Glisser le nom vers le centre déclenche l'échange.
+                    child: target == null
+                        ? badge
+                        : Draggable<SuperLayoutZone>(
+                            onDragStarted: () => _setDragging(true),
+                            onDragEnd: (_) => _setDragging(false),
+                            data: widget.zone,
+                            feedback: Material(
+                              color: colors.primary.withValues(alpha: .35),
+                              elevation: 4,
+                              borderRadius: BorderRadius.circular(12),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                // Pendant le survol du centre, le nom devient la zone future.
+                                child: ValueListenableBuilder<bool>(
+                                  valueListenable: widget.overCenter,
+                                  builder: (context, over, _) => Text(
+                                    over
+                                        ? widget.zoneLabel(target)
+                                        : widget.label,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: colors.onSurface,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          childWhenDragging: Opacity(
-                            opacity: .35,
+                            childWhenDragging: Opacity(
+                              opacity: .35,
+                              child: badge,
+                            ),
                             child: badge,
                           ),
-                          child: badge,
-                        ),
                   ),
                 ),
               ),
@@ -300,33 +302,34 @@ class _CenterSwapTarget extends StatelessWidget {
         overCenter.value = false;
         onSwap(details.data);
       },
-      builder: (context, candidates, _) => EditorOverlay(
-        child: IgnorePointer(
-          child: candidates.isEmpty
-              ? ValueListenableBuilder<bool>(
-                  valueListenable: hint,
-                  builder: (context, hinted, _) => hinted
-                      ? DecoratedBox(
-                          key: const ValueKey('super-layout-center-hint'),
-                          decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: .08),
-                            border: Border.all(
-                              color: colors.primary.withValues(alpha: .7),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: const SizedBox.expand(),
-                        )
-                      : const SizedBox.expand(),
-                )
-              : DecoratedBox(
-                  key: const ValueKey('super-layout-center-drop'),
-                  decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: .2),
-                    border: Border.all(color: colors.primary, width: 2),
-                  ),
-                ),
-        ),
+      builder: (context, candidates, _) => ValueListenableBuilder<bool>(
+        valueListenable: hint,
+        builder: (context, hinted, _) {
+          if (candidates.isEmpty && !hinted) return const SizedBox.expand();
+          return EditorOverlay(
+            child: IgnorePointer(
+              child: candidates.isEmpty
+                  ? DecoratedBox(
+                      key: const ValueKey('super-layout-center-hint'),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: .08),
+                        border: Border.all(
+                          color: colors.primary.withValues(alpha: .7),
+                          width: 1.5,
+                        ),
+                      ),
+                      child: const SizedBox.expand(),
+                    )
+                  : DecoratedBox(
+                      key: const ValueKey('super-layout-center-drop'),
+                      decoration: BoxDecoration(
+                        color: colors.primary.withValues(alpha: .2),
+                        border: Border.all(color: colors.primary, width: 2),
+                      ),
+                    ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -347,10 +350,12 @@ class _ZonePlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final editMode = StyleEditScope.controllerOf(context)?.value ?? false;
+    // An empty zone only paints its outline in edit mode.
+    if (!editMode) return const SizedBox.shrink();
     return EditorOverlayVisibility(
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: editMode ? Border.all(color: colors.outlineVariant) : null,
+          border: Border.all(color: colors.outlineVariant),
         ),
         // child: Center(
         //   child: showLabel && editMode

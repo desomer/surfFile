@@ -1,3 +1,9 @@
+/// Conteneur animant les effets d'interaction ([InteractionEffectBox]) d'une surface.
+///
+/// Applique les effets de survol ([HoverTint]) et de clic ([InteractionEffect] :
+/// `pressed`, `scale`, `elevation`, `ripple`) définis dans [ContainerStyle].
+library;
+
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 

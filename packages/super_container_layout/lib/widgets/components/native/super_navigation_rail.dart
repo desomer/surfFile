@@ -1,3 +1,8 @@
+/// Rail de navigation latéral éditable ([SuperNavigationRail]) basé sur `NavigationRail`.
+///
+/// Expose les régions `leading`, `destinations` (composants [SuperAction]) et `trailing`.
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/component_tag_filter.dart';

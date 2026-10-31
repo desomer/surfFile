@@ -1,7 +1,14 @@
+/// Configuration du halo lumineux néon ([NeonStyle]) d'une surface.
+///
+/// Définit l'activation, la couleur, l'intensité et la diffusion de la lueur
+/// externe rendue par [NeonSurface].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../models/json_syntax.dart';
 
+/// Paramètres immuables du halo lumineux néon externe d'une surface.
 @immutable
 class NeonStyle {
   static const maxIntensity = 3.0;

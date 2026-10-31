@@ -1,3 +1,6 @@
+// Opérations d'édition structurelle sur un [SuperLayoutConfig].
+//
+// Fournit les transformations pures pour déplacer, échanger, redimensionner ou retirer des slots.
 part of 'super_layout.dart';
 
 /// Formulaire d'édition d'un [SuperLayoutConfig] : aperçu, présence des côtés,

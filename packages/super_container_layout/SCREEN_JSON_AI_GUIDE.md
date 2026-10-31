@@ -19,7 +19,7 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
 | **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` |
-| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"Tab"`, `"Tabs"`, `"AppBar"`, `"BottomBar"` |
+| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:Chart"`, `"registry:TreeView"`, `"registry:Table"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"`, `"registry:BottomAppBar"`, `"registry:NavigationRail"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"List"`, `"Tab"`, `"Tabs"`, `"Chart"`, `"Graph"`, `"SuperChart"`, `"AppBar"`, `"BottomBar"`, `"NavigationRail"`, `"Rail"` |
 
 ---
 
@@ -34,7 +34,10 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"action"` (`SuperActionConfig`)
    - `"list"` (`SuperListViewConfig`, qui embarque directement son `"template"` de ligne)
    - `"tab"` (`SuperTabConfig`, barre d'onglets `TabBar` + vues `TabBarView` en mode statique ou dynamique)
-2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, `IterableContent`).
+   - `"chart"` (`SuperChartConfig`, graphique `fl_chart` lié à un tableau JSON)
+   - `"treeView"` (`SuperTreeViewConfig`, arbre hiérarchique à 2 zones `header` et `data`)
+   - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
+2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`).
 3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
 
@@ -317,6 +320,14 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
     - Élévation & dimensions : `elevation` (`0`..`24`, défaut `8`), `height` (`32`..`160`, défaut `56`), `iconSize` (`12`..`48`, défaut `24`), `selectedFontSize` (`8`..`32`, défaut `14`), `unselectedFontSize` (`8`..`32`, défaut `12`).
     - Disposition, libellés & comportement : `navigationBarType` (`"fixed"` | `"shifting"`), `landscapeLayout` (`"spread"` | `"centered"` | `"linear"`), `showSelectedLabels` (`bool`, défaut `true`), `showUnselectedLabels` (`bool`, défaut `true`), `enableFeedback` (`bool`, défaut `true`), `useLegacyColorScheme` (`bool`, défaut `true`), `mouseCursor` (`"click"` | `"basic"` | `"defer"` | `"none"`).
 
+- **`"registry:NavigationRail"` $\rightarrow$ `NavigationRail` de Flutter** (`type: "native"`, alias `"NavigationRail"`, `"Rail"`) :
+  - **Régions** :
+    - `leading` (optionnelle, liste verticale en haut du rail), `destinations` (liste verticale de composants `"action"`, convertis en entrées `NavigationRailDestination`), `trailing` (optionnelle, liste verticale en bas du rail).
+  - **Propriétés de style Flutter `NavigationRail` (directement à la racine de `components[railId]`)** :
+    - Couleurs (`"#RRGGBB"` ou `"#AARRGGBB"`) : `backgroundColor`, `indicatorColor`.
+    - Dimensions & alignement : `minWidth` (`36`..`200`, défaut `72`), `minExtendedWidth` (`120`..`400`, défaut `256`), `extended` (`bool`, défaut `false`), `groupAlignment` (`-1.0`..`1.0`, défaut `-1.0`), `elevation` (`0`..`24`).
+    - Libellés & indicateur : `labelType` (`"none"` | `"selected"` | `"all"`), `useIndicator` (`bool`, défaut `true`).
+
 - **`"registry:Card"` $\rightarrow$ Conteneur monoenfant (`Card` / `Container` Flutter) + surface `ContainerStyle` enrichie** (`type: "native"` + entrée associée sous le même `id` dans `styles`) :
   - `child` (1 slot unique max, région obligatoire toujours active) : comme un `Card` ou `Container` Flutter, ne prend qu'un seul composant enfant `child` (souvent un `"registry:Layout"` pour organiser plusieurs sous-composants, ou utilise `"registry:IterableContent"` si tu veux fusionner carte et grille sous le même ID).
   - **Carte vide / purement visuelle (ex. affiche, logo, miniature, séparateur ou bloc avec `fill.imageUrl`)** : si une `Card` ne contient aucun composant enfant, **ne mets jamais `"regions": { "child": false }`** (la région `child` d'une `Card` est requise et ne peut pas être désactivée). Utilise `"regions": {}, "placements": {}` (ou `"regions": { "child": true }, "placements": {}`), ou omet simplement l'entrée de `components["<cardId>"]` et définis uniquement son style dans `styles["<cardId>"]`. Pour fixer la taille de cette carte (`preferredWidth`, `preferredHeight`, etc.), déclare ses contraintes dans le `slotSizeConstraints["<cardId>"]` de son **conteneur parent** (et non sous la forme d'un objet plat dans `components["<cardId>"].slotSizeConstraints`).
@@ -531,7 +542,146 @@ Affiche un conteneur à onglets combinant une barre d'onglets (`TabBar`) et une 
 }
 ```
 
-### 4.7. Toutes les capacités de style des Cartes (`Card` / surfaces) et du Fond (`background` & fenêtre)
+### 4.7. `"chart"` (`SuperChartConfig`) — Graphiques `fl_chart` liés à un tableau JSON
+
+Place un composant `"registry:Chart"` (alias `"Chart"`, `"Graph"`, `"SuperChart"`) dans le `placements` du parent, et configure-le dans `components[chartId]` avec `"type": "chart"` :
+
+- **Propriétés principales de `SuperChartConfig`** :
+  - `kind` : `"line"` (courbe / aire, défaut), `"bar"` (barres groupées ou empilées), `"pie"` (camembert / donut), `"scatter"` (nuage de points), `"radar"` (radar / toile).
+  - `binding` : chemin du tableau JSON source (ex: `"ventes"` ou `"0123456789abcdef0123456789abcdef:clients[?].commandes"`).
+  - `labelPath` : `string` (`"label"` par défaut) — chemin relatif à l'élément du tableau pour le libellé de l'axe X, de la part de camembert ou de l'axe radar (ex: `"mois"`, `"categorie"`). **Ne doit jamais contenir `[?]`.**
+  - `series` (`List<SuperChartSeries>`, au moins 1 série requise) :
+    - `id` (`"series-1"` par défaut, unique dans le graphique), `label` (`"Série 1"` par défaut, affiché dans la légende et l'infobulle).
+    - `valuePath` (`"value"` par défaut) : chemin relatif de la valeur numérique Y dans chaque élément (ex: `"montant"`, `"stats.ca"`). **Ne doit pas contenir `[?]`.**
+    - `secondaryValuePath` (`""` par défaut) : chemin relatif optionnel de la coordonnée X numérique (pour `"scatter"` ou `"line"`).
+    - `color` : `"#RRGGBB"` ou `"#AARRGGBB"` (`null` = couleur automatique de palette).
+    - `strokeWidth` (`0.5`..`24`, défaut `3.0`), `radius` (`1`..`120`, défaut `6.0`), `isCurved` (`bool`, défaut `true`), `belowBarArea` (`bool`, défaut `false`), `showDots` (`bool`, défaut `true`).
+  - **Options d'affichage et d'interaction** :
+    - `showGrid` (`true`), `showLegend` (`true`), `enableTooltips` (`true`), `enableSelection` (`true`, synchronise le clic avec la sélection Maître / Détail du `JsonArrayBinding`), `showAxisLabels` (`true`), `showAxisTitles` (`false`), `xAxisTitle` (`""`), `yAxisTitle` (`""`), `minY` (`number?`), `maxY` (`number?`), `barStacked` (`false`), `pieCenterSpaceRadius` (`0`..`300`, défaut `32.0`), `pieSectionsSpace` (`0`..`40`, défaut `2.0`), `showDemoWhenUnbound` (`true`), `emptyText` (`"Aucune donnée"`).
+
+```json
+{
+  "components": {
+    "chart-ca": {
+      "type": "chart",
+      "kind": "bar",
+      "binding": "0123456789abcdef0123456789abcdef:ventesMensuelles",
+      "labelPath": "mois",
+      "barStacked": false,
+      "showLegend": true,
+      "enableSelection": true,
+      "series": [
+        {
+          "id": "s-ca",
+          "label": "Chiffre d'affaires",
+          "valuePath": "ca",
+          "color": "#5268D9"
+        },
+        {
+          "id": "s-marge",
+          "label": "Marge nette",
+          "valuePath": "marge",
+          "color": "#10B981"
+        }
+      ]
+    }
+  }
+}
+```
+
+### 4.8. `"treeView"` (`SuperTreeViewConfig`) — Arbre hiérarchique à 2 zones (`header` et `data`)
+
+Place un composant `"registry:TreeView"` dans le `placements` du parent, et configure-le dans `components[treeId]` avec `"type": "treeView"` :
+
+- **Structure à 2 zones par ligne de nœud** :
+  - Zone `"header"` : colonne d'en-tête à gauche, indentée automatiquement selon la profondeur du nœud et redimensionnable.
+  - Zone `"data"` : colonne de données à droite, occupant l'espace restant.
+  - Chaque ligne de nœud fournit un `JsonListScope` résolvant le chemin récursif du nœud (`dossiers[0]`, `dossiers[0].children[1]`, etc.) : les composants `Value` / `Action` placés dans `header` ou `data` peuvent utiliser un chemin relatif (`"nom"`, `"taille"`) ou un chemin avec joker (`"dossiers[?].nom"`).
+- **Propriétés principales de `SuperTreeViewConfig`** :
+  - `binding` : tableau ou objet JSON racine de l'arbre (ex: `"0123456789abcdef0123456789abcdef:dossiers"`).
+  - `childrenKey` : `string` (`"children"` par défaut) — clé JSON contenant le sous-tableau d'enfants de chaque nœud.
+  - `headerSize` (`100`..`2000`, défaut `220.0`), `rowHeight` (`16`..`400`, défaut `32.0`), `indent` (`8`..`120`, défaut `20.0`).
+  - `initiallyExpanded` (`true`), `showConnectors` (`true`), `showCheckboxes` (`false`), `animateSelectionAndHover` (`true`), `emptyText` (`"Aucun élément"`), `itemId` (`string?`, identifiant du style de ligne dans `styles`).
+  - `placements`, `zoneAxes`, `zoneFlows`, `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels` : mêmes règles que sur un `"layout"` pour les zones `"header"` et `"data"`.
+
+```json
+{
+  "components": {
+    "tree-org": {
+      "type": "treeView",
+      "binding": "0123456789abcdef0123456789abcdef:departements",
+      "childrenKey": "equipes",
+      "headerSize": 240,
+      "rowHeight": 36,
+      "showConnectors": true,
+      "placements": {
+        "header": [{ "id": "tree-node-nom", "type": "registry:Value" }],
+        "data": [{ "id": "tree-node-budget", "type": "registry:Value" }]
+      }
+    },
+    "tree-node-nom": {
+      "type": "value",
+      "binding": "nom",
+      "fontWeight": "medium"
+    },
+    "tree-node-budget": {
+      "type": "value",
+      "binding": "budget"
+    }
+  }
+}
+```
+
+### 4.9. `"table"` (`SuperTableConfig`) — Tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne
+
+Place un composant `"registry:Table"` dans le `placements` du parent, et configure-le dans `components[tableId]` avec `"type": "table"` :
+
+- **Colonnes et zones par colonne** :
+  - `columns` (`List<SuperTableColumnConfig>`, au moins 1 colonne requise) : chaque colonne définit `id` (ex: `"col_nom"`), `title` (titre affiché par défaut dans l'en-tête), `width` (`50`..`4000`, défaut `140.0`) et `fillPercent` (`0`..`100`, défaut `0.0` ; `> 0` étire la colonne sur l'espace horizontal restant).
+  - Pour chaque colonne `<colId>`, le tableau expose 3 zones dans `placements` :
+    - `"cell:<colId>"` : cellule répétée sur chaque ligne du tableau (avec `JsonListScope` résolvant l'indice de la ligne courante et la sélection Maître / Détail).
+    - `"header:<colId>"` : cellule d'en-tête personnalisée optionnelle (si vide, affiche automatiquement `column.title`).
+    - `"bottom:<colId>"` : cellule de pied de colonne (affichée lorsque `showBottomRow: true`).
+- **Propriétés principales de `SuperTableConfig`** :
+  - `binding` : tableau JSON source (ex: `"0123456789abcdef0123456789abcdef:clients"`).
+  - `colFreezeLeftCount` (`int`, défaut `0`) : nombre de colonnes figées à gauche lors du défilement horizontal.
+  - `showHeaderRow` (`true`), `showBottomRow` (`false`), `headerRowHeight` (`16`..`400`, défaut `40.0`), `rowHeight` (`16`..`400`, défaut `40.0`), `bottomRowHeight` (`16`..`400`, défaut `40.0`).
+  - `allowAdd` (`false`), `allowRemove` (`false`), `animateSelectionAndHover` (`true`), `emptyText` (`"Aucun élément"`), `itemId` (`string?`, identifiant du `ContainerStyle` de la ligne `CwTableRow` dans `styles`).
+  - `placements`, `zoneAxes`, `zoneFlows`, `zoneStyles`, `slotPreferredSizes`, `slotSizeConstraints`, `slotLabels`.
+
+```json
+{
+  "components": {
+    "table-clients": {
+      "type": "table",
+      "binding": "0123456789abcdef0123456789abcdef:clients",
+      "colFreezeLeftCount": 1,
+      "showHeaderRow": true,
+      "allowAdd": true,
+      "allowRemove": true,
+      "columns": [
+        { "id": "col_nom", "title": "Nom", "width": 180 },
+        { "id": "col_ville", "title": "Ville", "width": 140, "fillPercent": 100 }
+      ],
+      "placements": {
+        "cell:col_nom": [{ "id": "cell-client-nom", "type": "registry:Value" }],
+        "cell:col_ville": [{ "id": "cell-client-ville", "type": "registry:Value" }]
+      }
+    },
+    "cell-client-nom": {
+      "type": "value",
+      "binding": "clients[?].nom",
+      "fontWeight": "semibold"
+    },
+    "cell-client-ville": {
+      "type": "value",
+      "binding": "clients[?].ville"
+    }
+  }
+}
+```
+
+### 4.10. Toutes les capacités de style des Cartes (`Card` / surfaces) et du Fond (`background` & fenêtre)
 
 Le dictionnaire `styles` (`Map<String, ContainerStyle>`) contrôle l'apparence visuelle de toutes les surfaces de l'application :
 - **`styles["background"]`** : le fond global de l'application/écran.
@@ -541,7 +691,7 @@ Le dictionnaire `styles` (`Map<String, ContainerStyle>`) contrôle l'apparence v
 
 ---
 
-#### 4.7.1. Style du Fond de l'écran (`styles["background"]`) et de la Fenêtre (propriétés racines)
+#### 4.10.1. Style du Fond de l'écran (`styles["background"]`) et de la Fenêtre (propriétés racines)
 
 L'habillage de l'arrière-plan combine les **propriétés racines** du document JSON (thème, couleur d'accent, transparence de fenêtre) et l'entrée **`styles["background"]`** :
 
@@ -569,7 +719,7 @@ L'habillage de l'arrière-plan combine les **propriétés racines** du document 
 
 ---
 
-#### 4.7.2. Toutes les capacités de style d'une Carte (`Card`, `IterableContent`, surfaces) dans `ContainerStyle`
+#### 4.10.2. Toutes les capacités de style d'une Carte (`Card`, `IterableContent`, surfaces) dans `ContainerStyle`
 
 Chaque carte (`styles["<cardId>"]`) ou surface dispose des 8 familles de réglages suivantes :
 
@@ -708,7 +858,7 @@ Chaque carte (`styles["<cardId>"]`) ou surface dispose des 8 familles de réglag
 }
 ```
 
-### 4.8. États interactifs et styles conditionnels (`states`)
+### 4.11. États interactifs et styles conditionnels (`states`)
 
 **Tu peux configurer des styles différents au survol, à la sélection, au focus, etc.** Ces états sont déclenchés par le moteur : ne crée pas de composant supplémentaire pour représenter chaque état.
 
@@ -872,7 +1022,7 @@ Plusieurs états peuvent être actifs simultanément. Ils sont appliqués dans l
 
 Pour personnaliser la priorité, `states.order` accepte les noms métier et les clés automatiques préfixées par un caractère nul échappé JSON : par exemple `["\u0000selected", "\u0000hover"]` donne priorité au survol sur la sélection. Utilise `"\u0000contentHover"`, `"\u0000focused"`, etc. pour les autres états automatiques, et conserve l'ordre existant lors d'un patch si tu ne souhaites pas changer les priorités.
 
-### 4.9. Comportements (`behaviors`) : Actions et navigation au clic
+### 4.12. Comportements (`behaviors`) : Actions et navigation au clic
 
 Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des comportements interactifs à n'importe quel composant par son ID technique :
 - **Déclencheurs (`trigger`)** :

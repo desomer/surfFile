@@ -1,7 +1,11 @@
+/// Éditeur de valeurs uniformes ou indépendantes par côté/coin ([IndependentSpacingEditor]).
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'style_editor_panel.dart';
 
+/// Contrôle permettant d'éditer 4 valeurs (haut/droite/bas/gauche ou 4 coins) de manière liée ou indépendante.
 class IndependentSpacingEditor extends StatelessWidget {
   const IndependentSpacingEditor({
     required this.label,

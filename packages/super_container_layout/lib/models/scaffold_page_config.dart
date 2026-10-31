@@ -1,3 +1,10 @@
+/// Configuration structurelle ([ScaffoldPageConfig]) du `Scaffold` d'une page.
+///
+/// Gère l'activation des régions de niveau page (`appBar`, `body`,
+/// `bottomNavigationBar`, `drawer`, `endDrawer`, `bottomSheet`), le mode de
+/// défilement ([ScaffoldBodyMode]) et les options de redimensionnement.
+library;
+
 import 'dart:ui' show Clip;
 
 import 'package:flutter/painting.dart' show Axis;

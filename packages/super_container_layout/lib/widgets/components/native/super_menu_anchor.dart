@@ -1,3 +1,8 @@
+/// Menu popup éditable ([SuperMenuAnchor]) basé sur `MenuAnchor`.
+///
+/// Associe une région d'ancre (`header`) et un contenu déroulant (`body`).
+library;
+
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
 

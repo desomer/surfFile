@@ -1,3 +1,9 @@
+/// Résolution réactive de l'état métier nommé (`states.binding`) depuis un repository JSON.
+///
+/// Observe l'attribut JSON pointé par la liaison d'état et fournit le nom
+/// de l'état actif aux surfaces ([SuperContainer]) et composants ([SuperValue], [SuperAction]).
+library;
+
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';

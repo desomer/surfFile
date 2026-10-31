@@ -1,3 +1,6 @@
+/// Champs de formulaire réutilisables pour configurer un [JsonTextBinding].
+library;
+
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -11,6 +14,7 @@ import '../dialogs/editor_dialog_header.dart';
 
 const inheritedRepositoryValue = '*';
 
+/// Résultat retourné par le dialogue de configuration d'une liaison [JsonTextBinding].
 class RepositoryBindingDialogResult {
   const RepositoryBindingDialogResult(this.binding);
 

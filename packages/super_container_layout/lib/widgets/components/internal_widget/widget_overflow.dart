@@ -1,6 +1,12 @@
+/// Disposition flex tolérante au débordement ([NoOverflowErrorFlex]).
+///
+/// Masque les avertissements de débordement visuel transitoires lors du redimensionnement.
+library;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 
+/// Widget `Flex` personnalisé supprimant l'indicateur visuel d'erreur de débordement Flutter.
 class NoOverflowErrorFlex extends MultiChildRenderObjectWidget {
   final Axis direction;
   final MainAxisAlignment mainAxisAlignment;
@@ -42,6 +48,7 @@ class NoOverflowErrorFlex extends MultiChildRenderObjectWidget {
   }
 }
 
+/// `RenderFlex` personnalisé ignorant le dessin des bandes d'erreur de débordement.
 class RenderCustomFlex extends RenderFlex {
   RenderCustomFlex({
     required super.textDirection,

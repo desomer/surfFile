@@ -1,3 +1,9 @@
+/// Peintres personnalisés (`CustomPainter`) pour les effets avancés de [StyledSurface].
+///
+/// Fournit le tracé des bordures tiretées/pointillées ([BorderLineStyle]),
+/// des ombres intérieures (`innerShadow`) et des motifs de surface ([SurfacePattern]).
+library;
+
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 

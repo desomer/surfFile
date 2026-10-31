@@ -1,3 +1,8 @@
+/// Moteur interne de disposition tabulaire ([FrozenTableView]) utilisé par [SuperTable].
+///
+/// Synchronise le défilement vertical et horizontal entre les colonnes figées à gauche et le corps.
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
@@ -7,6 +12,7 @@ import 'package:super_container_layout/widgets/components/internal_widget/array/
 
 bool withWidgetCache = true;
 
+/// Vue tabulaire interne gérant le défilement synchronisé et les colonnes figées à gauche.
 class FrozenTableView extends StatefulWidget {
   final int rowCount;
   final int colCount;
@@ -91,12 +97,14 @@ class FrozenTableView extends StatefulWidget {
   State<FrozenTableView> createState() => FrozenTableViewState();
 }
 
+/// Cache interne des hauteurs et widgets de lignes construites dans [FrozenTableView].
 class CwRowCache {
   CwTableRowState? cwTableRowState;
   CwRowCache([this.cwTableRowState]);
   List<Widget?>? rowCells;
 }
 
+/// État interne de [FrozenTableView] coordonnant les `ScrollController` horizontal et vertical.
 class FrozenTableViewState extends State<FrozenTableView> {
   final ScrollController vertical = ScrollController();
   final ScrollController vertical2 = ScrollController();

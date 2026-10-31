@@ -1,3 +1,6 @@
+/// Éditeur générique des propriétés et régions d'un composant Material natif ([NativeComponentEditor]).
+library;
+
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -89,6 +92,7 @@ class _NativeInstanceSlot extends InstanceSlot
       _native.sizeListenable(context);
 }
 
+/// Callback appelé lorsqu'un slot est ajouté dans une région d'un composant natif.
 typedef NativeSlotAddedCallback = NativeComponentConfig Function(
   NativeComponentConfig config,
   String region,
@@ -210,8 +214,10 @@ class NativeComponentEditor extends StatefulWidget {
   State<NativeComponentEditor> createState() => NativeComponentEditorState();
 }
 
+/// État interne de [NativeComponentEditor] gérant l'édition des propriétés et régions natives.
 class NativeComponentEditorState extends State<NativeComponentEditor> {
   final _keys = <String, GlobalKey>{};
+  final _regionContentKeys = <String, GlobalKey>{};
   final _slotKeys = <String, GlobalKey>{};
   ValueNotifier<bool>? _editMode;
   String? _selected;
@@ -257,9 +263,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
 
   String _resolvedSlotId(SlotImplementation slot, BuildContext? slotCtx) {
     if (slot.id == '__provided-child') {
-      final resolved = EditorSlotState.resolveFromContext(
-        slotCtx,
-      )?.effectiveComponentId;
+      final resolved = EditorSlotState.resolveFromContext(slotCtx)
+          ?.effectiveComponentId;
       if (resolved != null && resolved.isNotEmpty) return resolved;
     }
     return slot.id;
@@ -2495,6 +2500,21 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       onHover: (_, _, value) => _setRegionHovered(id, value),
     );
     final colors = Theme.of(context).colorScheme;
+    final alignment = regionAxis == Axis.horizontal && !spec.stretch
+        ? AlignmentDirectional.centerStart
+        : AlignmentDirectional.topStart;
+    final keyedChild = KeyedSubtree(
+      key: _regionContentKeys.putIfAbsent('$id:overlay', GlobalKey.new),
+      child: child,
+    );
+    if (!editing) {
+      // Outside edit mode, drop targets and overlays are not mounted.
+      return Stack(
+        key: ValueKey('${widget.keyPrefix}-slot-drop-$id'),
+        alignment: alignment,
+        children: [keyedChild],
+      );
+    }
     return SlotZoneTarget(
       key: ValueKey('${widget.keyPrefix}-slot-drop-$id'),
       owner: this,
@@ -2502,20 +2522,13 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       ids: _config.value.slotsOf(id),
       canMove: (slotId) => _canMoveSlot(slotId, id),
       onMove: (slotId) => _moveSlot(slotId, id),
-      alignment: regionAxis == Axis.horizontal && !spec.stretch
-          ? AlignmentDirectional.centerStart
-          : AlignmentDirectional.topStart,
-      child: Stack(
-        alignment: regionAxis == Axis.horizontal && !spec.stretch
-            ? AlignmentDirectional.centerStart
-            : AlignmentDirectional.topStart,
-        children: [
-          child,
+      alignment: alignment,
+      child: keyedChild,
+      overlays: [
+        if (overlay)
           Positioned.fill(
             child: EditorOverlayVisibility(
-              child: !overlay
-                  ? const SizedBox.shrink()
-                  : selected
+              child: selected
                   ? (_selectedSlot != null
                         ? EditorSelectionBorder.subtleParent(
                             key: ValueKey('${widget.keyPrefix}-selected-$id'),
@@ -2535,83 +2548,81 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     ),
             ),
           ),
-          if (overlay && showBadge)
-            ValueListenableBuilder<Set<Object>>(
-              valueListenable: _hoveredRegionScopes,
-              builder: (context, hoveredRegions, _) =>
-                  hoveredRegions.contains(id)
-                  ? EditorZoneHighlight(
-                      key: ValueKey('${widget.keyPrefix}-zone-highlight-$id'),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          if (overlay && showBadge)
-            Positioned.fill(
-              key: ValueKey('${widget.keyPrefix}-badge-$id'),
-              child: EditorOverlay(
-                child: Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: EmphasizedLabel(
-                      emphasis: emphasis,
-                      allScopes: true,
-                      child: EditorZoneBadge(
-                        key: ValueKey('${widget.keyPrefix}-badge-content-$id'),
-                        label: spec.label,
-                        labelKey: ValueKey('${widget.keyPrefix}-select-$id'),
-                        selected: selected,
-                        hasSelectedChild: selected && _selectedSlot != null,
-                        onHover: (hovered) => emphasis.report(id, hovered),
-                        onTap: () => select(
-                          selected ? null : id,
-                          _keys['$id:sliver']?.currentContext ??
-                              _keys[id]?.currentContext,
-                        ),
-                        onAdd: slots.isEmpty
-                            ? () {
-                                select(
-                                  id,
-                                  _keys['$id:sliver']?.currentContext ??
-                                      _keys[id]?.currentContext,
-                                );
-                                add(id);
-                              }
-                            : null,
-                        addKey: ValueKey('${widget.keyPrefix}-add-$id'),
-                        addTooltip: 'Ajouter dans ${spec.label}',
-                        actions: [
-                          if (spec.editableFlow && selected) ...[
-                            ZoneAxisButton(
-                              key: ValueKey(
-                                '${widget.keyPrefix}-toggle-axis-$id',
-                              ),
-                              action: _axisActionFor(id),
-                              compact: true,
-                              color: colors.onSurface,
-                            ),
-                            IconButton(
-                              key: ValueKey('${widget.keyPrefix}-flow-$id'),
-                              tooltip:
-                                  '${spec.label} : Taille et paramètres de flux',
-                              visualDensity: VisualDensity.compact,
-                              iconSize: 14,
-                              padding: const EdgeInsets.all(2),
-                              constraints: const BoxConstraints(),
-                              color: colors.onSurface,
-                              onPressed: () => _openRegionFlowEditor(id),
-                              icon: const Icon(Icons.straighten),
-                            ),
-                          ],
-                          ...?widget.regionActions?.call(id),
-                        ],
+        if (overlay && showBadge)
+          ValueListenableBuilder<Set<Object>>(
+            valueListenable: _hoveredRegionScopes,
+            builder: (context, hoveredRegions, _) => hoveredRegions.contains(id)
+                ? EditorZoneHighlight(
+                    key: ValueKey('${widget.keyPrefix}-zone-highlight-$id'),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        if (overlay && showBadge)
+          Positioned.fill(
+            key: ValueKey('${widget.keyPrefix}-badge-$id'),
+            child: EditorOverlay(
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: EmphasizedLabel(
+                    emphasis: emphasis,
+                    allScopes: true,
+                    child: EditorZoneBadge(
+                      key: ValueKey('${widget.keyPrefix}-badge-content-$id'),
+                      label: spec.label,
+                      labelKey: ValueKey('${widget.keyPrefix}-select-$id'),
+                      selected: selected,
+                      hasSelectedChild: selected && _selectedSlot != null,
+                      onHover: (hovered) => emphasis.report(id, hovered),
+                      onTap: () => select(
+                        selected ? null : id,
+                        _keys['$id:sliver']?.currentContext ??
+                            _keys[id]?.currentContext,
                       ),
+                      onAdd: slots.isEmpty
+                          ? () {
+                              select(
+                                id,
+                                _keys['$id:sliver']?.currentContext ??
+                                    _keys[id]?.currentContext,
+                              );
+                              add(id);
+                            }
+                          : null,
+                      addKey: ValueKey('${widget.keyPrefix}-add-$id'),
+                      addTooltip: 'Ajouter dans ${spec.label}',
+                      actions: [
+                        if (spec.editableFlow && selected) ...[
+                          ZoneAxisButton(
+                            key: ValueKey(
+                              '${widget.keyPrefix}-toggle-axis-$id',
+                            ),
+                            action: _axisActionFor(id),
+                            compact: true,
+                            color: colors.onSurface,
+                          ),
+                          IconButton(
+                            key: ValueKey('${widget.keyPrefix}-flow-$id'),
+                            tooltip:
+                                '${spec.label} : Taille et paramètres de flux',
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 14,
+                            padding: const EdgeInsets.all(2),
+                            constraints: const BoxConstraints(),
+                            color: colors.onSurface,
+                            onPressed: () => _openRegionFlowEditor(id),
+                            icon: const Icon(Icons.straighten),
+                          ),
+                        ],
+                        ...?widget.regionActions?.call(id),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 
@@ -2723,14 +2734,22 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     if (fixedSize != null) {
       content = SizedBox(height: fixedSize, child: content);
     }
+    final regionKey = item == null ? id : '$id:${item.id}';
+    content = KeyedSubtree(
+      key: _regionContentKeys.putIfAbsent(regionKey, GlobalKey.new),
+      child: content,
+    );
+    final dropKey = ValueKey(
+      '${widget.keyPrefix}-slot-drop-$id${item == null ? '' : ':${item.id}'}',
+    );
+    final alignment = regionAxis == Axis.horizontal && !effectiveStretch
+        ? AlignmentDirectional.centerStart
+        : AlignmentDirectional.topStart;
     return LayoutSelectionScope(
       owner: this,
       path: [..._path, spec.label],
       child: Builder(
-        key: _keys.putIfAbsent(
-          item == null ? id : '$id:${item.id}',
-          GlobalKey.new,
-        ),
+        key: _keys.putIfAbsent(regionKey, GlobalKey.new),
         builder: (regionContext) => EditorSelectionRegion(
           enabled: editing,
           isZone: true,
@@ -2764,167 +2783,163 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
             onAdd: () => add(id),
             wrapChildrenActions: wrapActionsForRegion(id),
             onContextMenu: (_) => select(id, regionContext),
-            child: SlotZoneTarget(
-              key: ValueKey(
-                '${widget.keyPrefix}-slot-drop-$id${item == null ? '' : ':${item.id}'}',
-              ),
-              owner: this,
-              zoneLabel: spec.label,
-              ids: _config.value.slotsOf(id),
-              canMove: (slotId) => _canMoveSlot(slotId, id),
-              onMove: (slotId) => _moveSlot(slotId, id),
-              alignment: regionAxis == Axis.horizontal && !effectiveStretch
-                  ? AlignmentDirectional.centerStart
-                  : AlignmentDirectional.topStart,
-              child: Stack(
-                alignment: regionAxis == Axis.horizontal && !effectiveStretch
-                    ? AlignmentDirectional.centerStart
-                    : AlignmentDirectional.topStart,
-                children: [
-                  if (slots.isEmpty && editing)
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final fillWidth =
-                            (regionAxis == Axis.horizontal
-                                ? effectiveExpand
-                                : effectiveStretch) &&
-                            constraints.hasBoundedWidth;
-                        final fillHeight =
-                            fixedSize == null &&
-                            (regionAxis == Axis.vertical
-                                ? effectiveExpand
-                                : effectiveStretch) &&
-                            constraints.hasBoundedHeight;
-                        return SizedBox(
-                          width: fillWidth
-                              ? double.infinity
-                              : (spec.emptySize.width.isFinite
-                                    ? spec.emptySize.width
-                                    : (constraints.hasBoundedWidth
-                                          ? double.infinity
-                                          : 120)),
-                          height:
-                              fixedSize ??
-                              (fillHeight
-                                  ? double.infinity
-                                  : (spec.emptySize.height.isFinite
-                                        ? spec.emptySize.height
-                                        : kToolbarHeight)),
-                        );
-                      },
-                    )
-                  else
-                    content,
-                  Positioned.fill(
-                    child: EditorOverlayVisibility(
-                      child: !overlay
-                          ? const SizedBox.shrink()
-                          : selected
-                          ? (_selectedSlot != null
-                                ? EditorSelectionBorder.subtleParent(
-                                    key: ValueKey(
-                                      '${widget.keyPrefix}-selected-$id',
+            // Outside edit mode, drop targets and overlays are not mounted.
+            child: !editing
+                ? Stack(key: dropKey, alignment: alignment, children: [content])
+                : SlotZoneTarget(
+                    key: dropKey,
+                    owner: this,
+                    zoneLabel: spec.label,
+                    ids: _config.value.slotsOf(id),
+                    canMove: (slotId) => _canMoveSlot(slotId, id),
+                    onMove: (slotId) => _moveSlot(slotId, id),
+                    alignment: alignment,
+                    child: slots.isEmpty && editing
+                        ? LayoutBuilder(
+                            builder: (context, constraints) {
+                              final fillWidth =
+                                  (regionAxis == Axis.horizontal
+                                      ? effectiveExpand
+                                      : effectiveStretch) &&
+                                  constraints.hasBoundedWidth;
+                              final fillHeight =
+                                  fixedSize == null &&
+                                  (regionAxis == Axis.vertical
+                                      ? effectiveExpand
+                                      : effectiveStretch) &&
+                                  constraints.hasBoundedHeight;
+                              return SizedBox(
+                                width: fillWidth
+                                    ? double.infinity
+                                    : (spec.emptySize.width.isFinite
+                                          ? spec.emptySize.width
+                                          : (constraints.hasBoundedWidth
+                                                ? double.infinity
+                                                : 120)),
+                                height:
+                                    fixedSize ??
+                                    (fillHeight
+                                        ? double.infinity
+                                        : (spec.emptySize.height.isFinite
+                                              ? spec.emptySize.height
+                                              : kToolbarHeight)),
+                              );
+                            },
+                          )
+                        : content,
+                    overlays: [
+                      if (overlay)
+                        Positioned.fill(
+                          child: EditorOverlayVisibility(
+                            child: selected
+                                ? (_selectedSlot != null
+                                      ? EditorSelectionBorder.subtleParent(
+                                          key: ValueKey(
+                                            '${widget.keyPrefix}-selected-$id',
+                                          ),
+                                        )
+                                      : EditorSelectionBorder.active(
+                                          key: ValueKey(
+                                            '${widget.keyPrefix}-selected-$id',
+                                          ),
+                                        ))
+                                : IgnorePointer(
+                                    child: DecoratedBox(
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: colors.outlineVariant,
+                                          width: 1,
+                                        ),
+                                      ),
                                     ),
-                                  )
-                                : EditorSelectionBorder.active(
+                                  ),
+                          ),
+                        ),
+                      if (overlay && showBadge)
+                        ValueListenableBuilder<Set<Object>>(
+                          valueListenable: _hoveredRegionScopes,
+                          builder: (context, hoveredRegions, _) =>
+                              hoveredRegions.contains(id)
+                              ? EditorZoneHighlight(
+                                  key: ValueKey(
+                                    '${widget.keyPrefix}-zone-highlight-$id',
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      if (overlay && showBadge)
+                        Positioned.fill(
+                          key: ValueKey('${widget.keyPrefix}-badge-$id'),
+                          child: EditorOverlay(
+                            child: Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: EmphasizedLabel(
+                                  emphasis: emphasis,
+                                  allScopes: true,
+                                  child: EditorZoneBadge(
                                     key: ValueKey(
-                                      '${widget.keyPrefix}-selected-$id',
+                                      '${widget.keyPrefix}-badge-content-$id',
                                     ),
-                                  ))
-                          : IgnorePointer(
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: colors.outlineVariant,
-                                    width: 1,
+                                    label: spec.label,
+                                    labelKey: ValueKey(
+                                      '${widget.keyPrefix}-select-$id',
+                                    ),
+                                    selected: selected,
+                                    hasSelectedChild:
+                                        selected && _selectedSlot != null,
+                                    onHover: (hovered) =>
+                                        emphasis.report(id, hovered),
+                                    onTap: () => select(
+                                      selected ? null : id,
+                                      regionContext,
+                                    ),
+                                    onAdd: slots.isEmpty
+                                        ? () {
+                                            select(id, regionContext);
+                                            add(id);
+                                          }
+                                        : null,
+                                    addKey: ValueKey(
+                                      '${widget.keyPrefix}-add-$id',
+                                    ),
+                                    addTooltip: 'Ajouter dans ${spec.label}',
+                                    actions: [
+                                      if (spec.editableFlow && selected) ...[
+                                        ZoneAxisButton(
+                                          key: ValueKey(
+                                            '${widget.keyPrefix}-toggle-axis-$id',
+                                          ),
+                                          action: _axisActionFor(id),
+                                          compact: true,
+                                          color: colors.onSurface,
+                                        ),
+                                        IconButton(
+                                          key: ValueKey(
+                                            '${widget.keyPrefix}-flow-$id',
+                                          ),
+                                          tooltip:
+                                              '${spec.label} : Taille et paramètres de flux',
+                                          visualDensity: VisualDensity.compact,
+                                          iconSize: 14,
+                                          padding: const EdgeInsets.all(2),
+                                          constraints: const BoxConstraints(),
+                                          color: colors.onSurface,
+                                          onPressed: () =>
+                                              _openRegionFlowEditor(id),
+                                          icon: const Icon(Icons.straighten),
+                                        ),
+                                      ],
+                                      ...?widget.regionActions?.call(id),
+                                    ],
                                   ),
                                 ),
                               ),
                             ),
-                    ),
-                  ),
-                  if (overlay && showBadge)
-                    ValueListenableBuilder<Set<Object>>(
-                      valueListenable: _hoveredRegionScopes,
-                      builder: (context, hoveredRegions, _) =>
-                          hoveredRegions.contains(id)
-                          ? EditorZoneHighlight(
-                              key: ValueKey(
-                                '${widget.keyPrefix}-zone-highlight-$id',
-                              ),
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  if (overlay && showBadge)
-                    Positioned.fill(
-                      key: ValueKey('${widget.keyPrefix}-badge-$id'),
-                      child: EditorOverlay(
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: EmphasizedLabel(
-                              emphasis: emphasis,
-                              allScopes: true,
-                              child: EditorZoneBadge(
-                                key: ValueKey(
-                                  '${widget.keyPrefix}-badge-content-$id',
-                                ),
-                                label: spec.label,
-                                labelKey: ValueKey(
-                                  '${widget.keyPrefix}-select-$id',
-                                ),
-                                selected: selected,
-                                hasSelectedChild:
-                                    selected && _selectedSlot != null,
-                                onHover: (hovered) =>
-                                    emphasis.report(id, hovered),
-                                onTap: () =>
-                                    select(selected ? null : id, regionContext),
-                                onAdd: slots.isEmpty
-                                    ? () {
-                                        select(id, regionContext);
-                                        add(id);
-                                      }
-                                    : null,
-                                addKey: ValueKey('${widget.keyPrefix}-add-$id'),
-                                addTooltip: 'Ajouter dans ${spec.label}',
-                                actions: [
-                                  if (spec.editableFlow && selected) ...[
-                                    ZoneAxisButton(
-                                      key: ValueKey(
-                                        '${widget.keyPrefix}-toggle-axis-$id',
-                                      ),
-                                      action: _axisActionFor(id),
-                                      compact: true,
-                                      color: colors.onSurface,
-                                    ),
-                                    IconButton(
-                                      key: ValueKey(
-                                        '${widget.keyPrefix}-flow-$id',
-                                      ),
-                                      tooltip:
-                                          '${spec.label} : Taille et paramètres de flux',
-                                      visualDensity: VisualDensity.compact,
-                                      iconSize: 14,
-                                      padding: const EdgeInsets.all(2),
-                                      constraints: const BoxConstraints(),
-                                      color: colors.onSurface,
-                                      onPressed: () =>
-                                          _openRegionFlowEditor(id),
-                                      icon: const Icon(Icons.straighten),
-                                    ),
-                                  ],
-                                  ...?widget.regionActions?.call(id),
-                                ],
-                              ),
-                            ),
                           ),
                         ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+                    ],
+                  ),
           ),
         ),
       ),
@@ -2965,7 +2980,10 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         enabled: editing,
         zones: _addZones,
         child: ListenableBuilder(
-          listenable: LayoutSelection.path,
+          // Selection paths only affect edit overlays.
+          listenable: editing
+              ? LayoutSelection.path
+              : const AlwaysStoppedAnimation<double>(0),
           builder: (context, _) {
             if (SliverSlotScope.isSliver(context)) {
               return SliverLayoutBuilder(

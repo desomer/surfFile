@@ -1,3 +1,6 @@
+/// Panneau modulaire regroupant les sections d'édition d'un [ContainerStyle].
+library;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../history/editor_history.dart';

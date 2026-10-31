@@ -1,3 +1,9 @@
+/// Modèles de page routée ([EditorPageConfig]) et de catalogue de pages ([EditorPageCatalog]).
+///
+/// Persiste la liste des écrans de l'application, leurs chemins de route,
+/// leurs identifiants de `Scaffold` / `SuperLayout` racines et la page d'accueil.
+library;
+
 import 'package:flutter/foundation.dart';
 
 /// A visually authored page with an identity independent of its route.

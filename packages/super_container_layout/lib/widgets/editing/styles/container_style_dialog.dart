@@ -1,3 +1,6 @@
+/// Ouverture de [ContainerStyleEditor] dans une fenêtre de dialogue d'édition flottante.
+library;
+
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
