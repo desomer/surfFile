@@ -62,6 +62,7 @@ class LayoutAxisAction {
 /// Node in the hierarchy tree under a breadcrumb segment in `StyleEditBanner`.
 class LayoutSelectionNode {
   const LayoutSelectionNode({
+    this.id,
     required this.label,
     required this.path,
     this.icon,
@@ -71,6 +72,8 @@ class LayoutSelectionNode {
     this.targetContext,
   });
 
+  /// Stable technical identifier of this node (slot id, zone id, or component id).
+  final String? id;
   final String label;
   final List<String> path;
   final IconData? icon;
@@ -91,6 +94,9 @@ class LayoutSelection {
   static final path = ValueNotifier<List<String>>(const []);
   static final axisAction = ValueNotifier<LayoutAxisAction?>(null);
   static final focus = ValueNotifier<LayoutFocus?>(null);
+
+  /// Identifiant technique du noeud/slot actuellement survolé via le path ou l'arbre.
+  static final highlightedSlotId = ValueNotifier<String?>(null);
   static PointerEvent? _pointer;
 
   /// The deepest selection listener claims each pointer event first.
@@ -115,6 +121,7 @@ class LayoutSelection {
       <
         Object,
         ({
+          String? id,
           List<String> path,
           ValueChanged<String?> select,
           Object? parent,
@@ -122,12 +129,14 @@ class LayoutSelection {
         })
       >{};
   static final _slotSelectors = <Object, ValueChanged<String>>{};
+  static final _selectedSlotIds = <Object, String? Function()>{};
   static final _deselects = <Object, VoidCallback>{};
   static final _treeBuilders = <Object, List<LayoutSelectionNode> Function()>{};
   static final _contextMenus = <Object, ValueChanged<Offset>>{};
   static final _targetContexts = <Object, BuildContext? Function()>{};
   static Object? _activeOwner;
   static List<String> _leafSuffix = const [];
+  static List<String> _leafIds = const [];
   static LayoutFocus? _leafFocus;
   static bool _preserveLeafOnNextReport = false;
   static bool _activating = false;
@@ -213,14 +222,23 @@ class LayoutSelection {
   }
 
   /// Appends deeper leaf `EditorSlot` labels below the active container's slot.
-  static void setLeafSuffix(List<String> labels, {BuildContext? focusContext}) {
+  static void setLeafSuffix(
+    List<String> labels, {
+    BuildContext? focusContext,
+    List<String>? ids,
+  }) {
     final nextFocus = focusContext == null ? null : LayoutFocus(focusContext);
+    final nextIds = ids == null || labels.isEmpty
+        ? const <String>[]
+        : List<String>.unmodifiable(ids);
     _preserveLeafOnNextReport = labels.isNotEmpty;
     if (listEquals(_leafSuffix, labels) &&
+        listEquals(_leafIds, nextIds) &&
         _leafFocus?.context == nextFocus?.context) {
       return;
     }
     _leafSuffix = labels.isEmpty ? const [] : List.unmodifiable(labels);
+    _leafIds = nextIds;
     _leafFocus = labels.isEmpty ? null : nextFocus;
     _syncReported();
   }
@@ -229,8 +247,10 @@ class LayoutSelection {
     Object owner,
     List<String> path,
     ValueChanged<String?> select, {
+    String? id,
     Object? parent,
     ValueChanged<String>? selectSlot,
+    String? Function()? selectedSlotId,
     VoidCallback? onDeselect,
     bool delegateToParent = false,
     List<LayoutSelectionNode> Function()? treeBuilder,
@@ -246,6 +266,11 @@ class LayoutSelection {
       _slotSelectors.remove(owner);
     } else {
       _slotSelectors[owner] = selectSlot;
+    }
+    if (selectedSlotId == null) {
+      _selectedSlotIds.remove(owner);
+    } else {
+      _selectedSlotIds[owner] = selectedSlotId;
     }
     if (treeBuilder == null) {
       _treeBuilders.remove(owner);
@@ -263,6 +288,7 @@ class LayoutSelection {
       _targetContexts[owner] = targetContext;
     }
     _targets[owner] = (
+      id: id,
       path: List.unmodifiable(path),
       select: select,
       parent: parent,
@@ -273,6 +299,7 @@ class LayoutSelection {
   static void unregister(Object owner) {
     _targets.remove(owner);
     _slotSelectors.remove(owner);
+    _selectedSlotIds.remove(owner);
     _deselects.remove(owner);
     _treeBuilders.remove(owner);
     _contextMenus.remove(owner);
@@ -294,6 +321,7 @@ class LayoutSelection {
     List<LayoutSelectionNode> visitElement(
       Element element,
       List<String> parentPath,
+      List<String> parentLeafIds,
     ) {
       if (element is StatefulElement) {
         final state = element.state;
@@ -312,6 +340,7 @@ class LayoutSelection {
           }
           return [
             LayoutSelectionNode(
+              id: target.id,
               label: target.path.isNotEmpty ? target.path.last : 'Layout',
               path: target.path,
               children: children,
@@ -334,24 +363,34 @@ class LayoutSelection {
               ...parentPath,
               state.label,
             ]);
+            final nodeLeafIds = List<String>.unmodifiable([
+              ...parentLeafIds,
+              state.effectiveComponentId,
+            ]);
             final leafLabels = nodePath.sublist(slotPath.length);
             final grandChildren = <LayoutSelectionNode>[];
             element.visitChildElements((child) {
-              grandChildren.addAll(visitElement(child, nodePath));
+              grandChildren.addAll(visitElement(child, nodePath, nodeLeafIds));
             });
             return [
               LayoutSelectionNode(
+                id: state.effectiveComponentId,
                 label: state.label,
                 path: nodePath,
                 icon: state.widget.menuIcon ?? state.componentLabel?.menuIcon,
                 children: grandChildren,
                 onSelect: () {
                   selectSlot();
-                  setLeafSuffix(leafLabels, focusContext: state.context);
+                  setLeafSuffix(
+                    leafLabels,
+                    focusContext: state.context,
+                    ids: nodeLeafIds,
+                  );
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     setLeafSuffix(
                       leafLabels,
                       focusContext: state.mounted ? state.context : null,
+                      ids: nodeLeafIds,
                     );
                   });
                 },
@@ -365,37 +404,183 @@ class LayoutSelection {
       }
       final nodes = <LayoutSelectionNode>[];
       element.visitChildElements((child) {
-        nodes.addAll(visitElement(child, parentPath));
+        nodes.addAll(visitElement(child, parentPath, parentLeafIds));
       });
       return nodes;
     }
 
     slotContext.visitChildElements((child) {
-      result.addAll(visitElement(child, slotPath));
+      result.addAll(visitElement(child, slotPath, const []));
     });
     return result;
   }
 
-  static LayoutSelectionNode? _findNode(
-    List<LayoutSelectionNode> nodes,
-    List<String> targetPath,
+  static bool _isSameOrAncestorContext(
+    BuildContext? ancestor,
+    BuildContext? descendant,
   ) {
-    for (final node in nodes) {
-      if (listEquals(node.path, targetPath)) return node;
-      if (_findNode(node.children, targetPath) case final found?) {
-        return found;
-      }
+    if (ancestor == null ||
+        descendant == null ||
+        !ancestor.mounted ||
+        !descendant.mounted) {
+      return false;
     }
-    return null;
+    if (identical(ancestor, descendant)) return true;
+    var found = false;
+    try {
+      descendant.visitAncestorElements((element) {
+        if (identical(element, ancestor)) {
+          found = true;
+          return false;
+        }
+        return true;
+      });
+    } catch (_) {
+      return false;
+    }
+    return found;
   }
 
-  static List<Object> _candidateOwners() {
+  static bool _isNodeActive(
+    LayoutSelectionNode node, {
+    Object? owner,
+    BuildContext? focusContext,
+    List<String>? leafIds,
+  }) {
+    final effectiveFocusCtx =
+        focusContext ??
+        _leafFocus?.context ??
+        focus.value?.context ??
+        _focusTargets[_activeOwner]?.context;
+    final nodeCtx = node.targetContext?.call();
+    if (_isSameOrAncestorContext(nodeCtx, effectiveFocusCtx)) {
+      return true;
+    }
+    if (node.id != null) {
+      final ownerSlotId = owner == null
+          ? null
+          : _selectedSlotIds[owner]?.call();
+      if (ownerSlotId != null && node.id == ownerSlotId) {
+        return true;
+      }
+      final effectiveLeafIds = leafIds ?? _leafIds;
+      if (effectiveLeafIds.contains(node.id)) {
+        return true;
+      }
+    }
+    for (final child in node.children) {
+      if (_isNodeActive(
+        child,
+        owner: owner,
+        focusContext: focusContext,
+        leafIds: leafIds,
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Whether [node] is the currently selected node in the hierarchy.
+  static bool isNodeSelected(
+    LayoutSelectionNode node,
+    List<String> currentPath,
+  ) {
+    if (!listEquals(node.path, currentPath)) return false;
+    final effectiveFocusCtx =
+        _leafFocus?.context ??
+        focus.value?.context ??
+        _focusTargets[_activeOwner]?.context;
+    final nodeCtx = node.targetContext?.call();
+    if (nodeCtx != null && effectiveFocusCtx != null) {
+      if (_isSameOrAncestorContext(nodeCtx, effectiveFocusCtx) ||
+          _isSameOrAncestorContext(effectiveFocusCtx, nodeCtx)) {
+        return true;
+      }
+    }
+    if (node.id != null) {
+      if (_leafIds.isNotEmpty) {
+        return node.id == _leafIds.last;
+      }
+      for (final owner in _activeAncestryOwners()) {
+        final slotId = _selectedSlotIds[owner]?.call();
+        if (slotId != null) {
+          return node.id == slotId;
+        }
+      }
+    }
+    return true;
+  }
+
+  /// Whether [node] lies on the active selection branch for [currentPath].
+  static bool isNodeInActiveBranch(
+    LayoutSelectionNode node,
+    List<String> currentPath,
+  ) {
+    if (currentPath.length < node.path.length ||
+        !listEquals(currentPath.take(node.path.length).toList(), node.path)) {
+      return false;
+    }
+    if (listEquals(node.path, currentPath)) {
+      return isNodeSelected(node, currentPath);
+    }
+    return _isNodeActive(node);
+  }
+
+  static LayoutSelectionNode? _findNode(
+    List<LayoutSelectionNode> nodes,
+    List<String> targetPath, {
+    Object? owner,
+    BuildContext? focusContext,
+    List<String>? leafIds,
+  }) {
+    LayoutSelectionNode? firstMatch;
+    for (final node in nodes) {
+      if (listEquals(node.path, targetPath)) {
+        if (_isNodeActive(
+          node,
+          owner: owner,
+          focusContext: focusContext,
+          leafIds: leafIds,
+        )) {
+          return node;
+        }
+        firstMatch ??= node;
+      }
+      if (_findNode(
+            node.children,
+            targetPath,
+            owner: owner,
+            focusContext: focusContext,
+            leafIds: leafIds,
+          )
+          case final found?) {
+        if (_isNodeActive(
+          node,
+          owner: owner,
+          focusContext: focusContext,
+          leafIds: leafIds,
+        )) {
+          return found;
+        }
+        firstMatch ??= found;
+      }
+    }
+    return firstMatch;
+  }
+
+  static List<Object> _activeAncestryOwners() {
     final result = <Object>[];
     var current = _activeOwner;
     while (current != null) {
       result.add(current);
       current = _targets[current]?.parent;
     }
+    return result;
+  }
+
+  static List<Object> _candidateOwners() {
+    final result = _activeAncestryOwners();
     for (final owner in _targets.keys.toList().reversed) {
       if (!result.contains(owner)) result.add(owner);
     }
@@ -406,116 +591,170 @@ class LayoutSelection {
   /// without altering the currently displayed selection path.
   static void openContextMenu(List<String> prefix, Offset globalPosition) {
     if (prefix.isEmpty) return;
-    final owners = _candidateOwners();
+    final activeOwners = _activeAncestryOwners();
+    final fallbackOwners = [
+      for (final owner in _targets.keys.toList().reversed)
+        if (!activeOwners.contains(owner)) owner,
+    ];
 
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final openMenu = _contextMenus[owner];
-      if (target != null &&
-          !target.delegateToParent &&
-          openMenu != null &&
-          listEquals(target.path, prefix)) {
-        openMenu(globalPosition);
-        return;
+    bool tryOpenForOwners(List<Object> group) {
+      for (final owner in group) {
+        final target = _targets[owner];
+        final openMenu = _contextMenus[owner];
+        if (target != null &&
+            !target.delegateToParent &&
+            openMenu != null &&
+            listEquals(target.path, prefix)) {
+          openMenu(globalPosition);
+          return true;
+        }
       }
+
+      for (final owner in group) {
+        final target = _targets[owner];
+        final builder = _treeBuilders[owner];
+        if (target == null || builder == null) continue;
+        if (prefix.length > target.path.length &&
+            listEquals(prefix.take(target.path.length).toList(), target.path)) {
+          final roots = builder();
+          if (_findNode(roots, prefix, owner: owner) case final node?
+              when node.onContextMenu != null) {
+            node.onContextMenu!(globalPosition);
+            return true;
+          }
+        }
+      }
+
+      for (final owner in group) {
+        final target = _targets[owner];
+        final openMenu = _contextMenus[owner];
+        if (target != null &&
+            openMenu != null &&
+            listEquals(target.path, prefix)) {
+          openMenu(globalPosition);
+          return true;
+        }
+      }
+      return false;
     }
 
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final builder = _treeBuilders[owner];
-      if (target == null || builder == null) continue;
-      if (prefix.length > target.path.length &&
-          listEquals(prefix.take(target.path.length).toList(), target.path)) {
-        final roots = builder();
-        if (_findNode(roots, prefix) case final node?
-            when node.onContextMenu != null) {
-          node.onContextMenu!(globalPosition);
-          return;
+    if (tryOpenForOwners(activeOwners)) return;
+    tryOpenForOwners(fallbackOwners);
+  }
+
+  /// Resolves the [LayoutSelectionNode] corresponding to [prefix] in the
+  /// selection hierarchy, preferring the active selection branch and ID.
+  static LayoutSelectionNode? resolveNodeForPath(List<String> prefix) {
+    if (prefix.isEmpty) return null;
+    final activeOwners = _activeAncestryOwners();
+    final fallbackOwners = [
+      for (final owner in _targets.keys.toList().reversed)
+        if (!activeOwners.contains(owner)) owner,
+    ];
+    for (final group in [activeOwners, fallbackOwners]) {
+      for (final owner in group) {
+        final target = _targets[owner];
+        final builder = _treeBuilders[owner];
+        if (target == null || builder == null) continue;
+        if (prefix.length > target.path.length &&
+            listEquals(prefix.take(target.path.length).toList(), target.path)) {
+          final roots = builder();
+          if (_findNode(roots, prefix, owner: owner) case final node?) {
+            return node;
+          }
         }
       }
     }
-
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final openMenu = _contextMenus[owner];
-      if (target != null &&
-          openMenu != null &&
-          listEquals(target.path, prefix)) {
-        openMenu(globalPosition);
-        return;
-      }
-    }
+    return null;
   }
 
   /// Resolves the [EditorSlotState] corresponding to [prefix] in the selection
   /// hierarchy, or `null` if none matches.
   static EditorSlotState? resolveSlotForPath(List<String> prefix) {
     if (prefix.isEmpty) return null;
-    final owners = _candidateOwners();
+    final activeOwners = _activeAncestryOwners();
+    final fallbackOwners = [
+      for (final owner in _targets.keys.toList().reversed)
+        if (!activeOwners.contains(owner)) owner,
+    ];
 
-    // 1. Direct match on a non-delegating registered container's root path.
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final getCtx = _targetContexts[owner];
-      if (target != null &&
-          !target.delegateToParent &&
-          listEquals(target.path, prefix)) {
-        final ctx = getCtx?.call() ?? (owner is StatefulElement ? owner : null);
-        if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
-          return slot;
-        }
-      }
-    }
-
-    // 2. Match a zone, region, or slot inside an ancestor container's tree.
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final builder = _treeBuilders[owner];
-      if (target == null || builder == null) continue;
-      if (prefix.length > target.path.length &&
-          listEquals(prefix.take(target.path.length).toList(), target.path)) {
-        final roots = builder();
-        if (_findNode(roots, prefix) case final node?) {
-          final ctx = node.targetContext?.call();
+    EditorSlotState? resolveInGroup(List<Object> group) {
+      // 1. Direct match on a non-delegating registered container's root path.
+      for (final owner in group) {
+        final target = _targets[owner];
+        final getCtx = _targetContexts[owner];
+        if (target != null &&
+            !target.delegateToParent &&
+            listEquals(target.path, prefix)) {
+          final ctx =
+              getCtx?.call() ?? (owner is StatefulElement ? owner : null);
           if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
             return slot;
           }
         }
       }
-    }
 
-    // 3. Fallback on delegating container root path.
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final getCtx = _targetContexts[owner];
-      if (target != null && listEquals(target.path, prefix)) {
-        final ctx = getCtx?.call();
-        if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
-          return slot;
+      // 2. Match a zone, region, or slot inside an ancestor container's tree.
+      for (final owner in group) {
+        final target = _targets[owner];
+        final builder = _treeBuilders[owner];
+        if (target == null || builder == null) continue;
+        if (prefix.length > target.path.length &&
+            listEquals(prefix.take(target.path.length).toList(), target.path)) {
+          final roots = builder();
+          if (_findNode(roots, prefix, owner: owner) case final node?) {
+            final ctx = node.targetContext?.call();
+            if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
+              return slot;
+            }
+          }
         }
       }
+
+      // 3. Fallback on delegating container root path.
+      for (final owner in group) {
+        final target = _targets[owner];
+        final getCtx = _targetContexts[owner];
+        if (target != null && listEquals(target.path, prefix)) {
+          final ctx = getCtx?.call();
+          if (EditorSlotState.resolveFromContext(ctx) case final slot?) {
+            return slot;
+          }
+        }
+      }
+      return null;
     }
 
-    return null;
+    return resolveInGroup(activeOwners) ?? resolveInGroup(fallbackOwners);
   }
 
   /// Highlights the component at [prefix] with the editor overlay outline, or
   /// clears the highlight when [prefix] is `null`.
   static void highlightPath(List<String>? prefix) {
     if (prefix == null || prefix.isEmpty) {
+      highlightedSlotId.value = null;
       EditorSlotState.clearHighlightedTarget();
       return;
     }
-    EditorSlotState.setHighlightedTarget(resolveSlotForPath(prefix));
+    final node = resolveNodeForPath(prefix);
+    highlightedSlotId.value = node?.id;
+    final fromNode = node == null
+        ? null
+        : EditorSlotState.resolveFromContext(node.targetContext?.call());
+    EditorSlotState.setHighlightedTarget(
+      fromNode ?? resolveSlotForPath(prefix),
+    );
   }
 
   /// Highlights [node] with the editor overlay outline, or clears the highlight
   /// when [node] is `null`.
   static void highlightNode(LayoutSelectionNode? node) {
     if (node == null) {
+      highlightedSlotId.value = null;
       EditorSlotState.clearHighlightedTarget();
       return;
     }
+    highlightedSlotId.value = node.id;
     final fromCtx = EditorSlotState.resolveFromContext(
       node.targetContext?.call(),
     );
@@ -528,30 +767,36 @@ class LayoutSelection {
   static List<LayoutSelectionNode> childrenOf(List<String> prefix) {
     if (prefix.isEmpty) return const [];
 
-    final owners = _candidateOwners();
+    final activeOwners = _activeAncestryOwners();
+    final fallbackOwners = [
+      for (final owner in _targets.keys.toList().reversed)
+        if (!activeOwners.contains(owner)) owner,
+    ];
 
-    // 1. Direct match on a registered container's root path.
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final builder = _treeBuilders[owner];
-      if (target != null &&
-          builder != null &&
-          listEquals(target.path, prefix)) {
-        final built = builder();
-        if (built.isNotEmpty) return built;
+    for (final group in [activeOwners, fallbackOwners]) {
+      // 1. Direct match on a registered container's root path.
+      for (final owner in group) {
+        final target = _targets[owner];
+        final builder = _treeBuilders[owner];
+        if (target != null &&
+            builder != null &&
+            listEquals(target.path, prefix)) {
+          final built = builder();
+          if (built.isNotEmpty) return built;
+        }
       }
-    }
 
-    // 2. Match a zone, region, or slot inside an ancestor container's tree.
-    for (final owner in owners) {
-      final target = _targets[owner];
-      final builder = _treeBuilders[owner];
-      if (target == null || builder == null) continue;
-      if (prefix.length > target.path.length &&
-          listEquals(prefix.take(target.path.length).toList(), target.path)) {
-        final roots = builder();
-        if (_findNode(roots, prefix) case final node?) {
-          return node.children;
+      // 2. Match a zone, region, or slot inside an ancestor container's tree.
+      for (final owner in group) {
+        final target = _targets[owner];
+        final builder = _treeBuilders[owner];
+        if (target == null || builder == null) continue;
+        if (prefix.length > target.path.length &&
+            listEquals(prefix.take(target.path.length).toList(), target.path)) {
+          final roots = builder();
+          if (_findNode(roots, prefix, owner: owner) case final node?) {
+            return node.children;
+          }
         }
       }
     }
@@ -585,6 +830,7 @@ class LayoutSelection {
   /// zone or slot selections.
   static void deselectDescendants(Object owner) {
     _leafSuffix = const [];
+    _leafIds = const [];
     _leafFocus = null;
     var removedReported = false;
     for (final entry in _targets.entries.toList()) {
@@ -603,6 +849,7 @@ class LayoutSelection {
   /// active non-ancestor containers and removing stale ancestor reports.
   static void activate(Object owner) {
     _leafSuffix = const [];
+    _leafIds = const [];
     _leafFocus = null;
     _activeOwner = owner;
     var changed = false;
@@ -656,7 +903,11 @@ class LayoutSelection {
       return;
     }
     if (_leafSuffix.isNotEmpty && prefix.length > 1) {
-      _leafSuffix = _leafSuffix.sublist(0, _leafSuffix.length - 1);
+      final newLen = _leafSuffix.length - 1;
+      _leafSuffix = _leafSuffix.sublist(0, newLen);
+      if (_leafIds.length > newLen) {
+        _leafIds = _leafIds.sublist(0, newLen);
+      }
       _leafFocus = null;
       _syncReported();
       return;
@@ -680,7 +931,13 @@ class LayoutSelection {
 
   /// Active la disposition du segment, et sa zone si le segment en est une.
   static void select(List<String> prefix) {
+    final savedFocusCtx =
+        _leafFocus?.context ??
+        focus.value?.context ??
+        _focusTargets[_activeOwner]?.context;
+    final savedLeafIds = _leafIds;
     _leafSuffix = const [];
+    _leafIds = const [];
     _leafFocus = null;
     Object? active;
     var depth = -1;
@@ -699,6 +956,20 @@ class LayoutSelection {
       if (prefix.length == length + 2 &&
           _slotSelectors.containsKey(active) &&
           listEquals(prefix.take(length).toList(), target.path)) {
+        final builder = _treeBuilders[active];
+        if (builder != null) {
+          if (_findNode(
+                builder(),
+                prefix,
+                owner: active,
+                focusContext: savedFocusCtx,
+                leafIds: savedLeafIds,
+              )
+              case final node? when node.onSelect != null) {
+            node.onSelect!();
+            return;
+          }
+        }
         target.select(prefix[length]);
         _slotSelectors[active]!(prefix.last);
         return;
@@ -719,6 +990,20 @@ class LayoutSelection {
       if (prefix.length == length + 2 &&
           _slotSelectors.containsKey(entry.key) &&
           listEquals(prefix.take(length).toList(), target.path)) {
+        final builder = _treeBuilders[entry.key];
+        if (builder != null) {
+          if (_findNode(
+                builder(),
+                prefix,
+                owner: entry.key,
+                focusContext: savedFocusCtx,
+                leafIds: savedLeafIds,
+              )
+              case final node? when node.onSelect != null) {
+            node.onSelect!();
+            return;
+          }
+        }
         target.select(prefix[length]);
         _slotSelectors[entry.key]!(prefix.last);
         return;
@@ -739,8 +1024,14 @@ class LayoutSelection {
       if (target == null || builder == null) continue;
       if (prefix.length > target.path.length &&
           listEquals(prefix.take(target.path.length).toList(), target.path)) {
-        if (_findNode(builder(), prefix) case final node?
-            when node.onSelect != null) {
+        if (_findNode(
+              builder(),
+              prefix,
+              owner: owner,
+              focusContext: savedFocusCtx,
+              leafIds: savedLeafIds,
+            )
+            case final node? when node.onSelect != null) {
           node.onSelect!();
           return;
         }
@@ -776,6 +1067,7 @@ class LayoutSelection {
       if (_reported.remove(owner) == null) return;
       if (identical(_activeOwner, owner)) {
         _leafSuffix = const [];
+        _leafIds = const [];
         _leafFocus = null;
         _preserveLeafOnNextReport = false;
       }
@@ -786,6 +1078,7 @@ class LayoutSelection {
           _preserveLeafOnNextReport = false;
         } else {
           _leafSuffix = const [];
+          _leafIds = const [];
           _leafFocus = null;
         }
       }
