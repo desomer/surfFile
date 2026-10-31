@@ -9,6 +9,7 @@ import 'package:super_container_layout/widgets/components/super_layout/super_lay
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/super_page.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/overlay/editor_zone_badge.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 
@@ -2029,11 +2030,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Verify EditorZoom automatically zoomed in on the small 'Mon Bouton' leaf (120x48 -> 300%)
+      // Verify EditorZoom automatically zoomed in on the small 'Mon Bouton' leaf (120x48 -> 400%)
       final zoomController = EditorZoomScope.controllerOf(
         tester.element(find.text('Action')),
       )!;
-      expect(zoomController.scale.value, closeTo(3.0, 0.01));
+      expect(zoomController.scale.value, closeTo(4.0, 0.01));
 
       EditorSelectionOutline? activeOutlineForLabel(String targetLabel) {
         final slotFinder = find.byWidgetPredicate(
@@ -2070,8 +2071,21 @@ void main() {
       final cardOutline = activeOutlineForLabel('Ma Carte');
       expect(cardOutline, isNotNull);
       expect(cardOutline!.emphasized, isTrue);
+      expect(cardOutline.dashed, isTrue);
 
-      // Move pointer away -> outline disappears
+      // Hovering the resizable parent ('Ma Carte') reveals its resize anchors and dezooms to show them
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('slot-resize-card-slot-se')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('slot-resize-card-slot-nw')),
+        findsOneWidget,
+      );
+      expect(zoomController.scale.value, lessThan(1.0));
+
+      // Move pointer away -> outline disappears and zoom returns to leaf
       await gesture.moveTo(const Offset(5, 5));
       await tester.pumpAndSettle();
       expect(activeOutlineForLabel('Ma Carte'), isNull);
@@ -2101,6 +2115,81 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(activeOutlineForLabel('Mon Bouton'), isNull);
+
+      // 3. Hover the parent ('Ma Carte') directly with the mouse pointer on the canvas
+      // (outside 'Mon Bouton'): displays the same emphasized dashed outline + resize anchors + dezoom
+      await gesture.moveTo(const Offset(120, 120));
+      await tester.pump();
+      final canvasParentOutline = activeOutlineForLabel('Ma Carte');
+      expect(canvasParentOutline, isNotNull);
+      expect(canvasParentOutline!.emphasized, isTrue);
+      expect(canvasParentOutline.dashed, isTrue);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('slot-resize-card-slot-se')),
+        findsOneWidget,
+      );
+      expect(zoomController.scale.value, lessThan(1.0));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'selecting a child slot switches its parent zone border to subtle dashed 1px while the slot uses solid 2px',
+    (tester) async {
+      final mode = ValueNotifier(true);
+      addTearDown(mode.dispose);
+      await pump(tester, mode, layout('main'));
+
+      // 1. Single click selects the Centre zone directly: solid 2px border
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['main', 'Centre']);
+
+      final zoneSelectedFinder = find.descendant(
+        of: inside('main', 'super-layout-zone-selected-center'),
+        matching: find.byType(EditorSelectionBorder),
+      );
+      expect(zoneSelectedFinder, findsOneWidget);
+      final directZoneBorder = tester.widget<EditorSelectionBorder>(
+        zoneSelectedFinder,
+      );
+      expect(directZoneBorder.dashed, isFalse);
+      expect(directZoneBorder.animated, isTrue);
+      expect(directZoneBorder.strokeWidth, 2.0);
+      expect(directZoneBorder.opacity, 1.0);
+      expect(
+        find.byKey(const ValueKey('slot-highlight-content')),
+        findsNothing,
+      );
+
+      // 2. Double-click selects the child slot: parent zone switches to subtle dashed 1px (non-animated),
+      // while the child slot receives the active animated solid 2px border.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.tapAt(const Offset(400, 350));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['main', 'Centre', 'main']);
+
+      final parentZoneBorder = tester.widget<EditorSelectionBorder>(
+        zoneSelectedFinder,
+      );
+      expect(parentZoneBorder.dashed, isTrue);
+      expect(parentZoneBorder.animated, isFalse);
+      expect(parentZoneBorder.strokeWidth, 1.0);
+      expect(parentZoneBorder.opacity, 0.45);
+
+      final slotBorderFinder = find.descendant(
+        of: find.byKey(const ValueKey('slot-highlight-content')),
+        matching: find.byType(EditorSelectionBorder),
+      );
+      expect(slotBorderFinder, findsOneWidget);
+      final slotBorder = tester.widget<EditorSelectionBorder>(slotBorderFinder);
+      expect(slotBorder.dashed, isFalse);
+      expect(slotBorder.animated, isTrue);
+      expect(slotBorder.strokeWidth, 2.0);
+      expect(slotBorder.filled, isTrue);
       expect(tester.takeException(), isNull);
     },
   );

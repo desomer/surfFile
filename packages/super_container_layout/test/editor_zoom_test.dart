@@ -190,7 +190,7 @@ void main() {
       await wheel(-2000);
       await tester.pumpAndSettle();
       final maxed = screenRect(tester, target);
-      expect(maxed.width, closeTo(320 * 3, .01));
+      expect(maxed.width, closeTo(320 * 4, .01));
       expect(
         maxed.left + relativeBefore * maxed.width,
         closeTo(pointer.dx, .05),
@@ -347,13 +347,17 @@ void main() {
       final label = find.byKey(const ValueKey('slot-label-select-target'));
       final labelSize = screenRect(tester, label).size;
       await tester.pump(const Duration(milliseconds: 150));
+      final expectedScale = math.sqrt((800 * 600 / 3) / (320 * 240));
+      final expectedWidth = 320 * expectedScale;
+      final expectedHeight = 240 * expectedScale;
       final during = screenRect(tester, target);
       expect(during.width, greaterThan(original.width));
-      expect(during.width, lessThan(560));
+      expect(during.width, lessThan(expectedWidth));
       await tester.pumpAndSettle();
       final zoomed = screenRect(tester, target);
-      expect(zoomed.width, closeTo(560, .01));
-      expect(zoomed.height, closeTo(420, .01));
+      expect(zoomed.width, closeTo(expectedWidth, .01));
+      expect(zoomed.height, closeTo(expectedHeight, .01));
+      expect(zoomed.width * zoomed.height, closeTo(800 * 600 / 3, .5));
       expect(zoomed.center, const Offset(400, 300));
       expect(screenRect(tester, label).size, labelSize);
       expect(screenRect(tester, banner).size, bannerSize);
@@ -379,7 +383,7 @@ void main() {
 
       await selectTargetZone(tester);
       await tester.pumpAndSettle();
-      expect(screenRect(tester, target).width, closeTo(560, .01));
+      expect(screenRect(tester, target).width, closeTo(expectedWidth, .01));
       mode.value = false;
       await tester.pumpAndSettle();
       expect(screenRect(tester, target), const Rect.fromLTWH(0, 0, 320, 240));
@@ -395,7 +399,7 @@ void main() {
     },
   );
 
-  testWidgets('small targets are capped at three and menus stay unscaled', (
+  testWidgets('small targets are capped at four and menus stay unscaled', (
     tester,
   ) async {
     await pumpPage(tester, size: const Size(100, 80));
@@ -403,7 +407,7 @@ void main() {
     await selectTargetZone(tester);
     await tester.pumpAndSettle();
     final rect = screenRect(tester, target);
-    expect(rect.size, const Size(300, 240));
+    expect(rect.size, const Size(400, 320));
     expect(rect.center, const Offset(400, 300));
     await tester.tapAt(
       rect.bottomRight - const Offset(20, 20),
@@ -458,7 +462,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('slot-label-select-target')));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value.last, 'Target');
-      expect(screenRect(tester, target).size, const Size(360, 240));
+      expect(screenRect(tester, target).size, const Size(480, 320));
       expect(screenRect(tester, target).center, const Offset(400, 300));
       final handle = find.byKey(const ValueKey('slot-resize-target-se'));
       expect(screenRect(tester, handle).size, tester.getSize(handle));
@@ -486,7 +490,7 @@ void main() {
       await tester.binding.setSurfaceSize(const Size(1000, 700));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await tester.pumpAndSettle();
-      expect(screenRect(tester, target).size, const Size(360, 240));
+      expect(screenRect(tester, target).size, const Size(480, 320));
       expect(screenRect(tester, target).center, const Offset(500, 350));
       expect(
         (screenRect(tester, handle).bottomRight -
@@ -496,6 +500,7 @@ void main() {
       );
 
       final second = find.byKey(const ValueKey('zoom-second-content'));
+      final secondBaseSize = tester.getSize(second);
       LayoutSelection.select(const [
         'Page',
         'Corps',
@@ -505,8 +510,17 @@ void main() {
       ]);
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value.last, 'Second');
-      expect(screenRect(tester, second).center, const Offset(500, 350));
-      expect(screenRect(tester, second).width, closeTo(700, .01));
+      expect(
+        screenRect(tester, second).center,
+        within(distance: .01, from: const Offset(500, 350)),
+      );
+      final secondExpectedScale = math.sqrt(
+        (1000 * 700 / 3) / (secondBaseSize.width * secondBaseSize.height),
+      );
+      expect(
+        screenRect(tester, second).width,
+        closeTo(secondBaseSize.width * secondExpectedScale, .01),
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -522,11 +536,19 @@ void main() {
       await tester.pumpAndSettle();
       await tester.drag(
         find.byKey(const ValueKey('slot-resize-target-se')),
-        const Offset(60, 30),
+        const Offset(80, 40),
       );
       await tester.pumpAndSettle();
       expect(tester.getSize(target), const Size(140, 90));
-      expect(screenRect(tester, target).size, const Size(420, 270));
+      final resizedScale = math.sqrt((800 * 600 / 3) / (140 * 90));
+      expect(
+        screenRect(tester, target).width,
+        closeTo(140 * resizedScale, .01),
+      );
+      expect(
+        screenRect(tester, target).height,
+        closeTo(90 * resizedScale, .01),
+      );
       expect(screenRect(tester, target).center, const Offset(400, 300));
       expect(tester.takeException(), isNull);
     },
@@ -544,7 +566,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await tester.pump();
-    expect(screenRect(tester, target).size, const Size(300, 240));
+    expect(screenRect(tester, target).size, const Size(400, 320));
     expect(screenRect(tester, target).center, const Offset(400, 300));
     expect(tester.takeException(), isNull);
   });
@@ -871,6 +893,37 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
       await tester.pumpAndSettle();
       expect(dialog, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'selecting a wide but narrow zone keeps its full width visible in the viewport',
+    (tester) async {
+      // 1. Wide zone (600x50) inside an 800x600 viewport: zooms to fit width
+      // without clipping left/right edges.
+      await pumpPage(tester, size: const Size(600, 50));
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      await selectTargetZone(tester);
+      await tester.pumpAndSettle();
+
+      final zoomedWide = screenRect(tester, target);
+      expect(zoomedWide.width, greaterThan(600));
+      expect(zoomedWide.width, closeTo(800 * .9, .05));
+      expect(zoomedWide.left, greaterThanOrEqualTo(0));
+      expect(zoomedWide.right, lessThanOrEqualTo(800));
+      expect(zoomedWide.center, const Offset(400, 300));
+
+      // 2. Full-width narrow zone (800x50) inside an 800x600 viewport: stays at
+      // 100% (minScale) so the full 800px width remains visible.
+      await pumpPage(tester, size: const Size(800, 50));
+      await selectTargetZone(tester);
+      await tester.pumpAndSettle();
+
+      final zoomedFullWidth = screenRect(tester, target);
+      expect(zoomedFullWidth.width, closeTo(800, .05));
+      expect(zoomedFullWidth.left, greaterThanOrEqualTo(0));
+      expect(zoomedFullWidth.right, lessThanOrEqualTo(800));
       expect(tester.takeException(), isNull);
     },
   );

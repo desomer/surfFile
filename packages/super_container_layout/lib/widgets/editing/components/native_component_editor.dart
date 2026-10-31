@@ -2477,23 +2477,26 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
           child,
           Positioned.fill(
             child: EditorOverlayVisibility(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  key: selected && overlay
-                      ? ValueKey('${widget.keyPrefix}-selected-$id')
-                      : null,
-                  decoration: BoxDecoration(
-                    border: overlay
-                        ? Border.all(
-                            color: selected
-                                ? colors.primary
-                                : colors.outlineVariant,
-                            width: selected ? 3 : 1,
+              child: !overlay
+                  ? const SizedBox.shrink()
+                  : selected
+                  ? (_selectedSlot != null
+                        ? EditorSelectionBorder.subtleParent(
+                            key: ValueKey('${widget.keyPrefix}-selected-$id'),
                           )
-                        : null,
-                  ),
-                ),
-              ),
+                        : EditorSelectionBorder.active(
+                            key: ValueKey('${widget.keyPrefix}-selected-$id'),
+                          ))
+                  : IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: colors.outlineVariant,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
             ),
           ),
           if (overlay && showBadge)
@@ -2521,6 +2524,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                         label: spec.label,
                         labelKey: ValueKey('${widget.keyPrefix}-select-$id'),
                         selected: selected,
+                        hasSelectedChild: selected && _selectedSlot != null,
                         onHover: (hovered) => emphasis.report(id, hovered),
                         onTap: () => select(
                           selected ? null : id,
@@ -2775,23 +2779,30 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                     content,
                   Positioned.fill(
                     child: EditorOverlayVisibility(
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          key: selected && overlay
-                              ? ValueKey('${widget.keyPrefix}-selected-$id')
-                              : null,
-                          decoration: BoxDecoration(
-                            border: overlay
-                                ? Border.all(
-                                    color: selected
-                                        ? colors.primary
-                                        : colors.outlineVariant,
-                                    width: selected ? 3 : 1,
+                      child: !overlay
+                          ? const SizedBox.shrink()
+                          : selected
+                          ? (_selectedSlot != null
+                                ? EditorSelectionBorder.subtleParent(
+                                    key: ValueKey(
+                                      '${widget.keyPrefix}-selected-$id',
+                                    ),
                                   )
-                                : null,
-                          ),
-                        ),
-                      ),
+                                : EditorSelectionBorder.active(
+                                    key: ValueKey(
+                                      '${widget.keyPrefix}-selected-$id',
+                                    ),
+                                  ))
+                          : IgnorePointer(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: colors.outlineVariant,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                   if (overlay && showBadge)
@@ -2825,6 +2836,8 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
                                   '${widget.keyPrefix}-select-$id',
                                 ),
                                 selected: selected,
+                                hasSelectedChild:
+                                    selected && _selectedSlot != null,
                                 onHover: (hovered) =>
                                     emphasis.report(id, hovered),
                                 onTap: () =>

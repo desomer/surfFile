@@ -243,18 +243,12 @@ class _GridSurfaceState extends State<_GridSurface> {
       children: [
         if (selected)
           Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                key: _dragId == slot.id
-                    ? const ValueKey('grid-drop-preview')
-                    : null,
-                decoration: BoxDecoration(
-                  color: _dragId == slot.id
-                      ? colors.tertiary.withValues(alpha: .12)
-                      : null,
-                  border: Border.all(color: colors.tertiary, width: 2),
-                ),
-              ),
+            child: EditorSelectionBorder.active(
+              key: _dragId == slot.id
+                  ? const ValueKey('grid-drop-preview')
+                  : null,
+              filled: _dragId == slot.id,
+              fillOpacity: 0.12,
             ),
           ),
         Positioned.fill(

@@ -20,7 +20,8 @@ class EditorZoom extends StatefulWidget {
 
   static const defaultMaxAutoZoomExtent = 200.0;
   static const minScale = 1.0;
-  static const maxScale = 3.0;
+  static const maxScale = 4.0;
+  static const targetScreenAreaFraction = 1.0 / 3.0;
 
   /// Empêche l'ouverture du menu contextuel après un drag ou un zoom au clic droit.
   static bool suppressContextMenu = false;
@@ -68,14 +69,12 @@ class _EditorZoomState extends State<EditorZoom>
 
   void _onHighlightChanged() {
     _hoverZoomTimer?.cancel();
-    final next = EditorSlotState.highlightedTarget.value;
+    final next =
+        EditorSlotState.highlightedTarget.value ??
+        EditorSlotState.canvasHoveredParent.value;
     if (identical(next, _debouncedHighlight)) return;
-    _hoverZoomTimer = Timer(_hoverZoomDelay, () {
-      _hoverZoomTimer = null;
-      if (!mounted) return;
-      _debouncedHighlight = EditorSlotState.highlightedTarget.value;
-      _schedule();
-    });
+    _debouncedHighlight = next;
+    _schedule();
   }
 
   @override
@@ -101,6 +100,8 @@ class _EditorZoomState extends State<EditorZoom>
     };
     LayoutSelection.focus.addListener(_schedule);
     EditorSlotState.highlightedTarget.addListener(_onHighlightChanged);
+    EditorSlotState.canvasHoveredParent.addListener(_onHighlightChanged);
+    _controller.hoveredParentContext.addListener(_schedule);
     _controller.dialog.addListener(_schedule);
     _controller.contextMenuAvailable.addListener(_schedule);
     EditorInsertionPreview.active.addListener(_schedule);
@@ -139,8 +140,13 @@ class _EditorZoomState extends State<EditorZoom>
     final highlightedCtx = highlighted != null && highlighted.mounted
         ? highlighted.context
         : null;
+    final parentHover = _controller.hoveredParentContext.value;
+    final parentHoverCtx = parentHover != null && parentHover.mounted
+        ? parentHover
+        : null;
+    final activeHoverCtx = highlightedCtx ?? parentHoverCtx;
     final focus =
-        highlightedCtx ??
+        activeHoverCtx ??
         dialog?.target ??
         LayoutSelection.focus.value?.context ??
         (dialog != null ? _content.currentContext : null);
@@ -225,55 +231,57 @@ class _EditorZoomState extends State<EditorZoom>
             rect.top < viewportBounds.top ||
             rect.right > viewportBounds.right ||
             rect.bottom > viewportBounds.bottom;
-        final isHoverFraming = highlightedCtx != null;
-        final maxExtent = isHoverFraming && widget.maxAutoZoomExtent > 0
-            ? math.max(
-                widget.maxAutoZoomExtent,
-                math.min(available.width, available.height) * 0.75,
-              )
-            : widget.maxAutoZoomExtent;
-        final tooLarge =
-            dialog == null &&
+        final isHoverFraming = activeHoverCtx != null;
+        final hasEditorDialog = dialog != null;
+        final autoZoomDisabled =
+            !hasEditorDialog &&
             _manualScale == null &&
-            (widget.maxAutoZoomExtent <= 0 ||
-                (rect.width >= maxExtent &&
-                    rect.height >= maxExtent &&
-                    !isOutOfView));
-        if (!tooLarge) {
-          final hasReserved =
-              dialog != null || _controller.contextMenuAvailable.value != null;
-          var rawScale = math.min(
-            available.width * .7 / rect.width,
-            available.height * .7 / rect.height,
-          );
-          if (rawScale <= EditorZoom.minScale &&
-              rect.shortestSide > 0 &&
-              rect.shortestSide < maxExtent &&
-              (rect.width < _viewport.width * .88 ||
-                  rect.height < _viewport.height * .88)) {
-            final targetShort = isHoverFraming
-                ? math.min(available.shortestSide * .45, 220.0)
-                : math.min(widget.maxAutoZoomExtent * .85, 180.0);
-            rawScale = math.max(
-              rawScale,
-              (targetShort / rect.shortestSide).clamp(
-                isHoverFraming ? 1.35 : EditorZoom.minScale,
-                2.2,
-              ),
+            widget.maxAutoZoomExtent <= 0;
+        if (!autoZoomDisabled) {
+          final double rawScale;
+          if (hasEditorDialog) {
+            rawScale = math.min(
+              available.width * .7 / rect.width,
+              available.height * .7 / rect.height,
             );
+          } else {
+            final targetArea =
+                available.width *
+                available.height *
+                EditorZoom.targetScreenAreaFraction;
+            final selectionArea = rect.width * rect.height;
+            final areaScale = math.sqrt(targetArea / selectionArea);
+            final fitScale = math.min(
+              available.width * .9 / rect.width,
+              available.height * .9 / rect.height,
+            );
+            rawScale = math.min(areaScale, fitScale);
           }
-          final scale = rawScale.clamp(
-            !hasReserved || isHoverFraming ? EditorZoom.minScale : 0.0,
+          final baseScale = rawScale.clamp(
+            hasEditorDialog ? 0.0 : EditorZoom.minScale,
             EditorZoom.maxScale,
           );
-          if (hasReserved ||
+          const handleMargin = 28.0;
+          final fitWithHandles = math.min(
+            math.max(1.0, available.width - handleMargin * 2) / rect.width,
+            math.max(1.0, available.height - handleMargin * 2) / rect.height,
+          );
+          final scale = isHoverFraming
+              ? math
+                    .min(baseScale, fitWithHandles)
+                    .clamp(0.5, EditorZoom.maxScale)
+              : baseScale;
+          if (hasEditorDialog ||
               scale > EditorZoom.minScale ||
               isOutOfView ||
               isHoverFraming) {
             destination = (
               scale: scale,
               offset:
-                  scale <= EditorZoom.minScale && !hasReserved && !isOutOfView
+                  scale <= EditorZoom.minScale &&
+                      !hasEditorDialog &&
+                      !isOutOfView &&
+                      !isHoverFraming
                   ? Offset.zero
                   : available.center - rect.center * scale,
             );
@@ -488,6 +496,8 @@ class _EditorZoomState extends State<EditorZoom>
     _controller.sliderScaleHandler = null;
     LayoutSelection.focus.removeListener(_schedule);
     EditorSlotState.highlightedTarget.removeListener(_onHighlightChanged);
+    EditorSlotState.canvasHoveredParent.removeListener(_onHighlightChanged);
+    _controller.hoveredParentContext.removeListener(_schedule);
     _controller.dialog.removeListener(_schedule);
     _controller.contextMenuAvailable.removeListener(_schedule);
     EditorInsertionPreview.active.removeListener(_schedule);
@@ -512,27 +522,33 @@ class _EditorZoomState extends State<EditorZoom>
         return Stack(
           fit: StackFit.expand,
           children: [
-            Listener(
-              onPointerDown: _onPointerDown,
-              onPointerMove: _onPointerMove,
-              onPointerUp: _onPointerUp,
-              onPointerCancel: _onPointerCancel,
-              onPointerSignal: _onPointerSignal,
-              behavior: HitTestBehavior.translucent,
-              child: ClipRect(
-                key: _viewportKey,
-                child: Transform(
-                  key: const ValueKey('editor-zoom-transform'),
-                  alignment: Alignment.topLeft,
-                  transform: Matrix4.identity()
-                    ..translateByDouble(
-                      _current.offset.dx,
-                      _current.offset.dy,
-                      0,
-                      1,
-                    )
-                    ..scaleByDouble(_current.scale, _current.scale, 1, 1),
-                  child: SizedBox.expand(key: _content, child: widget.child),
+            MouseRegion(
+              opaque: false,
+              onHover: (event) =>
+                  EditorSlotState.recordViewportPointerHover(event.position),
+              onExit: (_) => EditorSlotState.clearCanvasHoveredParent(),
+              child: Listener(
+                onPointerDown: _onPointerDown,
+                onPointerMove: _onPointerMove,
+                onPointerUp: _onPointerUp,
+                onPointerCancel: _onPointerCancel,
+                onPointerSignal: _onPointerSignal,
+                behavior: HitTestBehavior.translucent,
+                child: ClipRect(
+                  key: _viewportKey,
+                  child: Transform(
+                    key: const ValueKey('editor-zoom-transform'),
+                    alignment: Alignment.topLeft,
+                    transform: Matrix4.identity()
+                      ..translateByDouble(
+                        _current.offset.dx,
+                        _current.offset.dy,
+                        0,
+                        1,
+                      )
+                      ..scaleByDouble(_current.scale, _current.scale, 1, 1),
+                    child: SizedBox.expand(key: _content, child: widget.child),
+                  ),
                 ),
               ),
             ),
@@ -779,6 +795,7 @@ class EditorZoomController {
   final scale = ValueNotifier<double>(1.0);
   final openContextMenus = ValueNotifier<int>(0);
   final contextMenuAvailable = ValueNotifier<Rect?>(null);
+  final hoveredParentContext = ValueNotifier<BuildContext?>(null);
   Offset? toolbarPosition;
   final transform = ValueNotifier<({double scale, Offset offset})>((
     scale: 1.0,
@@ -841,6 +858,7 @@ class EditorZoomController {
     }
     openContextMenus.dispose();
     contextMenuAvailable.dispose();
+    hoveredParentContext.dispose();
     dialog.dispose();
     transform.dispose();
   }

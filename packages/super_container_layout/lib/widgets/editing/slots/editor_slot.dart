@@ -21,6 +21,7 @@ import '../dialogs/editor_dialog_header.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../dialogs/super_value_json_extract_dialog.dart';
 import '../overlay/editor_overlay.dart';
+import '../overlay/editor_zone_badge.dart';
 import '../overlay/editor_zoom.dart';
 
 export 'editor_context_menu.dart'
@@ -308,17 +309,65 @@ class EditorSlotState extends State<EditorSlot> {
   static bool _hoveredTargetUpdateScheduled = false;
   static final ValueNotifier<EditorSlotState?> _highlightedTarget =
       ValueNotifier(null);
+  static final ValueNotifier<EditorSlotState?> _canvasHoveredParent =
+      ValueNotifier(null);
+  static Offset? _settledPointerPosition;
+  static bool _pointerMoveActive = false;
 
   /// Target currently highlighted from a context menu, banner path segment,
   /// chevron tree popup, or target selector dialog.
   static ValueNotifier<EditorSlotState?> get highlightedTarget =>
       _highlightedTarget;
 
+  /// Parent slot currently hovered directly by the mouse pointer on the canvas.
+  static ValueNotifier<EditorSlotState?> get canvasHoveredParent =>
+      _canvasHoveredParent;
+
   static EditorSlotState? get _menuHoveredTarget => _highlightedTarget.value;
   static set _menuHoveredTarget(EditorSlotState? value) {
     if (!identical(_highlightedTarget.value, value)) {
       _highlightedTarget.value = value;
     }
+  }
+
+  static bool _recordRealPointerMove(Offset position) {
+    final settled = _settledPointerPosition;
+    final moved = settled == null || (position - settled).distance > 0.01;
+    if (moved && !_pointerMoveActive) {
+      _pointerMoveActive = true;
+      scheduleMicrotask(() {
+        _settledPointerPosition = position;
+        _pointerMoveActive = false;
+      });
+    }
+    return moved || _pointerMoveActive;
+  }
+
+  /// Records a pointer hover position on the canvas viewport so synthetic
+   /// enter/exit events during zoom animations can be distinguished from real
+  /// pointer movements.
+  static void recordViewportPointerHover(Offset position) {
+    final moved = _recordRealPointerMove(position);
+    if (moved) {
+      scheduleMicrotask(_refreshHoveredTarget);
+    }
+  }
+
+  /// Clears any parent slot hovered on the canvas.
+  static void clearCanvasHoveredParent([EditorSlotState? expected]) {
+    if (expected != null && !identical(_canvasHoveredParent.value, expected)) {
+      return;
+    }
+    if (_canvasHoveredParent.value == null) return;
+    _canvasHoveredParent.value = null;
+    _refreshHoveredTarget(allowCanvasParentUpdate: false);
+  }
+
+  /// Explicitly sets or clears the parent slot hovered via its canvas badge.
+  static void setCanvasHoveredParent(EditorSlotState? target) {
+    if (identical(_canvasHoveredParent.value, target)) return;
+    _canvasHoveredParent.value = target;
+    _refreshHoveredTarget(allowCanvasParentUpdate: false);
   }
 
   static bool _menuOpen = false;
@@ -338,6 +387,7 @@ class EditorSlotState extends State<EditorSlot> {
   bool _sliverMoved = false;
 
   int _cachedDepth = 0;
+  bool _active = true;
 
   int get _depth {
     var depth = 0;
@@ -350,26 +400,39 @@ class EditorSlotState extends State<EditorSlot> {
     return depth;
   }
 
-  void _setHovered(bool hovered) {
+  void _setHovered(bool hovered, {Offset? pointerPosition}) {
+    final realMove =
+        pointerPosition == null || _recordRealPointerMove(pointerPosition);
     if (hovered) {
       _hovered.add(this);
     } else {
       _hovered.remove(this);
+      if (realMove && identical(_canvasHoveredParent.value, this)) {
+        _canvasHoveredParent.value = null;
+      }
     }
-    _refreshHoveredTarget();
+    _refreshHoveredTarget(allowCanvasParentUpdate: realMove);
   }
 
   void _removeHoveredSafely() {
     final wasHovered = _hovered.remove(this);
     final wasMenuTarget = identical(_menuHoveredTarget, this);
-    if (wasMenuTarget) _menuHoveredTarget = null;
-    if ((!wasHovered && !wasMenuTarget) || _hoveredTargetUpdateScheduled) {
+    final wasCanvasParent = identical(_canvasHoveredParent.value, this);
+    if ((!wasHovered && !wasMenuTarget && !wasCanvasParent) ||
+        _hoveredTargetUpdateScheduled) {
       return;
     }
     _hoveredTargetUpdateScheduled = true;
     scheduleMicrotask(() {
       _hoveredTargetUpdateScheduled = false;
-      _refreshHoveredTarget();
+      if (identical(_menuHoveredTarget, this) && (!_active || !mounted)) {
+        _menuHoveredTarget = null;
+      }
+      if (identical(_canvasHoveredParent.value, this) &&
+          (!_active || !mounted)) {
+        _canvasHoveredParent.value = null;
+      }
+      _refreshHoveredTarget(allowCanvasParentUpdate: false);
     });
   }
 
@@ -383,7 +446,10 @@ class EditorSlotState extends State<EditorSlot> {
     }
     if (identical(_menuHoveredTarget, target)) return;
     _menuHoveredTarget = target;
-    _refreshHoveredTarget();
+    if (target != null) {
+      _canvasHoveredParent.value = null;
+    }
+    _refreshHoveredTarget(allowCanvasParentUpdate: false);
   }
 
   /// Clears the highlighted target if it matches [expected] (or unconditionally
@@ -392,7 +458,7 @@ class EditorSlotState extends State<EditorSlot> {
     if (expected != null && !identical(_menuHoveredTarget, expected)) return;
     if (_menuHoveredTarget == null) return;
     _menuHoveredTarget = null;
-    _refreshHoveredTarget();
+    _refreshHoveredTarget(allowCanvasParentUpdate: false);
   }
 
   static bool _hoverTargetListenerAdded = false;
@@ -401,32 +467,68 @@ class EditorSlotState extends State<EditorSlot> {
     if (_hoverTargetListenerAdded) return;
     _hoverTargetListenerAdded = true;
     EditorSelectionRegion.hoverTarget.addListener(_refreshHoveredTarget);
+    LayoutSelection.focus.addListener(_onSelectionFocusChanged);
   }
 
-  static void _refreshHoveredTarget() {
+  static void _onSelectionFocusChanged() {
+    final parent = _canvasHoveredParent.value;
+    if (parent != null &&
+        (!parent.mounted ||
+            !parent._active ||
+            !LayoutSelection.isAncestorOfFocus(parent.context))) {
+      _canvasHoveredParent.value = null;
+      _refreshHoveredTarget(allowCanvasParentUpdate: false);
+    }
+  }
+
+  static void _refreshHoveredTarget({bool allowCanvasParentUpdate = true}) {
     _ensureHoverTargetListener();
     final previous = _hoveredTarget.value;
     final menuTarget = _menuHoveredTarget;
-    if (menuTarget != null && menuTarget.mounted && menuTarget.canEdit) {
+    if (menuTarget != null &&
+        menuTarget.mounted &&
+        menuTarget._active &&
+        menuTarget.canEdit) {
       _hoveredTarget.value = menuTarget;
       if (!identical(previous, menuTarget)) {
         EditorSelectionOutline.triggerAnimation();
       }
       return;
     }
-    if (EditorSelectionRegion.hoverTarget.value != null) {
-      _hoveredTarget.value = null;
-      return;
-    }
     EditorSlotState? deepest;
     var maxDepth = -1;
     for (final state in _hovered) {
-      if (!state.mounted) continue;
+      if (!state.mounted || !state._active) continue;
       final depth = state._cachedDepth;
       if (depth > maxDepth) {
         maxDepth = depth;
         deepest = state;
       }
+    }
+    if (allowCanvasParentUpdate && _pointerMoveActive) {
+      final isParent =
+          deepest != null &&
+          deepest.canEdit &&
+          LayoutSelection.isAncestorOfFocus(deepest.context);
+      _canvasHoveredParent.value = isParent ? deepest : null;
+    }
+    final parentTarget = _canvasHoveredParent.value;
+    if (parentTarget != null &&
+        parentTarget.mounted &&
+        parentTarget._active &&
+        parentTarget.canEdit &&
+        LayoutSelection.isAncestorOfFocus(parentTarget.context)) {
+      _hoveredTarget.value = parentTarget;
+      if (!identical(previous, parentTarget)) {
+        EditorSelectionOutline.triggerAnimation();
+      }
+      return;
+    } else if (parentTarget != null) {
+      _canvasHoveredParent.value = null;
+    }
+    if (EditorSelectionRegion.hoverTarget.value != null) {
+      _hoveredTarget.value = null;
+      return;
     }
     _hoveredTarget.value = deepest;
     if (deepest != null && !identical(previous, deepest)) {
@@ -560,6 +662,19 @@ class EditorSlotState extends State<EditorSlot> {
 
     context.visitChildElements(visit);
     return found;
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    _removeHoveredSafely();
+    super.deactivate();
   }
 
   @override
@@ -1779,26 +1894,40 @@ class EditorSlotState extends State<EditorSlot> {
           listenable: Listenable.merge([
             EditorOverlayVisibility.openDialogs,
             EditorSelectionRegion.hoverTarget,
+            _canvasHoveredParent,
+            LayoutSelection.focus,
+            LayoutSelection.path,
           ]),
           builder: (context, child) {
-            final isMenuHighlighted = identical(_menuHoveredTarget, this);
+            final isEmphasizedHighlight =
+                identical(_menuHoveredTarget, this) ||
+                identical(_canvasHoveredParent.value, this);
+            final isSelectedLeaf =
+                canEdit &&
+                editMode != null &&
+                EditorOverlayVisibility.openDialogs.value == 0 &&
+                LayoutSelection.isLeafFocus(this.context);
             final showOutline =
                 canEdit &&
                 editMode != null &&
                 (EditorOverlayVisibility.openDialogs.value == 0 ||
-                    isMenuHighlighted) &&
+                    isEmphasizedHighlight) &&
                 identical(target, this) &&
                 (EditorSelectionRegion.hoverTarget.value == null ||
-                    _menuHoveredTarget != null);
+                    isEmphasizedHighlight);
             return SliverPointerRegion(
               cursor: hasClickBehaviors
                   ? SystemMouseCursors.click
                   : MouseCursor.defer,
               onEnter: canEdit && editMode != null
-                  ? (_) => _setHovered(true)
+                  ? (event) => _setHovered(true, pointerPosition: event.position)
+                  : null,
+              onHover: canEdit && editMode != null
+                  ? (event) => _setHovered(true, pointerPosition: event.position)
                   : null,
               onExit: canEdit && editMode != null
-                  ? (_) => _setHovered(false)
+                  ? (event) =>
+                        _setHovered(false, pointerPosition: event.position)
                   : null,
               onPointerDown: (event) {
                 _sliverDown = event;
@@ -1843,8 +1972,18 @@ class EditorSlotState extends State<EditorSlot> {
                   ? EditorSelectionOutline(
                       color: accentColor,
                       radius: widget.outlineRadius,
-                      emphasized: isMenuHighlighted,
+                      emphasized: isEmphasizedHighlight,
                       label: titleLabel,
+                    )
+                  : isSelectedLeaf
+                  ? EditorSelectionBorderPainter(
+                      color: AppearanceScope.of(context).accent,
+                      dashed: false,
+                      strokeWidth: 2.0,
+                      fillOpacity: 0.10,
+                      animated:
+                          !(MediaQuery.maybeDisableAnimationsOf(context) ??
+                              false),
                     )
                   : null,
               child: child,
@@ -1862,30 +2001,49 @@ class EditorSlotState extends State<EditorSlot> {
       final accentColor = AppearanceScope.of(context).accent
           .withValues(alpha: .85);
       content = MouseRegion(
-        onEnter: (_) => _setHovered(true),
-        onExit: (_) => _setHovered(false),
+        onEnter: (event) => _setHovered(true, pointerPosition: event.position),
+        onHover: (event) => _setHovered(true, pointerPosition: event.position),
+        onExit: (event) => _setHovered(false, pointerPosition: event.position),
         child: ValueListenableBuilder<EditorSlotState?>(
           valueListenable: _hoveredTarget,
           builder: (context, target, child) => ListenableBuilder(
             listenable: Listenable.merge([
               EditorOverlayVisibility.openDialogs,
               EditorSelectionRegion.hoverTarget,
+              _canvasHoveredParent,
+              LayoutSelection.focus,
+              LayoutSelection.path,
             ]),
             builder: (context, child) {
-              final isMenuHighlighted = identical(_menuHoveredTarget, this);
+              final isEmphasizedHighlight =
+                  identical(_menuHoveredTarget, this) ||
+                  identical(_canvasHoveredParent.value, this);
+              final isSelectedLeaf =
+                  EditorOverlayVisibility.openDialogs.value == 0 &&
+                  LayoutSelection.isLeafFocus(this.context);
               final showOutline =
                   (EditorOverlayVisibility.openDialogs.value == 0 ||
-                      isMenuHighlighted) &&
+                      isEmphasizedHighlight) &&
                   identical(target, this) &&
                   (EditorSelectionRegion.hoverTarget.value == null ||
-                      _menuHoveredTarget != null);
+                      isEmphasizedHighlight);
               return CustomPaint(
                 foregroundPainter: showOutline
                     ? EditorSelectionOutline(
                         color: accentColor,
                         radius: widget.outlineRadius,
-                        emphasized: isMenuHighlighted,
+                        emphasized: isEmphasizedHighlight,
                         label: titleLabel,
+                      )
+                    : isSelectedLeaf
+                    ? EditorSelectionBorderPainter(
+                        color: AppearanceScope.of(context).accent,
+                        dashed: false,
+                        strokeWidth: 2.0,
+                        fillOpacity: 0.10,
+                        animated:
+                            !(MediaQuery.maybeDisableAnimationsOf(context) ??
+                                false),
                       )
                     : null,
                 child: child,

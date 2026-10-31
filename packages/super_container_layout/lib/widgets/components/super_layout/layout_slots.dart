@@ -248,8 +248,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
                 slot.id: slot.preferredSize,
           },
           slotSizeConstraints: {
-            for (final id in childIds)
-              id: ?config.slotSizeConstraints[id],
+            for (final id in childIds) id: ?config.slotSizeConstraints[id],
           },
           axis: config.axisOf(zone),
           flow: config.flowOf(zone),
@@ -365,7 +364,9 @@ extension _SuperLayoutSlots on SuperLayoutState {
             : _slotFocusKeys[slots.last.id]?.currentContext;
       },
       label: label ?? zoneLabel,
-      icon: beforeId == null ? Icons.add_box_outlined : Icons.vertical_align_top,
+      icon: beforeId == null
+          ? Icons.add_box_outlined
+          : Icons.vertical_align_top,
     );
   }
 
@@ -578,7 +579,8 @@ extension _SuperLayoutSlots on SuperLayoutState {
     if (slots.isEmpty) {
       final flow = config.flowOf(zone);
       final axis = config.axisOf(zone);
-      final hasFlow = config.zoneFlows.containsKey(content) ||
+      final hasFlow =
+          config.zoneFlows.containsKey(content) ||
           config.zoneFlows.containsKey(zone);
       final stretchCross =
           hasFlow && flow.crossAxisAlignment == CrossAxisAlignment.stretch;
@@ -615,7 +617,7 @@ extension _SuperLayoutSlots on SuperLayoutState {
       sizeConstraints: config.slotSizeConstraints,
       layoutSize: layoutSize,
       selectedSlotId: _selected.value == zone ? _selectedSlot.value : null,
-      onResizeSlot: editMode && widget.editable ? _applySlotDimensions : null,
+      onResizeSlot: canEditSlots ? _applySlotDimensions : null,
       onSelectSlot: editMode ? (slot) => _selectSlot(zone, slot) : null,
       onSelectContent: canEditSlots
           ? (slot) {
@@ -650,14 +652,12 @@ extension _SuperLayoutSlots on SuperLayoutState {
               ),
             )
           : null,
-      expand:
-          !(axis == Axis.vertical
-              ? (shrinkHeight || autoHeight)
-              : (shrinkWidth || autoWidth)),
-      stretch:
-          !(axis == Axis.vertical
-              ? (shrinkWidth || autoWidth)
-              : (shrinkHeight || autoHeight)),
+      expand: !(axis == Axis.vertical
+          ? (shrinkHeight || autoHeight)
+          : (shrinkWidth || autoWidth)),
+      stretch: !(axis == Axis.vertical
+          ? (shrinkWidth || autoWidth)
+          : (shrinkHeight || autoHeight)),
     );
   }
 }

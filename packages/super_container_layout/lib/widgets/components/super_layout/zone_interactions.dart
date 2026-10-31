@@ -15,6 +15,8 @@ class _ZoneNameBadge extends StatefulWidget {
     required this.emphasis,
     required this.selected,
     required this.onSelect,
+    this.hasSelectedChild = false,
+    this.zoneSlot,
     this.swapTarget,
     this.moves = false,
     this.axisAction,
@@ -36,6 +38,11 @@ class _ZoneNameBadge extends StatefulWidget {
 
   /// La zone est sélectionnée ; un clic sur son nom la (dé)sélectionne.
   final bool selected;
+
+  /// Un slot enfant de cette zone est sélectionné : la zone parente passe en
+  /// bordure pointillée discrète (`1px`).
+  final bool hasSelectedChild;
+  final EditorSlotState? Function()? zoneSlot;
   final VoidCallback onSelect;
   final LayoutAxisAction? axisAction;
   final VoidCallback? onAdd;
@@ -55,6 +62,12 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
   void _setHover(bool value) {
     if (mounted && value != _hover) {
       setState(() => _hover = value);
+      if (widget.hasSelectedChild) {
+        final slotState = widget.zoneSlot?.call();
+        if (slotState != null) {
+          EditorSlotState.setCanvasHoveredParent(value ? slotState : null);
+        }
+      }
       _report();
     }
   }
@@ -101,6 +114,7 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
     final badge = EditorZoneBadge(
       label: widget.label,
       selected: widget.selected,
+      hasSelectedChild: widget.hasSelectedChild,
       mouseCursor: target == null
           ? SystemMouseCursors.click
           : editorDragCursor(dragging: _dragging),
@@ -180,13 +194,9 @@ class _ZoneNameBadgeState extends State<_ZoneNameBadge> {
         if (widget.selected)
           Positioned.fill(
             key: ValueKey('super-layout-zone-selected-${widget.zone.name}'),
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border.all(color: colors.primary, width: 3),
-                ),
-              ),
-            ),
+            child: widget.hasSelectedChild
+                ? const EditorSelectionBorder.subtleParent()
+                : const EditorSelectionBorder.active(),
           ),
         Center(
           key: const ValueKey('super-layout-zone-badge'),

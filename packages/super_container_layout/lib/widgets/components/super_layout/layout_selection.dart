@@ -135,6 +135,37 @@ class LayoutSelection {
   /// The container currently owning the deepest reported selection path.
   static Object? get activeOwner => _activeOwner;
 
+  /// Whether a deeper leaf `EditorSlot` inside the selected slot is currently active.
+  static bool get hasLeafSuffix => _leafSuffix.isNotEmpty;
+
+  /// Whether [context] is the currently selected leaf `EditorSlot`.
+  static bool isLeafFocus(BuildContext context) =>
+      _leafSuffix.isNotEmpty && identical(focus.value?.context, context);
+
+  /// Whether [context] is an ancestor element of the current selection focus.
+  static bool isAncestorOfFocus(BuildContext context) {
+    final focusCtx = focus.value?.context;
+    if (focusCtx == null ||
+        !focusCtx.mounted ||
+        !context.mounted ||
+        identical(focusCtx, context)) {
+      return false;
+    }
+    var found = false;
+    try {
+      focusCtx.visitAncestorElements((element) {
+        if (identical(element, context)) {
+          found = true;
+          return false;
+        }
+        return true;
+      });
+    } catch (_) {
+      return false;
+    }
+    return found;
+  }
+
   /// Whether [owner] currently has a non-empty reported path.
   static bool isReported(Object owner) => _reported.containsKey(owner);
 

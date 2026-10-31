@@ -1,3 +1,4 @@
+import 'dart:async' show scheduleMicrotask;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart'
@@ -20,9 +21,11 @@ import '../../editing/overlay/editor_zoom.dart';
 import '../../editing/dialogs/editor_dialog_header.dart';
 import '../../editing/dialogs/editor_tabbed_wizard.dart';
 import '../../editing/overlay/editor_resize_handle.dart';
+import '../../editing/overlay/editor_zone_badge.dart';
 import '../../editing/addition/insertion_plan.dart';
 import '../../editing/slots/editor_slot.dart';
 import '../../editing/slots/editor_selection_region.dart';
+import 'layout_selection.dart';
 
 export '../../editing/slots/editor_selection_region.dart'
     show SliverPointerRegion, SliverSlotScope;
@@ -1390,10 +1393,102 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   SlotSizeConstraints? _resizeConstraints;
   Size? _resizeLegacySize;
   EditorHistoryController? _resizeHistory;
+  EditorZoomController? _zoomController;
   bool _resizeBlocked = false;
+  bool _active = true;
+  late final Listenable _selectionListenable = Listenable.merge([
+    EditorSlotState.highlightedTarget,
+    EditorSlotState.canvasHoveredParent,
+    EditorSelectionRegion.hoverTarget,
+    LayoutSelection.path,
+    LayoutSelection.focus,
+  ]);
+
+  bool _isDirectSlotOfThis(BuildContext targetContext) {
+    if (!mounted || !_active || !targetContext.mounted) return false;
+    var foundSelf = false;
+    var hasIntermediateSlot = false;
+    try {
+      targetContext.visitAncestorElements((element) {
+        if (identical(element, context)) {
+          foundSelf = true;
+          return false;
+        }
+        if (element is StatefulElement) {
+          if (element.state is _LabeledSlotState) {
+            return false;
+          }
+          if (element.state is EditorSlotState) {
+            hasIntermediateSlot = true;
+            return false;
+          }
+        }
+        return true;
+      });
+    } catch (_) {
+      return false;
+    }
+    return foundSelf && !hasIntermediateSlot;
+  }
+
+  bool get _hasSelectedDescendant =>
+      _active &&
+      ((widget.selected && LayoutSelection.hasLeafSuffix) ||
+          (!widget.showLabel && LayoutSelection.isAncestorOfFocus(context)));
+
+  bool get _isActivelySelected =>
+      widget.showLabel && widget.selected && !LayoutSelection.hasLeafSuffix;
+
+  bool get _isParentOfSelected =>
+      _active &&
+      ((widget.showLabel && widget.selected && LayoutSelection.hasLeafSuffix) ||
+          (!widget.showLabel && LayoutSelection.isAncestorOfFocus(context)));
+
+  bool get _isHighlightedTarget {
+    if (!_active) return false;
+    final highlighted =
+        EditorSlotState.highlightedTarget.value ??
+        EditorSlotState.canvasHoveredParent.value;
+    if (highlighted != null &&
+        highlighted.mounted &&
+        _isDirectSlotOfThis(highlighted.context)) {
+      return true;
+    }
+    if (_isParentOfSelected) {
+      final hoverCtx = EditorSelectionRegion.hoverTargetContext;
+      if (hoverCtx != null && _isDirectSlotOfThis(hoverCtx)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool get _isHoveredForResize => _hover || _isHighlightedTarget;
 
   bool get _showResizeHandles =>
-      widget.showLabel && widget.selected && widget.onResize != null;
+      _active &&
+      widget.onResize != null &&
+      (_isActivelySelected || _isHoveredForResize);
+
+  void _onSelectionOrHoverChanged() {
+    if (!mounted || !_active) return;
+    _syncResizeOverlay();
+    scheduleMicrotask(() {
+      if (mounted && _active) setState(() {});
+    });
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
 
   void _syncResizeOverlay() {
     if (_showResizeHandles == _resizeOverlay.isShowing &&
@@ -1414,6 +1509,7 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   @override
   void initState() {
     super.initState();
+    _selectionListenable.addListener(_onSelectionOrHoverChanged);
     _syncResizeOverlay();
   }
 
@@ -1537,6 +1633,21 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   void _setHover(bool value) {
     if (mounted && value != _hover) {
       setState(() => _hover = value);
+      _syncResizeOverlay();
+      if (_isParentOfSelected) {
+        final slotState = EditorSlotState.resolveFromContext(context);
+        if (slotState != null && _isDirectSlotOfThis(slotState.context)) {
+          EditorSlotState.setCanvasHoveredParent(value ? slotState : null);
+        }
+        final zoom = _zoomController = EditorZoomScope.controllerOf(context);
+        if (zoom != null) {
+          if (value) {
+            zoom.hoveredParentContext.value = context;
+          } else if (identical(zoom.hoveredParentContext.value, context)) {
+            zoom.hoveredParentContext.value = null;
+          }
+        }
+      }
       _reportEmphasis();
     }
   }
@@ -1554,6 +1665,14 @@ class _LabeledSlotState extends State<_LabeledSlot> {
 
   @override
   void dispose() {
+    _selectionListenable.removeListener(_onSelectionOrHoverChanged);
+    final zoom = _zoomController;
+    if (zoom != null &&
+        !zoom.disposed &&
+        identical(zoom.hoveredParentContext.value, context)) {
+      zoom.hoveredParentContext.value = null;
+    }
+    _zoomController = null;
     _finishResize();
     final emphasis = widget.emphasis;
     if (emphasis != null && (_hover || _dragging)) {
@@ -1789,18 +1908,18 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                       : Padding(padding: widget.padding, child: slot),
                 ),
               ),
-              if (_hover || _dragging || (widget.showLabel && widget.selected))
+              if (_hover ||
+                  _dragging ||
+                  _isHighlightedTarget ||
+                  (widget.showLabel && widget.selected))
                 Positioned.fill(
                   key: ValueKey('slot-highlight-${slot.id}'),
                   child: EditorOverlayVisibility(
-                    child: IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: colors.tertiary.withValues(alpha: .12),
-                          border: Border.all(color: colors.tertiary, width: 2),
-                        ),
-                      ),
-                    ),
+                    child: _isActivelySelected || _dragging
+                        ? const EditorSelectionBorder.active(filled: true)
+                        : (_hover || _isHighlightedTarget)
+                        ? const EditorSelectionBorder.hover()
+                        : const EditorSelectionBorder.subtleParent(),
                   ),
                 ),
               if (candidates.any((data) => data != null && data.id != slot.id))

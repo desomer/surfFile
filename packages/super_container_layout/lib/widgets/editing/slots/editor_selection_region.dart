@@ -15,6 +15,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
 import '../overlay/editor_overlay.dart';
+import 'editor_slot.dart';
 
 /// Indique aux composants compatibles Sliver (`SuperAppBar`, `SuperListView`,
 /// `EditorSlot`, `EditorSelectionRegion`, `NativeComponentEditor`) qu'ils sont
@@ -300,6 +301,11 @@ class EditorSelectionRegion extends StatefulWidget {
   static ValueListenable<Object?> get hoverTarget =>
       _EditorSelectionRegionState._hoverTarget;
 
+  static BuildContext? get hoverTargetContext {
+    final state = _EditorSelectionRegionState._hoverTarget.value;
+    return state != null && state.mounted ? state.context : null;
+  }
+
   static PointerEvent? _ignored;
 
   /// Labels retain their explicit selection and drag actions.
@@ -574,6 +580,8 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
         listenable: Listenable.merge([
           _hoverTarget,
           EditorOverlayVisibility.openDialogs,
+          EditorSlotState.highlightedTarget,
+          EditorSlotState.canvasHoveredParent,
         ]),
         builder: (context, child) => SliverPointerRegion(
           onEnter: (_) {
@@ -603,7 +611,9 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
           foregroundPainter:
               widget.enabled &&
                   identical(_hoverTarget.value, this) &&
-                  EditorOverlayVisibility.openDialogs.value == 0
+                  EditorOverlayVisibility.openDialogs.value == 0 &&
+                  EditorSlotState.highlightedTarget.value == null &&
+                  EditorSlotState.canvasHoveredParent.value == null
               ? EditorSelectionOutline(
                   color: AppearanceScope.of(context).accent,
                   dashed: !widget.isZone,
@@ -646,12 +656,16 @@ class _EditorSelectionRegionState extends State<EditorSelectionRegion> {
           listenable: Listenable.merge([
             _hoverTarget,
             EditorOverlayVisibility.openDialogs,
+            EditorSlotState.highlightedTarget,
+            EditorSlotState.canvasHoveredParent,
           ]),
           builder: (context, child) => CustomPaint(
             foregroundPainter:
                 widget.enabled &&
                     identical(_hoverTarget.value, this) &&
-                    EditorOverlayVisibility.openDialogs.value == 0
+                    EditorOverlayVisibility.openDialogs.value == 0 &&
+                    EditorSlotState.highlightedTarget.value == null &&
+                    EditorSlotState.canvasHoveredParent.value == null
                 ? EditorSelectionOutline(
                     color: AppearanceScope.of(context).accent,
                     dashed: !widget.isZone,
@@ -816,16 +830,15 @@ class EditorSelectionOutline extends CustomPainter {
       ..strokeWidth = (emphasized ? 7.5 : 4.5) * pulseFactor;
     canvas.drawRRect(rrect, glowPaint);
 
-    // 3. High-contrast white underlay stroke
+    // 3. High-contrast white underlay stroke + 4. Animated SweepGradient border
     final contrastPaint = Paint()
       ..color = Colors.white.withValues(
         alpha: (emphasized ? 0.90 : 0.65) * fadeCurve,
       )
       ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth + 1.2;
-    canvas.drawRRect(rrect, contrastPaint);
+      ..strokeWidth = strokeWidth + 1.2
+      ..strokeCap = StrokeCap.round;
 
-    // 4. Animated SweepGradient border
     final sweepAngle = rawProgress * math.pi * 2.0;
     final sweepShader = SweepGradient(
       colors: [
@@ -845,7 +858,8 @@ class EditorSelectionOutline extends CustomPainter {
       ..strokeWidth = strokeWidth
       ..strokeCap = StrokeCap.round;
 
-    if (!dashed || emphasized) {
+    if (!dashed) {
+      canvas.drawRRect(rrect, contrastPaint);
       canvas.drawPath(path, borderPaint);
     } else {
       final dashedPath = Path();
@@ -861,6 +875,7 @@ class EditorSelectionOutline extends CustomPainter {
           );
         }
       }
+      canvas.drawPath(dashedPath, contrastPaint);
       canvas.drawPath(dashedPath, borderPaint);
     }
 

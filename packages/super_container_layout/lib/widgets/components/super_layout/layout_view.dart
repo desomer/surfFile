@@ -389,6 +389,9 @@ extension _SuperLayoutView on SuperLayoutState {
                             onCenterHint: (active) => _hintCenter(zone, active),
                             emphasis: _emphasisFor(zone),
                             selected: selected == zone,
+                            hasSelectedChild:
+                                selected == zone && selectedSlot != null,
+                            zoneSlot: () => _zoneSlotKeys[zone]?.currentState,
                             onSelect: () => _select(zone),
                             onContextMenu: widget.editable
                                 ? (position) => _zoneSlotKeys[zone]
