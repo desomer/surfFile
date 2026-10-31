@@ -180,16 +180,17 @@ void registerExplorerComponents(Registry registry) {
 }
 
 Widget _sidebar(BuildContext context) {
-  final data = ExplorerPaneScope.of(context).data.sidebar;
+  final scope = ExplorerPaneScope.of(context, ExplorerPaneAspect.sidebar);
+  final data = scope.data.sidebar;
   return ExplorerSidebar(
     locations: data.locations,
     currentPath: data.currentPath,
-    onLocationSelected: ExplorerPaneScope.of(context).actions.onSidebarLocation,
+    onLocationSelected: scope.actions.onSidebarLocation,
   );
 }
 
 Widget _main(BuildContext context) {
-  final scope = ExplorerPaneScope.of(context);
+  final scope = ExplorerPaneScope.of(context, ExplorerPaneAspect.mainLayout);
   final data = scope.data;
   final appearance = AppearanceScope.controllerOf(context);
   final config = AppearanceScope.of(context).layout('explorerMain');
@@ -238,7 +239,10 @@ Widget _main(BuildContext context) {
 }
 
 Widget _splitIndicator(BuildContext context) {
-  final data = ExplorerPaneScope.of(context).data;
+  final data = ExplorerPaneScope.of(
+    context,
+    ExplorerPaneAspect.splitIndicator,
+  ).data;
   return AnimatedContainer(
     key: ValueKey('split-active-${data.active}'),
     duration: const Duration(milliseconds: 150),
@@ -250,7 +254,7 @@ Widget _splitIndicator(BuildContext context) {
 }
 
 Widget _viewModeBar(BuildContext context) {
-  final scope = ExplorerPaneScope.of(context);
+  final scope = ExplorerPaneScope.of(context, ExplorerPaneAspect.viewModeBar);
   final data = scope.data;
   final actions = scope.actions;
   return ValueListenableBuilder(
@@ -277,7 +281,7 @@ Widget _viewModeBar(BuildContext context) {
 }
 
 Widget _filterBar(BuildContext context) {
-  final scope = ExplorerPaneScope.of(context);
+  final scope = ExplorerPaneScope.of(context, ExplorerPaneAspect.filterBar);
   final data = scope.data;
   return AnimatedSize(
     duration: const Duration(milliseconds: 180),
@@ -296,7 +300,7 @@ Widget _filterBar(BuildContext context) {
 }
 
 Widget _sortHeader(BuildContext context) {
-  final scope = ExplorerPaneScope.of(context);
+  final scope = ExplorerPaneScope.of(context, ExplorerPaneAspect.sortHeader);
   return ExplorerSortHeader(
     sort: scope.data.sort,
     ascending: scope.data.ascending,
@@ -305,7 +309,7 @@ Widget _sortHeader(BuildContext context) {
 }
 
 Widget _content(BuildContext context) {
-  final scope = ExplorerPaneScope.of(context);
+  final scope = ExplorerPaneScope.of(context, ExplorerPaneAspect.content);
   final data = scope.data;
   final actions = scope.actions;
   final showGrid = data.gridView && !data.columnView;
@@ -477,10 +481,10 @@ bool _available(BuildContext context, String key) {
   if (scope != null && !scope.visible.contains(key)) return false;
   return switch (key) {
     'explorer_toolbar' ||
-    'explorer_breadcrumbs' => ExplorerScope.maybeOf(context) != null,
+    'explorer_breadcrumbs' => ExplorerScope.exists(context),
     'explorer_sidebar_places' ||
-    'explorer_sidebar_disks' => ExplorerSidebarScope.maybeOf(context) != null,
-    _ => ExplorerPaneScope.maybeOf(context) != null,
+    'explorer_sidebar_disks' => ExplorerSidebarScope.exists(context),
+    _ => ExplorerPaneScope.exists(context),
   };
 }
 

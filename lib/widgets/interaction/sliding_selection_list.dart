@@ -58,15 +58,19 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
       duration: const Duration(milliseconds: 250),
       value: 1,
     );
-    final index = widget.paths.indexOf(widget.selectedPath ?? '');
+    final selectedPath = widget.selectedPath;
+    final index = selectedPath == null ? -1 : widget.paths.indexOf(selectedPath);
     if (index >= 0) _from = _to = index.toDouble();
   }
 
   @override
   void didUpdateWidget(SlidingSelectionList oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final index = widget.paths.indexOf(widget.selectedPath ?? '');
-    final reordered = !listEquals(oldWidget.paths, widget.paths);
+    final selectedPath = widget.selectedPath;
+    final index = selectedPath == null ? -1 : widget.paths.indexOf(selectedPath);
+    final reordered =
+        !identical(oldWidget.paths, widget.paths) &&
+        !listEquals(oldWidget.paths, widget.paths);
     if (index < 0) {
       _animation.stop();
       _from = _to = null;
@@ -111,23 +115,103 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
     final hasSelectedCardStyle = appearance.styles.containsKey('selectedCard');
     final extent = appearance.rowHeight + appearance.spacing / 6;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final scheme = Theme.of(context).colorScheme;
+    final selectedGradient = selectedCardStyle.fill.gradient();
+    final cardGradient = cardStyle.fill.gradient();
+    final selectedImage = selectedCardStyle.fill.decorationImage();
+    final cardImage = cardStyle.fill.decorationImage();
+    final selectedMaterialColor = selectedGradient != null
+        ? Colors.transparent
+        : cardColor(context, selectedCardStyle, selected: true);
+    final unselectedMaterialColor = cardGradient != null
+        ? Colors.transparent
+        : cardStyle.color ??
+              (appearance.backgroundOpacity < 1 ||
+                      (appearance.style('background').color?.a ?? 1) < 1
+                  ? Colors.transparent
+                  : scheme.surface);
+
+    Widget buildSurfaceBody({
+      required bool selected,
+      required bool suppressNeon,
+    }) {
+      final style = selected ? selectedCardStyle : cardStyle;
+      final gradient = selected ? selectedGradient : cardGradient;
+      final image = selected ? selectedImage : cardImage;
+      return RepaintBoundary(
+        child: IgnorePointer(
+          child: NeonSurface(
+            style: suppressNeon
+                ? cardNeon.copyWith(enabled: false)
+                : selected
+                ? selectedCardStyle.neon!
+                : cardNeon,
+            accent: appearance.accent,
+            radius: style.radius,
+            child: Material(
+              color: selected ? selectedMaterialColor : unselectedMaterialColor,
+              elevation: style.elevation,
+              shadowColor: Colors.black.withValues(alpha: style.shadowOpacity),
+              borderRadius: BorderRadius.circular(style.radius),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: gradient,
+                  image: image,
+                  borderRadius: BorderRadius.circular(style.radius),
+                  border: selected && hasSelectedCardStyle
+                      ? Border.all(
+                          color:
+                              selectedCardStyle.borderColor ?? scheme.primary,
+                          width: selectedCardStyle.borderWidth,
+                          style: selectedCardStyle.borderWidth == 0
+                              ? BorderStyle.none
+                              : BorderStyle.solid,
+                        )
+                      : !selected && cardStyle.borderColor != null
+                      ? Border.all(
+                          color: cardStyle.borderColor!,
+                          width: cardStyle.borderWidth,
+                          style: cardStyle.borderWidth == 0
+                              ? BorderStyle.none
+                              : BorderStyle.solid,
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final selectedBody = buildSurfaceBody(selected: true, suppressNeon: false);
+    final unselectedBody = buildSurfaceBody(
+      selected: false,
+      suppressNeon: false,
+    );
+    final unlitUnselectedBody = cardNeon.enabled && cardNeon.intensity > 0
+        ? buildSurfaceBody(selected: false, suppressNeon: true)
+        : unselectedBody;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return ClipRect(
           child: AnimatedBuilder(
             animation: Listenable.merge([_scroll, _animation]),
-            child: ListView.builder(
-              controller: _scroll,
-              // Identique à EntriesLayout.listPadding.
-              padding: EdgeInsets.fromLTRB(
-                widget.horizontalPadding,
-                2,
-                widget.horizontalPadding,
-                24,
+            child: RepaintBoundary(
+              child: ListView.builder(
+                controller: _scroll,
+                // Identique à EntriesLayout.listPadding.
+                padding: EdgeInsets.fromLTRB(
+                  widget.horizontalPadding,
+                  2,
+                  widget.horizontalPadding,
+                  24,
+                ),
+                itemExtent: extent,
+                itemCount: widget.paths.length,
+                itemBuilder: widget.itemBuilder,
               ),
-              itemExtent: extent,
-              itemCount: widget.paths.length,
-              itemBuilder: widget.itemBuilder,
             ),
             builder: (context, child) {
               final offset = _scroll.hasClients ? _scroll.offset : 0.0;
@@ -152,95 +236,11 @@ class _SlidingSelectionListState extends State<SlidingSelectionList>
                     (slide ? position! : index.toDouble()) * extent -
                     offset,
                 height: appearance.rowHeight,
-                child: IgnorePointer(
-                  child: NeonSurface(
-                    // The sliding surface already lights the row beneath it.
-                    style: !selected && position == index.toDouble()
-                        ? cardNeon.copyWith(enabled: false)
-                        : selected
-                        ? selectedCardStyle.neon!
-                        : cardNeon,
-                    accent: appearance.accent,
-                    radius: selected
-                        ? selectedCardStyle.radius
-                        : cardStyle.radius,
-                    child: Material(
-                      color: selected
-                          ? selectedCardStyle.fill
-                                        .gradient() !=
-                                    null
-                                ? Colors.transparent
-                                : cardColor(
-                                    context,
-                                    selectedCardStyle,
-                                    selected: true,
-                                  )
-                          : cardStyle.fill.gradient() != null
-                          ? Colors.transparent
-                          : cardStyle.color ??
-                                (appearance.backgroundOpacity < 1 ||
-                                        (appearance.style('background').color?.a ??
-                                                1) <
-                                            1
-                                    ? Colors.transparent
-                                    : Theme.of(context).colorScheme.surface),
-                      elevation: (selected ? selectedCardStyle : cardStyle).elevation,
-                      shadowColor: Colors.black.withValues(
-                        alpha: selected
-                            ? selectedCardStyle
-                                  .shadowOpacity
-                            : cardStyle.shadowOpacity,
-                      ),
-                      borderRadius: BorderRadius.circular(
-                        selected
-                            ? selectedCardStyle.radius
-                            : cardStyle.radius,
-                      ),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: selected
-                              ? selectedCardStyle.fill
-                                    .gradient()
-                              : cardStyle.fill.gradient(),
-                          image: selected
-                              ? selectedCardStyle.fill.decorationImage()
-                              : cardStyle.fill.decorationImage(),
-                          borderRadius: BorderRadius.circular(
-                            selected
-                                ? selectedCardStyle.radius
-                                : cardStyle.radius,
-                          ),
-                          border:
-                              selected && hasSelectedCardStyle
-                              ? Border.all(
-                                  color:
-                                      selectedCardStyle
-                                          .borderColor ??
-                                      Theme.of(context).colorScheme.primary,
-                                  width: selectedCardStyle
-                                      .borderWidth,
-                                  style:
-                                      selectedCardStyle
-                                              .borderWidth ==
-                                          0
-                                      ? BorderStyle.none
-                                      : BorderStyle.solid,
-                                )
-                              : !selected &&
-                                    cardStyle.borderColor != null
-                              ? Border.all(
-                                  color: cardStyle.borderColor!,
-                                  width: cardStyle.borderWidth,
-                                  style: cardStyle.borderWidth == 0
-                                      ? BorderStyle.none
-                                      : BorderStyle.solid,
-                                )
-                              : null,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+                child: selected
+                    ? selectedBody
+                    : position == index.toDouble()
+                    ? unlitUnselectedBody
+                    : unselectedBody,
               );
               return Stack(
                 fit: StackFit.expand,

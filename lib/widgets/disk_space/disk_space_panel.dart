@@ -1,7 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
+
 import '../../theme/surffile_appearance_slots.dart';
+
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_context_menu.dart'
     show EditorMenuDestination;
@@ -161,11 +163,7 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
               IconButton(
                 tooltip: 'Actualiser les disques',
                 onPressed: _loading ? null : _load,
-                icon: Icon(
-                  Icons.refresh_rounded,
-                  size: 16,
-                  color: foreground,
-                ),
+                icon: Icon(Icons.refresh_rounded, size: 16, color: foreground),
                 visualDensity: VisualDensity.compact,
               ),
             ],
@@ -190,7 +188,9 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
           else
             LayoutBuilder(
               builder: (context, constraints) {
-                final columns = SurfFilePreferencesScope.of(context).diskGaugeStyle.columns;
+                final columns = SurfFilePreferencesScope.of(context)
+                    .diskGaugeStyle
+                    .columns;
                 final selectedPath = _selectedPath;
                 return Wrap(
                   spacing: 8,
@@ -286,54 +286,65 @@ class _DiskTile extends StatelessWidget {
               ? colors.primary
               : foreground.withValues(alpha: .12),
           child: Stack(
+            alignment: Alignment.center,
             children: [
-              InkWell(
-                onTap: onTap,
-                borderRadius: style.borderRadius,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-                  child: Column(
-                    children: [
-                      EditableSurface(
-                        key: ValueKey('disk-gauge-${disk.path}'),
-                        decorate: false,
-                        label: 'Style de la jauge des disques',
-                        menuDestination: EditorMenuDestination.style,
-                        onEdit: () => showDiskGaugeStyleEditor(context),
-                        child: DiskGauge(
-                          value: used,
-                          style: gauge,
-                          revision: revision,
-                          fillColor: gauge.fillColor ?? colors.primary,
-                          alertColor: gauge.alertColor ?? colors.error,
-                          trackColor:
-                              gauge.trackColor ?? foreground.withValues(alpha: .12),
-                          foreground: foreground,
+              SizedBox(
+                width: double.infinity,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: style.borderRadius,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 12,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        EditableSurface(
+                          key: ValueKey('disk-gauge-${disk.path}'),
+                          decorate: false,
+                          label: 'Style de la jauge des disques',
+                          menuDestination: EditorMenuDestination.style,
+                          onEdit: () => showDiskGaugeStyleEditor(context),
+                          child: DiskGauge(
+                            value: used,
+                            style: gauge,
+                            revision: revision,
+                            fillColor: gauge.fillColor ?? colors.primary,
+                            alertColor: gauge.alertColor ?? colors.error,
+                            trackColor:
+                                gauge.trackColor ??
+                                foreground.withValues(alpha: .12),
+                            foreground: foreground,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        disk.path,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: foreground,
-                          fontSize: gauge.nameSize,
-                          fontWeight: FontWeight.w600,
+                        const SizedBox(height: 10),
+                        Text(
+                          disk.path,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: gauge.nameSize,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        used == null
-                            ? 'Indisponible'
-                            : '${_capacity(disk.freeBytes!)} libres',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: foreground,
-                          fontSize: gauge.captionSize,
+                        const SizedBox(height: 4),
+                        Text(
+                          used == null
+                              ? 'Indisponible'
+                              : '${_capacity(disk.freeBytes!)} libres',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: gauge.captionSize,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

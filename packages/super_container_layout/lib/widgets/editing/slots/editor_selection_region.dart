@@ -33,7 +33,8 @@ class SliverSlotScope extends InheritedWidget {
   final Size? preferredSize;
 
   static bool isSliver(BuildContext context) {
-    context.dependOnInheritedWidgetOfExactType<SliverSlotScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<SliverSlotScope>();
+    if (scope == null || !scope.enabled) return false;
     var result = false;
     context.visitAncestorElements((element) {
       final widget = element.widget;

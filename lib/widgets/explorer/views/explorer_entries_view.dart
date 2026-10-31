@@ -23,7 +23,7 @@ import '../../interaction/sliding_selection_list.dart';
 import '../../interaction/scroll_edge_fade.dart';
 import '../../file_operations/external_file_drop.dart';
 
-class ExplorerEntriesView extends StatelessWidget {
+class ExplorerEntriesView extends StatefulWidget {
   const ExplorerEntriesView({
     required this.entries,
     required this.gridView,
@@ -76,31 +76,99 @@ class ExplorerEntriesView extends StatelessWidget {
 
   final ValueChanged<Size>? onViewportChanged;
 
-  Set<String> get _selection => selectedPaths ?? {?selectedPath};
+  @override
+  State<ExplorerEntriesView> createState() => _ExplorerEntriesViewState();
+}
 
-  void _tap(String path, bool selected) {
-    final onTapped = this.onTapped;
-    if (onTapped != null) {
-      onTapped(path);
-    } else if (!selected) {
-      onSelected(path);
-    }
+class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
+  late List<String> _paths;
+  late Map<String, int> _indexByPath;
+  List<String>? _folderPathsCache;
+  List<String>? _selectedDragPathsCache;
+  int? _maxSizeRevision;
+  List<int> _maxSizeList = const [0];
+  late List<Widget?> _rowWidgets;
+  late List<Object?> _rowKeys;
+  ThemeData? _cachedParentTheme;
+  ThemeData? _cachedNoHoverTheme;
+
+  Set<String> get _selection => widget.selectedPaths ?? {?widget.selectedPath};
+
+  @override
+  void initState() {
+    super.initState();
+    _rebuildEntriesCache();
   }
 
   @override
+  void didUpdateWidget(ExplorerEntriesView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.entries, widget.entries)) {
+      _rebuildEntriesCache();
+    } else if (oldWidget.selectedPath != widget.selectedPath ||
+        !identical(oldWidget.selectedPaths, widget.selectedPaths)) {
+      _selectedDragPathsCache = null;
+    }
+  }
+
+  void _rebuildEntriesCache() {
+    final entries = widget.entries;
+    _paths = [for (final entry in entries) entry.entity.path];
+    _indexByPath = {for (var i = 0; i < _paths.length; i++) _paths[i]: i};
+    _folderPathsCache = null;
+    _selectedDragPathsCache = null;
+    _maxSizeRevision = null;
+    _rowWidgets = List<Widget?>.filled(_paths.length, null);
+    _rowKeys = List<Object?>.filled(_paths.length, null);
+  }
+
+  void _tap(String path, bool selected) {
+    final onTapped = widget.onTapped;
+    if (onTapped != null) {
+      onTapped(path);
+    } else if (!selected) {
+      widget.onSelected(path);
+    }
+  }
+
+  void _onRowSelected(String path) => widget.onSelected(path);
+  void _onRowToggle(String path) => widget.onToggle?.call(path);
+  void _onRowTapped(String path) => _tap(path, _selection.contains(path));
+  void _onRowOpen(ExplorerEntry entry) => widget.onOpen(entry);
+  void _onRowContextMenu(ExplorerEntry entry, Offset pos) =>
+      widget.onContextMenu?.call(entry, pos);
+  void _onRowOpenWithBounds(ExplorerEntry entry, Rect card, Rect icon) =>
+      widget.onOpenWithBounds?.call(entry, card, icon);
+
+  @override
   Widget build(BuildContext context) {
-    final onSelectionChanged = this.onSelectionChanged;
-    final grid = gridView && !compact;
-    Widget view(ScrollController? controller) => ScrollEdgeFade(
-      child: grid ? _buildGrid(context, controller) : _buildList(controller),
+    final onSelectionChanged = widget.onSelectionChanged;
+    final grid = widget.gridView && !widget.compact;
+    final parentTheme = Theme.of(context);
+    if (!identical(parentTheme, _cachedParentTheme)) {
+      _cachedParentTheme = parentTheme;
+      _cachedNoHoverTheme =
+          parentTheme.hoverColor == Colors.transparent
+          ? parentTheme
+          : parentTheme.copyWith(hoverColor: Colors.transparent);
+    }
+    Widget view(ScrollController? controller) => Theme(
+      data: _cachedNoHoverTheme!,
+      child: ScrollEdgeFade(
+        child: grid ? _buildGrid(context, controller) : _buildList(context, controller),
+      ),
     );
     if (onSelectionChanged == null) {
-      return KeyedSubtree(key: ValueKey(grid), child: view(scrollController));
+      return KeyedSubtree(
+        key: ValueKey(grid),
+        child: view(widget.scrollController),
+      );
     }
     final appearance = AppearanceScope.of(context);
+    final entries = widget.entries;
     EntriesLayout layout(Size viewport) => EntriesLayout(
       grid: grid,
-      compact: compact,
+      compact: widget.compact,
       appearance: appearance,
       viewport: viewport,
       count: entries.length,
@@ -112,90 +180,129 @@ class ExplorerEntriesView extends StatelessWidget {
       selectedIndexes: () {
         final selection = _selection;
         return {
-          for (var i = 0; i < entries.length; i++)
-            if (selection.contains(entries[i].entity.path)) i,
+          for (final path in selection)
+            if (_indexByPath[path] case final index?) index,
         };
       },
       onChanged: (indexes) => onSelectionChanged({
         for (final index in indexes) entries[index].entity.path,
       }),
-      revealToken: revealToken,
+      revealToken: widget.revealToken,
       reveal: (viewport) {
-        final index = entries.indexWhere(
-          (entry) => entry.entity.path == selectedPath,
-        );
+        final selected = widget.selectedPath;
+        final index = selected == null ? -1 : (_indexByPath[selected] ?? -1);
         return index < 0 ? null : layout(viewport).itemRect(index);
       },
-      onViewport: onViewportChanged,
+      onViewport: widget.onViewportChanged,
     );
   }
 
-  Widget _buildList(ScrollController? controller) {
+  Widget _buildList(BuildContext context, ScrollController? controller) {
     final selection = _selection;
+    final dragMode = SurfFilePreferencesScope.of(context).fileDragMode;
+    final compact = widget.compact;
+    final entries = widget.entries;
     return SlidingSelectionList(
       controller: controller,
       horizontalPadding: compact
           ? EntriesLayout.compactHorizontalPadding
           : EntriesLayout.listPadding.left,
-      paths: entries.map((entry) => entry.entity.path).toList(),
-      selectedPath: selectedPath,
+      paths: _paths,
+      selectedPath: widget.selectedPath,
       selectedPaths: selection,
       itemBuilder: (context, index) {
         final entry = entries[index];
-        final paths = _pathsToDrag(entry);
-        final dragMode = SurfFilePreferencesScope.of(context).fileDragMode;
-        return ExternalDropDestination(
-          path: entry.isDirectory ? entry.entity.path : null,
+        final path = _paths[index];
+        final isSelected = selection.contains(path);
+        final dragPaths = isSelected ? _selectedDragPaths : null;
+        final rowKey = (
+          entry,
+          isSelected,
+          dragPaths,
+          dragMode,
+          compact,
+          widget.onToggle != null,
+          widget.onContextMenu != null,
+          widget.onOpenWithBounds != null,
+        );
+        if (_rowKeys[index] == rowKey && _rowWidgets[index] != null) {
+          return _rowWidgets[index]!;
+        }
+        final paths = dragPaths ?? [path];
+        final built = ExternalDropDestination(
+          path: entry.isDirectory ? path : null,
           child: ExternalFileDragSource(
             paths: paths,
             label: entry.name,
             mode: dragMode,
-            selected: selection.contains(entry.entity.path),
+            selected: isSelected,
             child: _EntryRow(
-              key: ValueKey(entry.entity.path),
+              key: ValueKey(path),
               compact: compact,
               entry: entry,
-              selected: selection.contains(entry.entity.path),
-              onSelected: onSelected,
-              onToggle: onToggle,
-              onTapped: (path) => _tap(path, _selection.contains(path)),
-              onOpen: onOpen,
-              onContextMenu: onContextMenu,
-              onOpenWithBounds: onOpenWithBounds,
+              selected: isSelected,
+              onSelected: _onRowSelected,
+              onToggle: widget.onToggle == null ? null : _onRowToggle,
+              onTapped: _onRowTapped,
+              onOpen: _onRowOpen,
+              onContextMenu:
+                  widget.onContextMenu == null ? null : _onRowContextMenu,
+              onOpenWithBounds:
+                  widget.onOpenWithBounds == null ? null : _onRowOpenWithBounds,
               siblingFolders: _folderPaths,
               siblingSizes: _sizes,
             ),
           ),
         );
+        _rowKeys[index] = rowKey;
+        _rowWidgets[index] = built;
+        return built;
       },
     );
   }
 
-  /// Tailles de tous les éléments (dossiers : taille calculée, sinon 0).
-  List<int> _sizes() => [
-    for (final entry in entries)
-      entry.isDirectory
-          ? FolderSizeService.bytesOf(entry.entity.path) ?? 0
-          : entry.size,
+  /// Taille maximale des éléments du dossier (dossiers : taille calculée, sinon 0).
+  List<int> _sizes() {
+    final rev = FolderSizeService.revision.value;
+    if (_maxSizeRevision != rev) {
+      _maxSizeRevision = rev;
+      var maxBytes = 0;
+      for (final entry in widget.entries) {
+        final bytes = entry.isDirectory
+            ? FolderSizeService.bytesOf(entry.entity.path) ?? 0
+            : entry.size;
+        if (bytes > maxBytes) maxBytes = bytes;
+      }
+      _maxSizeList = [maxBytes];
+    }
+    return _maxSizeList;
+  }
+
+  List<String> _folderPaths() => _folderPathsCache ??= [
+    for (final entry in widget.entries)
+      if (entry.isDirectory) entry.entity.path,
   ];
 
-  List<String> _folderPaths() => [
-    for (final entry in entries)
-      if (entry.isDirectory) entry.entity.path,
+  List<String> get _selectedDragPaths => _selectedDragPathsCache ??= [
+    for (final candidate in widget.entries)
+      if (_selection.contains(candidate.entity.path)) candidate.entity.path,
   ];
 
   List<String> _pathsToDrag(ExplorerEntry entry) {
     final path = entry.entity.path;
     if (!_selection.contains(path)) return [path];
-    return [
-      for (final candidate in entries)
-        if (_selection.contains(candidate.entity.path)) candidate.entity.path,
-    ];
+    return _selectedDragPaths;
   }
 
   Widget _buildGrid(BuildContext context, ScrollController? controller) {
     final appearance = AppearanceScope.of(context);
     final selection = _selection;
+    final entries = widget.entries;
+    final onSelected = widget.onSelected;
+    final onOpen = widget.onOpen;
+    final onContextMenu = widget.onContextMenu;
+    final onOpenWithBounds = widget.onOpenWithBounds;
+    final onToggle = widget.onToggle;
     return GridView.builder(
       controller: controller,
       padding: EntriesLayout.gridPadding,
@@ -312,7 +419,7 @@ class ExplorerEntriesView extends StatelessWidget {
                             onSecondaryTapDown:
                                 onContextMenu == null || _styleEditing(context)
                                 ? null
-                                : (details) => onContextMenu!(
+                                : (details) => onContextMenu(
                                     entry,
                                     details.globalPosition,
                                   ),
@@ -379,7 +486,7 @@ class ExplorerEntriesView extends StatelessWidget {
                                     child: _SelectBox(
                                       checked: selected,
                                       onChanged: () =>
-                                          onToggle!(entry.entity.path),
+                                          onToggle(entry.entity.path),
                                     ),
                                   ),
                               ],

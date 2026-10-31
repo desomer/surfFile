@@ -255,12 +255,12 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   set _selectedPath(String? path) {
     _primary = path;
     _anchor = path;
-    _selection = {?path};
+    _selection = path == null ? const {} : Set.unmodifiable({path});
   }
 
   void _setSelection(Set<String> paths) {
     final visible = _visibleEntries;
-    _selection = paths;
+    _selection = paths.isEmpty ? const {} : Set.unmodifiable(paths);
     _anchor = null;
     if (!paths.contains(_primary)) {
       _primary = null;
@@ -278,7 +278,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     final next = {..._selection};
     if (!next.remove(path)) next.add(path);
     if (next.contains(path)) {
-      _selection = next;
+      _selection = Set.unmodifiable(next);
       _primary = path;
     } else {
       _primary = null;
@@ -302,7 +302,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       for (var i = math.min(from, to); i <= math.max(from, to); i++)
         visible[i].entity.path,
     };
-    _selection = add ? {..._selection, ...range} : range;
+    _selection = Set.unmodifiable(add ? {..._selection, ...range} : range);
     _primary = path;
   }
 
@@ -316,6 +316,15 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     _explorerFocusNode.requestFocus();
     if (_effectiveSelectionMode == SelectionMode.rowClick) return;
     final keys = HardwareKeyboard.instance;
+    if (!keys.isShiftPressed &&
+        !keys.isControlPressed &&
+        _selection.length == 1 &&
+        _selection.contains(path) &&
+        _primary == path) {
+      _anchor = path;
+      _collapseTo = null;
+      return;
+    }
     _selectionChanged(() {
       _collapseTo = null;
       if (keys.isShiftPressed) {
@@ -350,6 +359,11 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     final collapse = _collapseTo == path || !_selection.contains(path);
     _collapseTo = null;
     if (keys.isShiftPressed || keys.isControlPressed || !collapse) return;
+    if (_selection.length == 1 &&
+        _selection.contains(path) &&
+        _primary == path) {
+      return;
+    }
     _explorerFocusNode.requestFocus();
     _selectionChanged(() => _selectedPath = path);
   }
@@ -357,7 +371,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   String? _loadError;
   String? _failedPath;
   bool _initializationFailed = false;
-  List<ExplorerLocation> _locations = [];
+  List<ExplorerLocation> _locations = const [];
   bool _isLoading = true;
   bool _gridView = false;
   bool _columnView = false;
@@ -415,12 +429,28 @@ class _ExplorerPaneState extends State<ExplorerPane> {
   /// Actions de la barre des modes d'affichage, activées selon la sélection.
   List<ExplorerBarAction> _barActions({required bool canPaste}) {
     final idle = _ready && !_contextMenuOpen;
-    final selected = _snapshot.selection;
-    final hasSelection = idle && selected.isNotEmpty;
-    final target = _selectedPath ?? selected.firstOrNull;
-    final entry = target == null
-        ? null
-        : _visibleEntries.where((e) => e.entity.path == target).firstOrNull;
+    ExplorerEntry? entry;
+    if (idle && _selection.isNotEmpty) {
+      final preferred = _selectedPath;
+      if (preferred != null) {
+        for (final candidate in _visibleEntries) {
+          if (candidate.entity.path == preferred) {
+            entry = candidate;
+            break;
+          }
+        }
+      }
+      if (entry == null) {
+        for (final candidate in _visibleEntries) {
+          if (_selection.contains(candidate.entity.path)) {
+            entry = candidate;
+            break;
+          }
+        }
+      }
+    }
+    final targetEntry = entry;
+    final hasSelection = targetEntry != null;
     return [
       ExplorerBarAction(
         id: 'new-folder',
@@ -457,8 +487,8 @@ class _ExplorerPaneState extends State<ExplorerPane> {
         label: 'Renommer',
         shortcut: 'F2',
         separatorBefore: true,
-        onPressed: hasSelection && entry != null
-            ? () => _renameWithKeyboard(entry)
+        onPressed: targetEntry != null
+            ? () => _renameWithKeyboard(targetEntry)
             : null,
       ),
       ExplorerBarAction(
@@ -528,7 +558,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
       final folders = await PersonalFolders.resolve(_homePath);
       if (!mounted) return;
       setState(() {
-        _locations = [
+        _locations = List.unmodifiable([
           ExplorerLocation('Accueil', _homePath, Icons.home_outlined),
           ExplorerLocation(
             'Bureau',
@@ -556,7 +586,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
             Icons.headphones_outlined,
           ),
           ExplorerLocation('Vidéos', folders['Videos']!, Icons.movie_outlined),
-        ];
+        ]);
       });
       await _loadDirectory(_currentPath, addToHistory: false);
     } on PlatformException catch (error) {
@@ -1490,6 +1520,95 @@ class _ExplorerPaneState extends State<ExplorerPane> {
     super.dispose();
   }
 
+  void _onSearchChanged(String value) => setState(() => _query = value);
+
+  void _onSidebarLocationSelected(String path) =>
+      (widget.onSidebarLocation ?? _loadDirectory)(path);
+
+  void _onPaneActivate() {
+    widget.onActivate?.call();
+    if (widget.split && !_explorerFocusNode.hasFocus) {
+      _explorerFocusNode.requestFocus();
+    }
+  }
+
+  void _onGridViewChanged(bool value) => setState(() => _gridView = value);
+  void _onColumnViewChanged(bool value) => setState(() => _columnView = value);
+  void _onHeatmapViewChanged(bool value) =>
+      setState(() => _heatmapView = value);
+  void _onSelectionModeChanged(SelectionMode value) =>
+      setState(() => _selectionMode = value);
+  void _onToggleFilter() => setState(() => _filterOpen = !_filterOpen);
+  void _onFilterChanged(ExplorerFilter value) =>
+      setState(() => _filter = value);
+  void _onCloseFilter() => setState(() => _filterOpen = false);
+
+  void _onSortChanged(ExplorerSort sort) => setState(() {
+    if (_sort == sort) {
+      _ascending = !_ascending;
+    } else {
+      _sort = sort;
+      _ascending = true;
+    }
+  });
+
+  void _onRetry() {
+    if (_initializationFailed) {
+      _initialize();
+    } else {
+      _loadDirectory(_failedPath ?? _currentPath, direction: _failedDirection);
+    }
+  }
+
+  void _onMarqueeSelectionChanged(Set<String> paths) {
+    _explorerFocusNode.requestFocus();
+    _selectionChanged(() {
+      _collapseTo = null;
+      _setSelection(paths);
+    });
+  }
+
+  void _onViewportChanged(Size size) => _viewport = size;
+
+  void _onOpenWithBounds(ExplorerEntry entry, Rect card, Rect icon) =>
+      _loadDirectory(entry.entity.path, heroCard: card, heroIcon: icon);
+
+  void _onClosePreview() => setState(() {
+    _previewVisible = false;
+    _previewExpanded = false;
+  });
+
+  void _onTogglePreviewExpanded() =>
+      setState(() => _previewExpanded = !_previewExpanded);
+
+  late final ExplorerPaneActions _paneActions = (
+    onSidebarLocation: _onSidebarLocationSelected,
+    onActivate: _onPaneActivate,
+    barActions: _barActions,
+    onGridViewChanged: _onGridViewChanged,
+    onColumnViewChanged: _onColumnViewChanged,
+    onHeatmapViewChanged: _onHeatmapViewChanged,
+    onSelectionModeChanged: _onSelectionModeChanged,
+    onToggleFilter: _onToggleFilter,
+    onFilterChanged: _onFilterChanged,
+    onCloseFilter: _onCloseFilter,
+    onSortChanged: _onSortChanged,
+    onRetry: _onRetry,
+    onPointerSelect: _pointerSelect,
+    onTapped: _tapSelect,
+    onColumnTapped: _columnTapped,
+    onSelectionChanged: _onMarqueeSelectionChanged,
+    onToggleSelection: _toggleSelection,
+    onViewportChanged: _onViewportChanged,
+    onOpen: _openEntry,
+    onOpenWithBounds: _onOpenWithBounds,
+    onContextMenu: Platform.isWindows ? _showContextMenu : null,
+    onNavigateColumn: _openColumn,
+    onDrop: _receiveExternalDrop,
+    onClosePreview: _onClosePreview,
+    onTogglePreviewExpanded: _onTogglePreviewExpanded,
+  );
+
   @override
   Widget build(BuildContext context) {
     final splitChild = widget.splitChild;
@@ -1518,15 +1637,15 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                   onBack: _goBack,
                   onForward: _goForward,
                   onUp: _goUp,
-                  onRefresh: () => _loadDirectory(_currentPath, addToHistory: false),
-                  onSearchChanged: (value) => setState(() => _query = value),
+                  onRefresh: _refresh,
+                  onSearchChanged: _onSearchChanged,
                   onCreateFolder: _createFolder,
                   onNavigate: _loadDirectory,
                 ),
                 child: ExplorerPaneScope(
                   data: (
                     sidebar: (
-                      locations: List.unmodifiable(_locations),
+                      locations: _locations,
                       currentPath: widget.sidebarPath ?? _currentPath,
                     ),
                     path: _currentPath,
@@ -1542,9 +1661,9 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                     sort: _sort,
                     ascending: _ascending,
                     selectionMode: _selectionMode,
-                    entries: List.unmodifiable(_visibleEntries),
+                    entries: _visibleEntries,
                     total: _entries.length,
-                    selection: Set.unmodifiable(_selection),
+                    selection: _selection,
                     selectedPath: _selectedPath,
                     checkboxSelection: _effectiveSelectionMode == SelectionMode.checkbox,
                     revealToken: _revealToken,
@@ -1565,62 +1684,7 @@ class _ExplorerPaneState extends State<ExplorerPane> {
                     textPreviewKey: _textPreviewKey,
                     videoPreviewKey: _videoPreviewKey,
                   ),
-                  actions: (
-                    onSidebarLocation: widget.onSidebarLocation ?? _loadDirectory,
-                    onActivate: () {
-                      widget.onActivate?.call();
-                      if (widget.split && !_explorerFocusNode.hasFocus) {
-                        _explorerFocusNode.requestFocus();
-                      }
-                    },
-                    barActions: _barActions,
-                    onGridViewChanged: (value) => setState(() => _gridView = value),
-                    onColumnViewChanged: (value) => setState(() => _columnView = value),
-                    onHeatmapViewChanged: (value) => setState(() => _heatmapView = value),
-                    onSelectionModeChanged: (value) => setState(() => _selectionMode = value),
-                    onToggleFilter: () => setState(() => _filterOpen = !_filterOpen),
-                    onFilterChanged: (value) => setState(() => _filter = value),
-                    onCloseFilter: () => setState(() => _filterOpen = false),
-                    onSortChanged: (sort) => setState(() {
-                      if (_sort == sort) {
-                        _ascending = !_ascending;
-                      } else {
-                        _sort = sort;
-                        _ascending = true;
-                      }
-                    }),
-                    onRetry: () {
-                      if (_initializationFailed) {
-                        _initialize();
-                      } else {
-                        _loadDirectory(_failedPath ?? _currentPath, direction: _failedDirection);
-                      }
-                    },
-                    onPointerSelect: _pointerSelect,
-                    onTapped: _tapSelect,
-                    onColumnTapped: _columnTapped,
-                    onSelectionChanged: (paths) {
-                      _explorerFocusNode.requestFocus();
-                      _selectionChanged(() {
-                        _collapseTo = null;
-                        _setSelection(paths);
-                      });
-                    },
-                    onToggleSelection: _toggleSelection,
-                    onViewportChanged: (size) => _viewport = size,
-                    onOpen: _openEntry,
-                    onOpenWithBounds: (entry, card, icon) => _loadDirectory(
-                      entry.entity.path, heroCard: card, heroIcon: icon,
-                    ),
-                    onContextMenu: Platform.isWindows ? _showContextMenu : null,
-                    onNavigateColumn: _openColumn,
-                    onDrop: _receiveExternalDrop,
-                    onClosePreview: () => setState(() {
-                      _previewVisible = false;
-                      _previewExpanded = false;
-                    }),
-                    onTogglePreviewExpanded: () => setState(() => _previewExpanded = !_previewExpanded),
-                  ),
+                  actions: _paneActions,
                   child: Builder(builder: _buildPane),
                 ),
               ),

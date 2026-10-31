@@ -255,7 +255,7 @@ class _FolderPreview extends StatefulWidget {
 
 class _FolderPreviewState extends State<_FolderPreview> {
   late final Future<List<ExplorerEntry>> _entries =
-      DirectoryScanner.scan(widget.path).then((entries) {
+      DirectoryScanner.scanNames(widget.path).then((entries) {
         sortExplorerEntries(entries, ExplorerSort.name, ascending: true);
         return entries;
       });

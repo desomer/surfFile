@@ -80,7 +80,17 @@ typedef ExplorerSidebarData = ({
 
 typedef ExplorerSidebarActions = ({ValueChanged<String> onLocationSelected});
 
-class ExplorerPaneScope extends InheritedWidget {
+enum ExplorerPaneAspect {
+  sidebar,
+  mainLayout,
+  splitIndicator,
+  viewModeBar,
+  filterBar,
+  sortHeader,
+  content,
+}
+
+class ExplorerPaneScope extends InheritedModel<ExplorerPaneAspect> {
   const ExplorerPaneScope({
     required this.data,
     required this.actions,
@@ -91,16 +101,96 @@ class ExplorerPaneScope extends InheritedWidget {
   final ExplorerPaneData data;
   final ExplorerPaneActions actions;
 
-  static ExplorerPaneScope? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<ExplorerPaneScope>();
+  static bool exists(BuildContext context) =>
+      context.getElementForInheritedWidgetOfExactType<ExplorerPaneScope>() !=
+      null;
 
-  static ExplorerPaneScope of(BuildContext context) =>
-      maybeOf(context) ??
+  static ExplorerPaneScope? maybeOf(
+    BuildContext context, [
+    ExplorerPaneAspect? aspect,
+  ]) => InheritedModel.inheritFrom<ExplorerPaneScope>(context, aspect: aspect);
+
+  static ExplorerPaneScope of(
+    BuildContext context, [
+    ExplorerPaneAspect? aspect,
+  ]) =>
+      maybeOf(context, aspect) ??
       (throw FlutterError('ExplorerPaneScope requires an ExplorerPane ancestor.'));
 
   @override
   bool updateShouldNotify(ExplorerPaneScope oldWidget) =>
       data != oldWidget.data || actions != oldWidget.actions;
+
+  @override
+  bool updateShouldNotifyDependent(
+    ExplorerPaneScope oldWidget,
+    Set<ExplorerPaneAspect> dependencies,
+  ) {
+    if (actions != oldWidget.actions) return true;
+    final a = oldWidget.data;
+    final b = data;
+    for (final aspect in dependencies) {
+      final changed = switch (aspect) {
+        ExplorerPaneAspect.sidebar => a.sidebar != b.sidebar,
+        ExplorerPaneAspect.mainLayout =>
+          a.editable != b.editable ||
+              a.previewExpanded != b.previewExpanded ||
+              a.split != b.split ||
+              a.columnView != b.columnView ||
+              a.heatmapView != b.heatmapView,
+        ExplorerPaneAspect.splitIndicator => a.active != b.active,
+        ExplorerPaneAspect.viewModeBar =>
+          a.title != b.title ||
+              a.entries.length != b.entries.length ||
+              a.pending != b.pending ||
+              a.gridView != b.gridView ||
+              a.columnView != b.columnView ||
+              a.heatmapView != b.heatmapView ||
+              a.titleIconKey != b.titleIconKey ||
+              a.filter.activeCount != b.filter.activeCount ||
+              a.filterOpen != b.filterOpen ||
+              a.selectionMode != b.selectionMode ||
+              a.loading != b.loading ||
+              a.hasLoaded != b.hasLoaded ||
+              a.selection.isEmpty != b.selection.isEmpty ||
+              (a.selectedPath ?? a.selection.firstOrNull) !=
+                  (b.selectedPath ?? b.selection.firstOrNull),
+        ExplorerPaneAspect.filterBar =>
+          a.filterOpen != b.filterOpen ||
+              (b.filterOpen &&
+                  (a.filter != b.filter ||
+                      a.entries.length != b.entries.length ||
+                      a.total != b.total)),
+        ExplorerPaneAspect.sortHeader =>
+          a.sort != b.sort || a.ascending != b.ascending,
+        ExplorerPaneAspect.content =>
+          a.path != b.path ||
+              !identical(a.entries, b.entries) ||
+              !identical(a.selection, b.selection) ||
+              a.selectedPath != b.selectedPath ||
+              a.gridView != b.gridView ||
+              a.columnView != b.columnView ||
+              a.heatmapView != b.heatmapView ||
+              a.checkboxSelection != b.checkboxSelection ||
+              a.revealToken != b.revealToken ||
+              a.loading != b.loading ||
+              a.pending != b.pending ||
+              a.hasLoaded != b.hasLoaded ||
+              a.error != b.error ||
+              a.hasQuery != b.hasQuery ||
+              a.dropEnabled != b.dropEnabled ||
+              a.previewVisible != b.previewVisible ||
+              a.previewExpanded != b.previewExpanded ||
+              a.folderRevision != b.folderRevision ||
+              a.reverseTransition != b.reverseTransition ||
+              a.refreshToken != b.refreshToken ||
+              a.sort != b.sort ||
+              a.ascending != b.ascending,
+      };
+      if (changed) return true;
+    }
+    return false;
+  }
 }
 
 class ExplorerSidebarScope extends InheritedWidget {
@@ -113,6 +203,10 @@ class ExplorerSidebarScope extends InheritedWidget {
 
   final ExplorerSidebarData data;
   final ExplorerSidebarActions actions;
+
+  static bool exists(BuildContext context) =>
+      context.getElementForInheritedWidgetOfExactType<ExplorerSidebarScope>() !=
+      null;
 
   static ExplorerSidebarScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ExplorerSidebarScope>();
@@ -156,6 +250,41 @@ class ExplorerNavigation {
   final VoidCallback onCreateFolder;
   final ValueChanged<String> onNavigate;
   final VoidCallback? onToggleSplit;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ExplorerNavigation &&
+          path == other.path &&
+          canGoBack == other.canGoBack &&
+          canGoForward == other.canGoForward &&
+          canGoUp == other.canGoUp &&
+          split == other.split &&
+          onBack == other.onBack &&
+          onForward == other.onForward &&
+          onUp == other.onUp &&
+          onRefresh == other.onRefresh &&
+          onSearchChanged == other.onSearchChanged &&
+          onCreateFolder == other.onCreateFolder &&
+          onNavigate == other.onNavigate &&
+          onToggleSplit == other.onToggleSplit;
+
+  @override
+  int get hashCode => Object.hash(
+    path,
+    canGoBack,
+    canGoForward,
+    canGoUp,
+    split,
+    onBack,
+    onForward,
+    onUp,
+    onRefresh,
+    onSearchChanged,
+    onCreateFolder,
+    onNavigate,
+    onToggleSplit,
+  );
 }
 
 class ExplorerScope extends InheritedWidget {
@@ -166,6 +295,9 @@ class ExplorerScope extends InheritedWidget {
   });
 
   final ExplorerNavigation navigation;
+
+  static bool exists(BuildContext context) =>
+      context.getElementForInheritedWidgetOfExactType<ExplorerScope>() != null;
 
   static ExplorerNavigation? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<ExplorerScope>()?.navigation;

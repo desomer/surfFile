@@ -64,16 +64,19 @@ class SizeGauge extends StatelessWidget {
         FolderSizeIndicator.mode,
         FolderSizeService.revision,
       ]),
-      builder: (context, _) {
+      child: child,
+      builder: (context, child) {
         final display = FolderSizeIndicator.mode.value;
+        if (display == FolderSizeDisplay.none ||
+            display == FolderSizeDisplay.background) {
+          return child!;
+        }
         final ratio = FolderSizeIndicator.ratio(
           bytes(),
           siblingSizes?.call() ?? const [],
         );
-        if (ratio == null ||
-            display == FolderSizeDisplay.none ||
-            display == FolderSizeDisplay.background) {
-          return child;
+        if (ratio == null) {
+          return child!;
         }
         final color = FolderSizeIndicator.color(ratio);
         return switch (display) {
@@ -81,7 +84,7 @@ class SizeGauge extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              child,
+              Flexible(child: child!),
               const SizedBox(height: 2),
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
@@ -104,7 +107,7 @@ class SizeGauge extends StatelessWidget {
                 decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               ),
               const SizedBox(width: 6),
-              Flexible(child: child),
+              Flexible(child: child!),
             ],
           ),
           _ => Row(
@@ -115,7 +118,7 @@ class SizeGauge extends StatelessWidget {
                 child: CustomPaint(painter: _PiePainter(ratio, color)),
               ),
               const SizedBox(width: 6),
-              Flexible(child: child),
+              Flexible(child: child!),
             ],
           ),
         };

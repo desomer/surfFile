@@ -29,6 +29,22 @@ class DirectoryScanner {
     );
   }
 
+  /// Lit uniquement les noms et types (dossier/fichier) sans appel `stat()`.
+  static Future<List<ExplorerEntry>> scanNames(String path) async {
+    final entities = await Directory(path).list(followLinks: false).toList();
+    final epoch = DateTime.fromMillisecondsSinceEpoch(0);
+    return [
+      for (final entity in entities)
+        ExplorerEntry(
+          entity: entity,
+          name: _nameOf(entity.path),
+          isDirectory: entity is Directory,
+          modified: epoch,
+          size: 0,
+        ),
+    ];
+  }
+
   static Future<ExplorerEntry> _entryAsync(FileSystemEntity entity) async =>
       _entry(entity, await entity.stat());
 
@@ -42,11 +58,15 @@ class DirectoryScanner {
     return _entry(entity, entity.statSync());
   }
 
+  static String _nameOf(String path) {
+    final parts = path.replaceAll('\\', '/').split('/');
+    return parts.isEmpty ? path : parts.last;
+  }
+
   static ExplorerEntry _entry(FileSystemEntity entity, FileStat stat) {
-    final parts = entity.path.replaceAll('\\', '/').split('/');
     return ExplorerEntry(
       entity: entity,
-      name: parts.isEmpty ? entity.path : parts.last,
+      name: _nameOf(entity.path),
       isDirectory: entity is Directory,
       modified: stat.modified,
       size: stat.size,

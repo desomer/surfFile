@@ -107,6 +107,7 @@ class EditableSurfaceState extends State<EditableSurface>
   SurfaceStateBinding? _stateBinding;
   bool _rowSelected = false;
   bool _contentHovered = false;
+  bool _dialogOpen = false;
   final _hovered = ValueNotifier(false);
 
   void _setHovered(bool value) {
@@ -116,6 +117,7 @@ class EditableSurfaceState extends State<EditableSurface>
   }
 
   void _runtimeChanged() {
+    if (!_dialogOpen) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _runtimeRevision.value++;
     });
@@ -221,6 +223,7 @@ class EditableSurfaceState extends State<EditableSurface>
     final initialInstance = editor.componentLabel;
     final history = EditorHistoryScope.controllerOf(context);
     history?.beginTransaction();
+    _dialogOpen = true;
     var confirmed = false;
     try {
       confirmed =
@@ -267,6 +270,7 @@ class EditableSurfaceState extends State<EditableSurface>
         }
       }
     } finally {
+      _dialogOpen = false;
       if (mounted) _preview.value = null;
       if (confirmed) {
         history?.commitTransaction();
@@ -300,15 +304,22 @@ class EditableSurfaceState extends State<EditableSurface>
           _contentHovered = content?.hovered ?? false;
           _runtimeChanged();
         }
-        _syncBinding(style, scope);
+        final base = style;
+        _syncBinding(base, scope);
+        final listenHover =
+            widget.resolveSelectionAndHover && base.states != null;
         return ListenableBuilder(
-          listenable: Listenable.merge([_preview, _hovered, ?_stateBinding]),
+          listenable: Listenable.merge([
+            _preview,
+            if (listenHover) _hovered,
+            ?_stateBinding,
+          ]),
           builder: (context, _) {
-            final base = style;
+            final currentBase = style;
             final surfaceStyle =
                 _preview.value ??
-                base.states?.resolve(
-                  base,
+                currentBase.states?.resolve(
+                  currentBase,
                   name: _stateBinding?.stateName,
                   isSelected:
                       widget.resolveSelectionAndHover &&
@@ -318,7 +329,7 @@ class EditableSurfaceState extends State<EditableSurface>
                     if (content?.hovered == true) AutomaticState.contentHover,
                   },
                 ) ??
-                base;
+                currentBase;
             final renderStyle = surfaceStyle.copyWith(
               margin: 0,
               marginInsets: null,

@@ -19,10 +19,11 @@ void main() {
     {'path': 'G:\\', 'totalBytes': 100 * gib, 'freeBytes': 0},
   ];
   setUp(
-      () => messenger.setMockMethodCallHandler(DiskSpace.channel, (call) async {
-            expect(call.method, 'getDisks');
-            return disks;
-          }));
+    () => messenger.setMockMethodCallHandler(DiskSpace.channel, (call) async {
+      expect(call.method, 'getDisks');
+      return disks;
+    }),
+  );
   tearDown(() => messenger.setMockMethodCallHandler(DiskSpace.channel, null));
 
   test('capacity reports real used fractions and unavailable media', () async {
@@ -33,34 +34,47 @@ void main() {
 
   test('invalid capacity is rejected', () async {
     messenger.setMockMethodCallHandler(
-        DiskSpace.channel,
-        (_) async => [
-              {'path': 'C:\\', 'totalBytes': 100, 'freeBytes': 101},
-            ]);
+      DiskSpace.channel,
+      (_) async => [
+        {'path': 'C:\\', 'totalBytes': 100, 'freeBytes': 101},
+      ],
+    );
     await expectLater(DiskSpace.load(), throwsFormatException);
   });
 
-  testWidgets('two-column disk grid renders usage, free space and navigation',
-      (tester) async {
+  testWidgets('two-column disk grid renders usage, free space and navigation', (
+    tester,
+  ) async {
     String? path;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
           body: SizedBox(
-        width: 210,
-        child: DiskSpacePanel(onNavigate: (value) => path = value),
-      )),
-    ));
+            width: 210,
+            child: DiskSpacePanel(onNavigate: (value) => path = value),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('75 %'), findsOneWidget);
     expect(find.text('25.0 Gio libres'), findsOneWidget);
     expect(find.text('Indisponible'), findsOneWidget);
-    final gauges =
-        tester.widgetList<DiskGauge>(find.byType(DiskGauge)).toList();
+    final gauges = tester
+        .widgetList<DiskGauge>(find.byType(DiskGauge))
+        .toList();
     expect(gauges.map((gauge) => gauge.value), [.75, .95, 0, null, 1]);
-    expect(gauges.map((gauge) => gauge.alert),
-        [false, true, false, false, true]);
-    expect(gauges[1].alertColor,
-        Theme.of(tester.element(find.text('D:\\'))).colorScheme.error);
+    expect(gauges.map((gauge) => gauge.alert), [
+      false,
+      true,
+      false,
+      false,
+      true,
+    ]);
+    expect(
+      gauges[1].alertColor,
+      Theme.of(tester.element(find.text('D:\\'))).colorScheme.error,
+    );
     final c = tester.getCenter(find.text('C:\\'));
     final d = tester.getCenter(find.text('D:\\'));
     final e = tester.getCenter(find.text('E:\\'));
@@ -95,17 +109,19 @@ void main() {
       ];
     });
     final navigated = <String>[];
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 210,
-          child: DiskSpacePanel(
-            currentPath: 'E:\\Photos',
-            onNavigate: navigated.add,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 210,
+            child: DiskSpacePanel(
+              currentPath: 'E:\\Photos',
+              onNavigate: navigated.add,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('disk-eject-C:\\')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('disk-eject-E:\\')));
@@ -113,8 +129,10 @@ void main() {
     expect(ejected, ['E:\\']);
     // La vue quitte le disque avant son éjection.
     expect(navigated, ['C:\\']);
-    expect(find.text('Vous pouvez retirer E:\\ en toute sécurité.'),
-        findsOneWidget);
+    expect(
+      find.text('Vous pouvez retirer E:\\ en toute sécurité.'),
+      findsOneWidget,
+    );
 
     inUse = true;
     ScaffoldMessenger.of(tester.element(find.byType(DiskSpacePanel)))
@@ -124,7 +142,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text(
-          'Impossible d’éjecter E:\\ : des fichiers sont encore ouverts.'),
+        'Impossible d’éjecter E:\\ : des fichiers sont encore ouverts.',
+      ),
       findsOneWidget,
     );
     await tester.pumpWidget(const SizedBox.shrink());
@@ -132,10 +151,11 @@ void main() {
 
   test('ejectable flag must be a boolean', () async {
     messenger.setMockMethodCallHandler(
-        DiskSpace.channel,
-        (_) async => [
-              {'path': 'E:\\', 'error': 'No media', 'ejectable': 'yes'},
-            ]);
+      DiskSpace.channel,
+      (_) async => [
+        {'path': 'E:\\', 'error': 'No media', 'ejectable': 'yes'},
+      ],
+    );
     await expectLater(DiskSpace.load(), throwsFormatException);
   });
 
@@ -143,10 +163,13 @@ void main() {
     messenger.setMockMethodCallHandler(DiskSpace.channel, (_) async {
       throw PlatformException(code: 'unavailable');
     });
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(
+      MaterialApp(
         home: Scaffold(
-      body: SizedBox(width: 210, child: DiskSpacePanel(onNavigate: (_) {})),
-    )));
+          body: SizedBox(width: 210, child: DiskSpacePanel(onNavigate: (_) {})),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Impossible de lire les disques.'), findsOneWidget);
     messenger.setMockMethodCallHandler(DiskSpace.channel, (_) async => disks);
@@ -157,20 +180,49 @@ void main() {
   });
 
   testWidgets('sidebar scrolls to all disks in a short window', (tester) async {
-    await tester.pumpWidget(MaterialApp(
+    await tester.pumpWidget(
+      MaterialApp(
         home: Scaffold(
-      body: SizedBox(
-          height: 260,
-          child: ExplorerSidebar(
-            locations: const [],
-            currentPath: 'C:\\',
-            onLocationSelected: (_) {},
-          )),
-    )));
+          body: SizedBox(
+            height: 260,
+            child: ExplorerSidebar(
+              locations: const [],
+              currentPath: 'C:\\',
+              onLocationSelected: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('Vos fichiers, à portée de main.'), findsNothing);
     await tester.ensureVisible(find.text('G:\\'));
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('disk gauge and labels are centered in their card', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(width: 420, child: DiskSpacePanel(onNavigate: (_) {})),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (final diskPath in ['C:\\', 'F:\\']) {
+      final tileRect = tester.getRect(
+        find.byKey(ValueKey('disk-tile-$diskPath')),
+      );
+      final gaugeRect = tester.getRect(
+        find.byKey(ValueKey('disk-gauge-$diskPath')),
+      );
+      final nameRect = tester.getRect(find.text(diskPath));
+      expect(gaugeRect.center.dx, closeTo(tileRect.center.dx, 0.5));
+      expect(nameRect.center.dx, closeTo(tileRect.center.dx, 0.5));
+    }
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

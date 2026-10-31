@@ -44,16 +44,24 @@ class InteractionEffectBox extends StatefulWidget {
 }
 
 class _InteractionEffectBoxState extends State<InteractionEffectBox> {
-  bool _hovered = false;
-  bool _pressed = false;
+  final _state = ValueNotifier<(bool hovered, bool pressed)>((false, false));
   int? _pointer;
+  ThemeData? _cachedParentTheme;
+  bool? _cachedRipple;
+  ThemeData? _cachedTheme;
+
+  bool get _hovered => _state.value.$1;
+  bool get _pressed => _state.value.$2;
 
   void _set({bool? hovered, bool? pressed}) {
     if (!mounted) return;
-    setState(() {
-      _hovered = hovered ?? _hovered;
-      _pressed = pressed ?? _pressed;
-    });
+    final next = (hovered ?? _hovered, pressed ?? _pressed);
+    if (_state.value == next) return;
+    if (widget.effect == InteractionEffect.elevation) {
+      setState(() => _state.value = next);
+    } else {
+      _state.value = next;
+    }
   }
 
   void _release(PointerEvent event) {
@@ -64,15 +72,45 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
   }
 
   @override
+  void dispose() {
+    _state.dispose();
+    super.dispose();
+  }
+
+  Widget _withTheme(
+    BuildContext context, {
+    required bool ripple,
+    required Widget child,
+  }) {
+    final parent = Theme.of(context);
+    if (ripple && parent.hoverColor == Colors.transparent) {
+      return child;
+    }
+    if (!identical(parent, _cachedParentTheme) || _cachedRipple != ripple) {
+      _cachedParentTheme = parent;
+      _cachedRipple = ripple;
+      _cachedTheme = parent.copyWith(
+        splashFactory: ripple ? null : NoSplash.splashFactory,
+        splashColor: ripple ? null : Colors.transparent,
+        // Le voile du survol est dessiné ici, pas par les InkWell.
+        hoverColor: Colors.transparent,
+        highlightColor: ripple ? null : Colors.transparent,
+      );
+    }
+    return Theme(data: _cachedTheme!, child: child);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final effect = widget.effect;
     final hover = widget.hover;
     final ripple = effect == InteractionEffect.ripple;
     if (ripple && !hover) {
       if (!widget.ownsHover) return widget.builder(context, 0);
-      return Theme(
-        data: Theme.of(context).copyWith(hoverColor: Colors.transparent),
-        child: widget.builder(context, 0),
+      return _withTheme(
+        context,
+        ripple: true,
+        child: Builder(builder: (context) => widget.builder(context, 0)),
       );
     }
     final reduced = MediaQuery.disableAnimationsOf(context);
@@ -84,46 +122,60 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
         : elevation && _hovered
         ? InteractionEffect.hoverLift
         : 0.0;
-    final pressedVeil = effect == InteractionEffect.pressed && _pressed;
     final onSurface = Theme.of(context).colorScheme.onSurface;
-    final tint = pressedVeil ? null : widget.hoverColor;
-    final base = tint ?? onSurface;
-    final alpha = pressedVeil
-        ? InteractionEffect.pressedOverlay
-        : hover && _hovered && !_pressed
-        ? (tint == null
-              ? InteractionEffect.hoverOverlay
-              : InteractionEffect.hoverTintedOverlay)
-        : 0.0;
     final corners = widget.borderRadius ?? BorderRadius.circular(widget.radius);
     final showOverlay = hover || effect == InteractionEffect.pressed;
-    Widget content = Theme(
-      data: Theme.of(context).copyWith(
-        splashFactory: ripple ? null : NoSplash.splashFactory,
-        splashColor: ripple ? null : Colors.transparent,
-        // Le voile du survol est dessiné ici, pas par les InkWell.
-        hoverColor: Colors.transparent,
-        highlightColor: ripple ? null : Colors.transparent,
-      ),
-      child: widget.builder(context, boost),
+    Widget content = _withTheme(
+      context,
+      ripple: ripple,
+      child: Builder(builder: (context) => widget.builder(context, boost)),
     );
-    if (showOverlay) {
-      content = Stack(
-        fit: StackFit.passthrough,
-        children: [
-          content,
-          Positioned.fill(
-            child: IgnorePointer(
-              child: AnimatedContainer(
-                duration: duration,
-                decoration: BoxDecoration(
-                  color: base.withValues(alpha: base.a * alpha),
-                  borderRadius: corners,
+    if (showOverlay || effect == InteractionEffect.pressed) {
+      content = ValueListenableBuilder<(bool, bool)>(
+        valueListenable: _state,
+        child: content,
+        builder: (context, state, child) {
+          final (hovered, pressed) = state;
+          final pressedVeil = effect == InteractionEffect.pressed && pressed;
+          final tint = pressedVeil ? null : widget.hoverColor;
+          final base = tint ?? onSurface;
+          final alpha = pressedVeil
+              ? InteractionEffect.pressedOverlay
+              : hover && hovered && !pressed
+              ? (tint == null
+                    ? InteractionEffect.hoverOverlay
+                    : InteractionEffect.hoverTintedOverlay)
+              : 0.0;
+          Widget current = child!;
+          if (showOverlay) {
+            current = Stack(
+              fit: StackFit.passthrough,
+              children: [
+                current,
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: AnimatedContainer(
+                      duration: duration,
+                      decoration: BoxDecoration(
+                        color: base.withValues(alpha: base.a * alpha),
+                        borderRadius: corners,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ),
-        ],
+              ],
+            );
+          }
+          if (effect == InteractionEffect.pressed) {
+            current = AnimatedScale(
+              scale: pressed && !reduced ? InteractionEffect.pressedScale : 1,
+              duration: duration,
+              curve: Curves.easeOutCubic,
+              child: current,
+            );
+          }
+          return current;
+        },
       );
     }
     if (elevation) {
@@ -151,14 +203,6 @@ class _InteractionEffectBoxState extends State<InteractionEffectBox> {
             ],
           ),
         ),
-      );
-    }
-    if (effect == InteractionEffect.pressed) {
-      content = AnimatedScale(
-        scale: _pressed && !reduced ? InteractionEffect.pressedScale : 1,
-        duration: duration,
-        curve: Curves.easeOutCubic,
-        child: content,
       );
     }
     return MouseRegion(

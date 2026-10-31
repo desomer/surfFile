@@ -46,67 +46,59 @@ class SuperContainer extends StatefulWidget {
 }
 
 class _SuperContainerState extends State<SuperContainer> {
-  late final ValueNotifier<ContainerStyle> _local =
-      ValueNotifier(widget.style);
-
   ValueNotifier<Appearance>? get _appearance =>
       widget.slot == null ? null : AppearanceScope.controllerOf(context);
 
   ContainerStyle get style {
     final appearance = _appearance;
     return appearance == null
-        ? _local.value
+        ? widget.style
         : widget.slot!.read(appearance.value);
   }
 
-  @override
-  void didUpdateWidget(SuperContainer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.style != widget.style) _local.value = widget.style;
-  }
-
-  @override
-  void dispose() {
-    _local.dispose();
-    super.dispose();
+  Widget _buildContent(
+    BuildContext context,
+    ContainerStyle resolvedStyle,
+    Widget child,
+  ) {
+    final applyPadding = widget.applyPadding ?? widget.decorate;
+    var current = child;
+    if (applyPadding) {
+      current = Padding(
+        padding: resolvedStyle.contentPadding,
+        child: current,
+      );
+    }
+    if (widget.decorate) {
+      current = StyledSurface(
+        style: resolvedStyle,
+        fallbackColor:
+            widget.fallbackColor ??
+            Theme.of(context).colorScheme.surfaceContainerLow,
+        borderColor:
+            widget.borderColor ??
+            Theme.of(context).colorScheme.outlineVariant,
+        horizontalBorder: widget.horizontalBorder,
+        child: current,
+      );
+    }
+    return Padding(padding: resolvedStyle.outerMargin, child: current);
   }
 
   @override
   Widget build(BuildContext context) {
-    final listenable = _appearance ?? _local;
     Widget content = widget.child ?? const SizedBox.expand();
     if (widget.padding != null) {
       content = Padding(padding: widget.padding!, child: content);
     }
-    final applyPadding = widget.applyPadding ?? widget.decorate;
-    final decorate = widget.decorate;
+    final appearance = _appearance;
+    if (appearance == null) {
+      return _buildContent(context, widget.style, content);
+    }
     return ListenableBuilder(
-      listenable: listenable,
+      listenable: appearance,
       child: content,
-      builder: (context, child) {
-        final resolvedStyle = style;
-        var current = child!;
-        if (applyPadding) {
-          current = Padding(
-            padding: resolvedStyle.contentPadding,
-            child: current,
-          );
-        }
-        if (decorate) {
-          current = StyledSurface(
-            style: resolvedStyle,
-            fallbackColor:
-                widget.fallbackColor ??
-                Theme.of(context).colorScheme.surfaceContainerLow,
-            borderColor:
-                widget.borderColor ??
-                Theme.of(context).colorScheme.outlineVariant,
-            horizontalBorder: widget.horizontalBorder,
-            child: current,
-          );
-        }
-        return Padding(padding: resolvedStyle.outerMargin, child: current);
-      },
+      builder: (context, child) => _buildContent(context, style, child!),
     );
   }
 }
