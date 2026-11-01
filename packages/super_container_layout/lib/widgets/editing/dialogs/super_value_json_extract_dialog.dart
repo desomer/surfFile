@@ -11,7 +11,6 @@ import 'package:material_ui/material_ui.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/registry.dart';
 import '../../../models/super_action_config.dart';
-import '../../../models/super_chart_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
@@ -3126,12 +3125,10 @@ List<JsonTextBinding> collectExistingBindingsFromSlot(EditorSlotState slot) {
         addBinding(t.binding);
       case final SuperTreeViewConfig tr:
         addBinding(tr.binding);
-      case final SuperChartConfig c:
-        addBinding(c.binding);
       case final SuperTabConfig tb:
         addBinding(tb.binding);
       default:
-        break;
+        comp?.referencedBindings.forEach(addBinding);
     }
     final st = appearance.styles[id];
     if (st != null) {

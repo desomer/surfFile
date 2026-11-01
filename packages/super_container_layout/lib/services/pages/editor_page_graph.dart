@@ -17,7 +17,6 @@ import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
 import '../../models/super_table_config.dart';
 import '../../models/super_tree_view_config.dart';
-import '../../models/super_chart_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 
@@ -461,7 +460,6 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
   EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
-  EditorConfigKind.chart => appearance.tryComponent<SuperChartConfig>(ref.id),
   EditorConfigKind.treeView =>
     appearance.tryComponent<SuperTreeViewConfig>(ref.id),
   EditorConfigKind.table =>
@@ -478,7 +476,6 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.action => value is SuperActionConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
   EditorConfigKind.tab => value is SuperTabConfig,
-  EditorConfigKind.chart => value is SuperChartConfig,
   EditorConfigKind.treeView => value is SuperTreeViewConfig,
   EditorConfigKind.table => value is SuperTableConfig,
 };
@@ -493,7 +490,6 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       SuperValueConfig() => [EditorConfigRef.value(entry.key)],
       SuperActionConfig() => [EditorConfigRef.action(entry.key)],
       SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
-      SuperChartConfig() => [EditorConfigRef.chart(entry.key)],
       SuperTreeViewConfig() => [EditorConfigRef.treeView(entry.key)],
       SuperTableConfig() => [EditorConfigRef.table(entry.key)],
       SuperListViewConfig() => [
@@ -576,6 +572,9 @@ Map<String, String> _slots(EditorConfigKind kind, Object value) {
       })
         id: value.slotTypeOf(id),
     };
+  }
+  if (value is ComponentConfig) {
+    return value.childSlots;
   }
   return const {};
 }
@@ -706,6 +705,9 @@ Object _copy(Object value, String Function(String) remap) {
       slotLabels: _remapKeys(value.slotLabels, remap),
       grid: grid?.copyWith(items: _remapKeys(grid.items, remap)),
     );
+  }
+  if (value is ComponentConfig) {
+    return value.copyWithRemappedSlots(remap);
   }
   // Immutable values; a SuperValue repository ID is external, not a component ID.
   return value;

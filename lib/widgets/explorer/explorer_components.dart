@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
@@ -33,6 +34,7 @@ Registry createExplorerRegistry() {
 }
 
 void registerExplorerComponents(Registry registry) {
+  registry.registerAllExtensions();
   registry.registerComponent(
     'explorer_toolbar',
     RegisteredComponent(

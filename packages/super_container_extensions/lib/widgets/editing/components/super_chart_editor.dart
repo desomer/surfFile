@@ -11,16 +11,9 @@ library;
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 
-import '../../../models/json_syntax.dart';
 import '../../../models/super_chart_config.dart';
-import '../../../services/repositories/json_list_scope.dart';
-import '../../../services/repositories/json_repository_scope.dart';
-import '../../../services/repositories/json_repository_store.dart';
-import '../dialogs/editor_dialog.dart';
-import '../dialogs/editor_dialog_header.dart';
-import '../dialogs/editor_tabbed_wizard.dart';
-import '../repositories/repository_binding_fields.dart';
 
 /// Palette de couleurs proposées pour les séries d'un graphique.
 const List<Color> defaultChartSeriesPalette = [
@@ -292,350 +285,349 @@ class _SuperChartEditorDialogState extends State<_SuperChartEditorDialog> {
       propertiesContentBuilder: (context) => Form(
         key: _form,
         child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 14,
-              children: [
-                // 1. Type de graphique
-                const Text(
-                  'Type de graphique (fl_chart)',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-                SegmentedButton<SuperChartKind>(
-                  key: const ValueKey('super-chart-kind'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  segments: [
-                    for (final item in SuperChartKind.values)
-                      ButtonSegment<SuperChartKind>(
-                        value: item,
-                        tooltip: item.label,
-                        icon: Flexible(
-                          flex: 0,
-                          child: Icon(
-                            switch (item) {
-                              SuperChartKind.line => Icons.show_chart,
-                              SuperChartKind.bar => Icons.bar_chart,
-                              SuperChartKind.pie => Icons.pie_chart_outline,
-                              SuperChartKind.scatter =>
-                                Icons.scatter_plot_outlined,
-                              SuperChartKind.radar => Icons.radar,
-                            },
-                            size: 14,
-                          ),
-                        ),
-                        label: Text(
-                          item.label,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                  ],
-                  selected: {_draft.kind},
-                  onSelectionChanged: _busy
-                      ? null
-                      : (selected) {
-                          if (selected.isNotEmpty) {
-                            setState(
-                              () => _draft = _draft.copyWith(
-                                kind: selected.first,
-                              ),
-                            );
-                          }
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 14,
+          children: [
+            // 1. Type de graphique
+            const Text(
+              'Type de graphique (fl_chart)',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            ),
+            SegmentedButton<SuperChartKind>(
+              key: const ValueKey('super-chart-kind'),
+              showSelectedIcon: false,
+              style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              segments: [
+                for (final item in SuperChartKind.values)
+                  ButtonSegment<SuperChartKind>(
+                    value: item,
+                    tooltip: item.label,
+                    icon: Flexible(
+                      flex: 0,
+                      child: Icon(
+                        switch (item) {
+                          SuperChartKind.line => Icons.show_chart,
+                          SuperChartKind.bar => Icons.bar_chart,
+                          SuperChartKind.pie => Icons.pie_chart_outline,
+                          SuperChartKind.scatter =>
+                            Icons.scatter_plot_outlined,
+                          SuperChartKind.radar => Icons.radar,
                         },
-                ),
-
-                // 2. Liaison au repository JSON
-                RepositoryBindingFields(
-                  keyPrefix: 'super-chart-binding',
-                  binding: _draft.binding,
-                  store: widget.repositories,
-                  listScope: widget.scope,
-                  pathHint: 'ventes ou clients[?].commandes',
-                  helper:
-                      'Tableau JSON dont chaque élément fournit un point / une entrée du graphique.',
-                  onChanged: (binding) => setState(
-                    () => _draft = _draft.copyWith(
-                      binding: binding,
-                      clearBinding: binding == null,
-                    ),
-                  ),
-                ),
-
-                // 3. Chemin du libellé / Axe X
-                TextFormField(
-                  key: const ValueKey('super-chart-label-path'),
-                  controller: _labelPath,
-                  enabled: !_busy,
-                  decoration: const InputDecoration(
-                    labelText: 'Chemin du libellé / catégorie (axe X)',
-                    hintText: 'mois, nom ou laisser vide pour l’index',
-                    helperText:
-                        'Clé relative dans chaque élément du tableau pour le titre X ou la tranche.',
-                  ),
-                ),
-
-                const Divider(height: 8),
-
-                // 4. Séries de données
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Séries de données (${_draft.series.length})',
-                        style: Theme.of(context).textTheme.titleSmall,
+                        size: 14,
                       ),
                     ),
-                    TextButton.icon(
-                      key: const ValueKey('super-chart-add-series'),
-                      onPressed: _busy ? null : _addSeries,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Ajouter une série'),
+                    label: Text(
+                      item.label,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ],
-                ),
-                for (var i = 0; i < _draft.series.length; i++)
-                  _SeriesEditorCard(
-                    key: ValueKey('super-chart-series-${_draft.series[i].id}'),
-                    index: i,
-                    series: _draft.series[i],
-                    chartKind: kind,
-                    canRemove: _draft.series.length > 1 && !_busy,
-                    enabled: !_busy,
-                    onChanged: (updated) => _updateSeries(i, updated),
-                    onRemove: () => _removeSeries(i),
-                  ),
-
-                const Divider(height: 8),
-
-                // 5. Options spécifiques au type
-                if (kind == SuperChartKind.bar)
-                  SwitchListTile(
-                    key: const ValueKey('super-chart-bar-stacked'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Empiler les séries (barres empilées)'),
-                    subtitle: const Text(
-                      'Cumule les valeurs Y des séries sur une seule barre par entrée.',
-                    ),
-                    value: _draft.barStacked,
-                    onChanged: _busy
-                        ? null
-                        : (v) => setState(
-                            () => _draft = _draft.copyWith(barStacked: v),
-                          ),
-                  ),
-
-                if (kind == SuperChartKind.pie)
-                  Row(
-                    spacing: 12,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: const ValueKey('super-chart-pie-center-radius'),
-                          controller: _pieCenterRadius,
-                          enabled: !_busy,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Rayon central (Donut)',
-                            helperText: '0 = Camembert plein',
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: TextFormField(
-                          key: const ValueKey('super-chart-pie-sections-space'),
-                          controller: _pieSectionsSpace,
-                          enabled: !_busy,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Espacement des parts',
-                            helperText: 'En pixels (0–40)',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                // 6. Axes, Grille et Bornes
-                if (kind != SuperChartKind.pie)
-                  SwitchListTile(
-                    key: const ValueKey('super-chart-show-grid'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Afficher la grille'),
-                    value: _draft.showGrid,
-                    onChanged: _busy
-                        ? null
-                        : (v) => setState(
-                            () => _draft = _draft.copyWith(showGrid: v),
-                          ),
-                  ),
-
-                if (kind != SuperChartKind.pie)
-                  SwitchListTile(
-                    key: const ValueKey('super-chart-show-axis-labels'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Afficher les graduations et libellés'),
-                    value: _draft.showAxisLabels,
-                    onChanged: _busy
-                        ? null
-                        : (v) => setState(
-                            () => _draft = _draft.copyWith(showAxisLabels: v),
-                          ),
-                  ),
-
-                if (hasCartesianAxes) ...[
-                  SwitchListTile(
-                    key: const ValueKey('super-chart-show-axis-titles'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Afficher les titres des axes X / Y'),
-                    value: _draft.showAxisTitles,
-                    onChanged: _busy
-                        ? null
-                        : (v) => setState(
-                            () => _draft = _draft.copyWith(showAxisTitles: v),
-                          ),
-                  ),
-                  if (_draft.showAxisTitles)
-                    Row(
-                      spacing: 12,
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            key: const ValueKey('super-chart-x-axis-title'),
-                            controller: _xAxisTitle,
-                            enabled: !_busy,
-                            decoration: const InputDecoration(
-                              labelText: 'Titre axe X',
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: TextFormField(
-                            key: const ValueKey('super-chart-y-axis-title'),
-                            controller: _yAxisTitle,
-                            enabled: !_busy,
-                            decoration: const InputDecoration(
-                              labelText: 'Titre axe Y',
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  Row(
-                    spacing: 12,
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          key: const ValueKey('super-chart-min-y'),
-                          controller: _minY,
-                          enabled: !_busy,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                            signed: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Min Y (optionnel)',
-                            hintText: 'Auto',
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: TextFormField(
-                          key: const ValueKey('super-chart-max-y'),
-                          controller: _maxY,
-                          enabled: !_busy,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                            signed: true,
-                          ),
-                          decoration: const InputDecoration(
-                            labelText: 'Max Y (optionnel)',
-                            hintText: 'Auto',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-
-                // 7. Légende, Infobulles & Sélection
-                SwitchListTile(
-                  key: const ValueKey('super-chart-show-legend'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Afficher la légende'),
-                  value: _draft.showLegend,
-                  onChanged: _busy
-                      ? null
-                      : (v) => setState(
-                          () => _draft = _draft.copyWith(showLegend: v),
-                        ),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-chart-enable-tooltips'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Activer les infobulles (tooltips)'),
-                  value: _draft.enableTooltips,
-                  onChanged: _busy
-                      ? null
-                      : (v) => setState(
-                          () => _draft = _draft.copyWith(enableTooltips: v),
-                        ),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-chart-enable-selection'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Synchroniser la sélection avec le repository',
-                  ),
-                  subtitle: const Text(
-                    'Un clic sur le graphique sélectionne la ligne dans JsonArrayBinding (maître / détail).',
-                  ),
-                  value: _draft.enableSelection,
-                  onChanged: _busy
-                      ? null
-                      : (v) => setState(
-                          () => _draft = _draft.copyWith(enableSelection: v),
-                        ),
-                ),
-
-                // 8. Aperçu & Texte vide
-                SwitchListTile(
-                  key: const ValueKey('super-chart-show-demo'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Afficher des données de démonstration sans liaison',
-                  ),
-                  value: _draft.showDemoWhenUnbound,
-                  onChanged: _busy
-                      ? null
-                      : (v) => setState(
-                          () =>
-                              _draft = _draft.copyWith(showDemoWhenUnbound: v),
-                        ),
-                ),
-                TextFormField(
-                  key: const ValueKey('super-chart-empty-text'),
-                  controller: _emptyText,
-                  enabled: !_busy,
-                  decoration: const InputDecoration(
-                    labelText: 'Message quand le tableau est vide',
-                  ),
-                ),
-
-                if (_error != null)
-                  Text(
-                    _error!,
-                    key: const ValueKey('super-chart-error'),
-                    style: TextStyle(color: colors.error),
                   ),
               ],
+              selected: {_draft.kind},
+              onSelectionChanged: _busy
+                  ? null
+                  : (selected) {
+                      if (selected.isNotEmpty) {
+                        setState(
+                          () => _draft = _draft.copyWith(
+                            kind: selected.first,
+                          ),
+                        );
+                      }
+                    },
             ),
+
+            // 2. Liaison au repository JSON
+            RepositoryBindingFields(
+              keyPrefix: 'super-chart-binding',
+              binding: _draft.binding,
+              store: widget.repositories,
+              listScope: widget.scope,
+              pathHint: 'ventes ou clients[?].commandes',
+              helper:
+                  'Tableau JSON dont chaque élément fournit un point / une entrée du graphique.',
+              onChanged: (binding) => setState(
+                () => _draft = _draft.copyWith(
+                  binding: binding,
+                  clearBinding: binding == null,
+                ),
+              ),
+            ),
+
+            // 3. Chemin du libellé / Axe X
+            TextFormField(
+              key: const ValueKey('super-chart-label-path'),
+              controller: _labelPath,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                labelText: 'Chemin du libellé / catégorie (axe X)',
+                hintText: 'mois, nom ou laisser vide pour l’index',
+                helperText:
+                    'Clé relative dans chaque élément du tableau pour le titre X ou la tranche.',
+              ),
+            ),
+
+            const Divider(height: 8),
+
+            // 4. Séries de données
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Séries de données (${_draft.series.length})',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('super-chart-add-series'),
+                  onPressed: _busy ? null : _addSeries,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Ajouter une série'),
+                ),
+              ],
+            ),
+            for (var i = 0; i < _draft.series.length; i++)
+              _SeriesEditorCard(
+                key: ValueKey('super-chart-series-${_draft.series[i].id}'),
+                index: i,
+                series: _draft.series[i],
+                chartKind: kind,
+                canRemove: _draft.series.length > 1 && !_busy,
+                enabled: !_busy,
+                onChanged: (updated) => _updateSeries(i, updated),
+                onRemove: () => _removeSeries(i),
+              ),
+
+            const Divider(height: 8),
+
+            // 5. Options spécifiques au type
+            if (kind == SuperChartKind.bar)
+              SwitchListTile(
+                key: const ValueKey('super-chart-bar-stacked'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Empiler les séries (barres empilées)'),
+                subtitle: const Text(
+                  'Cumule les valeurs Y des séries sur une seule barre par entrée.',
+                ),
+                value: _draft.barStacked,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(
+                        () => _draft = _draft.copyWith(barStacked: v),
+                      ),
+              ),
+
+            if (kind == SuperChartKind.pie)
+              Row(
+                spacing: 12,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      key: const ValueKey('super-chart-pie-center-radius'),
+                      controller: _pieCenterRadius,
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Rayon central (Donut)',
+                        helperText: '0 = Camembert plein',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextFormField(
+                      key: const ValueKey('super-chart-pie-sections-space'),
+                      controller: _pieSectionsSpace,
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Espacement des parts',
+                        helperText: 'En pixels (0–40)',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+            // 6. Axes, Grille et Bornes
+            if (kind != SuperChartKind.pie)
+              SwitchListTile(
+                key: const ValueKey('super-chart-show-grid'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Afficher la grille'),
+                value: _draft.showGrid,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(
+                        () => _draft = _draft.copyWith(showGrid: v),
+                      ),
+              ),
+
+            if (kind != SuperChartKind.pie)
+              SwitchListTile(
+                key: const ValueKey('super-chart-show-axis-labels'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Afficher les graduations et libellés'),
+                value: _draft.showAxisLabels,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(
+                        () => _draft = _draft.copyWith(showAxisLabels: v),
+                      ),
+              ),
+
+            if (hasCartesianAxes) ...[
+              SwitchListTile(
+                key: const ValueKey('super-chart-show-axis-titles'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Afficher les titres des axes X / Y'),
+                value: _draft.showAxisTitles,
+                onChanged: _busy
+                    ? null
+                    : (v) => setState(
+                        () => _draft = _draft.copyWith(showAxisTitles: v),
+                      ),
+              ),
+              if (_draft.showAxisTitles)
+                Row(
+                  spacing: 12,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        key: const ValueKey('super-chart-x-axis-title'),
+                        controller: _xAxisTitle,
+                        enabled: !_busy,
+                        decoration: const InputDecoration(
+                          labelText: 'Titre axe X',
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextFormField(
+                        key: const ValueKey('super-chart-y-axis-title'),
+                        controller: _yAxisTitle,
+                        enabled: !_busy,
+                        decoration: const InputDecoration(
+                          labelText: 'Titre axe Y',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              Row(
+                spacing: 12,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      key: const ValueKey('super-chart-min-y'),
+                      controller: _minY,
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Min Y (optionnel)',
+                        hintText: 'Auto',
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: TextFormField(
+                      key: const ValueKey('super-chart-max-y'),
+                      controller: _maxY,
+                      enabled: !_busy,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Max Y (optionnel)',
+                        hintText: 'Auto',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            // 7. Légende, Infobulles & Sélection
+            SwitchListTile(
+              key: const ValueKey('super-chart-show-legend'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Afficher la légende'),
+              value: _draft.showLegend,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(
+                      () => _draft = _draft.copyWith(showLegend: v),
+                    ),
+            ),
+            SwitchListTile(
+              key: const ValueKey('super-chart-enable-tooltips'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Activer les infobulles (tooltips)'),
+              value: _draft.enableTooltips,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(
+                      () => _draft = _draft.copyWith(enableTooltips: v),
+                    ),
+            ),
+            SwitchListTile(
+              key: const ValueKey('super-chart-enable-selection'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Synchroniser la sélection avec le repository',
+              ),
+              subtitle: const Text(
+                'Un clic sur le graphique sélectionne la ligne dans JsonArrayBinding (maître / détail).',
+              ),
+              value: _draft.enableSelection,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(
+                      () => _draft = _draft.copyWith(enableSelection: v),
+                    ),
+            ),
+
+            // 8. Aperçu & Texte vide
+            SwitchListTile(
+              key: const ValueKey('super-chart-show-demo'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Afficher des données de démonstration sans liaison',
+              ),
+              value: _draft.showDemoWhenUnbound,
+              onChanged: _busy
+                  ? null
+                  : (v) => setState(
+                      () => _draft = _draft.copyWith(showDemoWhenUnbound: v),
+                    ),
+            ),
+            TextFormField(
+              key: const ValueKey('super-chart-empty-text'),
+              controller: _emptyText,
+              enabled: !_busy,
+              decoration: const InputDecoration(
+                labelText: 'Message quand le tableau est vide',
+              ),
+            ),
+
+            if (_error != null)
+              Text(
+                _error!,
+                key: const ValueKey('super-chart-error'),
+                style: TextStyle(color: colors.error),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -765,7 +757,7 @@ class _SeriesEditorCardState extends State<_SeriesEditorCard> {
               const Spacer(),
               if (widget.canRemove)
                 IconButton(
-                  key: ValueKey('super-chart-series-remove-${ widget.index}'),
+                  key: ValueKey('super-chart-series-remove-${widget.index}'),
                   tooltip: 'Supprimer la série',
                   visualDensity: VisualDensity.compact,
                   onPressed: widget.onRemove,

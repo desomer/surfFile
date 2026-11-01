@@ -26,9 +26,9 @@ Ce document cartographie l'architecture interne du package `super_container_layo
      - `"action"` → `SuperActionConfig`
      - `"list"` → `SuperListViewConfig`
      - `"tab"` → `SuperTabConfig`
-     - `"chart"` → `SuperChartConfig`
      - `"treeView"` → `SuperTreeViewConfig`
      - `"table"` → `SuperTableConfig`
+     - Extensions externes enregistrées via `SuperComponentExtension` / `ComponentConfigCatalog.register` (ex: `"chart"` → `SuperChartConfig` dans le package `super_container_extensions`)
    - `behaviors` : `Map<String, List<ComponentBehavior>>` (actions déclenchées au clic telles que `GoToPageAction`).
    - `pageCatalog` : `EditorPageCatalog` (liste des pages routées et `homePageId`).
    - `repositories` : `List<JsonRepositoryDocument>` (sources de données JSON réactives).
@@ -95,7 +95,6 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `models/scrollbar_style_config.dart` | `ScrollbarStyleConfig` : personnalisation visuelle des barres de défilement (épaisseur, rayon, visibilité, couleurs). |
 | `models/super_action_config.dart` | `SuperActionConfig`, `SuperActionKind`, `SuperActionVariant`, `SuperActionIconPosition`, `SuperActionProperty` : configuration des boutons et actions Material 3 ou surfaciques. |
 | `models/super_action_states.dart` | `SuperActionStates`, `SuperActionStateOverride` : surcharges conditionnelles de `SuperActionConfig` par état (`hover`, `selected`, `automatic`, `named`). |
-| `models/super_chart_config.dart` | `SuperChartConfig`, `SuperChartKind`, `SuperChartSeries` : configuration des graphiques `fl_chart` (`line`, `bar`, `pie`, `scatter`, `radar`) liés à un tableau JSON. |
 | `models/super_layout_config.dart` | `SuperLayoutConfig`, `SuperLayoutMode`, `ZoneFlowConfig`, `SlotSizeConstraints`, `SlotDimension` : configuration d'un `SuperLayout` (zones N/S/E/W/Center ou Grille, flux flex, contraintes par slot). |
 | `models/super_list_view_config.dart` | `SuperListViewConfig` : configuration d'une liste répétée liée à un tableau JSON avec son `SuperLayoutConfig` de gabarit (`template`). |
 | `models/super_tab_config.dart` | `SuperTabConfig`, `SuperTabMode`, `SuperTabIndicatorType` : configuration d'une barre d'onglets `TabBar` + `TabBarView` en mode statique ou dynamique lié au JSON. |
@@ -157,7 +156,6 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | :--- | :--- |
 | `widgets/components/component_common.dart` | Utilitaires partagés entre composants (résolution de comportements `ComponentBehavior`, exécution de `GoToPageAction`, curseurs). |
 | `widgets/components/super_action.dart` | `SuperAction` : bouton/action configurable (variantes Material 3 `filled`/`tonal`/`elevated`/`outlined`/`text`/`icon` ou `surface`, états, liaisons JSON et comportements). |
-| `widgets/components/super_chart.dart` | `SuperChart` : composant graphique `fl_chart` (`line`, `bar`, `pie`, `scatter`, `radar`) lié à un tableau JSON avec sélection Maître / Détail. |
 | `widgets/components/super_list_view.dart` | `SuperListView` : liste dynamique liée à un tableau JSON, répétant un gabarit `IterableContent` par ligne avec ajout/suppression et sélection. |
 | `widgets/components/super_tab.dart` | `SuperTab` : composant d'onglets (`TabBar` + `TabBarView`) en mode statique (vues par onglet) ou dynamique (lié à un tableau JSON). |
 | `widgets/components/super_table.dart` | `SuperTable` : tableau multi-colonnes avec colonnes figées à gauche, en-tête, pied, redimensionnement de colonnes et `JsonListScope` par ligne. |
@@ -205,7 +203,6 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `widgets/editing/addition/contextual_add.dart` | Menu et logique d'ajout contextuel rapide (`+`) sur une zone, une région native ou un conteneur vide. |
 | `widgets/editing/addition/insertion_plan.dart` | `InsertionPlan` : planification atomique de l'insertion d'un composant et de ses sous-configurations initiales dans `Appearance`. |
 | `widgets/editing/addition/forms/add_form_common.dart` | Widgets de formulaire partagés entre les assistants d'ajout de composants. |
-| `widgets/editing/addition/forms/chart_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperChart`. |
 | `widgets/editing/addition/forms/container_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `Card` ou `IterableContent`. |
 | `widgets/editing/addition/forms/expansible_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperExpansible`. |
 | `widgets/editing/addition/forms/list_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperListView`. |
@@ -220,7 +217,6 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `widgets/editing/components/native_component_editor.dart` | Éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
 | `widgets/editing/components/native_shape_editor.dart` | Éditeur visuel de forme Material (`NativeShapeConfig`). |
 | `widgets/editing/components/super_action_editor.dart` | Fenêtre d'édition complète d'un `SuperAction` (contenu, icône, couleurs, typographie, surface, états, liaisons JSON, comportements). |
-| `widgets/editing/components/super_chart_editor.dart` | Fenêtre d'édition complète d'un `SuperChart` (type de graphique, liaison JSON, séries `SuperChartSeries`, axes, légende). |
 | `widgets/editing/components/super_list_view_editor.dart` | Fenêtre d'édition d'un `SuperListView` (liaison JSON, dimensions de ligne, ajout/suppression, message vide). |
 | `widgets/editing/components/super_tab_editor.dart` | Fenêtre d'édition d'un `SuperTab` (mode statique/dynamique, onglets, indicateur, style de barre, liaison JSON). |
 | `widgets/editing/components/super_table_editor.dart` | Fenêtre d'édition d'un `SuperTable` (colonnes, largeurs/fillPercent, colonnes figées, en-tête/pied, liaison JSON). |

@@ -8,19 +8,18 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'component_config.dart';
+import 'component_extension.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
 import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
-import 'super_chart_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_tab.dart';
 import '../widgets/components/super_table.dart';
 import '../widgets/components/super_tree_view.dart';
-import '../widgets/components/super_chart.dart';
 import '../widgets/components/super_value.dart';
 import '../widgets/components/super_action.dart';
 import '../widgets/components/super_layout/iterable_content.dart';
@@ -63,7 +62,6 @@ enum EditorConfigKind {
   action,
   list,
   tab,
-  chart,
   treeView,
   table,
 }
@@ -84,7 +82,6 @@ class EditorConfigRef {
   const EditorConfigRef.action(this.id) : kind = EditorConfigKind.action;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
   const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
-  const EditorConfigRef.chart(this.id) : kind = EditorConfigKind.chart;
   const EditorConfigRef.treeView(this.id) : kind = EditorConfigKind.treeView;
   const EditorConfigRef.table(this.id) : kind = EditorConfigKind.table;
 
@@ -163,7 +160,9 @@ class ComponentDuplicationContract {
     EditorConfigRef.nativeComponent(id),
   ];
   static List<EditorConfigRef> _tab(String id) => [EditorConfigRef.tab(id)];
-  static List<EditorConfigRef> _chart(String id) => [EditorConfigRef.chart(id)];
+  static List<EditorConfigRef> _component(String id) => [
+    EditorConfigRef.component(id),
+  ];
   static List<EditorConfigRef> _treeView(String id) => [
     EditorConfigRef.style(id),
     EditorConfigRef.treeView(id),
@@ -173,13 +172,15 @@ class ComponentDuplicationContract {
     EditorConfigRef.table(id),
   ];
 
-  /// Contracts of the components installed by [Registry.bootstrap].
+  /// Contracts of the components installed by [Registry.bootstrap] and extensions.
+  static const component = ComponentDuplicationContract(
+    ownedConfigs: _component,
+  );
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
   static const superAction = ComponentDuplicationContract(
     ownedConfigs: _action,
   );
   static const superTab = ComponentDuplicationContract(ownedConfigs: _tab);
-  static const superChart = ComponentDuplicationContract(ownedConfigs: _chart);
   static const superTreeView = ComponentDuplicationContract(
     ownedConfigs: _treeView,
   );
@@ -306,6 +307,8 @@ class Registry {
   final Map<String, SuperLayoutConfig> _layoutDefaults = {};
   final Map<String, ContainerStyle> _styleDefaults = {};
   final Map<String, ComponentConfig> _componentDefaults = {};
+  final Map<String, ComponentConfig Function(Appearance)> _componentReaders =
+      {};
   final Map<String, ValueNotifier<SuperValueConfig>> valueConfigById = {};
   final Map<String, SuperValueConfig> _valueDefaults = {};
   final Map<String, ValueNotifier<SuperActionConfig>> actionConfigById = {};
@@ -314,8 +317,6 @@ class Registry {
   final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, ValueNotifier<SuperTabConfig>> tabConfigById = {};
   final Map<String, SuperTabConfig> _tabDefaults = {};
-  final Map<String, ValueNotifier<SuperChartConfig>> chartConfigById = {};
-  final Map<String, SuperChartConfig> _chartDefaults = {};
   final Map<String, ValueNotifier<SuperTreeViewConfig>> treeViewConfigById = {};
   final Map<String, SuperTreeViewConfig> _treeViewDefaults = {};
   final Map<String, ValueNotifier<SuperTableConfig>> tableConfigById = {};
@@ -334,7 +335,6 @@ class Registry {
     ...actionConfigById.keys,
     ...listConfigById.keys,
     ...tabConfigById.keys,
-    ...chartConfigById.keys,
     ...treeViewConfigById.keys,
     ...tableConfigById.keys,
   };
@@ -354,7 +354,6 @@ class Registry {
         entry.key: entry.value.value,
       for (final entry in listConfigById.entries) entry.key: entry.value.value,
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
-      for (final entry in chartConfigById.entries) entry.key: entry.value.value,
       for (final entry in treeViewConfigById.entries)
         entry.key: entry.value.value,
       for (final entry in tableConfigById.entries)
@@ -390,10 +389,8 @@ class Registry {
       styleController(entry.key, fallback: entry.value.value);
     }
     for (final entry in componentConfigById.entries.toList()) {
-      componentController<ComponentConfig>(
-        entry.key,
-        fallback: entry.value.value,
-      );
+      _componentDefaults[entry.key] = entry.value.value;
+      _attachComponentListener(entry.key, entry.value);
     }
     for (final entry in scaffoldPageConfigById.entries.toList()) {
       scaffoldPageController(entry.key, fallback: entry.value.value);
@@ -413,10 +410,6 @@ class Registry {
     for (final entry in tabConfigById.entries.toList()) {
       _tabDefaults[entry.key] = entry.value.value;
       tabController(entry.key, fallback: entry.value.value);
-    }
-    for (final entry in chartConfigById.entries.toList()) {
-      _chartDefaults[entry.key] = entry.value.value;
-      chartController(entry.key, fallback: entry.value.value);
     }
     for (final entry in treeViewConfigById.entries.toList()) {
       _treeViewDefaults[entry.key] = entry.value.value;
@@ -551,10 +544,13 @@ class Registry {
         );
       }
       for (final entry in componentConfigById.entries) {
-        entry.value.value = appearance.component(
-          entry.key,
-          fallback: _componentDefaults[entry.key]!,
-        );
+        final reader = _componentReaders[entry.key];
+        entry.value.value = reader != null
+            ? reader(appearance)
+            : appearance.component(
+                entry.key,
+                fallback: _componentDefaults[entry.key]!,
+              );
       }
       for (final entry in nativeComponentConfigById.entries) {
         entry.value.value = _nativeValue(appearance, entry.key);
@@ -581,12 +577,6 @@ class Registry {
         entry.value.value = appearance.tabComponent(
           entry.key,
           fallback: _tabDefaults[entry.key]!,
-        );
-      }
-      for (final entry in chartConfigById.entries) {
-        entry.value.value = appearance.chartComponent(
-          entry.key,
-          fallback: _chartDefaults[entry.key]!,
         );
       }
       for (final entry in treeViewConfigById.entries) {
@@ -627,18 +617,10 @@ class Registry {
     );
   }
 
-  ValueNotifier<T> componentController<T extends ComponentConfig>(
-    String id, {
-    required T fallback,
-  }) {
-    fallback.validate();
-    _componentDefaults.putIfAbsent(id, () => fallback);
-    final notifier = componentConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier<T>(
-        _appearance?.value.component<T>(id, fallback: fallback) ?? fallback,
-      ),
-    );
+  void _attachComponentListener(
+    String id,
+    ValueNotifier<ComponentConfig> notifier,
+  ) {
     if (_appearance != null && !_listeners.containsKey(notifier)) {
       void write() {
         notifier.value.validate();
@@ -653,6 +635,26 @@ class Registry {
       _listeners[notifier] = write;
       notifier.addListener(write);
     }
+  }
+
+  ValueNotifier<T> componentController<T extends ComponentConfig>(
+    String id, {
+    required T fallback,
+  }) {
+    fallback.validate();
+    _componentDefaults.putIfAbsent(id, () => fallback);
+    _componentReaders.putIfAbsent(
+      id,
+      () => (appearance) =>
+          appearance.component<T>(id, fallback: _componentDefaults[id]! as T),
+    );
+    final notifier = componentConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier<T>(
+        _appearance?.value.component<T>(id, fallback: fallback) ?? fallback,
+      ),
+    );
+    _attachComponentListener(id, notifier);
     return notifier as ValueNotifier<T>;
   }
 
@@ -773,35 +775,6 @@ class Registry {
     return notifier;
   }
 
-  ValueNotifier<SuperChartConfig> chartController(
-    String id, {
-    SuperChartConfig fallback = const SuperChartConfig(),
-  }) {
-    fallback.validate();
-    _chartDefaults.putIfAbsent(id, () => fallback);
-    final notifier = chartConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.chartComponent(id, fallback: fallback) ?? fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withChartComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
-
   ValueNotifier<SuperTreeViewConfig> treeViewController(
     String id, {
     SuperTreeViewConfig? fallback,
@@ -910,6 +883,28 @@ class Registry {
       throw StateError('Composant inconnu : $key');
     }
     return result;
+  }
+
+  /// Enregistre une extension de composant ([SuperComponentExtension]) dans ce registre.
+  void registerExtension(
+    SuperComponentExtension extension, {
+    List<String> availableFontFamilies = defaultAvailableFontFamilies,
+  }) {
+    extension.registerCodecs();
+    extension.register(this, availableFontFamilies: availableFontFamilies);
+  }
+
+  /// Enregistre plusieurs extensions de composants dans ce registre.
+  void registerExtensions(
+    Iterable<SuperComponentExtension> extensions, {
+    List<String> availableFontFamilies = defaultAvailableFontFamilies,
+  }) {
+    for (final extension in extensions) {
+      registerExtension(
+        extension,
+        availableFontFamilies: availableFontFamilies,
+      );
+    }
   }
 
   void bootstrap({
@@ -1051,16 +1046,6 @@ class Registry {
       addConfigurator: tabAddConfigurator,
       previewBuilder: _buildTabPreview,
       dynamicBuilder: (ctx) => SuperTab(id: ctx.id),
-    );
-
-    registry['Chart'] = ComponentBuilderDynamic(
-      menuIcon: Icons.insert_chart_outlined,
-      label: 'Chart / Graphique',
-      duplication: ComponentDuplicationContract.superChart,
-      tags: const {'chart', 'data'},
-      addConfigurator: chartAddConfigurator,
-      previewBuilder: _buildChartPreview,
-      dynamicBuilder: (ctx) => SuperChart(id: ctx.id),
     );
 
     registry['IterableContent'] = ComponentBuilderDynamic(
@@ -1697,39 +1682,6 @@ Widget _buildListViewPreview(BuildContext context) {
         const SizedBox(height: 4),
         row('Élément de liste 3'),
       ],
-    ),
-  );
-}
-
-Widget _buildChartPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  Widget bar(double height, Color color) => Container(
-    width: 14,
-    height: height,
-    decoration: BoxDecoration(
-      color: color,
-      borderRadius: BorderRadius.circular(3),
-    ),
-  );
-  return IgnorePointer(
-    child: Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          bar(20, colors.primary.withValues(alpha: 0.65)),
-          bar(36, colors.primary),
-          bar(28, colors.tertiary),
-          bar(44, colors.primary),
-          bar(32, colors.secondary),
-        ],
-      ),
     ),
   );
 }

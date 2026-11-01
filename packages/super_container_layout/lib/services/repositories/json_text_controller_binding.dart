@@ -20,6 +20,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     required this.controller,
     this.onChanged,
     this.asBool = false,
+    this.requireString = false,
   }) {
     store.registerBindings(this, [binding.repositoryId]);
     controller.addListener(_edited);
@@ -34,6 +35,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
   final TextEditingController controller;
   final ValueChanged<String>? onChanged;
   final bool asBool;
+
+  /// Rejects non-text attributes for code editors; null remains an empty field.
+  final bool requireString;
   String? error;
   bool loading = true;
   bool saving = false;
@@ -66,6 +70,9 @@ class JsonTextControllerBinding extends ChangeNotifier {
     final cached = store.peekAttribute(binding);
     if (cached == null) return;
     if (asBool && cached.value != null && cached.value is! bool) return;
+    if (requireString && cached.value != null && cached.value is! String) {
+      return;
+    }
     final resolvedText = asBool
         ? (cached.value == true ? 'true' : 'false')
         : cached.text;
@@ -99,6 +106,11 @@ class JsonTextControllerBinding extends ChangeNotifier {
       if (_disposed || generation != _generation) return;
       if (asBool && result.value != null && result.value is! bool) {
         throw const FormatException('L’attribut lié doit être un booléen.');
+      }
+      if (requireString && result.value != null && result.value is! String) {
+        throw const FormatException(
+          'L’attribut lié doit être une chaîne de texte.',
+        );
       }
       final resolvedText = asBool
           ? (result.value == true ? 'true' : 'false')

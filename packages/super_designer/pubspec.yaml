@@ -1,0 +1,28 @@
+name: super_designer
+description: Application autonome d'édition visuelle et IA combinant super_container_layout et ses extensions (super_container_extensions).
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.5
+  flutter: ">=3.47.6"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_dotenv: ^6.0.1
+  go_router: ^18.0.2
+  material_ui: ^1.5.0
+  super_container_extensions:
+    path: ../super_container_extensions
+  super_container_layout:
+    path: ../super_container_layout
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  shared_preferences: ^2.5.5
+
+flutter:
+  uses-material-design: true

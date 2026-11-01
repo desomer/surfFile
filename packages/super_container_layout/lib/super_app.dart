@@ -9,10 +9,12 @@ library;
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart' as flutter_localizations;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
+import 'package:super_container_layout/widgets/components/internal_widget/material_compatibility_bridge.dart';
 
 import 'models/registry.dart';
 
@@ -355,16 +357,20 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       showSemanticsDebugger: false,
       scaffoldMessengerKey: _messenger,
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      localizationsDelegates: [
+        ...GlobalMaterialLocalizations.delegates,
+        ...flutter_localizations.GlobalMaterialLocalizations.delegates,
+      ],
       themeMode: value.mode,
       theme: _withHitTestablePages(value.theme(Brightness.light)),
       darkTheme: _withHitTestablePages(value.theme(Brightness.dark)),
-      builder: (context, child) => _buildShell(
+      builder: (context, child) => MaterialCompatibilityBridge(
+        child: _buildShell(
         context,
         _buildContent(child!),
         value,
         router.routerDelegate.navigatorKey,
-      ),
+      )),
     );
   }
 

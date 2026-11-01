@@ -2,7 +2,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/editing/dialogs/editor_dialog_header.dart';
 
 void main() {
   const initial = SuperLayoutConfig(

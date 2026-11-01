@@ -7,10 +7,25 @@ library;
 import 'dart:ui' show Color;
 
 import 'package:flutter/foundation.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 
-import 'component_config.dart';
-import 'json_syntax.dart';
-import 'json_text_binding.dart';
+/// Enregistre le codec `'chart'` et les alias de syntaxe courte (`Chart`, `Graph`, `SuperChart`)
+/// dans le catalogue du moteur `super_container_layout`.
+void ensureSuperChartCodecsRegistered() {
+  if (ComponentConfigCatalog.of('chart') == null) {
+    ComponentConfigCatalog.register<SuperChartConfig>(
+      const ComponentConfigCodec<SuperChartConfig>(
+        type: 'chart',
+        fromJson: SuperChartConfig.fromJson,
+      ),
+    );
+  }
+  JsonComponentType.registerAliases(const {
+    'Chart': 'Chart',
+    'Graph': 'Chart',
+    'SuperChart': 'Chart',
+  });
+}
 
 /// Type de graphique `fl_chart` affiché par `SuperChart`.
 enum SuperChartKind {
@@ -22,6 +37,7 @@ enum SuperChartKind {
 
   const SuperChartKind(this.label);
 
+  /// Libellé lisible affiché dans l'interface d'édition.
   final String label;
 }
 
@@ -79,6 +95,7 @@ class SuperChartSeries {
   static const minRadius = 1.0;
   static const maxRadius = 120.0;
 
+  /// Vérifie la validité des paramètres de la série.
   void validate() {
     if (id.trim().isEmpty) {
       throw const FormatException('Identifiant de série de graphique vide.');
@@ -111,6 +128,7 @@ class SuperChartSeries {
     }
   }
 
+  /// Retourne une copie modifiée de cette série.
   SuperChartSeries copyWith({
     String? id,
     String? label,
@@ -136,6 +154,7 @@ class SuperChartSeries {
     showDots: showDots ?? this.showDots,
   );
 
+  /// Sérialise la série en JSON complet.
   Map<String, Object?> toJson() {
     validate();
     return {
@@ -153,6 +172,7 @@ class SuperChartSeries {
     };
   }
 
+  /// Sérialise la série en JSON compact en omettant les valeurs par défaut.
   Map<String, Object?> toCompactJson() {
     validate();
     const d = SuperChartSeries();
@@ -184,6 +204,7 @@ class SuperChartSeries {
     'showDots',
   };
 
+  /// Désérialise une [SuperChartSeries] depuis une Map JSON.
   factory SuperChartSeries.fromJson(
     Object? value, {
     SuperChartSeries fallback = const SuperChartSeries(),
@@ -357,7 +378,11 @@ class SuperChartConfig extends ComponentConfig {
   String get componentType => 'chart';
 
   @override
+  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+
+  @override
   void validate() {
+    ensureSuperChartCodecsRegistered();
     binding?.validate();
     final trimmedLabel = labelPath.trim();
     if (trimmedLabel.isNotEmpty) {
@@ -403,6 +428,7 @@ class SuperChartConfig extends ComponentConfig {
     }
   }
 
+  /// Retourne une copie modifiée de cette configuration.
   SuperChartConfig copyWith({
     JsonTextBinding? binding,
     bool clearBinding = false,
@@ -532,6 +558,7 @@ class SuperChartConfig extends ComponentConfig {
     'emptyText',
   };
 
+  /// Désérialise une [SuperChartConfig] depuis une Map JSON.
   factory SuperChartConfig.fromJson(
     Object? value, {
     SuperChartConfig fallback = const SuperChartConfig(),

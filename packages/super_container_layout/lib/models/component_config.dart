@@ -6,10 +6,10 @@ library;
 
 import 'package:flutter/foundation.dart' show immutable;
 
+import 'json_text_binding.dart';
 import 'native_component_config.dart';
 import 'scaffold_page_config.dart';
 import 'super_action_config.dart';
-import 'super_chart_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
@@ -60,10 +60,6 @@ abstract final class ComponentConfigCatalog {
     'tab': ComponentConfigCodec<SuperTabConfig>(
       type: 'tab',
       fromJson: SuperTabConfig.fromJson,
-    ),
-    'chart': ComponentConfigCodec<SuperChartConfig>(
-      type: 'chart',
-      fromJson: SuperChartConfig.fromJson,
     ),
     'treeView': ComponentConfigCodec<SuperTreeViewConfig>(
       type: 'treeView',
@@ -130,6 +126,16 @@ abstract class ComponentConfig {
 
   /// Validates this configuration.
   void validate() {}
+
+  /// JSON repository bindings referenced by this configuration.
+  Iterable<JsonTextBinding> get referencedBindings => const [];
+
+  /// Child slot IDs and their types owned by this configuration, if any.
+  Map<String, String> get childSlots => const {};
+
+  /// Returns a copy of this configuration with any owned slot IDs remapped.
+  ComponentConfig copyWithRemappedSlots(String Function(String id) remap) =>
+      this;
 
   /// Serializes the configuration fields without the [componentType] tag.
   Map<String, Object?> toJson();

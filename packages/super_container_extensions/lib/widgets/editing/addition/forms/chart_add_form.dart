@@ -2,10 +2,10 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 
 import '../../../../models/super_chart_config.dart';
 import '../../components/super_chart_editor.dart';
-import 'add_form_common.dart';
 
 /// Formulaire de paramétrage initial d'un [SuperChart] dans l'assistant d'ajout.
 class ChartAddForm extends StatefulWidget {
@@ -109,8 +109,9 @@ class _ChartAddFormState extends State<ChartAddForm>
                       labelText: 'Chemin du libellé / axe X',
                       hintText: 'ex: mois, nom',
                     ),
-                    onChanged: (value) =>
-                        widget.onChanged(draft.copyWith(labelPath: value.trim())),
+                    onChanged: (value) => widget.onChanged(
+                      draft.copyWith(labelPath: value.trim()),
+                    ),
                   ),
                   Row(
                     spacing: 10,

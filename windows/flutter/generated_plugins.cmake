@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   flutter_acrylic
+  url_launcher_windows
   video_player_win
   webview_flutter_windows
 )

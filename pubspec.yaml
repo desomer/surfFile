@@ -16,6 +16,8 @@ dependencies:
   flutter_acrylic: ^1.1.4
   shared_preferences: ^2.5.5
   pro_image_editor: ^14.10.2
+  super_container_extensions:
+    path: packages/super_container_extensions
   super_container_layout:
     path: packages/super_container_layout
   video_player: ^2.9.2

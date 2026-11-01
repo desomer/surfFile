@@ -5,6 +5,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
@@ -13,6 +14,7 @@ void main() {
   late String repository;
 
   setUp(() async {
+    ensureSuperContainerExtensionCodecsRegistered();
     directory = await Directory.systemTemp.createTemp('super-chart-test-');
     store = JsonRepositoryStore(directory);
     await store.create('Analytics');
@@ -423,7 +425,9 @@ void main() {
     });
 
     test('EditorPageGraph duplicates page containing a Chart component', () {
-      final registry = Registry()..bootstrap();
+      final registry = Registry()
+        ..bootstrap()
+        ..registerAllExtensions();
       final chartConfig = SuperChartConfig(
         binding: JsonTextBinding(repositoryId: repository, path: 'ventes'),
         kind: SuperChartKind.pie,
@@ -453,5 +457,51 @@ void main() {
       expect(copiedChartId, isNot('chart-1'));
       expect(duplicated.chartComponent(copiedChartId), equals(chartConfig));
     });
+
+    testWidgets(
+      'SuperChartExtension registers Chart builder, preview, configurator and controller sync',
+      (tester) async {
+        final registry = Registry()
+          ..bootstrap()
+          ..registerAllExtensions();
+        expect(registry.registry.containsKey('Chart'), isTrue);
+
+        final appearance = ValueNotifier(Appearance());
+        registry.bindAppearance(appearance);
+
+        final chartCtrl = registry.chartController('c1');
+        final updated = SuperChartConfig(
+          binding: JsonTextBinding(repositoryId: repository, path: 'ventes'),
+          kind: SuperChartKind.bar,
+          labelPath: 'mois',
+        );
+        chartCtrl.value = updated;
+        expect(appearance.value.chartComponent('c1'), equals(updated));
+        expect(updated.referencedBindings, equals([updated.binding!]));
+
+        // Vérifie le rendu du previewBuilder et de ChartAddForm
+        var draft = const SuperChartConfig();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  Builder(
+                    builder: registry.registry['Chart']!.previewBuilder!,
+                  ),
+                  Expanded(
+                    child: ChartAddForm(
+                      draft: draft,
+                      onChanged: (next) => draft = next,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        expect(find.byType(ChartAddForm), findsOneWidget);
+      },
+    );
   });
 }

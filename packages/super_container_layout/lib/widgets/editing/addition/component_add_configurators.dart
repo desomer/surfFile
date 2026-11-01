@@ -13,13 +13,11 @@ import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
-import '../../../models/super_chart_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../models/super_action_config.dart';
 import '../../../theme/container_style.dart';
 import '../../components/super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
-import 'forms/chart_add_form.dart';
 import 'forms/container_add_form.dart';
 import 'forms/expansible_add_form.dart';
 import 'forms/list_view_add_form.dart';
@@ -32,7 +30,8 @@ import 'forms/tree_view_add_form.dart';
 
 export '../repositories/repository_binding_fields.dart'
     show RepositoryBindingFields;
-export 'forms/chart_add_form.dart' show ChartAddForm;
+export 'forms/add_form_common.dart'
+    show AddFormSectionCard, DraftAddFormStateMixin, parseAddFormDouble;
 export 'forms/container_add_form.dart' show ContainerAddForm;
 export 'forms/expansible_add_form.dart' show ExpansibleAddForm;
 export 'forms/list_view_add_form.dart' show ListViewAddForm;
@@ -430,45 +429,6 @@ final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
   bindingKeyPrefix: 'add-tab',
   bindingPathHint: 'categories ou ui.ongletActif',
   bindingHelp: 'En mode dynamique : tableau JSON générant les onglets. En mode statique : index actif.',
-);
-
-/// Add wizard settings of a `SuperChart`, written to `Registry.chartController`.
-final chartAddConfigurator = ComponentAddConfigurator<SuperChartConfig>(
-  initial: (_) => const SuperChartConfig(),
-  builder: (context, draft, onChanged) =>
-      ChartAddForm(draft: draft, onChanged: onChanged),
-  validate: (draft) {
-    if (draft.binding?.path.trim().isEmpty ?? false) {
-      return 'Chemin de liaison requis.';
-    }
-    try {
-      draft.validate();
-      return null;
-    } on FormatException catch (error) {
-      return error.message;
-    } on Object {
-      return 'Configuration du graphique invalide.';
-    }
-  },
-  summary: (draft) => [
-    ('Type', draft.kind.label),
-    if (draft.labelPath.isNotEmpty) ('Axe X / Libellé', draft.labelPath),
-    (
-      'Séries',
-      draft.series.map((s) => '${s.label} (${s.valuePath})').join(', '),
-    ),
-    ('Légende', _yes(draft.showLegend)),
-    ('Grille', _yes(draft.showGrid)),
-    ('Sélection synchronisée', _yes(draft.enableSelection)),
-    ('Liaison', _bindingLabel(draft.binding)),
-  ],
-  apply: (registry, id, draft) => registry.chartController(id).value = draft,
-  readBinding: (draft) => draft.binding,
-  writeBinding: (draft, binding) =>
-      draft.copyWith(binding: binding, clearBinding: binding == null),
-  bindingKeyPrefix: 'add-chart',
-  bindingPathHint: 'ventes ou clients[?].commandes',
-  bindingHelp: 'Chaque élément du tableau fournit un point ou une catégorie du graphique.',
 );
 
 String _yes(bool value) => value ? 'oui' : 'non';

@@ -184,7 +184,6 @@ String uniqueInstanceId(
       ...registry.actionConfigById.keys,
       ...registry.listConfigById.keys,
       ...registry.tabConfigById.keys,
-      ...registry.chartConfigById.keys,
       ...registry.treeViewConfigById.keys,
       ...registry.tableConfigById.keys,
     ],

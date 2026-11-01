@@ -87,7 +87,7 @@ abstract final class JsonColor {
 
 /// Normalisation des noms de composants entre la syntaxe courte IA et le Registry.
 abstract final class JsonComponentType {
-  static const Map<String, String> _aliases = {
+  static final Map<String, String> _aliases = {
     'Value': 'Value',
     'Action': 'Action',
     'Button': 'Action',
@@ -105,14 +105,16 @@ abstract final class JsonComponentType {
     'SuperMenuAnchor': 'Menu',
     'Tab': 'Tab',
     'Tabs': 'Tab',
-    'Chart': 'Chart',
-    'Graph': 'Chart',
-    'SuperChart': 'Chart',
     'AppBar': 'ApplicationBar',
     'BottomBar': 'BottomAppBar',
     'Rail': 'NavigationRail',
     'List': 'ListView',
   };
+
+  /// Enregistre des alias supplémentaires de noms de composants (ex: extensions).
+  static void registerAliases(Map<String, String> aliases) {
+    _aliases.addAll(aliases);
+  }
 
   /// Convertit un nom de type court (ex: `"Value"`, `"Card"`, `"AppBar"`) en
   /// identifiant de registre (`"registry:Value"`), tout en préservant les slots

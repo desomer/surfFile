@@ -4,6 +4,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/widgets/components/internal_widget/material_compatibility_bridge.dart';
 
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/component_tag_filter.dart';
@@ -198,10 +199,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
     return Drawer(child: content);
   }
 
-  Widget _body(
-    ScaffoldPageConfig config,
-    NativeComponentEditorState editor,
-  ) {
+  Widget _body(ScaffoldPageConfig config, NativeComponentEditorState editor) {
     final scrollAxis = config.scrollDirection;
     final paddingValue = config.scrollPadding;
     final padding = paddingValue != null && paddingValue > 0
@@ -248,10 +246,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
                 clipBehavior: config.clipBehavior ?? Clip.hardEdge,
                 slivers: [
                   if (editor.visible('appBar'))
-                    editor.sliverRegion(
-                      'appBar',
-                      scrollDirection: scrollAxis,
-                    ),
+                    editor.sliverRegion('appBar', scrollDirection: scrollAxis),
                   if (padding != EdgeInsets.zero)
                     SliverPadding(padding: padding, sliver: bodySliver)
                   else

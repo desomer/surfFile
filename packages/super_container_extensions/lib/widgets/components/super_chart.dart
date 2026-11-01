@@ -24,18 +24,11 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton, kTouchSlop;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 
-import '../../models/json_text_binding.dart';
+import '../../extensions_registry.dart';
 import '../../models/super_chart_config.dart';
-import '../../services/repositories/json_list_scope.dart';
-import '../../services/repositories/json_repository_binding.dart';
-import '../../services/repositories/json_repository_scope.dart';
-import '../../services/repositories/json_repository_store.dart';
-import '../../super_app.dart';
 import '../editing/components/super_chart_editor.dart';
-import '../editing/history/editor_history.dart';
-import '../editing/slots/editor_slot.dart';
-import 'super_layout/slot_implementation.dart';
 
 /// Point de données normalisé extrait pour une ligne du tableau JSON.
 @immutable
