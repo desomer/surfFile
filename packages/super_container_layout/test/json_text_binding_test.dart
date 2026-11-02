@@ -265,6 +265,40 @@ void main() {
     );
 
     test(
+      'text controller reports its component ID in repository changes',
+      () async {
+        const memoryId = '0123456789abcdef0123456789abcdef';
+        final changes = <ChangeContext>[];
+        store.registerRepository(
+          RepositoryImpl(
+            id: memoryId,
+            json: {'name': 'Before'},
+            onChanged: changes.add,
+          ),
+        );
+        final controller = TextEditingController();
+        final runtime = JsonTextControllerBinding(
+          store: store,
+          binding: const JsonTextBinding(repositoryId: memoryId, path: 'name'),
+          controller: controller,
+          componentId: 'name-field',
+        );
+        await runtime.reload();
+        controller.text = 'After';
+        await runtime.flush();
+
+        expect(changes, hasLength(1));
+        expect(changes.single.path, 'name');
+        expect(changes.single.oldValue, 'Before');
+        expect(changes.single.newValue, 'After');
+        expect(changes.single.componentId, 'name-field');
+
+        runtime.dispose();
+        controller.dispose();
+      },
+    );
+
+    test(
       'dirty controllers retain drafts and surface conflicts with recovery',
       () async {
         await store.writeAttribute(binding, 'Alice', expectedValue: null);

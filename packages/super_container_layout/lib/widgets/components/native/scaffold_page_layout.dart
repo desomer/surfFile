@@ -4,7 +4,6 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:super_container_layout/widgets/components/internal_widget/material_compatibility_bridge.dart';
 
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/component_tag_filter.dart';

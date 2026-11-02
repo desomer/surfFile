@@ -17,8 +17,63 @@ import 'json_repository_binding.dart';
 
 /// Entrée immuable décrivant un repository JSON enregistré (identifiant, nom et contenu JSON).
 typedef JsonRepositoryEntry = ({String name, String id});
+
 /// Couple associant un chemin d'attribut JSON à sa valeur brute ou résolue.
 typedef JsonAttributeValue = ({Object? value, String text});
+
+/// Describes a change made to a registered in-memory repository.
+class ChangeContext {
+  ChangeContext({
+    required this.repositoryId,
+    required this.path,
+    required Object? oldValue,
+    required Object? newValue,
+    this.componentId,
+  }) : oldValue = _snapshot(oldValue),
+       newValue = _snapshot(newValue);
+
+  final String repositoryId;
+  final String path;
+  final Object? oldValue;
+  final Object? newValue;
+  final String? componentId;
+
+  static Object? _snapshot(Object? value) => switch (value) {
+    Map() => Map<Object?, Object?>.unmodifiable({
+      for (final entry in value.entries) entry.key: _snapshot(entry.value),
+    }),
+    List() => List<Object?>.unmodifiable(value.map(_snapshot)),
+    _ => value,
+  };
+}
+
+/// Repository JSON fourni par l'application et conservé en mémoire.
+class RepositoryImpl {
+  factory RepositoryImpl({
+    required String id,
+    required Map<String, Object?> json,
+    ValueChanged<ChangeContext>? onChanged,
+  }) {
+    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(id)) {
+      throw const FormatException('ID de repository invalide.');
+    }
+    final copy = jsonDecode(jsonEncode(json));
+    if (copy is! Map<String, dynamic>) {
+      throw const FormatException('Le repository doit être un objet JSON.');
+    }
+    return RepositoryImpl._(
+      id,
+      Map<String, Object?>.unmodifiable(copy),
+      onChanged,
+    );
+  }
+
+  const RepositoryImpl._(this.id, this.json, this.onChanged);
+
+  final String id;
+  final Map<String, Object?> json;
+  final ValueChanged<ChangeContext>? onChanged;
+}
 
 /// One repository is one named JSON file, without an application envelope.
 class JsonRepositoryStore extends ChangeNotifier {
@@ -44,10 +99,29 @@ class JsonRepositoryStore extends ChangeNotifier {
   final _bindings = <String, JsonRepositoryBinding>{};
   final _activeBindings = <Object, Set<String>>{};
   final _documentCache = <String, Object?>{};
+  final _memoryRepositories = <String, Object?>{};
+  final _memoryRepositoryCallbacks = <String, ValueChanged<ChangeContext>?>{};
   final _loadingDocuments = <String, Future<Object?>>{};
   Map<String, String>? _idToNameCache;
   Future<Map<String, String>>? _loadingCatalog;
   int _activeMutations = 0;
+
+  /// Registers an application-provided repository without writing it to disk.
+  void registerRepository(RepositoryImpl repository) {
+    if (_memoryRepositories.containsKey(repository.id)) {
+      throw ArgumentError.value(
+        repository.id,
+        'repository.id',
+        'Repository déjà enregistré.',
+      );
+    }
+    final document = jsonDecode(jsonEncode(repository.json));
+    _memoryRepositories[repository.id] = document;
+    _memoryRepositoryCallbacks[repository.id] = repository.onChanged;
+    _documentCache[repository.id] = document;
+    _idToNameCache?[repository.id] = repository.id;
+    _changed();
+  }
 
   /// Vide le cache mémoire des documents JSON (ou uniquement celui de
   /// [repositoryId] s'il est précisé) afin de forcer une relecture sur disque.
@@ -102,6 +176,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (id.isEmpty) return false;
     return isRepositoryBound(id) || (appearance?.usesRepository(id) ?? false);
   }
+
   Future<void> _pending = Future.value();
   final _flushers = <Future<void> Function()>{};
   bool _disposed = false;
@@ -123,6 +198,25 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   void _changed() {
     if (!_disposed) notifyListeners();
+  }
+
+  void _notifyMemoryRepositoryChanged({
+    required String repositoryId,
+    required String path,
+    required Object? oldValue,
+    required Object? newValue,
+    String? componentId,
+  }) {
+    if (jsonEquals(oldValue, newValue)) return;
+    _memoryRepositoryCallbacks[repositoryId]?.call(
+      ChangeContext(
+        repositoryId: repositoryId,
+        path: path,
+        oldValue: oldValue,
+        newValue: newValue,
+        componentId: componentId,
+      ),
+    );
   }
 
   /// Live bindings register their pending-write flush here, so that a list
@@ -173,6 +267,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<String> idOf(String name) => _exclusive(() => _idOf(name));
 
   Future<String> _idOf(String name) async {
+    if (_memoryRepositories.containsKey(name)) return name;
     final jsonFile = _file(name);
     if (await FileSystemEntity.type(jsonFile.path, followLinks: false) !=
         FileSystemEntityType.file) {
@@ -208,14 +303,15 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   Future<List<String>> list() async {
     await directory.create(recursive: true);
-    final names = <String>[];
+    final names = <String>{..._memoryRepositories.keys};
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is! File || !entity.path.endsWith('.json')) continue;
       final filename = entity.uri.pathSegments.last;
       names.add(filename.substring(0, filename.length - 5));
     }
-    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return names;
+    final result = names.toList();
+    result.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return result;
   }
 
   Future<List<JsonRepositoryEntry>> catalog() => _exclusive(_catalog);
@@ -235,6 +331,9 @@ class JsonRepositoryStore extends ChangeNotifier {
       entries.add((name: name, id: id));
       idToName[id] = name;
     }
+    entries.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
     _idToNameCache = idToName;
     return entries;
   }
@@ -268,6 +367,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   }
 
   Future<String> _nameOf(String id) async {
+    if (_memoryRepositories.containsKey(id)) return id;
     final matches = (await _catalog()).where((entry) => entry.id == id);
     if (matches.isEmpty) {
       throw const FormatException('Repository lié introuvable.');
@@ -414,9 +514,32 @@ class JsonRepositoryStore extends ChangeNotifier {
     String text, {
     required Object? expectedValue,
     bool asBool = false,
+    String? componentId,
   }) => _exclusive(() async {
     binding.validateResolved();
     final repoId = binding.repositoryId!;
+    if (_memoryRepositories.containsKey(repoId)) {
+      final root = _memoryRepositories[repoId];
+      final path = JsonAttributePath(binding.path);
+      if (path.read(root) != expectedValue) {
+        throw const FormatException(
+          'L’attribut lié a été modifié. Rechargez la liaison avant de réessayer.',
+        );
+      }
+      final updated = path.write(root, text, expectedValue, asBool: asBool);
+      final value = path.read(updated);
+      _memoryRepositories[repoId] = updated;
+      _documentCache[repoId] = updated;
+      _changed();
+      _notifyMemoryRepositoryChanged(
+        repositoryId: repoId,
+        path: binding.path,
+        oldValue: expectedValue,
+        newValue: value,
+        componentId: componentId,
+      );
+      return (value: value, text: value?.toString() ?? '');
+    }
     final name = await _nameOf(repoId);
     final original = await read(name);
     final root = _decode(original);
@@ -471,10 +594,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       return (nodes: const <Object?>[], singleRootObject: false);
     }
     if (node is List) {
-      return (
-        nodes: List<Object?>.unmodifiable(node),
-        singleRootObject: false,
-      );
+      return (nodes: List<Object?>.unmodifiable(node), singleRootObject: false);
     }
     if (node is Map<String, dynamic>) {
       return (
@@ -492,16 +612,18 @@ class JsonRepositoryStore extends ChangeNotifier {
     String repositoryId,
     String path, {
     required int expectedLength,
+    String? componentId,
   }) => _updateArray(repositoryId, path, (items) {
     if (items.length != expectedLength) _arrayConflict();
     return [...items, items.isEmpty ? <String, dynamic>{} : blank(items.last)];
-  });
+  }, componentId: componentId);
 
   Future<int> removeArrayItem(
     String repositoryId,
     String path,
     int index, {
     required Object? expectedItem,
+    String? componentId,
   }) => _updateArray(repositoryId, path, (items) {
     if (index < 0 ||
         index >= items.length ||
@@ -509,19 +631,54 @@ class JsonRepositoryStore extends ChangeNotifier {
       _arrayConflict();
     }
     return [...items]..removeAt(index);
-  });
+  }, componentId: componentId);
 
   static Never _arrayConflict() => throw const FormatException(
     'La liste a été modifiée. Rechargez-la avant de réessayer.',
   );
 
+  /// Replaces a whole array (created when absent) with JSON [items].
+  Future<int> replaceArray(
+    String repositoryId,
+    String path,
+    List<Object?> items, {
+    String? componentId,
+  }) {
+    final copy = jsonDecode(jsonEncode(items)) as List<Object?>;
+    return _updateArray(
+      repositoryId,
+      path,
+      (_) => copy,
+      componentId: componentId,
+    );
+  }
+
   Future<int> _updateArray(
     String repositoryId,
     String path,
-    List<Object?> Function(List<Object?>) change,
-  ) => _exclusive(() async {
+    List<Object?> Function(List<Object?>) change, {
+    String? componentId,
+  }) => _exclusive(() async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
+    if (_memoryRepositories.containsKey(repositoryId)) {
+      final root = _memoryRepositories[repositoryId];
+      final attribute = JsonAttributePath(binding.path);
+      final previous = _array(attribute.readNode(root));
+      final items = change(previous);
+      final updated = attribute.replaceNode(root, items);
+      _memoryRepositories[repositoryId] = updated;
+      _documentCache[repositoryId] = updated;
+      _changed();
+      _notifyMemoryRepositoryChanged(
+        repositoryId: repositoryId,
+        path: binding.path,
+        oldValue: previous,
+        newValue: items,
+        componentId: componentId,
+      );
+      return items.length;
+    }
     final name = await _nameOf(repositoryId);
     final original = await read(name);
     final root = _decode(original);
@@ -580,6 +737,9 @@ class JsonRepositoryStore extends ChangeNotifier {
   }
 
   Future<String> read(String name) async {
+    if (_memoryRepositories.containsKey(name)) {
+      return '${const JsonEncoder.withIndent('  ').convert(_memoryRepositories[name])}\n';
+    }
     final file = _file(name);
     if (await FileSystemEntity.type(file.path, followLinks: false) !=
         FileSystemEntityType.file) {
@@ -610,6 +770,17 @@ class JsonRepositoryStore extends ChangeNotifier {
     required String expectedText,
   }) async {
     final decoded = jsonDecode(text);
+    if (_memoryRepositories.containsKey(name)) {
+      if (await read(name) != expectedText) {
+        throw const FormatException(
+          'Le repository a été modifié. Copiez vos modifications puis rechargez-le.',
+        );
+      }
+      _memoryRepositories[name] = decoded;
+      _documentCache[name] = decoded;
+      _changed();
+      return;
+    }
     if (await read(name) != expectedText) {
       throw const FormatException(
         'Le fichier a été modifié sur le disque. '
@@ -624,6 +795,11 @@ class JsonRepositoryStore extends ChangeNotifier {
   }
 
   Future<void> rename(String name, String newName) => _exclusive(() async {
+    if (_memoryRepositories.containsKey(name)) {
+      throw const FormatException(
+        'Le nom d’un repository fourni par l’application ne peut pas être modifié.',
+      );
+    }
     final validated = validateName(newName);
     if (name == validated) return;
     await _checkAvailable(validated);
@@ -639,56 +815,66 @@ class JsonRepositoryStore extends ChangeNotifier {
     _changed();
   });
 
-  Future<void> delete(String name, {Appearance? appearance}) =>
-      _exclusive(() async {
-        final validated = validateName(name);
-        final file = _file(validated);
-        if (await FileSystemEntity.type(file.path, followLinks: false) !=
-            FileSystemEntityType.file) {
-          throw FileSystemException(
-            'Fichier JSON introuvable ou lien refusé.',
-            file.path,
-          );
-        }
-        final idFile = _idFile(validated);
-        final idType = await FileSystemEntity.type(
-          idFile.path,
-          followLinks: false,
+  Future<void> delete(
+    String name, {
+    Appearance? appearance,
+  }) => _exclusive(() async {
+    final validated = validateName(name);
+    if (_memoryRepositories.containsKey(validated)) {
+      if (isRepositoryBound(validated) ||
+          (appearance?.usesRepository(validated) ?? false)) {
+        throw FormatException(
+          'Impossible de supprimer « $validated » : '
+          'ce repository est encore utilisé par un bind de l’application.',
         );
-        if (idType != FileSystemEntityType.notFound &&
-            idType != FileSystemEntityType.file) {
-          throw FileSystemException(
-            'Fichier d’identifiant invalide.',
-            idFile.path,
-          );
-        }
-        String? id;
-        if (idType == FileSystemEntityType.file) {
-          id = (await idFile.readAsString()).trim();
-        }
-        if (id != null &&
-            id.isNotEmpty &&
-            (isRepositoryBound(id) ||
-                (appearance?.usesRepository(id) ?? false))) {
-          throw FormatException(
-            'Impossible de supprimer « $validated » : '
-            'ce repository est encore utilisé par un bind de l’application.',
-          );
-        }
-        await file.delete();
-        if (idType == FileSystemEntityType.file) {
-          await idFile.delete();
-        }
-        if (id != null) {
-          _documentCache.remove(id);
-        }
-        _idToNameCache = null;
-        final binding = id == null ? null : _bindings[id];
-        if (binding != null) {
-          for (final array in binding.arrays) {
-            array.clear();
-          }
-        }
-        _changed();
-      });
+      }
+      _memoryRepositories.remove(validated);
+      _memoryRepositoryCallbacks.remove(validated);
+      _documentCache.remove(validated);
+      _idToNameCache?.remove(validated);
+      _changed();
+      return;
+    }
+    final file = _file(validated);
+    if (await FileSystemEntity.type(file.path, followLinks: false) !=
+        FileSystemEntityType.file) {
+      throw FileSystemException(
+        'Fichier JSON introuvable ou lien refusé.',
+        file.path,
+      );
+    }
+    final idFile = _idFile(validated);
+    final idType = await FileSystemEntity.type(idFile.path, followLinks: false);
+    if (idType != FileSystemEntityType.notFound &&
+        idType != FileSystemEntityType.file) {
+      throw FileSystemException('Fichier d’identifiant invalide.', idFile.path);
+    }
+    String? id;
+    if (idType == FileSystemEntityType.file) {
+      id = (await idFile.readAsString()).trim();
+    }
+    if (id != null &&
+        id.isNotEmpty &&
+        (isRepositoryBound(id) || (appearance?.usesRepository(id) ?? false))) {
+      throw FormatException(
+        'Impossible de supprimer « $validated » : '
+        'ce repository est encore utilisé par un bind de l’application.',
+      );
+    }
+    await file.delete();
+    if (idType == FileSystemEntityType.file) {
+      await idFile.delete();
+    }
+    if (id != null) {
+      _documentCache.remove(id);
+    }
+    _idToNameCache = null;
+    final binding = id == null ? null : _bindings[id];
+    if (binding != null) {
+      for (final array in binding.arrays) {
+        array.clear();
+      }
+    }
+    _changed();
+  });
 }

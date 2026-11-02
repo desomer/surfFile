@@ -38,6 +38,7 @@ class SuperCodeConfig extends ComponentConfig {
   const SuperCodeConfig({
     this.mode = SuperCodeMode.yaml,
     this.binding,
+    this.errorBinding,
     this.readOnly = false,
   });
 
@@ -47,6 +48,9 @@ class SuperCodeConfig extends ComponentConfig {
   /// Attribut texte du repository, avec heritage et jokers [?].
   final JsonTextBinding? binding;
 
+  /// Attribut du repository affiche en lecture comme message d'erreur.
+  final JsonTextBinding? errorBinding;
+
   /// Interdit les modifications du texte.
   final bool readOnly;
 
@@ -54,10 +58,13 @@ class SuperCodeConfig extends ComponentConfig {
   String get componentType => 'code';
 
   @override
-  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+  Iterable<JsonTextBinding> get referencedBindings => [?binding, ?errorBinding];
 
   @override
-  void validate() => binding?.validate();
+  void validate() {
+    binding?.validate();
+    errorBinding?.validate();
+  }
 
   @override
   SuperCodeConfig patchFromJson(Map<Object?, Object?> patch) {
@@ -77,10 +84,13 @@ class SuperCodeConfig extends ComponentConfig {
     SuperCodeMode? mode,
     JsonTextBinding? binding,
     bool clearBinding = false,
+    JsonTextBinding? errorBinding,
+    bool clearErrorBinding = false,
     bool? readOnly,
   }) => SuperCodeConfig(
     mode: mode ?? this.mode,
     binding: clearBinding ? null : binding ?? this.binding,
+    errorBinding: clearErrorBinding ? null : errorBinding ?? this.errorBinding,
     readOnly: readOnly ?? this.readOnly,
   );
 
@@ -90,6 +100,7 @@ class SuperCodeConfig extends ComponentConfig {
     return {
       'mode': mode.name,
       if (binding != null) 'binding': binding!.toJson(),
+      if (errorBinding != null) 'errorBinding': errorBinding!.toJson(),
       'readOnly': readOnly,
     };
   }
@@ -100,6 +111,7 @@ class SuperCodeConfig extends ComponentConfig {
     return {
       if (mode != SuperCodeMode.yaml) 'mode': mode.name,
       if (binding != null) 'binding': binding!.toCompactJson(),
+      if (errorBinding != null) 'errorBinding': errorBinding!.toCompactJson(),
       if (readOnly) 'readOnly': true,
     };
   }
@@ -107,7 +119,7 @@ class SuperCodeConfig extends ComponentConfig {
   /// Decode et valide les reglages JSON, sans accepter de langage inconnu.
   factory SuperCodeConfig.fromJson(Map<String, Object?> json) {
     for (final key in json.keys) {
-      if (!const {'mode', 'binding', 'readOnly'}.contains(key)) {
+      if (!const {'mode', 'binding', 'errorBinding', 'readOnly'}.contains(key)) {
         throw FormatException('Propriete SuperCode inconnue : $key.');
       }
     }
@@ -123,6 +135,9 @@ class SuperCodeConfig extends ComponentConfig {
     final result = SuperCodeConfig(
       mode: mode,
       binding: json['binding'] == null ? null : JsonTextBinding.fromJson(json['binding']),
+      errorBinding: json['errorBinding'] == null
+          ? null
+          : JsonTextBinding.fromJson(json['errorBinding']),
       readOnly: readOnly,
     );
     result.validate();
@@ -134,8 +149,9 @@ class SuperCodeConfig extends ComponentConfig {
       other is SuperCodeConfig &&
       mode == other.mode &&
       binding == other.binding &&
+      errorBinding == other.errorBinding &&
       readOnly == other.readOnly;
 
   @override
-  int get hashCode => Object.hash(mode, binding, readOnly);
+  int get hashCode => Object.hash(mode, binding, errorBinding, readOnly);
 }

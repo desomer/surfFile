@@ -52,6 +52,85 @@ void main() {
     expect(await File('${directory.path}\\Clients.json.id').exists(), isFalse);
   });
 
+  test(
+    'registered repositories stay in memory and support component bindings',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      final changes = <ChangeContext>[];
+      store.registerRepository(
+        RepositoryImpl(
+          id: id,
+          onChanged: changes.add,
+          json: {
+            'name': 'Demo',
+            'nodes': [
+              {'name': 'First'},
+            ],
+          },
+        ),
+      );
+
+      expect(await store.idOf(id), id);
+      expect(await store.readArray(id, 'nodes'), [
+        {'name': 'First'},
+      ]);
+
+      await store.writeAttribute(
+        const JsonTextBinding(repositoryId: id, path: 'name'),
+        'Updated',
+        expectedValue: 'Demo',
+        componentId: 'name-value',
+      );
+      await store.appendArrayItem(
+        id,
+        'nodes',
+        expectedLength: 1,
+        componentId: 'nodes-list',
+      );
+
+      expect(
+        await store.readAttribute(
+          const JsonTextBinding(repositoryId: id, path: 'name'),
+        ),
+        (value: 'Updated', text: 'Updated'),
+      );
+      expect(await store.readArray(id, 'nodes'), [
+        {'name': 'First'},
+        {'name': ''},
+      ]);
+      expect(await File('${directory.path}\\$id.json').exists(), isFalse);
+      expect(await store.catalog(), contains((name: id, id: id)));
+      expect(changes, hasLength(2));
+      expect(changes[0].repositoryId, id);
+      expect(changes[0].path, 'name');
+      expect(changes[0].oldValue, 'Demo');
+      expect(changes[0].newValue, 'Updated');
+      expect(changes[0].componentId, 'name-value');
+      expect(changes[1].path, 'nodes');
+      expect(changes[1].oldValue, [
+        {'name': 'First'},
+      ]);
+      expect(changes[1].newValue, [
+        {'name': 'First'},
+        {'name': ''},
+      ]);
+      expect(changes[1].componentId, 'nodes-list');
+
+      await store.replaceArray(id, 'nodes', [
+        {'name': 'Replaced'},
+      ], componentId: 'yaml-validator');
+      expect(await store.readArray(id, 'nodes'), [
+        {'name': 'Replaced'},
+      ]);
+      expect(changes, hasLength(3));
+      expect(changes[2].path, 'nodes');
+      expect(changes[2].newValue, [
+        {'name': 'Replaced'},
+      ]);
+      expect(changes[2].componentId, 'yaml-validator');
+    },
+  );
+
   test('delete removes JSON and ID files and clears array selection', () async {
     await store.create('Clients');
     await store.create('Articles');

@@ -76,7 +76,10 @@ class _SuperCodeState extends State<SuperCode> {
     history?.beginTransaction();
     SuperCodeConfig? result;
     try {
-      result = await showSuperCodeEditor(context: context, config: configuration.value);
+      result = await showSuperCodeEditor(
+        context: context,
+        config: configuration.value,
+      );
       if (result != null && mounted && result != configuration.value) {
         configuration.value = result;
         widget.onConfigChanged?.call(result);
@@ -92,10 +95,10 @@ class _SuperCodeState extends State<SuperCode> {
 
   @override
   Widget build(BuildContext context) {
-    final configuration = SuperApp.maybeOf(context)?.registry?.codeController(
-      widget.id,
-      fallback: widget.config,
-    ) ?? _local;
+    final configuration =
+        SuperApp.maybeOf(context)?.registry
+            ?.codeController(widget.id, fallback: widget.config) ??
+        _local;
     final store = JsonRepositoryScope.maybeOf(context);
     final scope = JsonListScope.maybeOf(context);
     final sliver = SliverSlotScope.isSliver(context);
@@ -104,29 +107,48 @@ class _SuperCodeState extends State<SuperCode> {
       valueListenable: configuration,
       builder: (context, config, _) {
         JsonTextBinding? binding;
+        JsonTextBinding? errorBinding;
         String? error;
-        List<JsonArrayBinding> arrays = const [];
+        final arrays = <JsonArrayBinding>[];
         final placeholder = scope?.placeholder ?? false;
         try {
           config.validate();
-          if (config.binding != null && !placeholder) {
+          if ((config.binding != null || config.errorBinding != null) &&
+              !placeholder) {
             if (store == null) {
               throw const FormatException('Repository indisponible.');
             }
-            final resolved = JsonListScope.resolveSelected(config.binding!, scope, store);
-            binding = resolved.binding;
-            arrays = resolved.arrays;
+            if (config.binding != null) {
+              final resolved = JsonListScope.resolveSelected(
+                config.binding!,
+                scope,
+                store,
+              );
+              binding = resolved.binding;
+              arrays.addAll(resolved.arrays);
+            }
+            if (config.errorBinding != null) {
+              final resolved = JsonListScope.resolveSelected(
+                config.errorBinding!,
+                scope,
+                store,
+              );
+              errorBinding = resolved.binding;
+              arrays.addAll(resolved.arrays);
+            }
           }
         } on FormatException catch (exception) {
           error = exception.message;
         }
         _listen(arrays);
         final content = _BoundCode(
-          key: ValueKey((widget.id, store, binding, placeholder)),
+          key: ValueKey((widget.id, store, binding, errorBinding, placeholder)),
           config: config,
           binding: binding,
+          errorBinding: errorBinding,
           store: store,
           error: error,
+          componentId: widget.id,
         );
         final body = LayoutBuilder(
           builder: (context, constraints) => Listener(
@@ -139,7 +161,8 @@ class _SuperCodeState extends State<SuperCode> {
             },
             onPointerMove: (event) {
               final down = _secondaryDown;
-              if (down != null && down.pointer == event.pointer &&
+              if (down != null &&
+                  down.pointer == event.pointer &&
                   (down.position - event.position).distance > kTouchSlop) {
                 _secondaryMoved = true;
               }
@@ -147,7 +170,9 @@ class _SuperCodeState extends State<SuperCode> {
             onPointerUp: (event) {
               final down = _secondaryDown;
               _secondaryDown = null;
-              if (canConfigure && down != null && down.pointer == event.pointer &&
+              if (canConfigure &&
+                  down != null &&
+                  down.pointer == event.pointer &&
                   !_secondaryMoved &&
                   (down.position - event.position).distance <= kTouchSlop) {
                 _surface.currentState?.openMenu(event.position);
@@ -165,7 +190,8 @@ class _SuperCodeState extends State<SuperCode> {
           label: 'Code',
           menuType: 'Code',
           menuIcon: Icons.code,
-          menuTooltip: () => 'Code ${config.mode.label}\n${config.binding?.path ?? 'Sans liaison'}',
+          menuTooltip: () =>
+              'Code ${config.mode.label}\n${config.binding?.path ?? 'Sans liaison'}',
           onEdit: () => _edit(configuration),
           child: sliver
               ? SliverToBoxAdapter(
@@ -187,13 +213,17 @@ class _BoundCode extends StatefulWidget {
     required this.binding,
     required this.store,
     required this.error,
+    required this.componentId,
+    this.errorBinding,
     super.key,
   });
 
   final SuperCodeConfig config;
   final JsonTextBinding? binding;
+  final JsonTextBinding? errorBinding;
   final JsonRepositoryStore? store;
   final String? error;
+  final String componentId;
 
   @override
   State<_BoundCode> createState() => _BoundCodeState();
@@ -202,18 +232,31 @@ class _BoundCode extends StatefulWidget {
 class _BoundCodeState extends State<_BoundCode> {
   final _text = TextEditingController();
   final _error = ValueNotifier('');
+  final _errorText = TextEditingController();
   JsonTextControllerBinding? _binding;
+  // Read-only: _errorText is never edited, so this binding never writes.
+  JsonTextControllerBinding? _errorBinding;
 
   @override
   void initState() {
     super.initState();
     final binding = widget.binding;
+    final errorBinding = widget.errorBinding;
     final store = widget.store;
+    if (errorBinding != null && store != null) {
+      _errorBinding = JsonTextControllerBinding(
+        store: store,
+        binding: errorBinding,
+        controller: _errorText,
+        componentId: widget.componentId,
+      )..addListener(_changed);
+    }
     if (binding != null && store != null) {
       _binding = JsonTextControllerBinding(
         store: store,
         binding: binding,
         controller: _text,
+        componentId: widget.componentId,
         requireString: true,
       )..addListener(_changed);
     }
@@ -221,7 +264,8 @@ class _BoundCodeState extends State<_BoundCode> {
 
   void _changed() {
     if (!mounted) return;
-    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() {});
       });
@@ -234,6 +278,9 @@ class _BoundCodeState extends State<_BoundCode> {
   void dispose() {
     _binding?.removeListener(_changed);
     _binding?.dispose();
+    _errorBinding?.removeListener(_changed);
+    _errorBinding?.dispose();
+    _errorText.dispose();
     _text.dispose();
     _error.dispose();
     super.dispose();
@@ -242,7 +289,11 @@ class _BoundCodeState extends State<_BoundCode> {
   @override
   Widget build(BuildContext context) {
     final binding = _binding;
-    _error.value = widget.error ?? binding?.error ?? '';
+    _error.value =
+        widget.error ??
+        binding?.error ??
+        _errorBinding?.error ??
+        _errorText.text;
     return CodeEditor(
       config: CodeEditorConfig(
         mode: switch (widget.config.mode) {
@@ -254,7 +305,8 @@ class _BoundCodeState extends State<_BoundCode> {
           if (!config.readOnly && _text.text != text) _text.text = text;
         },
         notifError: _error,
-        readOnly: widget.config.readOnly ||
+        readOnly:
+            widget.config.readOnly ||
             binding == null ||
             binding.loading ||
             (binding.error != null && !binding.dirty),

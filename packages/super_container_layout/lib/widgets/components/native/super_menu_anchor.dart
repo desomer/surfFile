@@ -434,6 +434,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
             store: store,
             binding: resolved.binding!,
             controller: _internalText,
+            componentId: widget.id,
             asBool: true,
             onChanged: (text) {
               if (!mounted) return;
@@ -599,8 +600,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
                   title: 'Lier l’état ouvert / fermé',
                   keyPrefix: 'super-menu-anchor-binding',
                   pathHint: 'ui.menuOuvert ou clients[?].menuOuvert',
-                  helper:
-                      'Attribut booléen JSON synchronisé avec l’ouverture du menu.',
+                  helper: 'Attribut booléen JSON synchronisé avec l’ouverture du menu.',
                   binding: current.binding,
                   store: repositoryStore,
                   listScope: listScope,

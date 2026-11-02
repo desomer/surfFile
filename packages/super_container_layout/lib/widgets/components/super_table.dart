@@ -409,6 +409,7 @@ class _SuperTableState extends State<SuperTable> {
         binding.repositoryId!,
         binding.path,
         expectedLength: length,
+        componentId: widget.id,
       );
       if (mounted && _source?.binding == binding) _selectRow(count - 1);
       return count;
@@ -443,6 +444,7 @@ class _SuperTableState extends State<SuperTable> {
         binding.path,
         index,
         expectedItem: expected,
+        componentId: widget.id,
       );
       final template = _templatePath;
       if (template != null) {

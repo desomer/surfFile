@@ -516,6 +516,7 @@ class _SuperValueState extends State<SuperValue>
             store: store,
             binding: resolved.binding!,
             controller: _internal,
+            componentId: widget.id,
             asBool: asBool,
             onChanged: stateful
                 ? null

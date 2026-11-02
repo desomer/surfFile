@@ -26,6 +26,7 @@ class _DelayedStore extends JsonRepositoryStore {
     String text, {
     required Object? expectedValue,
     bool asBool = false,
+    String? componentId,
   }) async {
     final pending = nextWrite;
     nextWrite = null;
@@ -35,6 +36,7 @@ class _DelayedStore extends JsonRepositoryStore {
       text,
       expectedValue: expectedValue,
       asBool: asBool,
+      componentId: componentId,
     );
   }
 }

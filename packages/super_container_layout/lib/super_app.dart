@@ -356,6 +356,9 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       title: widget.title,
       debugShowCheckedModeBanner: false,
       showSemanticsDebugger: false,
+
+      //showPerformanceOverlay: true,
+
       scaffoldMessengerKey: _messenger,
       localizationsDelegates: [
         ...GlobalMaterialLocalizations.delegates,

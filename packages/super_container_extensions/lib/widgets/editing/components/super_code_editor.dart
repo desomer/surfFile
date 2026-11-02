@@ -126,6 +126,20 @@ class _CodeEditorDialogState extends State<_CodeEditorDialog> {
               _draft = _draft.copyWith(binding: binding, clearBinding: binding == null);
             }),
           ),
+          RepositoryBindingFields(
+            keyPrefix: 'super-code-error-binding',
+            binding: _draft.errorBinding,
+            store: widget.store,
+            listScope: widget.scope,
+            pathHint: 'scripts[?].error',
+            helper: 'Attribut affiche comme message d’erreur (lecture seule).',
+            onChanged: (binding) => setState(() {
+              _draft = _draft.copyWith(
+                errorBinding: binding,
+                clearErrorBinding: binding == null,
+              );
+            }),
+          ),
           if (_error != null)
             Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
         ],

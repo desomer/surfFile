@@ -361,6 +361,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
             store: store,
             binding: resolved.binding!,
             controller: _internalText,
+            componentId: widget.id,
             asBool: true,
             onChanged: (text) {
               if (!mounted) return;
@@ -513,8 +514,7 @@ class _SuperExpansibleState extends State<SuperExpansible> {
                   title: 'Lier l’état ouvert / fermé',
                   keyPrefix: 'super-expansible-binding',
                   pathHint: 'ui.ouvert ou clients[?].ouvert',
-                  helper:
-                      'Attribut booléen JSON synchronisé avec l’ouverture de l’expansible.',
+                  helper: 'Attribut booléen JSON synchronisé avec l’ouverture de l’expansible.',
                   binding: current.binding,
                   store: repositoryStore,
                   listScope: listScope,

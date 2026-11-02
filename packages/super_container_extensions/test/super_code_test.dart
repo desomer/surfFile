@@ -97,6 +97,16 @@ void main() {
     expect(ComponentConfig.fromJson(config.toTypedJson()), config);
     expect(ComponentConfig.fromJson(config.toTypedCompactJson()), config);
     expect(config.referencedBindings, [config.binding]);
+    final withError = config.copyWith(
+      errorBinding: JsonTextBinding(repositoryId: repository, path: 'error'),
+    );
+    expect(ComponentConfig.fromJson(withError.toTypedJson()), withError);
+    expect(ComponentConfig.fromJson(withError.toTypedCompactJson()), withError);
+    expect(withError.referencedBindings, [
+      withError.binding,
+      withError.errorBinding,
+    ]);
+    expect(withError.copyWith(clearErrorBinding: true), config);
     expect(
       config.patchFromJson({'readOnly': false}),
       config.copyWith(readOnly: false),
@@ -270,6 +280,40 @@ void main() {
       )).value,
       42,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('error binding displays a repository attribute read-only', (
+    tester,
+  ) async {
+    final errorPath = JsonTextBinding(repositoryId: repository, path: 'error');
+    await real(
+      tester,
+      () => store.writeAttribute(
+        errorPath,
+        'Ligne 2 invalide',
+        expectedValue: null,
+      ),
+    );
+    await mount(
+      tester,
+      SuperCodeConfig(
+        binding: JsonTextBinding(repositoryId: repository, path: 'source'),
+        errorBinding: errorPath,
+      ),
+    );
+    expect(find.text('Ligne 2 invalide'), findsOneWidget);
+
+    await real(
+      tester,
+      () => store.writeAttribute(
+        errorPath,
+        '',
+        expectedValue: 'Ligne 2 invalide',
+      ),
+    );
+    expect(find.text('Ligne 2 invalide'), findsNothing);
+    expect((await store.readAttribute(errorPath)).value, '');
     expect(tester.takeException(), isNull);
   });
 

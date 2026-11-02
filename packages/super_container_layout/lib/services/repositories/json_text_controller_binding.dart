@@ -18,6 +18,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     required this.store,
     required this.binding,
     required this.controller,
+    this.componentId,
     this.onChanged,
     this.asBool = false,
     this.requireString = false,
@@ -33,6 +34,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
   final JsonRepositoryStore store;
   final JsonTextBinding binding;
   final TextEditingController controller;
+  final String? componentId;
   final ValueChanged<String>? onChanged;
   final bool asBool;
 
@@ -194,6 +196,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
           text,
           expectedValue: _expected,
           asBool: asBool,
+          componentId: componentId,
         );
         _expected = result.value;
         _saved = text;

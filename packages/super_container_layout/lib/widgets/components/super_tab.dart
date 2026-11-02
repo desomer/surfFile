@@ -436,6 +436,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             store: store,
             binding: resolved.binding!,
             controller: _staticBindingText,
+            componentId: widget.id,
             onChanged: (text) {
               if (!mounted) return;
               _setStaticIndexFromBinding(text);
@@ -647,6 +648,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         binding.repositoryId!,
         binding.path,
         expectedLength: length,
+        componentId: widget.id,
       );
       if (mounted && _dynamicSource?.binding == binding) {
         final nextIndex = count - 1;
@@ -668,6 +670,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         binding.path,
         index,
         expectedItem: expected,
+        componentId: widget.id,
       );
       final templatePath = _dynamicTemplatePath;
       if (templatePath != null) {
