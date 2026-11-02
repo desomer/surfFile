@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
 import '../../../models/component_behavior.dart';
+import '../../components/behavior_event_listener.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../../components/super_layout/zone_axis_button.dart';
 import '../addition/contextual_add.dart';
@@ -103,10 +104,22 @@ class EditorSlot extends StatefulWidget {
     this.outlineRadius = 0,
     this.onRemoveChild,
     this.wrapChildrenActions = const [],
+    this.eventData,
+    this.behaviors,
+    this.eventComponentType = 'component',
     super.key,
   });
 
   final Widget? child;
+
+  /// Comportements explicites ; `null` utilise ceux de l'apparence.
+  final List<ComponentBehavior>? behaviors;
+
+  /// Instantane runtime fourni par l'instance, jamais par un registre partage.
+  final Map<String, Object?> Function()? eventData;
+
+  /// Type du composant utilise dans l'enveloppe des evenements.
+  final String eventComponentType;
   final String? label;
   final String? menuTitle;
   final String? menuType;
@@ -2074,19 +2087,39 @@ class EditorSlotState extends State<EditorSlot> {
     final inEditMode = editMode?.value ?? false;
     final appearance = AppearanceScope.controllerOf(context)?.value;
     final behaviors =
-        appearance?.behaviorsFor(effectiveComponentId) ?? const [];
+        widget.behaviors ??
+        appearance?.behaviorsFor(effectiveComponentId) ??
+        const [];
     final clickBehaviors = behaviors
-        .where((b) => b.enabled && b.trigger == BehaviorTrigger.click)
+        .where(
+          (b) =>
+              b.enabled &&
+              b.trigger == BehaviorTrigger.click &&
+              b.action is! EmitEventAction,
+        )
         .toList();
+    final eventBehaviors = inEditMode
+        ? <ComponentBehavior>[]
+        : behaviors
+              .where((b) => b.enabled && b.action is EmitEventAction)
+              .toList();
     final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
     final interactive = canEdit || hasClickBehaviors;
+    final runtimeChild = BehaviorEventListener(
+      componentId: effectiveComponentId,
+      componentType: widget.eventComponentType,
+      behaviors: eventBehaviors,
+      readData: widget.eventData,
+      sliver: isSliver,
+      child:
+          widget.child ??
+          (isSliver
+              ? const SliverToBoxAdapter(child: SizedBox.shrink())
+              : const SizedBox.expand()),
+    );
 
     if (isSliver) {
-      final Widget child = KeyedSubtree(
-        key: _childKey,
-        child:
-            widget.child ?? const SliverToBoxAdapter(child: SizedBox.shrink()),
-      );
+      final Widget child = KeyedSubtree(key: _childKey, child: runtimeChild);
       if (!interactive) {
         if (_hovered.contains(this)) _removeHoveredSafely();
         return child;
@@ -2206,10 +2239,7 @@ class EditorSlotState extends State<EditorSlot> {
       );
     }
 
-    Widget content = KeyedSubtree(
-      key: _childKey,
-      child: widget.child ?? const SizedBox.expand(),
-    );
+    Widget content = KeyedSubtree(key: _childKey, child: runtimeChild);
     if (!interactive) {
       if (_hovered.contains(this)) _removeHoveredSafely();
       return content;

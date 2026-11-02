@@ -28,6 +28,7 @@ extension _SuperLayoutView on SuperLayoutState {
     final effectiveId = _resolveEffectiveLayoutId(context);
     return EditorSlot(
       id: effectiveId,
+      behaviors: widget.behaviours,
       label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,

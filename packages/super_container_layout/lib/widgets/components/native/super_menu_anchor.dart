@@ -11,6 +11,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:material_ui/material_ui.dart';
 
+import '../super_component.dart';
+
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
@@ -27,7 +29,7 @@ import '../super_layout/slot_implementation.dart';
 /// Adapter around Flutter's native [MenuAnchor] widget with editable `header`
 /// (anchor trigger) and `body` (popup content) regions and optional two-way
 /// boolean JSON repository binding for its open/closed state.
-class SuperMenuAnchor extends StatefulWidget {
+class SuperMenuAnchor extends SuperStatefulComponent<NativeComponentConfig?> {
   static const List<NativePropertyDescriptor> propertyDescriptors =
       superMenuAnchorPropertyDescriptors;
 
@@ -53,9 +55,11 @@ class SuperMenuAnchor extends StatefulWidget {
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
   final String label;
 
@@ -106,6 +110,8 @@ class SuperMenuAnchor extends StatefulWidget {
 
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
+  @override
+  NativeComponentConfig? get config => nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
 
   NativeComponentConfig get _initialConfig =>
@@ -558,6 +564,7 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
 
         return NativeComponentEditor(
           id: widget.id,
+          behaviours: widget.behaviours,
           label: widget.label,
           menuType: 'Menu',
           menuIcon: Icons.menu_open_outlined,

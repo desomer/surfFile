@@ -38,6 +38,7 @@ import '../../../super_app.dart';
 import 'layout_selection.dart';
 import 'slot_implementation.dart';
 import 'zone_axis_button.dart';
+import '../super_component.dart';
 
 part 'layout.dart';
 part 'layout_dialogs.dart';

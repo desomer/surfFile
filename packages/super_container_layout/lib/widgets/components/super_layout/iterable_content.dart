@@ -14,9 +14,10 @@ import '../../editing/slots/editable_surface.dart';
 import '../../editing/slots/editor_slot.dart';
 import 'slot_implementation.dart';
 import 'super_layout.dart';
+import '../super_component.dart';
 
 /// A reusable styled surface with a structural, editable layout.
-class IterableContent extends StatefulWidget {
+class IterableContent extends SuperStatefulComponent<SuperLayoutConfig> {
   const IterableContent({
     this.id,
     this.label = 'Iterable Content',
@@ -35,11 +36,14 @@ class IterableContent extends StatefulWidget {
     this.dimensionDelegateBuilder,
     this.sizeConstraints,
     this.child,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String? id;
   final String label;
+  @override
   final SuperLayoutConfig config;
   final ContainerStyle style;
   final List<SlotImplementation> slots;
@@ -92,6 +96,7 @@ class _IterableContentState extends State<IterableContent> {
       valueListenable: style,
       builder: (context, value, _) => EditableSurface(
         id: widget.id,
+        behaviours: widget.behaviours,
         singleChild: false,
         label: widget.label,
         menuType: 'IterableContent',

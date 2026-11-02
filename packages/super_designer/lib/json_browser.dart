@@ -55,6 +55,7 @@ class JsonNode {
     'type': type,
     'description': isContainer ? '' : '${value ?? ''}',
     if (properties.isNotEmpty) 'properties': properties,
+    'propertiesText': properties.isEmpty ? '' : properties.toString(),
     if (isContainer || children.isNotEmpty)
       'children': [for (final child in children) child.toJson()],
   };
@@ -434,8 +435,7 @@ class _JsonMatcher {
   List<JsonNode> unmatchedRoots() {
     bool isRoot(JsonNode node) {
       final parent = node.parent;
-      return parent == null || 
-          !_oldSignatures.containsKey(parent);
+      return parent == null || !_oldSignatures.containsKey(parent);
     }
 
     return [

@@ -13,9 +13,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-import 'json_browser.dart';
+import 'yaml2jsonschemas_parser.dart';
 
 export 'json_browser.dart';
+export 'yaml2jsonschemas_parser.dart';
 
 export 'package:super_container_extensions/super_container_extensions.dart';
 export 'package:super_container_layout/super_container_layout.dart';
@@ -69,12 +70,16 @@ class SuperDesignerApp extends StatefulWidget {
 
 class _SuperDesignerAppState extends State<SuperDesignerApp> {
   final _registry = createSuperDesignerRegistry();
+  final _eventBus = SuperEventBus();
+  late final StreamSubscription<SuperComponentEvent> _eventSubscription;
 
   static const _repositoryId = '0123456789abcdef0123456789abcdef';
   late final _repositoryStore = JsonRepositoryStore.defaultStore();
 
-  /// Arbre du YAML de `source`, patché à chaque modification pour garder les ID.
-  final _jsonModel = JsonBrowser().model('source', null);
+  /// Schéma issu du DSL YAML de `source`, patché à chaque modification pour
+  /// garder les ID et les propriétés saisies dans l'IHM.
+  final _schemaParser = Yaml2JsonSchemasParser();
+  late final _jsonModel = _schemaParser.model('source', '');
 
   void _onRepositoryChanged(ChangeContext change) {
     debugPrint(
@@ -85,12 +90,12 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     if (change.path == 'source') unawaited(_validateYaml(change.newValue));
   }
 
-  /// Patche [_jsonModel] avec le YAML de `source` : publie l'erreur dans
-  /// `yamlError` et, si le parsing réussit, écrit ses nœuds dans `nodes`.
+  /// Patche [_jsonModel] avec le DSL de schéma de `source` : publie l'erreur
+  /// dans `yamlError` et, si le parsing réussit, écrit ses nœuds dans `nodes`.
   Future<void> _validateYaml(Object? source) async {
     var message = '';
     try {
-      _jsonModel.patch(source is String ? source : '');
+      _schemaParser.patch(_jsonModel, source is String ? source : '');
     } on FormatException catch (error) {
       message = error.message;
     }
@@ -120,23 +125,20 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   @override
   void initState() {
     super.initState();
+    _eventSubscription = _eventBus.on('node.click').listen((event) {
+      debugPrint(
+        'Event ${event.eventId} from ${event.componentId} '
+        '(${event.trigger}): ${event.data}',
+      );
+    });
 
     var repository = RepositoryImpl(
       id: _repositoryId,
       onChanged: _onRepositoryChanged,
       json: {
-        'source': 'name: Example\nvalue: 42',
+        'source': '',
         'yamlError': '',
-        'nodes': [
-          {
-            'name': 'Example',
-            'type': 'String',
-            'id': 'aaa',
-            'children': [
-              {'name': 'Child', 'type': 'String', 'id': 'bbb'},
-            ],
-          },
-        ],
+        'nodes': [{}],
       },
     );
 
@@ -204,9 +206,16 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     BuilderSlot(
                       id: 'tree-node-name',
                       label: 'Name',
-                      builder: (_) => const SuperValue(
+                      builder: (_) => SuperValue(
                         id: 'tree-node-name',
-                        config: SuperValueConfig(
+                        behaviours: [
+                          ComponentBehavior(
+                            id: 'tree-node-name-click',
+                            trigger: BehaviorTrigger.click,
+                            action: EmitEventAction(eventId: 'node.click'),
+                          ),
+                        ],
+                        config: const SuperValueConfig(
                           binding: JsonTextBinding(path: 'name'),
                         ),
                       ),
@@ -223,11 +232,44 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     ),
                   ],
                 ),
-                data: const SuperValue(
-                  id: 'tree-node-description',
-                  config: SuperValueConfig(
-                    binding: JsonTextBinding(path: 'id'),
+                data: SuperLayout(
+                  label: 'Node data',
+                  config: const SuperLayoutConfig(
+                    zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+                    zoneFlows: {
+                      SuperLayoutZone.center: ZoneFlowConfig(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      ),
+                    },
+                    placements: {
+                      SuperLayoutZone.center: [
+                        'tree-node-id',
+                        'tree-node-properties',
+                      ],
+                    },
                   ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'tree-node-id',
+                      label: 'ID',
+                      builder: (_) => const SuperValue(
+                        id: 'tree-node-id',
+                        config: SuperValueConfig(
+                          binding: JsonTextBinding(path: 'id'),
+                        ),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'tree-node-properties',
+                      label: 'Properties',
+                      builder: (_) => const SuperValue(
+                        id: 'tree-node-properties',
+                        config: SuperValueConfig(
+                          binding: JsonTextBinding(path: 'propertiesText'),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 config: SuperTreeViewConfig(
                   binding: const JsonTextBinding(
@@ -260,6 +302,8 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
   @override
   void dispose() {
+    unawaited(_eventSubscription.cancel());
+    unawaited(_eventBus.close());
     _pageRouting.dispose();
     _repositoryStore.dispose();
     super.dispose();
@@ -272,6 +316,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     title: 'Card Layout demo 2',
     registry: _registry,
     repositoryStore: _repositoryStore,
+    eventBus: _eventBus,
   );
 
   /// Construit la surface racine contenant la [SuperPage] et la barre d'outils flottante.

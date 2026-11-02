@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../super_component.dart';
+
 import '../../../models/component_tag_filter.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
@@ -20,7 +22,8 @@ import 'native_component_common.dart';
 
 /// A native [BottomNavigationBar] whose items are exclusively [SuperAction]
 /// components converted into [BottomNavigationBarItem] entries.
-class SuperBottomNavigationBar extends StatefulWidget
+class SuperBottomNavigationBar
+    extends SuperStatefulComponent<NativeComponentConfig?>
     implements NativePreferredSizeWidget {
   static const List<NativePropertyDescriptor> propertyDescriptors =
       superBottomNavigationBarPropertyDescriptors;
@@ -56,6 +59,7 @@ class SuperBottomNavigationBar extends StatefulWidget
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
+    super.behaviours,
     super.key,
   }) : assert(height > 0 && height < double.infinity),
        assert(currentIndex >= 0),
@@ -68,6 +72,7 @@ class SuperBottomNavigationBar extends StatefulWidget
          'Either selectedItemColor or fixedColor can be specified, but not both.',
        );
 
+  @override
   final String id;
   final String label;
 
@@ -99,6 +104,8 @@ class SuperBottomNavigationBar extends StatefulWidget
   final bool useLegacyColorScheme;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
+  @override
+  NativeComponentConfig? get config => nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
 
   List<SuperAction> get _allDestinations => [?destination, ...destinations];
@@ -224,6 +231,7 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
           );
           return NativeComponentEditor(
             id: widget.id,
+            behaviours: widget.behaviours,
             label: widget.label,
             menuType: 'BottomNavigationBar',
             keyPrefix: 'super-bottom-navigation-bar',
@@ -233,8 +241,7 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
             onChanged: (value) => controller.value = value,
             registry: registry,
             slots: _slots,
-            propertyDescriptors:
-                SuperBottomNavigationBar.propertyDescriptors,
+            propertyDescriptors: SuperBottomNavigationBar.propertyDescriptors,
             onSlotAdded: _added,
             regions: [
               NativeRegion(
@@ -378,6 +385,7 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                         context,
                         slot.id,
                         onPressed: action?.onPressed,
+                        behaviours: action?.behaviours,
                       );
                     },
                   );

@@ -19,6 +19,7 @@ import 'package:super_container_layout/widgets/components/internal_widget/materi
 import 'models/registry.dart';
 
 import 'services/appearance/appearance_store.dart';
+import 'services/events/super_event_bus.dart';
 import 'services/pages/editor_page_router.dart';
 import 'services/repositories/json_repository_store.dart';
 import 'services/repositories/json_repository_scope.dart';
@@ -46,6 +47,7 @@ class SuperApp extends StatefulWidget {
     this.registry,
     this.pageRouting,
     this.repositoryStore,
+    this.eventBus,
   });
 
   final GoRouter router;
@@ -53,6 +55,9 @@ class SuperApp extends StatefulWidget {
   final String title;
   final Registry? registry;
   final JsonRepositoryStore? repositoryStore;
+
+  /// Application-owned event bus; this widget never closes it.
+  final SuperEventBus? eventBus;
 
   /// Optional editable routing. Its router must be [router]; owned by the caller.
   final EditorPageRouter? pageRouting;

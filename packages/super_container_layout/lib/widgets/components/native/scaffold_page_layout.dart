@@ -5,6 +5,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../super_component.dart';
+
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/component_tag_filter.dart';
 import '../../../super_app.dart';
@@ -12,7 +14,7 @@ import '../../editing/components/native_component_editor.dart';
 import '../super_layout/slot_implementation.dart';
 
 /// Native Scaffold adapter; editing behavior lives in [NativeComponentEditor].
-class ScaffoldPageLayout extends StatefulWidget {
+class ScaffoldPageLayout extends SuperStatefulComponent<ScaffoldPageConfig> {
   const ScaffoldPageLayout({
     required this.id,
     this.label = 'Page',
@@ -26,12 +28,15 @@ class ScaffoldPageLayout extends StatefulWidget {
     required this.bottomNavigationBar,
     required this.floatingActionButton,
     required this.bottomSheet,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
   final String label;
   final IconData? menuIcon;
+  @override
   final ScaffoldPageConfig config;
   final List<SlotImplementation> slots;
   final PreferredSizeWidget? appBar;
@@ -271,6 +276,7 @@ class _ScaffoldPageLayoutState extends State<ScaffoldPageLayout> {
         final config = controller.value;
         return NativeComponentEditor(
           id: widget.id,
+          behaviours: widget.behaviours,
           label: widget.label,
           menuType: 'Page',
           menuIcon: widget.menuIcon,

@@ -31,6 +31,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
+import 'super_component.dart';
+
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
@@ -93,7 +95,7 @@ class _TableSource {
 }
 
 /// Composant `SuperTable` avec `IterableContent` de ligne et liaison repository.
-class SuperTable extends StatefulWidget {
+class SuperTable extends SuperStatefulComponent<SuperTableConfig?> {
   const SuperTable({
     this.id = 'root-table',
     this.itemId,
@@ -107,10 +109,12 @@ class SuperTable extends StatefulWidget {
     this.onRowSelected,
     this.onHeaderActionTap,
     this.onConfigChanged,
+    super.behaviours,
     super.key,
   });
 
   /// ID sous lequel sont persistés les réglages et la disposition de la table.
+  @override
   final String id;
 
   /// ID technique distinct pour l'[IterableContent] des lignes.
@@ -132,6 +136,7 @@ class SuperTable extends StatefulWidget {
   final List<SlotImplementation> slots;
 
   /// Configuration initiale avant celle enregistrée dans l'apparence.
+  @override
   final SuperTableConfig? config;
 
   /// Style initial partagé par les lignes (`IterableContent`), avant celui
@@ -1012,6 +1017,7 @@ class _SuperTableState extends State<SuperTable> {
         return ValueListenableBuilder<ContainerStyle>(
           valueListenable: style,
           builder: (context, currentRowStyle, _) => NativeComponentEditor(
+            behaviours: widget.behaviours,
             id: widget.id,
             label: widget.label,
             menuType: 'Table',

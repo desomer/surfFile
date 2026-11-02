@@ -763,6 +763,89 @@ l'interface ni enregistrés dans le JSON. Les configurations manipulées
 directement par le code ne valident pas le catalogue ; les contrôles
 s'appliquent aux mutations de l'éditeur.
 
+## Evenements internes des composants
+
+Dans **Comportement...**, choisir **Emettre un evenement**, son declencheur
+(`click` ou `doubleClick`), un ID non vide (ex. `node.changed`) et un objet JSON
+`custom` facultatif. Les configurations restent dans `Appearance.behaviors`
+et participent a la sauvegarde et a undo/redo.
+
+Les composants configurables partagent le contrat `SuperComponent<C>` :
+`id`, `config` typee et `behaviours`. Ils heritent de
+`SuperStatefulComponent<C>` ou `SuperStatelessComponent<C>` selon leur besoin
+d'etat. Leurs constructeurs et configurations optionnelles restent compatibles ;
+les adaptateurs natifs exposent aussi `nativeConfig` via `config`, et `SuperPage`
+expose `pageConfig` via `config`. L'execution reste composee via les slots,
+sans classe d'etat commune.
+
+Ils peuvent declarer leurs comportements directement en code :
+
+```dart
+SuperValue(
+  id: 'tree-node-name',
+  behaviours: [
+    ComponentBehavior(
+      id: 'tree-node-name-click',
+      trigger: BehaviorTrigger.click,
+      action: EmitEventAction(eventId: 'node.click'),
+    ),
+  ],
+);
+```
+
+Cette liste remplace les comportements de l'apparence pour cette instance,
+sans les modifier ni les sauvegarder. `behaviours: null` (par defaut) conserve
+la resolution par apparence ; `behaviours: []` desactive les comportements.
+
+L'application fournit le bus a `SuperApp` et s'abonne par ID exact :
+
+```dart
+final eventBus = SuperEventBus();
+final subscription = eventBus.on('node.changed').listen((event) {
+  final before = event.data['previousValue'];
+  final after = event.data['value'];
+  debugPrint('${event.componentId}: $before -> $after');
+});
+
+// Dans build :
+SuperApp(router: router, eventBus: eventBus);
+
+// A la destruction du proprietaire, annuler puis fermer :
+await subscription.cancel();
+await eventBus.close();
+```
+
+Le listener recoit un `SuperComponentEvent` immutable dont `toJson()` expose
+`eventId`, `componentId`, `componentType`, `trigger`, `data` et `custom`.
+Pour `SuperValue`, `componentType` vaut `"value"` et `data` contient
+`previousValue` et `value` : texte ou booleen pour checkbox/switch.
+Ce sont les valeurs avant/apres **ce geste**, pas avant/apres la derniere saisie.
+Un clic sans modification fournit deux valeurs identiques. Pour les autres
+composants, seules les metadonnees generiques sont garanties (`data: {}`).
+
+Un double-clic emet les **deux clics simples puis le double-clic**, si ces
+declencheurs sont configures. Le double-clic contient l'avant du premier clic
+et l'apres du second. Les clics simples ne sont pas retardes. Saisie, focus,
+selection et bascules natives restent disponibles ; les gestes annules,
+glissements, appuis longs et clics secondaires ne publient pas d'evenement.
+Les evenements sont des interactions pointeur, pas des notifications de
+modification clavier. Aucun evenement n'est emis en mode edition ou pour un
+behaviour desactive. Un controle readOnly/desactive conserve son etat natif,
+mais peut signaler un clic si son behaviour est actif.
+
+Le bus est asynchrone, broadcast, sans replay et sans singleton global.
+L'ID est sensible a la casse. Les listeners possedent leur abonnement et
+l'application possede le bus : `SuperApp` ne le ferme pas.
+Une emission sans `SuperApp.eventBus`, un ID vide/entoure d'espaces ou
+l'utilisation d'un bus ferme produit une erreur explicite. Les donnees et
+collections JSON sont copiees et protegees recursivement. `custom` est un
+objet statique, sans expressions ni bindings. Eviter de journaliser des
+donnees sensibles dans les listeners.
+
+`super_designer` fournit deja un bus et un listener d'exemple pour
+`node.click` dans son widget racine ; il suffit d'utiliser cet ID dans
+le wizard.
+
 ## Gestion des pages depuis l'editeur (optionnelle)
 
 Le bouton **Gerer les pages** du bandeau d'edition est active uniquement si

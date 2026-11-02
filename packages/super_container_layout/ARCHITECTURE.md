@@ -29,7 +29,7 @@ Ce document cartographie l'architecture interne du package `super_container_layo
      - `"treeView"` → `SuperTreeViewConfig`
      - `"table"` → `SuperTableConfig`
      - Extensions externes enregistrées via `SuperComponentExtension` / `ComponentConfigCatalog.register` (ex: `"chart"` → `SuperChartConfig` dans le package `super_container_extensions`)
-   - `behaviors` : `Map<String, List<ComponentBehavior>>` (actions déclenchées au clic telles que `GoToPageAction`).
+   - `behaviors` : `Map<String, List<ComponentBehavior>>` (navigation `GoToPageAction` au clic, ou `EmitEventAction` au clic/double-clic).
    - `pageCatalog` : `EditorPageCatalog` (liste des pages routées et `homePageId`).
    - `repositories` : `List<JsonRepositoryDocument>` (sources de données JSON réactives).
 2. `Registry` maintient un `ValueNotifier<T>` par identifiant de composant/style (`superLayoutConfigById`, `containerStyleById`, `valueConfigById`, `actionConfigById`, `listConfigById`, `tabConfigById`, `chartConfigById`, `treeViewConfigById`, `tableConfigById`, `nativeComponentConfigById`, `scaffoldPageConfigById`).
@@ -57,6 +57,24 @@ Ce document cartographie l'architecture interne du package `super_container_layo
   - la **duplication profonde** d'un sous-graphe de composants avec réécriture des IDs selon leur `ComponentDuplicationContract` ;
   - la **suppression propre** d'un slot ou d'une page en nettoyant toutes les configurations et styles orphelins qui ne sont plus référencés ailleurs.
 
+### 2.5. Bus d'evenements de composants
+
+- `SuperEventBus` est injecte dans `SuperApp` et reste possede par l'hote :
+  abonnements par ID exact, broadcast asynchrone, sans replay ni singleton.
+- `EmitEventAction` est persistee par `BehaviorActionCatalog`. Le contexte
+  runtime `BehaviorExecutionData` fournit l'identite de l'instance et un
+  instantane JSON ; l'API historique `BehaviorAction.execute(context)` reste
+  compatible pour les actions existantes.
+- `EditorSlot` delegue les actions d'evenement a `BehaviorEventListener`.
+  Celui-ci observe les pointeurs (box/sliver) sans gagner l'arene gestuelle,
+  deduplique les slots imbriques equivalents et lit l'apres dans une microtask,
+  apres les callbacks natifs synchrones. Les autres actions gardent leur voie
+  d'execution historique.
+- `SuperValue` fournit explicitement sa valeur runtime locale, y compris dans
+  les lignes repetees, sans rechercher un ID dans un sous-arbre. Le payload
+  contient `data.previousValue`, `data.value` et `custom` separe ; les collections
+  sont copiees et protegees recursivement. Un double-clic conserve les deux clics.
+
 ---
 
 ## 3. Index complet des 167 fichiers Dart (`packages/super_container_layout/lib/`)
@@ -79,7 +97,9 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState` : énumération des états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et encodage de priorité d'état. |
-| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `GoToPageAction` : modélisation des déclencheurs (`click`) et actions de navigation sur un composant. |
+| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction` : navigation et evenements (`click`, `doubleClick`). |
+| `services/events/super_event_bus.dart` | `SuperEventBus`, `SuperComponentEvent` : bus applicatif et snapshots JSON immutables. |
+| `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
 | `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. |
 | `models/component_tag_filter.dart` | `ComponentTagFilter` : filtrage par tags (`include`/`exclude`) des composants autorisés dans une zone ou une région native. |
 | `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageCatalog` : configuration d'une page routée (id, nom, chemin, `scaffoldId`, `layoutId`) et catalogue complet des pages. |
@@ -155,6 +175,7 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `widgets/components/component_common.dart` | Utilitaires partagés entre composants (résolution de comportements `ComponentBehavior`, exécution de `GoToPageAction`, curseurs). |
+| `widgets/components/super_component.dart` | Contrat type `SuperComponent<C>` (`id`, `config`, `behaviours`), bases `SuperStatefulComponent` et `SuperStatelessComponent`. Les comportements explicites remplacent ceux de l'apparence pour l'instance, sans les persister ; `null` conserve l'apparence. |
 | `widgets/components/super_action.dart` | `SuperAction` : bouton/action configurable (variantes Material 3 `filled`/`tonal`/`elevated`/`outlined`/`text`/`icon` ou `surface`, états, liaisons JSON et comportements). |
 | `widgets/components/super_list_view.dart` | `SuperListView` : liste dynamique liée à un tableau JSON, répétant un gabarit `IterableContent` par ligne avec ajout/suppression et sélection. |
 | `widgets/components/super_tab.dart` | `SuperTab` : composant d'onglets (`TabBar` + `TabBarView`) en mode statique (vues par onglet) ou dynamique (lié à un tableau JSON). |

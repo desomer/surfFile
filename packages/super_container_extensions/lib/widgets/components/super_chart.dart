@@ -87,18 +87,22 @@ class _ChartSource {
 }
 
 /// Widget de graphique `fl_chart` configurable et lié aux repositories JSON.
-class SuperChart extends StatefulWidget implements SliverCapableWidget {
+class SuperChart extends SuperStatefulComponent<SuperChartConfig>
+    implements SliverCapableWidget {
   const SuperChart({
     required this.id,
     this.config = const SuperChartConfig(),
     this.onConfigChanged,
+    super.behaviours,
     super.key,
   });
 
   /// Identifiant de persistance dans `Appearance.components`.
+  @override
   final String id;
 
   /// Configuration initiale avant celle persistée dans l'apparence.
+  @override
   final SuperChartConfig config;
 
   /// Appelé après validation de la boîte de dialogue d'édition.
@@ -1140,6 +1144,7 @@ class _SuperChartState extends State<SuperChart> {
         );
 
         return EditorSlot(
+          behaviors: widget.behaviours,
           key: _surface,
           id: widget.id,
           label: 'Graphique',

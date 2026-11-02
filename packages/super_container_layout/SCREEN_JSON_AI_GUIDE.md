@@ -1022,16 +1022,49 @@ Plusieurs états peuvent être actifs simultanément. Ils sont appliqués dans l
 
 Pour personnaliser la priorité, `states.order` accepte les noms métier et les clés automatiques préfixées par un caractère nul échappé JSON : par exemple `["\u0000selected", "\u0000hover"]` donne priorité au survol sur la sélection. Utilise `"\u0000contentHover"`, `"\u0000focused"`, etc. pour les autres états automatiques, et conserve l'ordre existant lors d'un patch si tu ne souhaites pas changer les priorités.
 
-### 4.12. Comportements (`behaviors`) : Actions et navigation au clic
+### 4.12. Comportements (`behaviors`) : Actions, navigation et evenements
 
 Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des comportements interactifs à n'importe quel composant par son ID technique :
 - **Déclencheurs (`trigger`)** :
   - `"click"` : Déclenché lors d'un clic (ou tap) sur le composant lorsque le mode édition est désactivé. Le curseur passe automatiquement en pointeur (`click`).
+  - `"doubleClick"` : Double-clic pour l'action `"emitEvent"`. Les deux clics simples restent emis si un behaviour `"click"` est aussi configure ; le double-clic est emis en supplement.
 - **Actions polymorphes (`action`)** :
   - `"goToPage"` (`GoToPageAction`) : Navigation vers une page ou une URL.
     - `pagePath` : Chemin absolu vers lequel naviguer (ex. `"/details"`, `"/clients"`).
     - `pageId` (optionnel) : Identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
     - `pageName` (optionnel) : Nom lisible de la page cible (ex. `"Détails"`).
+  - `"emitEvent"` (`EmitEventAction`) : Publie sur le bus interne fourni a `SuperApp`.
+    - `eventId` : Identifiant non vide, sans espaces de debut/fin, filtre par egalite exacte.
+    - `custom` (optionnel) : Objet JSON statique, distinct des donnees automatiques.
+    - L'evenement expose `eventId`, `componentId`, `componentType`, `trigger`, `data`, `custom`.
+    - Pour `SuperValue`, `componentType` vaut `"value"` et `data` contient `previousValue` et `value` (texte ou booleen). Ces valeurs encadrent le geste natif ; pour un double-clic elles encadrent la paire de clics. Un clic sans changement donne deux valeurs egales.
+    - L'interaction native (saisie, selection, checkbox/switch) est conservee. Ni mode edition, ni drag, ni appui long, ni clic secondaire ne publient d'evenement. Les changements clavier seuls ne sont pas des clics.
+    - Les autres composants fournissent seulement les metadonnees generiques, sans donnees specifiques garanties.
+
+#### Exemple : evenement au double-clic d'une valeur
+
+```json
+{
+  "behaviors": {
+    "tree-node-name": [
+      {
+        "id": "b-node-open",
+        "trigger": "doubleClick",
+        "enabled": true,
+        "action": {
+          "type": "emitEvent",
+          "eventId": "node.changed",
+          "custom": {"origin": "designer"}
+        }
+      }
+    ]
+  }
+}
+```
+
+L'application hote ecoute avec `eventBus.on('node.changed').listen(...)` et
+injecte ce meme bus dans `SuperApp(eventBus: eventBus, ...)`.
+Ne pas inventer d'action d'execution Dart ni de binding dynamique dans `custom`.
 
 #### Exemple : Action de navigation sur un bouton ou sur une ligne de liste
 

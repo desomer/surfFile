@@ -13,6 +13,7 @@ import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
 import '../../models/super_value_config.dart';
+import 'super_component.dart';
 import '../../models/automatic_state.dart';
 import '../../models/json_syntax.dart';
 import '../../services/states/content_hover_scope.dart';
@@ -126,7 +127,7 @@ Object _parseBoundProperty(SuperValueProperty property, Object? value) {
 
 /// Display or edit a value (text, checkbox or switch); runtime input persists
 /// only with a repository binding.
-class SuperValue extends StatefulWidget {
+class SuperValue extends SuperStatefulComponent<SuperValueConfig> {
   const SuperValue({
     required this.id,
     this.config = const SuperValueConfig(),
@@ -136,6 +137,7 @@ class SuperValue extends StatefulWidget {
     this.onChanged,
     this.onBoolChanged,
     this.onConfigChanged,
+    super.behaviours,
     this.availableFontFamilies = const [],
     super.key,
   }) : assert(
@@ -147,7 +149,9 @@ class SuperValue extends StatefulWidget {
          'Use either value or boolValue, not both.',
        );
 
+  @override
   final String id;
+  @override
   final SuperValueConfig config;
   final TextEditingController? controller;
   final String? value;
@@ -155,6 +159,7 @@ class SuperValue extends StatefulWidget {
   final ValueChanged<String>? onChanged;
   final ValueChanged<bool>? onBoolChanged;
   final ValueChanged<SuperValueConfig>? onConfigChanged;
+
   final List<String> availableFontFamilies;
 
   @override
@@ -850,6 +855,13 @@ class _SuperValueState extends State<SuperValue>
           return EditorSlot(
             key: _surface,
             id: widget.id,
+            eventComponentType: 'value',
+            behaviors: widget.behaviours,
+            eventData: () => {
+              'value': _currentEffectiveConfig.kind.isBoolean
+                  ? _text.text.trim().toLowerCase() == 'true'
+                  : _text.text,
+            },
             label: 'Valeur',
             menuType: 'Value',
             menuTooltip: () => formatSuperValueTooltip(

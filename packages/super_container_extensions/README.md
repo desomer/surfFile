@@ -22,6 +22,12 @@ Package d'extensions de composants modulaires pour le moteur [`super_container_l
 
 ## Utilisation
 
+`SuperCode` et `SuperChart` heritent de `SuperStatefulComponent<C>` du moteur.
+Ils partagent le contrat `SuperComponent<C>` (`id`, `config`, `behaviours`).
+Une liste `behaviours: [...]` declare les comportements en code et remplace
+ceux de l'apparence pour l'instance ; `null` conserve l'apparence et `[]`
+desactive les comportements, sans modifier les preferences sauvegardees.
+
 ```dart
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_container_extensions/super_container_extensions.dart';

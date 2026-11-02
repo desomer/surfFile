@@ -26,6 +26,8 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 
+import 'super_component.dart';
+
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
@@ -126,7 +128,7 @@ class _TreeSource {
 }
 
 /// Composant `SuperTreeView` avec 2 zones (`Header` et `Data`) lié à un repository.
-class SuperTreeView extends StatefulWidget {
+class SuperTreeView extends SuperStatefulComponent<SuperTreeViewConfig?> {
   const SuperTreeView({
     this.id = 'root-tree-view',
     this.itemId,
@@ -140,9 +142,11 @@ class SuperTreeView extends StatefulWidget {
     this.templateStyle = const ContainerStyle(),
     this.onNodeSelected,
     this.onConfigChanged,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
 
   /// ID technique distinct pour l'[IterableContent] des lignes.
@@ -163,6 +167,7 @@ class SuperTreeView extends StatefulWidget {
   final List<SlotImplementation> slots;
 
   /// Configuration initiale avant celle enregistrée dans l'apparence.
+  @override
   final SuperTreeViewConfig? config;
 
   /// Style initial partagé par les lignes (`IterableContent`), avant celui
@@ -902,6 +907,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
         return ValueListenableBuilder<ContainerStyle>(
           valueListenable: style,
           builder: (context, currentRowStyle, _) => NativeComponentEditor(
+            behaviours: widget.behaviours,
             id: widget.id,
             label: widget.label,
             menuType: 'TreeView',
@@ -957,9 +963,8 @@ class _SuperTreeViewState extends State<SuperTreeView> {
                       !animateIndicators &&
                           !hasCustomSelectedStyle &&
                           _isNodeSelected(node.data)
-                      ? Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.14)
+                      ? Theme.of(context).colorScheme.primary
+                            .withValues(alpha: 0.14)
                       : null;
                   for (final child in node.children ?? const []) {
                     applySelectionBg(child);

@@ -3,6 +3,8 @@
 /// Permet d'ajouter ou modifier des déclencheurs ([BehaviorTrigger]) et actions ([GoToPageAction]).
 library;
 
+import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
@@ -125,6 +127,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   int _step = 0;
   late BehaviorTargetElement _selectedTarget;
   BehaviorCatalogItem _selectedCatalogItem = BehaviorCatalog.goToPage;
+  BehaviorTrigger _eventTrigger = BehaviorTrigger.click;
+  final _eventIdController = TextEditingController();
+  final _customJsonController = TextEditingController(text: '{}');
   String? _selectedPageId;
   String? _selectedPagePath;
   String? _selectedPageName;
@@ -155,17 +160,41 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   @override
   void dispose() {
+    _eventIdController.dispose();
+    _customJsonController.dispose();
     _customPathController.dispose();
     super.dispose();
   }
 
   BehaviorWizardStage get _stage => BehaviorWizardStage.values[_step];
 
+  bool get _isEvent => _selectedCatalogItem.actionType == 'emitEvent';
+
+  String get _customJsonText => _customJsonController.text.trim().isEmpty
+      ? '{}'
+      : _customJsonController.text;
+
+  String? get _customJsonError {
+    try {
+      final decoded = jsonDecode(_customJsonText);
+      if (decoded is! Map<String, dynamic>) return 'Un objet JSON est requis.';
+      EmitEventAction(eventId: 'validation', custom: decoded);
+      return null;
+    } on FormatException catch (error) {
+      return 'JSON invalide : ${error.message}';
+    } on ArgumentError catch (error) {
+      return 'JSON invalide : ${error.message}';
+    }
+  }
+
   bool get _canContinue => switch (_stage) {
     BehaviorWizardStage.target => true,
     BehaviorWizardStage.catalog => true,
     BehaviorWizardStage.settings =>
-      !_customPath ? _selectedPagePath != null : _isCustomPathValid,
+      _isEvent
+          ? _eventIdController.text.trim().isNotEmpty &&
+                _customJsonError == null
+          : (!_customPath ? _selectedPagePath != null : _isCustomPathValid),
     BehaviorWizardStage.summary => true,
   };
 
@@ -192,15 +221,20 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         ? _customPathController.text.trim()
         : (_selectedPagePath ?? '/');
 
-    final action = GoToPageAction(
-      pagePath: path,
-      pageId: _customPath ? null : _selectedPageId,
-      pageName: _customPath ? null : _selectedPageName,
-    );
+    final BehaviorAction action = _isEvent
+        ? EmitEventAction(
+            eventId: _eventIdController.text.trim(),
+            custom: jsonDecode(_customJsonText) as Map<String, dynamic>,
+          )
+        : GoToPageAction(
+            pagePath: path,
+            pageId: _customPath ? null : _selectedPageId,
+            pageName: _customPath ? null : _selectedPageName,
+          );
 
     final behavior = ComponentBehavior(
       id: 'behavior-${shortid.generate()}',
-      trigger: _selectedCatalogItem.trigger,
+      trigger: _isEvent ? _eventTrigger : _selectedCatalogItem.trigger,
       action: action,
     );
 
@@ -541,6 +575,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   }
 
   Widget _buildSettingsStep(BuildContext context) {
+    if (_isEvent) return _buildEventSettings(context);
     final theme = Theme.of(context);
     final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
     final pageCatalog = appearance?.pageCatalog;
@@ -722,7 +757,11 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                     context,
                     icon: Icons.touch_app_outlined,
                     label: 'Declencheur',
-                    value: _selectedCatalogItem.trigger.description,
+                    value:
+                        (_isEvent
+                                ? _eventTrigger
+                                : _selectedCatalogItem.trigger)
+                            .description,
                   ),
                   const Divider(height: 16),
                   _summaryRow(
@@ -734,14 +773,31 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                   const Divider(height: 16),
                   _summaryRow(
                     context,
-                    icon: Icons.alt_route,
-                    label: 'Destination',
-                    value: _customPath
+                    icon: _isEvent ? Icons.bolt : Icons.alt_route,
+                    label: _isEvent ? 'Evenement' : 'Destination',
+                    value: _isEvent
+                        ? _eventIdController.text.trim()
+                        : _customPath
                         ? path
                         : (_selectedPageName != null
                               ? '$_selectedPageName ($path)'
                               : path),
                   ),
+                  if (_isEvent) ...[
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.data_object,
+                      label: 'Custom JSON',
+                      value: _customJsonController.text,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Donnees automatiques : componentId, componentType, trigger, '
+                      'data.previousValue et data.value pour SuperValue. '
+                      'Le double-clic conserve les deux clics simples.',
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -750,6 +806,58 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
       ),
     );
   }
+
+  Widget _buildEventSettings(BuildContext context) => SingleChildScrollView(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<BehaviorTrigger>(
+          key: const ValueKey('behavior-event-trigger'),
+          initialValue: _eventTrigger,
+          decoration: const InputDecoration(labelText: 'Declencheur'),
+          items: [
+            for (final trigger in BehaviorTrigger.values)
+              DropdownMenuItem(value: trigger, child: Text(trigger.label)),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => _eventTrigger = value);
+          },
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('behavior-event-id'),
+          controller: _eventIdController,
+          decoration: InputDecoration(
+            labelText: 'ID de l’evenement',
+            hintText: 'node.changed',
+            errorText: _eventIdController.text.trim().isEmpty
+                ? 'Un ID est requis.'
+                : null,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          key: const ValueKey('behavior-event-custom'),
+          controller: _customJsonController,
+          minLines: 3,
+          maxLines: 8,
+          decoration: InputDecoration(
+            labelText: 'Donnees personnalisees (objet JSON)',
+            errorText: _customJsonError,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Le bus recoit l’ID du composant, son type et le declencheur. '
+          'SuperValue fournit les valeurs avant et apres le clic dans data. '
+          'Le JSON personnalise reste dans custom, sans ecraser ces donnees. '
+          'Un double-clic emet aussi les deux clics simples configures.',
+        ),
+      ],
+    ),
+  );
 
   Widget _summaryRow(
     BuildContext context, {

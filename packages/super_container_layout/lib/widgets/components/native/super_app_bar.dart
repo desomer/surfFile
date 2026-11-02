@@ -8,6 +8,8 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
+import '../super_component.dart';
+
 import '../../../models/super_layout_config.dart' show SlotSizeUnit;
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
@@ -19,7 +21,7 @@ import '../super_layout/slot_implementation.dart';
 import '../../editing/slots/editor_slot.dart';
 
 /// AppBar regions map to Flutter properties, never to a SuperLayout.
-class SuperAppBar extends StatefulWidget
+class SuperAppBar extends SuperStatefulComponent<NativeComponentConfig?>
     implements NativePreferredSizeWidget, SliverCapableWidget {
   static const List<NativePropertyDescriptor> propertyDescriptors =
       superAppBarPropertyDescriptors;
@@ -52,9 +54,11 @@ class SuperAppBar extends StatefulWidget
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
   final String label;
   final Widget? title;
@@ -80,6 +84,8 @@ class SuperAppBar extends StatefulWidget
   final double? actionsPadding;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
+  @override
+  NativeComponentConfig? get config => nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
 
   NativeComponentConfig get _initialConfig =>
@@ -354,9 +360,11 @@ class _SuperAppBarState extends State<SuperAppBar> {
           return resolved > 0 ? resolved : baseToolbarHeight;
         }
 
-        Widget buildEditor(double effectiveToolbarHeight) =>
-            NativeComponentEditor(
+        Widget buildEditor(
+          double effectiveToolbarHeight,
+        ) => NativeComponentEditor(
               id: widget.id,
+          behaviours: widget.behaviours,
               label: widget.label,
               menuType: 'AppBar',
               keyPrefix: 'super-app-bar',

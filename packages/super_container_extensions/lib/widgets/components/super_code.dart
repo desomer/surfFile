@@ -14,18 +14,22 @@ import '../editing/components/super_code_editor.dart';
 import 'internal_widget/code_editor.dart';
 
 /// Composant Code configurable; aucune execution du code saisi.
-class SuperCode extends StatefulWidget implements SliverCapableWidget {
+class SuperCode extends SuperStatefulComponent<SuperCodeConfig>
+    implements SliverCapableWidget {
   const SuperCode({
     required this.id,
     this.config = const SuperCodeConfig(),
     this.onConfigChanged,
+    super.behaviours,
     super.key,
   });
 
   /// Identifiant dans Appearance.components.
+  @override
   final String id;
 
   /// Configuration initiale hors registre.
+  @override
   final SuperCodeConfig config;
 
   /// Notification apres application des reglages.
@@ -185,6 +189,7 @@ class _SuperCodeState extends State<SuperCode> {
           ),
         );
         return EditorSlot(
+          behaviors: widget.behaviours,
           key: _surface,
           id: widget.id,
           label: 'Code',

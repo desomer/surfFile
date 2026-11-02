@@ -66,6 +66,8 @@ import 'package:flutter/gestures.dart'
     show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:material_ui/material_ui.dart';
 
+import 'super_component.dart';
+
 import '../../models/json_text_binding.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/super_list_view_config.dart';
@@ -96,7 +98,8 @@ import '../surfaces/super_container.dart';
 /// Un clic sélectionne la ligne dans le [JsonArrayBinding] du chemin modèle :
 /// une liaison placée hors de la liste, par exemple `clients[?].nom`, lit
 /// alors la ligne sélectionnée.
-class SuperListView extends StatefulWidget implements SliverCapableWidget {
+class SuperListView extends SuperStatefulComponent<SuperListViewConfig>
+    implements SliverCapableWidget {
   const SuperListView({
     required this.id,
     this.itemId,
@@ -105,10 +108,12 @@ class SuperListView extends StatefulWidget implements SliverCapableWidget {
     this.templateStyle = const ContainerStyle(),
     this.slots = const [],
     this.onConfigChanged,
+    super.behaviours,
     super.key,
   });
 
   /// ID sous lequel sont persistés les réglages et la disposition des lignes.
+  @override
   final String id;
 
   /// ID technique distinct pour l'[IterableContent] des lignes.
@@ -116,6 +121,7 @@ class SuperListView extends StatefulWidget implements SliverCapableWidget {
   final String? itemId;
 
   /// Réglages initiaux, avant ceux enregistrés dans l'apparence.
+  @override
   final SuperListViewConfig config;
 
   /// Disposition initiale des lignes, avant celle modifiée dans le designer.
@@ -1090,6 +1096,7 @@ class _SuperListViewState extends State<SuperListView> {
 
         return EditorSlot(
           id: widget.id,
+          behaviors: widget.behaviours,
           label: 'Liste',
           menuType: 'ListView',
           scrollable: config.showScrollbar,

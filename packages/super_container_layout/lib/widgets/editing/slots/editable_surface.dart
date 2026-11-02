@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
+import '../../../models/component_behavior.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../services/states/content_hover_scope.dart';
 
@@ -57,10 +58,14 @@ class EditableSurface extends StatefulWidget {
     this.fixedHeight = false,
     this.fixedWidth = false,
     this.singleChild = true,
+    this.behaviours,
     super.key,
   }) : assert(id == null || id != '');
 
   final Widget? child;
+
+  /// Comportements explicites, sans modification de l'apparence.
+  final List<ComponentBehavior>? behaviours;
 
   /// Stable registry identity for an optional single catalog child.
   final String? id;
@@ -362,6 +367,7 @@ class EditableSurfaceState extends State<EditableSurface>
                 child: EditorSlot(
                   key: _editorKey,
                   id: widget.id ?? widget.slot?.name,
+                  behaviors: widget.behaviours,
                   label: _label,
                   menuTitle: widget.menuTitle,
                   onLabelChanged: widget.onLabelChanged == null

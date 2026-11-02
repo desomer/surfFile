@@ -37,7 +37,7 @@ class SlotAddition {
 ///
 /// Un côté en taille automatique ([SuperLayoutConfig.autoSides]) prend la
 /// taille de son contenu ; le centre reçoit le reste.
-class SuperLayout extends StatefulWidget {
+class SuperLayout extends SuperStatefulComponent<SuperLayoutConfig> {
   const SuperLayout({
     this.id,
     this.slots = const [],
@@ -52,10 +52,12 @@ class SuperLayout extends StatefulWidget {
     this.menuIcon,
     this.zoneLabels = const {},
     this.zoneTagFilters = const {},
+    super.behaviours,
     super.key,
   });
 
   final List<SlotImplementation> slots;
+  @override
   final SuperLayoutConfig config;
 
   /// Measures the layout from its contents instead of filling its parent.
@@ -157,6 +159,7 @@ class SuperLayout extends StatefulWidget {
   }
 
   /// Identifiant technique optionnel du layout pour le stockage dans les JSON d'apparence.
+  @override
   final String? id;
 
   final String label;

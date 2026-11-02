@@ -5,14 +5,18 @@
 /// `Appearance.behaviors`.
 library;
 
+import 'dart:convert';
+
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../super_app.dart';
+import '../services/events/super_event_bus.dart';
 
 /// Déclencheur d'un comportement sur un composant.
 enum BehaviorTrigger {
-  click('Clic', 'Sur un clic', Icons.touch_app_outlined);
+  click('Clic', 'Sur un clic', Icons.touch_app_outlined),
+  doubleClick('Double-clic', 'Sur un double-clic', Icons.touch_app_outlined);
 
   const BehaviorTrigger(this.label, this.description, this.icon);
 
@@ -33,6 +37,106 @@ abstract class BehaviorAction {
 
   Map<String, Object?> toJson();
   Future<void> execute(BuildContext context);
+
+  /// Execute avec les donnees de l'instance, sans modifier les actions existantes.
+  Future<void> executeWithData(
+    BuildContext context,
+    BehaviorExecutionData data,
+  ) => execute(context);
+}
+
+/// Metadonnees runtime de l'instance ayant declenche un comportement.
+@immutable
+class BehaviorExecutionData {
+  BehaviorExecutionData({
+    required this.componentId,
+    required this.componentType,
+    required this.trigger,
+    Map<String, Object?> data = const {},
+  }) : data = immutableEventJson(data);
+
+  final String componentId;
+  final String componentType;
+  final BehaviorTrigger trigger;
+  final Map<String, Object?> data;
+}
+
+/// Publie un evenement interne avec les donnees automatiques et personnalisees.
+@immutable
+class EmitEventAction extends BehaviorAction {
+  EmitEventAction({
+    required this.eventId,
+    Map<String, Object?> custom = const {},
+  }) : custom = immutableEventJson(custom) {
+    if (eventId.trim().isEmpty || eventId != eventId.trim()) {
+      throw ArgumentError.value(
+        eventId,
+        'eventId',
+        'Expected a non-empty ID without surrounding whitespace.',
+      );
+    }
+  }
+
+  final String eventId;
+  final Map<String, Object?> custom;
+
+  @override
+  String get type => 'emitEvent';
+  @override
+  String get label => 'Emettre un evenement';
+  @override
+  String get description => eventId;
+  @override
+  IconData get icon => Icons.bolt;
+
+  @override
+  Future<void> execute(BuildContext context) async {
+    throw StateError('EmitEventAction requires component execution data.');
+  }
+
+  @override
+  Future<void> executeWithData(
+    BuildContext context,
+    BehaviorExecutionData data,
+  ) async {
+    final bus = SuperApp.maybeOf(context)?.eventBus;
+    if (bus == null) {
+      throw StateError('EmitEventAction requires SuperApp.eventBus.');
+    }
+    bus.emit(
+      SuperComponentEvent(
+        eventId: eventId,
+        componentId: data.componentId,
+        componentType: data.componentType,
+        trigger: data.trigger.name,
+        data: data.data,
+        custom: custom,
+      ),
+    );
+  }
+
+  @override
+  Map<String, Object?> toJson() => {
+    'type': type,
+    'eventId': eventId,
+    'custom': custom,
+  };
+
+  factory EmitEventAction.fromJson(Map<String, dynamic> json) =>
+      EmitEventAction(
+        eventId: json['eventId'] as String,
+        custom: (json['custom'] as Map<String, dynamic>?) ?? const {},
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EmitEventAction &&
+          other.eventId == eventId &&
+          jsonEncode(other.custom) == jsonEncode(custom);
+
+  @override
+  int get hashCode => Object.hash(eventId, jsonEncode(custom));
 }
 
 /// Action de navigation vers une page.
@@ -107,7 +211,10 @@ class GoToPageAction extends BehaviorAction {
 /// Registre extensible pour décoder les actions polymorphes.
 abstract final class BehaviorActionCatalog {
   static final Map<String, BehaviorAction Function(Map<String, dynamic> json)>
-  _codecs = {'goToPage': GoToPageAction.fromJson};
+  _codecs = {
+    'goToPage': GoToPageAction.fromJson,
+    'emitEvent': EmitEventAction.fromJson,
+  };
 
   static void register(
     String type,
@@ -143,9 +250,16 @@ class ComponentBehavior {
   final BehaviorAction action;
   final bool enabled;
 
-  Future<void> execute(BuildContext context) async {
+  Future<void> execute(
+    BuildContext context, {
+    BehaviorExecutionData? data,
+  }) async {
     if (!enabled) return;
-    await action.execute(context);
+    if (data == null) {
+      await action.execute(context);
+    } else {
+      await action.executeWithData(context, data);
+    }
   }
 
   Map<String, Object?> toJson() => {
@@ -230,5 +344,14 @@ abstract final class BehaviorCatalog {
     actionType: 'goToPage',
   );
 
-  static final List<BehaviorCatalogItem> items = [goToPage];
+  static const emitEvent = BehaviorCatalogItem(
+    id: 'emit_event',
+    title: 'Emettre un evenement',
+    description: 'Publier un evenement interne au clic ou double-clic',
+    icon: Icons.bolt,
+    trigger: BehaviorTrigger.click,
+    actionType: 'emitEvent',
+  );
+
+  static final List<BehaviorCatalogItem> items = [goToPage, emitEvent];
 }

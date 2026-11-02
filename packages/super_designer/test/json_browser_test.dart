@@ -28,6 +28,7 @@ void main() {
       'name': 'name',
       'type': 'String',
       'description': 'demo',
+      'propertiesText': '',
     });
     expect(items.toJson()['children'], hasLength(2));
   });

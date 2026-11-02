@@ -8,9 +8,10 @@ import '../../../models/component_tag_filter.dart';
 import '../../../super_app.dart';
 import 'slot_implementation.dart';
 import 'super_layout.dart';
+import '../super_component.dart';
 
 /// Editable layout backed by the application's registry when one is available.
-class RegisteredSuperLayout extends StatelessWidget {
+class RegisteredSuperLayout extends SuperStatelessComponent<SuperLayoutConfig> {
   const RegisteredSuperLayout({
     required this.id,
     required this.config,
@@ -19,10 +20,13 @@ class RegisteredSuperLayout extends StatelessWidget {
     this.zoneLabels = const {},
     this.zoneTagFilters = const {},
     this.onSlotAdded = SuperLayout.defaultSlotAddition,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
+  @override
   final SuperLayoutConfig config;
   final String label;
   final List<SlotImplementation> slots;
@@ -39,6 +43,7 @@ class RegisteredSuperLayout extends StatelessWidget {
       ValueChanged<SuperLayoutConfig>? onChanged,
     ) => SuperLayout(
       id: id,
+      behaviours: behaviours,
       config: value,
       slots: slots,
       label: label,

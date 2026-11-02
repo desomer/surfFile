@@ -8,12 +8,13 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'models/scaffold_page_config.dart';
+import 'widgets/components/super_component.dart';
 import 'widgets/editing/overlay/editor_zoom.dart';
 import 'widgets/components/native/scaffold_page_layout.dart';
 import 'widgets/components/super_layout/slot_implementation.dart';
 
 /// Page whose editable regions map directly to the native [Scaffold] slots.
-class SuperPage extends StatelessWidget {
+class SuperPage extends SuperStatelessComponent<ScaffoldPageConfig?> {
   const SuperPage({
     this.id = 'root',
     this.label = 'Page',
@@ -37,6 +38,7 @@ class SuperPage extends StatelessWidget {
     this.scrollPadding,
     this.clipBehavior,
     this.maxAutoZoomExtent = EditorZoom.defaultMaxAutoZoomExtent,
+    super.behaviours,
     super.key,
   }) : assert(
          bottomBar == null || bottomNavigationBar == null,
@@ -44,6 +46,7 @@ class SuperPage extends StatelessWidget {
        );
 
   /// Stable persistence key. Use a different ID for each page.
+  @override
   final String id;
   final String label;
   final IconData? menuIcon;
@@ -61,6 +64,8 @@ class SuperPage extends StatelessWidget {
 
   /// Initial native Scaffold region placement; persisted edits take precedence.
   final ScaffoldPageConfig? pageConfig;
+  @override
+  ScaffoldPageConfig? get config => pageConfig;
 
   /// Mode d'affichage de la zone `body` (`standard`, `singleChildScrollView`, `customScrollView`).
   final ScaffoldBodyMode? bodyMode;
@@ -130,6 +135,7 @@ class SuperPage extends StatelessWidget {
       maxAutoZoomExtent: maxAutoZoomExtent,
       child: ScaffoldPageLayout(
         id: id,
+        behaviours: behaviours,
         label: label,
         menuIcon: menuIcon,
         config: resolvedConfig,

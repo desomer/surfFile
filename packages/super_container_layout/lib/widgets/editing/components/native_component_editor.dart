@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../../models/json_syntax.dart';
+import '../../../models/component_behavior.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_layout_config.dart';
@@ -136,6 +137,7 @@ class NativeRegion {
 class NativeComponentEditor extends StatefulWidget {
   const NativeComponentEditor({
     this.id,
+    this.behaviours,
     required this.label,
     required this.config,
     required this.onChanged,
@@ -171,6 +173,9 @@ class NativeComponentEditor extends StatefulWidget {
   final String? id;
   final String label;
   final NativeComponentConfig config;
+
+  /// Comportements explicites de la surface complete du composant.
+  final List<ComponentBehavior>? behaviours;
   final ValueChanged<NativeComponentConfig> onChanged;
   final List<NativeRegion> regions;
   final List<SlotImplementation> slots;
@@ -2951,7 +2956,15 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     _validate(widget.config);
     Widget wrapSurface(BuildContext context) {
       final child = widget.builder(context, this);
-      if (!widget.editSurface) return child;
+      if (!widget.editSurface && widget.behaviours == null) return child;
+      if (!widget.editSurface) {
+        return EditorSlot(
+          id: _effectiveComponentId,
+          behaviors: widget.behaviours,
+          editable: false,
+          child: child,
+        );
+      }
       return EditorSelectionRegion(
         enabled: editing,
         isZone: true,
@@ -2960,6 +2973,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         onSelect: () => select(null),
         child: EditorSlot(
           id: _effectiveComponentId,
+          behaviors: widget.behaviours,
           label: widget.settingsTitle,
           menuTitle: widget.label,
           menuType: widget.menuType,

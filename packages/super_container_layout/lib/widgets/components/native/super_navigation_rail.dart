@@ -5,6 +5,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../super_component.dart';
+
 import '../../../models/component_tag_filter.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/super_action_config.dart';
@@ -16,7 +18,7 @@ import 'native_component_common.dart';
 
 /// A native [NavigationRail] whose destinations are exclusively [SuperAction]
 /// components converted into [NavigationRailDestination] entries.
-class SuperNavigationRail extends StatefulWidget
+class SuperNavigationRail extends SuperStatefulComponent<NativeComponentConfig?>
     implements NativePreferredSizeWidget {
   const SuperNavigationRail({
     this.id = 'root-navigationRail',
@@ -35,11 +37,13 @@ class SuperNavigationRail extends StatefulWidget
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
+    super.behaviours,
     super.key,
   }) : assert(width > 0 && width < double.infinity),
        assert(minExtendedWidth > 0 && minExtendedWidth < double.infinity),
        assert(selectedIndex >= 0);
 
+  @override
   final String id;
   final String label;
 
@@ -57,6 +61,8 @@ class SuperNavigationRail extends StatefulWidget
   final double? elevation;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
+  @override
+  NativeComponentConfig? get config => nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
 
   List<SuperAction> get _allDestinations => [?destination, ...destinations];
@@ -141,6 +147,7 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
       valueListenable: controller,
       builder: (context, config, _) => NativeComponentEditor(
         id: widget.id,
+        behaviours: widget.behaviours,
         label: widget.label,
         menuType: 'NavigationRail',
         keyPrefix: 'super-navigation-rail',
@@ -254,6 +261,7 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                       context,
                       slot.id,
                       onPressed: action?.onPressed,
+                      behaviours: action?.behaviours,
                     );
                   },
                 ),

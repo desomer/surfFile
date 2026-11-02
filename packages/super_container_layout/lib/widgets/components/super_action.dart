@@ -31,6 +31,7 @@ import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
 import 'super_layout/slot_implementation.dart';
 import '../surfaces/styled_surface.dart';
+import 'super_component.dart';
 
 Object _parseBoundActionProperty(SuperActionProperty property, Object? value) {
   switch (property) {
@@ -463,20 +464,23 @@ class SuperActionNavigationScope extends InheritedWidget {
       part != oldWidget.part;
 }
 
-/// Executes [onPressed] and all enabled click [ComponentBehavior]s registered
-/// for action [id].
+/// Executes [onPressed] and enabled click actions for [id].
+/// Event actions are observed separately by the slot without consuming gestures.
 void executeSuperActionClick(
   BuildContext context,
   String id, {
   VoidCallback? onPressed,
+  List<ComponentBehavior>? behaviours,
 }) {
   onPressed?.call();
   final appearance =
       AppearanceScope.controllerOf(context)?.value ??
       AppearanceScope.of(context);
-  final behaviors = appearance.behaviorsFor(id);
+  final behaviors = behaviours ?? appearance.behaviorsFor(id);
   for (final behavior in behaviors) {
-    if (behavior.enabled && behavior.trigger == BehaviorTrigger.click) {
+    if (behavior.enabled &&
+        behavior.trigger == BehaviorTrigger.click &&
+        behavior.action is! EmitEventAction) {
       behavior.execute(context);
     }
   }
@@ -484,17 +488,20 @@ void executeSuperActionClick(
 
 /// Interactive button component supporting text, icon, or text+icon content,
 /// Material/surface variants, repository property bindings, and automatic/named states.
-class SuperAction extends StatefulWidget {
+class SuperAction extends SuperStatefulComponent<SuperActionConfig> {
   const SuperAction({
     required this.id,
     this.config = const SuperActionConfig(),
     this.onPressed,
     this.onConfigChanged,
     this.availableFontFamilies = const [],
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
+  @override
   final SuperActionConfig config;
   final VoidCallback? onPressed;
   final ValueChanged<SuperActionConfig>? onConfigChanged;
@@ -970,6 +977,7 @@ class _SuperActionState extends State<SuperAction>
             return EditorSlot(
               key: _surface,
               id: widget.id,
+              behaviors: widget.behaviours,
               label: 'Action',
               menuType: 'Action',
               menuTooltip: () => formatSuperActionTooltip(
@@ -1041,6 +1049,7 @@ class _SuperActionState extends State<SuperAction>
             return EditorSlot(
               key: _surface,
               id: widget.id,
+              behaviors: widget.behaviours,
               label: 'Action',
               menuType: 'Action',
               menuTooltip: () => formatSuperActionTooltip(
@@ -1058,6 +1067,7 @@ class _SuperActionState extends State<SuperAction>
           return EditorSlot(
             key: _surface,
             id: widget.id,
+            behaviors: widget.behaviours,
             label: 'Action',
             menuType: 'Action',
             menuTooltip: () => formatSuperActionTooltip(
@@ -1090,6 +1100,7 @@ class _SuperActionState extends State<SuperAction>
                               context,
                               widget.id,
                               onPressed: widget.onPressed,
+                              behaviours: widget.behaviours,
                             ),
                     ),
                   ),

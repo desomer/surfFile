@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
+import 'super_component.dart';
+
 import '../../models/component_tag_filter.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
@@ -77,7 +79,7 @@ class _DynamicTabSource {
 /// - [SuperTabMode.dynamic] : onglets générés dynamiquement depuis un tableau
 ///   JSON de repository, partageant un onglet gabarit (`'tabs'`) et une zone
 ///   de contenu gabarit (`'content'`) sous un [JsonListScope].
-class SuperTab extends StatefulWidget {
+class SuperTab extends SuperStatefulComponent<SuperTabConfig?> {
   const SuperTab({
     this.id = 'root-tab',
     this.label = 'Onglets',
@@ -89,9 +91,11 @@ class SuperTab extends StatefulWidget {
     this.config,
     this.onTabSelected,
     this.onConfigChanged,
+    super.behaviours,
     super.key,
   });
 
+  @override
   final String id;
   final String label;
 
@@ -112,6 +116,7 @@ class SuperTab extends StatefulWidget {
   final List<SlotImplementation> slots;
 
   /// Configuration initiale avant celle persistée dans l'apparence.
+  @override
   final SuperTabConfig? config;
 
   /// Appelé lorsqu'un onglet est sélectionné.
@@ -1183,6 +1188,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                   context,
                   slot.id,
                   onPressed: action?.onPressed,
+                  behaviours: action?.behaviours,
                 );
               },
             ),
@@ -1439,6 +1445,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             context,
             templateSlot.id,
             onPressed: action?.onPressed,
+            behaviours: action?.behaviours,
           );
         },
       ),
@@ -1537,6 +1544,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
         return NativeComponentEditor(
           id: widget.id,
+          behaviours: widget.behaviours,
           label: widget.label,
           menuType: 'Tab',
           menuIcon: Icons.tab_outlined,

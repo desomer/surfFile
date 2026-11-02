@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../super_component.dart';
+
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../super_app.dart';
@@ -18,7 +20,7 @@ import 'native_component_common.dart';
 /// A native BottomAppBar with three editable, free-widget regions.
 ///
 /// Navigation state and callbacks belong to the supplied widgets.
-class SuperBottomAppBar extends StatefulWidget
+class SuperBottomAppBar extends SuperStatefulComponent<NativeComponentConfig?>
     implements NativePreferredSizeWidget {
   static const List<NativePropertyDescriptor> propertyDescriptors =
       superBottomAppBarPropertyDescriptors;
@@ -41,11 +43,13 @@ class SuperBottomAppBar extends StatefulWidget
     this.slots = const [],
     this.nativeConfig,
     this.onNativeSlotAdded,
+    super.behaviours,
     super.key,
   }) : assert(height > 0 && height < double.infinity),
        assert(elevation == null || elevation >= 0.0),
        assert(notchMargin >= 0.0);
 
+  @override
   final String id;
   final String label;
   final Widget? left;
@@ -62,6 +66,8 @@ class SuperBottomAppBar extends StatefulWidget
   final EdgeInsetsGeometry? padding;
   final List<SlotImplementation> slots;
   final NativeComponentConfig? nativeConfig;
+  @override
+  NativeComponentConfig? get config => nativeConfig;
   final NativeSlotAddedCallback? onNativeSlotAdded;
 
   NativeComponentConfig get _initialConfig =>
@@ -181,6 +187,7 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
           );
           return NativeComponentEditor(
             id: widget.id,
+            behaviours: widget.behaviours,
             label: widget.label,
             menuType: 'BottomAppBar',
             keyPrefix: 'super-bottom-app-bar',
