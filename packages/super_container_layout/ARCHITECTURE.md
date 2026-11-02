@@ -97,7 +97,7 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState` : énumération des états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et encodage de priorité d'état. |
-| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction` : navigation et evenements (`click`, `doubleClick`). |
+| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction`, `ZoneSizeBindingAction` : navigation et evenements (`click`, `doubleClick`), taille de cote de `SuperLayout` liee a un repository (`binding`, animee par `BehaviorCurve`). |
 | `services/events/super_event_bus.dart` | `SuperEventBus`, `SuperComponentEvent` : bus applicatif et snapshots JSON immutables. |
 | `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
 | `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. |

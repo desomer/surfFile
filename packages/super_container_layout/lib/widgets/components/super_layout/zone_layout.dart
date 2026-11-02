@@ -56,6 +56,7 @@ class _ZoneEntry extends ParentDataWidget<_ZoneParentData> {
 class _ZoneLayout extends MultiChildRenderObjectWidget {
   const _ZoneLayout({
     required this.config,
+    this.zoneSizes,
     required this.shrinkWidth,
     required this.shrinkHeight,
     required this.autoSides,
@@ -64,6 +65,9 @@ class _ZoneLayout extends MultiChildRenderObjectWidget {
   });
 
   final SuperLayoutConfig config;
+
+  /// Tailles liées (et animées) remplaçant celles de [config] au layout.
+  final _ZoneSizeBindings? zoneSizes;
   final bool shrinkWidth;
   final bool shrinkHeight;
   final Set<SuperLayoutZone> autoSides;
@@ -72,6 +76,7 @@ class _ZoneLayout extends MultiChildRenderObjectWidget {
   @override
   RenderObject createRenderObject(BuildContext context) => _RenderZoneLayout(
     config,
+    zoneSizes,
     autoSides,
     emptyAutoSides,
     shrinkWidth,
@@ -84,6 +89,7 @@ class _ZoneLayout extends MultiChildRenderObjectWidget {
     covariant _RenderZoneLayout renderObject,
   ) => renderObject
     ..config = config
+    ..zoneSizes = zoneSizes
     ..shrinkWidth = shrinkWidth
     ..shrinkHeight = shrinkHeight
     ..autoSides = autoSides
@@ -95,12 +101,13 @@ class _RenderZoneLayout extends RenderBox
         ContainerRenderObjectMixin<RenderBox, _ZoneParentData>,
         RenderBoxContainerDefaultsMixin<RenderBox, _ZoneParentData> {
   _RenderZoneLayout(
-    this._config,
+    this._baseConfig,
+    this._zoneSizes,
     this._autoSides,
     this._emptyAutoSides,
     this._shrinkWidth,
     this._shrinkHeight,
-  );
+  ) : _config = _baseConfig;
 
   bool _shrinkWidth;
   set shrinkWidth(bool value) {
@@ -120,11 +127,39 @@ class _RenderZoneLayout extends RenderBox
 
   Map<SuperLayoutZone, Rect> rects = const {};
 
+  /// Configuration effective du layout en cours (tailles liées appliquées).
   SuperLayoutConfig _config;
+  SuperLayoutConfig _baseConfig;
   set config(SuperLayoutConfig value) {
-    if (value == _config) return;
-    _config = value;
+    if (value == _baseConfig) return;
+    _baseConfig = value;
     markNeedsLayout();
+  }
+
+  _ZoneSizeBindings? _zoneSizes;
+  set zoneSizes(_ZoneSizeBindings? value) {
+    if (identical(value, _zoneSizes)) return;
+    if (attached) _zoneSizes?.frames.removeListener(markNeedsLayout);
+    _zoneSizes = value;
+    if (attached) value?.frames.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  void _resolveConfig(BoxConstraints constraints) {
+    _config =
+        _zoneSizes?.apply(_baseConfig, constraints.biggest) ?? _baseConfig;
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _zoneSizes?.frames.addListener(markNeedsLayout);
+  }
+
+  @override
+  void detach() {
+    _zoneSizes?.frames.removeListener(markNeedsLayout);
+    super.detach();
   }
 
   Set<SuperLayoutZone> _autoSides;
@@ -154,6 +189,7 @@ class _RenderZoneLayout extends RenderBox
   @override
   Size computeDryLayout(BoxConstraints constraints) {
     if (!_shrinkAny) return constraints.biggest;
+    _resolveConfig(constraints);
     final measured = _measureContent(
       constraints,
       (child, limits) => child.getDryLayout(limits),
@@ -297,6 +333,7 @@ class _RenderZoneLayout extends RenderBox
 
   @override
   void performLayout() {
+    _resolveConfig(constraints);
     final natural = _shrinkAny
         ? _measureContent(constraints, (child, limits) {
             child.layout(limits, parentUsesSize: true);

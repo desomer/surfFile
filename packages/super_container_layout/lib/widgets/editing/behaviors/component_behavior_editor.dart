@@ -9,12 +9,18 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../../models/component_behavior.dart';
+import '../../../models/json_text_binding.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../services/repositories/json_list_scope.dart';
+import '../../../services/repositories/json_repository_scope.dart';
 import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
+import '../../components/super_layout/super_layout.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../dialogs/editor_target_selector.dart';
 import '../history/editor_history.dart';
+import '../repositories/repository_binding_fields.dart';
 import '../slots/editor_slot.dart';
 
 /// Element cible pouvant recevoir un comportement.
@@ -137,6 +143,13 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   late final TextEditingController _customPathController =
       TextEditingController(text: '/');
   final _formKey = GlobalKey<FormState>();
+  SuperLayoutZone _zone = SuperLayoutZone.west;
+  JsonTextBinding? _zoneBinding;
+  SlotSizeUnit _zoneUnit = SlotSizeUnit.pixels;
+  final _durationController = TextEditingController(
+    text: '${ZoneSizeBindingAction.defaultDurationMs}',
+  );
+  BehaviorCurve _curve = BehaviorCurve.easeInOut;
 
   @override
   void initState() {
@@ -163,12 +176,61 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     _eventIdController.dispose();
     _customJsonController.dispose();
     _customPathController.dispose();
+    _durationController.dispose();
     super.dispose();
   }
 
   BehaviorWizardStage get _stage => BehaviorWizardStage.values[_step];
 
   bool get _isEvent => _selectedCatalogItem.actionType == 'emitEvent';
+
+  bool get _isZoneSize => _selectedCatalogItem.actionType == 'bindZoneSize';
+
+  EditorSlotState? get _targetSlot {
+    final slot = _selectedTarget.slot;
+    return slot != null && slot.mounted ? slot : null;
+  }
+
+  bool _isLayoutTarget(BehaviorTargetElement target) {
+    final slot = target.slot;
+    return slot != null &&
+        slot.mounted &&
+        slot.widget.eventComponentType == 'layout';
+  }
+
+  List<BehaviorCatalogItem> get _catalogItems => [
+    for (final item in BehaviorCatalog.items)
+      if (item.actionType != 'bindZoneSize' || _isLayoutTarget(_selectedTarget))
+        item,
+  ];
+
+  /// Côtés visibles du layout ciblé (tous à défaut).
+  List<SuperLayoutZone> get _layoutSides {
+    final zones = _targetSlot?.context
+        .findAncestorStateOfType<SuperLayoutState>()
+        ?.config
+        .visibleZones;
+    final sides = [
+      for (final zone in SuperLayoutZone.values)
+        if (zone.isSide && (zones == null || zones.contains(zone))) zone,
+    ];
+    return sides.isEmpty
+        ? [
+            for (final zone in SuperLayoutZone.values)
+              if (zone.isSide) zone,
+          ]
+        : sides;
+  }
+
+  SuperLayoutZone get _effectiveZone {
+    final sides = _layoutSides;
+    return sides.contains(_zone) ? _zone : sides.first;
+  }
+
+  int? get _durationMs {
+    final value = int.tryParse(_durationController.text.trim());
+    return value == null || value < 0 || value > 10000 ? null : value;
+  }
 
   String get _customJsonText => _customJsonController.text.trim().isEmpty
       ? '{}'
@@ -191,7 +253,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     BehaviorWizardStage.target => true,
     BehaviorWizardStage.catalog => true,
     BehaviorWizardStage.settings =>
-      _isEvent
+      _isZoneSize
+          ? _zoneBinding != null && _durationMs != null
+          : _isEvent
           ? _eventIdController.text.trim().isNotEmpty &&
                 _customJsonError == null
           : (!_customPath ? _selectedPagePath != null : _isCustomPathValid),
@@ -221,7 +285,15 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         ? _customPathController.text.trim()
         : (_selectedPagePath ?? '/');
 
-    final BehaviorAction action = _isEvent
+    final BehaviorAction action = _isZoneSize
+        ? ZoneSizeBindingAction(
+            zone: _effectiveZone,
+            binding: _zoneBinding!,
+            unit: _zoneUnit,
+            durationMs: _durationMs!,
+            curve: _curve,
+          )
+        : _isEvent
         ? EmitEventAction(
             eventId: _eventIdController.text.trim(),
             custom: jsonDecode(_customJsonText) as Map<String, dynamic>,
@@ -385,7 +457,12 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           EditorTargetSelector<BehaviorTargetElement>(
             targets: widget.targets,
             selected: _selectedTarget,
-            onSelected: (target) => setState(() => _selectedTarget = target),
+            onSelected: (target) => setState(() {
+              _selectedTarget = target;
+              if (_isZoneSize && !_isLayoutTarget(target)) {
+                _selectedCatalogItem = BehaviorCatalog.goToPage;
+              }
+            }),
             subtitle:
                 'Sélectionnez le composant qui déclenchera ce comportement :',
             itemKeyBuilder: (target) =>
@@ -436,11 +513,12 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            IconButton(
-                              icon: const Icon(Icons.play_arrow_outlined),
-                              tooltip: 'Tester',
-                              onPressed: () => b.execute(widget.ownerContext),
-                            ),
+                            if (b.trigger != BehaviorTrigger.binding)
+                              IconButton(
+                                icon: const Icon(Icons.play_arrow_outlined),
+                                tooltip: 'Tester',
+                                onPressed: () => b.execute(widget.ownerContext),
+                              ),
                             IconButton(
                               key: ValueKey('behavior-delete-${b.id}'),
                               icon: const Icon(Icons.delete_outline),
@@ -483,7 +561,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             ),
           ),
           const SizedBox(height: 12),
-          for (final item in BehaviorCatalog.items) ...[
+          for (final item in _catalogItems) ...[
             Builder(
               builder: (context) {
                 final isSelected = _selectedCatalogItem.id == item.id;
@@ -576,6 +654,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   Widget _buildSettingsStep(BuildContext context) {
     if (_isEvent) return _buildEventSettings(context);
+    if (_isZoneSize) return _buildZoneSizeSettings(context);
     final theme = Theme.of(context);
     final appearance = AppearanceScope.controllerOf(widget.ownerContext)?.value;
     final pageCatalog = appearance?.pageCatalog;
@@ -771,18 +850,44 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                     value: _selectedCatalogItem.title,
                   ),
                   const Divider(height: 16),
-                  _summaryRow(
-                    context,
-                    icon: _isEvent ? Icons.bolt : Icons.alt_route,
-                    label: _isEvent ? 'Evenement' : 'Destination',
-                    value: _isEvent
-                        ? _eventIdController.text.trim()
-                        : _customPath
-                        ? path
-                        : (_selectedPageName != null
-                              ? '$_selectedPageName ($path)'
-                              : path),
-                  ),
+                  if (_isZoneSize) ...[
+                    _summaryRow(
+                      context,
+                      icon: Icons.view_sidebar_outlined,
+                      label: 'Zone',
+                      value: _effectiveZone.label,
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.link,
+                      label: 'Liaison',
+                      value: _zoneBinding == null
+                          ? '-'
+                          : '${_zoneBinding!.repositoryId ?? 'liste'} : '
+                                '${_zoneBinding!.path} '
+                                '(${_zoneUnit == SlotSizeUnit.percent ? '%' : 'px'})',
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.animation,
+                      label: 'Animation',
+                      value: '${_durationMs ?? '-'} ms, ${_curve.label}',
+                    ),
+                  ] else
+                    _summaryRow(
+                      context,
+                      icon: _isEvent ? Icons.bolt : Icons.alt_route,
+                      label: _isEvent ? 'Evenement' : 'Destination',
+                      value: _isEvent
+                          ? _eventIdController.text.trim()
+                          : _customPath
+                          ? path
+                          : (_selectedPageName != null
+                                ? '$_selectedPageName ($path)'
+                                : path),
+                    ),
                   if (_isEvent) ...[
                     const Divider(height: 16),
                     _summaryRow(
@@ -807,6 +912,109 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     );
   }
 
+  Widget _buildZoneSizeSettings(BuildContext context) {
+    final theme = Theme.of(context);
+    final slotContext = _targetSlot?.context;
+    final zone = _effectiveZone;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Zone du layout',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<SuperLayoutZone>(
+            key: const ValueKey('behavior-zone-size-zone'),
+            segments: [
+              for (final side in _layoutSides)
+                ButtonSegment(value: side, label: Text(side.label)),
+            ],
+            selected: {zone},
+            onSelectionChanged: (set) => setState(() => _zone = set.first),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Taille liée',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          RepositoryBindingFields(
+            keyPrefix: 'behavior-zone-size-binding',
+            binding: _zoneBinding,
+            store: slotContext == null
+                ? null
+                : JsonRepositoryScope.maybeOf(slotContext),
+            listScope: slotContext == null
+                ? null
+                : JsonListScope.maybeOf(slotContext),
+            pathHint: 'ui.panneau.largeur',
+            helper:
+                'Valeur numérique ; 0 ferme la zone, une valeur absente ou '
+                'invalide rend la taille de la configuration.',
+            onChanged: (binding) => setState(() => _zoneBinding = binding),
+          ),
+          const SizedBox(height: 12),
+          SegmentedButton<SlotSizeUnit>(
+            key: const ValueKey('behavior-zone-size-unit'),
+            segments: const [
+              ButtonSegment(value: SlotSizeUnit.pixels, label: Text('Pixels')),
+              ButtonSegment(
+                value: SlotSizeUnit.percent,
+                label: Text('% du layout'),
+              ),
+            ],
+            selected: {_zoneUnit},
+            onSelectionChanged: (set) => setState(() => _zoneUnit = set.first),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('behavior-zone-size-duration'),
+                  controller: _durationController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Durée (ms)',
+                    errorText: _durationMs == null ? '0 à 10000 ms.' : null,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<BehaviorCurve>(
+                  key: const ValueKey('behavior-zone-size-curve'),
+                  initialValue: _curve,
+                  decoration: const InputDecoration(labelText: 'Courbe'),
+                  items: [
+                    for (final curve in BehaviorCurve.values)
+                      DropdownMenuItem(value: curve, child: Text(curve.label)),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _curve = value);
+                  },
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'La zone s’ouvre ou se ferme en animant l’ancienne taille vers la '
+            'nouvelle à chaque changement de la valeur liée. Sa poignée de '
+            'redimensionnement est masquée tant que la liaison est active.',
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEventSettings(BuildContext context) => SingleChildScrollView(
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -816,7 +1024,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           initialValue: _eventTrigger,
           decoration: const InputDecoration(labelText: 'Declencheur'),
           items: [
-            for (final trigger in BehaviorTrigger.values)
+            for (final trigger in BehaviorTrigger.gestures)
               DropdownMenuItem(value: trigger, child: Text(trigger.label)),
           ],
           onChanged: (value) {

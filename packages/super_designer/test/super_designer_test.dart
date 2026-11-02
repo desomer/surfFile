@@ -95,13 +95,37 @@ void main() {
             .behaviorsFor('tree-node-name'),
         isEmpty,
       );
+      const sizeBinding = JsonTextBinding(
+        repositoryId: '0123456789abcdef0123456789abcdef',
+        path: 'estSize',
+      );
+      final tree = find.byType(SuperTreeView);
+      final initialTreeWidth = tester.getSize(tree).width;
+      expect(
+        (await superApp.repositoryStore!.readAttribute(sizeBinding)).value,
+        300,
+      );
       await tester.tap(find.text('Test node'));
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(events, hasLength(1));
       expect(events.single.componentId, 'tree-node-name');
       expect(events.single.trigger, 'click');
       expect(events.single.data['value'], 'Test node');
+      expect(
+        (await superApp.repositoryStore!.readAttribute(sizeBinding)).value,
+        0,
+      );
+      expect(tester.getSize(tree).width, closeTo(initialTreeWidth + 300, 1));
+
+      await tester.tap(find.text('Test node'));
+      await tester.pumpAndSettle();
+      expect(events, hasLength(2));
+      expect(
+        (await superApp.repositoryStore!.readAttribute(sizeBinding)).value,
+        300,
+      );
+      expect(tester.getSize(tree).width, closeTo(initialTreeWidth, 1));
     },
   );
 

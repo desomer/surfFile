@@ -16,6 +16,8 @@ import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
+import '../widgets/components/super_renderer.dart';
+import '../widgets/editing/components/super_renderer_editor.dart';
 import '../widgets/components/super_list_view.dart';
 import '../widgets/components/super_tab.dart';
 import '../widgets/components/super_table.dart';
@@ -184,9 +186,7 @@ class ComponentDuplicationContract {
   static const superTreeView = ComponentDuplicationContract(
     ownedConfigs: _treeView,
   );
-  static const superTable = ComponentDuplicationContract(
-    ownedConfigs: _table,
-  );
+  static const superTable = ComponentDuplicationContract(ownedConfigs: _table);
   static const superAppBar = ComponentDuplicationContract(
     ownedConfigs: _native,
   );
@@ -356,8 +356,7 @@ class Registry {
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
       for (final entry in treeViewConfigById.entries)
         entry.key: entry.value.value,
-      for (final entry in tableConfigById.entries)
-        entry.key: entry.value.value,
+      for (final entry in tableConfigById.entries) entry.key: entry.value.value,
       ...current.components,
     };
     // A list and its row layout share an ID.
@@ -444,6 +443,29 @@ class Registry {
     }
     _listeners.clear();
     _appearance = null;
+  }
+
+  /// Libere les controleurs possedes par ce registre et detache l'apparence.
+  ///
+  /// L'hote ne doit appeler cette methode qu'apres demontage de ses composants.
+  void dispose() {
+    unbindAppearance();
+    final controllers = <ChangeNotifier>{
+      ...superLayoutConfigById.values,
+      ...containerStyleById.values,
+      ...componentConfigById.values,
+      ...scaffoldPageConfigById.values,
+      ...nativeComponentConfigById.values,
+      ...valueConfigById.values,
+      ...actionConfigById.values,
+      ...listConfigById.values,
+      ...tabConfigById.values,
+      ...treeViewConfigById.values,
+      ...tableConfigById.values,
+    };
+    for (final controller in controllers) {
+      controller.dispose();
+    }
   }
 
   ValueNotifier<SuperLayoutConfig> layoutController(
@@ -645,8 +667,11 @@ class Registry {
     _componentDefaults.putIfAbsent(id, () => fallback);
     _componentReaders.putIfAbsent(
       id,
-      () => (appearance) =>
-          appearance.component<T>(id, fallback: _componentDefaults[id]! as T),
+      () =>
+          (appearance) => appearance.component<T>(
+            id,
+            fallback: _componentDefaults[id]! as T,
+          ),
     );
     final notifier = componentConfigById.putIfAbsent(
       id,
@@ -910,6 +935,15 @@ class Registry {
   void bootstrap({
     List<String> availableFontFamilies = defaultAvailableFontFamilies,
   }) {
+    registry['Renderer'] = ComponentBuilderDynamic(
+      label: 'SuperRenderer / Apparence JSON',
+      menuIcon: Icons.web,
+      tags: const {'renderer', 'layout'},
+      duplication: ComponentDuplicationContract.component,
+      addConfigurator: superRendererAddConfigurator,
+      previewBuilder: (_) => const Center(child: Icon(Icons.web, size: 40)),
+      dynamicBuilder: (ctx) => SuperRenderer(id: ctx.id),
+    );
     registry['Layout'] = ComponentBuilderDynamic(
       menuIcon: Icons.dashboard_outlined,
       duplication: ComponentDuplicationContract.newLayout,
@@ -1740,7 +1774,9 @@ Widget _buildTablePreview(BuildContext context) {
   Widget tableRow(List<String> cells, {bool header = false}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      color: header ? colors.surfaceContainerHighest : colors.surfaceContainerLow,
+      color: header
+          ? colors.surfaceContainerHighest
+          : colors.surfaceContainerLow,
       borderRadius: BorderRadius.circular(4),
       border: Border.all(color: colors.outlineVariant),
     ),

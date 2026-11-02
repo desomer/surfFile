@@ -178,6 +178,13 @@ class _EditorHistoryShortcutState extends State<EditorHistoryShortcut> {
   }
 
   bool _onKey(KeyEvent event) {
+    final focus = FocusManager.instance.primaryFocus?.context;
+    final focusedHistory = focus == null
+        ? null
+        : EditorHistoryScope.controllerOf(focus);
+    if (focusedHistory != null && focusedHistory != widget.history) {
+      return false;
+    }
     if (event is! KeyDownEvent ||
         !widget.editMode.value ||
         !(HardwareKeyboard.instance.isControlPressed ||

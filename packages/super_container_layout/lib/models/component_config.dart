@@ -16,14 +16,12 @@ import 'super_tab_config.dart';
 import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
 import 'super_value_config.dart';
+import 'super_renderer_config.dart';
 
 /// Declarative codec entry for a [ComponentConfig] subtype (GenUI CatalogItem pattern).
 @immutable
 class ComponentConfigCodec<T extends ComponentConfig> {
-  const ComponentConfigCodec({
-    required this.type,
-    required this.fromJson,
-  });
+  const ComponentConfigCodec({required this.type, required this.fromJson});
 
   final String type;
   final T Function(Map<String, Object?> json) fromJson;
@@ -33,6 +31,10 @@ class ComponentConfigCodec<T extends ComponentConfig> {
 /// `Appearance.components` entries by their `'type'` discriminator.
 abstract final class ComponentConfigCatalog {
   static final Map<String, ComponentConfigCodec<ComponentConfig>> _codecs = {
+    'renderer': ComponentConfigCodec<SuperRendererConfig>(
+      type: 'renderer',
+      fromJson: SuperRendererConfig.fromJson,
+    ),
     'layout': ComponentConfigCodec<SuperLayoutConfig>(
       type: 'layout',
       fromJson: SuperLayoutConfig.fromJson,

@@ -183,10 +183,14 @@ class SuperLayout extends SuperStatefulComponent<SuperLayoutConfig> {
 }
 
 /// État interne d'un [SuperLayout] gérant la sélection, le glisser-déposer et les mises à jour de configuration.
-class SuperLayoutState extends State<SuperLayout> {
+class SuperLayoutState extends State<SuperLayout>
+    with TickerProviderStateMixin {
   late final ValueNotifier<SuperLayoutConfig> _config = ValueNotifier(
     widget.config,
   );
+
+  /// Tailles de côtés liées par des [ZoneSizeBindingAction], hors config.
+  late final _zoneSizes = _ZoneSizeBindings(this);
 
   SuperLayoutConfig get config => _config.value;
 
@@ -383,6 +387,7 @@ class SuperLayoutState extends State<SuperLayout> {
   @override
   void dispose() {
     LayoutSelection.unregister(this);
+    _zoneSizes.dispose();
     _config.dispose();
     _overCenter.dispose();
     _centerHint.dispose();

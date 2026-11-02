@@ -89,6 +89,8 @@ abstract final class JsonColor {
 abstract final class JsonComponentType {
   static final Map<String, String> _aliases = {
     'Value': 'Value',
+    'Renderer': 'Renderer',
+    'SuperRenderer': 'Renderer',
     'Action': 'Action',
     'Button': 'Action',
     'Card': 'Card',
@@ -420,8 +422,7 @@ abstract final class JsonReader {
       final property = values
           .where((candidate) => candidate.name == entry.key)
           .firstOrNull;
-      if (property == null ||
-          (entry.value is! Map && entry.value is! String)) {
+      if (property == null || (entry.value is! Map && entry.value is! String)) {
         throw FormatException('Invalid $context property binding.');
       }
       result[property] = JsonTextBinding.fromJson(entry.value);
@@ -461,7 +462,9 @@ abstract final class JsonReader {
     required Map<Object?, Object?> slotLabels,
   }) => [
     Object.hashAllUnordered(
-      placements.entries.map((e) => Object.hash(e.key, Object.hashAll(e.value))),
+      placements.entries.map(
+        (e) => Object.hash(e.key, Object.hashAll(e.value)),
+      ),
     ),
     Object.hashAllUnordered(
       slotTypes.entries.map((e) => Object.hash(e.key, e.value)),
@@ -487,4 +490,3 @@ abstract final class JsonReader {
     ),
   ];
 }
-

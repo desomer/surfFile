@@ -1028,6 +1028,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
 - **Déclencheurs (`trigger`)** :
   - `"click"` : Déclenché lors d'un clic (ou tap) sur le composant lorsque le mode édition est désactivé. Le curseur passe automatiquement en pointeur (`click`).
   - `"doubleClick"` : Double-clic pour l'action `"emitEvent"`. Les deux clics simples restent emis si un behaviour `"click"` est aussi configure ; le double-clic est emis en supplement.
+  - `"binding"` : Reactif, reserve a l'action `"bindZoneSize"` ; s'applique a chaque changement de la valeur liee (aucun clic).
 - **Actions polymorphes (`action`)** :
   - `"goToPage"` (`GoToPageAction`) : Navigation vers une page ou une URL.
     - `pagePath` : Chemin absolu vers lequel naviguer (ex. `"/details"`, `"/clients"`).
@@ -1040,6 +1041,36 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     - Pour `SuperValue`, `componentType` vaut `"value"` et `data` contient `previousValue` et `value` (texte ou booleen). Ces valeurs encadrent le geste natif ; pour un double-clic elles encadrent la paire de clics. Un clic sans changement donne deux valeurs egales.
     - L'interaction native (saisie, selection, checkbox/switch) est conservee. Ni mode edition, ni drag, ni appui long, ni clic secondaire ne publient d'evenement. Les changements clavier seuls ne sont pas des clics.
     - Les autres composants fournissent seulement les metadonnees generiques, sans donnees specifiques garanties.
+  - `"bindZoneSize"` (`ZoneSizeBindingAction`, declencheur `"binding"`, sur l'ID d'un `SuperLayout`) : lie l'epaisseur d'un cote a une valeur numerique d'un repository et anime chaque changement (ouverture / fermeture en tiroir).
+    - `zone` : `"west"` | `"east"` | `"north"` | `"south"`.
+    - `binding` : `{"repositoryId": "...", "path": "ui.panneau.largeur"}` (`repositoryId` omis dans une liste : herite).
+    - `unit` (optionnel, defaut `"pixels"`) : `"pixels"` ou `"percent"` (largeur du layout pour ouest/est, hauteur pour nord/sud).
+    - `durationMs` (optionnel, defaut `250`, `0` sans animation) et `curve` (optionnel, defaut `"easeInOut"` ; `"linear"`, `"easeIn"`, `"easeOut"`, `"fastOutSlowIn"`, `"easeOutBack"`).
+    - `0` ferme la zone ; une valeur absente ou non numerique rend la taille de la configuration. La taille n'est jamais enregistree dans la configuration et la poignee de redimensionnement du cote est masquee. La premiere valeur s'applique sans animation.
+
+#### Exemple : panneau ouest lie a un repository
+
+```json
+{
+  "behaviors": {
+    "main-layout": [
+      {
+        "id": "b-west-panel",
+        "trigger": "binding",
+        "enabled": true,
+        "action": {
+          "type": "bindZoneSize",
+          "zone": "west",
+          "binding": {"repositoryId": "0123456789abcdef0123456789abcdef", "path": "ui.westWidth"},
+          "unit": "pixels",
+          "durationMs": 300,
+          "curve": "easeInOut"
+        }
+      }
+    ]
+  }
+}
+```
 
 #### Exemple : evenement au double-clic d'une valeur
 

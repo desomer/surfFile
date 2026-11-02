@@ -4,6 +4,17 @@
 part of 'super_layout.dart';
 
 extension _SuperLayoutView on SuperLayoutState {
+  /// Enveloppe le contenu d'un côté lié pour l'effet tiroir des animations.
+  Widget _withZoneDrawer(SuperLayoutZone zone, Size basis, Widget child) =>
+      _zoneSizes.boundSides.contains(zone)
+      ? _ZoneDrawer(
+          zone: zone,
+          bindings: _zoneSizes,
+          basis: basis,
+          child: child,
+        )
+      : child;
+
   String? _resolveEffectiveLayoutId(BuildContext context) {
     if (widget.id != null && widget.id!.isNotEmpty) return widget.id!;
     final fromLabel = editorComponentLabelOf(context)?.id;
@@ -29,6 +40,7 @@ extension _SuperLayoutView on SuperLayoutState {
     return EditorSlot(
       id: effectiveId,
       behaviors: widget.behaviours,
+      eventComponentType: 'layout',
       label: _displayLabel,
       editable: widget.editable,
       onEdit: _openEditor,
@@ -52,8 +64,17 @@ extension _SuperLayoutView on SuperLayoutState {
           _selected,
           _selectedSlot,
           _LayoutEditSelection.selected,
+          _zoneSizes,
         ]),
         builder: (context, _) {
+          _zoneSizes.sync(
+            widget.behaviours ??
+                (effectiveId == null
+                    ? const []
+                    : AppearanceScope.of(context).behaviorsFor(effectiveId)),
+            JsonListScope.maybeOf(context),
+            JsonRepositoryScope.maybeOf(context),
+          );
           final config = _config.value;
           if (config.positioning == SuperLayoutPositioning.grid) {
             return _buildGrid(context);
@@ -199,10 +220,19 @@ extension _SuperLayoutView on SuperLayoutState {
           );
           final editing = widget.showZoneNames && editMode;
           final zones = config.visibleZones;
+          final boundSides = _zoneSizes.boundSides;
+          final overriddenSides = _zoneSizes.overriddenSides;
+          final closedSides = {
+            for (final side in config.collapsedSides.keys)
+              if (!overriddenSides.contains(side)) side,
+            ..._zoneSizes.closedSides,
+          };
+          bool closed(SuperLayoutZone zone) => closedSides.contains(zone);
           final emptyAutoSides = {
             if (!styleEditMode)
               for (final side in config.autoSides)
                 if (zones.contains(side) &&
+                    !overriddenSides.contains(side) &&
                     !_hasContent(config, config.contentZone(side)) &&
                     !zones.any(
                       (zone) =>
@@ -229,6 +259,7 @@ extension _SuperLayoutView on SuperLayoutState {
           final autoSides = {
             for (final side in config.autoSides)
               if (zones.contains(side) &&
+                  !overriddenSides.contains(side) &&
                   !config.collapsedSides.containsKey(side) &&
                   _hasContent(config, config.contentZone(side)))
                 side,
@@ -243,6 +274,7 @@ extension _SuperLayoutView on SuperLayoutState {
                   widget.shrinkWrap || (fitScope?.fitHeight ?? false);
               return _ZoneLayout(
                 config: config,
+                zoneSizes: _zoneSizes.isEmpty ? null : _zoneSizes,
                 shrinkWidth: shrinkWidth,
                 shrinkHeight: shrinkHeight,
                 autoSides: autoSides,
@@ -252,80 +284,72 @@ extension _SuperLayoutView on SuperLayoutState {
                     _ZoneEntry(
                       key: ValueKey('super-layout-${zone.name}'),
                       zone: zone,
-                      child: KeyedSubtree(
-                        key: _zoneFocusKeys.putIfAbsent(zone, GlobalKey.new),
-                        child: LayoutSelectionScope(
-                          owner: this,
-                          path: [...parentPath, name, widget.zoneLabel(zone)],
-                          child: _LabelScope(
+                      child: _withZoneDrawer(
+                        zone,
+                        layoutSize,
+                        KeyedSubtree(
+                          key: _zoneFocusKeys.putIfAbsent(zone, GlobalKey.new),
+                          child: LayoutSelectionScope(
+                            owner: this,
                             path: [...parentPath, name, widget.zoneLabel(zone)],
-                            child: Offstage(
-                              offstage:
-                                  config.collapsedSides.containsKey(zone) ||
-                                  switch (zone) {
-                                    SuperLayoutZone.nw =>
-                                      config.collapsedSides.containsKey(
-                                            SuperLayoutZone.north,
-                                          ) ||
-                                          config.collapsedSides.containsKey(
-                                            SuperLayoutZone.west,
-                                          ),
-                                    SuperLayoutZone.ne =>
-                                      config.collapsedSides.containsKey(
-                                            SuperLayoutZone.north,
-                                          ) ||
-                                          config.collapsedSides.containsKey(
-                                            SuperLayoutZone.east,
-                                          ),
-                                    SuperLayoutZone.sw =>
-                                      config.collapsedSides.containsKey(
-                                            SuperLayoutZone.south,
-                                          ) ||
-                                          config.collapsedSides.containsKey(
-                                            SuperLayoutZone.west,
-                                          ),
-                                    SuperLayoutZone.se =>
-                                      config.collapsedSides.containsKey(
-                                            SuperLayoutZone.south,
-                                          ) ||
-                                          config.collapsedSides.containsKey(
-                                            SuperLayoutZone.east,
-                                          ),
-                                    _ => false,
-                                  },
-                              child: EditorSelectionRegion(
-                                enabled: styleEditMode,
-                                isZone: true,
-                                selected:
-                                    editMode &&
-                                    selected == zone &&
-                                    selectedSlot == null,
-                                onSelect: () => _selectZone(zone),
-                                child: EditorSlot(
-                                  key: _zoneSlotKeys.putIfAbsent(
-                                    zone,
-                                    GlobalKey<EditorSlotState>.new,
-                                  ),
-                                  id: effectiveId,
-                                  zoneId: config.contentZone(zone).name,
-                                  label: widget.zoneLabel(zone),
-                                  menuTitle: 'zone ${widget.zoneLabel(zone)}',
-                                  menuSubtitle: () => _displayLabel,
-                                  menuIcon: EditorSlot.zoneMenuIcon,
-                                  editable: widget.editable,
-                                  onEdit: () => _openZoneFlowEditor(zone),
-                                  onAdd: () => _addSlot(zone),
-                                  axisAction: () => _axisAction(zone),
-                                  wrapChildrenActions: _wrapActionsForZone(
-                                    zone,
-                                  ),
-                                  onContextMenu: (_) => _selectZone(zone),
-                                  child: _contentOf(
-                                    config,
-                                    zone,
-                                    autoSides,
-                                    editMode,
-                                    layoutSize,
+                            child: _LabelScope(
+                              path: [
+                                ...parentPath,
+                                name,
+                                widget.zoneLabel(zone),
+                              ],
+                              child: Offstage(
+                                offstage:
+                                    closed(zone) ||
+                                    switch (zone) {
+                                      SuperLayoutZone.nw =>
+                                        closed(SuperLayoutZone.north) ||
+                                            closed(SuperLayoutZone.west),
+                                      SuperLayoutZone.ne =>
+                                        closed(SuperLayoutZone.north) ||
+                                            closed(SuperLayoutZone.east),
+                                      SuperLayoutZone.sw =>
+                                        closed(SuperLayoutZone.south) ||
+                                            closed(SuperLayoutZone.west),
+                                      SuperLayoutZone.se =>
+                                        closed(SuperLayoutZone.south) ||
+                                            closed(SuperLayoutZone.east),
+                                      _ => false,
+                                    },
+                                child: EditorSelectionRegion(
+                                  enabled: styleEditMode,
+                                  isZone: true,
+                                  selected:
+                                      editMode &&
+                                      selected == zone &&
+                                      selectedSlot == null,
+                                  onSelect: () => _selectZone(zone),
+                                  child: EditorSlot(
+                                    key: _zoneSlotKeys.putIfAbsent(
+                                      zone,
+                                      GlobalKey<EditorSlotState>.new,
+                                    ),
+                                    id: effectiveId,
+                                    zoneId: config.contentZone(zone).name,
+                                    label: widget.zoneLabel(zone),
+                                    menuTitle: 'zone ${widget.zoneLabel(zone)}',
+                                    menuSubtitle: () => _displayLabel,
+                                    menuIcon: EditorSlot.zoneMenuIcon,
+                                    editable: widget.editable,
+                                    onEdit: () => _openZoneFlowEditor(zone),
+                                    onAdd: () => _addSlot(zone),
+                                    axisAction: () => _axisAction(zone),
+                                    wrapChildrenActions: _wrapActionsForZone(
+                                      zone,
+                                    ),
+                                    onContextMenu: (_) => _selectZone(zone),
+                                    child: _contentOf(
+                                      config,
+                                      zone,
+                                      autoSides,
+                                      editMode,
+                                      layoutSize,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -427,6 +451,7 @@ extension _SuperLayoutView on SuperLayoutState {
                     for (final side in SuperLayoutZone.values)
                       if (config.canResize(side) &&
                           zones.contains(side) &&
+                          !boundSides.contains(side) &&
                           !emptyAutoSides.contains(side))
                         _ZoneEntry(
                           key: ValueKey(

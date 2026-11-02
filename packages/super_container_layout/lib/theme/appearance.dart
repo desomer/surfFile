@@ -370,6 +370,11 @@ class Appearance {
     for (final component in components.values) {
       visit(component.toTypedJson());
     }
+    for (final list in behaviors.values) {
+      for (final behavior in list) {
+        visit(behavior.toJson());
+      }
+    }
     return count;
   }
 

@@ -11,6 +11,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
 import '../../../models/component_behavior.dart';
+import '../../../services/pages/editor_page_graph.dart';
+import '../../../services/appearance/appearance_store.dart';
+import '../../../models/super_renderer_config.dart';
+import '../../../super_app.dart';
+import '../../appearance/appearance_transfer_dialog.dart';
 import '../../components/behavior_event_listener.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../../components/super_layout/zone_axis_button.dart';
@@ -253,6 +258,64 @@ class EditorSlotState extends State<EditorSlot> {
 
   bool get _canEditWithAi =>
       canEdit && AppearanceScope.controllerOf(context) != null;
+
+  bool get _canExportContent {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final appearance = AppearanceScope.controllerOf(context);
+    final config =
+        appearance?.value.components[effectiveComponentId] ??
+        registry?.componentConfigById[effectiveComponentId]?.value;
+    return canEdit &&
+        widget.eventComponentType != 'renderer' &&
+        appearance != null &&
+        registry != null &&
+        config is! SuperRendererConfig;
+  }
+
+  Future<void> _exportContent() async {
+    final controller = AppearanceScope.controllerOf(context);
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (controller == null || registry == null) return;
+    ValueNotifier<Appearance>? fragment;
+    try {
+      fragment = ValueNotifier(
+        EditorPageGraph.fragment(
+          appearance: controller.value,
+          registry: registry,
+          componentId: effectiveComponentId,
+          zoneId: widget.zoneId,
+          registryType: widget.menuType,
+        ),
+      );
+      final codec = AppearanceServicesScope.codecOf(context);
+      await showEditorDialog<void>(
+        context: context,
+        builder: (_) => AppearanceTransferDialog(
+          controller: fragment!,
+          codec: codec,
+          allowImport: false,
+        ),
+      );
+    } on FormatException catch (error) {
+      if (mounted) {
+        await showEditorDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Export impossible'),
+            content: Text(error.message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Fermer'),
+              ),
+            ],
+          ),
+        );
+      }
+    } finally {
+      fragment?.dispose();
+    }
+  }
 
   Future<void> _openAiWithScope() async {
     if (!mounted) return;
@@ -836,8 +899,10 @@ class EditorSlotState extends State<EditorSlot> {
   List<EditorSlotState> get editableChain {
     final chain = <EditorSlotState>[];
     final identities = <Object>{};
+    final registry = SuperApp.maybeOf(context)?.registry;
     EditorSlotState? state = this;
     while (state != null) {
+      if (SuperApp.maybeOf(state.context)?.registry != registry) break;
       final identity = state.widget.identity;
       if (state.canEdit && (identity == null || identities.add(identity))) {
         chain.add(state);
@@ -1937,10 +2002,23 @@ class EditorSlotState extends State<EditorSlot> {
                             when wrapActions.isNotEmpty ||
                                 wrapChildrenActions.isNotEmpty ||
                                 extractableTargets.isNotEmpty ||
-                                canEditWithAi)
+                                canEditWithAi ||
+                                state._canExportContent)
                           MenuAnchor(
                             consumeOutsideTap: true,
                             menuChildren: [
+                              if (state._canExportContent)
+                                MenuItemButton(
+                                  key: ValueKey(
+                                    'style-menu-export-${state.label}',
+                                  ),
+                                  leadingIcon: const Icon(Icons.upload),
+                                  onPressed: () => Navigator.of(context)
+                                      .pop<Future<void> Function()>(
+                                        state._exportContent,
+                                      ),
+                                  child: const Text('Exporter le contenu...'),
+                                ),
                               if (wrapActions.isNotEmpty)
                                 SubmenuButton(
                                   leadingIcon: const Icon(Icons.wrap_text),

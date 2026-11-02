@@ -1,6 +1,10 @@
 /// Point d'entrée public du sous-système `super_layout`.
 library;
 
+import 'dart:async' show unawaited;
+import 'dart:io' show FileSystemException;
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/foundation.dart'
     show ValueListenable, debugPrint, listEquals, setEquals;
 import 'package:flutter/rendering.dart';
@@ -32,9 +36,16 @@ import '../../editing/styles/scrollbar_style_editor.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:shortid/shortid.dart';
 
+import '../../../models/component_behavior.dart';
+import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/component_tag_filter.dart';
+import '../../../services/repositories/json_list_scope.dart';
+import '../../../services/repositories/json_repository_binding.dart';
+import '../../../services/repositories/json_repository_scope.dart';
+import '../../../services/repositories/json_repository_store.dart';
 import '../../../super_app.dart';
+import '../../../theme/appearance.dart';
 import 'layout_selection.dart';
 import 'slot_implementation.dart';
 import 'zone_axis_button.dart';
@@ -52,3 +63,4 @@ part 'layout_editor.dart';
 part 'zone_resize_handle.dart';
 part 'grid_view.dart';
 part 'grid_slot_editor.dart';
+part 'zone_size_binding.dart';

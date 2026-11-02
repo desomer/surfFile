@@ -17,6 +17,12 @@ declare son behaviour clic directement dans son attribut `behaviours: [...]`
 dans le main. Il emet cet evenement sur ce bus, sans ajout ni migration dans
 l'apparence. Cette liste explicite est prioritaire sur les behaviours sauvegardes.
 
+Chaque `node.click` bascule l'attribut repository `estSize` entre `300` et `0`.
+Un `ZoneSizeBindingAction` declare dans les `behaviours` du layout lie la taille
+de sa zone est a cet attribut : le panneau `global-node-properties` se ferme
+et se rouvre avec l'animation du behaviour (250 ms par defaut). Sa largeur
+initiale est de 300 px. Les evenements sont traites dans l'ordre.
+
 L'evenement fournit `componentId`, `trigger`, `data.previousValue`,
 `data.value` et un objet `custom` configurable. Le double-clic conserve
 les deux clics simples s'ils sont configures. Le bus et les abonnements

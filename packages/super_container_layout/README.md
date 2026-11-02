@@ -763,6 +763,35 @@ l'interface ni enregistrés dans le JSON. Les configurations manipulées
 directement par le code ne valident pas le catalogue ; les contrôles
 s'appliquent aux mutations de l'éditeur.
 
+## Taille de zone liee (SuperLayout)
+
+Dans **Comportement...** d'un layout, choisir **Taille de zone liée** : le cote
+(ouest, est, nord ou sud), un attribut numerique de repository, l'unite (pixels
+ou % du layout), la duree et la courbe d'animation. A chaque changement de la
+valeur, le cote s'anime de l'ancienne vers la nouvelle taille ; son contenu
+garde la plus grande des deux tailles et glisse depuis le bord exterieur,
+rogne aux limites de la zone (effet tiroir, sans reorganisation). `0` ferme la
+zone ; une valeur absente ou invalide rend la taille configuree. La taille liee
+n'est jamais enregistree et la poignee de redimensionnement du cote est masquee.
+
+```dart
+SuperLayout(
+  id: 'main-layout',
+  behaviours: [
+    ComponentBehavior(
+      id: 'west-panel',
+      trigger: BehaviorTrigger.binding,
+      action: ZoneSizeBindingAction(
+        zone: SuperLayoutZone.west,
+        binding: JsonTextBinding(repositoryId: repoId, path: 'ui.westWidth'),
+        durationMs: 300,
+      ),
+    ),
+  ],
+  // ...
+);
+```
+
 ## Evenements internes des composants
 
 Dans **Comportement...**, choisir **Emettre un evenement**, son declencheur

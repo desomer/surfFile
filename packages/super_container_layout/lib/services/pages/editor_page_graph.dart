@@ -7,6 +7,7 @@ library;
 import 'package:shortid/shortid.dart';
 
 import '../../models/component_config.dart';
+import '../../models/editor_page_config.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
 import '../../models/scaffold_page_config.dart';
@@ -52,6 +53,175 @@ class EditorPageRemoval {
 /// sizes) into the configurations declared by each component's
 /// [ComponentDuplicationContract]. Runtime controllers are never read.
 abstract final class EditorPageGraph {
+  /// Extrait un composant ou le contenu exact d'une zone, avec une page racine.
+  ///
+  /// L'instantane ne modifie aucun controleur et reste importable comme une
+  /// apparence normale. Les repositories externes ne sont pas copies.
+  static Appearance fragment({
+    required Appearance appearance,
+    required Registry registry,
+    required String componentId,
+    String? zoneId,
+    String? registryType,
+  }) {
+    final snapshot = registry.appearanceSnapshot(appearance);
+    final config = snapshot.components[componentId];
+    if (config == null && !snapshot.styles.containsKey(componentId)) {
+      throw FormatException('Composant introuvable : $componentId.');
+    }
+    final page = snapshot.pageCatalog.pages
+        .where((page) => page.id == componentId)
+        .firstOrNull;
+    final isPage =
+        page != null ||
+        registryType == 'Page' ||
+        config is ScaffoldPageConfig ||
+        (componentId == 'root' && config is NativeComponentConfig);
+    String? type;
+    for (final ref in _allRefs(snapshot)) {
+      type ??= _slots(ref.kind, _read(snapshot, ref)!)[componentId];
+    }
+    if (type == null && registry.registry.containsKey(registryType)) {
+      type = 'registry:$registryType';
+    }
+    type ??= switch (config) {
+      SuperLayoutConfig() => 'registry:Layout',
+      SuperValueConfig() => 'registry:Value',
+      SuperActionConfig() => 'registry:Action',
+      SuperListViewConfig() => 'registry:ListView',
+      SuperTabConfig() => 'registry:Tab',
+      SuperTreeViewConfig() => 'registry:TreeView',
+      SuperTableConfig() => 'registry:Table',
+      _ =>
+        registry.registry.keys
+            .where(
+              (key) => key.toLowerCase() == config?.componentType.toLowerCase(),
+            )
+            .map((key) => 'registry:$key')
+            .firstOrNull,
+    };
+    final roots = <EditorConfigRef>[];
+    final selected = <String, String>{};
+    var kind = EditorConfigKind.layout;
+    if (zoneId != null) {
+      final ids = switch (config) {
+        SuperLayoutConfig() =>
+          zoneId == 'grid'
+              ? config.grid?.items.keys.toList() ?? <String>[]
+              : config.placements.entries
+                    .where((entry) => entry.key.name == zoneId)
+                    .expand((entry) => entry.value)
+                    .toList(),
+        SuperListViewConfig() =>
+          config.template.placements.entries
+              .where((entry) => entry.key.name == zoneId)
+              .expand((entry) => entry.value)
+              .toList(),
+        NativeComponentConfig() => config.placements[zoneId],
+        ScaffoldPageConfig() => config.native.placements[zoneId],
+        SuperTabConfig() => config.placements[zoneId],
+        SuperTreeViewConfig() => config.placements[zoneId],
+        SuperTableConfig() => config.placements[zoneId],
+        _ => null,
+      };
+      if (ids == null) {
+        throw FormatException('Zone introuvable : $componentId / $zoneId.');
+      }
+      kind = config is SuperLayoutConfig || config is SuperListViewConfig
+          ? EditorConfigKind.layout
+          : EditorConfigKind.nativeComponent;
+      final slots = _slots(kind, config!);
+      for (final id in ids) {
+        selected[id] = slots[id] ?? id;
+      }
+    } else if (isPage) {
+      roots.addAll(_roots(componentId));
+    } else if (type != null) {
+      selected[componentId] = type;
+    } else {
+      throw FormatException(
+        'Le type de $componentId ne peut pas etre reconstruit. '
+        'Enregistrez son constructeur et son contrat dans le registre.',
+      );
+    }
+    for (final entry in selected.entries) {
+      final resolved = _resolve(registry, entry.value, kind);
+      if (resolved.contract == null) {
+        throw FormatException('Composant non exportable : ${entry.value}.');
+      }
+      roots.addAll(resolved.contract!.ownedConfigs(entry.key));
+    }
+    final graph = _Graph.build(snapshot, registry, roots);
+    if (graph.cycles.isNotEmpty) {
+      throw FormatException('Cycle dans le contenu : ${graph.cycles.first}.');
+    }
+    for (final instance in graph.instances.values) {
+      if (instance.contract == null) {
+        throw FormatException('Composant non exportable : ${instance.label}.');
+      }
+    }
+    final ids = {
+      ...selected.keys,
+      ...graph.instances.keys,
+      for (final ref in graph.configs) ref.id,
+      if (isPage && zoneId == null) componentId,
+    };
+    final auxiliary = <String>{
+      for (final id in ids) ...['$id:item', '$id:layout'],
+      for (final id in ids)
+        if (snapshot.components[id] case final SuperListViewConfig list)
+          ?list.itemId,
+      for (final id in ids)
+        if (snapshot.components[id] case final SuperTreeViewConfig tree)
+          ?tree.itemId,
+      for (final id in ids)
+        if (snapshot.components[id] case final SuperTableConfig table)
+          ?table.itemId,
+    };
+    final used = _usedIds(snapshot);
+    var rootId = '__export_root';
+    while (used.contains(rootId)) {
+      rootId = '${rootId}_';
+    }
+    final components = <String, ComponentConfig>{
+      for (final entry in snapshot.components.entries)
+        if (ids.contains(entry.key)) entry.key: entry.value,
+    };
+    if (zoneId != null || !isPage) {
+      components[rootId] = ScaffoldPageConfig(
+        placements: {ScaffoldPageRegion.body: selected.keys.toList()},
+        slotTypes: selected,
+      );
+    } else {
+      rootId = componentId;
+    }
+    return snapshot.copyWith(
+      components: components,
+      styles: {
+        if (isPage && zoneId == null && snapshot.styles['background'] != null)
+          'background': snapshot.styles['background']!,
+        for (final entry in snapshot.styles.entries)
+          if (ids.contains(entry.key) || auxiliary.contains(entry.key))
+            entry.key: entry.value,
+      },
+      behaviors: {
+        for (final entry in snapshot.behaviors.entries)
+          if (ids.contains(entry.key) || auxiliary.contains(entry.key))
+            entry.key: entry.value,
+      },
+      pageCatalog: EditorPageCatalog(
+        homePageId: rootId,
+        pages: [
+          EditorPageConfig(
+            id: rootId,
+            name: page?.name ?? componentId,
+            path: page?.path ?? '/export',
+          ),
+        ],
+      ),
+    );
+  }
+
   static List<EditorConfigRef> _roots(String pageId) => [
     EditorConfigRef.nativeComponent(pageId),
     EditorConfigRef.scaffoldPage(pageId),
@@ -454,16 +624,17 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   EditorConfigKind.component => appearance.components[ref.id],
   EditorConfigKind.nativeComponent =>
     appearance.tryComponent<NativeComponentConfig>(ref.id),
-  EditorConfigKind.scaffoldPage =>
-    appearance.tryComponent<ScaffoldPageConfig>(ref.id),
+  EditorConfigKind.scaffoldPage => appearance.tryComponent<ScaffoldPageConfig>(
+    ref.id,
+  ),
   EditorConfigKind.value => appearance.tryComponent<SuperValueConfig>(ref.id),
   EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
   EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
-  EditorConfigKind.treeView =>
-    appearance.tryComponent<SuperTreeViewConfig>(ref.id),
-  EditorConfigKind.table =>
-    appearance.tryComponent<SuperTableConfig>(ref.id),
+  EditorConfigKind.treeView => appearance.tryComponent<SuperTreeViewConfig>(
+    ref.id,
+  ),
+  EditorConfigKind.table => appearance.tryComponent<SuperTableConfig>(ref.id),
 };
 
 bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
@@ -623,9 +794,7 @@ Object _copy(Object value, String Function(String) remap) {
   if (value is SuperTabConfig) {
     String remapZone(String zone) {
       final tabId = SuperTabConfig.tabSlotIdOfZone(zone);
-      return tabId == null
-          ? zone
-          : SuperTabConfig.contentZoneFor(remap(tabId));
+      return tabId == null ? zone : SuperTabConfig.contentZoneFor(remap(tabId));
     }
 
     return value.copyWith(
@@ -758,8 +927,5 @@ Appearance _write(
     }
   }
 
-  return appearance.copyWith(
-    styles: nextStyles,
-    components: nextComponents,
-  );
+  return appearance.copyWith(styles: nextStyles, components: nextComponents);
 }

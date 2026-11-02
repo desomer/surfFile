@@ -9,7 +9,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart' as flutter_localizations;
+import 'package:flutter_localizations/flutter_localizations.dart'
+    as flutter_localizations;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -64,7 +65,7 @@ class SuperApp extends StatefulWidget {
 
   /// Returns the nearest application and subscribes to its configuration.
   static SuperApp? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<_SuperAppScope>()?.app;
+      context.dependOnInheritedWidgetOfExactType<SuperAppScope>()?.app;
 
   /// Returns the nearest application, or throws if none encloses [context].
   static SuperApp of(BuildContext context) {
@@ -324,7 +325,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   }
 
   @override
-  Widget build(BuildContext context) => _SuperAppScope(
+  Widget build(BuildContext context) => SuperAppScope(
     app: widget,
     child: JsonRepositoryScope(
       store: _repositories,
@@ -363,7 +364,6 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       showSemanticsDebugger: false,
 
       //showPerformanceOverlay: true,
-
       scaffoldMessengerKey: _messenger,
       localizationsDelegates: [
         ...GlobalMaterialLocalizations.delegates,
@@ -374,11 +374,12 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       darkTheme: _withHitTestablePages(value.theme(Brightness.dark)),
       builder: (context, child) => MaterialCompatibilityBridge(
         child: _buildShell(
-        context,
-        _buildContent(child!),
-        value,
-        router.routerDelegate.navigatorKey,
-      )),
+          context,
+          _buildContent(child!),
+          value,
+          router.routerDelegate.navigatorKey,
+        ),
+      ),
     );
   }
 
@@ -428,12 +429,8 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
               binding: value.backgroundStyle.imageBinding,
               builder: (context, fill) => DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: fill.gradient(
-                    opacity: value.backgroundOpacity,
-                  ),
-                  image: fill.decorationImage(
-                    opacity: value.backgroundOpacity,
-                  ),
+                  gradient: fill.gradient(opacity: value.backgroundOpacity),
+                  image: fill.decorationImage(opacity: value.backgroundOpacity),
                 ),
                 child: child,
               ),
@@ -499,13 +496,16 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   }
 }
 
-class _SuperAppScope extends InheritedWidget {
-  const _SuperAppScope({required this.app, required super.child});
+/// Contexte runtime sans montage ni persistance de la coquille applicative.
+///
+/// Permet notamment au renderer de fournir ses propres registre et routeur.
+class SuperAppScope extends InheritedWidget {
+  const SuperAppScope({required this.app, required super.child, super.key});
 
   final SuperApp app;
 
   @override
-  bool updateShouldNotify(_SuperAppScope oldWidget) => app != oldWidget.app;
+  bool updateShouldNotify(SuperAppScope oldWidget) => app != oldWidget.app;
 }
 
 /// Makes every page opaque to hit testing. Otherwise a click on an empty area

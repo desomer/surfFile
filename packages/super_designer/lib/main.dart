@@ -74,6 +74,10 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   late final StreamSubscription<SuperComponentEvent> _eventSubscription;
 
   static const _repositoryId = '0123456789abcdef0123456789abcdef';
+  static const _eastSizeBinding = JsonTextBinding(
+    repositoryId: _repositoryId,
+    path: 'estSize',
+  );
   late final _repositoryStore = JsonRepositoryStore.defaultStore();
 
   /// Schéma issu du DSL YAML de `source`, patché à chaque modification pour
@@ -125,18 +129,37 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   @override
   void initState() {
     super.initState();
-    _eventSubscription = _eventBus.on('node.click').listen((event) {
-      debugPrint(
-        'Event ${event.eventId} from ${event.componentId} '
-        '(${event.trigger}): ${event.data}',
-      );
-    });
+    _eventSubscription = _eventBus
+        .on('node.click')
+        .asyncMap((event) async {
+          final current = await _repositoryStore.readAttribute(
+            _eastSizeBinding,
+          );
+          final size = current.value;
+          if (size is! num || !size.isFinite) {
+            throw StateError('estSize doit etre une taille numerique finie.');
+          }
+          await _repositoryStore.writeAttribute(
+            _eastSizeBinding,
+            size == 0 ? '300' : '0',
+            expectedValue: current.value,
+            componentId: event.componentId,
+          );
+          return event;
+        })
+        .listen((event) {
+          debugPrint(
+            'Event ${event.eventId} from ${event.componentId} '
+            '(${event.trigger}): ${event.data}',
+          );
+        });
 
     var repository = RepositoryImpl(
       id: _repositoryId,
       onChanged: _onRepositoryChanged,
       json: {
         'source': '',
+        'estSize': 300,
         'yamlError': '',
         'nodes': [{}],
       },
@@ -153,14 +176,27 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
         },
         builder: (_) => SuperLayout(
           label: 'layout',
+          behaviours: [
+            ComponentBehavior(
+              id: 'global-node-properties-size',
+              trigger: BehaviorTrigger.binding,
+              action: ZoneSizeBindingAction(
+                zone: SuperLayoutZone.east,
+                binding: _eastSizeBinding,
+              ),
+            ),
+          ],
           config: const SuperLayoutConfig(
             west: true,
             westSize: 320,
+            east: true,
+            eastSize: 300,
             autoSides: {SuperLayoutZone.center},
             sideResizing: {SuperLayoutZone.west: true},
             placements: {
               SuperLayoutZone.west: ['explorer-code'],
               SuperLayoutZone.center: ['explorer-tree'],
+              SuperLayoutZone.east: ['global-node-properties'],
             },
           ),
           slots: [
@@ -178,6 +214,21 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     repositoryId: _repositoryId,
                     path: 'yamlError',
                   ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'global-node-properties',
+              label: 'Global Node Properties',
+              builder: (_) => const SuperValue(
+                id: 'global-node-properties_text',
+                config: SuperValueConfig(
+                  binding: JsonTextBinding(
+                    repositoryId: _repositoryId,
+                    path: 'nodes[?].propertiesText',
+                  ),
+                  minLines: 5,
+                  maxLines: 5,
                 ),
               ),
             ),
@@ -235,6 +286,8 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                 data: SuperLayout(
                   label: 'Node data',
                   config: const SuperLayoutConfig(
+                    east: true,
+                    eastSize: 300,
                     zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
                     zoneFlows: {
                       SuperLayoutZone.center: ZoneFlowConfig(

@@ -26,11 +26,17 @@ class AppearanceTransferDialog extends StatefulWidget {
   const AppearanceTransferDialog({
     required this.controller,
     this.codec = const AppearanceCodec(),
+    this.allowImport = true,
+    this.allowExport = true,
     super.key,
-  });
+  }) : assert(allowImport || allowExport);
 
   final ValueNotifier<Appearance> controller;
   final AppearanceCodec codec;
+
+  /// Limite le dialogue a l'import ou a l'export selon son usage.
+  final bool allowImport;
+  final bool allowExport;
 
   static Future<void> show(
     BuildContext context,
@@ -73,7 +79,8 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   @override
   void initState() {
     super.initState();
-    _refreshExport();
+    _importing = !widget.allowExport;
+    if (widget.allowExport) _refreshExport();
   }
 
   @override
@@ -306,7 +313,13 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     key: const ValueKey('appearance-transfer'),
-    title: const EditorDialogHeader(label: 'Importer / exporter'),
+    title: EditorDialogHeader(
+      label: !widget.allowImport
+          ? 'Exporter le contenu'
+          : !widget.allowExport
+          ? 'Importer une apparence'
+          : 'Importer / exporter',
+    ),
     content: SizedBox(
       width: 560,
       child: SingleChildScrollView(
@@ -314,28 +327,29 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SegmentedButton<bool>(
-              key: const ValueKey('transfer-mode'),
-              segments: const [
-                ButtonSegment(
-                  value: false,
-                  tooltip: 'Exporter',
-                  icon: Icon(Icons.upload),
-                  label: Text('Exporter'),
-                ),
-                ButtonSegment(
-                  value: true,
-                  tooltip: 'Importer',
-                  icon: Icon(Icons.download),
-                  label: Text('Importer'),
-                ),
-              ],
-              selected: {_importing},
-              onSelectionChanged: (value) => setState(() {
-                _importing = value.first;
-                _status = null;
-              }),
-            ),
+            if (widget.allowImport && widget.allowExport)
+              SegmentedButton<bool>(
+                key: const ValueKey('transfer-mode'),
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    tooltip: 'Exporter',
+                    icon: Icon(Icons.upload),
+                    label: Text('Exporter'),
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    tooltip: 'Importer',
+                    icon: Icon(Icons.download),
+                    label: Text('Importer'),
+                  ),
+                ],
+                selected: {_importing},
+                onSelectionChanged: (value) => setState(() {
+                  _importing = value.first;
+                  _status = null;
+                }),
+              ),
             const SizedBox(height: 16),
             _importing ? _importTab() : _exportTab(),
             if (_status != null) ...[
