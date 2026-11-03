@@ -243,7 +243,12 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
                     zoneFlows: {
                       SuperLayoutZone.center: ZoneFlowConfig(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        expandSlots: false,
+                      ),
+                    },
+                    slotSizeConstraints: {
+                      'tree-node-separator': SlotSizeConstraints(
+                        fitContent: false,
                       ),
                     },
                     placements: {

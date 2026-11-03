@@ -205,6 +205,7 @@ void main() {
           'header',
           'tree-node-icon',
           'tree-node-name',
+          'tree-node-separator',
           'tree-node-type',
           '__export_root',
         ]),
