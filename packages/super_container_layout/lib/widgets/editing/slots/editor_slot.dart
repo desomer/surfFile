@@ -10,7 +10,9 @@ import 'package:flutter/semantics.dart' show SemanticsRole;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
+import '../../../theme/appearance_slot.dart';
 import '../../../models/component_behavior.dart';
+import '../../../models/component_config.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../models/super_renderer_config.dart';
@@ -112,10 +114,16 @@ class EditorSlot extends StatefulWidget {
     this.eventData,
     this.behaviors,
     this.eventComponentType = 'component',
+    this.exportConfig,
     super.key,
   });
 
   final Widget? child;
+
+  /// Configuration courante du composant pour « Exporter le contenu... »
+  /// lorsqu'elle n'est ni persistee ni geree par un controleur du registre
+  /// (composant declare en code).
+  final ComponentConfig Function()? exportConfig;
 
   /// Comportements explicites ; `null` utilise ceux de l'apparence.
   final List<ComponentBehavior>? behaviors;
@@ -267,10 +275,45 @@ class EditorSlotState extends State<EditorSlot> {
         registry?.componentConfigById[effectiveComponentId]?.value;
     return canEdit &&
         widget.eventComponentType != 'renderer' &&
+        widget.identity is! AppearanceSlot &&
         appearance != null &&
         registry != null &&
         config is! SuperRendererConfig;
   }
+
+  /// Configurations vivantes de ce slot et de ses descendants declares en code.
+  Map<String, ComponentConfig> _liveConfigs() {
+    final configs = <String, ComponentConfig>{};
+    if (widget.exportConfig case final read?) {
+      configs[effectiveComponentId] = read();
+    }
+    void visit(Element element) {
+      if (element is StatefulElement && element.state is EditorSlotState) {
+        final slot = element.state as EditorSlotState;
+        if (slot.widget.zoneId == null) {
+          if (slot.widget.exportConfig case final read?) {
+            configs.putIfAbsent(slot.effectiveComponentId, read);
+          }
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    context.visitChildElements(visit);
+    return configs;
+  }
+
+  /// Calcule l'export contextuel de ce slot (composant ou zone et descendants).
+  ///
+  /// Lève une [FormatException] si la cible n'est pas exportable.
+  EditorFragmentExport buildContentExport() => EditorPageGraph.export(
+    appearance: AppearanceScope.controllerOf(context)!.value,
+    registry: SuperApp.maybeOf(context)!.registry!,
+    componentId: effectiveComponentId,
+    zoneId: widget.zoneId,
+    registryType: widget.menuType,
+    liveConfigs: _liveConfigs(),
+  );
 
   Future<void> _exportContent() async {
     final controller = AppearanceScope.controllerOf(context);
@@ -278,15 +321,8 @@ class EditorSlotState extends State<EditorSlot> {
     if (controller == null || registry == null) return;
     ValueNotifier<Appearance>? fragment;
     try {
-      fragment = ValueNotifier(
-        EditorPageGraph.fragment(
-          appearance: controller.value,
-          registry: registry,
-          componentId: effectiveComponentId,
-          zoneId: widget.zoneId,
-          registryType: widget.menuType,
-        ),
-      );
+      final export = buildContentExport();
+      fragment = ValueNotifier(export.appearance);
       final codec = AppearanceServicesScope.codecOf(context);
       await showEditorDialog<void>(
         context: context,
@@ -294,6 +330,10 @@ class EditorSlotState extends State<EditorSlot> {
           controller: fragment!,
           codec: codec,
           allowImport: false,
+          notice: export.omitted.isEmpty
+              ? null
+              : 'Widgets fournis par le code Dart, non exportables et retirés '
+                    ': ${export.omitted.join(', ')}.',
         ),
       );
     } on FormatException catch (error) {

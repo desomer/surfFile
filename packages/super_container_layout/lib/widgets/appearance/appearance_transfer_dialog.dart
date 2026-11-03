@@ -28,6 +28,7 @@ class AppearanceTransferDialog extends StatefulWidget {
     this.codec = const AppearanceCodec(),
     this.allowImport = true,
     this.allowExport = true,
+    this.notice,
     super.key,
   }) : assert(allowImport || allowExport);
 
@@ -37,6 +38,9 @@ class AppearanceTransferDialog extends StatefulWidget {
   /// Limite le dialogue a l'import ou a l'export selon son usage.
   final bool allowImport;
   final bool allowExport;
+
+  /// Avertissement affiche au-dessus de l'export (contenu partiel, etc.).
+  final String? notice;
 
   static Future<void> show(
     BuildContext context,
@@ -219,6 +223,14 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      if (widget.notice case final notice?) ...[
+        Text(
+          notice,
+          key: const ValueKey('transfer-export-notice'),
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+        const SizedBox(height: 8),
+      ],
       const Text('Contenu de l’export'),
       const SizedBox(height: 6),
       _groupChips(_exportGroups, (group) {

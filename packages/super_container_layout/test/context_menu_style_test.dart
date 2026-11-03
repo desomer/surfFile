@@ -342,7 +342,9 @@ void main() {
         findsOneWidget,
       );
       expect(
-        tester.widget<PopupMenuDivider>(find.byType(PopupMenuDivider)).height,
+        tester
+            .widget<PopupMenuDivider>(find.byType(PopupMenuDivider).first)
+            .height,
         12,
       );
 

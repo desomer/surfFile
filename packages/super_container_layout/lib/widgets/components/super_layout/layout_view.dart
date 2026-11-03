@@ -39,6 +39,7 @@ extension _SuperLayoutView on SuperLayoutState {
     final effectiveId = _resolveEffectiveLayoutId(context);
     return EditorSlot(
       id: effectiveId,
+      exportConfig: () => _config.value,
       behaviors: widget.behaviours,
       eventComponentType: 'layout',
       label: _displayLabel,
@@ -331,6 +332,7 @@ extension _SuperLayoutView on SuperLayoutState {
                                     ),
                                     id: effectiveId,
                                     zoneId: config.contentZone(zone).name,
+                                    exportConfig: () => _config.value,
                                     label: widget.zoneLabel(zone),
                                     menuTitle: 'zone ${widget.zoneLabel(zone)}',
                                     menuSubtitle: () => _displayLabel,

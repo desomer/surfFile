@@ -144,21 +144,27 @@ void main() {
     (
       'Tab',
       SuperTabConfig(
-        placements: {'tab0': ['text']},
+        placements: {
+          'tab0': ['text'],
+        },
         slotTypes: {'text': 'registry:Value'},
       ),
     ),
     (
       'TreeView',
       SuperTreeViewConfig(
-        placements: {'header': ['text']},
+        placements: {
+          'header': ['text'],
+        },
         slotTypes: {'text': 'registry:Value'},
       ),
     ),
     (
       'Table',
       SuperTableConfig(
-        placements: {'column0': ['text']},
+        placements: {
+          'column0': ['text'],
+        },
         slotTypes: {'text': 'registry:Value'},
       ),
     ),
@@ -174,7 +180,9 @@ void main() {
       (
         native,
         NativeComponentConfig(
-          placements: {'child': ['text']},
+          placements: {
+            'child': ['text'],
+          },
           slotTypes: {'text': 'registry:Value'},
         ),
       ),
@@ -185,7 +193,9 @@ void main() {
           .withComponent(
             'parent',
             NativeComponentConfig(
-              placements: {'child': ['target']},
+              placements: {
+                'child': ['target'],
+              },
               slotTypes: {'target': 'registry:$type'},
             ),
           );
@@ -200,25 +210,74 @@ void main() {
     });
   }
 
-  test('grid export excludes other zones and keeps shared descendants once', () {
-    final source = appearance.withComponent(
-      'grid',
-      const SuperLayoutConfig(
-        positioning: SuperLayoutPositioning.grid,
-        grid: GridLayoutConfig(items: {'card': GridSlotPosition()}),
-        placements: {
-          SuperLayoutZone.west: ['neighbor'],
-        },
-        slotTypes: {'card': 'registry:Card', 'neighbor': 'registry:Value'},
-      ),
+  test('code-declared content uses live configs, renames scaffold slots '
+      'and reports pure Dart widgets', () {
+    final page = Appearance(
+      components: {
+        'root': ScaffoldPageConfig(
+          placements: {
+            ScaffoldPageRegion.body: ['scaffold:body'],
+          },
+        ),
+        'text': const SuperValueConfig(initialText: 'Child'),
+      },
     );
-    final fragment = EditorPageGraph.fragment(
-      appearance: source,
+    final export = EditorPageGraph.export(
+      appearance: page,
       registry: registry,
-      componentId: 'grid',
-      zoneId: 'grid',
+      componentId: 'root',
+      zoneId: 'body',
+      liveConfigs: {
+        'scaffold:body': const SuperLayoutConfig(
+          placements: {
+            SuperLayoutZone.center: ['text', 'dart-widget'],
+          },
+        ),
+        // Une configuration persistee n'est jamais remplacee.
+        'text': const SuperValueConfig(initialText: 'Live'),
+      },
     );
-    expect(fragment.components.keys, containsAll(['card', 'text']));
-    expect(fragment.components.containsKey('neighbor'), isFalse);
+    final fragment = export.appearance;
+    expect(export.omitted, ['dart-widget']);
+    expect(fragment.components.containsKey('scaffold:body'), isFalse);
+    final body = fragment.components['body']! as SuperLayoutConfig;
+    expect(body.placementsOf(SuperLayoutZone.center), ['text']);
+    expect(body.slotTypeOf('text'), 'registry:Value');
+    expect(fragment.valueComponent('text').initialText, 'Child');
+    final root = fragment.components[fragment.pageCatalog.homePageId]!;
+    expect((root as ScaffoldPageConfig).native.placements['body'], ['body']);
+    expect(
+      () => EditorPageGraph.fragment(
+        appearance: page,
+        registry: registry,
+        componentId: 'scaffold:body',
+      ),
+      throwsFormatException,
+    );
   });
+
+  test(
+    'grid export excludes other zones and keeps shared descendants once',
+    () {
+      final source = appearance.withComponent(
+        'grid',
+        const SuperLayoutConfig(
+          positioning: SuperLayoutPositioning.grid,
+          grid: GridLayoutConfig(items: {'card': GridSlotPosition()}),
+          placements: {
+            SuperLayoutZone.west: ['neighbor'],
+          },
+          slotTypes: {'card': 'registry:Card', 'neighbor': 'registry:Value'},
+        ),
+      );
+      final fragment = EditorPageGraph.fragment(
+        appearance: source,
+        registry: registry,
+        componentId: 'grid',
+        zoneId: 'grid',
+      );
+      expect(fragment.components.keys, containsAll(['card', 'text']));
+      expect(fragment.components.containsKey('neighbor'), isFalse);
+    },
+  );
 }

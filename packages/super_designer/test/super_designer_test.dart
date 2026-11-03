@@ -129,6 +129,99 @@ void main() {
     },
   );
 
+  testWidgets(
+    'every edit target exports its own subtree, renderable by SuperRenderer',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const SuperDesignerApp());
+      await tester.pumpAndSettle();
+      final superApp = tester.widget<SuperApp>(find.byType(SuperApp));
+      superApp
+          .getLayoutConfigById('mainLayout')
+          .value = const SuperLayoutConfig(
+        placements: {
+          SuperLayoutZone.center: ['explorer'],
+        },
+        slotTypes: {'explorer': 'registry:A'},
+      );
+      await tester.pumpAndSettle();
+      StyleEditScope.controllerOf(tester.element(find.byType(SuperPage)))!
+              .value =
+          true;
+      await tester.pumpAndSettle();
+
+      final exports = <String, EditorFragmentExport>{};
+      for (final slot in tester.stateList<EditorSlotState>(
+        find.byType(EditorSlot),
+      )) {
+        if (!slot.canEdit || slot.widget.identity is AppearanceSlot) continue;
+        final key = '${slot.effectiveComponentId}|${slot.widget.zoneId}';
+        exports.putIfAbsent(key, slot.buildContentExport);
+      }
+      // Corps du SuperPage (pseudo-slot `scaffold:body`) et layouts declares
+      // en code, auparavant introuvables.
+      expect(
+        exports.keys,
+        containsAll([
+          'root|body',
+          'scaffold:body|null',
+          'explorer|null',
+          'header|null',
+        ]),
+      );
+      final body = exports['scaffold:body|null']!;
+      expect(body.appearance.components.keys, isNot(contains('scaffold:body')));
+      expect(body.appearance.components['body'], isA<SuperLayoutConfig>());
+      expect(body.omitted, ['global-node-properties']);
+      final header = exports['header|null']!.appearance;
+      expect(
+        header.components.keys,
+        unorderedEquals([
+          'header',
+          'tree-node-name',
+          'tree-node-type',
+          '__export_root',
+        ]),
+      );
+      for (final export in exports.values) {
+        AppearanceTransfer.import(
+          Appearance(),
+          AppearanceTransfer.export(export.appearance, {
+            ...TransferGroup.values,
+          }),
+          {...TransferGroup.values},
+        );
+      }
+
+      final source = AppearanceTransfer.export(
+        exports['explorer|null']!.appearance,
+        {...TransferGroup.values},
+      );
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => Scaffold(body: SuperRenderer(source: source)),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+      await tester.pumpWidget(
+        SuperApp(
+          key: UniqueKey(),
+          router: router,
+          registry: createSuperDesignerRegistry(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(SuperTreeView), findsOneWidget);
+      expect(find.byType(SuperCode), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   for (final name in ['Code', 'Chart']) {
     testWidgets('$name shares the component contract and code behaviours', (
       tester,

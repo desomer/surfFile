@@ -875,6 +875,22 @@ donnees sensibles dans les listeners.
 `node.click` dans son widget racine ; il suffit d'utiliser cet ID dans
 le wizard.
 
+## Export contextuel et SuperRenderer
+
+En mode edition, l'entree **Exporter le contenu...** du menu (trois points)
+de chaque composant (sauf `SuperRenderer` et le fond d'application) produit
+un document d'apparence importable contenant **l'element cible et tous ses
+descendants** (ou seulement le contenu de la zone ciblee), enveloppe dans une
+page `__export_root`. Ce document peut etre colle dans un `SuperRenderer`.
+
+- Les composants declares dans le code Dart (ex. `SuperLayout` sans config
+  persistee) sont exportes a partir de leur configuration vivante
+  (`EditorSlot.exportConfig`).
+- Les slots de page `scaffold:*` sont renommes (`scaffold:body` -> `body`)
+  pour ne pas etre masques par les slots natifs du `ScaffoldPageLayout`.
+- Les widgets purement Dart (`BuilderSlot`) ne sont pas serialisables : ils
+  sont omis et listes dans un avertissement de la boite d'export.
+
 ## Gestion des pages depuis l'editeur (optionnelle)
 
 Le bouton **Gerer les pages** du bandeau d'edition est active uniquement si

@@ -388,8 +388,9 @@ void main() {
             )
             .controller!
             .text
-            .isNotEmpty)
+            .isNotEmpty) {
           break;
+        }
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
     });

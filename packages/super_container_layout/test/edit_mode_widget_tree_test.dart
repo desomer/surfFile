@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_overlay.dart';
-import 'package:super_container_layout/widgets/editing/slots/editor_selection_region.dart';
 
 int _elementCount(WidgetTester tester) =>
     find.byType(SuperLayout).evaluate().fold(0, (count, element) {

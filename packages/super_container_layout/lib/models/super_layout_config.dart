@@ -140,9 +140,7 @@ class SlotSizeConstraints {
   /// d'une `Map<slotId, SlotSizeConstraints>`.
   static bool isDirectConstraintsMap(Object? value) {
     if (value is! Map || value.isEmpty) return false;
-    return value.keys.every(
-          (key) => key is String && jsonKeys.contains(key),
-        ) &&
+    return value.keys.every((key) => key is String && jsonKeys.contains(key)) &&
         value.values.any(
           (entry) =>
               entry is! Map ||
@@ -270,7 +268,9 @@ class SlotSizeConstraints {
       (null, 0) => true,
       (null, 1) => false,
       (null, null) => null,
-      _ => throw const FormatException('Mode flex/fitContent de slot invalide.'),
+      _ => throw const FormatException(
+        'Mode flex/fitContent de slot invalide.',
+      ),
     };
     return SlotSizeConstraints(
       minWidth: dimension('minWidth'),
@@ -646,8 +646,9 @@ String formatZoneFlowTooltip({
               : 'Taille : ${SlotDimension.formatNumber(size ?? 100)} px',
           if (canResize) 'redimensionnable',
         ].join(' · ');
-  final directionLabel =
-      axis == Axis.horizontal ? 'Ligne (Row)' : 'Colonne (Column)';
+  final directionLabel = axis == Axis.horizontal
+      ? 'Ligne (Row)'
+      : 'Colonne (Column)';
   final elementsLabel = effectiveExpand
       ? 'Étirer (flex : 1)'
       : 'Contenu (flex : 0)';
@@ -1275,7 +1276,10 @@ class SuperLayoutConfig extends ComponentConfig {
       for (final entry in collapsedSides.entries) entry.key.name: entry.value,
     },
     'swaps': [for (final zone in swaps) zone.name],
-    'autoSides': [for (final zone in autoSides) zone.name],
+    'autoSides': [
+      for (final zone in autoSides)
+        if (zone.isSide) zone.name,
+    ],
     'zoneAxes': {
       for (final entry in zoneAxes.entries)
         entry.key.name: entry.value == Axis.horizontal ? 'row' : 'column',
@@ -1452,10 +1456,7 @@ class SuperLayoutConfig extends ComponentConfig {
           (placement['id'] as String).isNotEmpty &&
           (placement['type'] as String).isNotEmpty) {
         id = placement['id'] as String;
-        type = JsonComponentType.normalize(
-          placement['type'] as String,
-          id: id,
-        );
+        type = JsonComponentType.normalize(placement['type'] as String, id: id);
       } else {
         throw const FormatException('Placement invalide : type et id requis.');
       }
@@ -1563,9 +1564,8 @@ class SuperLayoutConfig extends ComponentConfig {
 
     final parsedPlacements = placementMap();
     final inferSidesFromZones = value.containsKey('zones');
-    bool hasZoneContent(List<SuperLayoutZone> zones) => zones.any(
-      (z) => (parsedPlacements[z]?.isNotEmpty ?? false),
-    );
+    bool hasZoneContent(List<SuperLayoutZone> zones) =>
+        zones.any((z) => (parsedPlacements[z]?.isNotEmpty ?? false));
     bool sideFlag(
       String key,
       bool fallbackSide,

@@ -21,6 +21,20 @@ import '../../models/super_tree_view_config.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_style.dart';
 
+/// Resultat de [EditorPageGraph.export] : apparence autonome et enfants omis.
+class EditorFragmentExport {
+  EditorFragmentExport({
+    required this.appearance,
+    required List<String> omitted,
+  }) : omitted = List.unmodifiable(omitted);
+
+  /// Apparence importable contenant la cible et ses descendants.
+  final Appearance appearance;
+
+  /// Identifiants de widgets fournis par le code Dart, absents de l'export.
+  final List<String> omitted;
+}
+
 /// Result of [EditorPageGraph.removal].
 class EditorPageRemoval {
   EditorPageRemoval({
@@ -55,19 +69,52 @@ class EditorPageRemoval {
 abstract final class EditorPageGraph {
   /// Extrait un composant ou le contenu exact d'une zone, avec une page racine.
   ///
-  /// L'instantane ne modifie aucun controleur et reste importable comme une
-  /// apparence normale. Les repositories externes ne sont pas copies.
+  /// Raccourci de [export] qui ignore la liste des enfants omis.
   static Appearance fragment({
     required Appearance appearance,
     required Registry registry,
     required String componentId,
     String? zoneId,
     String? registryType,
+    Map<String, ComponentConfig> liveConfigs = const {},
+  }) => export(
+    appearance: appearance,
+    registry: registry,
+    componentId: componentId,
+    zoneId: zoneId,
+    registryType: registryType,
+    liveConfigs: liveConfigs,
+  ).appearance;
+
+  /// Extrait [componentId] (ou sa zone [zoneId]) et tous ses descendants dans
+  /// une apparence autonome, importable et affichable par `SuperRenderer`.
+  ///
+  /// L'instantane ne modifie aucun controleur ; les repositories externes ne
+  /// sont pas copies. [liveConfigs] complete l'instantane avec la configuration
+  /// courante des composants declares en code sans persistance (un
+  /// `SuperLayout` sans identifiant, par exemple) sans jamais remplacer une
+  /// configuration persistee. Un slot sans type explicite prend le type deduit
+  /// de sa configuration. Les identifiants reserves `scaffold:*` sont renommes.
+  /// Les enfants purement fournis par du code Dart (widget non serialisable)
+  /// sont retires des placements et listes dans [EditorFragmentExport.omitted].
+  static EditorFragmentExport export({
+    required Appearance appearance,
+    required Registry registry,
+    required String componentId,
+    String? zoneId,
+    String? registryType,
+    Map<String, ComponentConfig> liveConfigs = const {},
   }) {
-    final snapshot = registry.appearanceSnapshot(appearance);
+    final base = registry.appearanceSnapshot(appearance);
+    final snapshot = liveConfigs.isEmpty
+        ? base
+        : base.copyWith(components: {...liveConfigs, ...base.components});
     final config = snapshot.components[componentId];
     if (config == null && !snapshot.styles.containsKey(componentId)) {
-      throw FormatException('Composant introuvable : $componentId.');
+      throw FormatException(
+        '« $componentId » est fourni par le code Dart de l’application et '
+        'n’a pas de configuration exportable.',
+      );
     }
     final page = snapshot.pageCatalog.pages
         .where((page) => page.id == componentId)
@@ -77,30 +124,84 @@ abstract final class EditorPageGraph {
         registryType == 'Page' ||
         config is ScaffoldPageConfig ||
         (componentId == 'root' && config is NativeComponentConfig);
-    String? type;
-    for (final ref in _allRefs(snapshot)) {
-      type ??= _slots(ref.kind, _read(snapshot, ref)!)[componentId];
-    }
-    if (type == null && registry.registry.containsKey(registryType)) {
-      type = 'registry:$registryType';
-    }
-    type ??= switch (config) {
+
+    String? inferred(String id) => switch (snapshot.components[id]) {
+      null => null,
+      SuperListViewConfig() => 'registry:ListView',
       SuperLayoutConfig() => 'registry:Layout',
       SuperValueConfig() => 'registry:Value',
       SuperActionConfig() => 'registry:Action',
-      SuperListViewConfig() => 'registry:ListView',
       SuperTabConfig() => 'registry:Tab',
       SuperTreeViewConfig() => 'registry:TreeView',
       SuperTableConfig() => 'registry:Table',
-      _ =>
+      final value =>
         registry.registry.keys
             .where(
-              (key) => key.toLowerCase() == config?.componentType.toLowerCase(),
+              (key) => key.toLowerCase() == value.componentType.toLowerCase(),
             )
             .map((key) => 'registry:$key')
             .firstOrNull,
     };
-    final roots = <EditorConfigRef>[];
+
+    // Type declare s'il a un contrat, sinon type deduit de la configuration,
+    // sinon composant enregistre sans contrat (reference opaque). `null` :
+    // widget fourni par le code, non serialisable.
+    String? typeOf(String id, String? declared, EditorConfigKind kind) {
+      final resolved = declared == null
+          ? null
+          : _resolve(registry, declared, kind);
+      if (resolved?.contract != null) return declared;
+      final guess = inferred(id);
+      if (guess != null && _resolve(registry, guess, kind).contract != null) {
+        return guess;
+      }
+      if (resolved?.status == _Status.unsupported) return declared;
+      if (resolved?.status == _Status.unknown) {
+        throw FormatException('Type inconnu pour « $id » : $declared.');
+      }
+      return null;
+    }
+
+    final configs = <EditorConfigRef>{};
+    final instances = <String>{};
+    final retyped = <String, Map<String, String>>{};
+    final dropped = <String, Set<String>>{};
+    final omitted = <String>{};
+    final stack = <EditorConfigRef>[];
+    late void Function(String id, String type, EditorConfigKind kind)
+    visitInstance;
+    void visitConfig(EditorConfigRef ref) {
+      final value = _read(snapshot, ref);
+      if (value == null) return;
+      if (stack.contains(ref)) {
+        throw FormatException(
+          'Cycle dans le contenu : ${[...stack, ref].join(' > ')}.',
+        );
+      }
+      if (!configs.add(ref)) return;
+      stack.add(ref);
+      for (final MapEntry(key: id, value: declared) in _slots(
+        ref.kind,
+        value,
+      ).entries) {
+        final type = typeOf(id, declared, ref.kind);
+        if (type == null) {
+          dropped.putIfAbsent(ref.id, () => {}).add(id);
+          omitted.add(id);
+          continue;
+        }
+        if (type != declared) retyped.putIfAbsent(ref.id, () => {})[id] = type;
+        visitInstance(id, type, ref.kind);
+      }
+      stack.removeLast();
+    }
+
+    visitInstance = (id, type, kind) {
+      instances.add(id);
+      final contract = _resolve(registry, type, kind).contract;
+      contract?.ownedConfigs(id).forEach(visitConfig);
+    };
+
     final selected = <String, String>{};
     var kind = EditorConfigKind.layout;
     if (zoneId != null) {
@@ -132,38 +233,44 @@ abstract final class EditorPageGraph {
           : EditorConfigKind.nativeComponent;
       final slots = _slots(kind, config!);
       for (final id in ids) {
-        selected[id] = slots[id] ?? id;
+        final type = typeOf(id, slots[id], kind);
+        if (type == null) {
+          omitted.add(id);
+        } else {
+          selected[id] = type;
+        }
       }
     } else if (isPage) {
-      roots.addAll(_roots(componentId));
-    } else if (type != null) {
-      selected[componentId] = type;
+      _roots(componentId).forEach(visitConfig);
     } else {
-      throw FormatException(
-        'Le type de $componentId ne peut pas etre reconstruit. '
-        'Enregistrez son constructeur et son contrat dans le registre.',
-      );
+      String? declared;
+      for (final ref in _allRefs(snapshot)) {
+        declared = _slots(ref.kind, _read(snapshot, ref)!)[componentId];
+        if (declared != null) {
+          kind = ref.kind;
+          break;
+        }
+      }
+      if (declared == null && registry.registry.containsKey(registryType)) {
+        declared = 'registry:$registryType';
+      }
+      final type = typeOf(componentId, declared, kind);
+      if (type == null) {
+        throw FormatException(
+          '« $componentId » est un widget fourni par le code Dart : '
+          'son contenu ne peut pas etre exporte.',
+        );
+      }
+      selected[componentId] = type;
     }
     for (final entry in selected.entries) {
-      final resolved = _resolve(registry, entry.value, kind);
-      if (resolved.contract == null) {
-        throw FormatException('Composant non exportable : ${entry.value}.');
-      }
-      roots.addAll(resolved.contract!.ownedConfigs(entry.key));
+      visitInstance(entry.key, entry.value, kind);
     }
-    final graph = _Graph.build(snapshot, registry, roots);
-    if (graph.cycles.isNotEmpty) {
-      throw FormatException('Cycle dans le contenu : ${graph.cycles.first}.');
-    }
-    for (final instance in graph.instances.values) {
-      if (instance.contract == null) {
-        throw FormatException('Composant non exportable : ${instance.label}.');
-      }
-    }
+
     final ids = {
       ...selected.keys,
-      ...graph.instances.keys,
-      for (final ref in graph.configs) ref.id,
+      ...instances,
+      for (final ref in configs) ref.id,
       if (isPage && zoneId == null) componentId,
     };
     final auxiliary = <String>{
@@ -179,46 +286,74 @@ abstract final class EditorPageGraph {
           ?table.itemId,
     };
     final used = _usedIds(snapshot);
+    // Les slots `scaffold:*` sont reserves au code d'un SuperPage.
+    final renamed = <String, String>{};
+    for (final id in ids) {
+      if (!id.startsWith('scaffold:')) continue;
+      var next = id.substring('scaffold:'.length);
+      if (next.isEmpty) next = 'content';
+      while (used.contains(next) || renamed.containsValue(next)) {
+        next = '${next}_';
+      }
+      renamed[id] = next;
+    }
+    String remap(String id) => renamed[id] ?? id;
     var rootId = '__export_root';
     while (used.contains(rootId)) {
       rootId = '${rootId}_';
     }
     final components = <String, ComponentConfig>{
       for (final entry in snapshot.components.entries)
-        if (ids.contains(entry.key)) entry.key: entry.value,
+        if (ids.contains(entry.key))
+          remap(entry.key): () {
+            final value = _exportSlots(
+              entry.value,
+              retyped[entry.key] ?? const {},
+              dropped[entry.key] ?? const {},
+            );
+            return (renamed.isEmpty ? value : _copy(value, remap))
+                as ComponentConfig;
+          }(),
     };
     if (zoneId != null || !isPage) {
       components[rootId] = ScaffoldPageConfig(
-        placements: {ScaffoldPageRegion.body: selected.keys.toList()},
-        slotTypes: selected,
+        placements: {
+          ScaffoldPageRegion.body: selected.keys.map(remap).toList(),
+        },
+        slotTypes: {
+          for (final entry in selected.entries) remap(entry.key): entry.value,
+        },
       );
     } else {
       rootId = componentId;
     }
-    return snapshot.copyWith(
-      components: components,
-      styles: {
-        if (isPage && zoneId == null && snapshot.styles['background'] != null)
-          'background': snapshot.styles['background']!,
-        for (final entry in snapshot.styles.entries)
-          if (ids.contains(entry.key) || auxiliary.contains(entry.key))
-            entry.key: entry.value,
-      },
-      behaviors: {
-        for (final entry in snapshot.behaviors.entries)
-          if (ids.contains(entry.key) || auxiliary.contains(entry.key))
-            entry.key: entry.value,
-      },
-      pageCatalog: EditorPageCatalog(
-        homePageId: rootId,
-        pages: [
-          EditorPageConfig(
-            id: rootId,
-            name: page?.name ?? componentId,
-            path: page?.path ?? '/export',
-          ),
-        ],
+    return EditorFragmentExport(
+      appearance: snapshot.copyWith(
+        components: components,
+        styles: {
+          if (isPage && zoneId == null && snapshot.styles['background'] != null)
+            'background': snapshot.styles['background']!,
+          for (final entry in snapshot.styles.entries)
+            if (ids.contains(entry.key) || auxiliary.contains(entry.key))
+              remap(entry.key): entry.value,
+        },
+        behaviors: {
+          for (final entry in snapshot.behaviors.entries)
+            if (ids.contains(entry.key) || auxiliary.contains(entry.key))
+              remap(entry.key): entry.value,
+        },
+        pageCatalog: EditorPageCatalog(
+          homePageId: rootId,
+          pages: [
+            EditorPageConfig(
+              id: rootId,
+              name: page?.name ?? componentId,
+              path: page?.path ?? '/export',
+            ),
+          ],
+        ),
       ),
+      omitted: omitted.toList(),
     );
   }
 
@@ -928,4 +1063,59 @@ Appearance _write(
   }
 
   return appearance.copyWith(styles: nextStyles, components: nextComponents);
+}
+
+/// Retire [drop] des placements de [value] et y fixe les types [types].
+Object _exportSlots(Object value, Map<String, String> types, Set<String> drop) {
+  if (types.isEmpty && drop.isEmpty) return value;
+  List<String> keep(List<String> ids) => [
+    for (final id in ids)
+      if (!drop.contains(id)) id,
+  ];
+  Map<String, String> retype(Map<String, String> current) => {
+    for (final entry in current.entries)
+      if (!drop.contains(entry.key)) entry.key: entry.value,
+    ...types,
+  };
+  Map<String, List<String>> placements(Map<String, List<String>> source) => {
+    for (final entry in source.entries) entry.key: keep(entry.value),
+  };
+  return switch (value) {
+    ScaffoldPageConfig() => ScaffoldPageConfig.fromNative(
+      _exportSlots(value.native, types, drop) as NativeComponentConfig,
+    ),
+    NativeComponentConfig() => value.copyWith(
+      placements: placements(value.placements),
+      slotTypes: retype(value.slotTypes),
+    ),
+    SuperTabConfig() => value.copyWith(
+      placements: placements(value.placements),
+      slotTypes: retype(value.slotTypes),
+    ),
+    SuperTreeViewConfig() => value.copyWith(
+      placements: placements(value.placements),
+      slotTypes: retype(value.slotTypes),
+    ),
+    SuperTableConfig() => value.copyWith(
+      placements: placements(value.placements),
+      slotTypes: retype(value.slotTypes),
+    ),
+    SuperListViewConfig() => value.copyWith(
+      template: _exportSlots(value.template, types, drop) as SuperLayoutConfig,
+    ),
+    SuperLayoutConfig() => value.copyWith(
+      placements: {
+        for (final entry in value.placements.entries)
+          entry.key: keep(entry.value),
+      },
+      slotTypes: retype(value.slotTypes),
+      grid: value.grid?.copyWith(
+        items: {
+          for (final entry in value.grid!.items.entries)
+            if (!drop.contains(entry.key)) entry.key: entry.value,
+        },
+      ),
+    ),
+    _ => value,
+  };
 }
