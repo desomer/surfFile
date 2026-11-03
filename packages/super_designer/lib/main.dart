@@ -250,6 +250,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                       SuperLayoutZone.center: [
                         'tree-node-icon',
                         'tree-node-name',
+                        'tree-node-separator',
                         'tree-node-type',
                       ],
                     },
@@ -293,6 +294,16 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                         ],
                         config: const SuperValueConfig(
                           binding: JsonTextBinding(path: 'name'),
+                        ),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'tree-node-separator',
+                      label: 'Separator',
+                      builder: (_) => const SuperSeparator(
+                        id: 'tree-node-separator',
+                        config: SuperSeparatorConfig(
+                          kind: SuperSeparatorKind.spacer,
                         ),
                       ),
                     ),
