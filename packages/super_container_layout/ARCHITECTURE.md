@@ -24,6 +24,8 @@ Ce document cartographie l'architecture interne du package `super_container_layo
      - `"scaffold"` → `ScaffoldPageConfig`
      - `"value"` → `SuperValueConfig`
      - `"action"` → `SuperActionConfig`
+     - `"indicator"` → `SuperIndicatorConfig`
+     - `"separator"` → `SuperSeparatorConfig`
      - `"list"` → `SuperListViewConfig`
      - `"tab"` → `SuperTabConfig`
      - `"treeView"` → `SuperTreeViewConfig`
@@ -45,6 +47,17 @@ Ce document cartographie l'architecture interne du package `super_container_layo
   - puis, pour les `[?]` restants (composants placés hors de la liste), par l'indice de la ligne sélectionnée dans le `JsonArrayBinding` correspondant (**pattern Maître / Détail**).
 
 ### 2.3. Surfaces, systèmes de design et états (`ContainerStyle` & `SurfaceStyleStates`)
+
+Les comportements `onTooltip` (`trigger: "hover"`) sont rendus par
+`ComponentTooltip`, enveloppe publique commune à tous les types de composants.
+`EditorSlot` couvre les composants standard et natifs, pages et collections ;
+`SlotImplementation` couvre aussi les slots hôtes et extensions sans code dédié.
+La déduplication par ID évite les tooltips multiples des enveloppes imbriquées,
+sans masquer ceux des composants enfants distincts. Les slivers utilisent une
+ancre box dans l'overlay sans changer leur géométrie.
+`JsonStringBinding` partage la lecture réactive de chaînes entre ces info-bulles
+et `SurfaceStateBinding` : repository, sélection et contexte de ligne/arbre,
+lecture seule, désabonnement et protection contre les réponses obsolètes.
 - `SuperContainer` et `StyledSurface` peignent une surface à partir d'un `ContainerStyle` (systèmes `material`, `neumorphism`, `liquidGlass`, remplissage `ContainerFill` uni/dégradé/image/SVG, rayons par coin, bordures par côté, ombres portées et intérieures, halo `NeonStyle`, flou `backdropBlur`, motifs `SurfacePattern` et transformations 2D).
 - `SurfaceStyleStates` (ainsi que `SuperValueStates` et `SuperActionStates`) applique dynamiquement des surcharges partielles par groupes de propriétés selon les états actifs :
   - états nommés métier liés au JSON (`states.binding` + `states.named`) ;
@@ -97,9 +110,10 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState` : énumération des états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et encodage de priorité d'état. |
-| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction`, `ZoneSizeBindingAction` : navigation et evenements (`click`, `doubleClick`), taille de cote de `SuperLayout` liee a un repository (`binding`, animee par `BehaviorCurve`). |
+| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction`, `ZoneSizeBindingAction`, `TooltipAction` : navigation et événements (`click`, `doubleClick`), taille de côté liée (`binding`) et info-bulle générique (`onTooltip`, `hover`). |
 | `services/events/super_event_bus.dart` | `SuperEventBus`, `SuperComponentEvent` : bus applicatif et snapshots JSON immutables. |
 | `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
+| `widgets/components/component_tooltip.dart` | `ComponentTooltip` : info-bulle fixe ou liée pour tout composant identifié, box/sliver, priorité, déduplication et conservation des configurations explicites. |
 | `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. |
 | `models/component_tag_filter.dart` | `ComponentTagFilter` : filtrage par tags (`include`/`exclude`) des composants autorisés dans une zone ou une région native. |
 | `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageCatalog` : configuration d'une page routée (id, nom, chemin, `scaffoldId`, `layoutId`) et catalogue complet des pages. |
@@ -115,6 +129,10 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `models/scrollbar_style_config.dart` | `ScrollbarStyleConfig` : personnalisation visuelle des barres de défilement (épaisseur, rayon, visibilité, couleurs). |
 | `models/super_action_config.dart` | `SuperActionConfig`, `SuperActionKind`, `SuperActionVariant`, `SuperActionIconPosition`, `SuperActionProperty` : configuration des boutons et actions Material 3 ou surfaciques. |
 | `models/super_action_states.dart` | `SuperActionStates`, `SuperActionStateOverride` : surcharges conditionnelles de `SuperActionConfig` par état (`hover`, `selected`, `automatic`, `named`). |
+| `models/super_indicator_config.dart` | `SuperIndicatorConfig`, `SuperIndicatorIconPosition`, `SuperIndicatorProperty` : configuration d'un composant indicateur / icône d'état avec libellé et badge optionnels. |
+| `models/super_indicator_states.dart` | `IndicatorConfigStates`, `IndicatorConfigOverride`, `IndicatorStateProperty` : surcharges conditionnelles de `SuperIndicatorConfig` par état (`hover`, `selected`, `automatic`, `named`). |
+| `models/super_separator_config.dart` | `SuperSeparatorConfig`, `SuperSeparatorKind`, `SuperSeparatorLabelPosition`, `SuperSeparatorProperty` : configuration d'un séparateur (`divider`) ou espaceur (`spacer`) horizontal/vertical avec libellé optionnel. |
+| `models/super_separator_states.dart` | `SeparatorConfigStates`, `SeparatorConfigOverride`, `SeparatorStateProperty` : surcharges conditionnelles de `SuperSeparatorConfig` par état (`hover`, `selected`, `automatic`, `named`). |
 | `models/super_layout_config.dart` | `SuperLayoutConfig`, `SuperLayoutMode`, `ZoneFlowConfig`, `SlotSizeConstraints`, `SlotDimension` : configuration d'un `SuperLayout` (zones N/S/E/W/Center ou Grille, flux flex, contraintes par slot). |
 | `models/super_list_view_config.dart` | `SuperListViewConfig` : configuration d'une liste répétée liée à un tableau JSON avec son `SuperLayoutConfig` de gabarit (`template`). |
 | `models/super_tab_config.dart` | `SuperTabConfig`, `SuperTabMode`, `SuperTabIndicatorType` : configuration d'une barre d'onglets `TabBar` + `TabBarView` en mode statique ou dynamique lié au JSON. |
@@ -154,7 +172,8 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `services/repositories/json_repository_store.dart` | `JsonRepositoryStore`, `JsonRepositoryDocument` : magasin multi-documents JSON réactif avec validation et extraction de chemins. |
 | `services/repositories/json_text_controller_binding.dart` | `JsonTextControllerBinding` : synchronisation bidirectionnelle sans boucle entre un `TextEditingController` et un attribut JSON. |
 | `services/states/content_hover_scope.dart` | `ContentHoverScope` : propagation de l'état de survol d'un conteneur parent (`IterableContent`) vers ses composants enfants (`AutomaticState.contentHover`). |
-| `services/states/surface_state_binding.dart` | `SurfaceStateBinding` : écoute réactive de l'attribut JSON pilotant l'état métier nommé (`states.binding`) d'une surface ou d'un composant. |
+| `services/states/surface_state_binding.dart` | `SurfaceStateBinding` : adaptation du lecteur partagé `JsonStringBinding` pour l'état métier nommé (`states.binding`). |
+| `services/repositories/json_string_binding.dart` | `JsonStringBinding` : lecture seule réactive d'une chaîne JSON, contexte de ligne/arbre et sélection maître/détail, diagnostics et gestion du cycle de vie. |
 | `services/window/window_transparency.dart` | `WindowTransparency`, `WindowEffectType` : pilotage multi-plateforme des effets de transparence et d'opacité de fenêtre via `flutter_acrylic`. |
 
 ### 3.6. Widgets d'apparence et de surfaces (`lib/widgets/appearance/` & `lib/widgets/surfaces/` — 10 fichiers)
@@ -177,6 +196,8 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `widgets/components/component_common.dart` | Utilitaires partagés entre composants (résolution de comportements `ComponentBehavior`, exécution de `GoToPageAction`, curseurs). |
 | `widgets/components/super_component.dart` | Contrat type `SuperComponent<C>` (`id`, `config`, `behaviours`), bases `SuperStatefulComponent` et `SuperStatelessComponent`. Les comportements explicites remplacent ceux de l'apparence pour l'instance, sans les persister ; `null` conserve l'apparence. |
 | `widgets/components/super_action.dart` | `SuperAction` : bouton/action configurable (variantes Material 3 `filled`/`tonal`/`elevated`/`outlined`/`text`/`icon` ou `surface`, états, liaisons JSON et comportements). |
+| `widgets/components/super_indicator.dart` | `SuperIndicator` : indicateur / icône d'état configurable avec libellé et badge optionnels, états standards/nommés (`SurfaceStateBinding`) et `propertyBindings`. |
+| `widgets/components/super_separator.dart` | `SuperSeparator` : séparateur (`divider`) ou espaceur (`spacer`) horizontal/vertical avec libellé optionnel, style de trait (`solid`/`dashed`/`dotted`), états et liaisons JSON. |
 | `widgets/components/super_list_view.dart` | `SuperListView` : liste dynamique liée à un tableau JSON, répétant un gabarit `IterableContent` par ligne avec ajout/suppression et sélection. |
 | `widgets/components/super_tab.dart` | `SuperTab` : composant d'onglets (`TabBar` + `TabBarView`) en mode statique (vues par onglet) ou dynamique (lié à un tableau JSON). |
 | `widgets/components/super_table.dart` | `SuperTable` : tableau multi-colonnes avec colonnes figées à gauche, en-tête, pied, redimensionnement de colonnes et `JsonListScope` par ligne. |
@@ -229,15 +250,19 @@ Ce document cartographie l'architecture interne du package `super_container_layo
 | `widgets/editing/addition/forms/list_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperListView`. |
 | `widgets/editing/addition/forms/menu_anchor_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperMenuAnchor`. |
 | `widgets/editing/addition/forms/super_action_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperAction`. |
+| `widgets/editing/addition/forms/super_indicator_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperIndicator`. |
+| `widgets/editing/addition/forms/super_separator_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperSeparator`. |
 | `widgets/editing/addition/forms/super_value_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperValue`. |
 | `widgets/editing/addition/forms/tab_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTab`. |
 | `widgets/editing/addition/forms/table_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTable`. |
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
 | `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA ("Vibe") construisant le prompt avec `SCREEN_JSON_AI_GUIDE.md`, l'export JSON courant (ou ciblé par `VibeChatScope`) et appliquant la réponse via `AppearanceTransfer.applyVibe`. |
-| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorEditor` : éditeur des comportements (`ComponentBehavior`, déclencheurs et navigation `GoToPageAction`) d'un composant. |
+| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée et info-bulle fixe ou liée au repository. |
 | `widgets/editing/components/native_component_editor.dart` | Éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
 | `widgets/editing/components/native_shape_editor.dart` | Éditeur visuel de forme Material (`NativeShapeConfig`). |
 | `widgets/editing/components/super_action_editor.dart` | Fenêtre d'édition complète d'un `SuperAction` (contenu, icône, couleurs, typographie, surface, états, liaisons JSON, comportements). |
+| `widgets/editing/components/super_indicator_editor.dart` | Fenêtre d'édition complète d'un `SuperIndicator` (icône, libellé, badge/surface, typographie, états standards/nommés, liaisons JSON). |
+| `widgets/editing/components/super_separator_editor.dart` | Fenêtre d'édition complète d'un `SuperSeparator` (type divider/spacer, orientation, style de trait, libellé, états, liaisons JSON). |
 | `widgets/editing/components/super_list_view_editor.dart` | Fenêtre d'édition d'un `SuperListView` (liaison JSON, dimensions de ligne, ajout/suppression, message vide). |
 | `widgets/editing/components/super_tab_editor.dart` | Fenêtre d'édition d'un `SuperTab` (mode statique/dynamique, onglets, indicateur, style de barre, liaison JSON). |
 | `widgets/editing/components/super_table_editor.dart` | Fenêtre d'édition d'un `SuperTable` (colonnes, largeurs/fillPercent, colonnes figées, en-tête/pied, liaison JSON). |

@@ -53,6 +53,7 @@ class JsonNode {
     'id': id,
     'name': name,
     'type': type,
+    'typeIcon': isContainer || children.isNotEmpty ? 'container' : 'value',
     'description': isContainer ? '' : '${value ?? ''}',
     if (properties.isNotEmpty) 'properties': properties,
     'propertiesText': properties.isEmpty ? '' : properties.toString(),

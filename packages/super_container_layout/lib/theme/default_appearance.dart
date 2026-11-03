@@ -14,6 +14,8 @@ import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_value_config.dart';
 import '../models/super_action_config.dart';
+import '../models/super_indicator_config.dart';
+import '../models/super_separator_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/editor_page_config.dart';
 import 'appearance.dart';
@@ -117,6 +119,18 @@ class DefaultAppearance extends Appearance {
   @override
   DefaultAppearance withActionComponent(String id, SuperActionConfig value) =>
       withComponent(id, value);
+
+  @override
+  DefaultAppearance withIndicatorComponent(
+    String id,
+    SuperIndicatorConfig value,
+  ) => withComponent(id, value);
+
+  @override
+  DefaultAppearance withSeparatorComponent(
+    String id,
+    SuperSeparatorConfig value,
+  ) => withComponent(id, value);
 
   @override
   DefaultAppearance withListComponent(String id, SuperListViewConfig value) {

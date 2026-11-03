@@ -15,6 +15,8 @@ import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../models/super_action_config.dart';
+import '../../../models/super_indicator_config.dart';
+import '../../../models/super_separator_config.dart';
 import '../../../theme/container_style.dart';
 import '../../components/super_layout/super_layout.dart';
 import 'component_add_wizard.dart';
@@ -23,6 +25,8 @@ import 'forms/expansible_add_form.dart';
 import 'forms/list_view_add_form.dart';
 import 'forms/menu_anchor_add_form.dart';
 import 'forms/super_action_add_form.dart';
+import 'forms/super_indicator_add_form.dart';
+import 'forms/super_separator_add_form.dart';
 import 'forms/super_value_add_form.dart';
 import 'forms/tab_add_form.dart';
 import 'forms/table_add_form.dart';
@@ -37,6 +41,8 @@ export 'forms/expansible_add_form.dart' show ExpansibleAddForm;
 export 'forms/list_view_add_form.dart' show ListViewAddForm;
 export 'forms/menu_anchor_add_form.dart' show MenuAnchorAddForm;
 export 'forms/super_action_add_form.dart' show SuperActionAddForm;
+export 'forms/super_indicator_add_form.dart' show SuperIndicatorAddForm;
+export 'forms/super_separator_add_form.dart' show SuperSeparatorAddForm;
 export 'forms/super_value_add_form.dart' show SuperValueAddForm;
 export 'forms/tab_add_form.dart' show TabAddForm;
 export 'forms/table_add_form.dart' show TableAddForm;
@@ -131,6 +137,107 @@ ComponentAddConfigurator<SuperActionConfig> superActionAddConfigurator(
     ('Alignement', _alignLabel(draft.textAlign)),
   ],
   apply: (registry, id, draft) => registry.actionController(id).value = draft,
+);
+
+/// Add wizard settings of a `SuperIndicator`, written to `Registry.indicatorController`.
+ComponentAddConfigurator<SuperIndicatorConfig> superIndicatorAddConfigurator(
+  List<String> availableFontFamilies,
+) => ComponentAddConfigurator<SuperIndicatorConfig>(
+  initial: (_) => const SuperIndicatorConfig(),
+  builder: (context, draft, onChanged) => SuperIndicatorAddForm(
+    draft: draft,
+    onChanged: onChanged,
+    availableFontFamilies: availableFontFamilies,
+  ),
+  validate: (draft) {
+    if (draft.states?.binding?.path.trim().isEmpty ?? false) {
+      return 'Chemin de liaison requis.';
+    }
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration de l’indicateur invalide.';
+    }
+  },
+  summary: (draft) => [
+    (
+      'Icône',
+      draft.icon.trim().isEmpty
+          ? 'Aucune'
+          : SuperIndicatorIcons.labelOf(draft.icon),
+    ),
+    if (draft.iconSize != null) ('Taille de l’icône', '${draft.iconSize}'),
+    if (draft.label.isNotEmpty) ('Libellé', draft.label),
+    if (draft.tooltip.isNotEmpty) ('Infobulle', draft.tooltip),
+    ('Alignement', _alignLabel(draft.textAlign)),
+    ('Liaison d’état', _bindingLabel(draft.states?.binding)),
+  ],
+  apply: (registry, id, draft) =>
+      registry.indicatorController(id).value = draft,
+  readBinding: (draft) => draft.states?.binding,
+  writeBinding: (draft, binding) {
+    final currentStates = draft.states;
+    if (binding == null &&
+        currentStates != null &&
+        currentStates.named.isEmpty &&
+        currentStates.hover == null &&
+        currentStates.selected == null &&
+        currentStates.automatic.isEmpty) {
+      return draft.copyWith(clearStates: true);
+    }
+    return draft.copyWith(
+      states: (currentStates ?? IndicatorConfigStates()).copyWith(
+        binding: binding,
+        clearBinding: binding == null,
+      ),
+    );
+  },
+  bindingKeyPrefix: 'add-indicator',
+  bindingPathHint: 'client.statut ou clients[?].statut',
+  bindingHelp:
+      'Le repository fournit le nom de l’état actif de l’indicateur (states.binding).',
+);
+
+/// Add wizard settings of a `SuperSeparator`, written to `Registry.separatorController`.
+ComponentAddConfigurator<SuperSeparatorConfig> superSeparatorAddConfigurator(
+  List<String> availableFontFamilies,
+) => ComponentAddConfigurator<SuperSeparatorConfig>(
+  initial: (_) => const SuperSeparatorConfig(),
+  builder: (context, draft, onChanged) => SuperSeparatorAddForm(
+    draft: draft,
+    onChanged: onChanged,
+    availableFontFamilies: availableFontFamilies,
+  ),
+  validate: (draft) {
+    try {
+      draft.validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    } on Object {
+      return 'Configuration du séparateur invalide.';
+    }
+  },
+  summary: (draft) => [
+    (
+      'Type',
+      draft.kind == SuperSeparatorKind.spacer
+          ? 'Spacer (espace)'
+          : 'Divider (trait)',
+    ),
+    (
+      'Orientation',
+      draft.axis == Axis.horizontal ? 'Horizontale' : 'Verticale',
+    ),
+    ('Taille / espace', '${draft.extent}'),
+    if (draft.kind.isDivider) ('Épaisseur', '${draft.thickness}'),
+    if (draft.label.isNotEmpty) ('Libellé', draft.label),
+  ],
+  apply: (registry, id, draft) =>
+      registry.separatorController(id).value = draft,
 );
 
 /// Add wizard settings of a `SuperListView`, written to `Registry.listController`.

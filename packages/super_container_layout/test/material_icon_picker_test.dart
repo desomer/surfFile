@@ -32,6 +32,18 @@ void main() {
       allowedIds: const ['person', 'email'],
     );
     expect(restricted.map((e) => e.id).toSet(), {'person', 'email'});
+
+    // All entry IDs are unique and include common schema/data icons
+    expect(MaterialIconCatalog.byId.length, MaterialIconCatalog.entries.length);
+    for (final id in [
+      'business',
+      'call_split',
+      'data_array',
+      'link',
+      'looks_one_rounded',
+    ]) {
+      expect(MaterialIconCatalog.isKnown(id), isTrue, reason: 'Missing $id');
+    }
   });
 
   testWidgets(

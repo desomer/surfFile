@@ -27,7 +27,7 @@
         "spacing": 0.0,
         "allowAdd": false,
         "allowRemove": false,
-        "emptyText": "Aucun élément",
+        "emptyText": "Aucun éléments",
         "template": {
           "north": false,
           "south": false,

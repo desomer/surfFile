@@ -24,6 +24,9 @@ enum BehaviorTrigger {
   click('Clic', 'Sur un clic', Icons.touch_app_outlined),
   doubleClick('Double-clic', 'Sur un double-clic', Icons.touch_app_outlined),
 
+  /// Affichage déclaratif d'une info-bulle au survol.
+  hover('Survol', 'Au survol du composant', Icons.info_outline),
+
   /// Comportement réactif : appliqué quand la valeur liée change.
   binding('Liaison', 'Quand la valeur liée change', Icons.link);
 
@@ -220,6 +223,98 @@ class GoToPageAction extends BehaviorAction {
   int get hashCode => Object.hash(pagePath, pageId, pageName);
 }
 
+/// Info-bulle déclarative, commune à tous les types de composants.
+@immutable
+class TooltipAction extends BehaviorAction {
+  const TooltipAction({this.message = '', this.binding});
+
+  /// Texte utilisé uniquement lorsqu'aucune liaison n'est configurée.
+  final String message;
+
+  /// Source réactive du texte, éventuellement héritée de la ligne.
+  final JsonTextBinding? binding;
+
+  /// Vérifie le texte fixe ou la syntaxe de la liaison.
+  void validate() {
+    binding?.validate();
+    if (binding == null && message.trim().isEmpty) {
+      throw const FormatException('Le texte de l’info-bulle est requis.');
+    }
+  }
+
+  @override
+  String get type => 'onTooltip';
+  @override
+  String get label => 'Afficher une info-bulle';
+  @override
+  String get description => binding?.path ?? message;
+  @override
+  IconData get icon => Icons.info_outline;
+
+  @override
+  Future<void> execute(BuildContext context) async {
+    throw StateError('TooltipAction is rendered by ComponentTooltip.');
+  }
+
+  /// Copie immuable ; permet aussi de supprimer la liaison.
+  TooltipAction copyWith({
+    String? message,
+    JsonTextBinding? binding,
+    bool clearBinding = false,
+  }) => TooltipAction(
+    message: message ?? this.message,
+    binding: clearBinding ? null : binding ?? this.binding,
+  );
+
+  @override
+  Map<String, Object?> toJson() {
+    validate();
+    return {
+      'type': type,
+      'message': message,
+      if (binding != null) 'binding': binding!.toJson(),
+    };
+  }
+
+  /// Forme compacte compatible avec les liaisons courtes.
+  Map<String, Object?> toCompactJson() {
+    validate();
+    return {
+      'type': type,
+      if (message.isNotEmpty) 'message': message,
+      if (binding != null) 'binding': binding!.toCompactJson(),
+    };
+  }
+
+  /// Décode et valide une info-bulle persistée.
+  factory TooltipAction.fromJson(Map<String, dynamic> json) {
+    final message = json['message'];
+    if (message != null && message is! String) {
+      throw const FormatException(
+        'Le texte de l’info-bulle doit être un texte.',
+      );
+    }
+    final result = TooltipAction(
+      message: message as String? ?? '',
+      binding: json['binding'] == null
+          ? null
+          : JsonTextBinding.fromJson(json['binding']),
+    );
+    result.validate();
+    return result;
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TooltipAction &&
+          other.message == message &&
+          other.binding == binding;
+
+  @override
+  int get hashCode => Object.hash(message, binding);
+}
+
 /// Courbes d'animation sérialisables proposées par les comportements.
 enum BehaviorCurve {
   linear('Linéaire', Curves.linear),
@@ -340,6 +435,7 @@ abstract final class BehaviorActionCatalog {
     'goToPage': GoToPageAction.fromJson,
     'emitEvent': EmitEventAction.fromJson,
     'bindZoneSize': ZoneSizeBindingAction.fromJson,
+    'onTooltip': TooltipAction.fromJson,
   };
 
   static void register(
@@ -388,11 +484,33 @@ class ComponentBehavior {
     }
   }
 
-  Map<String, Object?> toJson() => {
-    'id': id,
-    'trigger': trigger.name,
-    'enabled': enabled,
-    'action': action.toJson(),
+  /// Valide les invariants des comportements déclaratifs d'info-bulle.
+  void validate() {
+    if (action case final TooltipAction tooltip) {
+      tooltip.validate();
+      if (trigger != BehaviorTrigger.hover) {
+        throw const FormatException('onTooltip exige le déclencheur hover.');
+      }
+    } else if (trigger == BehaviorTrigger.hover) {
+      throw const FormatException('hover exige une action onTooltip.');
+    }
+  }
+
+  Map<String, Object?> toJson() {
+    validate();
+    return {
+      'id': id,
+      'trigger': trigger.name,
+      'enabled': enabled,
+      'action': action.toJson(),
+    };
+  }
+
+  /// Sérialisation compacte conservant le contrat du comportement.
+  Map<String, Object?> toCompactJson() => {
+    ...toJson(),
+    if (action case final TooltipAction tooltip)
+      'action': tooltip.toCompactJson(),
   };
 
   factory ComponentBehavior.fromJson(Map<String, dynamic> json) {
@@ -406,12 +524,14 @@ class ComponentBehavior {
     final actionJson = (json['action'] as Map<String, dynamic>?) ?? {};
     final action = BehaviorActionCatalog.decode(actionJson);
 
-    return ComponentBehavior(
+    final result = ComponentBehavior(
       id: id,
       trigger: trigger,
       action: action,
       enabled: enabled,
     );
+    result.validate();
+    return result;
   }
 
   ComponentBehavior copyWith({
@@ -490,9 +610,20 @@ abstract final class BehaviorCatalog {
     actionType: 'bindZoneSize',
   );
 
+  /// Comportement disponible pour toute cible, sans restriction de type.
+  static const onTooltip = BehaviorCatalogItem(
+    id: 'onTooltip',
+    title: 'Afficher une info-bulle',
+    description: 'Afficher un texte fixe ou lié à un repository au survol',
+    icon: Icons.info_outline,
+    trigger: BehaviorTrigger.hover,
+    actionType: 'onTooltip',
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
     emitEvent,
     zoneSize,
+    onTooltip,
   ];
 }

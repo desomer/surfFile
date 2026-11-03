@@ -14,6 +14,8 @@ import '../../models/scaffold_page_config.dart';
 import '../../models/super_layout_config.dart';
 import '../../models/super_value_config.dart';
 import '../../models/super_action_config.dart';
+import '../../models/super_indicator_config.dart';
+import '../../models/super_separator_config.dart';
 import '../../models/super_list_view_config.dart';
 import '../../models/super_tab_config.dart';
 import '../../models/super_table_config.dart';
@@ -131,6 +133,8 @@ abstract final class EditorPageGraph {
       SuperLayoutConfig() => 'registry:Layout',
       SuperValueConfig() => 'registry:Value',
       SuperActionConfig() => 'registry:Action',
+      SuperIndicatorConfig() => 'registry:Indicator',
+      SuperSeparatorConfig() => 'registry:Separator',
       SuperTabConfig() => 'registry:Tab',
       SuperTreeViewConfig() => 'registry:TreeView',
       SuperTableConfig() => 'registry:Table',
@@ -764,6 +768,12 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   ),
   EditorConfigKind.value => appearance.tryComponent<SuperValueConfig>(ref.id),
   EditorConfigKind.action => appearance.tryComponent<SuperActionConfig>(ref.id),
+  EditorConfigKind.indicator => appearance.tryComponent<SuperIndicatorConfig>(
+    ref.id,
+  ),
+  EditorConfigKind.separator => appearance.tryComponent<SuperSeparatorConfig>(
+    ref.id,
+  ),
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
   EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
   EditorConfigKind.treeView => appearance.tryComponent<SuperTreeViewConfig>(
@@ -780,6 +790,8 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.scaffoldPage => value is ScaffoldPageConfig,
   EditorConfigKind.value => value is SuperValueConfig,
   EditorConfigKind.action => value is SuperActionConfig,
+  EditorConfigKind.indicator => value is SuperIndicatorConfig,
+  EditorConfigKind.separator => value is SuperSeparatorConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
   EditorConfigKind.tab => value is SuperTabConfig,
   EditorConfigKind.treeView => value is SuperTreeViewConfig,
@@ -795,6 +807,8 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       ScaffoldPageConfig() => [EditorConfigRef.scaffoldPage(entry.key)],
       SuperValueConfig() => [EditorConfigRef.value(entry.key)],
       SuperActionConfig() => [EditorConfigRef.action(entry.key)],
+      SuperIndicatorConfig() => [EditorConfigRef.indicator(entry.key)],
+      SuperSeparatorConfig() => [EditorConfigRef.separator(entry.key)],
       SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
       SuperTreeViewConfig() => [EditorConfigRef.treeView(entry.key)],
       SuperTableConfig() => [EditorConfigRef.table(entry.key)],

@@ -16,6 +16,8 @@ import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
 import 'super_value_config.dart';
 import 'super_action_config.dart';
+import 'super_indicator_config.dart';
+import 'super_separator_config.dart';
 import '../widgets/components/super_renderer.dart';
 import '../widgets/editing/components/super_renderer_editor.dart';
 import '../widgets/components/super_list_view.dart';
@@ -24,6 +26,8 @@ import '../widgets/components/super_table.dart';
 import '../widgets/components/super_tree_view.dart';
 import '../widgets/components/super_value.dart';
 import '../widgets/components/super_action.dart';
+import '../widgets/components/super_indicator.dart';
+import '../widgets/components/super_separator.dart';
 import '../widgets/components/super_layout/iterable_content.dart';
 
 import 'package:super_container_layout/models/super_layout_config.dart';
@@ -62,6 +66,8 @@ enum EditorConfigKind {
   scaffoldPage,
   value,
   action,
+  indicator,
+  separator,
   list,
   tab,
   treeView,
@@ -82,6 +88,8 @@ class EditorConfigRef {
     : kind = EditorConfigKind.scaffoldPage;
   const EditorConfigRef.value(this.id) : kind = EditorConfigKind.value;
   const EditorConfigRef.action(this.id) : kind = EditorConfigKind.action;
+  const EditorConfigRef.indicator(this.id) : kind = EditorConfigKind.indicator;
+  const EditorConfigRef.separator(this.id) : kind = EditorConfigKind.separator;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
   const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
   const EditorConfigRef.treeView(this.id) : kind = EditorConfigKind.treeView;
@@ -149,6 +157,12 @@ class ComponentDuplicationContract {
   static List<EditorConfigRef> _action(String id) => [
     EditorConfigRef.action(id),
   ];
+  static List<EditorConfigRef> _indicator(String id) => [
+    EditorConfigRef.indicator(id),
+  ];
+  static List<EditorConfigRef> _separator(String id) => [
+    EditorConfigRef.separator(id),
+  ];
   static List<EditorConfigRef> _list(String id) => [
     EditorConfigRef.layout(id),
     EditorConfigRef.style(id),
@@ -181,6 +195,12 @@ class ComponentDuplicationContract {
   static const superValue = ComponentDuplicationContract(ownedConfigs: _value);
   static const superAction = ComponentDuplicationContract(
     ownedConfigs: _action,
+  );
+  static const superIndicator = ComponentDuplicationContract(
+    ownedConfigs: _indicator,
+  );
+  static const superSeparator = ComponentDuplicationContract(
+    ownedConfigs: _separator,
   );
   static const superTab = ComponentDuplicationContract(ownedConfigs: _tab);
   static const superTreeView = ComponentDuplicationContract(
@@ -313,6 +333,12 @@ class Registry {
   final Map<String, SuperValueConfig> _valueDefaults = {};
   final Map<String, ValueNotifier<SuperActionConfig>> actionConfigById = {};
   final Map<String, SuperActionConfig> _actionDefaults = {};
+  final Map<String, ValueNotifier<SuperIndicatorConfig>> indicatorConfigById =
+      {};
+  final Map<String, SuperIndicatorConfig> _indicatorDefaults = {};
+  final Map<String, ValueNotifier<SuperSeparatorConfig>> separatorConfigById =
+      {};
+  final Map<String, SuperSeparatorConfig> _separatorDefaults = {};
   final Map<String, ValueNotifier<SuperListViewConfig>> listConfigById = {};
   final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, ValueNotifier<SuperTabConfig>> tabConfigById = {};
@@ -333,6 +359,8 @@ class Registry {
     ...nativeComponentConfigById.keys,
     ...valueConfigById.keys,
     ...actionConfigById.keys,
+    ...indicatorConfigById.keys,
+    ...separatorConfigById.keys,
     ...listConfigById.keys,
     ...tabConfigById.keys,
     ...treeViewConfigById.keys,
@@ -351,6 +379,10 @@ class Registry {
         entry.key: entry.value.value,
       for (final entry in valueConfigById.entries) entry.key: entry.value.value,
       for (final entry in actionConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in indicatorConfigById.entries)
+        entry.key: entry.value.value,
+      for (final entry in separatorConfigById.entries)
         entry.key: entry.value.value,
       for (final entry in listConfigById.entries) entry.key: entry.value.value,
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
@@ -402,6 +434,12 @@ class Registry {
     }
     for (final entry in actionConfigById.entries.toList()) {
       actionController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in indicatorConfigById.entries.toList()) {
+      indicatorController(entry.key, fallback: entry.value.value);
+    }
+    for (final entry in separatorConfigById.entries.toList()) {
+      separatorController(entry.key, fallback: entry.value.value);
     }
     for (final entry in listConfigById.entries.toList()) {
       listController(entry.key, fallback: entry.value.value);
@@ -458,6 +496,8 @@ class Registry {
       ...nativeComponentConfigById.values,
       ...valueConfigById.values,
       ...actionConfigById.values,
+      ...indicatorConfigById.values,
+      ...separatorConfigById.values,
       ...listConfigById.values,
       ...tabConfigById.values,
       ...treeViewConfigById.values,
@@ -587,6 +627,18 @@ class Registry {
         entry.value.value = appearance.actionComponent(
           entry.key,
           fallback: _actionDefaults[entry.key]!,
+        );
+      }
+      for (final entry in indicatorConfigById.entries) {
+        entry.value.value = appearance.indicatorComponent(
+          entry.key,
+          fallback: _indicatorDefaults[entry.key]!,
+        );
+      }
+      for (final entry in separatorConfigById.entries) {
+        entry.value.value = appearance.separatorComponent(
+          entry.key,
+          fallback: _separatorDefaults[entry.key]!,
         );
       }
       for (final entry in listConfigById.entries) {
@@ -729,6 +781,66 @@ class Registry {
         notifier.value.validate();
         if (!_syncing) {
           _appearance!.value = _appearance!.value.withActionComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperIndicatorConfig> indicatorController(
+    String id, {
+    SuperIndicatorConfig fallback = const SuperIndicatorConfig(),
+  }) {
+    fallback.validate();
+    _indicatorDefaults.putIfAbsent(id, () => fallback);
+    final notifier = indicatorConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.indicatorComponent(id, fallback: fallback) ??
+            fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withIndicatorComponent(
+            id,
+            notifier.value,
+          );
+        }
+      }
+
+      _listeners[notifier] = write;
+      notifier.addListener(write);
+    }
+    return notifier;
+  }
+
+  ValueNotifier<SuperSeparatorConfig> separatorController(
+    String id, {
+    SuperSeparatorConfig fallback = const SuperSeparatorConfig(),
+  }) {
+    fallback.validate();
+    _separatorDefaults.putIfAbsent(id, () => fallback);
+    final notifier = separatorConfigById.putIfAbsent(
+      id,
+      () => ValueNotifier(
+        _appearance?.value.separatorComponent(id, fallback: fallback) ??
+            fallback,
+      ),
+    );
+    if (_appearance != null && !_listeners.containsKey(notifier)) {
+      void write() {
+        notifier.value.validate();
+        if (!_syncing) {
+          _appearance!.value = _appearance!.value.withSeparatorComponent(
             id,
             notifier.value,
           );
@@ -1018,6 +1130,32 @@ class Registry {
       previewBuilder: _buildActionPreview,
       dynamicBuilder: (ctx) =>
           SuperAction(id: ctx.id, availableFontFamilies: availableFontFamilies),
+    );
+
+    registry['Indicator'] = ComponentBuilderDynamic(
+      menuIcon: Icons.adjust_outlined,
+      label: 'Indicator / Icon',
+      duplication: ComponentDuplicationContract.superIndicator,
+      tags: const {'indicator', 'icon', 'text'},
+      addConfigurator: superIndicatorAddConfigurator(availableFontFamilies),
+      previewBuilder: _buildIndicatorPreview,
+      dynamicBuilder: (ctx) => SuperIndicator(
+        id: ctx.id,
+        availableFontFamilies: availableFontFamilies,
+      ),
+    );
+
+    registry['Separator'] = ComponentBuilderDynamic(
+      menuIcon: Icons.horizontal_rule,
+      label: 'Separator / Divider / Spacer',
+      duplication: ComponentDuplicationContract.superSeparator,
+      tags: const {'separator', 'divider', 'spacer'},
+      addConfigurator: superSeparatorAddConfigurator(availableFontFamilies),
+      previewBuilder: _buildSeparatorPreview,
+      dynamicBuilder: (ctx) => SuperSeparator(
+        id: ctx.id,
+        availableFontFamilies: availableFontFamilies,
+      ),
     );
 
     registry['ApplicationBar'] = ComponentBuilderDynamic(
@@ -1319,6 +1457,78 @@ Widget _buildActionPreview(BuildContext context) => IgnorePointer(
     ],
   ),
 );
+
+Widget _buildIndicatorPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  return IgnorePointer(
+    child: Wrap(
+      spacing: 12,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Icon(Icons.check_circle_outline, size: 22, color: Colors.green.shade600),
+        Icon(Icons.warning_amber_rounded, size: 22, color: Colors.orange.shade700),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: colors.secondaryContainer,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.info_outline,
+                size: 16,
+                color: colors.onSecondaryContainer,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                'Statut',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildSeparatorPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  return IgnorePointer(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Divider(color: colors.outlineVariant)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Text(
+                'Section',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Expanded(child: Divider(color: colors.outlineVariant)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Divider(color: colors.outlineVariant),
+      ],
+    ),
+  );
+}
 
 Widget _buildCardPreview(BuildContext context) {
   final theme = Theme.of(context);

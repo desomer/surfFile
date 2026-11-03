@@ -27,9 +27,11 @@ void main() {
       'id': 'id0',
       'name': 'name',
       'type': 'String',
+      'typeIcon': 'value',
       'description': 'demo',
       'propertiesText': '',
     });
+    expect(items.toJson()['typeIcon'], 'container');
     expect(items.toJson()['children'], hasLength(2));
   });
 

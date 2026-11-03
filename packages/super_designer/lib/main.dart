@@ -248,12 +248,37 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     },
                     placements: {
                       SuperLayoutZone.center: [
+                        'tree-node-icon',
                         'tree-node-name',
                         'tree-node-type',
                       ],
                     },
                   ),
                   slots: [
+                    BuilderSlot(
+                      id: 'tree-node-icon',
+                      label: 'Icon',
+                      builder: (_) => SuperIndicator(
+                        id: 'tree-node-icon',
+                        config: SuperIndicatorConfig(
+                          icon: 'description',
+                          iconSize: 18,
+                          states: IndicatorConfigStates(
+                            binding: const JsonTextBinding(path: 'typeIcon'),
+                            named: const {
+                              'container': SuperIndicatorConfig(icon: 'folder'),
+                              'value': SuperIndicatorConfig(
+                                icon: 'description',
+                              ),
+                            },
+                            namedProperties: const {
+                              'container': {IndicatorStateProperty.icon},
+                              'value': {IndicatorStateProperty.icon},
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
                     BuilderSlot(
                       id: 'tree-node-name',
                       label: 'Name',

@@ -15,6 +15,8 @@ import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
 import '../models/super_value_config.dart';
 import '../models/super_action_config.dart';
+import '../models/super_indicator_config.dart';
+import '../models/super_separator_config.dart';
 import '../models/super_list_view_config.dart';
 import '../models/super_tab_config.dart';
 import '../models/super_table_config.dart';
@@ -172,6 +174,22 @@ class Appearance {
   }) => component<SuperActionConfig>(id, fallback: fallback);
 
   Appearance withActionComponent(String id, SuperActionConfig value) =>
+      withComponent(id, value);
+
+  SuperIndicatorConfig indicatorComponent(
+    String id, {
+    SuperIndicatorConfig fallback = const SuperIndicatorConfig(),
+  }) => component<SuperIndicatorConfig>(id, fallback: fallback);
+
+  Appearance withIndicatorComponent(String id, SuperIndicatorConfig value) =>
+      withComponent(id, value);
+
+  SuperSeparatorConfig separatorComponent(
+    String id, {
+    SuperSeparatorConfig fallback = const SuperSeparatorConfig(),
+  }) => component<SuperSeparatorConfig>(id, fallback: fallback);
+
+  Appearance withSeparatorComponent(String id, SuperSeparatorConfig value) =>
       withComponent(id, value);
 
   SuperTabConfig tabComponent(

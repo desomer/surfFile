@@ -150,6 +150,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     text: '${ZoneSizeBindingAction.defaultDurationMs}',
   );
   BehaviorCurve _curve = BehaviorCurve.easeInOut;
+  final _tooltipMessage = TextEditingController();
+  JsonTextBinding? _tooltipBinding;
 
   @override
   void initState() {
@@ -177,12 +179,26 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     _customJsonController.dispose();
     _customPathController.dispose();
     _durationController.dispose();
+    _tooltipMessage.dispose();
     super.dispose();
   }
 
   BehaviorWizardStage get _stage => BehaviorWizardStage.values[_step];
 
   bool get _isEvent => _selectedCatalogItem.actionType == 'emitEvent';
+  bool get _isTooltip => _selectedCatalogItem.actionType == 'onTooltip';
+
+  String? get _tooltipError {
+    try {
+      TooltipAction(
+        message: _tooltipMessage.text,
+        binding: _tooltipBinding,
+      ).validate();
+      return null;
+    } on FormatException catch (error) {
+      return error.message;
+    }
+  }
 
   bool get _isZoneSize => _selectedCatalogItem.actionType == 'bindZoneSize';
 
@@ -253,7 +269,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     BehaviorWizardStage.target => true,
     BehaviorWizardStage.catalog => true,
     BehaviorWizardStage.settings =>
-      _isZoneSize
+      _isTooltip
+          ? _tooltipError == null
+          : _isZoneSize
           ? _zoneBinding != null && _durationMs != null
           : _isEvent
           ? _eventIdController.text.trim().isNotEmpty &&
@@ -285,7 +303,9 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         ? _customPathController.text.trim()
         : (_selectedPagePath ?? '/');
 
-    final BehaviorAction action = _isZoneSize
+    final BehaviorAction action = _isTooltip
+        ? TooltipAction(message: _tooltipMessage.text, binding: _tooltipBinding)
+        : _isZoneSize
         ? ZoneSizeBindingAction(
             zone: _effectiveZone,
             binding: _zoneBinding!,
@@ -653,6 +673,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   }
 
   Widget _buildSettingsStep(BuildContext context) {
+    if (_isTooltip) return _buildTooltipSettings(context);
     if (_isEvent) return _buildEventSettings(context);
     if (_isZoneSize) return _buildZoneSizeSettings(context);
     final theme = Theme.of(context);
@@ -850,7 +871,19 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                     value: _selectedCatalogItem.title,
                   ),
                   const Divider(height: 16),
-                  if (_isZoneSize) ...[
+                  if (_isTooltip)
+                    _summaryRow(
+                      context,
+                      icon: _tooltipBinding == null
+                          ? Icons.text_fields
+                          : Icons.link,
+                      label: _tooltipBinding == null ? 'Texte' : 'Liaison',
+                      value: _tooltipBinding == null
+                          ? _tooltipMessage.text
+                          : '${_tooltipBinding!.repositoryId ?? 'liste'} : '
+                                '${_tooltipBinding!.path}',
+                    )
+                  else if (_isZoneSize) ...[
                     _summaryRow(
                       context,
                       icon: Icons.view_sidebar_outlined,
@@ -907,6 +940,44 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTooltipSettings(BuildContext context) {
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            key: const ValueKey('behavior-tooltip-message'),
+            controller: _tooltipMessage,
+            decoration: const InputDecoration(
+              labelText: 'Texte de l’info-bulle',
+              helperText: 'Utilisé uniquement sans liaison.',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 16),
+          RepositoryBindingFields(
+            keyPrefix: 'behavior-tooltip-binding',
+            binding: _tooltipBinding,
+            store: JsonRepositoryScope.maybeOf(targetContext),
+            listScope: JsonListScope.maybeOf(targetContext),
+            pathHint: 'clients[?].description',
+            helper: 'Texte du repository ; [?] suit la ligne courante ou sélectionnée.',
+            onChanged: (binding) => setState(() => _tooltipBinding = binding),
+          ),
+          if (_tooltipError case final error?) ...[
+            const SizedBox(height: 8),
+            Text(
+              error,
+              key: const ValueKey('behavior-tooltip-error'),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
         ],
       ),
     );

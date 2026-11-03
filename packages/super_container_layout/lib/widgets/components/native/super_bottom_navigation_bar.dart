@@ -8,6 +8,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../super_component.dart';
+import '../component_tooltip.dart';
 
 import '../../../models/component_tag_filter.dart';
 import '../../../models/native_component_config.dart';
@@ -310,7 +311,15 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                             child: editor.slotItem('destinations', slot),
                           ),
                           label: actionConfig.label,
-                          tooltip: actionConfig.tooltip.trim().isNotEmpty
+                          tooltip:
+                              ComponentTooltip.actionOf(
+                                    context,
+                                    slot.id,
+                                    behaviors: supplied[slot.id]?.behaviours,
+                                  ) !=
+                                  null
+                              ? ''
+                              : actionConfig.tooltip.trim().isNotEmpty
                               ? actionConfig.tooltip
                               : null,
                           backgroundColor:

@@ -19,6 +19,7 @@ import '../../../models/super_renderer_config.dart';
 import '../../../super_app.dart';
 import '../../appearance/appearance_transfer_dialog.dart';
 import '../../components/behavior_event_listener.dart';
+import '../../components/component_tooltip.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../../components/super_layout/zone_axis_button.dart';
 import '../addition/contextual_add.dart';
@@ -2223,17 +2224,22 @@ class EditorSlotState extends State<EditorSlot> {
               .toList();
     final hasClickBehaviors = !inEditMode && clickBehaviors.isNotEmpty;
     final interactive = canEdit || hasClickBehaviors;
-    final runtimeChild = BehaviorEventListener(
+    final runtimeChild = ComponentTooltip(
       componentId: effectiveComponentId,
-      componentType: widget.eventComponentType,
-      behaviors: eventBehaviors,
-      readData: widget.eventData,
+      behaviors: widget.behaviors,
       sliver: isSliver,
-      child:
-          widget.child ??
-          (isSliver
-              ? const SliverToBoxAdapter(child: SizedBox.shrink())
-              : const SizedBox.expand()),
+      child: BehaviorEventListener(
+        componentId: effectiveComponentId,
+        componentType: widget.eventComponentType,
+        behaviors: eventBehaviors,
+        readData: widget.eventData,
+        sliver: isSliver,
+        child:
+            widget.child ??
+            (isSliver
+                ? const SliverToBoxAdapter(child: SizedBox.shrink())
+                : const SizedBox.expand()),
+      ),
     );
 
     if (isSliver) {

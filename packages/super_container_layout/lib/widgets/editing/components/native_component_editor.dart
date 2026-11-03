@@ -27,6 +27,7 @@ import '../overlay/editor_overlay.dart';
 import '../overlay/editor_zone_badge.dart';
 import '../slots/slot_size_editor.dart';
 import '../../components/super_layout/layout_selection.dart';
+import '../../components/component_tooltip.dart';
 import '../../components/super_layout/slot_implementation.dart';
 import '../../components/super_layout/super_layout.dart'
     show ZoneFlowSettingsEditor;
@@ -2956,7 +2957,12 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
     _validate(widget.config);
     Widget wrapSurface(BuildContext context) {
       final child = widget.builder(context, this);
-      if (!widget.editSurface && widget.behaviours == null) return child;
+      if (!widget.editSurface && widget.behaviours == null) {
+        return ComponentTooltip(
+          componentId: _effectiveComponentId ?? widget.keyPrefix,
+          child: child,
+        );
+      }
       if (!widget.editSurface) {
         return EditorSlot(
           id: _effectiveComponentId,

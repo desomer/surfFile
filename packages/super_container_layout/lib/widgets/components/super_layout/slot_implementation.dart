@@ -20,6 +20,8 @@ import 'package:flutter/gestures.dart'
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_layout_config.dart';
+import '../component_tooltip.dart';
+import '../super_component.dart';
 import '../../editing/history/editor_history.dart';
 import '../../editing/overlay/editor_overlay.dart';
 import '../../editing/overlay/editor_zoom.dart';
@@ -217,8 +219,20 @@ abstract class SlotImplementation extends StatelessWidget {
   Widget buildSlot(BuildContext context);
 
   @override
-  Widget build(BuildContext context) =>
-      KeyedSubtree(key: ValueKey('slot-$id'), child: buildSlot(context));
+  Widget build(BuildContext context) {
+    final child = buildSlot(context);
+    return KeyedSubtree(
+      key: ValueKey('slot-$id'),
+      child: ComponentTooltip(
+        componentId: id,
+        behaviors: switch (child) {
+          SuperComponent(:final behaviours) => behaviours,
+          _ => null,
+        },
+        child: child,
+      ),
+    );
+  }
 }
 
 /// Slot dont le contenu est fourni par une fonction.

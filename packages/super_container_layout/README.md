@@ -792,6 +792,61 @@ SuperLayout(
 );
 ```
 
+## Info-bulles sur tous les composants
+
+Dans **Comportement...**, choisir **Afficher une info-bulle** puis saisir un
+texte fixe ou sélectionner un repository et le chemin de son champ texte.
+Le comportement `onTooltip` utilise le déclencheur `hover`. Il fonctionne sur
+tous les types de composants, y compris les conteneurs, layouts, pages, listes,
+tables, arbres, onglets, composants natifs et extensions, en box comme en sliver.
+
+```dart
+SuperValue(
+  id: 'client-name',
+  behaviours: const [
+    ComponentBehavior(
+      id: 'client-tooltip',
+      trigger: BehaviorTrigger.hover,
+      action: TooltipAction(
+        binding: JsonTextBinding(path: 'clients[?].description'),
+      ),
+    ),
+  ],
+);
+```
+
+Sans liaison, utiliser `TooltipAction(message: 'Description du client')`.
+Avec une liaison, le texte suit les données du repository et la ligne courante
+ou sélectionnée (`[?]`), sans écrire dans le repository. Le repository peut être
+hérité d'une collection ou précisé avec `repositoryId`.
+Les valeurs nulles, vides et les lignes non sélectionnées n'affichent rien ;
+une erreur de liaison est signalée explicitement, sans repli sur le texte fixe.
+
+L'info-bulle apparaît uniquement hors édition, avec le délai du thème Flutter.
+Le premier `onTooltip` activé remplace le tooltip propre au composant ; les
+tooltips des composants enfants distincts restent disponibles. La navigation,
+les clics et le curseur natif ne sont pas modifiés.
+
+Les slots et composants standard installent le rendu partagé automatiquement.
+Les extensions et composants hôtes rendus dans un `BuilderSlot` en bénéficient
+sans code spécifique. Pour un widget personnalisé hors slot, utiliser
+l'enveloppe publique avec son identifiant :
+
+```dart
+ComponentTooltip(
+  componentId: 'custom-component',
+  // behaviors: [...] remplace optionnellement Appearance.behaviors pour cette instance.
+  child: myWidget,
+);
+```
+
+L'ID est la clé dans `Appearance.behaviors`. Les enveloppes imbriquées portant
+le même ID ne créent qu'une info-bulle. Un widget décoratif sans ID peut être
+enveloppé de la même façon ; aucun type de widget n'est exclu.
+Pour exposer aussi le menu d'édition **Comportement...** sur un widget
+personnalisé, utiliser `EditorSlot(id: 'custom-component', label: 'Mon composant',
+child: myWidget)` ; cette enveloppe installe déjà `ComponentTooltip`.
+
 ## Evenements internes des composants
 
 Dans **Comportement...**, choisir **Emettre un evenement**, son declencheur

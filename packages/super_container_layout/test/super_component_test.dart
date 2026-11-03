@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -164,6 +165,44 @@ void main() {
   };
 
   for (final entry in factories.entries) {
+    testWidgets('${entry.key} supports the shared onTooltip behavior', (
+      tester,
+    ) async {
+      final bus = SuperEventBus();
+      addTearDown(bus.close);
+      final behaviours = [
+        const ComponentBehavior(
+          id: 'tooltip',
+          trigger: BehaviorTrigger.hover,
+          action: TooltipAction(message: 'Shared tooltip'),
+        ),
+      ];
+      await mount(tester, entry.value(behaviours), bus);
+      final target = find.byWidgetPredicate(
+        (widget) =>
+            widget is EditorSlot &&
+            widget.id == 'subject' &&
+            identical(widget.behaviors, behaviours),
+      );
+      expect(target, findsOneWidget);
+      final tooltip = find.descendant(
+        of: target,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Tooltip && widget.message == 'Shared tooltip',
+        ),
+      );
+      expect(tooltip, findsOneWidget);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getTopLeft(target) + const Offset(4, 4));
+      await tester.pumpAndSettle();
+      expect(find.text('Shared tooltip'), findsOneWidget);
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
+      expect(find.text('Shared tooltip'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('${entry.key} exposes and executes code behaviours', (
       tester,
     ) async {
@@ -206,6 +245,104 @@ void main() {
       expect(events.single.trigger, 'click');
     });
   }
+
+  for (final type in (Registry()..bootstrap()).registry.keys) {
+    testWidgets('registry $type accepts onTooltip without a type whitelist', (
+      tester,
+    ) async {
+      final registry = Registry()..bootstrap();
+      final bus = SuperEventBus();
+      addTearDown(bus.close);
+      final appearance = ValueNotifier(
+        Appearance(
+          behaviors: {
+            'registered': [
+              const ComponentBehavior(
+                id: 'tooltip',
+                trigger: BehaviorTrigger.hover,
+                action: TooltipAction(message: 'Registered tooltip'),
+              ),
+            ],
+          },
+        ),
+      );
+      addTearDown(appearance.dispose);
+      await mount(
+        tester,
+        AppearanceScope(
+          controller: appearance,
+          child: BuilderSlot(
+            id: 'registered',
+            label: type,
+            builder: (_) =>
+                registry.getWidget(type, XuiBuildCtx(id: 'registered')),
+          ),
+        ),
+        bus,
+      );
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is Tooltip && widget.message == 'Registered tooltip',
+        ),
+        findsOneWidget,
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(
+        tester.getTopLeft(find.byKey(const ValueKey('slot-registered')).first) +
+            const Offset(4, 4),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Registered tooltip'), findsOneWidget);
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
+    });
+  }
+
+  testWidgets('bottom navigation item behavior overrides native tooltip', (
+    tester,
+  ) async {
+    final bus = SuperEventBus();
+    addTearDown(bus.close);
+    await mount(
+      tester,
+      const SuperBottomNavigationBar(
+        destinations: [
+          SuperAction(
+            id: 'one',
+            config: SuperActionConfig(
+              label: 'One',
+              icon: 'home',
+              tooltip: 'Native one',
+            ),
+            behaviours: [
+              ComponentBehavior(
+                id: 'tooltip-one',
+                trigger: BehaviorTrigger.hover,
+                action: TooltipAction(message: 'Behavior one'),
+              ),
+            ],
+          ),
+          SuperAction(
+            id: 'two',
+            config: SuperActionConfig(label: 'Two', icon: 'settings'),
+          ),
+        ],
+      ),
+      bus,
+    );
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('super-action-icon-one'))),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Behavior one'), findsOneWidget);
+    expect(find.text('Native one'), findsNothing);
+    await mouse.removePointer();
+    await tester.pumpAndSettle();
+  });
 
   test('configuration types and nullable initial configs are preserved', () {
     const value = SuperValue(id: 'value');

@@ -10,6 +10,8 @@ import 'json_text_binding.dart';
 import 'native_component_config.dart';
 import 'scaffold_page_config.dart';
 import 'super_action_config.dart';
+import 'super_indicator_config.dart';
+import 'super_separator_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
 import 'super_tab_config.dart';
@@ -54,6 +56,14 @@ abstract final class ComponentConfigCatalog {
     'action': ComponentConfigCodec<SuperActionConfig>(
       type: 'action',
       fromJson: SuperActionConfig.fromJson,
+    ),
+    'indicator': ComponentConfigCodec<SuperIndicatorConfig>(
+      type: 'indicator',
+      fromJson: SuperIndicatorConfig.fromJson,
+    ),
+    'separator': ComponentConfigCodec<SuperSeparatorConfig>(
+      type: 'separator',
+      fromJson: SuperSeparatorConfig.fromJson,
     ),
     'list': ComponentConfigCodec<SuperListViewConfig>(
       type: 'list',

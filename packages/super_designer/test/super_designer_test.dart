@@ -80,14 +80,37 @@ void main() {
         '0123456789abcdef0123456789abcdef',
         'nodes',
         [
-          {'id': 'test-node', 'name': 'Test node', 'type': 'string'},
+          {
+            'id': 'test-node',
+            'name': 'Test node',
+            'type': 'string',
+            'typeIcon': 'value',
+          },
+          {
+            'id': 'container-node',
+            'name': 'Container node',
+            'type': 'object',
+            'typeIcon': 'container',
+          },
         ],
       );
       await tester.pumpAndSettle();
+      final indicatorIcons = tester
+          .widgetList<Icon>(
+            find.byKey(const ValueKey('super-indicator-icon-tree-node-icon')),
+          )
+          .map((icon) => icon.icon)
+          .toList();
+      expect(indicatorIcons, [
+        Icons.description_outlined,
+        Icons.folder_outlined,
+      ]);
       final name = tester.widget<SuperValue>(
-        find.byWidgetPredicate(
-          (widget) => widget is SuperValue && widget.id == 'tree-node-name',
-        ),
+        find
+            .byWidgetPredicate(
+              (widget) => widget is SuperValue && widget.id == 'tree-node-name',
+            )
+            .first,
       );
       expect(name.behaviours, hasLength(1));
       expect(
@@ -180,6 +203,7 @@ void main() {
         header.components.keys,
         unorderedEquals([
           'header',
+          'tree-node-icon',
           'tree-node-name',
           'tree-node-type',
           '__export_root',

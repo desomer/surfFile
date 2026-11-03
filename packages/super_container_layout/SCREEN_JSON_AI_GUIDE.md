@@ -19,7 +19,7 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
 | **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` |
-| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:Chart"`, `"registry:TreeView"`, `"registry:Table"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"`, `"registry:BottomAppBar"`, `"registry:NavigationRail"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"ListView"`, `"List"`, `"Tab"`, `"Tabs"`, `"Chart"`, `"Graph"`, `"SuperChart"`, `"AppBar"`, `"BottomBar"`, `"NavigationRail"`, `"Rail"` |
+| **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:Indicator"`, `"registry:Separator"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:Chart"`, `"registry:TreeView"`, `"registry:Table"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"`, `"registry:BottomAppBar"`, `"registry:NavigationRail"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"Indicator"`, `"SuperIndicator"`, `"Icon"`, `"Separator"`, `"SuperSeparator"`, `"Divider"`, `"Spacer"`, `"ListView"`, `"List"`, `"Tab"`, `"Tabs"`, `"Chart"`, `"Graph"`, `"SuperChart"`, `"AppBar"`, `"BottomBar"`, `"NavigationRail"`, `"Rail"` |
 
 ---
 
@@ -32,6 +32,8 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"scaffold"` (`ScaffoldPageConfig`)
    - `"value"` (`SuperValueConfig`)
    - `"action"` (`SuperActionConfig`)
+   - `"indicator"` (`SuperIndicatorConfig`, icône d'état et badge optionnel pilotés par `states`)
+   - `"separator"` (`SuperSeparatorConfig`, séparateur `divider` ou espaceur `spacer`, horizontal ou vertical, avec ou sans libellé)
    - `"list"` (`SuperListViewConfig`, qui embarque directement son `"template"` de ligne)
    - `"tab"` (`SuperTabConfig`, barre d'onglets `TabBar` + vues `TabBarView` en mode statique ou dynamique)
    - `"chart"` (`SuperChartConfig`, graphique `fl_chart` lié à un tableau JSON)
@@ -382,6 +384,28 @@ Affiche un bouton interactif :
 - Typographie & Couleurs : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `iconColor`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`.
 - `style` (`ContainerStyle`) : style de surface avancé optionnel.
 - `propertyBindings` & `states` : liaisons repository et états nommés/automatiques (voir § 4.8).
+
+### 4.4bis. `"indicator"` (`SuperIndicatorConfig`)
+Affiche une icône Material (accompagnée optionnellement d'un libellé et d'un badge/surface) dont l'icône et le style changent selon les états standards (`hover`, `selected`, `contentHover`, `disabled`) ou les états métier nommés (`states.binding` + `states.named`) :
+- `icon` : identifiant d'icône du catalogue `MaterialIconCatalog` (défaut `"info"`, ex. `"check_circle"`, `"warning"`, `"error"`, `"verified"`, `"bolt"`, `"folder"`, etc.).
+- `iconSize` (`number > 0`, défaut `24`), `iconColor` (couleur de l'icône).
+- `label` (ou `text`) : libellé optionnel (`string`, défaut `""`), `iconPosition` (`"leading"` ou `"trailing"`), `iconSpacing` (`number >= 0`, défaut `6`).
+- `tooltip` : infobulle (`string`), `enabled` (`bool`, défaut `true`).
+- Typographie & Badge : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `backgroundColor`, `borderColor`, `radius`, `borderWidth`, `elevation`, `horizontalPadding`, `verticalPadding`, `textAlign`, `letterSpacing`, `style` (`ContainerStyle`).
+- `propertyBindings` & `states` (`IndicatorConfigStates`) : mêmes surcharges par groupes de propriétés (`"icon"`, `"iconColor"`, `"iconSize"`, `"textLabel"`, `"tooltip"`, `"backgroundColor"`, `"borderColor"`, `"radius"`, `"style"`, etc.) que `SuperAction` (voir § 4.8).
+
+### 4.4ter. `"separator"` (`SuperSeparatorConfig`)
+Affiche un trait de séparation (`"divider"`) ou un espaceur (`"spacer"`), horizontal ou vertical, avec ou sans libellé :
+- `kind` : `"divider"` (défaut, alias `"line"`) ou `"spacer"` (alias `"space"`).
+- `axis` (ou `orientation`) : `"horizontal"` (défaut) ou `"vertical"`.
+- `extent` (ou `size`) : hauteur (en horizontal) ou largeur (en vertical) totale (`number >= 0`, défaut `16`).
+- `thickness` : épaisseur du trait en mode `divider` (`number > 0`, défaut `1`).
+- `indent`, `endIndent` : retraits de début et de fin (`number >= 0`, défaut `0`).
+- `lineStyle` : `"solid"` (défaut), `"dashed"`, ou `"dotted"`.
+- `lineColor` : couleur du trait (`#RRGGBB` / `#AARRGGBB`, repli sur `outlineVariant`).
+- `label` (ou `text`) : libellé optionnel (`string`, défaut `""`), `labelPosition` (`"start"`, `"center"`, `"end"`), `labelSpacing` (`number >= 0`, défaut `8`).
+- Typographie du libellé : `fontFamily`, `fontSize`, `fontWeight`, `italic`, `color`, `letterSpacing`.
+- `propertyBindings` & `states` (`SeparatorConfigStates`) : liaisons repository et surcharges par état (`"content"`, `"extent"`, `"thickness"`, `"indents"`, `"lineColor"`, `"textLabel"`, etc.).
 
 ### 4.5. `"list"` (`SuperListViewConfig`) — Embarque un `IterableContent` par défaut
 Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
@@ -1029,7 +1053,13 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
   - `"click"` : Déclenché lors d'un clic (ou tap) sur le composant lorsque le mode édition est désactivé. Le curseur passe automatiquement en pointeur (`click`).
   - `"doubleClick"` : Double-clic pour l'action `"emitEvent"`. Les deux clics simples restent emis si un behaviour `"click"` est aussi configure ; le double-clic est emis en supplement.
   - `"binding"` : Reactif, reserve a l'action `"bindZoneSize"` ; s'applique a chaque changement de la valeur liee (aucun clic).
+  - `"hover"` : Survol hors édition, réservé à l'action `"onTooltip"`, sans action au clic ni curseur de clic ajouté.
 - **Actions polymorphes (`action`)** :
+  - `"onTooltip"` (`TooltipAction`, déclencheur `"hover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
+    - `message` : texte fixe, requis et non vide si aucune liaison n'est fournie.
+    - `binding` (optionnel) : `{"repositoryId": "...", "path": "clients[?].description"}` ou forme courte `"clients[?].description"` avec repository hérité. La valeur doit être un texte ou `null`.
+    - Avec `binding`, `message` n'est pas un fallback. La liaison suit les données et le contexte courant/sélectionné ; une valeur vide/null ou une absence de sélection n'affiche rien. Une liaison invalide produit un diagnostic explicite.
+    - Le premier `onTooltip` activé remplace le tooltip natif de cette cible, mais pas ceux de ses composants enfants distincts. Délai du thème Flutter, aucun affichage en édition.
   - `"goToPage"` (`GoToPageAction`) : Navigation vers une page ou une URL.
     - `pagePath` : Chemin absolu vers lequel naviguer (ex. `"/details"`, `"/clients"`).
     - `pageId` (optionnel) : Identifiant de la page dans `pageCatalog` (ex. `"page-detail"`).
@@ -1047,6 +1077,32 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     - `unit` (optionnel, defaut `"pixels"`) : `"pixels"` ou `"percent"` (largeur du layout pour ouest/est, hauteur pour nord/sud).
     - `durationMs` (optionnel, defaut `250`, `0` sans animation) et `curve` (optionnel, defaut `"easeInOut"` ; `"linear"`, `"easeIn"`, `"easeOut"`, `"fastOutSlowIn"`, `"easeOutBack"`).
     - `0` ferme la zone ; une valeur absente ou non numerique rend la taille de la configuration. La taille n'est jamais enregistree dans la configuration et la poignee de redimensionnement du cote est masquee. La premiere valeur s'applique sans animation.
+
+#### Exemple : info-bulle fixe et info-bulle liée sur une ligne
+
+```json
+{
+  "behaviors": {
+    "main-layout": [
+      {
+        "id": "layout-tooltip",
+        "trigger": "hover",
+        "action": { "type": "onTooltip", "message": "Espace de travail" }
+      }
+    ],
+    "list-clients:item": [
+      {
+        "id": "client-tooltip",
+        "trigger": "hover",
+        "action": {
+          "type": "onTooltip",
+          "binding": "clients[?].description"
+        }
+      }
+    ]
+  }
+}
+```
 
 #### Exemple : panneau ouest lie a un repository
 

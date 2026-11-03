@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -292,6 +293,44 @@ void main() {
   );
 
   testWidgets(
+    'static tab header supports onTooltip without changing selection',
+    (tester) async {
+      await mount(
+        const SuperPage(
+          child: SuperTab(
+            tab: SuperAction(
+              id: 'tab-tooltip',
+              config: SuperActionConfig(
+                label: 'Tooltip tab',
+                tooltip: 'Native tab',
+              ),
+              behaviours: [
+                ComponentBehavior(
+                  id: 'tab-hover',
+                  trigger: BehaviorTrigger.hover,
+                  action: TooltipAction(message: 'Tab behavior'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        tester,
+        Registry()..bootstrap(),
+      );
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(find.text('Tooltip tab')));
+      await tester.pumpAndSettle();
+      expect(find.text('Tab behavior'), findsOneWidget);
+      expect(find.text('Native tab'), findsNothing);
+      expect(tester.widget<TabBar>(find.byType(TabBar)).controller!.index, 0);
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
+      expect(find.text('Tab behavior'), findsNothing);
+    },
+  );
+
+  testWidgets(
     'SuperTab dynamic mode generates tabs and contents from JSON repository array with JsonListScope',
     (tester) async {
       final arrayBinding = JsonTextBinding(
@@ -381,8 +420,27 @@ void main() {
         ),
       );
 
+      final tooltipAppearance = ValueNotifier(
+        Appearance(
+          behaviors: {
+            'tpl-action': [
+              const ComponentBehavior(
+                id: 'tab-description',
+                trigger: BehaviorTrigger.hover,
+                action: TooltipAction(
+                  binding: JsonTextBinding(path: 'categories[?].detail'),
+                ),
+              ),
+            ],
+          },
+        ),
+      );
+      addTearDown(tooltipAppearance.dispose);
       await mount(
-        const SuperPage(child: SuperTab(id: 'dyn-tabs')),
+        AppearanceScope(
+          controller: tooltipAppearance,
+          child: const SuperPage(child: SuperTab(id: 'dyn-tabs')),
+        ),
         tester,
         registry,
       );
@@ -392,6 +450,19 @@ void main() {
       expect(find.text('Fruits'), findsOneWidget);
       expect(find.text('Légumes'), findsOneWidget);
       expect(find.text('Pommes et poires'), findsOneWidget);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(find.text('Fruits')));
+      await tester.pumpAndSettle();
+      expect(find.text('Pommes et poires'), findsNWidgets(2));
+      await mouse.moveTo(tester.getCenter(find.text('Légumes')));
+      await tester.pumpAndSettle();
+      expect(find.text('Carottes et poireaux'), findsOneWidget);
+      expect(find.text('Pommes et poires'), findsOneWidget);
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
+      expect(find.text('Carottes et poireaux'), findsNothing);
 
       // Select second dynamic tab
       await real(tester, () async {
