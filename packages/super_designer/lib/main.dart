@@ -327,8 +327,6 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                 data: SuperLayout(
                   label: 'Node data',
                   config: const SuperLayoutConfig(
-                    east: true,
-                    eastSize: 300,
                     zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
                     zoneFlows: {
                       SuperLayoutZone.center: ZoneFlowConfig(
