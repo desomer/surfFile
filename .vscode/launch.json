@@ -1,0 +1,85 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "SurfFile",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "SurfFile (profile mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "SurfFile (release mode)",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "super_container_extensions",
+            "cwd": "packages\\super_container_extensions",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "super_container_extensions (profile mode)",
+            "cwd": "packages\\super_container_extensions",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "super_container_extensions (release mode)",
+            "cwd": "packages\\super_container_extensions",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "super_container_layout",
+            "cwd": "packages\\super_container_layout",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "super_container_layout (profile mode)",
+            "cwd": "packages\\super_container_layout",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "super_container_layout (release mode)",
+            "cwd": "packages\\super_container_layout",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        },
+        {
+            "name": "super_designer",
+            "cwd": "packages\\super_designer",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "super_designer (profile mode)",
+            "cwd": "packages\\super_designer",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "super_designer (release mode)",
+            "cwd": "packages\\super_designer",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}

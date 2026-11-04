@@ -16,12 +16,22 @@ import '../../theme/appearance.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/dialogs/editor_dialog_header.dart';
 
+/// Format de sortie de l'export dans [AppearanceTransferDialog].
+enum ExportFormat {
+  json('JSON'),
+  dart('Code Dart');
+
+  const ExportFormat(this.label);
+
+  /// Libellé affiché dans le sélecteur de format.
+  final String label;
+}
+
 /// Boîte d'export et d'import du style et de la disposition.
 ///
-/// L'export produit un texte JSON (à copier ou à enregistrer dans un fichier)
-/// limité aux styles, aux dispositions, ou aux deux. L'import lit ce texte (collé
-/// ou lu depuis un fichier), propose les groupes qu'il contient et applique
-/// ceux qui sont cochés.
+/// L'export produit un texte JSON ou du code Dart (à copier ou à enregistrer
+/// dans un fichier). L'import lit ce texte JSON (collé ou lu depuis un fichier),
+/// propose les groupes qu'il contient et applique ceux qui sont cochés.
 class AppearanceTransferDialog extends StatefulWidget {
   const AppearanceTransferDialog({
     required this.controller,
@@ -29,6 +39,7 @@ class AppearanceTransferDialog extends StatefulWidget {
     this.allowImport = true,
     this.allowExport = true,
     this.notice,
+    this.dartExportBuilder,
     super.key,
   }) : assert(allowImport || allowExport);
 
@@ -41,6 +52,9 @@ class AppearanceTransferDialog extends StatefulWidget {
 
   /// Avertissement affiche au-dessus de l'export (contenu partiel, etc.).
   final String? notice;
+
+  /// Générateur optionnel de code Dart pour « Exporter le contenu... ».
+  final String Function(Appearance appearance)? dartExportBuilder;
 
   static Future<void> show(
     BuildContext context,
@@ -61,6 +75,7 @@ class AppearanceTransferDialog extends StatefulWidget {
 
 class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   bool _importing = false;
+  ExportFormat _exportFormat = ExportFormat.json;
   var _exportGroups = {...TransferGroup.values};
   var _importGroups = <TransferGroup>{};
   Set<TransferGroup> _available = const {};
@@ -72,12 +87,13 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   String? _importError;
   String? _status;
 
-  static String _defaultPath() {
+  static String _defaultPath([ExportFormat format = ExportFormat.json]) {
     final home =
         Platform.environment['USERPROFILE'] ??
         Platform.environment['HOME'] ??
         Directory.current.path;
-    return '$home${Platform.pathSeparator}appearance.json';
+    final ext = format == ExportFormat.dart ? 'dart' : 'json';
+    return '$home${Platform.pathSeparator}appearance.$ext';
   }
 
   @override
@@ -95,13 +111,33 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
     super.dispose();
   }
 
-  void _refreshExport() => _exportText.text = _exportGroups.isEmpty
-      ? ''
-      : AppearanceTransfer.export(
-          widget.controller.value,
-          _exportGroups,
-          codec: widget.codec,
-        );
+  void _refreshExport() {
+    if (_exportFormat == ExportFormat.dart &&
+        widget.dartExportBuilder != null) {
+      _exportText.text = widget.dartExportBuilder!(widget.controller.value);
+      return;
+    }
+    _exportText.text = _exportGroups.isEmpty
+        ? ''
+        : AppearanceTransfer.export(
+            widget.controller.value,
+            _exportGroups,
+            codec: widget.codec,
+          );
+  }
+
+  void _setExportFormat(ExportFormat next) {
+    if (_exportFormat == next) return;
+    final previousDefault = _defaultPath(_exportFormat);
+    setState(() {
+      _exportFormat = next;
+      _status = null;
+      if (_file.text.trim() == previousDefault) {
+        _file.text = _defaultPath(next);
+      }
+      _refreshExport();
+    });
+  }
 
   /// Relit le texte à importer : groupes présents, ou erreur à afficher.
   void _refreshImport() {
@@ -231,23 +267,47 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         ),
         const SizedBox(height: 8),
       ],
-      const Text('Contenu de l’export'),
-      const SizedBox(height: 6),
-      _groupChips(_exportGroups, (group) {
-        final next = {..._exportGroups};
-        // Au moins un groupe reste coché.
-        if (!next.remove(group)) {
-          next.add(group);
-        } else if (next.isEmpty) {
-          return;
-        }
-        setState(() {
-          _exportGroups = next;
-          _status = null;
-          _refreshExport();
-        });
-      }, keyPrefix: 'transfer-export'),
-      const SizedBox(height: 12),
+      if (widget.dartExportBuilder != null) ...[
+        const Text('Format de l’export'),
+        const SizedBox(height: 6),
+        SegmentedButton<ExportFormat>(
+          key: const ValueKey('transfer-export-format'),
+          segments: const [
+            ButtonSegment<ExportFormat>(
+              value: ExportFormat.json,
+              icon: Icon(Icons.data_object),
+              label: Text('JSON'),
+            ),
+            ButtonSegment<ExportFormat>(
+              value: ExportFormat.dart,
+              icon: Icon(Icons.code),
+              label: Text('Code Dart'),
+            ),
+          ],
+          selected: {_exportFormat},
+          onSelectionChanged: (selection) => _setExportFormat(selection.first),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (_exportFormat == ExportFormat.json) ...[
+        const Text('Contenu de l’export'),
+        const SizedBox(height: 6),
+        _groupChips(_exportGroups, (group) {
+          final next = {..._exportGroups};
+          // Au moins un groupe reste coché.
+          if (!next.remove(group)) {
+            next.add(group);
+          } else if (next.isEmpty) {
+            return;
+          }
+          setState(() {
+            _exportGroups = next;
+            _status = null;
+            _refreshExport();
+          });
+        }, keyPrefix: 'transfer-export'),
+        const SizedBox(height: 12),
+      ],
       TextField(
         key: const ValueKey('transfer-export-text'),
         controller: _exportText,

@@ -6,6 +6,7 @@
 /// de widget ([ComponentBuilder]) dans le [Registry].
 library;
 
+import '../services/codegen/dart_code_generator.dart';
 import 'registry.dart';
 
 /// Contrat déclaratif d'une extension de composant pour `super_container_layout`.
@@ -14,6 +15,9 @@ abstract class SuperComponentExtension {
 
   /// Nom canonique du composant dans [Registry.registry] (ex: `'Chart'`).
   String get registryType;
+
+  /// Classe dédiée à la génération du code Dart de ce composant (`null` si non supporté).
+  ComponentDartGenerator? get dartGenerator => null;
 
   /// Enregistre les codecs [ComponentConfigCodec] dans [ComponentConfigCatalog]
   /// et les alias de type dans [JsonComponentType].

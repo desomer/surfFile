@@ -7,6 +7,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 import 'models/super_chart_config.dart';
 import 'models/super_code_config.dart';
+import 'services/codegen/extension_dart_generators.dart';
 import 'widgets/components/super_chart.dart';
 import 'widgets/components/super_code.dart';
 import 'widgets/editing/addition/chart_add_configurator.dart';
@@ -18,6 +19,9 @@ class SuperCodeExtension extends SuperComponentExtension {
 
   @override
   String get registryType => 'Code';
+
+  @override
+  ComponentDartGenerator get dartGenerator => const SuperCodeDartGenerator();
 
   @override
   void registerCodecs() => ensureSuperCodeCodecsRegistered();
@@ -34,7 +38,9 @@ class SuperCodeExtension extends SuperComponentExtension {
       duplication: ComponentDuplicationContract.component,
       tags: const {'code', 'data'},
       addConfigurator: codeAddConfigurator,
-      previewBuilder: (context) => const Center(child: Icon(Icons.code, size: 40)),
+      previewBuilder: (context) =>
+          const Center(child: Icon(Icons.code, size: 40)),
+      dartGenerator: dartGenerator,
       dynamicBuilder: (ctx) => SuperCode(id: ctx.id),
     );
   }
@@ -46,6 +52,9 @@ class SuperChartExtension extends SuperComponentExtension {
 
   @override
   String get registryType => 'Chart';
+
+  @override
+  ComponentDartGenerator get dartGenerator => const SuperChartDartGenerator();
 
   @override
   void registerCodecs() => ensureSuperChartCodecsRegistered();
@@ -63,6 +72,7 @@ class SuperChartExtension extends SuperComponentExtension {
       tags: const {'chart', 'data'},
       addConfigurator: chartAddConfigurator,
       previewBuilder: buildSuperChartPreview,
+      dartGenerator: dartGenerator,
       dynamicBuilder: (ctx) => SuperChart(id: ctx.id),
     );
   }
@@ -154,7 +164,6 @@ extension SuperContainerExtensionsRegistry on Registry {
     ensureSuperChartCodecsRegistered();
     return componentController<SuperChartConfig>(id, fallback: fallback);
   }
-
 }
 
 /// Acces type aux reglages de SuperCode dans l'apparence.

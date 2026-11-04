@@ -13,6 +13,7 @@ import '../../../theme/appearance.dart';
 import '../../../theme/appearance_slot.dart';
 import '../../../models/component_behavior.dart';
 import '../../../models/component_config.dart';
+import '../../../services/codegen/dart_code_generator.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../models/super_renderer_config.dart';
@@ -304,6 +305,28 @@ class EditorSlotState extends State<EditorSlot> {
     return configs;
   }
 
+  /// Comportements vivants de ce slot et de ses descendants declares en code.
+  Map<String, List<ComponentBehavior>> _liveBehaviors() {
+    final behaviors = <String, List<ComponentBehavior>>{};
+    if (widget.behaviors case final list? when list.isNotEmpty) {
+      behaviors[effectiveComponentId] = list;
+    }
+    void visit(Element element) {
+      if (element is StatefulElement && element.state is EditorSlotState) {
+        final slot = element.state as EditorSlotState;
+        if (slot.widget.zoneId == null) {
+          if (slot.widget.behaviors case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(slot.effectiveComponentId, () => list);
+          }
+        }
+      }
+      element.visitChildren(visit);
+    }
+
+    context.visitChildElements(visit);
+    return behaviors;
+  }
+
   /// Calcule l'export contextuel de ce slot (composant ou zone et descendants).
   ///
   /// Lève une [FormatException] si la cible n'est pas exportable.
@@ -314,7 +337,19 @@ class EditorSlotState extends State<EditorSlot> {
     zoneId: widget.zoneId,
     registryType: widget.menuType,
     liveConfigs: _liveConfigs(),
+    liveBehaviors: _liveBehaviors(),
   );
+
+  /// Génère le code Dart correspondant au contenu de ce slot.
+  String buildDartContentExport([EditorFragmentExport? export]) {
+    final fragment = export ?? buildContentExport();
+    return DartCodeExporter.export(
+      appearance: fragment.appearance,
+      registry: SuperApp.maybeOf(context)!.registry!,
+      componentId: effectiveComponentId,
+      componentLabel: label,
+    );
+  }
 
   Future<void> _exportContent() async {
     final controller = AppearanceScope.controllerOf(context);
@@ -323,6 +358,8 @@ class EditorSlotState extends State<EditorSlot> {
     ValueNotifier<Appearance>? fragment;
     try {
       final export = buildContentExport();
+      final exportId = effectiveComponentId;
+      final exportLabel = label;
       fragment = ValueNotifier(export.appearance);
       final codec = AppearanceServicesScope.codecOf(context);
       await showEditorDialog<void>(
@@ -331,6 +368,12 @@ class EditorSlotState extends State<EditorSlot> {
           controller: fragment!,
           codec: codec,
           allowImport: false,
+          dartExportBuilder: (appearance) => DartCodeExporter.export(
+            appearance: appearance,
+            registry: registry,
+            componentId: exportId,
+            componentLabel: exportLabel,
+          ),
           notice: export.omitted.isEmpty
               ? null
               : 'Widgets fournis par le code Dart, non exportables et retirés '

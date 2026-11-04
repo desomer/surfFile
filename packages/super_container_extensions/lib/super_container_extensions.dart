@@ -8,6 +8,7 @@ library;
 export 'extensions_registry.dart';
 export 'models/super_chart_config.dart';
 export 'models/super_code_config.dart';
+export 'services/codegen/extension_dart_generators.dart';
 export 'widgets/components/super_code.dart';
 export 'widgets/editing/addition/code_add_configurator.dart';
 export 'widgets/editing/addition/forms/code_add_form.dart';

@@ -164,6 +164,12 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `services/appearance/appearance_store.dart` | `AppearanceStore` : persistance asynchrone sérialisée dans `SharedPreferences` (clé `appearance.v1`) et création de contrôleurs persistants. |
 | `services/appearance/appearance_transfer.dart` | `AppearanceTransfer`, `AppearanceGroup` : import/export JSON par groupes (Styles, Dispositions) et application incrémentale des patches IA (`applyVibe`). |
 | `services/appearance/default_appearance_codec.dart` | `DefaultAppearanceCodec` : codec JSON standard (versions 1 à 3) pour `DefaultAppearance`. |
+| `services/codegen/dart_code_generator.dart` | Fichier baril réexportant le socle (`core/` : `ComponentDartGenerator`, `DartCodegenContext`, `DartCodeExporter`). |
+| `services/codegen/component_dart_generators.dart` | Fichier baril réexportant les générateurs dédiés par composant situés sous `services/codegen/generators/`. |
+| `services/codegen/core/component_dart_generator.dart` | `ComponentDartGenerator` : contrat abstrait de générateur de code Dart pour un composant. |
+| `services/codegen/core/dart_codegen_context.dart` | `DartCodegenContext` : contexte de génération, résolution des slots, formatage d'expressions Dart (couleurs, polices, styles, etc.). |
+| `services/codegen/core/dart_code_exporter.dart` | `DartCodeExporter` : moteur d'export d'une apparence ou fragment en code Dart `_registry.registerComponent(...)`. |
+| `services/codegen/generators/` | Dossier dédié contenant chaque classe de génération : `SuperLayoutDartGenerator`, `SuperValueDartGenerator`, `SuperActionDartGenerator`, `SuperIndicatorDartGenerator`, `SuperSeparatorDartGenerator`, `SuperListViewDartGenerator`, `SuperTreeViewDartGenerator`, `SuperTabDartGenerator`, `SuperTableDartGenerator`, `SuperCardDartGenerator`, `SuperIterableContentDartGenerator`, `SuperNativeComponentDartGenerator`, `SuperRendererDartGenerator`. |
 | `services/pages/editor_page_graph.dart` | `EditorPageGraph` : graphe de dépendances des composants et styles d'une page (collecte, duplication profonde, nettoyage d'orphelins à la suppression). |
 | `services/pages/editor_page_router.dart` | `EditorPageRouter`, `buildEditorGoRouter` : génération dynamique des routes `GoRouter` à partir de `EditorPageCatalog`. |
 | `services/repositories/json_list_scope.dart` | `JsonListScope`, `ResolvedJsonBinding` : `InheritedWidget` de contexte de ligne pour les listes/tables/arbres et résolution des jokers `[?]`. |

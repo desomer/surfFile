@@ -6,6 +6,7 @@ library;
 
 import 'package:shortid/shortid.dart';
 
+import '../../models/component_behavior.dart';
 import '../../models/component_config.dart';
 import '../../models/editor_page_config.dart';
 import '../../models/native_component_config.dart';
@@ -79,6 +80,7 @@ abstract final class EditorPageGraph {
     String? zoneId,
     String? registryType,
     Map<String, ComponentConfig> liveConfigs = const {},
+    Map<String, List<ComponentBehavior>> liveBehaviors = const {},
   }) => export(
     appearance: appearance,
     registry: registry,
@@ -86,6 +88,7 @@ abstract final class EditorPageGraph {
     zoneId: zoneId,
     registryType: registryType,
     liveConfigs: liveConfigs,
+    liveBehaviors: liveBehaviors,
   ).appearance;
 
   /// Extrait [componentId] (ou sa zone [zoneId]) et tous ses descendants dans
@@ -106,11 +109,15 @@ abstract final class EditorPageGraph {
     String? zoneId,
     String? registryType,
     Map<String, ComponentConfig> liveConfigs = const {},
+    Map<String, List<ComponentBehavior>> liveBehaviors = const {},
   }) {
     final base = registry.appearanceSnapshot(appearance);
-    final snapshot = liveConfigs.isEmpty
+    final snapshot = liveConfigs.isEmpty && liveBehaviors.isEmpty
         ? base
-        : base.copyWith(components: {...liveConfigs, ...base.components});
+        : base.copyWith(
+            components: {...liveConfigs, ...base.components},
+            behaviors: {...liveBehaviors, ...base.behaviors},
+          );
     final config = snapshot.components[componentId];
     if (config == null && !snapshot.styles.containsKey(componentId)) {
       throw FormatException(

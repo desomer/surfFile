@@ -40,6 +40,8 @@ import '../widgets/components/native/super_bottom_navigation_bar.dart';
 import '../widgets/components/native/super_expansible.dart';
 import '../widgets/components/native/super_menu_anchor.dart';
 import '../widgets/components/native/super_navigation_rail.dart';
+import '../services/codegen/component_dart_generators.dart';
+import '../services/codegen/dart_code_generator.dart';
 import '../services/pages/editor_page_graph.dart';
 import '../widgets/editing/addition/component_add_configurators.dart';
 import '../widgets/editing/addition/component_add_wizard.dart';
@@ -247,6 +249,7 @@ class ComponentBuilder {
     this.duplication,
     this.addConfigurator,
     this.previewBuilder,
+    this.dartGenerator,
   });
 
   /// Optional custom label displayed in the component add popup.
@@ -270,6 +273,9 @@ class ComponentBuilder {
   /// Optional preview widget builder displayed in the component add popup.
   final WidgetBuilder? previewBuilder;
 
+  /// Optional Dart code generator dedicated to this component type.
+  final ComponentDartGenerator? dartGenerator;
+
   Widget getWidget(XuiBuildCtx ctx) {
     return SizedBox.shrink();
   }
@@ -286,6 +292,7 @@ class RegisteredComponentImpl extends ComponentBuilder {
     super.duplication,
     super.addConfigurator,
     super.previewBuilder,
+    super.dartGenerator,
   });
 
   final Widget widget;
@@ -1054,6 +1061,7 @@ class Registry {
       duplication: ComponentDuplicationContract.component,
       addConfigurator: superRendererAddConfigurator,
       previewBuilder: (_) => const Center(child: Icon(Icons.web, size: 40)),
+      dartGenerator: const SuperRendererDartGenerator(),
       dynamicBuilder: (ctx) => SuperRenderer(id: ctx.id),
     );
     registry['Layout'] = ComponentBuilderDynamic(
@@ -1062,6 +1070,7 @@ class Registry {
       tags: const {'layout'},
       addConfigurator: layoutAddConfigurator,
       previewBuilder: _buildLayoutPreview,
+      dartGenerator: const SuperLayoutDartGenerator(),
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (ctx) {
           final id = xuiCtx.id;
@@ -1093,6 +1102,7 @@ class Registry {
       tags: const {'container'},
       addConfigurator: containerAddConfigurator,
       previewBuilder: _buildCardPreview,
+      dartGenerator: const SuperCardDartGenerator(),
       dynamicBuilder: (xuiCtx) => Builder(
         builder: (context) {
           final style = SuperApp.of(context).getContainerStyleById(xuiCtx.id);
@@ -1117,6 +1127,7 @@ class Registry {
       tags: const {'text', 'input'},
       addConfigurator: superValueAddConfigurator(availableFontFamilies),
       previewBuilder: _buildValuePreview,
+      dartGenerator: const SuperValueDartGenerator(),
       dynamicBuilder: (ctx) =>
           SuperValue(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
@@ -1128,6 +1139,7 @@ class Registry {
       tags: const {'action', 'button', 'input'},
       addConfigurator: superActionAddConfigurator(availableFontFamilies),
       previewBuilder: _buildActionPreview,
+      dartGenerator: const SuperActionDartGenerator(),
       dynamicBuilder: (ctx) =>
           SuperAction(id: ctx.id, availableFontFamilies: availableFontFamilies),
     );
@@ -1139,6 +1151,7 @@ class Registry {
       tags: const {'indicator', 'icon', 'text'},
       addConfigurator: superIndicatorAddConfigurator(availableFontFamilies),
       previewBuilder: _buildIndicatorPreview,
+      dartGenerator: const SuperIndicatorDartGenerator(),
       dynamicBuilder: (ctx) => SuperIndicator(
         id: ctx.id,
         availableFontFamilies: availableFontFamilies,
@@ -1152,6 +1165,7 @@ class Registry {
       tags: const {'separator', 'divider', 'spacer'},
       addConfigurator: superSeparatorAddConfigurator(availableFontFamilies),
       previewBuilder: _buildSeparatorPreview,
+      dartGenerator: const SuperSeparatorDartGenerator(),
       dynamicBuilder: (ctx) => SuperSeparator(
         id: ctx.id,
         availableFontFamilies: availableFontFamilies,
@@ -1164,6 +1178,10 @@ class Registry {
       tags: const {'appBar'},
       placementTags: const {'appBar'},
       previewBuilder: _buildApplicationBarPreview,
+      dartGenerator: const SuperNativeComponentDartGenerator(
+        widgetClassName: 'SuperAppBar',
+        defaultLabel: 'ApplicationBar',
+      ),
       dynamicBuilder: (ctx) => SuperAppBar(id: ctx.id),
     );
 
@@ -1173,6 +1191,10 @@ class Registry {
       tags: const {'bottomNavigationBar'},
       placementTags: const {'bottomNavigationBar'},
       previewBuilder: _buildBottomNavigationBarPreview,
+      dartGenerator: const SuperNativeComponentDartGenerator(
+        widgetClassName: 'SuperBottomNavigationBar',
+        defaultLabel: 'Barre de navigation',
+      ),
       dynamicBuilder: (ctx) => SuperBottomNavigationBar(id: ctx.id),
     );
 
@@ -1182,6 +1204,10 @@ class Registry {
       tags: const {'bottomNavigationBar', 'bottomAppBar'},
       placementTags: const {'bottomNavigationBar'},
       previewBuilder: _buildBottomAppBarPreview,
+      dartGenerator: const SuperNativeComponentDartGenerator(
+        widgetClassName: 'SuperBottomAppBar',
+        defaultLabel: 'Barre basse',
+      ),
       dynamicBuilder: (ctx) => SuperBottomAppBar(id: ctx.id),
     );
 
@@ -1190,6 +1216,10 @@ class Registry {
       duplication: ComponentDuplicationContract.superNavigationRail,
       tags: const {'navigationRail'},
       previewBuilder: _buildNavigationRailPreview,
+      dartGenerator: const SuperNativeComponentDartGenerator(
+        widgetClassName: 'SuperNavigationRail',
+        defaultLabel: 'Rail de navigation',
+      ),
       dynamicBuilder: (ctx) => SuperNavigationRail(id: ctx.id),
     );
 
@@ -1199,6 +1229,10 @@ class Registry {
       tags: const {'container', 'layout', 'expansible'},
       addConfigurator: expansibleAddConfigurator,
       previewBuilder: _buildExpansiblePreview,
+      dartGenerator: const SuperNativeComponentDartGenerator(
+        widgetClassName: 'SuperExpansible',
+        defaultLabel: 'Expansible',
+      ),
       dynamicBuilder: (ctx) => SuperExpansible(id: ctx.id),
     );
 
@@ -1208,6 +1242,10 @@ class Registry {
       tags: const {'container', 'layout', 'menu'},
       addConfigurator: menuAnchorAddConfigurator,
       previewBuilder: _buildMenuPreview,
+      dartGenerator: const SuperNativeComponentDartGenerator(
+        widgetClassName: 'SuperMenuAnchor',
+        defaultLabel: 'Menu',
+      ),
       dynamicBuilder: (ctx) => SuperMenuAnchor(id: ctx.id),
     );
 
@@ -1217,6 +1255,7 @@ class Registry {
       tags: const {'container', 'layout', 'tab'},
       addConfigurator: tabAddConfigurator,
       previewBuilder: _buildTabPreview,
+      dartGenerator: const SuperTabDartGenerator(),
       dynamicBuilder: (ctx) => SuperTab(id: ctx.id),
     );
 
@@ -1227,6 +1266,7 @@ class Registry {
       placementTags: const {'list'},
       addConfigurator: containerAddConfigurator,
       previewBuilder: _buildIterableContentPreview,
+      dartGenerator: const SuperIterableContentDartGenerator(),
       dynamicBuilder: (ctx) => IterableContent(id: ctx.id),
     );
     registry['ListView'] = ComponentBuilderDynamic(
@@ -1235,6 +1275,7 @@ class Registry {
       tags: const {'list', 'layout'},
       addConfigurator: listViewAddConfigurator,
       previewBuilder: _buildListViewPreview,
+      dartGenerator: const SuperListViewDartGenerator(),
       dynamicBuilder: (xuiCtx) => BuilderSlot(
         id: xuiCtx.id,
         label: 'Liste',
@@ -1249,6 +1290,7 @@ class Registry {
       tags: const {'tree', 'list', 'layout', 'data'},
       addConfigurator: treeViewAddConfigurator,
       previewBuilder: _buildTreeViewPreview,
+      dartGenerator: const SuperTreeViewDartGenerator(),
       dynamicBuilder: (ctx) => SuperTreeView(id: ctx.id),
     );
 
@@ -1259,6 +1301,7 @@ class Registry {
       tags: const {'table', 'list', 'layout', 'data'},
       addConfigurator: tableAddConfigurator,
       previewBuilder: _buildTablePreview,
+      dartGenerator: const SuperTableDartGenerator(),
       dynamicBuilder: (ctx) => SuperTable(id: ctx.id),
     );
   }
@@ -1280,6 +1323,7 @@ class ComponentBuilderDynamic extends ComponentBuilder {
     super.duplication,
     super.addConfigurator,
     super.previewBuilder,
+    super.dartGenerator,
   });
 
   @override
