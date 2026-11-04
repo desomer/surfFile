@@ -167,10 +167,132 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
     _repositoryStore.registerRepository(repository);
     unawaited(_validateYaml(repository.json['source']));
+
     _registry.registerComponent(
-      'A',
+      'model-code',
       RegisteredComponent(
-        label: 'A',
+        label: 'Card',
+        isAvailable: (context) {
+          return true;
+        },
+        builder: (_) => EditableSurface(
+          id: 'model-code',
+          label: 'Card',
+          menuType: 'Card',
+          style: const ContainerStyle(color: Color(0xFF2B382C)),
+          child: const SuperCode(
+            id: 'model-code',
+            config: SuperCodeConfig(
+              style: SuperCodeStyle(transparentBackground: true),
+              binding: JsonTextBinding(
+                repositoryId: _repositoryId,
+                path: 'source',
+              ),
+              errorBinding: JsonTextBinding(
+                repositoryId: _repositoryId,
+                path: 'yamlError',
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    _registry.registerComponent(
+      'model-header',
+      RegisteredComponent(
+        label: 'Model Header',
+        menuIcon: Icons.code,
+        builder: (_) => SuperLayout(
+          label: 'Node header',
+          config: const SuperLayoutConfig(
+            zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+            zoneFlows: {
+              SuperLayoutZone.center: ZoneFlowConfig(expandSlots: false),
+            },
+            slotSizeConstraints: {
+              'tree-node-separator': SlotSizeConstraints(fitContent: false),
+              'tree-node-name': SlotSizeConstraints(
+                paddingInsets: EdgeInsets.fromLTRB(5, 0, 0, 0),
+                percentBasis: SlotPercentBasis.layout,
+              ),
+            },
+            placements: {
+              SuperLayoutZone.center: [
+                'tree-node-icon',
+                'tree-node-name',
+                'tree-node-separator',
+                'tree-node-type',
+              ],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'tree-node-icon',
+              label: 'Icon',
+              builder: (_) => SuperIndicator(
+                id: 'tree-node-icon',
+                config: SuperIndicatorConfig(
+                  icon: 'description',
+                  iconSize: 18,
+                  states: IndicatorConfigStates(
+                    binding: const JsonTextBinding(path: 'typeIcon'),
+                    named: const {
+                      'container': SuperIndicatorConfig(icon: 'folder'),
+                      'value': SuperIndicatorConfig(icon: 'description'),
+                    },
+                    namedProperties: const {
+                      'container': {IndicatorStateProperty.icon},
+                      'value': {IndicatorStateProperty.icon},
+                    },
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tree-node-name',
+              label: 'Name',
+              builder: (_) => SuperValue(
+                id: 'tree-node-name',
+                behaviours: [
+                  ComponentBehavior(
+                    id: 'tree-node-name-click',
+                    trigger: BehaviorTrigger.click,
+                    action: EmitEventAction(eventId: 'node.click'),
+                  ),
+                ],
+                config: const SuperValueConfig(
+                  binding: JsonTextBinding(path: 'name'),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tree-node-separator',
+              label: 'Separator',
+              builder: (_) => const SuperSeparator(
+                id: 'tree-node-separator',
+                config: SuperSeparatorConfig(kind: SuperSeparatorKind.spacer),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tree-node-type',
+              label: 'Type',
+              builder: (_) => const SuperValue(
+                id: 'tree-node-type',
+                config: SuperValueConfig(
+                  binding: JsonTextBinding(path: 'type'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    _registry.registerComponent(
+      'ModelDesc',
+      RegisteredComponent(
+        label: 'Model Desc',
         isAvailable: (context) {
           return true;
         },
@@ -194,29 +316,23 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
             autoSides: {SuperLayoutZone.center},
             sideResizing: {SuperLayoutZone.west: true},
             placements: {
-              SuperLayoutZone.west: ['explorer-code'],
+              SuperLayoutZone.west: ['input-code'],
               SuperLayoutZone.center: ['explorer-tree'],
               SuperLayoutZone.east: ['global-node-properties'],
             },
           ),
           slots: [
+            // _registry.component('model-code').createSlot('model-code'),
             BuilderSlot(
-              id: 'explorer-code',
-              label: 'Code',
-              builder: (_) => const SuperCode(
-                id: 'explorer-code',
-                config: SuperCodeConfig(
-                  binding: JsonTextBinding(
-                    repositoryId: _repositoryId,
-                    path: 'source',
-                  ),
-                  errorBinding: JsonTextBinding(
-                    repositoryId: _repositoryId,
-                    path: 'yamlError',
-                  ),
-                ),
-              ),
+              id: 'input-code',
+              label: 'Input Code',
+              menuIcon: Icons.code,
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('model-code')
+                      .builder(context),
             ),
+
             BuilderSlot(
               id: 'global-node-properties',
               label: 'Global Node Properties',
@@ -237,93 +353,17 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               label: 'TreeView',
               builder: (_) => SuperTreeView(
                 id: 'explorer-tree',
-                header: SuperLayout(
-                  label: 'Node header',
-                  config: const SuperLayoutConfig(
-                    zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
-                    zoneFlows: {
-                      SuperLayoutZone.center: ZoneFlowConfig(
-                        expandSlots: false,
-                      ),
-                    },
-                    slotSizeConstraints: {
-                      'tree-node-separator': SlotSizeConstraints(
-                        fitContent: false,
-                      ),
-                    },
-                    placements: {
-                      SuperLayoutZone.center: [
-                        'tree-node-icon',
-                        'tree-node-name',
-                        'tree-node-separator',
-                        'tree-node-type',
-                      ],
-                    },
+                slots: [
+                  BuilderSlot(
+                    id: 'input-header',
+                    label: 'Input Header',
+                    menuIcon: Icons.code,
+                    builder: (context) =>
+                        SuperApp.of(context).registry!
+                            .component('model-header')
+                            .builder(context),
                   ),
-                  slots: [
-                    BuilderSlot(
-                      id: 'tree-node-icon',
-                      label: 'Icon',
-                      builder: (_) => SuperIndicator(
-                        id: 'tree-node-icon',
-                        config: SuperIndicatorConfig(
-                          icon: 'description',
-                          iconSize: 18,
-                          states: IndicatorConfigStates(
-                            binding: const JsonTextBinding(path: 'typeIcon'),
-                            named: const {
-                              'container': SuperIndicatorConfig(icon: 'folder'),
-                              'value': SuperIndicatorConfig(
-                                icon: 'description',
-                              ),
-                            },
-                            namedProperties: const {
-                              'container': {IndicatorStateProperty.icon},
-                              'value': {IndicatorStateProperty.icon},
-                            },
-                          ),
-                        ),
-                      ),
-                    ),
-                    BuilderSlot(
-                      id: 'tree-node-name',
-                      label: 'Name',
-                      builder: (_) => SuperValue(
-                        id: 'tree-node-name',
-                        behaviours: [
-                          ComponentBehavior(
-                            id: 'tree-node-name-click',
-                            trigger: BehaviorTrigger.click,
-                            action: EmitEventAction(eventId: 'node.click'),
-                          ),
-                        ],
-                        config: const SuperValueConfig(
-                          binding: JsonTextBinding(path: 'name'),
-                        ),
-                      ),
-                    ),
-                    BuilderSlot(
-                      id: 'tree-node-separator',
-                      label: 'Separator',
-                      builder: (_) => const SuperSeparator(
-                        id: 'tree-node-separator',
-                        config: SuperSeparatorConfig(
-                          kind: SuperSeparatorKind.spacer,
-                        ),
-                      ),
-                    ),
-                    BuilderSlot(
-                      id: 'tree-node-type',
-                      label: 'Type',
-                      builder: (_) => const SuperValue(
-                        id: 'tree-node-type',
-                        config: SuperValueConfig(
-                          binding: JsonTextBinding(path: 'type'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                ],
                 data: SuperLayout(
                   label: 'Node data',
                   config: const SuperLayoutConfig(
@@ -333,14 +373,42 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       ),
                     },
+                    slotSizeConstraints: {
+                      'tree-node-title': SlotSizeConstraints(
+                        padding: 1,
+                        percentBasis: SlotPercentBasis.layout,
+                      ),
+                    },
                     placements: {
                       SuperLayoutZone.center: [
+                        'tree-node-title',
                         'tree-node-id',
                         'tree-node-properties',
                       ],
                     },
                   ),
                   slots: [
+                    BuilderSlot(
+                      id: 'tree-node-title',
+                      label: 'Title',
+                      builder: (_) => const SuperValue(
+                        id: 'tree-node-title',
+
+                        config: SuperValueConfig(
+                          placeholder: 'title',
+                          mode: SuperValueMode.input,
+                          binding: JsonTextBinding(
+                            repositoryId: '0123456789abcdef0123456789abcdef',
+                            path: 'nodes[?].title',
+                          ),
+                          field: SuperTextFieldConfig(
+                            variant: TextFieldVariant.outlined,
+                            borderWidth: 1,
+                            horizontalPadding: 0,
+                          ),
+                        ),
+                      ),
+                    ),
                     BuilderSlot(
                       id: 'tree-node-id',
                       label: 'ID',
@@ -364,12 +432,13 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                   ],
                 ),
                 config: SuperTreeViewConfig(
+                  rowHeight: 28,
                   binding: const JsonTextBinding(
                     repositoryId: _repositoryId,
                     path: 'nodes',
                   ),
                   placements: const {
-                    SuperTreeViewConfig.headerZone: ['header'],
+                    SuperTreeViewConfig.headerZone: ['input-header'],
                     SuperTreeViewConfig.dataZone: ['data'],
                   },
                 ),

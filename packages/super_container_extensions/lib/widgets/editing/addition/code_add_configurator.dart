@@ -23,6 +23,8 @@ final codeAddConfigurator = ComponentAddConfigurator<SuperCodeConfig>(
   summary: (draft) => [
     ('Langage', draft.mode.label),
     ('Lecture seule', draft.readOnly ? 'oui' : 'non'),
+    ('Thème', draft.style.theme.label),
+    ('Taille police', '${draft.style.fontSize.toInt()} px'),
     ('Liaison', draft.binding?.path ?? 'Aucune'),
   ],
   apply: (registry, id, draft) => registry.codeController(id).value = draft,

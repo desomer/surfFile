@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart' as flutter_material;
 import 'package:flutter_localizations/flutter_localizations.dart' as flutter_localizations;
 import 'package:flutter_code_editor/flutter_code_editor.dart';
-import 'package:flutter_highlight/themes/monokai-sublime.dart';
 import 'package:highlight/highlight_core.dart';
+import 'package:super_container_extensions/models/super_code_style.dart';
 import 'package:super_container_extensions/widgets/components/internal_widget/widget_error_banner.dart';
 import 'package:super_container_extensions/widgets/components/internal_widget/widget_long_json_viewer.dart';
 import 'package:super_container_extensions/widgets/components/internal_widget/yaml_browser.dart';
@@ -106,10 +106,14 @@ class CodeEditorState extends State<CodeEditor> {
   String _lastText = '';
 
   int lastRow = -1;
-  final textStyle = const TextStyle(
-    height: 1.5,
-    /*fontFamily: 'SourceCode',*/ fontSize: 14,
-  );
+  TextStyle get textStyle {
+    final style = widget.config.style;
+    return TextStyle(
+      height: style.lineHeight,
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+    );
+  }
 
   @override
   void initState() {
@@ -223,6 +227,22 @@ class CodeEditorState extends State<CodeEditor> {
       return SizedBox.shrink();
     }
 
+    final style = widget.config.style;
+    final rawThemeStyles = style.theme.highlightTheme;
+    final themeStyles = style.transparentBackground
+        ? {
+            ...rawThemeStyles,
+            if (rawThemeStyles.containsKey('root'))
+              'root': rawThemeStyles['root']!.copyWith(
+                backgroundColor: flutter_material.Colors.transparent,
+              ),
+          }
+        : rawThemeStyles;
+    final effectiveBackground = style.transparentBackground
+        ? flutter_material.Colors.transparent
+        : (rawThemeStyles['root']?.backgroundColor ??
+            const flutter_material.Color(0xff23241f));
+
     if (!widget.config.useLargeTextViewer && aText.length > 50000) {
       if (_largeText.text != aText) {
         _largeText.value = TextEditingValue(
@@ -242,11 +262,12 @@ class CodeEditorState extends State<CodeEditor> {
                 expands: true,
                 minLines: null,
                 maxLines: null,
-                style: textStyle.copyWith(color: monokaiSublimeTheme['root']?.color),
+                style: textStyle.copyWith(color: themeStyles['root']?.color),
                 decoration: const flutter_material.InputDecoration(
                   border: flutter_material.InputBorder.none,
                 ),
               ),
+              color: effectiveBackground,
             ),
           ),
           WidgetErrorBanner(error: widget.config.notifError),
@@ -273,17 +294,17 @@ class CodeEditorState extends State<CodeEditor> {
       );
     }
 
+    final gutterWidth = style.showLineNumbers
+        ? (style.fontSize * 4.2).clamp(40.0, 90.0)
+        : (style.showFoldingHandles ? 24.0 : 0.0);
     Widget code = CodeField(
-      gutterStyle: const GutterStyle(
-        textStyle: TextStyle(
-          height: 1.5,
-          /*fontFamily: 'SourceCode',*/ fontSize: 14,
-        ),
+      gutterStyle: GutterStyle(
+        textStyle: textStyle,
         margin: 0,
-        width: 60,
+        width: gutterWidth,
         showErrors: true,
-        showFoldingHandles: true,
-        showLineNumbers: true,
+        showFoldingHandles: style.showFoldingHandles,
+        showLineNumbers: style.showLineNumbers,
       ),
       controller: controller,
       textStyle: textStyle,
@@ -291,6 +312,7 @@ class CodeEditorState extends State<CodeEditor> {
       readOnly: widget.config.readOnly,
       expands: true,
       maxLines: null,
+      background: effectiveBackground,
     );
 
     return Column(
@@ -298,7 +320,7 @@ class CodeEditorState extends State<CodeEditor> {
         //getHeaderEditor(context),
         Expanded(
           child: CodeTheme(
-            data: CodeThemeData(styles: monokaiSublimeTheme),
+            data: CodeThemeData(styles: themeStyles),
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) => _handleTap(),
@@ -308,7 +330,7 @@ class CodeEditorState extends State<CodeEditor> {
                   return SizedBox(
                     height: constraints.maxHeight,
                     width: constraints.maxWidth,
-                    child: _withFlutterMaterial(code),
+                    child: _withFlutterMaterial(code, color: effectiveBackground),
                   );
                 },
               ),
@@ -320,7 +342,7 @@ class CodeEditorState extends State<CodeEditor> {
     );
   }
 
-  Widget _withFlutterMaterial(Widget child) {
+  Widget _withFlutterMaterial(Widget child, {flutter_material.Color? color}) {
     // material_ui has distinct Material/Localizations types from Flutter.
     if (Localizations.of<flutter_material.MaterialLocalizations>(
           context,
@@ -332,8 +354,17 @@ class CodeEditorState extends State<CodeEditor> {
         child: child,
       );
     }
+    final style = widget.config.style;
+    final fallbackColor = style.transparentBackground
+        ? flutter_material.Colors.transparent
+        : (style.theme.highlightTheme['root']?.backgroundColor ??
+            const flutter_material.Color(0xff23241f));
+    final resolvedColor = color ?? fallbackColor;
     return flutter_material.Material(
-      color: monokaiSublimeTheme['root']?.backgroundColor,
+      type: resolvedColor == flutter_material.Colors.transparent
+          ? flutter_material.MaterialType.transparency
+          : flutter_material.MaterialType.canvas,
+      color: resolvedColor,
       child: child,
     );
   }
@@ -476,6 +507,7 @@ class CodeEditorConfig {
     this.useLargeTextViewer = true,
     this.validateYamlKey,
     required this.type,
+    this.style = const SuperCodeStyle(),
   });
   Mode mode;
   late Function onChange;
@@ -485,6 +517,7 @@ class CodeEditorConfig {
   bool readOnly;
   bool useLargeTextViewer;
   String type;
+  SuperCodeStyle style;
 
   CodeEditorState? codeEditorState;
   State? treeJsonState;

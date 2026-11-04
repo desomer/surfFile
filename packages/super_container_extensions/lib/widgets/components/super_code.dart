@@ -317,6 +317,7 @@ class _BoundCodeState extends State<_BoundCode> {
             (binding.error != null && !binding.dirty),
         useLargeTextViewer: false,
         type: 'code',
+        style: widget.config.style,
       ),
     );
   }

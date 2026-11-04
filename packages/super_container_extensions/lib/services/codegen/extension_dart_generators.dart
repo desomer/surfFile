@@ -72,10 +72,48 @@ class SuperCodeDartGenerator extends ComponentDartGenerator {
           indent: indent + 2,
         ),
       if (config.readOnly != d.readOnly) 'readOnly': '${config.readOnly}',
+      if (config.style != d.style)
+        'style': formatStyle(
+          context,
+          config.style,
+          indent: indent + 2,
+          includeConst: includeConst,
+        ),
     };
     final prefix = includeConst ? 'const ' : '';
     return context.formatCall(
       '${prefix}SuperCodeConfig',
+      const [],
+      args,
+      indent: indent,
+      forceMultiline: args.length > 1,
+    );
+  }
+
+  /// Formate un [SuperCodeStyle] en omettant les valeurs par défaut.
+  static String formatStyle(
+    DartCodegenContext context,
+    SuperCodeStyle style, {
+    int indent = 0,
+    bool includeConst = false,
+  }) {
+    const d = SuperCodeStyle();
+    final args = <String, String>{
+      if (style.theme != d.theme) 'theme': 'SuperCodeTheme.${style.theme.name}',
+      if (style.fontSize != d.fontSize) 'fontSize': '${style.fontSize}',
+      if (style.lineHeight != d.lineHeight) 'lineHeight': '${style.lineHeight}',
+      if (style.fontFamily != null)
+        'fontFamily': context.formatString(style.fontFamily!),
+      if (style.showLineNumbers != d.showLineNumbers)
+        'showLineNumbers': '${style.showLineNumbers}',
+      if (style.showFoldingHandles != d.showFoldingHandles)
+        'showFoldingHandles': '${style.showFoldingHandles}',
+      if (style.transparentBackground != d.transparentBackground)
+        'transparentBackground': '${style.transparentBackground}',
+    };
+    final prefix = includeConst ? 'const ' : '';
+    return context.formatCall(
+      '${prefix}SuperCodeStyle',
       const [],
       args,
       indent: indent,

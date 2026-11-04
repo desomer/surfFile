@@ -134,6 +134,74 @@ void main() {
     expect(registry.codeController('editor').value, config);
   });
 
+  test('style codecs, validation, compact JSON and partial patches', () {
+    const defaultStyle = SuperCodeStyle();
+    expect(defaultStyle.toCompactJson(), isEmpty);
+    expect(SuperCodeStyle.fromJson(const {}), defaultStyle);
+
+    const customStyle = SuperCodeStyle(
+      theme: SuperCodeTheme.dracula,
+      fontSize: 18.0,
+      lineHeight: 1.8,
+      fontFamily: 'Fira Code',
+      showLineNumbers: false,
+      showFoldingHandles: false,
+      transparentBackground: true,
+    );
+    expect(SuperCodeStyle.fromJson(customStyle.toJson()), customStyle);
+    expect(SuperCodeStyle.fromJson(customStyle.toCompactJson()), customStyle);
+    expect(customStyle.theme.highlightTheme, isNotEmpty);
+    expect(customStyle.theme.isDark, isTrue);
+
+    // Invariant validation
+    expect(
+      () => const SuperCodeStyle(fontSize: 4.0).validate(),
+      throwsFormatException,
+    );
+    expect(
+      () => const SuperCodeStyle(fontSize: 60.0).validate(),
+      throwsFormatException,
+    );
+    expect(
+      () => const SuperCodeStyle(lineHeight: 0.5).validate(),
+      throwsFormatException,
+    );
+    expect(
+      () => const SuperCodeStyle(fontFamily: '   ').validate(),
+      throwsFormatException,
+    );
+    expect(
+      () => SuperCodeStyle.fromJson({'theme': 'unknown'}),
+      throwsFormatException,
+    );
+
+    // SuperCodeConfig with style
+    final config = SuperCodeConfig(
+      mode: SuperCodeMode.javascript,
+      style: customStyle,
+    );
+    expect(ComponentConfig.fromJson(config.toTypedJson()), config);
+    expect(ComponentConfig.fromJson(config.toTypedCompactJson()), config);
+
+    // PatchFromJson with nested style
+    final patched = config.patchFromJson({
+      'style': {'fontSize': 20.0, 'theme': 'nord'},
+    });
+    expect(patched.style.fontSize, 20.0);
+    expect(patched.style.theme, SuperCodeTheme.nord);
+    expect(patched.style.fontFamily, 'Fira Code');
+    expect(patched.style.transparentBackground, isTrue);
+
+    // Dart codegen
+    final context = DartCodegenContext(
+      appearance: Appearance(),
+      registry: Registry(),
+    );
+    final generated = SuperCodeDartGenerator.formatConfig(context, config);
+    expect(generated, contains('SuperCodeTheme.dracula'));
+    expect(generated, contains('fontSize: 18.0'));
+  });
+
   testWidgets(
     'loads, saves raw code, switches language and reloads external edits',
     (tester) async {
@@ -361,6 +429,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('dialog allows changing style and applies theme and options', (
+    tester,
+  ) async {
+    SuperCodeConfig? saved;
+    const initial = SuperCodeConfig();
+    await real(tester, () async {
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: [
+            ...GlobalMaterialLocalizations.delegates,
+            ...flutter_localizations.GlobalMaterialLocalizations.delegates,
+          ],
+          home: Scaffold(
+            body: JsonRepositoryScope(
+              store: store,
+              child: SuperCode(
+                id: 'style-code',
+                config: initial,
+                onConfigChanged: (value) => saved = value,
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+    await tester.tap(find.byType(CodeField), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await real(
+      tester,
+      () async => tester.tap(find.byKey(const ValueKey('style-menu-Code'))),
+    );
+    expect(find.byKey(const ValueKey('super-code-editor')), findsOneWidget);
+
+    // Toggle line numbers and transparent background switches
+    await tester.tap(find.byKey(const ValueKey('super-code-line-numbers')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('super-code-transparent-bg')));
+    await tester.pumpAndSettle();
+
+    await real(
+      tester,
+      () async => tester.tap(find.byKey(const ValueKey('super-code-apply'))),
+    );
+    expect(saved?.style.showLineNumbers, isFalse);
+    expect(saved?.style.transparentBackground, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('selection toolbar resolves Flutter localizations in app host', (
     tester,
   ) async {
@@ -443,5 +559,34 @@ void main() {
     });
     expect((await store.readAttribute(binding)).value, '$source\n// saved');
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('applies customized style and theme to CodeField and CodeTheme', (
+    tester,
+  ) async {
+    const customStyle = SuperCodeStyle(
+      theme: SuperCodeTheme.atomOneLight,
+      fontSize: 20.0,
+      showLineNumbers: false,
+      transparentBackground: true,
+    );
+    await mount(
+      tester,
+      SuperCodeConfig(
+        binding: JsonTextBinding(repositoryId: repository, path: 'source'),
+        style: customStyle,
+      ),
+    );
+
+    final codeField = tester.widget<CodeField>(find.byType(CodeField));
+    expect(codeField.textStyle?.fontSize, 20.0);
+    expect(codeField.gutterStyle.showLineNumbers, isFalse);
+    expect(codeField.background, flutter_material.Colors.transparent);
+
+    final codeTheme = tester.widget<CodeTheme>(find.byType(CodeTheme));
+    expect(
+      codeTheme.data?.styles['root']?.backgroundColor,
+      flutter_material.Colors.transparent,
+    );
   });
 }

@@ -190,6 +190,209 @@ B: json
     expect(parser.parse(''), isEmpty);
   });
 
+  test('supports nullable modifier ? and default values =', () {
+    final roots = parser.parse('''
+Order:
+  quantity: int! = 1
+  completed: bool = false
+  message: string?
+  nullableDefault: string? = null
+  title: string = "Mon titre"
+  rate: number = 3.14
+  tags[]: string = ["urgent"]
+  role: enum(admin, guest) = admin
+  flag!?: bool = true
+  optionalKey?: int = 10
+''');
+    final quantity = at(roots, 'Order.quantity');
+    expect(quantity.type, 'int');
+    expect(quantity.properties, {'required': true, 'default': 1});
+
+    final completed = at(roots, 'Order.completed');
+    expect(completed.type, 'bool');
+    expect(completed.properties, {'default': false});
+
+    final message = at(roots, 'Order.message');
+    expect(message.type, 'string');
+    expect(message.properties, {'nullable': true});
+
+    final nullableDefault = at(roots, 'Order.nullableDefault');
+    expect(nullableDefault.type, 'string');
+    expect(nullableDefault.properties, {'nullable': true, 'default': null});
+
+    final title = at(roots, 'Order.title');
+    expect(title.type, 'string');
+    expect(title.properties, {'default': 'Mon titre'});
+
+    final rate = at(roots, 'Order.rate');
+    expect(rate.type, 'number');
+    expect(rate.properties, {'default': 3.14});
+
+    final tags = at(roots, 'Order.tags');
+    expect(tags.type, 'string');
+    expect(tags.properties, {
+      'array': true,
+      'default': ['urgent'],
+    });
+
+    final role = at(roots, 'Order.role');
+    expect(role.type, 'enum');
+    expect(role.properties, {
+      'enum': ['admin', 'guest'],
+      'default': 'admin',
+    });
+
+    final flag = at(roots, 'Order.flag');
+    expect(flag.type, 'bool');
+    expect(flag.properties, {
+      'required': true,
+      'nullable': true,
+      'default': true,
+    });
+
+    final optionalKey = at(roots, 'Order.optionalKey');
+    expect(optionalKey.type, 'int');
+    expect(optionalKey.properties, {'nullable': true, 'default': 10});
+
+    // Validations d'erreurs sur les valeurs par défaut
+    expect(
+      () => parser.parse('A:\n  qty: int ='),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('valeur par défaut attendue après « = »'),
+        ),
+      ),
+    );
+    expect(
+      () => parser.parse('A:\n  qty: int = abc'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('doit être un entier'),
+        ),
+      ),
+    );
+    expect(
+      () => parser.parse('A:\n  flag: bool = 123'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('doit être un booléen'),
+        ),
+      ),
+    );
+    expect(
+      () => parser.parse('A:\n  qty: int = null'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('ne peut pas être null sur un champ non nullable'),
+        ),
+      ),
+    );
+  });
+
+  test('parses openAPI-style endpoints (METHOD /path) and nested schemas', () {
+    final roots = parser.parse('''
+Pet:
+  id: uuid!
+  name: string!
+  tag: string?
+
+GET /pets/{petId}:
+  params:
+    petId: uuid!
+  response: Pet?
+
+POST /pets:
+  body:
+    name: string!
+    tag: string? = null
+  response: Pet
+
+DELETE /pets/{petId}:
+  params:
+    petId: uuid!
+  response: bool
+''');
+
+    expect(roots.map((node) => node.name), [
+      'Pet',
+      'GET /pets/{petId}',
+      'POST /pets',
+      'DELETE /pets/{petId}',
+    ]);
+
+    final petModel = at(roots, 'Pet');
+    expect(petModel.type, 'object');
+
+    final getEndpoint = at(roots, 'GET /pets/{petId}');
+    expect(getEndpoint.type, 'endpoint');
+    expect(getEndpoint.properties, {
+      'method': 'GET',
+      'path': '/pets/{petId}',
+    });
+
+    final params = at(roots, 'GET /pets/{petId}.params');
+    expect(params.type, 'object');
+
+    final petId = at(roots, 'GET /pets/{petId}.params.petId');
+    expect(petId.type, 'uuid');
+    expect(petId.properties, {'required': true});
+
+    final getResponse = at(roots, 'GET /pets/{petId}.response');
+    expect(getResponse.type, 'Pet');
+    expect(getResponse.properties, {'nullable': true});
+
+    final postEndpoint = at(roots, 'POST /pets');
+    expect(postEndpoint.type, 'endpoint');
+    expect(postEndpoint.properties, {
+      'method': 'POST',
+      'path': '/pets',
+    });
+    expect(at(roots, 'POST /pets.body.name').properties, {'required': true});
+    expect(at(roots, 'POST /pets.body.tag').properties, {
+      'nullable': true,
+      'default': null,
+    });
+    expect(at(roots, 'POST /pets.response').type, 'Pet');
+
+    final deleteEndpoint = at(roots, 'DELETE /pets/{petId}');
+    expect(deleteEndpoint.type, 'endpoint');
+    expect(deleteEndpoint.properties, {
+      'method': 'DELETE',
+      'path': '/pets/{petId}',
+    });
+    expect(at(roots, 'DELETE /pets/{petId}.response').type, 'bool');
+
+    // Rejets d'erreurs
+    expect(
+      () => parser.parse('GET /invalid: "not an object"'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('un endpoint attend un objet de sections'),
+        ),
+      ),
+    );
+    expect(
+      () => parser.parse('GET /missing:\n  response: UnknownModel'),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('type inconnu « UnknownModel »'),
+        ),
+      ),
+    );
+  });
+
   test('parses conditional fields and exposes their condition in the tree', () {
     final roots = parser.parse('''
 Payment:
@@ -398,10 +601,47 @@ Account:
 ''');
     expect(at(model.nodes, 'Account.state').properties, {'enum': []});
 
+    // Test patch avec default et nullable ?
+    parser.patch(model, '''
+Account:
+  id: uuid!
+  count: int! = 1
+  info: string?
+''');
+    final count = at(model.nodes, 'Account.count');
+    expect(count.properties, {'required': true, 'default': 1});
+    final info = at(model.nodes, 'Account.info');
+    expect(info.properties, {'nullable': true});
+
+    // Patch met à jour default depuis le DSL
+    parser.patch(model, '''
+Account:
+  id: uuid!
+  count: int! = 42
+  info: string?
+''');
+    expect(at(model.nodes, 'Account.count').properties['default'], 42);
+
+    // Patch avec endpoint OpenAPI
+    parser.patch(model, '''
+Account:
+  id: uuid!
+
+GET /users/{id}:
+  params:
+    id: uuid!
+  response: Account
+''');
+    final endpoint = at(model.nodes, 'GET /users/{id}');
+    expect(endpoint.type, 'endpoint');
+    expect(endpoint.properties['method'], 'GET');
+    expect(endpoint.properties['path'], '/users/{id}');
+    expect(at(model.nodes, 'GET /users/{id}.response').type, 'Account');
+
     expect(
       () => parser.patch(model, 'Account:\n  x: Nope'),
       throwsFormatException,
     );
-    expect(model.nodes.single.id, user.id);
+    expect(model.nodes.first.id, user.id);
   });
 }

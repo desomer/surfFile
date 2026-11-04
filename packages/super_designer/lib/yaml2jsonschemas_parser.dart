@@ -7,16 +7,19 @@
 /// |------------------------------|--------------------------------------------|
 /// | `string`, `int`, `uuid`…     | type primitif                              |
 /// | `string!`                    | `properties.required = true`               |
+/// | `string?`                    | `properties.nullable = true`               |
+/// | `T = valeur`                 | `properties.default = valeur`              |
 /// | `string(enum)`, `int(enum)`  | énumération typée, `properties.enum = []`  |
 /// | `enum(a, b, c)`              | type `enum`, `properties.enum = [a, b, c]` |
 /// | `User`                       | référence à une définition                 |
 /// | `users[]: User`, `User[]`    | `properties.array = true`                  |
 /// | `json`                       | structure libre                            |
 /// | `A \| B`                     | type `union`, une alternative par enfant   |
-/// | `A \| null`                  | `properties.nullable = true`               |
+/// | `A \| null`, `A?`            | `properties.nullable = true`               |
 /// | `oneOf:` / `anyOf:` / `allOf:` | type de la composition, un enfant par alternative |
 /// | sous-objet YAML              | type `object`, un enfant par champ         |
 /// | `when field == value:`       | type `when`, champs conditionnels enfants |
+/// | `METHOD /path:`              | type `endpoint`, `properties.method`, `properties.path` |
 ///
 /// Un bloc `when` appartient à un objet et référence un champ du même objet.
 /// `properties.condition` contient `field`, `operator` (`==`) et `value`
@@ -77,6 +80,7 @@ class Yaml2JsonSchemasParser {
   static const unionType = 'union';
   static const enumType = 'enum';
   static const whenType = 'when';
+  static const endpointType = 'endpoint';
 
   /// Propriétés dérivées du DSL ; les autres viennent de l'IHM.
   static const dslProperties = {
@@ -85,13 +89,20 @@ class Yaml2JsonSchemasParser {
     'array',
     'enum',
     'condition',
+    'default',
+    'method',
+    'path',
   };
 
+  static final _endpointPattern = RegExp(
+    r'^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(/[^\s]*)$',
+    caseSensitive: false,
+  );
   static final _whenPrefix = RegExp(r'^when(?:\s|$)');
   static final _whenPattern = RegExp(r'^when\s+([A-Za-z_][\w-]*)\s*==\s*(.+)$');
-  static final _keyPattern = RegExp(r'^([A-Za-z_][\w-]*)(\[\])?(!)?$');
+  static final _keyPattern = RegExp(r'^([A-Za-z_][\w-]*)(\[\])?([!?]{1,2})?$');
   static final _termPattern = RegExp(
-    r'^([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*(\[\])?\s*(!)?$',
+    r'^([A-Za-z_]\w*)\s*(?:\((.*)\))?\s*(\[\])?\s*([!?]{1,2})?$',
   );
 
   final String Function() _generateId;
@@ -161,10 +172,13 @@ class Yaml2JsonSchemasParser {
     _ids.clear();
     _definitions = {};
     for (final key in document.keys) {
+      if (_endpointPattern.hasMatch(key.trim())) {
+        continue;
+      }
       final name = _key(key, key).name;
       if (primitives.contains(name) ||
           compositions.contains(name) ||
-          {objectType, unionType, enumType, whenType}.contains(name)) {
+          {objectType, unionType, enumType, whenType, endpointType}.contains(name)) {
         throw FormatException('$key : nom de définition réservé.');
       }
       _definitions.add(name);
@@ -205,6 +219,7 @@ class Yaml2JsonSchemasParser {
       type == unionType ||
       type == enumType ||
       type == whenType ||
+      type == endpointType ||
       _definitions.contains(type);
 
   static Iterable<JsonNode> _walk(List<JsonNode> nodes) sync* {
@@ -214,15 +229,20 @@ class Yaml2JsonSchemasParser {
     }
   }
 
-  ({String name, bool array, bool required}) _key(String raw, String where) {
+  ({String name, bool array, bool required, bool nullable}) _key(
+    String raw,
+    String where,
+  ) {
     final match = _keyPattern.firstMatch(raw.trim());
     if (match == null) {
       throw FormatException('$where : nom de champ invalide « $raw ».');
     }
+    final modifiers = match[3] ?? '';
     return (
       name: match[1]!,
       array: match[2] != null,
-      required: match[3] != null,
+      required: modifiers.contains('!'),
+      nullable: modifiers.contains('?'),
     );
   }
 
@@ -234,13 +254,42 @@ class Yaml2JsonSchemasParser {
   }
 
   JsonNode _field(String rawKey, Object? value, JsonNode? parent) {
-    if (_whenPrefix.hasMatch(rawKey.trim())) {
-      return _when(rawKey.trim(), value, parent);
+    final trimmedKey = rawKey.trim();
+    if (_whenPrefix.hasMatch(trimmedKey)) {
+      return _when(trimmedKey, value, parent);
+    }
+    final endpointMatch =
+        parent == null ? _endpointPattern.firstMatch(trimmedKey) : null;
+    if (endpointMatch != null) {
+      return _endpoint(trimmedKey, endpointMatch, value, parent);
     }
     final key = _key(rawKey, _location(parent, rawKey));
     final node = _typed(key.name, value, parent);
     if (key.array) node.properties['array'] = true;
     if (key.required) node.properties['required'] = true;
+    if (key.nullable) node.properties['nullable'] = true;
+    return node;
+  }
+
+  JsonNode _endpoint(
+    String name,
+    Match match,
+    Object? value,
+    JsonNode? parent,
+  ) {
+    final method = match[1]!.toUpperCase();
+    final path = match[2]!;
+    final mapValue = (value is Map<String, Object?>)
+        ? value
+        : (value == null ? const <String, Object?>{} : null);
+    if (mapValue == null) {
+      throw FormatException(
+        '$name : un endpoint attend un objet de sections (params, query, body, response…).',
+      );
+    }
+    final node = _object(name, mapValue, parent, type: endpointType);
+    node.properties['method'] = method;
+    node.properties['path'] = path;
     return node;
   }
 
@@ -350,20 +399,29 @@ class Yaml2JsonSchemasParser {
     return node;
   }
 
-  /// Expression d'un champ : `T`, `T!`, `T(enum)`, `T[]`, `A | B | null`…
+  /// Expression d'un champ : `T`, `T!`, `T?`, `T = val`, `T(enum)`, `T[]`, `A | B | null`…
   JsonNode _expression(String name, String text, JsonNode? parent) {
     final where = _location(parent, name);
-    var expression = text.trim();
+    final (typePart, defaultRaw) = _splitDefault(text);
+    final hasDefault = defaultRaw != null;
+
+    var expression = typePart;
     var required = false;
-    if (expression.endsWith('!')) {
-      required = true;
-      expression = expression.substring(0, expression.length - 1).trimRight();
+    var nullable = false;
+    while (expression.endsWith('!') || expression.endsWith('?')) {
+      if (expression.endsWith('!')) {
+        required = true;
+        expression = expression.substring(0, expression.length - 1).trimRight();
+      } else if (expression.endsWith('?')) {
+        nullable = true;
+        expression = expression.substring(0, expression.length - 1).trimRight();
+      }
     }
+
     final parts = _split(expression, '|');
     if (parts.isEmpty || parts.any((part) => part.isEmpty)) {
       throw FormatException('$where : expression de type vide dans « $text ».');
     }
-    var nullable = false;
     final terms = <_Term>[];
     for (final part in parts) {
       if (part == 'null' && parts.length > 1) {
@@ -384,9 +442,85 @@ class Yaml2JsonSchemasParser {
         node.children.add(child);
       }
     }
+    for (final term in terms) {
+      if (term.nullable) nullable = true;
+      if (term.required) required = true;
+    }
     if (nullable) node.properties['nullable'] = true;
     if (required) node.properties['required'] = true;
+
+    if (hasDefault) {
+      if (defaultRaw.isEmpty) {
+        throw FormatException(
+          '$where : valeur par défaut attendue après « = ».',
+        );
+      }
+      Object? defaultValue;
+      try {
+        defaultValue = _plain(loadYaml(defaultRaw));
+      } on YamlException catch (error) {
+        throw FormatException('$where : valeur par défaut invalide : $error');
+      }
+
+      if (defaultValue == null && !nullable && node.type != 'null') {
+        throw FormatException(
+          '$where : la valeur par défaut ne peut pas être null sur un champ non nullable.',
+        );
+      }
+      if (defaultValue != null) {
+        if (node.type == 'int' || node.type == 'integer') {
+          if (defaultValue is num && defaultValue == defaultValue.toInt()) {
+            defaultValue = defaultValue.toInt();
+          } else {
+            throw FormatException(
+              '$where : la valeur par défaut pour ${node.type} doit être un entier.',
+            );
+          }
+        } else if (node.type == 'bool' || node.type == 'boolean') {
+          if (defaultValue is! bool) {
+            throw FormatException(
+              '$where : la valeur par défaut pour ${node.type} doit être un booléen.',
+            );
+          }
+        } else if (_numeric.contains(node.type)) {
+          if (defaultValue is! num) {
+            throw FormatException(
+              '$where : la valeur par défaut pour ${node.type} doit être un nombre.',
+            );
+          }
+        }
+      }
+
+      node.properties['default'] = defaultValue;
+    }
+
     return node;
+  }
+
+  /// Sépare l'expression de type et la valeur par défaut au premier `=` hors parenthèses/crochets/guillemets.
+  static (String typeExpr, String? defaultRaw) _splitDefault(String text) {
+    var depth = 0;
+    String? quote;
+    for (var i = 0; i < text.length; i++) {
+      final char = text[i];
+      if (quote != null) {
+        if (char == quote) quote = null;
+        continue;
+      }
+      if (char == '"' || char == "'") {
+        quote = char;
+        continue;
+      }
+      if (char == '(' || char == '[' || char == '{') depth++;
+      if (char == ')' || char == ']' || char == '}') depth--;
+      if (char == '=' && depth == 0) {
+        return (
+          text.substring(0, i).trim(),
+          text.substring(i + 1).trim(),
+        );
+      }
+    }
+    return (text.trim(), null);
   }
 
   _Term _term(String text, String where) {
@@ -410,11 +544,13 @@ class Yaml2JsonSchemasParser {
         ];
       }
     }
+    final modifiers = match[4] ?? '';
     return _Term(
       text: text,
       type: type,
       array: match[3] != null,
-      required: match[4] != null,
+      required: modifiers.contains('!'),
+      nullable: modifiers.contains('?'),
       values: values,
     );
   }
@@ -503,6 +639,7 @@ class _Term {
     required this.type,
     required this.array,
     required this.required,
+    required this.nullable,
     required this.values,
   });
 
@@ -510,11 +647,13 @@ class _Term {
   final String type;
   final bool array;
   final bool required;
+  final bool nullable;
   final List<Object?>? values;
 
   void applyTo(Map<String, Object?> properties) {
     if (array) properties['array'] = true;
     if (required) properties['required'] = true;
+    if (nullable) properties['nullable'] = true;
     if (values != null) properties['enum'] = values;
   }
 }
