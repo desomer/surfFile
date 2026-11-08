@@ -87,45 +87,28 @@ class NativeComponentConfig extends ComponentConfig {
          for (final entry in properties.entries)
            entry.key.trim(): _normalizeProperty(entry.key, entry.value),
        }),
-       placements = Map.unmodifiable({
-         for (final entry in placements.entries)
-           entry.key: List<String>.unmodifiable(entry.value),
-       }),
+       placements = JsonReader.normalizePlacements(
+         placements,
+         dropEmptyZones: false,
+       ),
        slotTypes = Map.unmodifiable(slotTypes),
        regions = Map.unmodifiable(regions),
        regionAxes = Map.unmodifiable(regionAxes),
-       regionFlows = Map.unmodifiable({
-         for (final entry in regionFlows.entries)
-           if (!entry.value.isDefault) entry.key: entry.value,
-       }),
+       regionFlows = JsonReader.normalizeZoneFlows(regionFlows),
        regionSizes = Map.unmodifiable(regionSizes),
        slotPreferredSizes = Map.unmodifiable(slotPreferredSizes),
        slotSizeConstraints = Map.unmodifiable(slotSizeConstraints),
-       slotLabels = Map.unmodifiable({
-         for (final entry in slotLabels.entries)
-           if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
-       }) {
-    final ids = placements.values.expand((value) => value).toList();
-    if (ids.any((id) => id.trim().isEmpty) ||
-        ids.toSet().length != ids.length ||
-        placements.keys.any((id) => id.trim().isEmpty) ||
-        regions.keys.any((id) => id.trim().isEmpty) ||
-        regionAxes.keys.any((id) => id.trim().isEmpty) ||
-        regionFlows.keys.any((id) => id.trim().isEmpty) ||
-        regionSizes.keys.any((id) => id.trim().isEmpty) ||
-        regionSizes.values.any((size) => !size.isFinite || size <= 0) ||
-        slotTypes.keys.any((id) => id.trim().isEmpty) ||
-        slotTypes.values.any((type) => type.trim().isEmpty) ||
-        slotPreferredSizes.keys.any((id) => id.trim().isEmpty) ||
-        slotSizeConstraints.keys.any((id) => id.trim().isEmpty) ||
-        slotLabels.keys.any((id) => id.trim().isEmpty) ||
-        slotPreferredSizes.values.any(
-          (size) =>
-              size != null &&
-              (size.width.isNaN ||
-                  size.height.isNaN ||
-                  size.width < 0 ||
-                  size.height < 0),
+       slotLabels = JsonReader.normalizeSlotLabels(slotLabels) {
+    if (regionSizes.values.any((size) => !size.isFinite || size <= 0) ||
+        JsonReader.hasInvalidSlotContainerMaps(
+          placements: this.placements,
+          slotTypes: this.slotTypes,
+          zoneAxes: this.regionAxes,
+          zoneFlows: this.regionFlows,
+          slotPreferredSizes: this.slotPreferredSizes,
+          slotSizeConstraints: this.slotSizeConstraints,
+          slotLabels: this.slotLabels,
+          extraZoneKeys: [...this.regions.keys, ...this.regionSizes.keys],
         )) {
       throw ArgumentError('Region and slot IDs must be unique and non-empty.');
     }
@@ -238,30 +221,22 @@ class NativeComponentConfig extends ComponentConfig {
     String replacementId,
     String type,
   ) {
-    if (!placements.values.any((ids) => ids.contains(id)) ||
-        replacementId.trim().isEmpty ||
-        placements.values.any((ids) => ids.contains(replacementId))) {
-      throw ArgumentError('Invalid slot replacement.');
-    }
+    final next = JsonReader.replaceSlotInMaps(
+      id: id,
+      replacementId: replacementId,
+      type: type,
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
     return copyWith(
-      placements: {
-        for (final entry in placements.entries)
-          entry.key: [
-            for (final slot in entry.value) slot == id ? replacementId : slot,
-          ],
-      },
-      slotTypes: {...slotTypes}
-        ..remove(id)
-        ..[replacementId] = type,
-      slotPreferredSizes: {
-        for (final entry in slotPreferredSizes.entries)
-          (entry.key == id ? replacementId : entry.key): entry.value,
-      },
-      slotSizeConstraints: {
-        for (final entry in slotSizeConstraints.entries)
-          (entry.key == id ? replacementId : entry.key): entry.value,
-      },
-      slotLabels: {...slotLabels}..remove(id),
+      placements: next.placements,
+      slotTypes: next.slotTypes,
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
@@ -329,25 +304,19 @@ class NativeComponentConfig extends ComponentConfig {
     String region,
     Axis? axis, {
     Axis? defaultAxis,
-  }) {
-    final next = {...regionAxes};
-    if (axis == null || axis == defaultAxis) {
-      next.remove(region);
-    } else {
-      next[region] = axis;
-    }
-    return copyWith(regionAxes: next);
-  }
+  }) => copyWith(
+    regionAxes: JsonReader.updateZoneAxisMap(
+      regionAxes,
+      region,
+      axis,
+      defaultAxis: defaultAxis,
+    ),
+  );
 
-  NativeComponentConfig withRegionFlow(String region, ZoneFlowConfig flow) {
-    final next = {...regionFlows};
-    if (flow.isDefault) {
-      next.remove(region);
-    } else {
-      next[region] = flow;
-    }
-    return copyWith(regionFlows: next);
-  }
+  NativeComponentConfig withRegionFlow(String region, ZoneFlowConfig flow) =>
+      copyWith(
+        regionFlows: JsonReader.updateZoneFlowMap(regionFlows, region, flow),
+      );
 
   NativeComponentConfig withRegionSize(String region, double? size) {
     final next = {...regionSizes};
@@ -365,43 +334,49 @@ class NativeComponentConfig extends ComponentConfig {
     String? type,
     bool replace = false,
   }) {
-    final next = {
-      for (final entry in placements.entries)
-        entry.key: entry.value.where((value) => value != id).toList(),
-    };
-    final replaced = replace ? next.remove(region) ?? <String>[] : <String>[];
-    next.putIfAbsent(region, () => []).add(id);
-    final types = {...slotTypes}
-      ..removeWhere((key, _) => key == id || replaced.contains(key));
-    if (type != null && type != id) types[id] = type;
+    final next = JsonReader.addSlotToMaps(
+      id: id,
+      zone: region,
+      type: type,
+      replace: replace,
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
     return copyWith(
-      placements: next,
-      slotTypes: types,
+      placements: next.placements,
+      slotTypes: next.slotTypes,
       regions: {...regions, region: true},
-      slotPreferredSizes: {...slotPreferredSizes}
-        ..removeWhere((key, _) => replaced.contains(key)),
-      slotSizeConstraints: {...slotSizeConstraints}
-        ..removeWhere((key, _) => replaced.contains(key)),
-      slotLabels: {...slotLabels}
-        ..removeWhere((key, _) => replaced.contains(key)),
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
-  NativeComponentConfig withoutSlot(String id) => copyWith(
-    placements: {
-      for (final entry in placements.entries)
-        entry.key: entry.value.where((value) => value != id).toList(),
-    },
-    slotTypes: {...slotTypes}..remove(id),
-    regions: {
-      ...regions,
-      for (final entry in placements.entries)
-        if (entry.value.contains(id) && isEnabled(entry.key)) entry.key: true,
-    },
-    slotPreferredSizes: {...slotPreferredSizes}..remove(id),
-    slotSizeConstraints: {...slotSizeConstraints}..remove(id),
-    slotLabels: {...slotLabels}..remove(id),
-  );
+  NativeComponentConfig withoutSlot(String id) {
+    final next = JsonReader.removeSlotsFromMaps(
+      removedIds: {id},
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
+    return copyWith(
+      placements: next.placements,
+      slotTypes: next.slotTypes,
+      regions: {
+        ...regions,
+        for (final entry in placements.entries)
+          if (entry.value.contains(id) && isEnabled(entry.key)) entry.key: true,
+      },
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
+    );
+  }
 
   NativeComponentConfig withSlotMoved(
     String id,
@@ -409,29 +384,16 @@ class NativeComponentConfig extends ComponentConfig {
     String? beforeId,
     String? afterId,
   }) {
-    if (!placements.values.any((ids) => ids.contains(id))) {
-      throw ArgumentError.value(id, 'id', 'Unknown native slot.');
-    }
-    if (region.trim().isEmpty ||
-        (beforeId != null && afterId != null) ||
-        (beforeId != null && !slotsOf(region).contains(beforeId)) ||
-        (afterId != null && !slotsOf(region).contains(afterId))) {
-      throw ArgumentError(
-        'Invalid native slot destination or insertion point.',
-      );
-    }
-    if (beforeId == id || afterId == id) return this;
-    final next = {
-      for (final entry in placements.entries)
-        entry.key: entry.value.where((value) => value != id).toList(),
-    };
-    final destination = next.putIfAbsent(region, () => []);
-    final index = beforeId != null
-        ? destination.indexOf(beforeId)
-        : afterId != null
-        ? destination.indexOf(afterId) + 1
-        : destination.length;
-    destination.insert(index, id);
+    final next = JsonReader.moveSlotInPlacements(
+      id: id,
+      zone: region,
+      beforeId: beforeId,
+      afterId: afterId,
+      placements: placements,
+      unknownError: 'Unknown native slot.',
+      destinationError: 'Invalid native slot destination or insertion point.',
+    );
+    if (next == null) return this;
     if (isEnabled(region) &&
         next.length == placements.length &&
         next.entries.every(
@@ -481,42 +443,33 @@ class NativeComponentConfig extends ComponentConfig {
   @override
   Map<String, Object> toJson() {
     validate();
+    final slotJson = JsonReader.encodeSlotContainerJson(
+      placements: placements,
+      slotTypeOf: slotTypeOf,
+      zoneAxes: regionAxes,
+      zoneFlows: regionFlows,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+      alwaysIncludePlacements: true,
+      useShortTypeNameInFullJson: false,
+      allowBareSlotIdInFullJson: false,
+      axesKey: 'regionAxes',
+      flowsKey: 'regionFlows',
+    );
     return {
       if (binding != null) 'binding': binding!.toJson(),
       ...properties,
       'regions': regions,
-      if (regionAxes.isNotEmpty)
-        'regionAxes': {
-          for (final entry in regionAxes.entries) entry.key: entry.value.name,
-        },
-      if (regionFlows.isNotEmpty)
-        'regionFlows': {
-          for (final entry in regionFlows.entries)
-            if (!entry.value.isDefault) entry.key: entry.value.toJson(),
-        },
+      if (slotJson['regionAxes'] case final Object axes) 'regionAxes': axes,
+      if (slotJson['regionFlows'] case final Object flows) 'regionFlows': flows,
       if (regionSizes.isNotEmpty) 'regionSizes': regionSizes,
-      'placements': {
-        for (final entry in placements.entries)
-          entry.key: [
-            for (final id in entry.value) {'id': id, 'type': slotTypeOf(id)},
-          ],
-      },
-      if (slotPreferredSizes.isNotEmpty)
-        'slotPreferredSizes': {
-          for (final entry in slotPreferredSizes.entries)
-            entry.key: entry.value == null
-                ? null
-                : [
-                    entry.value!.width.isFinite ? entry.value!.width : null,
-                    entry.value!.height.isFinite ? entry.value!.height : null,
-                  ],
-        },
-      if (slotSizeConstraints.isNotEmpty)
-        'slotSizeConstraints': {
-          for (final entry in slotSizeConstraints.entries)
-            entry.key: entry.value.toJson(),
-        },
-      if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      'placements': slotJson['placements']!,
+      if (slotJson['slotPreferredSizes'] case final Object sizes)
+        'slotPreferredSizes': sizes,
+      if (slotJson['slotSizeConstraints'] case final Object constraints)
+        'slotSizeConstraints': constraints,
+      if (slotJson['slotLabels'] case final Object labels) 'slotLabels': labels,
     };
   }
 
@@ -534,67 +487,29 @@ class NativeComponentConfig extends ComponentConfig {
         )) {
       throw const FormatException('Invalid native region activation.');
     }
-    final placements = <String, List<String>>{};
-    final types = <String, String>{};
-    for (final entry in (value['placements'] as Map).entries) {
-      if (entry.key is! String || entry.value is! List) {
-        throw const FormatException('Invalid native region.');
-      }
-      final ids = <String>[];
-      for (final slot in entry.value as List) {
-        if (slot is String && slot.trim().isNotEmpty) {
-          ids.add(slot);
-          types[slot] = JsonComponentType.normalize(slot, id: slot);
-          continue;
-        }
-        if (slot is! Map || slot['id'] is! String || slot['type'] is! String) {
-          throw const FormatException('Invalid native slot.');
-        }
-        final id = slot['id'] as String;
-        ids.add(id);
-        types[id] = JsonComponentType.normalize(slot['type'] as String, id: id);
-      }
-      placements[entry.key as String] = ids;
-    }
+    final (:placements, :slotTypes) = JsonReader.parseSlotPlacements(
+      value['placements'],
+      invalidPlacementsMessage: 'Invalid native component configuration.',
+      invalidZoneMessage: 'Invalid native region.',
+      invalidSlotMessage: 'Invalid native slot.',
+    );
     try {
-      final rawSizes = value['slotPreferredSizes'] ?? const {};
-      final rawConstraints = value['slotSizeConstraints'] ?? const {};
-      if (rawSizes is! Map || rawConstraints is! Map) {
-        throw const FormatException('Invalid native slot sizes.');
-      }
-      final rawLabels = value['slotLabels'] ?? const {};
-      if (rawLabels is! Map ||
-          rawLabels.entries.any(
-            (entry) => entry.key is! String || entry.value is! String,
-          )) {
-        throw const FormatException('Invalid native slot labels.');
-      }
-      final rawAxes = value['regionAxes'] ?? const {};
-      final rawFlows = value['regionFlows'] ?? const {};
       final rawRegionSizes = value['regionSizes'] ?? const {};
-      if (rawAxes is! Map || rawFlows is! Map || rawRegionSizes is! Map) {
+      if (rawRegionSizes is! Map) {
         throw const FormatException('Invalid native region flow settings.');
       }
-      final parsedAxes = <String, Axis>{};
-      for (final entry in rawAxes.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Invalid native region axis.');
-        }
-        final axis = Axis.values
-            .where((candidate) => candidate.name == entry.value)
-            .firstOrNull;
-        if (axis == null) {
-          throw const FormatException('Invalid native region axis.');
-        }
-        parsedAxes[entry.key as String] = axis;
-      }
-      final parsedFlows = <String, ZoneFlowConfig>{};
-      for (final entry in rawFlows.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Invalid native region flow.');
-        }
-        parsedFlows[entry.key as String] = ZoneFlowConfig.fromJson(entry.value);
-      }
+      final meta = JsonReader.parseSlotContainerMetadata(
+        value,
+        placedIds: placements.values.expand((ids) => ids),
+        axesKey: 'regionAxes',
+        flowsKey: 'regionFlows',
+        invalidMetadataMessage: 'Invalid native slot sizes.',
+        invalidLabelsMessage: 'Invalid native slot labels.',
+        invalidAxisMessage: 'Invalid native region axis.',
+        invalidFlowMessage: 'Invalid native region flow.',
+        invalidConstraintMessage: 'Invalid native slot constraint ID.',
+        invalidSizeMessage: 'Invalid native slot size.',
+      );
       final parsedRegionSizes = <String, double>{};
       for (final entry in rawRegionSizes.entries) {
         final rawSize = entry.value;
@@ -605,20 +520,6 @@ class NativeComponentConfig extends ComponentConfig {
           throw const FormatException('Invalid native region size.');
         }
         parsedRegionSizes[entry.key as String] = rawSize.toDouble();
-      }
-      if (rawConstraints.keys.any((key) => key is! String)) {
-        throw const FormatException('Invalid native slot constraint ID.');
-      }
-      final sizes = <String, Size?>{};
-      for (final entry in rawSizes.entries) {
-        final size = entry.value;
-        if (entry.key is! String) {
-          throw const FormatException('Invalid native slot size.');
-        }
-        sizes[entry.key as String] = JsonDimension.parsePreferredSize(
-          size,
-          allowInfiniteSides: true,
-        );
       }
       final parsedProperties = <String, Object>{};
       for (final entry in value.entries) {
@@ -635,21 +536,18 @@ class NativeComponentConfig extends ComponentConfig {
         binding: binding,
         properties: parsedProperties,
         placements: placements,
-        slotTypes: types,
+        slotTypes: slotTypes,
         regions: {
           for (final entry in rawRegions.entries)
             if (!(entry.key == 'child' && entry.value == false))
               entry.key as String: entry.value as bool,
         },
-        regionAxes: parsedAxes,
-        regionFlows: parsedFlows,
+        regionAxes: meta.zoneAxes,
+        regionFlows: meta.zoneFlows,
         regionSizes: parsedRegionSizes,
-        slotPreferredSizes: sizes,
-        slotSizeConstraints: SlotSizeConstraints.parseMap(
-          rawConstraints,
-          placedIds: placements.values.expand((ids) => ids),
-        ),
-        slotLabels: Map<String, String>.from(rawLabels),
+        slotPreferredSizes: meta.slotPreferredSizes,
+        slotSizeConstraints: meta.slotSizeConstraints,
+        slotLabels: meta.slotLabels,
       );
     } on ArgumentError {
       throw const FormatException('Invalid native region or slot IDs.');
@@ -657,16 +555,13 @@ class NativeComponentConfig extends ComponentConfig {
   }
 }
 
-String _formatNativeNumber(double value) =>
-    value == value.roundToDouble() ? '${value.round()}' : '$value';
-
 String _formatNativeDescriptorValue(
   NativePropertyDescriptor descriptor,
   Object value,
 ) => switch (descriptor.editorType) {
   NativePropertyEditorType.bool => (value as bool) ? 'Oui' : 'Non',
   NativePropertyEditorType.number =>
-    _formatNativeNumber((value as num).toDouble()),
+    JsonReader.formatNumber((value as num).toDouble()),
   NativePropertyEditorType.color =>
     value is Color ? JsonColor.toHex(value) : '$value',
   NativePropertyEditorType.select =>

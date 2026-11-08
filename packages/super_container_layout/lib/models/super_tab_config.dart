@@ -64,42 +64,22 @@ class SuperTabConfig extends ComponentConfig {
     Map<String, Size?> slotPreferredSizes = const {},
     Map<String, SlotSizeConstraints> slotSizeConstraints = const {},
     Map<String, String> slotLabels = const {},
-  }) : placements = Map.unmodifiable({
-         for (final entry in placements.entries)
-           if (entry.value.isNotEmpty)
-             entry.key: List<String>.unmodifiable(entry.value),
-       }),
+  }) : placements = JsonReader.normalizePlacements(placements),
        slotTypes = Map.unmodifiable(slotTypes),
        zoneAxes = Map.unmodifiable(zoneAxes),
-       zoneFlows = Map.unmodifiable({
-         for (final entry in zoneFlows.entries)
-           if (!entry.value.isDefault) entry.key: entry.value,
-       }),
+       zoneFlows = JsonReader.normalizeZoneFlows(zoneFlows),
        slotPreferredSizes = Map.unmodifiable(slotPreferredSizes),
        slotSizeConstraints = Map.unmodifiable(slotSizeConstraints),
-       slotLabels = Map.unmodifiable({
-         for (final entry in slotLabels.entries)
-           if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
-       }) {
-    final ids = placements.values.expand((value) => value).toList();
+       slotLabels = JsonReader.normalizeSlotLabels(slotLabels) {
     if (initialIndex < 0 ||
-        ids.any((id) => id.trim().isEmpty) ||
-        ids.toSet().length != ids.length ||
-        placements.keys.any((id) => id.trim().isEmpty) ||
-        zoneAxes.keys.any((id) => id.trim().isEmpty) ||
-        zoneFlows.keys.any((id) => id.trim().isEmpty) ||
-        slotTypes.keys.any((id) => id.trim().isEmpty) ||
-        slotTypes.values.any((type) => type.trim().isEmpty) ||
-        slotPreferredSizes.keys.any((id) => id.trim().isEmpty) ||
-        slotSizeConstraints.keys.any((id) => id.trim().isEmpty) ||
-        slotLabels.keys.any((id) => id.trim().isEmpty) ||
-        slotPreferredSizes.values.any(
-          (size) =>
-              size != null &&
-              (size.width.isNaN ||
-                  size.height.isNaN ||
-                  size.width < 0 ||
-                  size.height < 0),
+        JsonReader.hasInvalidSlotContainerMaps(
+          placements: this.placements,
+          slotTypes: this.slotTypes,
+          zoneAxes: this.zoneAxes,
+          zoneFlows: this.zoneFlows,
+          slotPreferredSizes: this.slotPreferredSizes,
+          slotSizeConstraints: this.slotSizeConstraints,
+          slotLabels: this.slotLabels,
         )) {
       throw ArgumentError('Invalid SuperTab configuration.');
     }
@@ -328,51 +308,49 @@ class SuperTabConfig extends ComponentConfig {
     String? type,
     bool replace = false,
   }) {
-    final next = <String, List<String>>{
-      for (final entry in placements.entries)
-        entry.key: entry.value.where((value) => value != id).toList(),
-    };
-    final replaced = replace ? next.remove(zone) ?? <String>[] : <String>[];
-    next.putIfAbsent(zone, () => []).add(id);
-    final types = {...slotTypes}
-      ..removeWhere((key, _) => key == id || replaced.contains(key));
-    if (type != null && type != id) types[id] = type;
+    final next = JsonReader.addSlotToMaps(
+      id: id,
+      zone: zone,
+      type: type,
+      replace: replace,
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
     return copyWith(
-      placements: next,
-      slotTypes: types,
-      slotPreferredSizes: {...slotPreferredSizes}
-        ..removeWhere((key, _) => replaced.contains(key)),
-      slotSizeConstraints: {...slotSizeConstraints}
-        ..removeWhere((key, _) => replaced.contains(key)),
-      slotLabels: {...slotLabels}
-        ..removeWhere((key, _) => replaced.contains(key)),
+      placements: next.placements,
+      slotTypes: next.slotTypes,
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
   SuperTabConfig withoutSlot(String id) {
     final contentZone = tabSlotIds.contains(id) ? contentZoneFor(id) : null;
-    final removedIds = slotsRemovedWith(id);
+    final next = JsonReader.removeSlotsFromMaps(
+      removedIds: slotsRemovedWith(id),
+      removedZone: contentZone,
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
     return copyWith(
-      placements: {
-        for (final entry in placements.entries)
-          if (entry.key != contentZone)
-            entry.key: entry.value
-                .where((value) => !removedIds.contains(value))
-                .toList(),
-      },
-      slotTypes: {...slotTypes}..removeWhere((k, _) => removedIds.contains(k)),
+      placements: next.placements,
+      slotTypes: next.slotTypes,
       zoneAxes: contentZone == null
           ? null
           : ({...zoneAxes}..remove(contentZone)),
       zoneFlows: contentZone == null
           ? null
           : ({...zoneFlows}..remove(contentZone)),
-      slotPreferredSizes: {...slotPreferredSizes}
-        ..removeWhere((k, _) => removedIds.contains(k)),
-      slotSizeConstraints: {...slotSizeConstraints}
-        ..removeWhere((k, _) => removedIds.contains(k)),
-      slotLabels: {...slotLabels}
-        ..removeWhere((k, _) => removedIds.contains(k)),
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
@@ -382,28 +360,16 @@ class SuperTabConfig extends ComponentConfig {
     String? beforeId,
     String? afterId,
   }) {
-    if (!placedSlotIds.contains(id)) {
-      throw ArgumentError.value(id, 'id', 'Unknown SuperTab slot.');
-    }
-    if (zone.trim().isEmpty ||
-        (beforeId != null && afterId != null) ||
-        (beforeId != null && !slotsOf(zone).contains(beforeId)) ||
-        (afterId != null && !slotsOf(zone).contains(afterId))) {
-      throw ArgumentError('Invalid SuperTab slot destination.');
-    }
-    if (beforeId == id || afterId == id) return this;
-    final next = <String, List<String>>{
-      for (final entry in placements.entries)
-        entry.key: entry.value.where((value) => value != id).toList(),
-    };
-    final destination = next.putIfAbsent(zone, () => []);
-    final index = beforeId != null
-        ? destination.indexOf(beforeId)
-        : afterId != null
-        ? destination.indexOf(afterId) + 1
-        : destination.length;
-    destination.insert(index, id);
-    return copyWith(placements: next);
+    final next = JsonReader.moveSlotInPlacements(
+      id: id,
+      zone: zone,
+      beforeId: beforeId,
+      afterId: afterId,
+      placements: placements,
+      unknownError: 'Unknown SuperTab slot.',
+      destinationError: 'Invalid SuperTab slot destination.',
+    );
+    return next == null ? this : copyWith(placements: next);
   }
 
   SuperTabConfig withSlotReplaced(
@@ -411,41 +377,30 @@ class SuperTabConfig extends ComponentConfig {
     String replacementId,
     String type,
   ) {
-    if (!placedSlotIds.contains(id) ||
-        replacementId.trim().isEmpty ||
-        placedSlotIds.contains(replacementId)) {
-      throw ArgumentError('Invalid SuperTab slot replacement.');
-    }
     final oldContentZone = contentZoneFor(id);
     final newContentZone = contentZoneFor(replacementId);
-    String remapZone(String z) => z == oldContentZone ? newContentZone : z;
+    final next = JsonReader.replaceSlotInMaps(
+      id: id,
+      replacementId: replacementId,
+      type: type,
+      placements: placements,
+      slotTypes: slotTypes,
+      zoneAxes: zoneAxes,
+      zoneFlows: zoneFlows,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+      remapZone: (z) => z == oldContentZone ? newContentZone : z,
+      errorMessage: 'Invalid SuperTab slot replacement.',
+    );
     return copyWith(
-      placements: {
-        for (final entry in placements.entries)
-          remapZone(entry.key): [
-            for (final slot in entry.value) slot == id ? replacementId : slot,
-          ],
-      },
-      slotTypes: {...slotTypes}
-        ..remove(id)
-        ..[replacementId] = type,
-      zoneAxes: {
-        for (final entry in zoneAxes.entries)
-          remapZone(entry.key): entry.value,
-      },
-      zoneFlows: {
-        for (final entry in zoneFlows.entries)
-          remapZone(entry.key): entry.value,
-      },
-      slotPreferredSizes: {
-        for (final entry in slotPreferredSizes.entries)
-          (entry.key == id ? replacementId : entry.key): entry.value,
-      },
-      slotSizeConstraints: {
-        for (final entry in slotSizeConstraints.entries)
-          (entry.key == id ? replacementId : entry.key): entry.value,
-      },
-      slotLabels: {...slotLabels}..remove(id),
+      placements: next.placements,
+      slotTypes: next.slotTypes,
+      zoneAxes: next.zoneAxes,
+      zoneFlows: next.zoneFlows,
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
@@ -453,25 +408,17 @@ class SuperTabConfig extends ComponentConfig {
     String zone,
     Axis? axis, {
     Axis? defaultAxis,
-  }) {
-    final next = {...zoneAxes};
-    if (axis == null || axis == defaultAxis) {
-      next.remove(zone);
-    } else {
-      next[zone] = axis;
-    }
-    return copyWith(zoneAxes: next);
-  }
+  }) => copyWith(
+    zoneAxes: JsonReader.updateZoneAxisMap(
+      zoneAxes,
+      zone,
+      axis,
+      defaultAxis: defaultAxis,
+    ),
+  );
 
-  SuperTabConfig withZoneFlow(String zone, ZoneFlowConfig flow) {
-    final next = {...zoneFlows};
-    if (flow.isDefault) {
-      next.remove(zone);
-    } else {
-      next[zone] = flow;
-    }
-    return copyWith(zoneFlows: next);
-  }
+  SuperTabConfig withZoneFlow(String zone, ZoneFlowConfig flow) =>
+      copyWith(zoneFlows: JsonReader.updateZoneFlowMap(zoneFlows, zone, flow));
 
   SuperTabConfig withSlotSize(String id, Size? size) => copyWith(
     slotPreferredSizes: {...slotPreferredSizes, id: size},
@@ -523,38 +470,18 @@ class SuperTabConfig extends ComponentConfig {
       if (dividerColor != null) 'dividerColor': JsonColor.toHex(dividerColor!),
       if (dividerHeight != null) 'dividerHeight': dividerHeight,
       if (tabAlignment != null) 'tabAlignment': tabAlignment!.name,
-      'placements': {
-        for (final entry in placements.entries)
-          if (entry.value.isNotEmpty)
-            entry.key: [
-              for (final id in entry.value) {'id': id, 'type': slotTypeOf(id)},
-            ],
-      },
-      if (zoneAxes.isNotEmpty)
-        'zoneAxes': {
-          for (final entry in zoneAxes.entries) entry.key: entry.value.name,
-        },
-      if (zoneFlows.isNotEmpty)
-        'zoneFlows': {
-          for (final entry in zoneFlows.entries)
-            if (!entry.value.isDefault) entry.key: entry.value.toJson(),
-        },
-      if (slotPreferredSizes.isNotEmpty)
-        'slotPreferredSizes': {
-          for (final entry in slotPreferredSizes.entries)
-            entry.key: entry.value == null
-                ? null
-                : [
-                    entry.value!.width.isFinite ? entry.value!.width : null,
-                    entry.value!.height.isFinite ? entry.value!.height : null,
-                  ],
-        },
-      if (slotSizeConstraints.isNotEmpty)
-        'slotSizeConstraints': {
-          for (final entry in slotSizeConstraints.entries)
-            entry.key: entry.value.toJson(),
-        },
-      if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      ...JsonReader.encodeSlotContainerJson(
+        placements: placements,
+        slotTypeOf: slotTypeOf,
+        zoneAxes: zoneAxes,
+        zoneFlows: zoneFlows,
+        slotPreferredSizes: slotPreferredSizes,
+        slotSizeConstraints: slotSizeConstraints,
+        slotLabels: slotLabels,
+        alwaysIncludePlacements: true,
+        useShortTypeNameInFullJson: false,
+        allowBareSlotIdInFullJson: false,
+      ),
     };
   }
 
@@ -597,43 +524,16 @@ class SuperTabConfig extends ComponentConfig {
       if (dividerColor != null) 'dividerColor': JsonColor.toHex(dividerColor!),
       if (dividerHeight != null) 'dividerHeight': dividerHeight,
       if (tabAlignment != null) 'tabAlignment': tabAlignment!.name,
-      if (placements.isNotEmpty)
-        'placements': {
-          for (final entry in placements.entries)
-            if (entry.value.isNotEmpty)
-              entry.key: [
-                for (final id in entry.value)
-                  {
-                    'id': id,
-                    'type': JsonComponentType.shortName(slotTypeOf(id)),
-                  },
-              ],
-        },
-      if (zoneAxes.isNotEmpty)
-        'zoneAxes': {
-          for (final entry in zoneAxes.entries) entry.key: entry.value.name,
-        },
-      if (zoneFlows.isNotEmpty)
-        'zoneFlows': {
-          for (final entry in zoneFlows.entries)
-            if (!entry.value.isDefault) entry.key: entry.value.toJson(),
-        },
-      if (slotPreferredSizes.isNotEmpty)
-        'slotPreferredSizes': {
-          for (final entry in slotPreferredSizes.entries)
-            entry.key: entry.value == null
-                ? null
-                : [
-                    entry.value!.width.isFinite ? entry.value!.width : null,
-                    entry.value!.height.isFinite ? entry.value!.height : null,
-                  ],
-        },
-      if (slotSizeConstraints.isNotEmpty)
-        'slotSizeConstraints': {
-          for (final entry in slotSizeConstraints.entries)
-            entry.key: JsonDimension.formatConstraintsCompact(entry.value),
-        },
-      if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      ...JsonReader.encodeSlotContainerJson(
+        placements: placements,
+        slotTypeOf: slotTypeOf,
+        zoneAxes: zoneAxes,
+        zoneFlows: zoneFlows,
+        slotPreferredSizes: slotPreferredSizes,
+        slotSizeConstraints: slotSizeConstraints,
+        slotLabels: slotLabels,
+        compact: true,
+      ),
     };
   }
 
@@ -764,84 +664,24 @@ class SuperTabConfig extends ComponentConfig {
       }
     }
 
-    final rawPlacements = value['placements'] ?? const {};
-    if (rawPlacements is! Map) {
-      throw const FormatException('Placements d’onglets invalides.');
-    }
-    final placements = <String, List<String>>{};
-    final types = <String, String>{};
-    for (final entry in rawPlacements.entries) {
-      if (entry.key is! String || entry.value is! List) {
-        throw const FormatException('Zone d’onglets invalide.');
-      }
-      final ids = <String>[];
-      for (final slot in entry.value as List) {
-        if (slot is String && slot.trim().isNotEmpty) {
-          ids.add(slot);
-          types[slot] = JsonComponentType.normalize(slot, id: slot);
-          continue;
-        }
-        if (slot is! Map || slot['id'] is! String || slot['type'] is! String) {
-          throw const FormatException('Slot d’onglet invalide.');
-        }
-        final id = slot['id'] as String;
-        ids.add(id);
-        types[id] = JsonComponentType.normalize(slot['type'] as String, id: id);
-      }
-      placements[entry.key as String] = ids;
-    }
+    final (:placements, :slotTypes) = JsonReader.parseSlotPlacements(
+      value['placements'],
+      invalidPlacementsMessage: 'Placements d’onglets invalides.',
+      invalidZoneMessage: 'Zone d’onglets invalide.',
+      invalidSlotMessage: 'Slot d’onglet invalide.',
+    );
 
     try {
-      final rawSizes = value['slotPreferredSizes'] ?? const {};
-      final rawConstraints = value['slotSizeConstraints'] ?? const {};
-      final rawLabels = value['slotLabels'] ?? const {};
-      final rawAxes = value['zoneAxes'] ?? const {};
-      final rawFlows = value['zoneFlows'] ?? const {};
-      if (rawSizes is! Map ||
-          rawConstraints is! Map ||
-          rawLabels is! Map ||
-          rawAxes is! Map ||
-          rawFlows is! Map) {
-        throw const FormatException('Métadonnées de slots d’onglets invalides.');
-      }
-      if (rawLabels.entries.any(
-        (entry) => entry.key is! String || entry.value is! String,
-      )) {
-        throw const FormatException('Libellés de slots d’onglets invalides.');
-      }
-      final parsedAxes = <String, Axis>{};
-      for (final entry in rawAxes.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Axe de zone d’onglet invalide.');
-        }
-        final axis = Axis.values
-            .where((candidate) => candidate.name == entry.value)
-            .firstOrNull;
-        if (axis == null) {
-          throw const FormatException('Axe de zone d’onglet invalide.');
-        }
-        parsedAxes[entry.key as String] = axis;
-      }
-      final parsedFlows = <String, ZoneFlowConfig>{};
-      for (final entry in rawFlows.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Flux de zone d’onglet invalide.');
-        }
-        parsedFlows[entry.key as String] = ZoneFlowConfig.fromJson(entry.value);
-      }
-      if (rawConstraints.keys.any((key) => key is! String)) {
-        throw const FormatException('Contrainte de slot d’onglet invalide.');
-      }
-      final sizes = <String, Size?>{};
-      for (final entry in rawSizes.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Taille de slot d’onglet invalide.');
-        }
-        sizes[entry.key as String] = JsonDimension.parsePreferredSize(
-          entry.value,
-          allowInfiniteSides: true,
-        );
-      }
+      final meta = JsonReader.parseSlotContainerMetadata(
+        value,
+        placedIds: placements.values.expand((ids) => ids),
+        invalidMetadataMessage: 'Métadonnées de slots d’onglets invalides.',
+        invalidLabelsMessage: 'Libellés de slots d’onglets invalides.',
+        invalidAxisMessage: 'Axe de zone d’onglet invalide.',
+        invalidFlowMessage: 'Flux de zone d’onglet invalide.',
+        invalidConstraintMessage: 'Contrainte de slot d’onglet invalide.',
+        invalidSizeMessage: 'Taille de slot d’onglet invalide.',
+      );
       return SuperTabConfig(
         mode: mode,
         tabBarPosition: tabBarPosition,
@@ -867,15 +707,12 @@ class SuperTabConfig extends ComponentConfig {
         dividerHeight: dividerHeight,
         tabAlignment: tabAlignment,
         placements: placements,
-        slotTypes: types,
-        zoneAxes: parsedAxes,
-        zoneFlows: parsedFlows,
-        slotPreferredSizes: sizes,
-        slotSizeConstraints: SlotSizeConstraints.parseMap(
-          rawConstraints,
-          placedIds: placements.values.expand((ids) => ids),
-        ),
-        slotLabels: Map<String, String>.from(rawLabels),
+        slotTypes: slotTypes,
+        zoneAxes: meta.zoneAxes,
+        zoneFlows: meta.zoneFlows,
+        slotPreferredSizes: meta.slotPreferredSizes,
+        slotSizeConstraints: meta.slotSizeConstraints,
+        slotLabels: meta.slotLabels,
       )..validate();
     } on ArgumentError {
       throw const FormatException('Identifiants de zones ou de slots invalides.');
@@ -883,43 +720,48 @@ class SuperTabConfig extends ComponentConfig {
   }
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! SuperTabConfig) return false;
-    if (mode != other.mode ||
-        tabBarPosition != other.tabBarPosition ||
-        isScrollable != other.isScrollable ||
-        initialIndex != other.initialIndex ||
-        binding != other.binding ||
-        allowAdd != other.allowAdd ||
-        allowRemove != other.allowRemove ||
-        emptyText != other.emptyText ||
-        tabBarStyle != other.tabBarStyle ||
-        indicatorKind != other.indicatorKind ||
-        indicatorSize != other.indicatorSize ||
-        indicatorColor != other.indicatorColor ||
-        indicatorWeight != other.indicatorWeight ||
-        indicatorRadius != other.indicatorRadius ||
-        indicatorHorizontalPadding != other.indicatorHorizontalPadding ||
-        indicatorVerticalPadding != other.indicatorVerticalPadding ||
-        labelColor != other.labelColor ||
-        unselectedLabelColor != other.unselectedLabelColor ||
-        overlayColor != other.overlayColor ||
-        labelHorizontalPadding != other.labelHorizontalPadding ||
-        dividerColor != other.dividerColor ||
-        dividerHeight != other.dividerHeight ||
-        tabAlignment != other.tabAlignment ||
-        !JsonReader.sameSlotPlacements(placements, other.placements) ||
-        !mapEquals(slotTypes, other.slotTypes) ||
-        !mapEquals(zoneAxes, other.zoneAxes) ||
-        !mapEquals(zoneFlows, other.zoneFlows) ||
-        !mapEquals(slotPreferredSizes, other.slotPreferredSizes) ||
-        !mapEquals(slotSizeConstraints, other.slotSizeConstraints) ||
-        !mapEquals(slotLabels, other.slotLabels)) {
-      return false;
-    }
-    return true;
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SuperTabConfig &&
+          mode == other.mode &&
+          tabBarPosition == other.tabBarPosition &&
+          isScrollable == other.isScrollable &&
+          initialIndex == other.initialIndex &&
+          binding == other.binding &&
+          allowAdd == other.allowAdd &&
+          allowRemove == other.allowRemove &&
+          emptyText == other.emptyText &&
+          tabBarStyle == other.tabBarStyle &&
+          indicatorKind == other.indicatorKind &&
+          indicatorSize == other.indicatorSize &&
+          indicatorColor == other.indicatorColor &&
+          indicatorWeight == other.indicatorWeight &&
+          indicatorRadius == other.indicatorRadius &&
+          indicatorHorizontalPadding == other.indicatorHorizontalPadding &&
+          indicatorVerticalPadding == other.indicatorVerticalPadding &&
+          labelColor == other.labelColor &&
+          unselectedLabelColor == other.unselectedLabelColor &&
+          overlayColor == other.overlayColor &&
+          labelHorizontalPadding == other.labelHorizontalPadding &&
+          dividerColor == other.dividerColor &&
+          dividerHeight == other.dividerHeight &&
+          tabAlignment == other.tabAlignment &&
+          JsonReader.sameSlotLayoutMetadata(
+            placementsA: placements,
+            placementsB: other.placements,
+            slotTypesA: slotTypes,
+            slotTypesB: other.slotTypes,
+            zoneAxesA: zoneAxes,
+            zoneAxesB: other.zoneAxes,
+            zoneFlowsA: zoneFlows,
+            zoneFlowsB: other.zoneFlows,
+            slotPreferredSizesA: slotPreferredSizes,
+            slotPreferredSizesB: other.slotPreferredSizes,
+            slotSizeConstraintsA: slotSizeConstraints,
+            slotSizeConstraintsB: other.slotSizeConstraints,
+            slotLabelsA: slotLabels,
+            slotLabelsB: other.slotLabels,
+          ));
 
   @override
   int get hashCode => Object.hashAll([
@@ -958,9 +800,6 @@ class SuperTabConfig extends ComponentConfig {
   ]);
 }
 
-String _formatTabNumber(double value) =>
-    value == value.roundToDouble() ? '${value.round()}' : '$value';
-
 /// Résumé des propriétés d'un [SuperTabConfig] pour l'info-bulle du menu contextuel.
 String formatSuperTabTooltip({
   required String title,
@@ -989,9 +828,9 @@ String formatSuperTabTooltip({
       : '';
   final indicatorLabel = switch (config.indicatorKind) {
     SuperTabIndicatorKind.underline =>
-      'Souligné (${_formatTabNumber(config.indicatorWeight)} px$indicatorColorSuffix)',
+      'Souligné (${JsonReader.formatNumber(config.indicatorWeight)} px$indicatorColorSuffix)',
     SuperTabIndicatorKind.box =>
-      'Boîte (rayon ${_formatTabNumber(config.indicatorRadius)} px$indicatorColorSuffix)',
+      'Boîte (rayon ${JsonReader.formatNumber(config.indicatorRadius)} px$indicatorColorSuffix)',
     SuperTabIndicatorKind.none => 'Aucun',
   };
   final colorParts = <String>[

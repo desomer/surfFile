@@ -7,7 +7,7 @@
 /// et les surcharges d'états ([SeparatorConfigStates]).
 library;
 
-import 'package:flutter/foundation.dart' show mapEquals, setEquals;
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'automatic_state.dart';
@@ -96,17 +96,12 @@ class SuperSeparatorConfig extends ComponentConfig {
   String get componentType => 'separator';
 
   @override
-  Iterable<JsonTextBinding> get referencedBindings => [
-    ?states?.binding,
-    ...propertyBindings.values,
-    for (final cfg in states?.named.values ?? const <SuperSeparatorConfig>[])
-      ...cfg.propertyBindings.values,
-    if (states?.hover case final h?) ...h.config.propertyBindings.values,
-    if (states?.selected case final s?) ...s.config.propertyBindings.values,
-    for (final auto
-        in states?.automatic.values ?? const <SeparatorConfigOverride>[])
-      ...auto.config.propertyBindings.values,
-  ];
+  Iterable<JsonTextBinding> get referencedBindings =>
+      JsonReader.collectReferencedBindings(
+        propertyBindings,
+        states,
+        (c) => c.propertyBindings,
+      );
 
   @override
   void validate() {
@@ -128,9 +123,11 @@ class SuperSeparatorConfig extends ComponentConfig {
         endIndent < 0 ||
         !labelSpacing.isFinite ||
         labelSpacing < 0 ||
-        (fontFamily != null && fontFamily!.trim().isEmpty) ||
-        (fontSize != null && (!fontSize!.isFinite || fontSize! <= 0)) ||
-        (letterSpacing != null && !letterSpacing!.isFinite)) {
+        JsonReader.hasInvalidTypographyOrBox(
+          fontFamily: fontFamily,
+          fontSize: fontSize,
+          letterSpacing: letterSpacing,
+        )) {
       throw ArgumentError('Invalid Separator configuration.');
     }
   }
@@ -331,19 +328,20 @@ class SuperSeparatorConfig extends ComponentConfig {
         'bottom': SuperSeparatorLabelPosition.end,
       },
     );
-    final hasWeight = value.containsKey('fontWeight');
-    final weight = value['fontWeight'];
-    final fontWeight = hasWeight
-        ? JsonReader.parseFontWeight(weight)
-        : fallback.fontWeight;
-    final hasFamily = value.containsKey('fontFamily');
-    final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
+    final fontWeight = JsonReader.readFontWeight(
+      value,
+      fallback.fontWeight,
+      errorMessage: 'Invalid Separator style.',
+    );
+    final family = JsonReader.readFontFamily(
+      value,
+      fallback.fontFamily,
+      errorMessage: 'Invalid Separator style.',
+    );
     if (kind == null ||
         axis == null ||
         lineStyle == null ||
-        labelPosition == null ||
-        (hasWeight && weight != null && fontWeight == null) ||
-        (family != null && family is! String)) {
+        labelPosition == null) {
       throw const FormatException('Invalid Separator style.');
     }
 
@@ -354,11 +352,11 @@ class SuperSeparatorConfig extends ComponentConfig {
       context: 'Separator',
     );
 
-    final resolvedLabel = value.containsKey('label')
-        ? field('label', fallback.label)
-        : value.containsKey('text')
-        ? field('text', fallback.label)
-        : fallback.label;
+    final resolvedLabel = JsonReader.readLabelOrText(
+      value,
+      fallback.label,
+      context: 'Separator',
+    );
 
     final resolvedExtent = value.containsKey('extent')
         ? (number('extent', fallback.extent) ?? fallback.extent)
@@ -380,7 +378,7 @@ class SuperSeparatorConfig extends ComponentConfig {
       labelSpacing:
           number('labelSpacing', fallback.labelSpacing) ??
           fallback.labelSpacing,
-      fontFamily: family as String?,
+      fontFamily: family,
       fontSize: number('fontSize', fallback.fontSize),
       fontWeight: fontWeight,
       italic: field<bool?>('italic', fallback.italic),
@@ -443,17 +441,10 @@ class SuperSeparatorConfig extends ComponentConfig {
     italic,
     color,
     letterSpacing,
-    Object.hashAllUnordered(
-      propertyBindings.entries.map(
-        (entry) => Object.hash(entry.key, entry.value),
-      ),
-    ),
+    JsonReader.hashPropertyBindings(propertyBindings),
     states,
   ]);
 }
-
-String _formatSeparatorNumber(double value) =>
-    value == value.roundToDouble() ? '${value.round()}' : '$value';
 
 /// Résumé des propriétés d'un [SuperSeparatorConfig] pour l'info-bulle du menu contextuel.
 String formatSuperSeparatorTooltip({
@@ -465,13 +456,13 @@ String formatSuperSeparatorTooltip({
       : 'Séparateur (Divider)';
   final axisLabel = config.axis == Axis.horizontal ? 'Horizontal' : 'Vertical';
   final details = <String>[
-    'Espace : ${_formatSeparatorNumber(config.extent)} px',
+    'Espace : ${JsonReader.formatNumber(config.extent)} px',
     if (config.kind.isDivider) ...[
-      'Épaisseur : ${_formatSeparatorNumber(config.thickness)} px',
+      'Épaisseur : ${JsonReader.formatNumber(config.thickness)} px',
       'Style : ${config.lineStyle.name}',
     ],
     if (config.indent > 0 || config.endIndent > 0)
-      'Retraits : ${_formatSeparatorNumber(config.indent)} / ${_formatSeparatorNumber(config.endIndent)} px',
+      'Retraits : ${JsonReader.formatNumber(config.indent)} / ${JsonReader.formatNumber(config.endIndent)} px',
     if (config.label.trim().isNotEmpty) 'Libellé : ${config.label.trim()}',
     if (config.lineColor != null)
       'Couleur trait : ${JsonColor.toHex(config.lineColor!)}',

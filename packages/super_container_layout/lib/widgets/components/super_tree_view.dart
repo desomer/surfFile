@@ -22,7 +22,6 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart' show kPrimaryButton;
 import 'package:material_ui/material_ui.dart';
 
@@ -39,9 +38,9 @@ import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import 'component_common.dart';
+import 'json_collection_common.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tree_view_editor.dart';
-import '../editing/history/editor_history.dart';
 import '../surfaces/super_container.dart';
 import 'super_layout/iterable_content.dart';
 import 'super_layout/slot_implementation.dart';
@@ -85,45 +84,6 @@ class SuperTreeNodeItem {
     isTemplate: isTemplate,
     isFirstRow: isFirstRow,
     revision: nextRevision,
-  );
-}
-
-@immutable
-class _TreeSource {
-  const _TreeSource({
-    this.binding,
-    this.error,
-    this.unselected = false,
-    this.parents = const [],
-    this.rowBase = const [],
-    this.arrays = const [],
-  });
-
-  final JsonTextBinding? binding;
-  final String? error;
-  final bool unselected;
-  final List<int> parents;
-  final List<int> rowBase;
-  final List<JsonArrayBinding> arrays;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _TreeSource &&
-      other.binding == binding &&
-      other.error == error &&
-      other.unselected == unselected &&
-      listEquals(other.parents, parents) &&
-      listEquals(other.rowBase, rowBase) &&
-      listEquals(other.arrays, arrays);
-
-  @override
-  int get hashCode => Object.hash(
-    binding,
-    error,
-    unselected,
-    Object.hashAll(parents),
-    Object.hashAll(rowBase),
-    Object.hashAll(arrays),
   );
 }
 
@@ -216,7 +176,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
   );
 
   JsonRepositoryStore? _store;
-  _TreeSource? _source;
+  ResolvedJsonArraySource? _source;
   String? _configPath;
   JsonArrayBinding? _selection;
   List<JsonArrayBinding> _listened = const [];
@@ -306,13 +266,11 @@ class _SuperTreeViewState extends State<SuperTreeView> {
   }
 
   void _listen(List<JsonArrayBinding> arrays) {
-    for (final array in _listened) {
-      array.removeListener(_selectionChanged);
-    }
-    _listened = arrays;
-    for (final array in arrays) {
-      array.addListener(_selectionChanged);
-    }
+    _listened = updateWatchedArrayBindings(
+      _listened,
+      arrays,
+      _selectionChanged,
+    );
   }
 
   void _invalidateSelectedNodes(String? previousPath, String? nextPath) {
@@ -345,30 +303,6 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     }
   }
 
-  _TreeSource _resolve(
-    SuperTreeViewConfig config,
-    JsonListScope? scope,
-    JsonRepositoryStore? store,
-  ) {
-    final binding = config.binding;
-    if (binding == null) return const _TreeSource();
-    try {
-      final resolved = JsonListScope.resolveSelected(binding, scope, store);
-      final scoped = scope?.indices ?? const <int>[];
-      return _TreeSource(
-        binding: resolved.binding,
-        unselected: resolved.binding == null,
-        parents: resolved.indices,
-        rowBase: resolved.indices.length > scoped.length
-            ? resolved.indices
-            : scoped,
-        arrays: resolved.arrays,
-      );
-    } on FormatException catch (error) {
-      return _TreeSource(error: error.message);
-    }
-  }
-
   void _observe(
     SuperTreeViewConfig config,
     JsonListScope? scope,
@@ -376,7 +310,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
   ) {
     _configPath = config.binding?.path;
     if (scope?.placeholder ?? false) return;
-    final source = _resolve(config, scope, store);
+    final source = resolveJsonArraySource(config.binding, scope, store);
     if (_source == source && identical(_store, store)) return;
     if (_source != source) {
       _rawNodes = null;
@@ -639,45 +573,20 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     return _cachedTreeNodes;
   }
 
-  NativeComponentConfig _toNativeConfig(SuperTreeViewConfig config) {
-    final activeRegionIds = {
-      SuperTreeViewConfig.headerZone,
-      SuperTreeViewConfig.dataZone,
-    };
-    final activePlacements = <String, List<String>>{
-      for (final entry in config.placements.entries)
-        if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-    };
-    final activeSlotIds = activePlacements.values.expand((ids) => ids).toSet();
-    return NativeComponentConfig(
-      regions: {for (final id in activeRegionIds) id: true},
-      placements: activePlacements,
-      slotTypes: {
-        for (final entry in config.slotTypes.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      regionAxes: {
-        for (final entry in config.zoneAxes.entries)
-          if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-      },
-      regionFlows: {
-        for (final entry in config.zoneFlows.entries)
-          if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotPreferredSizes: {
-        for (final entry in config.slotPreferredSizes.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotSizeConstraints: {
-        for (final entry in config.slotSizeConstraints.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotLabels: {
-        for (final entry in config.slotLabels.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-    );
-  }
+  NativeComponentConfig _toNativeConfig(SuperTreeViewConfig config) =>
+      buildNativeComponentConfigFromRegions(
+        activeRegionIds: {
+          SuperTreeViewConfig.headerZone,
+          SuperTreeViewConfig.dataZone,
+        },
+        placements: config.placements,
+        slotTypes: config.slotTypes,
+        zoneAxes: config.zoneAxes,
+        zoneFlows: config.zoneFlows,
+        slotPreferredSizes: config.slotPreferredSizes,
+        slotSizeConstraints: config.slotSizeConstraints,
+        slotLabels: config.slotLabels,
+      );
 
   SuperTreeViewConfig _fromNativeConfig(
     SuperTreeViewConfig current,
@@ -699,54 +608,27 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     Registry? registry,
     String region,
     SlotImplementation slot,
-  ) async {
-    final current = controller.value;
-    final removedIds = current.slotsRemovedWith(slot.id);
-    final removedTypes = {
-      for (final id in removedIds) id: current.slotTypeOf(id),
-    };
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    try {
-      controller.value = current.withoutSlot(slot.id);
-      if (registry != null) {
-        for (final entry in removedTypes.entries) {
-          registry.purgeInstance(
-            entry.key,
-            entry.value,
-            EditorConfigKind.treeView,
-          );
-        }
-      }
-    } finally {
-      history?.commitTransaction();
-    }
-  }
+  ) => purgeRemovedComponentSlots<SuperTreeViewConfig>(
+    context: context,
+    controller: controller,
+    registry: registry,
+    ownerKind: EditorConfigKind.treeView,
+    removedIds: controller.value.slotsRemovedWith(slot.id),
+    slotTypeOf: controller.value.slotTypeOf,
+    nextConfig: controller.value.withoutSlot(slot.id),
+  );
 
-  Future<void> _openSettings(
-    ValueNotifier<SuperTreeViewConfig> controller,
-  ) async {
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    SuperTreeViewConfig? result;
-    try {
-      result = await showSuperTreeViewEditor(
+  Future<void> _openSettings(ValueNotifier<SuperTreeViewConfig> controller) =>
+      runComponentEditorTransaction<SuperTreeViewConfig>(
         context: context,
-        config: controller.value,
+        configuration: controller,
+        onConfigChanged: (result) {
+          _renderRevision++;
+          widget.onConfigChanged?.call(result);
+        },
+        showEditor: (initial) =>
+            showSuperTreeViewEditor(context: context, config: initial),
       );
-      if (result != null && mounted && result != controller.value) {
-        controller.value = result;
-        _renderRevision++;
-        widget.onConfigChanged?.call(result);
-      }
-    } finally {
-      if (result != null) {
-        history?.commitTransaction();
-      } else {
-        history?.cancelTransaction();
-      }
-    }
-  }
 
   Widget _buildZoneContent(
     BuildContext context,
@@ -754,38 +636,14 @@ class _SuperTreeViewState extends State<SuperTreeView> {
     SuperTreeViewConfig config,
     SuperTreeNodeItem item,
     String zoneId,
-  ) {
-    final Widget content;
-    if (item.isFirstRow) {
-      content = editor.region(zoneId, expand: true, stretch: true);
-    } else {
-      final slots = editor.slotsFor(zoneId);
-      if (slots.isEmpty) {
-        return const SizedBox.shrink();
-      }
-      final axis = editor.axisOf(zoneId);
-      final flow = editor.flowOf(zoneId);
-      content = SlotStack(
-        slots: slots,
-        axis: axis,
-        flow: flow,
-        expand: true,
-        stretch: true,
-        preferredSizes: {
-          for (final slot in slots)
-            if (slot case NativePreferredSizeWidget native)
-              slot.id: native.preferredSizeIn(context),
-          ...config.slotPreferredSizes,
-        },
-        sizeConstraints: config.slotSizeConstraints,
-      );
-    }
-    return SlotContentFitScope(
-      fitWidth: false,
-      fitHeight: false,
-      child: content,
-    );
-  }
+  ) => buildRepeatedRegionZoneContent(
+    context: context,
+    editor: editor,
+    zoneId: zoneId,
+    isInteractiveRegion: item.isFirstRow,
+    slotPreferredSizes: config.slotPreferredSizes,
+    slotSizeConstraints: config.slotSizeConstraints,
+  );
 
   Widget _buildRowWrapper(
     BuildContext context,

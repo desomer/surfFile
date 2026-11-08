@@ -61,7 +61,6 @@ library;
 
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart'
     show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:material_ui/material_ui.dart';
@@ -77,8 +76,8 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
 import '../../theme/container_style.dart';
-import '../editing/history/editor_history.dart';
 import 'component_common.dart';
+import 'json_collection_common.dart';
 import '../editing/components/super_list_view_editor.dart';
 import 'super_layout/slot_implementation.dart';
 import 'super_layout/super_layout.dart';
@@ -141,54 +140,6 @@ class SuperListView extends SuperStatefulComponent<SuperListViewConfig>
   State<SuperListView> createState() => _SuperListViewState();
 }
 
-/// Tableau résolu de la liste.
-@immutable
-class _Source {
-  const _Source({
-    this.binding,
-    this.error,
-    this.unselected = false,
-    this.parents = const [],
-    this.rowBase = const [],
-    this.arrays = const [],
-  });
-
-  final JsonTextBinding? binding;
-  final String? error;
-
-  /// Un `[?]` du chemin n'a pas de ligne sélectionnée.
-  final bool unselected;
-
-  /// Valeurs des `[?]` du chemin du tableau.
-  final List<int> parents;
-
-  /// Indices transmis aux lignes, avant leur propre indice.
-  final List<int> rowBase;
-
-  /// Sélections dont dépend le chemin du tableau.
-  final List<JsonArrayBinding> arrays;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _Source &&
-      other.binding == binding &&
-      other.error == error &&
-      other.unselected == unselected &&
-      listEquals(other.parents, parents) &&
-      listEquals(other.rowBase, rowBase) &&
-      listEquals(other.arrays, arrays);
-
-  @override
-  int get hashCode => Object.hash(
-    binding,
-    error,
-    unselected,
-    Object.hashAll(parents),
-    Object.hashAll(rowBase),
-    Object.hashAll(arrays),
-  );
-}
-
 class _SuperListViewState extends State<SuperListView> {
   String get effectiveItemId =>
       widget.itemId ?? widget.config.itemId ?? widget.id;
@@ -203,7 +154,7 @@ class _SuperListViewState extends State<SuperListView> {
       GlobalKey<_RowMeasureSubtreeState>();
   final GlobalKey _scrollableHostKey = GlobalKey();
   JsonRepositoryStore? _store;
-  _Source? _source;
+  ResolvedJsonArraySource? _source;
 
   /// Sélection du tableau de la liste, puis celles utilisées par son chemin.
   JsonArrayBinding? _selection;
@@ -251,30 +202,6 @@ class _SuperListViewState extends State<SuperListView> {
     super.dispose();
   }
 
-  _Source _resolve(
-    SuperListViewConfig config,
-    JsonListScope? scope,
-    JsonRepositoryStore? store,
-  ) {
-    final binding = config.binding;
-    if (binding == null) return const _Source();
-    try {
-      final resolved = JsonListScope.resolveSelected(binding, scope, store);
-      final scoped = scope?.indices ?? const <int>[];
-      return _Source(
-        binding: resolved.binding,
-        unselected: resolved.binding == null,
-        parents: resolved.indices,
-        rowBase: resolved.indices.length > scoped.length
-            ? resolved.indices
-            : scoped,
-        arrays: resolved.arrays,
-      );
-    } on FormatException catch (error) {
-      return _Source(error: error.message);
-    }
-  }
-
   /// Chemin modèle du tableau, qui identifie sa sélection.
   String? get _template {
     final path = _configPath;
@@ -284,16 +211,10 @@ class _SuperListViewState extends State<SuperListView> {
   String? _configPath;
 
   void _listen(List<JsonArrayBinding> arrays) {
-    for (final array in _listened) {
-      array.removeListener(_selectionChanged);
-    }
-    _listened = arrays;
-    for (final array in arrays) {
-      array.addListener(_selectionChanged);
-    }
+    _listened = updateWatchedArrayBindings(_listened, arrays, _selectionChanged);
   }
 
-  void _observe(_Source source, JsonRepositoryStore? store) {
+  void _observe(ResolvedJsonArraySource source, JsonRepositoryStore? store) {
     if (_source == source && identical(_store, store)) return;
     if (_source != source) {
       // Les lignes d'un autre tableau (indices parents décalés…) ne doivent
@@ -384,38 +305,15 @@ class _SuperListViewState extends State<SuperListView> {
     Widget child,
   ) {
     final scrollAxis = config.wrap ? Axis.vertical : config.axis;
-    Widget scrollView = ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+    Widget scrollView = wrapWithConfiguredScrollbar(
+      context: context,
+      scrollbarKey: ValueKey('super-list-scrollbar-${widget.id}'),
+      controller: _scrollController,
+      scrollAxis: scrollAxis,
+      showScrollbar: config.showScrollbar,
+      scrollbarStyle: config.scrollbarStyle,
       child: child,
     );
-    if (config.showScrollbar) {
-      final sbStyle = config.scrollbarStyle;
-      final colors = Theme.of(context).colorScheme;
-      scrollView = RawScrollbar(
-        key: ValueKey('super-list-scrollbar-${widget.id}'),
-        controller: _scrollController,
-        thumbVisibility: sbStyle.thumbVisibility,
-        trackVisibility: sbStyle.trackVisibility,
-        interactive: sbStyle.interactive,
-        thickness: sbStyle.thickness,
-        radius: Radius.circular(sbStyle.radius),
-        mainAxisMargin: sbStyle.mainAxisMargin,
-        crossAxisMargin: sbStyle.crossAxisMargin,
-        thumbColor:
-            sbStyle.thumbColor ??
-            colors.onSurfaceVariant.withValues(alpha: 0.45),
-        trackColor:
-            sbStyle.trackColor ??
-            colors.surfaceContainerHighest.withValues(alpha: 0.35),
-        trackBorderColor:
-            sbStyle.trackBorderColor ??
-            (sbStyle.trackVisibility
-                ? colors.outlineVariant.withValues(alpha: 0.5)
-                : const Color(0x00000000)),
-        scrollbarOrientation: sbStyle.side.resolveOrientation(scrollAxis),
-        child: scrollView,
-      );
-    }
     if (scrollAxis == Axis.horizontal) {
       scrollView = Listener(
         onPointerSignal: _handleHorizontalPointerSignal,
@@ -612,24 +510,8 @@ class _SuperListViewState extends State<SuperListView> {
     final items = _items;
     if (items == null || index >= items.length) return;
     final expected = items[index];
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Supprimer l’élément ?'),
-        content: Text('L’élément ${index + 1} sera retiré du repository.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    final confirmed = await confirmRemoveCollectionItemDialog(context, index);
+    if (!confirmed || !mounted) return;
     await _change((store, binding) async {
       final count = await store.removeArrayItem(
         binding.repositoryId!,
@@ -648,27 +530,14 @@ class _SuperListViewState extends State<SuperListView> {
     });
   }
 
-  Future<void> _edit(ValueNotifier<SuperListViewConfig> configuration) async {
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    SuperListViewConfig? result;
-    try {
-      result = await showSuperListViewEditor(
+  Future<void> _edit(ValueNotifier<SuperListViewConfig> configuration) =>
+      runComponentEditorTransaction<SuperListViewConfig>(
         context: context,
-        config: configuration.value,
+        configuration: configuration,
+        onConfigChanged: widget.onConfigChanged,
+        showEditor: (initial) =>
+            showSuperListViewEditor(context: context, config: initial),
       );
-      if (result != null && mounted && result != configuration.value) {
-        configuration.value = result;
-        widget.onConfigChanged?.call(result);
-      }
-    } finally {
-      if (result != null) {
-        history?.commitTransaction();
-      } else {
-        history?.cancelTransaction();
-      }
-    }
-  }
 
   SlotSizeConstraints _initialItemSize(SuperListViewConfig config) {
     if (config.itemSize case final dimensions?) return dimensions;
@@ -1040,7 +909,9 @@ class _SuperListViewState extends State<SuperListView> {
       builder: (context, config, _) {
         final placeholder = scope?.placeholder ?? false;
         _configPath = config.binding?.path;
-        if (!placeholder) _observe(_resolve(config, scope, store), store);
+        if (!placeholder) {
+          _observe(resolveJsonArraySource(config.binding, scope, store), store);
+        }
         final items = placeholder ? null : _items;
         final message = placeholder
             ? null

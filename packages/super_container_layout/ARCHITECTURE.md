@@ -109,7 +109,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 ### 3.3. Modèles de données (`lib/models/` — 26 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
-| `models/automatic_state.dart` | `AutomaticState` : énumération des états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et encodage de priorité d'état. |
+| `models/automatic_state.dart` | `AutomaticState`, `ComponentStateProperty`, `ComponentConfigOverrideBase`, `ComponentConfigStatesBase`, `ComponentStateHelpers` : états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et classes de base génériques des surcharges d'états de composants. |
 | `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction`, `ZoneSizeBindingAction`, `TooltipAction` : navigation et événements (`click`, `doubleClick`), taille de côté liée (`binding`) et info-bulle générique (`onTooltip`, `hover`). |
 | `services/events/super_event_bus.dart` | `SuperEventBus`, `SuperComponentEvent` : bus applicatif et snapshots JSON immutables. |
 | `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
@@ -125,6 +125,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/native_property_descriptor.dart` | `NativePropertyDescriptor`, `NativeComponentSchema` : descripteurs déclaratifs des propriétés et régions des composants Material natifs. |
 | `models/native_shape_config.dart` | `NativeShapeConfig`, `NativeShapeKind` : configuration sérialisable des formes Material (`RoundedRectangleBorder`, `StadiumBorder`, `BeveledRectangleBorder`, `CircleBorder`). |
 | `models/registry.dart` | `Registry`, `RegisteredComponent`, `ComponentBuilder`, `ComponentDuplicationContract`, `EditorConfigKind`, `EditorConfigRef` : registre central des composants et synchronisation des `ValueNotifier` avec `Appearance`. |
+| `models/registry_previews.dart` | Aperçus visuels (`_build*Preview`, `_previewZoneBox`) des composants du `Registry` affichés dans l'assistant d'ajout. |
 | `models/scaffold_page_config.dart` | `ScaffoldPageConfig`, `ScaffoldBodyMode` : configuration de la structure `Scaffold` d'une page (`appBar`, `body`, `bottomNavigationBar`, `drawer`, `endDrawer`, `bottomSheet`, mode `standard` ou `customScrollView`). |
 | `models/scrollbar_style_config.dart` | `ScrollbarStyleConfig` : personnalisation visuelle des barres de défilement (épaisseur, rayon, visibilité, couleurs). |
 | `models/super_action_config.dart` | `SuperActionConfig`, `SuperActionKind`, `SuperActionVariant`, `SuperActionIconPosition`, `SuperActionProperty` : configuration des boutons et actions Material 3 ou surfaciques. |
@@ -199,11 +200,16 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 ### 3.7. Widgets de composants (`lib/widgets/components/` — 41 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
-| `widgets/components/component_common.dart` | Utilitaires partagés entre composants (résolution de comportements `ComponentBehavior`, exécution de `GoToPageAction`, curseurs). |
+| `widgets/components/component_common.dart` | Utilitaires et mixins partagés entre composants (résolution de styles de ligne, `ComponentStateResolutionMixin`, `runComponentEditorTransaction`, `buildComponentTextStyle`, erreurs de diagnostic et helpers `JsonExtractableState`). |
+| `widgets/components/component_property_bindings.dart` | `BoundPropertyParsers` et `ComponentPropertyBindingsMixin` : validation typée et observation réactive des `propertyBindings` JSON partagées entre `SuperValue`, `SuperAction`, `SuperIndicator` et `SuperSeparator`. |
+| `widgets/components/json_collection_common.dart` | `ResolvedJsonArraySource`, `resolveJsonArraySource`, `buildNativeComponentConfigFromRegions`, `buildRepeatedRegionZoneContent`, `purgeRemovedComponentSlots`, `confirmRemoveCollectionItemDialog` et `wrapWithConfiguredScrollbar` pour les collections JSON (`SuperListView`, `SuperTable`, `SuperTab`, `SuperTreeView`). |
 | `widgets/components/super_component.dart` | Contrat type `SuperComponent<C>` (`id`, `config`, `behaviours`), bases `SuperStatefulComponent` et `SuperStatelessComponent`. Les comportements explicites remplacent ceux de l'apparence pour l'instance, sans les persister ; `null` conserve l'apparence. |
 | `widgets/components/super_action.dart` | `SuperAction` : bouton/action configurable (variantes Material 3 `filled`/`tonal`/`elevated`/`outlined`/`text`/`icon` ou `surface`, états, liaisons JSON et comportements). |
+| `widgets/components/super_action_visual.dart` | `buildSuperActionVisual`, `buildSuperActionTabVisual`, `SuperActionNavigationScope` et `executeSuperActionClick` : rendu visuel et adaptation en destination de navigation pour `SuperAction`. |
 | `widgets/components/super_indicator.dart` | `SuperIndicator` : indicateur / icône d'état configurable avec libellé et badge optionnels, états standards/nommés (`SurfaceStateBinding`) et `propertyBindings`. |
+| `widgets/components/super_indicator_visual.dart` | `buildSuperIndicatorVisual` : rendu visuel d'un `SuperIndicator` partagé entre le widget d'exécution et l'aperçu de l'éditeur. |
 | `widgets/components/super_separator.dart` | `SuperSeparator` : séparateur (`divider`) ou espaceur (`spacer`) horizontal/vertical avec libellé optionnel, style de trait (`solid`/`dashed`/`dotted`), états et liaisons JSON. |
+| `widgets/components/super_separator_visual.dart` | `buildSuperSeparatorVisual` : rendu visuel d'un `SuperSeparator` (trait plein/tireté/pointillé, libellé aligné) partagé entre le widget runtime et l'aperçu de l'éditeur. |
 | `widgets/components/super_list_view.dart` | `SuperListView` : liste dynamique liée à un tableau JSON, répétant un gabarit `IterableContent` par ligne avec ajout/suppression et sélection. |
 | `widgets/components/super_tab.dart` | `SuperTab` : composant d'onglets (`TabBar` + `TabBarView`) en mode statique (vues par onglet) ou dynamique (lié à un tableau JSON). |
 | `widgets/components/super_table.dart` | `SuperTable` : tableau multi-colonnes avec colonnes figées à gauche, en-tête, pied, redimensionnement de colonnes et `JsonListScope` par ligne. |

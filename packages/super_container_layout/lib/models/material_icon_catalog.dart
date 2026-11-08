@@ -3246,6 +3246,12 @@ abstract final class MaterialIconCatalog {
     ];
   }
 
+  static final Map<String, ({IconData icon, String label})> catalogMap =
+      Map.unmodifiable({
+        for (final entry in entries)
+          entry.id: (icon: entry.icon, label: entry.label),
+      });
+
   static bool _matches(MaterialIconEntry entry, List<String> tokens) {
     if (tokens.isEmpty) return true;
     final haystack = [

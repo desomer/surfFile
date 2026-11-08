@@ -6,7 +6,7 @@ part of 'super_value_config.dart';
 
 /// Dependent input settings are atomic. Each bindable property also carries
 /// its own entry in [SuperValueConfig.propertyBindings], including its removal.
-enum ValueStateProperty {
+enum ValueStateProperty implements ComponentStateProperty<SuperValueProperty> {
   content('Contenu et champ', [
     'mode',
     'kind',
@@ -32,23 +32,27 @@ enum ValueStateProperty {
 
   const ValueStateProperty(this.label, this.keys, [this.bindingProperty]);
 
+  @override
   final String label;
+  @override
   final List<String> keys;
+  @override
   final SuperValueProperty? bindingProperty;
 }
 
 /// Surcharge partielle d'un [SuperValueConfig] appliquée lorsqu'un état est actif.
 @immutable
-class ValueConfigOverride {
+class ValueConfigOverride
+    extends
+        ComponentConfigOverrideBase<
+          SuperValueConfig,
+          ValueStateProperty,
+          SuperValueProperty
+        > {
   ValueConfigOverride({
     SuperValueConfig config = const SuperValueConfig(),
-    Set<ValueStateProperty> properties = const {},
-  }) : config = _valueStateLeaf(config),
-       properties = Set.unmodifiable(properties);
-
-  final SuperValueConfig config;
-  final Set<ValueStateProperty> properties;
-  bool get isEmpty => properties.isEmpty;
+    super.properties,
+  }) : super(config: _valueStateLeaf(config));
 
   ValueConfigOverride copyWith({
     SuperValueConfig? config,
@@ -61,46 +65,23 @@ class ValueConfigOverride {
 
   ValueConfigOverride edited(SuperValueConfig next) {
     final leaf = _valueStateLeaf(next);
-    final before = config.toJson();
-    final after = leaf.toJson();
     return ValueConfigOverride(
       config: leaf,
-      properties: {
-        ...properties,
-        for (final property in ValueStateProperty.values)
-          if (property.keys.any(
-                (key) => !ComponentStateHelpers.sameJsonValue(
-                  before[key],
-                  after[key],
-                ),
-              ) ||
-              (property.bindingProperty != null &&
-                  config.propertyBindings[property.bindingProperty] !=
-                      leaf.propertyBindings[property.bindingProperty]))
-            property,
-      },
+      properties: computeEditedProperties(
+        leaf,
+        ValueStateProperty.values,
+        (c) => c.propertyBindings,
+      ),
     );
   }
 
+  @override
   SuperValueConfig apply(SuperValueConfig base) {
-    final bindings = Map<SuperValueProperty, JsonTextBinding>.of(
-      base.propertyBindings,
-    );
-    for (final property in properties) {
-      final target = property.bindingProperty;
-      if (target != null) {
-        final binding = config.propertyBindings[target];
-        if (binding == null) {
-          bindings.remove(target);
-        } else {
-          bindings[target] = binding;
-        }
-      }
-    }
+    final bindings = mergePropertyBindings(base, (c) => c.propertyBindings);
     bool has(ValueStateProperty property) => properties.contains(property);
     final content = has(ValueStateProperty.content) ? config : base;
     final interaction = has(ValueStateProperty.enabled) ? config : base;
-    final result = SuperValueConfig(
+    return SuperValueConfig(
       mode: content.mode,
       kind: content.kind,
       initialText: content.initialText,
@@ -137,20 +118,8 @@ class ValueConfigOverride {
           : base.letterSpacing,
       binding: has(ValueStateProperty.binding) ? config.binding : base.binding,
       propertyBindings: Map.unmodifiable(bindings),
-    );
-    result._validateLeaf();
-    return result;
+    ).._validateLeaf();
   }
-
-  Map<String, Object?> toJson() => {
-    'config': config.toJson(),
-    'properties': properties.map((p) => p.name).toList()..sort(),
-  };
-
-  Map<String, Object?> toCompactJson() => {
-    'config': config.toCompactJson(),
-    'properties': properties.map((p) => p.name).toList()..sort(),
-  };
 
   factory ValueConfigOverride.fromJson(Object? value) {
     final properties = ComponentStateHelpers.parseOverrideProperties(
@@ -163,68 +132,40 @@ class ValueConfigOverride {
       properties: properties,
     );
   }
-
-  @override
-  bool operator ==(Object other) =>
-      other is ValueConfigOverride &&
-      config == other.config &&
-      setEquals(properties, other.properties);
-
-  @override
-  int get hashCode => Object.hash(config, Object.hashAllUnordered(properties));
 }
 
 /// Collection des surcharges d'états (`named`, `hover`, `selected`, `automatic`) d'un [SuperValueConfig].
 @immutable
-class ValueConfigStates {
+class ValueConfigStates
+    extends
+        ComponentConfigStatesBase<
+          SuperValueConfig,
+          ValueStateProperty,
+          SuperValueProperty,
+          ValueConfigOverride
+        > {
   ValueConfigStates({
-    this.binding,
-    Map<String, SuperValueConfig> named = const {},
-    Map<String, Set<ValueStateProperty>> namedProperties = const {},
-    this.hover,
-    this.selected,
-    Map<AutomaticState, ValueConfigOverride> automatic = const {},
-    List<String>? order,
-  }) : named = Map.unmodifiable({
-         for (final entry in named.entries)
-           _valueStateName(entry.key): _valueStateLeaf(entry.value),
-       }),
-       automatic = Map.unmodifiable(automatic),
-       namedProperties = Map.unmodifiable({
-         for (final name in named.keys)
-           name: Set<ValueStateProperty>.unmodifiable(
-             namedProperties[name] ?? {},
-           ),
-       }),
-       order = List.unmodifiable(
-         ComponentStateHelpers.normalizeStateOrder(
-           named.keys,
-           order,
-           automatic.keys,
-           'Value',
-         ),
-       ) {
-    binding?.validate();
-    if (namedProperties.keys.any((name) => !named.containsKey(name))) {
-      throw const FormatException('Unknown named Value override.');
-    }
-    if (automatic.keys.any(
-      (s) => s == AutomaticState.hover || s == AutomaticState.selected,
-    )) {
-      throw const FormatException('Duplicate automatic Value state.');
-    }
-  }
+    super.binding,
+    super.named,
+    super.namedProperties,
+    super.hover,
+    super.selected,
+    super.automatic,
+    super.order,
+  }) : super(context: 'Value', toLeaf: _valueStateLeaf);
 
   static const hoverKey = ComponentStateHelpers.hoverKey;
   static const selectedKey = ComponentStateHelpers.selectedKey;
 
-  final JsonTextBinding? binding;
-  final Map<String, SuperValueConfig> named;
-  final Map<String, Set<ValueStateProperty>> namedProperties;
-  final ValueConfigOverride? hover;
-  final ValueConfigOverride? selected;
-  final Map<AutomaticState, ValueConfigOverride> automatic;
-  final List<String> order;
+  @override
+  SuperValueConfig clearStatesOf(SuperValueConfig base) =>
+      base.copyWith(clearStates: true);
+
+  @override
+  ValueConfigOverride buildOverride(
+    SuperValueConfig config,
+    Set<ValueStateProperty> properties,
+  ) => ValueConfigOverride(config: config, properties: properties);
 
   ValueConfigStates copyWith({
     JsonTextBinding? binding,
@@ -266,225 +207,33 @@ class ValueConfigStates {
     );
   }
 
-  SuperValueConfig resolve(
-    SuperValueConfig base, {
-    String? name,
-    bool isHovered = false,
-    bool isSelected = false,
-    Set<AutomaticState> activeStates = const {},
-  }) {
-    var result = base.copyWith(clearStates: true);
-    for (final key in order) {
-      if (key == hoverKey) {
-        if (isHovered && hover != null) result = hover!.apply(result);
-      } else if (key == selectedKey) {
-        if (isSelected && selected != null) result = selected!.apply(result);
-      } else if (key == name) {
-        result = ValueConfigOverride(
-          config: named[key]!,
-          properties: namedProperties[key]!,
-        ).apply(result);
-      } else if (AutomaticState.fromKey(key) case final state?) {
-        if (activeStates.contains(state)) {
-          result = automatic[state]?.apply(result) ?? result;
-        }
-      }
-    }
-    return result;
-  }
+  void _validateAgainst(SuperValueConfig base) =>
+      validateStatesAgainst(base, (c) => c._validateLeaf());
 
-  void _validateAgainst(SuperValueConfig base) {
-    binding?.validate();
-    for (final config in named.values) {
-      config._validateLeaf();
-    }
-    hover?.config._validateLeaf();
-    selected?.config._validateLeaf();
-    for (final value in automatic.values) {
-      value.config._validateLeaf();
-    }
-    for (final name in <String?>[null, ...named.keys]) {
-      for (final isHovered in [false, true]) {
-        for (final isSelected in [false, true]) {
-          for (var mask = 0; mask < (1 << automatic.length); mask++) {
-            resolve(
-              base,
-              name: name,
-              isHovered: isHovered,
-              isSelected: isSelected,
-              activeStates: {
-                for (var i = 0; i < automatic.length; i++)
-                  if (mask & (1 << i) != 0) automatic.keys.elementAt(i),
-              },
-            )._validateLeaf();
-          }
-        }
-      }
-    }
-  }
-
-  Map<String, Object?> toJson() => {
-    if (binding != null) 'binding': binding!.toJson(),
-    'named': {
-      for (final entry in named.entries) entry.key: entry.value.toJson(),
-    },
-    'namedProperties': {
-      for (final entry in namedProperties.entries)
-        entry.key: entry.value.map((p) => p.name).toList()..sort(),
-    },
-    if (hover != null) 'hover': hover!.toJson(),
-    if (selected != null) 'selected': selected!.toJson(),
-    if (automatic.isNotEmpty)
-      'automatic': {
-        for (final entry in automatic.entries)
-          entry.key.name: entry.value.toJson(),
-      },
-    'order': order,
-  };
-
-  Map<String, Object?> toCompactJson() => {
-    if (binding != null) 'binding': binding!.toCompactJson(),
-    'named': {
-      for (final entry in named.entries) entry.key: entry.value.toCompactJson(),
-    },
-    if (namedProperties.values.any((s) => s.isNotEmpty))
-      'namedProperties': {
-        for (final entry in namedProperties.entries)
-          entry.key: entry.value.map((p) => p.name).toList()..sort(),
-      },
-    if (hover != null) 'hover': hover!.toCompactJson(),
-    if (selected != null) 'selected': selected!.toCompactJson(),
-    if (automatic.isNotEmpty)
-      'automatic': {
-        for (final entry in automatic.entries)
-          entry.key.name: entry.value.toCompactJson(),
-      },
-    'order': order,
-  };
-
-  factory ValueConfigStates.fromJson(Object? value) {
-    if (value is! Map ||
-        value.keys.any(
-          (key) => !{
-            'binding',
-            'named',
-            'namedProperties',
-            'hover',
-            'selected',
-            'automatic',
-            'order',
-          }.contains(key),
-        ) ||
-        value['named'] is! Map ||
-        (value.containsKey('order') &&
-            (value['order'] is! List ||
-                (value['order'] as List).any((key) => key is! String)))) {
-      throw const FormatException('Invalid Value states.');
-    }
-    final named = <String, SuperValueConfig>{};
-    for (final entry in (value['named'] as Map).entries) {
-      if (entry.key is! String) {
-        throw const FormatException('Invalid Value state name.');
-      }
-      named[_valueStateName(entry.key as String)] = _readValueStateLeaf(
-        entry.value,
+  factory ValueConfigStates.fromJson(Object? value) =>
+      ComponentStateHelpers.parseStatesJson(
+        value: value,
+        context: 'Value',
+        readLeaf: _readValueStateLeaf,
+        parseOverride: ValueConfigOverride.fromJson,
+        build: ValueConfigStates.new,
       );
-    }
-    try {
-      return ValueConfigStates(
-        binding: value['binding'] == null
-            ? null
-            : JsonTextBinding.fromJson(value['binding']),
-        named: named,
-        namedProperties: _readValueNamedProperties(
-          value['namedProperties'],
-          named,
-        ),
-        hover: value.containsKey('hover')
-            ? ValueConfigOverride.fromJson(value['hover'])
-            : null,
-        selected: value.containsKey('selected')
-            ? ValueConfigOverride.fromJson(value['selected'])
-            : null,
-        automatic: _readValueAutomatic(value['automatic']),
-        order: (value['order'] as List?)?.cast<String>(),
-      );
-    } on ArgumentError {
-      throw const FormatException('Invalid Value states.');
-    }
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is ValueConfigStates &&
-      ComponentStateHelpers.equalsStateCollection(
-        bindingA: binding,
-        bindingB: other.binding,
-        namedA: named,
-        namedB: other.named,
-        propsA: namedProperties,
-        propsB: other.namedProperties,
-        hoverA: hover,
-        hoverB: other.hover,
-        selectedA: selected,
-        selectedB: other.selected,
-        autoA: automatic,
-        autoB: other.automatic,
-        orderA: order,
-        orderB: other.order,
-      );
-
-  @override
-  int get hashCode => ComponentStateHelpers.hashStateCollection(
-    binding,
-    named,
-    namedProperties,
-    hover,
-    selected,
-    automatic,
-    order,
-  );
 }
 
-Map<String, Set<ValueStateProperty>> _readValueNamedProperties(
-  Object? value,
-  Map<String, SuperValueConfig> named,
-) {
-  if (value == null) return {};
-  if (value is! Map || value.keys.any((key) => !named.containsKey(key))) {
-    throw const FormatException('Invalid named Value overrides.');
-  }
-  return {
-    for (final entry in value.entries)
-      entry.key as String: ValueConfigOverride.fromJson({
-        'config': named[entry.key]!.toJson(),
-        'properties': entry.value,
-      }).properties,
-  };
-}
-
-Map<AutomaticState, ValueConfigOverride> _readValueAutomatic(Object? value) =>
-    ComponentStateHelpers.readAutomaticStates(
-      value,
-      ValueConfigOverride.fromJson,
-      'Value',
+SuperValueConfig _valueStateLeaf(SuperValueConfig config) =>
+    ComponentStateHelpers.ensureStateLeaf(
+      config,
+      states: config.states,
+      normalize: (c) => c.copyWith(
+        propertyBindings: Map.unmodifiable(c.propertyBindings),
+      ),
+      context: 'Value',
     );
 
-SuperValueConfig _valueStateLeaf(SuperValueConfig config) {
-  if (config.states != null) {
-    throw const FormatException('Value states cannot contain nested states.');
-  }
-  return config.copyWith(
-    propertyBindings: Map.unmodifiable(config.propertyBindings),
-  );
-}
-
-SuperValueConfig _readValueStateLeaf(Object? value) {
-  if (value is! Map || value.containsKey('states')) {
-    throw const FormatException('Invalid or nested Value state.');
-  }
-  return _valueStateLeaf(SuperValueConfig.fromJson(value));
-}
-
-String _valueStateName(String name) =>
-    ComponentStateHelpers.validateStateName(name, 'Value');
+SuperValueConfig _readValueStateLeaf(Object? value) =>
+    ComponentStateHelpers.readStateLeaf(
+      value,
+      fromJson: SuperValueConfig.fromJson,
+      toLeaf: _valueStateLeaf,
+      context: 'Value',
+    );

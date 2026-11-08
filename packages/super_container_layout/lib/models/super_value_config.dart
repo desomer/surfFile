@@ -6,7 +6,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/foundation.dart' show mapEquals, setEquals;
+import 'package:flutter/foundation.dart' show mapEquals;
 
 import 'component_config.dart';
 import 'json_syntax.dart';
@@ -115,10 +115,12 @@ class SuperValueConfig extends ComponentConfig {
                 initialText.isNotEmpty ||
                 minLines != 1 ||
                 maxLines != 1)) ||
-        (fontFamily != null && fontFamily!.trim().isEmpty) ||
-        (fontSize != null && (!fontSize!.isFinite || fontSize! <= 0)) ||
-        (lineHeight != null && (!lineHeight!.isFinite || lineHeight! <= 0)) ||
-        (letterSpacing != null && !letterSpacing!.isFinite)) {
+        JsonReader.hasInvalidTypographyOrBox(
+          fontFamily: fontFamily,
+          fontSize: fontSize,
+          lineHeight: lineHeight,
+          letterSpacing: letterSpacing,
+        )) {
       throw ArgumentError('Invalid Value configuration.');
     }
   }
@@ -312,24 +314,23 @@ class SuperValueConfig extends ComponentConfig {
       TextAlign.values,
       field('textAlign', fallback.textAlign.name),
     );
-    final hasWeight = value.containsKey('fontWeight');
-    final weight = value['fontWeight'];
-    final fontWeight = hasWeight
-        ? JsonReader.parseFontWeight(weight)
-        : fallback.fontWeight;
+    final fontWeight = JsonReader.readFontWeight(
+      value,
+      fallback.fontWeight,
+      errorMessage: 'Invalid Value style.',
+    );
     final parsedColor = JsonReader.nullableColor(
       value,
       'color',
       fallback.color,
       errorMessage: 'Invalid Value style.',
     );
-    final hasFamily = value.containsKey('fontFamily');
-    final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
-    if (mode == null ||
-        kind == null ||
-        align == null ||
-        (hasWeight && weight != null && fontWeight == null) ||
-        (family != null && family is! String)) {
+    final family = JsonReader.readFontFamily(
+      value,
+      fallback.fontFamily,
+      errorMessage: 'Invalid Value style.',
+    );
+    if (mode == null || kind == null || align == null) {
       throw const FormatException('Invalid Value style.');
     }
     final propertyBindings = JsonReader.readPropertyBindings(
@@ -379,7 +380,7 @@ class SuperValueConfig extends ComponentConfig {
       obscureText: resolvedObscure,
       minLines: field<int>('minLines', fallback.minLines),
       maxLines: field<int>('maxLines', fallback.maxLines),
-      fontFamily: family as String?,
+      fontFamily: family,
       fontSize: number('fontSize', fallback.fontSize),
       fontWeight: fontWeight,
       italic: field<bool?>('italic', fallback.italic),
@@ -461,18 +462,11 @@ class SuperValueConfig extends ComponentConfig {
     lineHeight,
     letterSpacing,
     binding,
-    Object.hashAllUnordered(
-      propertyBindings.entries.map(
-        (entry) => Object.hash(entry.key, entry.value),
-      ),
-    ),
+    JsonReader.hashPropertyBindings(propertyBindings),
     field,
     states,
   ]);
 }
-
-String _formatValueNumber(double value) =>
-    value == value.roundToDouble() ? '${value.round()}' : '$value';
 
 /// Résumé des propriétés d'un [SuperValueConfig] pour l'info-bulle du menu contextuel.
 String formatSuperValueTooltip({
@@ -505,7 +499,7 @@ String formatSuperValueTooltip({
   ];
   final styleParts = <String>[
     'Police : ${config.fontFamily ?? 'Auto'}',
-    'Taille : ${config.fontSize != null ? '${_formatValueNumber(config.fontSize!)} px' : 'Auto'}',
+    'Taille : ${config.fontSize != null ? '${JsonReader.formatNumber(config.fontSize!)} px' : 'Auto'}',
     'Alignement : ${config.textAlign.name}',
     if (!config.kind.isBoolean && (config.minLines > 1 || config.maxLines > 1))
       'Lignes : ${config.minLines == config.maxLines ? '${config.maxLines}' : '${config.minLines}–${config.maxLines}'}',

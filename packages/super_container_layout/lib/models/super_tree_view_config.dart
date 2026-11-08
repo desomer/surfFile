@@ -38,42 +38,22 @@ class SuperTreeViewConfig extends ComponentConfig {
     Map<String, Size?> slotPreferredSizes = const {},
     Map<String, SlotSizeConstraints> slotSizeConstraints = const {},
     Map<String, String> slotLabels = const {},
-  }) : placements = Map.unmodifiable({
-         for (final entry in placements.entries)
-           if (entry.value.isNotEmpty)
-             entry.key: List<String>.unmodifiable(entry.value),
-       }),
+  }) : placements = JsonReader.normalizePlacements(placements),
        slotTypes = Map.unmodifiable(slotTypes),
        zoneAxes = Map.unmodifiable(zoneAxes),
-       zoneFlows = Map.unmodifiable({
-         for (final entry in zoneFlows.entries)
-           if (!entry.value.isDefault) entry.key: entry.value,
-       }),
+       zoneFlows = JsonReader.normalizeZoneFlows(zoneFlows),
        slotPreferredSizes = Map.unmodifiable(slotPreferredSizes),
        slotSizeConstraints = Map.unmodifiable(slotSizeConstraints),
-       slotLabels = Map.unmodifiable({
-         for (final entry in slotLabels.entries)
-           if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
-       }) {
-    final ids = placements.values.expand((value) => value).toList();
-    if (ids.any((id) => id.trim().isEmpty) ||
-        ids.toSet().length != ids.length ||
-        placements.keys.any((id) => id.trim().isEmpty) ||
-        zoneAxes.keys.any((id) => id.trim().isEmpty) ||
-        zoneFlows.keys.any((id) => id.trim().isEmpty) ||
-        slotTypes.keys.any((id) => id.trim().isEmpty) ||
-        slotTypes.values.any((type) => type.trim().isEmpty) ||
-        slotPreferredSizes.keys.any((id) => id.trim().isEmpty) ||
-        slotSizeConstraints.keys.any((id) => id.trim().isEmpty) ||
-        slotLabels.keys.any((id) => id.trim().isEmpty) ||
-        slotPreferredSizes.values.any(
-          (size) =>
-              size != null &&
-              (size.width.isNaN ||
-                  size.height.isNaN ||
-                  size.width < 0 ||
-                  size.height < 0),
-        )) {
+       slotLabels = JsonReader.normalizeSlotLabels(slotLabels) {
+    if (JsonReader.hasInvalidSlotContainerMaps(
+      placements: this.placements,
+      slotTypes: this.slotTypes,
+      zoneAxes: this.zoneAxes,
+      zoneFlows: this.zoneFlows,
+      slotPreferredSizes: this.slotPreferredSizes,
+      slotSizeConstraints: this.slotSizeConstraints,
+      slotLabels: this.slotLabels,
+    )) {
       throw ArgumentError('Invalid SuperTreeView configuration.');
     }
   }
@@ -217,43 +197,41 @@ class SuperTreeViewConfig extends ComponentConfig {
     String? type,
     bool replace = false,
   }) {
-    final next = <String, List<String>>{
-      for (final entry in placements.entries)
-        entry.key: entry.value.where((value) => value != id).toList(),
-    };
-    final replaced = replace ? next.remove(zone) ?? <String>[] : <String>[];
-    next.putIfAbsent(zone, () => []).add(id);
-    final types = {...slotTypes}
-      ..removeWhere((key, _) => key == id || replaced.contains(key));
-    if (type != null && type != id) types[id] = type;
+    final next = JsonReader.addSlotToMaps(
+      id: id,
+      zone: zone,
+      type: type,
+      replace: replace,
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
     return copyWith(
-      placements: next,
-      slotTypes: types,
-      slotPreferredSizes: {...slotPreferredSizes}
-        ..removeWhere((key, _) => replaced.contains(key)),
-      slotSizeConstraints: {...slotSizeConstraints}
-        ..removeWhere((key, _) => replaced.contains(key)),
-      slotLabels: {...slotLabels}
-        ..removeWhere((key, _) => replaced.contains(key)),
+      placements: next.placements,
+      slotTypes: next.slotTypes,
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
   SuperTreeViewConfig withoutSlot(String id) {
-    final removedIds = slotsRemovedWith(id);
+    final next = JsonReader.removeSlotsFromMaps(
+      removedIds: slotsRemovedWith(id),
+      placements: placements,
+      slotTypes: slotTypes,
+      slotPreferredSizes: slotPreferredSizes,
+      slotSizeConstraints: slotSizeConstraints,
+      slotLabels: slotLabels,
+    );
     return copyWith(
-      placements: {
-        for (final entry in placements.entries)
-          entry.key: entry.value
-              .where((value) => !removedIds.contains(value))
-              .toList(),
-      },
-      slotTypes: {...slotTypes}..removeWhere((k, _) => removedIds.contains(k)),
-      slotPreferredSizes: {...slotPreferredSizes}
-        ..removeWhere((k, _) => removedIds.contains(k)),
-      slotSizeConstraints: {...slotSizeConstraints}
-        ..removeWhere((k, _) => removedIds.contains(k)),
-      slotLabels: {...slotLabels}
-        ..removeWhere((k, _) => removedIds.contains(k)),
+      placements: next.placements,
+      slotTypes: next.slotTypes,
+      slotPreferredSizes: next.slotPreferredSizes,
+      slotSizeConstraints: next.slotSizeConstraints,
+      slotLabels: next.slotLabels,
     );
   }
 
@@ -261,25 +239,17 @@ class SuperTreeViewConfig extends ComponentConfig {
     String zone,
     Axis? axis, {
     Axis? defaultAxis,
-  }) {
-    final next = {...zoneAxes};
-    if (axis == null || axis == defaultAxis) {
-      next.remove(zone);
-    } else {
-      next[zone] = axis;
-    }
-    return copyWith(zoneAxes: next);
-  }
+  }) => copyWith(
+    zoneAxes: JsonReader.updateZoneAxisMap(
+      zoneAxes,
+      zone,
+      axis,
+      defaultAxis: defaultAxis,
+    ),
+  );
 
-  SuperTreeViewConfig withZoneFlow(String zone, ZoneFlowConfig flow) {
-    final next = {...zoneFlows};
-    if (flow.isDefault) {
-      next.remove(zone);
-    } else {
-      next[zone] = flow;
-    }
-    return copyWith(zoneFlows: next);
-  }
+  SuperTreeViewConfig withZoneFlow(String zone, ZoneFlowConfig flow) =>
+      copyWith(zoneFlows: JsonReader.updateZoneFlowMap(zoneFlows, zone, flow));
 
   SuperTreeViewConfig withSlotSize(String id, Size? size) => copyWith(
     slotPreferredSizes: {...slotPreferredSizes, id: size},
@@ -323,46 +293,15 @@ class SuperTreeViewConfig extends ComponentConfig {
       'animateSelectionAndHover': animateSelectionAndHover,
       'emptyText': emptyText,
       if (itemId != null) 'itemId': itemId,
-      if (placements.isNotEmpty)
-        'placements': {
-          for (final entry in placements.entries)
-            if (entry.value.isNotEmpty)
-              entry.key: [
-                for (final id in entry.value)
-                  if (slotTypeOf(id) == id)
-                    id
-                  else
-                    {
-                      'id': id,
-                      'type': JsonComponentType.shortName(slotTypeOf(id)),
-                    },
-              ],
-        },
-      if (zoneAxes.isNotEmpty)
-        'zoneAxes': {
-          for (final entry in zoneAxes.entries) entry.key: entry.value.name,
-        },
-      if (zoneFlows.isNotEmpty)
-        'zoneFlows': {
-          for (final entry in zoneFlows.entries)
-            if (!entry.value.isDefault) entry.key: entry.value.toJson(),
-        },
-      if (slotPreferredSizes.isNotEmpty)
-        'slotPreferredSizes': {
-          for (final entry in slotPreferredSizes.entries)
-            entry.key: entry.value == null
-                ? null
-                : [
-                    entry.value!.width.isFinite ? entry.value!.width : null,
-                    entry.value!.height.isFinite ? entry.value!.height : null,
-                  ],
-        },
-      if (slotSizeConstraints.isNotEmpty)
-        'slotSizeConstraints': {
-          for (final entry in slotSizeConstraints.entries)
-            entry.key: entry.value.toJson(),
-        },
-      if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      ...JsonReader.encodeSlotContainerJson(
+        placements: placements,
+        slotTypeOf: slotTypeOf,
+        zoneAxes: zoneAxes,
+        zoneFlows: zoneFlows,
+        slotPreferredSizes: slotPreferredSizes,
+        slotSizeConstraints: slotSizeConstraints,
+        slotLabels: slotLabels,
+      ),
     };
   }
 
@@ -384,43 +323,16 @@ class SuperTreeViewConfig extends ComponentConfig {
         'animateSelectionAndHover': animateSelectionAndHover,
       if (emptyText != d.emptyText) 'emptyText': emptyText,
       if (itemId != null) 'itemId': itemId,
-      if (placements.isNotEmpty)
-        'placements': {
-          for (final entry in placements.entries)
-            if (entry.value.isNotEmpty)
-              entry.key: [
-                for (final id in entry.value)
-                  {
-                    'id': id,
-                    'type': JsonComponentType.shortName(slotTypeOf(id)),
-                  },
-              ],
-        },
-      if (zoneAxes.isNotEmpty)
-        'zoneAxes': {
-          for (final entry in zoneAxes.entries) entry.key: entry.value.name,
-        },
-      if (zoneFlows.isNotEmpty)
-        'zoneFlows': {
-          for (final entry in zoneFlows.entries)
-            if (!entry.value.isDefault) entry.key: entry.value.toJson(),
-        },
-      if (slotPreferredSizes.isNotEmpty)
-        'slotPreferredSizes': {
-          for (final entry in slotPreferredSizes.entries)
-            entry.key: entry.value == null
-                ? null
-                : [
-                    entry.value!.width.isFinite ? entry.value!.width : null,
-                    entry.value!.height.isFinite ? entry.value!.height : null,
-                  ],
-        },
-      if (slotSizeConstraints.isNotEmpty)
-        'slotSizeConstraints': {
-          for (final entry in slotSizeConstraints.entries)
-            entry.key: JsonDimension.formatConstraintsCompact(entry.value),
-        },
-      if (slotLabels.isNotEmpty) 'slotLabels': slotLabels,
+      ...JsonReader.encodeSlotContainerJson(
+        placements: placements,
+        slotTypeOf: slotTypeOf,
+        zoneAxes: zoneAxes,
+        zoneFlows: zoneFlows,
+        slotPreferredSizes: slotPreferredSizes,
+        slotSizeConstraints: slotSizeConstraints,
+        slotLabels: slotLabels,
+        compact: true,
+      ),
     };
   }
 
@@ -465,84 +377,24 @@ class SuperTreeViewConfig extends ComponentConfig {
     final rowHeight = readDouble('rowHeight', 32.0);
     final indent = readDouble('indent', 20.0);
 
-    final rawPlacements = value['placements'] ?? const {};
-    if (rawPlacements is! Map) {
-      throw const FormatException('Placements de TreeView invalides.');
-    }
-    final placements = <String, List<String>>{};
-    final types = <String, String>{};
-    for (final entry in rawPlacements.entries) {
-      if (entry.key is! String || entry.value is! List) {
-        throw const FormatException('Zone de TreeView invalide.');
-      }
-      final ids = <String>[];
-      for (final slot in entry.value as List) {
-        if (slot is String && slot.trim().isNotEmpty) {
-          ids.add(slot);
-          types[slot] = JsonComponentType.normalize(slot, id: slot);
-          continue;
-        }
-        if (slot is! Map || slot['id'] is! String || slot['type'] is! String) {
-          throw const FormatException('Slot de TreeView invalide.');
-        }
-        final id = slot['id'] as String;
-        ids.add(id);
-        types[id] = JsonComponentType.normalize(slot['type'] as String, id: id);
-      }
-      placements[entry.key as String] = ids;
-    }
+    final (:placements, :slotTypes) = JsonReader.parseSlotPlacements(
+      value['placements'],
+      invalidPlacementsMessage: 'Placements de TreeView invalides.',
+      invalidZoneMessage: 'Zone de TreeView invalide.',
+      invalidSlotMessage: 'Slot de TreeView invalide.',
+    );
 
     try {
-      final rawSizes = value['slotPreferredSizes'] ?? const {};
-      final rawConstraints = value['slotSizeConstraints'] ?? const {};
-      final rawLabels = value['slotLabels'] ?? const {};
-      final rawAxes = value['zoneAxes'] ?? const {};
-      final rawFlows = value['zoneFlows'] ?? const {};
-      if (rawSizes is! Map ||
-          rawConstraints is! Map ||
-          rawLabels is! Map ||
-          rawAxes is! Map ||
-          rawFlows is! Map) {
-        throw const FormatException('Métadonnées de slots de TreeView invalides.');
-      }
-      if (rawLabels.entries.any(
-        (entry) => entry.key is! String || entry.value is! String,
-      )) {
-        throw const FormatException('Libellés de slots de TreeView invalides.');
-      }
-      final parsedAxes = <String, Axis>{};
-      for (final entry in rawAxes.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Axe de zone de TreeView invalide.');
-        }
-        final axis = Axis.values
-            .where((candidate) => candidate.name == entry.value)
-            .firstOrNull;
-        if (axis == null) {
-          throw const FormatException('Axe de zone de TreeView invalide.');
-        }
-        parsedAxes[entry.key as String] = axis;
-      }
-      final parsedFlows = <String, ZoneFlowConfig>{};
-      for (final entry in rawFlows.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Flux de zone de TreeView invalide.');
-        }
-        parsedFlows[entry.key as String] = ZoneFlowConfig.fromJson(entry.value);
-      }
-      if (rawConstraints.keys.any((key) => key is! String)) {
-        throw const FormatException('Contrainte de slot de TreeView invalide.');
-      }
-      final sizes = <String, Size?>{};
-      for (final entry in rawSizes.entries) {
-        if (entry.key is! String) {
-          throw const FormatException('Taille de slot de TreeView invalide.');
-        }
-        sizes[entry.key as String] = JsonDimension.parsePreferredSize(
-          entry.value,
-          allowInfiniteSides: true,
-        );
-      }
+      final meta = JsonReader.parseSlotContainerMetadata(
+        value,
+        placedIds: placements.values.expand((ids) => ids),
+        invalidMetadataMessage: 'Métadonnées de slots de TreeView invalides.',
+        invalidLabelsMessage: 'Libellés de slots de TreeView invalides.',
+        invalidAxisMessage: 'Axe de zone de TreeView invalide.',
+        invalidFlowMessage: 'Flux de zone de TreeView invalide.',
+        invalidConstraintMessage: 'Contrainte de slot de TreeView invalide.',
+        invalidSizeMessage: 'Taille de slot de TreeView invalide.',
+      );
       return SuperTreeViewConfig(
         binding: binding,
         childrenKey: childrenKey,
@@ -556,15 +408,12 @@ class SuperTreeViewConfig extends ComponentConfig {
         emptyText: emptyText,
         itemId: itemId as String?,
         placements: placements,
-        slotTypes: types,
-        zoneAxes: parsedAxes,
-        zoneFlows: parsedFlows,
-        slotPreferredSizes: sizes,
-        slotSizeConstraints: SlotSizeConstraints.parseMap(
-          rawConstraints,
-          placedIds: placements.values.expand((ids) => ids),
-        ),
-        slotLabels: Map<String, String>.from(rawLabels),
+        slotTypes: slotTypes,
+        zoneAxes: meta.zoneAxes,
+        zoneFlows: meta.zoneFlows,
+        slotPreferredSizes: meta.slotPreferredSizes,
+        slotSizeConstraints: meta.slotSizeConstraints,
+        slotLabels: meta.slotLabels,
       )..validate();
     } on ArgumentError {
       throw const FormatException(
@@ -574,31 +423,36 @@ class SuperTreeViewConfig extends ComponentConfig {
   }
 
   @override
-  bool operator ==(Object other) {
-    if (identical(this, other)) return true;
-    if (other is! SuperTreeViewConfig) return false;
-    if (binding != other.binding ||
-        childrenKey != other.childrenKey ||
-        headerSize != other.headerSize ||
-        rowHeight != other.rowHeight ||
-        indent != other.indent ||
-        initiallyExpanded != other.initiallyExpanded ||
-        showConnectors != other.showConnectors ||
-        showCheckboxes != other.showCheckboxes ||
-        animateSelectionAndHover != other.animateSelectionAndHover ||
-        emptyText != other.emptyText ||
-        itemId != other.itemId ||
-        !JsonReader.sameSlotPlacements(placements, other.placements) ||
-        !mapEquals(slotTypes, other.slotTypes) ||
-        !mapEquals(zoneAxes, other.zoneAxes) ||
-        !mapEquals(zoneFlows, other.zoneFlows) ||
-        !mapEquals(slotPreferredSizes, other.slotPreferredSizes) ||
-        !mapEquals(slotSizeConstraints, other.slotSizeConstraints) ||
-        !mapEquals(slotLabels, other.slotLabels)) {
-      return false;
-    }
-    return true;
-  }
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SuperTreeViewConfig &&
+          binding == other.binding &&
+          childrenKey == other.childrenKey &&
+          headerSize == other.headerSize &&
+          rowHeight == other.rowHeight &&
+          indent == other.indent &&
+          initiallyExpanded == other.initiallyExpanded &&
+          showConnectors == other.showConnectors &&
+          showCheckboxes == other.showCheckboxes &&
+          animateSelectionAndHover == other.animateSelectionAndHover &&
+          emptyText == other.emptyText &&
+          itemId == other.itemId &&
+          JsonReader.sameSlotLayoutMetadata(
+            placementsA: placements,
+            placementsB: other.placements,
+            slotTypesA: slotTypes,
+            slotTypesB: other.slotTypes,
+            zoneAxesA: zoneAxes,
+            zoneAxesB: other.zoneAxes,
+            zoneFlowsA: zoneFlows,
+            zoneFlowsB: other.zoneFlows,
+            slotPreferredSizesA: slotPreferredSizes,
+            slotPreferredSizesB: other.slotPreferredSizes,
+            slotSizeConstraintsA: slotSizeConstraints,
+            slotSizeConstraintsB: other.slotSizeConstraints,
+            slotLabelsA: slotLabels,
+            slotLabelsB: other.slotLabels,
+          ));
 
   @override
   int get hashCode => Object.hashAll([

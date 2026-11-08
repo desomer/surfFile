@@ -26,51 +26,12 @@ import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_tab_editor.dart';
-import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
 import '../surfaces/styled_surface.dart';
+import 'component_common.dart';
+import 'json_collection_common.dart';
 import 'super_action.dart';
 import 'super_layout/slot_implementation.dart';
-
-/// Tableau JSON résolu pour le mode dynamique de [SuperTab].
-@immutable
-class _DynamicTabSource {
-  const _DynamicTabSource({
-    this.binding,
-    this.error,
-    this.unselected = false,
-    this.parents = const [],
-    this.rowBase = const [],
-    this.arrays = const [],
-  });
-
-  final JsonTextBinding? binding;
-  final String? error;
-  final bool unselected;
-  final List<int> parents;
-  final List<int> rowBase;
-  final List<JsonArrayBinding> arrays;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _DynamicTabSource &&
-      other.binding == binding &&
-      other.error == error &&
-      other.unselected == unselected &&
-      listEquals(other.parents, parents) &&
-      listEquals(other.rowBase, rowBase) &&
-      listEquals(other.arrays, arrays);
-
-  @override
-  int get hashCode => Object.hash(
-    binding,
-    error,
-    unselected,
-    Object.hashAll(parents),
-    Object.hashAll(rowBase),
-    Object.hashAll(arrays),
-  );
-}
 
 /// Composant spécifique d'onglets (`TabBar` + `TabBarView`) dont les onglets
 /// sont pilotés par des composants [SuperAction] et qui supporte deux modes :
@@ -180,7 +141,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
   // Liaison repository en mode dynamique (tableau JSON)
   JsonRepositoryStore? _dynamicStore;
-  _DynamicTabSource? _dynamicSource;
+  ResolvedJsonArraySource? _dynamicSource;
   String? _dynamicConfigPath;
   JsonArrayBinding? _dynamicSelection;
   List<JsonArrayBinding> _dynamicListened = const [];
@@ -491,13 +452,11 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   }
 
   void _listenDynamic(List<JsonArrayBinding> arrays) {
-    for (final array in _dynamicListened) {
-      array.removeListener(_dynamicSelectionChanged);
-    }
-    _dynamicListened = arrays;
-    for (final array in arrays) {
-      array.addListener(_dynamicSelectionChanged);
-    }
+    _dynamicListened = updateWatchedArrayBindings(
+      _dynamicListened,
+      arrays,
+      _dynamicSelectionChanged,
+    );
   }
 
   void _dynamicSelectionChanged() {
@@ -519,30 +478,6 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     setState(() {});
   }
 
-  _DynamicTabSource _resolveDynamic(
-    SuperTabConfig config,
-    JsonListScope? scope,
-    JsonRepositoryStore? store,
-  ) {
-    final binding = config.binding;
-    if (binding == null) return const _DynamicTabSource();
-    try {
-      final resolved = JsonListScope.resolveSelected(binding, scope, store);
-      final scoped = scope?.indices ?? const <int>[];
-      return _DynamicTabSource(
-        binding: resolved.binding,
-        unselected: resolved.binding == null,
-        parents: resolved.indices,
-        rowBase: resolved.indices.length > scoped.length
-            ? resolved.indices
-            : scoped,
-        arrays: resolved.arrays,
-      );
-    } on FormatException catch (error) {
-      return _DynamicTabSource(error: error.message);
-    }
-  }
-
   void _observeDynamic(
     SuperTabConfig config,
     JsonListScope? scope,
@@ -556,7 +491,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     }
     _dynamicConfigPath = config.binding?.path;
     if (scope?.placeholder ?? false) return;
-    final source = _resolveDynamic(config, scope, store);
+    final source = resolveJsonArraySource(config.binding, scope, store);
     if (_dynamicSource == source && identical(_dynamicStore, store)) return;
     if (_dynamicSource != source) {
       _dynamicItems = null;
@@ -793,41 +728,16 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   NativeComponentConfig _toNativeConfig(
     SuperTabConfig config,
     Set<String> activeRegionIds,
-  ) {
-    final activePlacements = <String, List<String>>{
-      for (final entry in config.placements.entries)
-        if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-    };
-    final activeSlotIds = activePlacements.values.expand((ids) => ids).toSet();
-    return NativeComponentConfig(
-      regions: {for (final id in activeRegionIds) id: true},
-      placements: activePlacements,
-      slotTypes: {
-        for (final entry in config.slotTypes.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      regionAxes: {
-        for (final entry in config.zoneAxes.entries)
-          if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-      },
-      regionFlows: {
-        for (final entry in config.zoneFlows.entries)
-          if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotPreferredSizes: {
-        for (final entry in config.slotPreferredSizes.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotSizeConstraints: {
-        for (final entry in config.slotSizeConstraints.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotLabels: {
-        for (final entry in config.slotLabels.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-    );
-  }
+  ) => buildNativeComponentConfigFromRegions(
+    activeRegionIds: activeRegionIds,
+    placements: config.placements,
+    slotTypes: config.slotTypes,
+    zoneAxes: config.zoneAxes,
+    zoneFlows: config.zoneFlows,
+    slotPreferredSizes: config.slotPreferredSizes,
+    slotSizeConstraints: config.slotSizeConstraints,
+    slotLabels: config.slotLabels,
+  );
 
   SuperTabConfig _fromNativeConfig(
     SuperTabConfig current,
@@ -895,83 +805,51 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     Registry? registry,
     String region,
     SlotImplementation slot,
-  ) async {
-    final current = controller.value;
-    final removedIds = current.slotsRemovedWith(slot.id);
-    final removedTypes = {
-      for (final id in removedIds) id: current.slotTypeOf(id),
-    };
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    try {
-      controller.value = current.withoutSlot(slot.id);
-      if (registry != null) {
-        for (final entry in removedTypes.entries) {
-          registry.purgeInstance(entry.key, entry.value, EditorConfigKind.tab);
-        }
-      }
-    } finally {
-      history?.commitTransaction();
-    }
-  }
+  ) => purgeRemovedComponentSlots<SuperTabConfig>(
+    context: context,
+    controller: controller,
+    registry: registry,
+    ownerKind: EditorConfigKind.tab,
+    removedIds: controller.value.slotsRemovedWith(slot.id),
+    slotTypeOf: controller.value.slotTypeOf,
+    nextConfig: controller.value.withoutSlot(slot.id),
+  );
 
-  Future<void> _openSettings(ValueNotifier<SuperTabConfig> controller) async {
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    SuperTabConfig? result;
-    try {
-      result = await showSuperTabEditor(
+  Future<void> _openSettings(ValueNotifier<SuperTabConfig> controller) =>
+      runComponentEditorTransaction<SuperTabConfig>(
         context: context,
-        config: controller.value,
+        configuration: controller,
+        onConfigChanged: (result) {
+          _selectedIndex = result.initialIndex;
+          _lastValidIndex = result.initialIndex;
+          widget.onConfigChanged?.call(result);
+        },
+        showEditor: (initial) =>
+            showSuperTabEditor(context: context, config: initial),
       );
-      if (result != null && mounted && result != controller.value) {
-        controller.value = result;
-        _selectedIndex = result.initialIndex;
-        _lastValidIndex = result.initialIndex;
-        widget.onConfigChanged?.call(result);
-      }
-    } finally {
-      if (result != null) {
-        history?.commitTransaction();
-      } else {
-        history?.cancelTransaction();
-      }
-    }
-  }
 
   Future<void> _openTabBarStyleEditor(
     ValueNotifier<SuperTabConfig> controller,
-  ) async {
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    SuperTabConfig? result;
-    try {
-      result = await showSuperTabBarStyleEditor(
-        context: context,
-        config: controller.value,
-        label: configLabelForTabBar(controller.value),
-        onPreviewChanged: (draft) {
-          if (!mounted) return;
-          setState(() => _previewConfig = draft);
-        },
-      );
-      if (result != null && mounted && result != controller.value) {
-        controller.value = result;
-        _selectedIndex = result.initialIndex;
-        _lastValidIndex = result.initialIndex;
-        widget.onConfigChanged?.call(result);
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _previewConfig = null);
-      }
-      if (result != null) {
-        history?.commitTransaction();
-      } else {
-        history?.cancelTransaction();
-      }
-    }
-  }
+  ) => runComponentEditorTransaction<SuperTabConfig>(
+    context: context,
+    configuration: controller,
+    onConfigChanged: (result) {
+      _selectedIndex = result.initialIndex;
+      _lastValidIndex = result.initialIndex;
+      widget.onConfigChanged?.call(result);
+    },
+    onFinally: () {
+      if (mounted) setState(() => _previewConfig = null);
+    },
+    showEditor: (initial) => showSuperTabBarStyleEditor(
+      context: context,
+      config: initial,
+      label: configLabelForTabBar(initial),
+      onPreviewChanged: (draft) {
+        if (mounted) setState(() => _previewConfig = draft);
+      },
+    ),
+  );
 
   String configLabelForTabBar(SuperTabConfig config) =>
       config.mode == SuperTabMode.dynamic ? 'Onglet gabarit' : 'Onglets';

@@ -6,7 +6,8 @@
 part of 'super_indicator_config.dart';
 
 /// Groupes de propriétés de [SuperIndicatorConfig] surchargeables par état.
-enum IndicatorStateProperty {
+enum IndicatorStateProperty
+    implements ComponentStateProperty<SuperIndicatorProperty> {
   content('Disposition', ['iconPosition', 'iconSpacing']),
   icon('Icône', ['icon'], SuperIndicatorProperty.icon),
   textLabel('Libellé', ['label'], SuperIndicatorProperty.label),
@@ -39,23 +40,27 @@ enum IndicatorStateProperty {
 
   const IndicatorStateProperty(this.label, this.keys, [this.bindingProperty]);
 
+  @override
   final String label;
+  @override
   final List<String> keys;
+  @override
   final SuperIndicatorProperty? bindingProperty;
 }
 
 /// Surcharge partielle d'un [SuperIndicatorConfig] associée à une liste explicite de [IndicatorStateProperty].
 @immutable
-class IndicatorConfigOverride {
+class IndicatorConfigOverride
+    extends
+        ComponentConfigOverrideBase<
+          SuperIndicatorConfig,
+          IndicatorStateProperty,
+          SuperIndicatorProperty
+        > {
   IndicatorConfigOverride({
     SuperIndicatorConfig config = const SuperIndicatorConfig(),
-    Set<IndicatorStateProperty> properties = const {},
-  }) : config = _indicatorStateLeaf(config),
-       properties = Set.unmodifiable(properties);
-
-  final SuperIndicatorConfig config;
-  final Set<IndicatorStateProperty> properties;
-  bool get isEmpty => properties.isEmpty;
+    super.properties,
+  }) : super(config: _indicatorStateLeaf(config));
 
   IndicatorConfigOverride copyWith({
     SuperIndicatorConfig? config,
@@ -68,46 +73,23 @@ class IndicatorConfigOverride {
 
   IndicatorConfigOverride edited(SuperIndicatorConfig next) {
     final leaf = _indicatorStateLeaf(next);
-    final before = config.toJson();
-    final after = leaf.toJson();
     return IndicatorConfigOverride(
       config: leaf,
-      properties: {
-        ...properties,
-        for (final property in IndicatorStateProperty.values)
-          if (property.keys.any(
-                (key) => !ComponentStateHelpers.sameJsonValue(
-                  before[key],
-                  after[key],
-                ),
-              ) ||
-              (property.bindingProperty != null &&
-                  config.propertyBindings[property.bindingProperty] !=
-                      leaf.propertyBindings[property.bindingProperty]))
-            property,
-      },
+      properties: computeEditedProperties(
+        leaf,
+        IndicatorStateProperty.values,
+        (c) => c.propertyBindings,
+      ),
     );
   }
 
+  @override
   SuperIndicatorConfig apply(SuperIndicatorConfig base) {
-    final bindings = Map<SuperIndicatorProperty, JsonTextBinding>.of(
-      base.propertyBindings,
-    );
-    for (final property in properties) {
-      final target = property.bindingProperty;
-      if (target != null) {
-        final binding = config.propertyBindings[target];
-        if (binding == null) {
-          bindings.remove(target);
-        } else {
-          bindings[target] = binding;
-        }
-      }
-    }
+    final bindings = mergePropertyBindings(base, (c) => c.propertyBindings);
     bool has(IndicatorStateProperty property) => properties.contains(property);
     final content = has(IndicatorStateProperty.content) ? config : base;
     final pad = has(IndicatorStateProperty.padding) ? config : base;
-    final result = SuperIndicatorConfig(
+    return SuperIndicatorConfig(
       iconPosition: content.iconPosition,
       iconSpacing: content.iconSpacing,
       icon: has(IndicatorStateProperty.icon) ? config.icon : base.icon,
@@ -158,20 +140,8 @@ class IndicatorConfigOverride {
           : base.letterSpacing,
       style: has(IndicatorStateProperty.style) ? config.style : base.style,
       propertyBindings: Map.unmodifiable(bindings),
-    );
-    result._validateLeaf();
-    return result;
+    ).._validateLeaf();
   }
-
-  Map<String, Object?> toJson() => {
-    'config': config.toJson(),
-    'properties': properties.map((p) => p.name).toList()..sort(),
-  };
-
-  Map<String, Object?> toCompactJson() => {
-    'config': config.toCompactJson(),
-    'properties': properties.map((p) => p.name).toList()..sort(),
-  };
 
   factory IndicatorConfigOverride.fromJson(Object? value) {
     final properties = ComponentStateHelpers.parseOverrideProperties(
@@ -184,68 +154,40 @@ class IndicatorConfigOverride {
       properties: properties,
     );
   }
-
-  @override
-  bool operator ==(Object other) =>
-      other is IndicatorConfigOverride &&
-      config == other.config &&
-      setEquals(properties, other.properties);
-
-  @override
-  int get hashCode => Object.hash(config, Object.hashAllUnordered(properties));
 }
 
 /// Collection des surcharges d'états (`named`, `hover`, `selected`, `automatic`) d'un [SuperIndicatorConfig].
 @immutable
-class IndicatorConfigStates {
+class IndicatorConfigStates
+    extends
+        ComponentConfigStatesBase<
+          SuperIndicatorConfig,
+          IndicatorStateProperty,
+          SuperIndicatorProperty,
+          IndicatorConfigOverride
+        > {
   IndicatorConfigStates({
-    this.binding,
-    Map<String, SuperIndicatorConfig> named = const {},
-    Map<String, Set<IndicatorStateProperty>> namedProperties = const {},
-    this.hover,
-    this.selected,
-    Map<AutomaticState, IndicatorConfigOverride> automatic = const {},
-    List<String>? order,
-  }) : named = Map.unmodifiable({
-         for (final entry in named.entries)
-           _indicatorStateName(entry.key): _indicatorStateLeaf(entry.value),
-       }),
-       automatic = Map.unmodifiable(automatic),
-       namedProperties = Map.unmodifiable({
-         for (final name in named.keys)
-           name: Set<IndicatorStateProperty>.unmodifiable(
-             namedProperties[name] ?? {},
-           ),
-       }),
-       order = List.unmodifiable(
-         ComponentStateHelpers.normalizeStateOrder(
-           named.keys,
-           order,
-           automatic.keys,
-           'Indicator',
-         ),
-       ) {
-    binding?.validate();
-    if (namedProperties.keys.any((name) => !named.containsKey(name))) {
-      throw const FormatException('Unknown named Indicator override.');
-    }
-    if (automatic.keys.any(
-      (s) => s == AutomaticState.hover || s == AutomaticState.selected,
-    )) {
-      throw const FormatException('Duplicate automatic Indicator state.');
-    }
-  }
+    super.binding,
+    super.named,
+    super.namedProperties,
+    super.hover,
+    super.selected,
+    super.automatic,
+    super.order,
+  }) : super(context: 'Indicator', toLeaf: _indicatorStateLeaf);
 
   static const hoverKey = ComponentStateHelpers.hoverKey;
   static const selectedKey = ComponentStateHelpers.selectedKey;
 
-  final JsonTextBinding? binding;
-  final Map<String, SuperIndicatorConfig> named;
-  final Map<String, Set<IndicatorStateProperty>> namedProperties;
-  final IndicatorConfigOverride? hover;
-  final IndicatorConfigOverride? selected;
-  final Map<AutomaticState, IndicatorConfigOverride> automatic;
-  final List<String> order;
+  @override
+  SuperIndicatorConfig clearStatesOf(SuperIndicatorConfig base) =>
+      base.copyWith(clearStates: true);
+
+  @override
+  IndicatorConfigOverride buildOverride(
+    SuperIndicatorConfig config,
+    Set<IndicatorStateProperty> properties,
+  ) => IndicatorConfigOverride(config: config, properties: properties);
 
   IndicatorConfigStates copyWith({
     JsonTextBinding? binding,
@@ -287,228 +229,33 @@ class IndicatorConfigStates {
     );
   }
 
-  SuperIndicatorConfig resolve(
-    SuperIndicatorConfig base, {
-    String? name,
-    bool isHovered = false,
-    bool isSelected = false,
-    Set<AutomaticState> activeStates = const {},
-  }) {
-    var result = base.copyWith(clearStates: true);
-    for (final key in order) {
-      if (key == hoverKey) {
-        if (isHovered && hover != null) result = hover!.apply(result);
-      } else if (key == selectedKey) {
-        if (isSelected && selected != null) result = selected!.apply(result);
-      } else if (key == name) {
-        result = IndicatorConfigOverride(
-          config: named[key]!,
-          properties: namedProperties[key]!,
-        ).apply(result);
-      } else if (AutomaticState.fromKey(key) case final state?) {
-        if (activeStates.contains(state)) {
-          result = automatic[state]?.apply(result) ?? result;
-        }
-      }
-    }
-    return result;
-  }
+  void _validateAgainst(SuperIndicatorConfig base) =>
+      validateStatesAgainst(base, (c) => c._validateLeaf());
 
-  void _validateAgainst(SuperIndicatorConfig base) {
-    binding?.validate();
-    for (final config in named.values) {
-      config._validateLeaf();
-    }
-    hover?.config._validateLeaf();
-    selected?.config._validateLeaf();
-    for (final value in automatic.values) {
-      value.config._validateLeaf();
-    }
-    for (final name in <String?>[null, ...named.keys]) {
-      for (final isHovered in [false, true]) {
-        for (final isSelected in [false, true]) {
-          for (var mask = 0; mask < (1 << automatic.length); mask++) {
-            resolve(
-              base,
-              name: name,
-              isHovered: isHovered,
-              isSelected: isSelected,
-              activeStates: {
-                for (var i = 0; i < automatic.length; i++)
-                  if (mask & (1 << i) != 0) automatic.keys.elementAt(i),
-              },
-            )._validateLeaf();
-          }
-        }
-      }
-    }
-  }
-
-  Map<String, Object?> toJson() => {
-    if (binding != null) 'binding': binding!.toJson(),
-    'named': {
-      for (final entry in named.entries) entry.key: entry.value.toJson(),
-    },
-    'namedProperties': {
-      for (final entry in namedProperties.entries)
-        entry.key: entry.value.map((p) => p.name).toList()..sort(),
-    },
-    if (hover != null) 'hover': hover!.toJson(),
-    if (selected != null) 'selected': selected!.toJson(),
-    if (automatic.isNotEmpty)
-      'automatic': {
-        for (final entry in automatic.entries)
-          entry.key.name: entry.value.toJson(),
-      },
-    'order': order,
-  };
-
-  Map<String, Object?> toCompactJson() => {
-    if (binding != null) 'binding': binding!.toCompactJson(),
-    'named': {
-      for (final entry in named.entries) entry.key: entry.value.toCompactJson(),
-    },
-    if (namedProperties.values.any((s) => s.isNotEmpty))
-      'namedProperties': {
-        for (final entry in namedProperties.entries)
-          entry.key: entry.value.map((p) => p.name).toList()..sort(),
-      },
-    if (hover != null) 'hover': hover!.toCompactJson(),
-    if (selected != null) 'selected': selected!.toCompactJson(),
-    if (automatic.isNotEmpty)
-      'automatic': {
-        for (final entry in automatic.entries)
-          entry.key.name: entry.value.toCompactJson(),
-      },
-    'order': order,
-  };
-
-  factory IndicatorConfigStates.fromJson(Object? value) {
-    if (value is! Map ||
-        value.keys.any(
-          (key) => !{
-            'binding',
-            'named',
-            'namedProperties',
-            'hover',
-            'selected',
-            'automatic',
-            'order',
-          }.contains(key),
-        ) ||
-        value['named'] is! Map ||
-        (value.containsKey('order') &&
-            (value['order'] is! List ||
-                (value['order'] as List).any((key) => key is! String)))) {
-      throw const FormatException('Invalid Indicator states.');
-    }
-    final named = <String, SuperIndicatorConfig>{};
-    for (final entry in (value['named'] as Map).entries) {
-      if (entry.key is! String) {
-        throw const FormatException('Invalid Indicator state name.');
-      }
-      named[_indicatorStateName(entry.key as String)] = _readIndicatorStateLeaf(
-        entry.value,
+  factory IndicatorConfigStates.fromJson(Object? value) =>
+      ComponentStateHelpers.parseStatesJson(
+        value: value,
+        context: 'Indicator',
+        readLeaf: _readIndicatorStateLeaf,
+        parseOverride: IndicatorConfigOverride.fromJson,
+        build: IndicatorConfigStates.new,
       );
-    }
-    try {
-      return IndicatorConfigStates(
-        binding: value['binding'] == null
-            ? null
-            : JsonTextBinding.fromJson(value['binding']),
-        named: named,
-        namedProperties: _readIndicatorNamedProperties(
-          value['namedProperties'],
-          named,
-        ),
-        hover: value.containsKey('hover')
-            ? IndicatorConfigOverride.fromJson(value['hover'])
-            : null,
-        selected: value.containsKey('selected')
-            ? IndicatorConfigOverride.fromJson(value['selected'])
-            : null,
-        automatic: _readIndicatorAutomatic(value['automatic']),
-        order: (value['order'] as List?)?.cast<String>(),
-      );
-    } on ArgumentError {
-      throw const FormatException('Invalid Indicator states.');
-    }
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      other is IndicatorConfigStates &&
-      ComponentStateHelpers.equalsStateCollection(
-        bindingA: binding,
-        bindingB: other.binding,
-        namedA: named,
-        namedB: other.named,
-        propsA: namedProperties,
-        propsB: other.namedProperties,
-        hoverA: hover,
-        hoverB: other.hover,
-        selectedA: selected,
-        selectedB: other.selected,
-        autoA: automatic,
-        autoB: other.automatic,
-        orderA: order,
-        orderB: other.order,
-      );
-
-  @override
-  int get hashCode => ComponentStateHelpers.hashStateCollection(
-    binding,
-    named,
-    namedProperties,
-    hover,
-    selected,
-    automatic,
-    order,
-  );
 }
 
-Map<String, Set<IndicatorStateProperty>> _readIndicatorNamedProperties(
-  Object? value,
-  Map<String, SuperIndicatorConfig> named,
-) {
-  if (value == null) return {};
-  if (value is! Map || value.keys.any((key) => !named.containsKey(key))) {
-    throw const FormatException('Invalid named Indicator overrides.');
-  }
-  return {
-    for (final entry in value.entries)
-      entry.key as String: IndicatorConfigOverride.fromJson({
-        'config': named[entry.key]!.toJson(),
-        'properties': entry.value,
-      }).properties,
-  };
-}
-
-Map<AutomaticState, IndicatorConfigOverride> _readIndicatorAutomatic(
-  Object? value,
-) => ComponentStateHelpers.readAutomaticStates(
-  value,
-  IndicatorConfigOverride.fromJson,
-  'Indicator',
-);
-
-SuperIndicatorConfig _indicatorStateLeaf(SuperIndicatorConfig config) {
-  if (config.states != null) {
-    throw const FormatException(
-      'Indicator states cannot contain nested states.',
+SuperIndicatorConfig _indicatorStateLeaf(SuperIndicatorConfig config) =>
+    ComponentStateHelpers.ensureStateLeaf(
+      config,
+      states: config.states,
+      normalize: (c) => c.copyWith(
+        propertyBindings: Map.unmodifiable(c.propertyBindings),
+      ),
+      context: 'Indicator',
     );
-  }
-  return config.copyWith(
-    propertyBindings: Map.unmodifiable(config.propertyBindings),
-  );
-}
 
-SuperIndicatorConfig _readIndicatorStateLeaf(Object? value) {
-  if (value is! Map || value.containsKey('states')) {
-    throw const FormatException('Invalid or nested Indicator state.');
-  }
-  return _indicatorStateLeaf(SuperIndicatorConfig.fromJson(value));
-}
-
-String _indicatorStateName(String name) =>
-    ComponentStateHelpers.validateStateName(name, 'Indicator');
+SuperIndicatorConfig _readIndicatorStateLeaf(Object? value) =>
+    ComponentStateHelpers.readStateLeaf(
+      value,
+      fromJson: SuperIndicatorConfig.fromJson,
+      toLeaf: _indicatorStateLeaf,
+      context: 'Indicator',
+    );

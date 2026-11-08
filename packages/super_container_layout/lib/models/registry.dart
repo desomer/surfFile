@@ -53,6 +53,8 @@ import 'package:super_container_layout/widgets/components/super_layout/slot_impl
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 
+part 'registry_previews.dart';
+
 /// Contexte d'instanciation contenant l'identifiant unique `id` du composant à construire.
 class XuiBuildCtx {
   XuiBuildCtx({required this.id});
@@ -519,56 +521,61 @@ class Registry {
     }
   }
 
-  ValueNotifier<SuperLayoutConfig> layoutController(
+  ValueNotifier<T> _bindTypedController<T extends Object>(
     String id, {
-    SuperLayoutConfig fallback = const SuperLayoutConfig(),
+    required T fallback,
+    required Map<String, T> defaults,
+    required Map<String, ValueNotifier<T>> controllers,
+    required T Function(Appearance appearance, String id, T fallback) read,
+    required Appearance Function(Appearance appearance, String id, T value)
+    write,
+    void Function(T value)? validate,
   }) {
-    _layoutDefaults.putIfAbsent(id, () => fallback);
-    final notifier = superLayoutConfigById.putIfAbsent(
+    validate?.call(fallback);
+    defaults.putIfAbsent(id, () => fallback);
+    final notifier = controllers.putIfAbsent(
       id,
       () => ValueNotifier(
-        _appearance?.value.layout(id, fallback: fallback) ?? fallback,
+        _appearance == null ? fallback : read(_appearance!.value, id, fallback),
       ),
     );
     if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
+      void onChanged() {
+        validate?.call(notifier.value);
         if (!_syncing) {
-          _appearance!.value = _appearance!.value.withLayout(
-            id,
-            notifier.value,
-          );
+          _appearance!.value = write(_appearance!.value, id, notifier.value);
         }
       }
 
-      _listeners[notifier] = write;
-      notifier.addListener(write);
+      _listeners[notifier] = onChanged;
+      notifier.addListener(onChanged);
     }
     return notifier;
   }
+
+  ValueNotifier<SuperLayoutConfig> layoutController(
+    String id, {
+    SuperLayoutConfig fallback = const SuperLayoutConfig(),
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _layoutDefaults,
+    controllers: superLayoutConfigById,
+    read: (a, k, f) => a.layout(k, fallback: f),
+    write: (a, k, v) => a.withLayout(k, v),
+  );
 
   ValueNotifier<ContainerStyle> styleController(
     String id, {
     ContainerStyle fallback = const ContainerStyle(),
-  }) {
-    _styleDefaults.putIfAbsent(id, () => fallback);
-    final notifier = containerStyleById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.style(id, fallback: fallback) ?? fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withStyle(id, notifier.value);
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _styleDefaults,
+    controllers: containerStyleById,
+    read: (a, k, f) => a.style(k, fallback: f),
+    write: (a, k, v) => a.withStyle(k, v),
+  );
 
   ValueNotifier<ScaffoldPageConfig> scaffoldPageController(
     String id, {
@@ -749,239 +756,106 @@ class Registry {
   ValueNotifier<SuperValueConfig> valueController(
     String id, {
     SuperValueConfig fallback = const SuperValueConfig(),
-  }) {
-    fallback.validate();
-    _valueDefaults.putIfAbsent(id, () => fallback);
-    final notifier = valueConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.valueComponent(id, fallback: fallback) ?? fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withValueComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _valueDefaults,
+    controllers: valueConfigById,
+    read: (a, k, f) => a.valueComponent(k, fallback: f),
+    write: (a, k, v) => a.withValueComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperActionConfig> actionController(
     String id, {
     SuperActionConfig fallback = const SuperActionConfig(),
-  }) {
-    fallback.validate();
-    _actionDefaults.putIfAbsent(id, () => fallback);
-    final notifier = actionConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.actionComponent(id, fallback: fallback) ?? fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withActionComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _actionDefaults,
+    controllers: actionConfigById,
+    read: (a, k, f) => a.actionComponent(k, fallback: f),
+    write: (a, k, v) => a.withActionComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperIndicatorConfig> indicatorController(
     String id, {
     SuperIndicatorConfig fallback = const SuperIndicatorConfig(),
-  }) {
-    fallback.validate();
-    _indicatorDefaults.putIfAbsent(id, () => fallback);
-    final notifier = indicatorConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.indicatorComponent(id, fallback: fallback) ??
-            fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withIndicatorComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _indicatorDefaults,
+    controllers: indicatorConfigById,
+    read: (a, k, f) => a.indicatorComponent(k, fallback: f),
+    write: (a, k, v) => a.withIndicatorComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperSeparatorConfig> separatorController(
     String id, {
     SuperSeparatorConfig fallback = const SuperSeparatorConfig(),
-  }) {
-    fallback.validate();
-    _separatorDefaults.putIfAbsent(id, () => fallback);
-    final notifier = separatorConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.separatorComponent(id, fallback: fallback) ??
-            fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withSeparatorComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _separatorDefaults,
+    controllers: separatorConfigById,
+    read: (a, k, f) => a.separatorComponent(k, fallback: f),
+    write: (a, k, v) => a.withSeparatorComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperListViewConfig> listController(
     String id, {
     SuperListViewConfig fallback = const SuperListViewConfig(),
-  }) {
-    fallback.validate();
-    _listDefaults.putIfAbsent(id, () => fallback);
-    final notifier = listConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.listComponent(id, fallback: fallback) ?? fallback,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withListComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback,
+    defaults: _listDefaults,
+    controllers: listConfigById,
+    read: (a, k, f) => a.listComponent(k, fallback: f),
+    write: (a, k, v) => a.withListComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperTabConfig> tabController(
     String id, {
     SuperTabConfig? fallback,
-  }) {
-    final initial = fallback ?? SuperTabConfig();
-    initial.validate();
-    _tabDefaults.putIfAbsent(id, () => initial);
-    final notifier = tabConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.tabComponent(id, fallback: initial) ?? initial,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withTabComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback ?? SuperTabConfig(),
+    defaults: _tabDefaults,
+    controllers: tabConfigById,
+    read: (a, k, f) => a.tabComponent(k, fallback: f),
+    write: (a, k, v) => a.withTabComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperTreeViewConfig> treeViewController(
     String id, {
     SuperTreeViewConfig? fallback,
-  }) {
-    final initial = fallback ?? SuperTreeViewConfig();
-    initial.validate();
-    _treeViewDefaults.putIfAbsent(id, () => initial);
-    final notifier = treeViewConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.treeViewComponent(id, fallback: initial) ?? initial,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withTreeViewComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback ?? SuperTreeViewConfig(),
+    defaults: _treeViewDefaults,
+    controllers: treeViewConfigById,
+    read: (a, k, f) => a.treeViewComponent(k, fallback: f),
+    write: (a, k, v) => a.withTreeViewComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<SuperTableConfig> tableController(
     String id, {
     SuperTableConfig? fallback,
-  }) {
-    final initial = fallback ?? SuperTableConfig();
-    initial.validate();
-    _tableDefaults.putIfAbsent(id, () => initial);
-    final notifier = tableConfigById.putIfAbsent(
-      id,
-      () => ValueNotifier(
-        _appearance?.value.tableComponent(id, fallback: initial) ?? initial,
-      ),
-    );
-    if (_appearance != null && !_listeners.containsKey(notifier)) {
-      void write() {
-        notifier.value.validate();
-        if (!_syncing) {
-          _appearance!.value = _appearance!.value.withTableComponent(
-            id,
-            notifier.value,
-          );
-        }
-      }
-
-      _listeners[notifier] = write;
-      notifier.addListener(write);
-    }
-    return notifier;
-  }
+  }) => _bindTypedController(
+    id,
+    fallback: fallback ?? SuperTableConfig(),
+    defaults: _tableDefaults,
+    controllers: tableConfigById,
+    read: (a, k, f) => a.tableComponent(k, fallback: f),
+    write: (a, k, v) => a.withTableComponent(k, v),
+    validate: (v) => v.validate(),
+  );
 
   ValueNotifier<NativeComponentConfig> nativeComponentController(
     String id, {
@@ -1601,700 +1475,5 @@ class RegisteredComponent {
         : builder,
     tags: tags,
     menuIcon: menuIcon,
-  );
-}
-
-Widget _previewZoneBox(
-  BuildContext context,
-  String label, {
-  bool highlighted = false,
-}) {
-  final colors = Theme.of(context).colorScheme;
-  return Container(
-    alignment: Alignment.center,
-    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-    decoration: BoxDecoration(
-      color: highlighted ? colors.primaryContainer : colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(
-        color: highlighted ? colors.primary : colors.outlineVariant,
-      ),
-    ),
-    child: Text(
-      label,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: highlighted ? FontWeight.w600 : FontWeight.w400,
-        color: highlighted
-            ? colors.onPrimaryContainer
-            : colors.onSurfaceVariant,
-      ),
-    ),
-  );
-}
-
-Widget _buildLayoutPreview(BuildContext context) => IgnorePointer(
-  child: SizedBox(
-    height: 92,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _previewZoneBox(context, 'Nord'),
-        const SizedBox(height: 4),
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(child: _previewZoneBox(context, 'Ouest')),
-              const SizedBox(width: 4),
-              Expanded(
-                flex: 2,
-                child: _previewZoneBox(context, 'Centre', highlighted: true),
-              ),
-              const SizedBox(width: 4),
-              Expanded(child: _previewZoneBox(context, 'Est')),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        _previewZoneBox(context, 'Sud'),
-      ],
-    ),
-  ),
-);
-
-Widget _buildValuePreview(BuildContext context) {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
-  return IgnorePointer(
-    child: Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Text('Texte affiché', style: theme.textTheme.bodyMedium),
-        SizedBox(
-          width: 180,
-          child: InputDecorator(
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Champ de saisie',
-              border: OutlineInputBorder(),
-            ),
-            child: Text(
-              'Valeur…',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Checkbox(value: true, onChanged: (_) {}),
-            Switch(value: true, onChanged: (_) {}),
-          ],
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _buildActionPreview(BuildContext context) => IgnorePointer(
-  child: Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    crossAxisAlignment: WrapCrossAlignment.center,
-    children: [
-      FilledButton.icon(
-        onPressed: () {},
-        icon: const Icon(Icons.play_arrow, size: 16),
-        label: const Text('Action principale'),
-      ),
-      OutlinedButton(onPressed: () {}, child: const Text('Secondaire')),
-      IconButton.filledTonal(
-        onPressed: () {},
-        icon: const Icon(Icons.bolt, size: 18),
-      ),
-    ],
-  ),
-);
-
-Widget _buildIndicatorPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  return IgnorePointer(
-    child: Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        Icon(
-          Icons.check_circle_outline,
-          size: 22,
-          color: Colors.green.shade600,
-        ),
-        Icon(
-          Icons.warning_amber_rounded,
-          size: 22,
-          color: Colors.orange.shade700,
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            color: colors.secondaryContainer,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.info_outline,
-                size: 16,
-                color: colors.onSecondaryContainer,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                'Statut',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: colors.onSecondaryContainer,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _buildSeparatorPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  return IgnorePointer(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            Expanded(child: Divider(color: colors.outlineVariant)),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                'Section',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Expanded(child: Divider(color: colors.outlineVariant)),
-          ],
-        ),
-        const SizedBox(height: 6),
-        Divider(color: colors.outlineVariant),
-      ],
-    ),
-  );
-}
-
-Widget _buildCardPreview(BuildContext context) {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
-  return IgnorePointer(
-    child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: colors.outlineVariant),
-        boxShadow: [
-          BoxShadow(
-            color: colors.shadow.withValues(alpha: 0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.crop_square, color: colors.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('Card', style: theme.textTheme.titleSmall),
-                Text(
-                  'Surface stylable (couleur, bordure, rayon, marges)',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildApplicationBarPreview(BuildContext context) {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
-  return IgnorePointer(
-    child: Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.menu, size: 18, color: colors.onSurface),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Barre d’application',
-              style: theme.textTheme.titleSmall,
-            ),
-          ),
-          Icon(Icons.search, size: 18, color: colors.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Icon(Icons.more_vert, size: 18, color: colors.onSurfaceVariant),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildBottomNavigationBarPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  Widget item(IconData icon, String label, {bool selected = false}) => Expanded(
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          decoration: BoxDecoration(
-            color: selected ? colors.secondaryContainer : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            icon,
-            size: 16,
-            color: selected
-                ? colors.onSecondaryContainer
-                : colors.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-            color: selected ? colors.onSurface : colors.onSurfaceVariant,
-          ),
-        ),
-      ],
-    ),
-  );
-  return IgnorePointer(
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          item(Icons.home_outlined, 'Accueil', selected: true),
-          item(Icons.search_outlined, 'Recherche'),
-          item(Icons.person_outline, 'Profil'),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildBottomAppBarPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  return IgnorePointer(
-    child: Container(
-      height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.menu, size: 18, color: colors.onSurfaceVariant),
-          const SizedBox(width: 12),
-          Icon(Icons.search, size: 18, color: colors.onSurfaceVariant),
-          const SizedBox(width: 12),
-          Icon(Icons.favorite_border, size: 18, color: colors.onSurfaceVariant),
-          const Spacer(),
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: colors.primaryContainer,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(Icons.add, size: 16, color: colors.onPrimaryContainer),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildNavigationRailPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  return IgnorePointer(
-    child: SizedBox(
-      height: 84,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            width: 56,
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainer,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.secondaryContainer,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.folder_outlined,
-                    size: 16,
-                    color: colors.onSecondaryContainer,
-                  ),
-                ),
-                Icon(
-                  Icons.analytics_outlined,
-                  size: 16,
-                  color: colors.onSurfaceVariant,
-                ),
-                Icon(
-                  Icons.settings_outlined,
-                  size: 16,
-                  color: colors.onSurfaceVariant,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _previewZoneBox(context, 'Contenu de la destination'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildExpansiblePreview(BuildContext context) {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
-  return IgnorePointer(
-    child: Container(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'En-tête repliable',
-                    style: theme.textTheme.labelLarge,
-                  ),
-                ),
-                Icon(
-                  Icons.expand_less,
-                  size: 18,
-                  color: colors.onSurfaceVariant,
-                ),
-              ],
-            ),
-          ),
-          Divider(height: 1, color: colors.outlineVariant),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: _previewZoneBox(context, 'Contenu déplié'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildMenuPreview(BuildContext context) {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
-  return IgnorePointer(
-    child: Row(
-      children: [
-        OutlinedButton.icon(
-          onPressed: () {},
-          icon: const Icon(Icons.menu_open_outlined, size: 16),
-          label: const Text('Menu'),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: colors.outlineVariant),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('• Option 1', style: theme.textTheme.bodySmall),
-                Text('• Option 2', style: theme.textTheme.bodySmall),
-              ],
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _buildTabPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  Widget tab(String title, {bool selected = false}) => Expanded(
-    child: Container(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: selected ? colors.primary : colors.outlineVariant,
-            width: selected ? 2 : 1,
-          ),
-        ),
-      ),
-      child: Text(
-        title,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-          color: selected ? colors.primary : colors.onSurfaceVariant,
-        ),
-      ),
-    ),
-  );
-  return IgnorePointer(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            tab('Onglet 1', selected: true),
-            tab('Onglet 2'),
-            tab('Onglet 3'),
-          ],
-        ),
-        const SizedBox(height: 6),
-        _previewZoneBox(
-          context,
-          'Contenu de l’onglet actif',
-          highlighted: true,
-        ),
-      ],
-    ),
-  );
-}
-
-Widget _buildIterableContentPreview(BuildContext context) {
-  final theme = Theme.of(context);
-  final colors = theme.colorScheme;
-  return IgnorePointer(
-    child: Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: colors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: colors.primary.withValues(alpha: 0.5)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.repeat, size: 16, color: colors.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Modèle d’élément répété (ligne / carte de liste)',
-              style: theme.textTheme.bodySmall,
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-Widget _buildListViewPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  Widget row(String label) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(6),
-      border: Border.all(color: colors.outlineVariant),
-    ),
-    child: Row(
-      children: [
-        Icon(Icons.drag_handle, size: 14, color: colors.onSurfaceVariant),
-        const SizedBox(width: 8),
-        Text(label, style: const TextStyle(fontSize: 11)),
-      ],
-    ),
-  );
-  return IgnorePointer(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        row('Élément de liste 1'),
-        const SizedBox(height: 4),
-        row('Élément de liste 2'),
-        const SizedBox(height: 4),
-        row('Élément de liste 3'),
-      ],
-    ),
-  );
-}
-
-Widget _buildTreeViewPreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  Widget nodeRow(String header, String data, {int depth = 0}) => Padding(
-    padding: EdgeInsets.only(left: depth * 16.0),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            depth == 0 ? Icons.arrow_drop_down : Icons.subdirectory_arrow_right,
-            size: 14,
-            color: colors.primary,
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              header,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
-            ),
-          ),
-          Container(
-            width: 1,
-            height: 12,
-            color: colors.outlineVariant,
-            margin: const EdgeInsets.symmetric(horizontal: 6),
-          ),
-          Expanded(child: Text(data, style: const TextStyle(fontSize: 11))),
-        ],
-      ),
-    ),
-  );
-  return IgnorePointer(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        nodeRow('Header (Parent)', 'Data'),
-        const SizedBox(height: 4),
-        nodeRow('Header (Enfant)', 'Data', depth: 1),
-      ],
-    ),
-  );
-}
-
-Widget _buildTablePreview(BuildContext context) {
-  final colors = Theme.of(context).colorScheme;
-  Widget tableRow(List<String> cells, {bool header = false}) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color: header
-          ? colors.surfaceContainerHighest
-          : colors.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: colors.outlineVariant),
-    ),
-    child: Row(
-      children: [
-        for (var i = 0; i < cells.length; i++) ...[
-          if (i > 0)
-            Container(
-              width: 1,
-              height: 12,
-              color: colors.outlineVariant,
-              margin: const EdgeInsets.symmetric(horizontal: 6),
-            ),
-          Expanded(
-            child: Text(
-              cells[i],
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: header ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ),
-        ],
-      ],
-    ),
-  );
-  return IgnorePointer(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        tableRow(const ['Col 1', 'Col 2', 'Col 3'], header: true),
-        const SizedBox(height: 3),
-        tableRow(const ['Val A1', 'Val A2', 'Val A3']),
-        const SizedBox(height: 3),
-        tableRow(const ['Val B1', 'Val B2', 'Val B3']),
-      ],
-    ),
   );
 }

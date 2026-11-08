@@ -79,6 +79,71 @@ class NativePropertyDescriptor {
     this.nullable = true,
   });
 
+  /// Crée un descripteur de propriété de type couleur ([NativePropertyEditorType.color]).
+  const NativePropertyDescriptor.color({
+    required this.id,
+    required this.label,
+    this.subtitle,
+    this.defaultValue,
+    this.nullable = true,
+  }) : editorType = NativePropertyEditorType.color,
+       min = null,
+       max = null,
+       divisions = null,
+       options = const [];
+
+  /// Crée un descripteur de propriété booléenne ([NativePropertyEditorType.bool]).
+  const NativePropertyDescriptor.flag({
+    required this.id,
+    required this.label,
+    this.subtitle,
+    bool? this.defaultValue,
+    this.nullable = true,
+  }) : editorType = NativePropertyEditorType.bool,
+       min = null,
+       max = null,
+       divisions = null,
+       options = const [];
+
+  /// Crée un descripteur de propriété numérique ([NativePropertyEditorType.number]).
+  const NativePropertyDescriptor.number({
+    required this.id,
+    required this.label,
+    this.subtitle,
+    double? this.defaultValue,
+    this.min,
+    this.max,
+    this.divisions,
+    this.nullable = true,
+  }) : editorType = NativePropertyEditorType.number,
+       options = const [];
+
+  /// Crée un descripteur de propriété à choix multiple ([NativePropertyEditorType.select]).
+  const NativePropertyDescriptor.select({
+    required this.id,
+    required this.label,
+    required this.options,
+    this.subtitle,
+    String? this.defaultValue,
+    this.nullable = true,
+  }) : editorType = NativePropertyEditorType.select,
+       min = null,
+       max = null,
+       divisions = null;
+
+  /// Crée un descripteur de propriété de forme géométrique ([NativePropertyEditorType.shape]).
+  const NativePropertyDescriptor.shape({
+    required this.id,
+    required this.label,
+    this.subtitle,
+    this.nullable = true,
+  }) : editorType = NativePropertyEditorType.shape,
+       defaultValue = null,
+       min = null,
+       max = null,
+       divisions = null,
+       options = const [];
+
   final String id;
   final String label;
   final String? subtitle;
@@ -255,153 +320,163 @@ class NativePropertyDescriptor {
   );
 }
 
+const List<NativePropertyOption> _clipBehaviorOptions = [
+  NativePropertyOption(value: 'none', label: 'Aucun (none)'),
+  NativePropertyOption(value: 'hardEdge', label: 'Bord net (hardEdge)'),
+  NativePropertyOption(value: 'antiAlias', label: 'Anticrénelage (antiAlias)'),
+  NativePropertyOption(
+    value: 'antiAliasWithSaveLayer',
+    label: 'Anticrénelage avec calque (antiAliasWithSaveLayer)',
+  ),
+];
+
+const NativePropertyDescriptor _surfaceTintColorDescriptor =
+    NativePropertyDescriptor.color(
+      id: 'surfaceTintColor',
+      label: 'Teinte de surface',
+      subtitle:
+          'Teinte Material 3 appliquée avec l’élévation (surfaceTintColor)',
+    );
+
+const NativePropertyDescriptor _shadowColorDescriptor =
+    NativePropertyDescriptor.color(
+      id: 'shadowColor',
+      label: 'Couleur de l’ombre',
+      subtitle: 'Couleur de l’ombre portée sous la barre (shadowColor)',
+    );
+
+const NativePropertyDescriptor _shapeDescriptor =
+    NativePropertyDescriptor.shape(
+      id: 'shape',
+      label: 'Forme et bordure (Shape)',
+      subtitle: 'Découpe géométrique, coins arrondis et contour (shape)',
+    );
+
+const NativePropertyDescriptor _barClipBehaviorDescriptor =
+    NativePropertyDescriptor.select(
+      id: 'clipBehavior',
+      label: 'Découpage (Clip)',
+      subtitle: 'Mode de découpage du contenu dépassant de la barre',
+      options: _clipBehaviorOptions,
+    );
+
+const NativePropertyDescriptor _initiallyExpandedDescriptor =
+    NativePropertyDescriptor.flag(
+      id: 'initiallyExpanded',
+      label: 'Ouvert par défaut',
+      subtitle: 'État initial hors liaison repository',
+      defaultValue: false,
+    );
+
+const NativePropertyDescriptor _headerClickTogglesDescriptor =
+    NativePropertyDescriptor.flag(
+      id: 'headerClickToggles',
+      label: 'Basculer au clic sur l’en-tête',
+      defaultValue: true,
+    );
+
 /// Catalogue déclaratif des propriétés de style Flutter disponibles sur [SuperAppBar].
 const List<NativePropertyDescriptor> superAppBarPropertyDescriptors = [
   // Couleurs
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.color(
     id: 'backgroundColor',
     label: 'Couleur de fond',
     subtitle: 'Arrière-plan de la barre (backgroundColor)',
-    editorType: NativePropertyEditorType.color,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.color(
     id: 'foregroundColor',
     label: 'Couleur du contenu',
     subtitle: 'Couleur par défaut du texte et des icônes (foregroundColor)',
-    editorType: NativePropertyEditorType.color,
   ),
-  NativePropertyDescriptor(
-    id: 'surfaceTintColor',
-    label: 'Teinte de surface',
-    subtitle: 'Teinte Material 3 appliquée avec l’élévation (surfaceTintColor)',
-    editorType: NativePropertyEditorType.color,
-  ),
-  NativePropertyDescriptor(
-    id: 'shadowColor',
-    label: 'Couleur de l’ombre',
-    subtitle: 'Couleur de l’ombre portée sous la barre (shadowColor)',
-    editorType: NativePropertyEditorType.color,
-  ),
+  _surfaceTintColorDescriptor,
+  _shadowColorDescriptor,
   // Élévation & transparence
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'elevation',
     label: 'Élévation',
     subtitle: 'Hauteur de l’ombre portée au repos (elevation)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: 0,
     max: 24,
     divisions: 24,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'scrolledUnderElevation',
     label: 'Élévation au défilement',
     subtitle: 'Élévation lorsque le contenu défile dessous',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 3.0,
     min: 0,
     max: 24,
     divisions: 24,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'forceMaterialTransparency',
     label: 'Transparence Material forcée',
     subtitle: 'Rend le fond Material totalement transparent',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
-    id: 'shape',
-    label: 'Forme et bordure (Shape)',
-    subtitle: 'Découpe géométrique, coins arrondis et contour (shape)',
-    editorType: NativePropertyEditorType.shape,
-  ),
+  _shapeDescriptor,
   // Dimensions & espacements
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'leadingWidth',
     label: 'Largeur de Navigation',
     subtitle: 'Largeur réservée à la zone leading (leadingWidth)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 56.0,
     min: 24,
     max: 200,
     divisions: 88,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'titleSpacing',
     label: 'Espacement du titre',
     subtitle: 'Marge horizontale autour de la zone title (titleSpacing)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: 0,
     max: 64,
     divisions: 64,
   ),
   // Comportement & opacité
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'centerTitle',
     label: 'Centrer le titre',
     subtitle: 'Centre horizontalement la zone title dans la barre',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'toolbarOpacity',
     label: 'Opacité de la barre',
     subtitle: 'Opacité des éléments de la barre principale (0.0 à 1.0)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 1.0,
     min: 0,
     max: 1,
     divisions: 20,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'bottomOpacity',
     label: 'Opacité de la zone Bas',
     subtitle: 'Opacité de la région bottom de la barre (0.0 à 1.0)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 1.0,
     min: 0,
     max: 1,
     divisions: 20,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'primary',
     label: 'Barre principale (SafeArea)',
     subtitle: 'Ajoute le retrait de la barre de statut système en haut',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'excludeHeaderSemantics',
     label: 'Exclure la sémantique d’en-tête',
     subtitle: 'Ne marque pas le titre comme en-tête d’accessibilité',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
-    id: 'clipBehavior',
-    label: 'Découpage (Clip)',
-    subtitle: 'Mode de découpage du contenu dépassant de la barre',
-    editorType: NativePropertyEditorType.select,
-    options: [
-      NativePropertyOption(value: 'none', label: 'Aucun (none)'),
-      NativePropertyOption(value: 'hardEdge', label: 'Bord net (hardEdge)'),
-      NativePropertyOption(
-        value: 'antiAlias',
-        label: 'Anticrénelage (antiAlias)',
-      ),
-      NativePropertyOption(
-        value: 'antiAliasWithSaveLayer',
-        label: 'Anticrénelage avec calque (antiAliasWithSaveLayer)',
-      ),
-    ],
-  ),
-  NativePropertyDescriptor(
+  _barClipBehaviorDescriptor,
+  NativePropertyDescriptor.select(
     id: 'systemOverlayStyle',
     label: 'Style de la barre système',
     subtitle: 'Luminosité des icônes système (statut / navigation)',
-    editorType: NativePropertyEditorType.select,
     options: [
       NativePropertyOption(value: 'light', label: 'Icônes claires (light)'),
       NativePropertyOption(value: 'dark', label: 'Icônes sombres (dark)'),
@@ -411,163 +486,118 @@ const List<NativePropertyDescriptor> superAppBarPropertyDescriptors = [
 
 /// Descripteur de la propriété `useDefaultNavigation` de [SuperAppBar].
 const NativePropertyDescriptor useDefaultNavigationPropertyDescriptor =
-    NativePropertyDescriptor(
+    NativePropertyDescriptor.flag(
       id: 'useDefaultNavigation',
       label: 'Bouton de navigation par défaut',
       subtitle:
           'Menu du drawer ou bouton Retour natif. Remplace la zone Navigation.',
-      editorType: NativePropertyEditorType.bool,
       defaultValue: true,
     );
 
 /// Catalogue déclaratif des propriétés de style Flutter disponibles sur [SuperBottomAppBar].
 const List<NativePropertyDescriptor> superBottomAppBarPropertyDescriptors = [
   // Couleurs
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.color(
     id: 'color',
     label: 'Couleur de fond',
     subtitle: 'Arrière-plan de la barre basse (color)',
-    editorType: NativePropertyEditorType.color,
   ),
-  NativePropertyDescriptor(
-    id: 'surfaceTintColor',
-    label: 'Teinte de surface',
-    subtitle: 'Teinte Material 3 appliquée avec l’élévation (surfaceTintColor)',
-    editorType: NativePropertyEditorType.color,
-  ),
-  NativePropertyDescriptor(
-    id: 'shadowColor',
-    label: 'Couleur de l’ombre',
-    subtitle: 'Couleur de l’ombre portée sous la barre (shadowColor)',
-    editorType: NativePropertyEditorType.color,
-  ),
+  _surfaceTintColorDescriptor,
+  _shadowColorDescriptor,
   // Élévation, forme & encoche
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'elevation',
     label: 'Élévation',
     subtitle: 'Hauteur de l’ombre portée au repos (elevation)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 3.0,
     min: 0,
     max: 24,
     divisions: 24,
   ),
-  NativePropertyDescriptor(
-    id: 'shape',
-    label: 'Forme et bordure (Shape)',
-    subtitle: 'Découpe géométrique, coins arrondis et contour (shape)',
-    editorType: NativePropertyEditorType.shape,
-  ),
-  NativePropertyDescriptor(
+  _shapeDescriptor,
+  NativePropertyDescriptor.number(
     id: 'notchMargin',
     label: 'Marge d’encoche (FAB)',
     subtitle: 'Espace entre le bouton flottant et l’encoche (notchMargin)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 4.0,
     min: 0,
     max: 24,
     divisions: 24,
   ),
   // Dimensions, marges & découpage
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'padding',
     label: 'Marge intérieure (Padding)',
     subtitle: 'Espacement interne autour du contenu de la barre (padding)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: 0,
     max: 48,
     divisions: 48,
   ),
-  NativePropertyDescriptor(
-    id: 'clipBehavior',
-    label: 'Découpage (Clip)',
-    subtitle: 'Mode de découpage du contenu dépassant de la barre',
-    editorType: NativePropertyEditorType.select,
-    options: [
-      NativePropertyOption(value: 'none', label: 'Aucun (none)'),
-      NativePropertyOption(value: 'hardEdge', label: 'Bord net (hardEdge)'),
-      NativePropertyOption(
-        value: 'antiAlias',
-        label: 'Anticrénelage (antiAlias)',
-      ),
-      NativePropertyOption(
-        value: 'antiAliasWithSaveLayer',
-        label: 'Anticrénelage avec calque (antiAliasWithSaveLayer)',
-      ),
-    ],
-  ),
+  _barClipBehaviorDescriptor,
 ];
 
 /// Catalogue déclaratif des propriétés de style Flutter disponibles sur [SuperBottomNavigationBar].
 const List<NativePropertyDescriptor>
 superBottomNavigationBarPropertyDescriptors = [
   // Couleurs
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.color(
     id: 'backgroundColor',
     label: 'Couleur de fond',
     subtitle: 'Arrière-plan de la barre de navigation (backgroundColor)',
-    editorType: NativePropertyEditorType.color,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.color(
     id: 'selectedItemColor',
     label: 'Couleur de l’élément sélectionné',
     subtitle: 'Couleur de l’icône et du libellé actifs (selectedItemColor)',
-    editorType: NativePropertyEditorType.color,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.color(
     id: 'unselectedItemColor',
     label: 'Couleur des éléments non sélectionnés',
     subtitle: 'Couleur des icônes et libellés inactifs (unselectedItemColor)',
-    editorType: NativePropertyEditorType.color,
   ),
   // Élévation & dimensions
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'elevation',
     label: 'Élévation',
     subtitle: 'Hauteur de l’ombre portée de la barre (elevation)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 8.0,
     min: 0,
     max: 24,
     divisions: 24,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'iconSize',
     label: 'Taille des icônes',
     subtitle: 'Taille en pixels des icônes des destinations (iconSize)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 24.0,
     min: 12,
     max: 48,
     divisions: 36,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'selectedFontSize',
     label: 'Taille du texte sélectionné',
     subtitle: 'Taille de police du libellé actif (selectedFontSize)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 14.0,
     min: 8,
     max: 32,
     divisions: 24,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'unselectedFontSize',
     label: 'Taille du texte non sélectionné',
     subtitle: 'Taille de police des libellés inactifs (unselectedFontSize)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 12.0,
     min: 8,
     max: 32,
     divisions: 24,
   ),
   // Disposition, libellés & comportement
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.select(
     id: 'navigationBarType',
     label: 'Type de barre',
     subtitle: 'Mode de disposition des destinations (type)',
-    editorType: NativePropertyEditorType.select,
     options: [
       NativePropertyOption(value: 'fixed', label: 'Fixe (fixed)'),
       NativePropertyOption(
@@ -576,11 +606,10 @@ superBottomNavigationBarPropertyDescriptors = [
       ),
     ],
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.select(
     id: 'landscapeLayout',
     label: 'Disposition en mode paysage',
     subtitle: 'Agencement des destinations à l’horizontale (landscapeLayout)',
-    editorType: NativePropertyEditorType.select,
     options: [
       NativePropertyOption(value: 'spread', label: 'Réparti (spread)'),
       NativePropertyOption(value: 'centered', label: 'Centré (centered)'),
@@ -590,48 +619,39 @@ superBottomNavigationBarPropertyDescriptors = [
       ),
     ],
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'showSelectedLabels',
     label: 'Afficher le libellé sélectionné',
-    subtitle: 'Affiche le texte sous la destination active (showSelectedLabels)',
-    editorType: NativePropertyEditorType.bool,
+    subtitle:
+        'Affiche le texte sous la destination active (showSelectedLabels)',
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'showUnselectedLabels',
     label: 'Afficher les libellés non sélectionnés',
-    subtitle:
-        'Affiche le texte sous les destinations inactives (showUnselectedLabels)',
-    editorType: NativePropertyEditorType.bool,
+    subtitle: 'Affiche le texte sous les destinations inactives (showUnselectedLabels)',
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'enableFeedback',
     label: 'Retour haptique et sonore',
     subtitle: 'Active les vibrations et sons système au clic (enableFeedback)',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'useLegacyColorScheme',
     label: 'Schéma de couleurs hérité',
-    subtitle:
-        'Applique la logique classique des couleurs d’icônes et libellés (useLegacyColorScheme)',
-    editorType: NativePropertyEditorType.bool,
+    subtitle: 'Applique la logique classique des couleurs d’icônes et libellés (useLegacyColorScheme)',
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.select(
     id: 'mouseCursor',
     label: 'Curseur de la souris',
     subtitle: 'Apparence du pointeur au survol des destinations (mouseCursor)',
-    editorType: NativePropertyEditorType.select,
     options: [
       NativePropertyOption(value: 'click', label: 'Main cliquable (click)'),
       NativePropertyOption(value: 'basic', label: 'Flèche standard (basic)'),
-      NativePropertyOption(
-        value: 'defer',
-        label: 'Hérité du parent (defer)',
-      ),
+      NativePropertyOption(value: 'defer', label: 'Hérité du parent (defer)'),
       NativePropertyOption(value: 'none', label: 'Masqué (none)'),
     ],
   ),
@@ -639,11 +659,10 @@ superBottomNavigationBarPropertyDescriptors = [
 
 /// Descripteur de la propriété `toggleIcon` partagée par [SuperExpansible] et [SuperMenuAnchor].
 const NativePropertyDescriptor toggleIconPropertyDescriptor =
-    NativePropertyDescriptor(
+    NativePropertyDescriptor.select(
       id: 'toggleIcon',
       label: 'Icône ouvert / fermé',
       subtitle: 'Indicateur visuel de l’état déplié ou replié dans l’en-tête',
-      editorType: NativePropertyEditorType.select,
       defaultValue: 'none',
       nullable: false,
       options: [
@@ -668,25 +687,18 @@ const NativePropertyDescriptor toggleIconPropertyDescriptor =
     );
 
 /// Descripteur de la propriété `toggleIconPosition` partagée par [SuperExpansible] et [SuperMenuAnchor].
-const NativePropertyDescriptor toggleIconPositionPropertyDescriptor =
-    NativePropertyDescriptor(
-      id: 'toggleIconPosition',
-      label: 'Position de l’icône',
-      subtitle: 'Emplacement de l’icône ouvert / fermé dans l’en-tête',
-      editorType: NativePropertyEditorType.select,
-      defaultValue: 'trailing',
-      nullable: false,
-      options: [
-        NativePropertyOption(
-          value: 'trailing',
-          label: 'Fin / Droite (trailing)',
-        ),
-        NativePropertyOption(
-          value: 'leading',
-          label: 'Début / Gauche (leading)',
-        ),
-      ],
-    );
+const NativePropertyDescriptor
+toggleIconPositionPropertyDescriptor = NativePropertyDescriptor.select(
+  id: 'toggleIconPosition',
+  label: 'Position de l’icône',
+  subtitle: 'Emplacement de l’icône ouvert / fermé dans l’en-tête',
+  defaultValue: 'trailing',
+  nullable: false,
+  options: [
+    NativePropertyOption(value: 'trailing', label: 'Fin / Droite (trailing)'),
+    NativePropertyOption(value: 'leading', label: 'Début / Gauche (leading)'),
+  ],
+);
 
 /// Résout l’icône Material correspondant au style `toggleIcon` et à l’état [expanded].
 ///
@@ -718,23 +730,11 @@ String nativeToggleIconPositionLabel(String? position) =>
 
 /// Catalogue déclaratif des propriétés de comportement de [SuperExpansible].
 const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
-  NativePropertyDescriptor(
-    id: 'initiallyExpanded',
-    label: 'Ouvert par défaut',
-    subtitle: 'État initial hors liaison repository',
-    editorType: NativePropertyEditorType.bool,
-    defaultValue: false,
-  ),
-  NativePropertyDescriptor(
-    id: 'headerClickToggles',
-    label: 'Basculer au clic sur l’en-tête',
-    editorType: NativePropertyEditorType.bool,
-    defaultValue: true,
-  ),
-  NativePropertyDescriptor(
+  _initiallyExpandedDescriptor,
+  _headerClickTogglesDescriptor,
+  NativePropertyDescriptor.flag(
     id: 'maintainState',
     label: 'Maintenir l’état fermé',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: true,
   ),
   toggleIconPropertyDescriptor,
@@ -743,44 +743,29 @@ const List<NativePropertyDescriptor> superExpansiblePropertyDescriptors = [
 
 /// Catalogue déclaratif des propriétés de comportement de [SuperMenuAnchor].
 const List<NativePropertyDescriptor> superMenuAnchorPropertyDescriptors = [
-  NativePropertyDescriptor(
-    id: 'initiallyExpanded',
-    label: 'Ouvert par défaut',
-    subtitle: 'État initial hors liaison repository',
-    editorType: NativePropertyEditorType.bool,
-    defaultValue: false,
-  ),
-  NativePropertyDescriptor(
-    id: 'headerClickToggles',
-    label: 'Basculer au clic sur l’en-tête',
-    editorType: NativePropertyEditorType.bool,
-    defaultValue: true,
-  ),
-  NativePropertyDescriptor(
+  _initiallyExpandedDescriptor,
+  _headerClickTogglesDescriptor,
+  NativePropertyDescriptor.flag(
     id: 'consumeOutsideTap',
     label: 'Consommer le clic extérieur',
-    subtitle:
-        'Empêche le clic fermant le menu d’activer l’élément sous-jacent',
-    editorType: NativePropertyEditorType.bool,
+    subtitle: 'Empêche le clic fermant le menu d’activer l’élément sous-jacent',
     defaultValue: false,
   ),
   toggleIconPropertyDescriptor,
   toggleIconPositionPropertyDescriptor,
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'alignmentOffsetX',
     label: 'Décalage horizontal (X)',
     subtitle: 'Décalage en pixels sur l’axe horizontal (alignmentOffset.dx)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: -200,
     max: 200,
     divisions: 80,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'alignmentOffsetY',
     label: 'Décalage vertical (Y)',
     subtitle: 'Décalage en pixels sur l’axe vertical (alignmentOffset.dy)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: -200,
     max: 200,
@@ -790,83 +775,74 @@ const List<NativePropertyDescriptor> superMenuAnchorPropertyDescriptors = [
 
 /// Catalogue déclaratif des propriétés supplémentaires de [SuperAppBar] en mode `SliverAppBar`.
 const List<NativePropertyDescriptor> superSliverAppBarPropertyDescriptors = [
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'pinned',
     label: 'Épingler la barre (pinned)',
     subtitle: 'Garde la barre visible en haut lors du défilement',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'floating',
     label: 'Barre flottante (floating)',
     subtitle: 'Réapparaît dès que l’utilisateur défile vers le haut',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'snap',
     label: 'Magnétisme (snap)',
     subtitle: 'Anime complètement l’apparition/disparition (requiert floating)',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'stretch',
     label: 'Étirement (stretch)',
     subtitle: 'Autorise l’étirement de la barre lors d’un sur-défilement',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'stretchTriggerOffset',
     label: 'Seuil d’étirement (stretchTriggerOffset)',
     subtitle: 'Distance de sur-défilement en pixels déclenchant l’étirement',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 100.0,
     min: 10,
     max: 300,
     divisions: 58,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'expandedHeight',
     label: 'Hauteur étendue (expandedHeight)',
     subtitle: 'Hauteur maximale de la barre complètement déployée',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 160.0,
     min: 56,
     max: 400,
     divisions: 172,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'collapsedHeight',
     label: 'Hauteur réduite (collapsedHeight)',
     subtitle: 'Hauteur minimale de la barre repliée',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 56.0,
     min: 32,
     max: 200,
     divisions: 84,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'forceElevated',
     label: 'Forcer l’élévation (forceElevated)',
-    subtitle: 'Affiche l’ombre même lorsque le contenu ne défile pas sous la barre',
-    editorType: NativePropertyEditorType.bool,
+    subtitle:
+        'Affiche l’ombre même lorsque le contenu ne défile pas sous la barre',
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'useDefaultSemanticsOrder',
     label: 'Ordre sémantique par défaut (useDefaultSemanticsOrder)',
     subtitle: 'Utilise l’ordre standard d’accessibilité dans la barre sliver',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'actionsPadding',
     label: 'Marge des actions (actionsPadding)',
     subtitle: 'Marge horizontale intérieure autour de la zone Actions',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: 0,
     max: 48,
@@ -876,11 +852,10 @@ const List<NativePropertyDescriptor> superSliverAppBarPropertyDescriptors = [
 
 /// Catalogue déclaratif des propriétés de mise en page et défilement de [ScaffoldPageLayout].
 const List<NativePropertyDescriptor> scaffoldPagePropertyDescriptors = [
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.select(
     id: 'bodyMode',
     label: 'Mode du corps (Body)',
     subtitle: 'Conteneur principal de la zone Corps de la page',
-    editorType: NativePropertyEditorType.select,
     defaultValue: 'standard',
     nullable: false,
     options: [
@@ -898,25 +873,23 @@ const List<NativePropertyDescriptor> scaffoldPagePropertyDescriptors = [
       ),
     ],
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'extendBodyBehindAppBar',
     label: 'Étendre le corps derrière l’AppBar (extendBodyBehindAppBar)',
     subtitle: 'Fait passer la zone Corps sous l’AppBar en haut de la page',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'extendBody',
     label: 'Étendre le corps sous la barre basse (extendBody)',
     subtitle: 'Fait passer la zone Corps derrière la barre de navigation basse',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.select(
     id: 'scrollDirection',
     label: 'Axe de défilement',
-    subtitle: 'Direction du défilement pour SingleChildScrollView / CustomScrollView',
-    editorType: NativePropertyEditorType.select,
+    subtitle:
+        'Direction du défilement pour SingleChildScrollView / CustomScrollView',
     defaultValue: 'vertical',
     options: [
       NativePropertyOption(value: 'vertical', label: 'Vertical (vertical)'),
@@ -926,48 +899,31 @@ const List<NativePropertyDescriptor> scaffoldPagePropertyDescriptors = [
       ),
     ],
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'reverse',
     label: 'Inverser le sens de défilement',
     subtitle: 'Défile en sens inverse sur l’axe principal (reverse)',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: false,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.flag(
     id: 'primary',
     label: 'Défilement principal (primary)',
     subtitle: 'Utilise le PrimaryScrollController de la page',
-    editorType: NativePropertyEditorType.bool,
     defaultValue: true,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.number(
     id: 'scrollPadding',
     label: 'Marge intérieure du défilement',
     subtitle: 'Espacement interne autour du contenu défilant (padding)',
-    editorType: NativePropertyEditorType.number,
     defaultValue: 0.0,
     min: 0,
     max: 64,
     divisions: 64,
   ),
-  NativePropertyDescriptor(
+  NativePropertyDescriptor.select(
     id: 'clipBehavior',
     label: 'Découpage (Clip)',
     subtitle: 'Mode de découpage de la zone de défilement',
-    editorType: NativePropertyEditorType.select,
-    options: [
-      NativePropertyOption(value: 'none', label: 'Aucun (none)'),
-      NativePropertyOption(value: 'hardEdge', label: 'Bord net (hardEdge)'),
-      NativePropertyOption(
-        value: 'antiAlias',
-        label: 'Anticrénelage (antiAlias)',
-      ),
-      NativePropertyOption(
-        value: 'antiAliasWithSaveLayer',
-        label: 'Anticrénelage avec calque (antiAliasWithSaveLayer)',
-      ),
-    ],
+    options: _clipBehaviorOptions,
   ),
 ];
-
-

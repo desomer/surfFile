@@ -4,126 +4,53 @@
 /// et applique les surcharges d'états ([ValueConfigStates]).
 library;
 
-import 'dart:io';
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show listEquals, mapEquals;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
-
 import 'package:material_ui/material_ui.dart';
 
-import '../../models/super_value_config.dart';
-import 'super_component.dart';
 import '../../models/automatic_state.dart';
-import '../../models/json_syntax.dart';
-import '../../services/states/content_hover_scope.dart';
 import '../../models/json_text_binding.dart';
+import '../../models/super_value_config.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_text_controller_binding.dart';
-import '../../services/states/surface_state_binding.dart';
+import '../../services/states/content_hover_scope.dart';
 import '../../super_app.dart';
-import '../editing/dialogs/super_value_json_extract_dialog.dart';
-import '../editing/history/editor_history.dart';
 import '../editing/components/super_value_editor.dart';
-import 'super_text_field.dart';
+import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/slots/editor_slot.dart';
+import 'component_common.dart';
+import 'component_property_bindings.dart';
+import 'super_component.dart';
 import 'super_layout/slot_implementation.dart';
+import 'super_text_field.dart';
 
-Object _parseBoundProperty(SuperValueProperty property, Object? value) {
-  switch (property) {
-    case SuperValueProperty.label:
-    case SuperValueProperty.placeholder:
-    case SuperValueProperty.fontFamily:
-      if (value is! String ||
-          (property == SuperValueProperty.fontFamily && value.trim().isEmpty)) {
-        throw FormatException(
-          'La valeur liée à ${property.name} doit être un texte valide.',
-        );
-      }
-      return value;
-    case SuperValueProperty.color:
-      if (value is int && value >= 0 && value <= 0xFFFFFFFF) {
-        return Color(value);
-      }
-      if (value is String) {
-        final hex = value.trim().replaceFirst(RegExp(r'^#'), '');
-        if (RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(hex)) {
-          return Color(0xFF000000 | int.parse(hex, radix: 16));
-        }
-        if (RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(hex)) {
-          return Color(int.parse(hex, radix: 16));
-        }
-      }
-      throw const FormatException(
-        'La couleur liée doit être un entier ARGB ou un hexadécimal RGB/ARGB.',
-      );
-    case SuperValueProperty.fontSize:
-      final number = value is num
-          ? value.toDouble()
-          : value is String
-          ? double.tryParse(value.trim().replaceAll(',', '.'))
-          : null;
-      if (number == null || !number.isFinite || number <= 0) {
-        throw const FormatException(
-          'La taille de police liée doit être un nombre positif.',
-        );
-      }
-      return number;
-    case SuperValueProperty.fontWeight:
-      final weight = switch (value) {
-        int weightValue =>
-          FontWeight.values
-              .where((weight) => weight.value == weightValue)
-              .firstOrNull,
-        String text => switch (text.trim().toLowerCase()) {
-          'normal' => FontWeight.w400,
-          'bold' => FontWeight.w700,
-          final value when RegExp(r'^(?:w)?[1-9]00$').hasMatch(value) =>
-            FontWeight.values
-                .where(
-                  (weight) =>
-                      weight.value == int.parse(value.replaceFirst('w', '')),
-                )
-                .firstOrNull,
-          _ => null,
-        },
-        _ => null,
-      };
-      if (weight == null) {
-        throw const FormatException(
-          'La graisse liée doit être normal, bold ou une valeur 100–900.',
-        );
-      }
-      return weight;
-    case SuperValueProperty.italic:
-      if (value is bool) return value;
-      if (value is String) {
-        return switch (value.trim().toLowerCase()) {
-          'true' || 'italic' => true,
-          'false' || 'normal' => false,
-          _ => throw const FormatException(
-            'Le style italique lié doit être true/false ou italic/normal.',
-          ),
-        };
-      }
-      throw const FormatException(
-        'Le style italique lié doit être un booléen ou un texte.',
-      );
-    case SuperValueProperty.textAlign:
-      if (value is String) {
-        final align = TextAlign.values
-            .where((candidate) => candidate.name == value.trim().toLowerCase())
-            .firstOrNull;
-        if (align != null) return align;
-      }
-      throw const FormatException(
-        'L’alignement lié doit être start, end, left, right, center ou justify.',
-      );
-  }
-}
+Object _parseBoundProperty(SuperValueProperty property, Object? value) =>
+    switch (property) {
+      SuperValueProperty.label ||
+      SuperValueProperty.placeholder ||
+      SuperValueProperty.fontFamily => BoundPropertyParsers.parseString(
+        property.name,
+        value,
+        nonEmptyTrimmed: property == SuperValueProperty.fontFamily,
+      ),
+      SuperValueProperty.color => BoundPropertyParsers.parseColor(value),
+      SuperValueProperty.fontSize => BoundPropertyParsers.parsePositiveDouble(
+        value,
+        errorMessage: 'La taille de police liée doit être un nombre positif.',
+      ),
+      SuperValueProperty.fontWeight => BoundPropertyParsers.parseFontWeight(
+        value,
+      ),
+      SuperValueProperty.italic => BoundPropertyParsers.parseItalic(value),
+      SuperValueProperty.textAlign => BoundPropertyParsers.parseTextAlign(
+        value,
+      ),
+    };
 
 /// Display or edit a value (text, checkbox or switch); runtime input persists
 /// only with a repository binding.
@@ -167,6 +94,9 @@ class SuperValue extends SuperStatefulComponent<SuperValueConfig> {
 }
 
 class _SuperValueState extends State<SuperValue>
+    with
+        ComponentStateResolutionMixin<SuperValue>,
+        ComponentPropertyBindingsMixin<SuperValue, SuperValueProperty>
     implements JsonExtractableState {
   final _surface = GlobalKey<EditorSlotState>();
   late final TextEditingController _internal;
@@ -182,18 +112,6 @@ class _SuperValueState extends State<SuperValue>
   bool _requestedPlaceholder = false;
   int _bindingGeneration = 0;
   String? _bindingError;
-  Map<SuperValueProperty, Object> _boundPropertyValues = const {};
-  Map<SuperValueProperty, String> _propertyBindingErrors = const {};
-  List<JsonArrayBinding> _propertySelections = const [];
-  Map<SuperValueProperty, JsonTextBinding> _activePropertyBindings = const {};
-  Map<SuperValueProperty, JsonTextBinding>? _requestedPropertyBindings;
-  JsonRepositoryStore? _requestedPropertyStore;
-  String? _requestedPropertyRepositoryId;
-  String? _requestedPropertyNodePath;
-  List<int> _requestedPropertyIndices = const [];
-  bool _requestedPropertyPlaceholder = false;
-  bool _refreshPropertyBindings = true;
-  int _propertyBindingGeneration = 0;
 
   /// A `[?]` resolved by a selection has no selected row: empty and read-only.
   bool _unselected = false;
@@ -202,14 +120,10 @@ class _SuperValueState extends State<SuperValue>
   List<JsonArrayBinding> _selections = const [];
   SuperValueConfig? _editorConfig;
   TextEditingController? _editorText;
-  SurfaceStateBinding? _stateReader;
-  bool _hovered = false;
   List<String>? _activeStates;
-  String? _stateError;
   SuperValueConfig? _effectiveConfig;
   bool _hadStates = false;
   final _focusNode = FocusNode();
-  Set<AutomaticState> _automaticActive = {};
   Future<void>? _pendingBindingFlush;
 
   static String _initialTextFor(SuperValueConfig config) =>
@@ -217,12 +131,13 @@ class _SuperValueState extends State<SuperValue>
       ? (config.initialBool ? 'true' : 'false')
       : (config.obscureText ? '' : config.initialText);
 
-  void _stateChanged() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
-    WidgetsBinding.instance.ensureVisualUpdate();
-  }
+  @override
+  List<String> get availableComponentFontFamilies =>
+      widget.availableFontFamilies;
+
+  @override
+  Object parseBoundProperty(SuperValueProperty property, Object? value) =>
+      _parseBoundProperty(property, value);
 
   SuperValueConfig _resolveStates(
     SuperValueConfig saved,
@@ -230,33 +145,13 @@ class _SuperValueState extends State<SuperValue>
     JsonRepositoryStore? store,
     bool contentHovered,
   ) {
-    final binding = saved.states?.binding;
-    if (binding == null) {
-      _stateReader?.removeListener(_stateChanged);
-      _stateReader?.dispose();
-      _stateReader = null;
-    } else if (_stateReader == null) {
-      _stateReader = SurfaceStateBinding(
-        store: store,
-        binding: binding,
-        scope: scope,
-        placeholder: scope?.placeholder ?? false,
-      )..addListener(_stateChanged);
-    } else {
-      _stateReader!.reconfigure(
-        store: store,
-        binding: binding,
-        scope: scope,
-        placeholder: scope?.placeholder ?? false,
-      );
-    }
-    _stateError = _stateReader?.error;
+    syncSurfaceStateReader(saved.states?.binding, scope, store);
     try {
       final source =
-          saved.states?.resolve(saved, name: _stateReader?.stateName) ??
+          saved.states?.resolve(saved, name: stateReader?.stateName) ??
           saved.copyWith(clearStates: true);
       final input = source.mode == SuperValueMode.input;
-      _automaticActive = {
+      automaticActiveStates = {
         if (contentHovered) AutomaticState.contentHover,
         if (input && _focusNode.hasFocus) AutomaticState.focused,
         if (input && !source.enabled) AutomaticState.disabled,
@@ -265,18 +160,18 @@ class _SuperValueState extends State<SuperValue>
       final config =
           saved.states?.resolve(
             saved,
-            name: _stateReader?.stateName,
-            isHovered: _hovered,
+            name: stateReader?.stateName,
+            isHovered: isComponentHovered,
             isSelected: scope?.selected ?? false,
-            activeStates: _automaticActive,
+            activeStates: automaticActiveStates,
           ) ??
           saved;
       config.validate();
       return config;
     } on FormatException catch (error) {
-      _stateError = error.message;
+      stateError = error.message;
     } on ArgumentError {
-      _stateError = 'Combinaison d’états de la valeur invalide.';
+      stateError = 'Combinaison d’états de la valeur invalide.';
     }
     return saved.copyWith(clearStates: true);
   }
@@ -294,7 +189,7 @@ class _SuperValueState extends State<SuperValue>
       text: _controlledText ?? _initialTextFor(widget.config),
     );
     _local = ValueNotifier(widget.config);
-    _focusNode.addListener(_stateChanged);
+    _focusNode.addListener(onComponentStateChanged);
   }
 
   @override
@@ -540,179 +435,9 @@ class _SuperValueState extends State<SuperValue>
     if (mounted) setState(() {});
   }
 
-  void _listenPropertySelections(List<JsonArrayBinding> selections) {
-    if (listEquals(_propertySelections, selections)) return;
-    for (final selection in _propertySelections) {
-      selection.removeListener(_propertySelectionChanged);
-    }
-    _propertySelections = selections;
-    for (final selection in selections) {
-      selection.addListener(_propertySelectionChanged);
-    }
-  }
-
-  void _propertySelectionChanged() {
-    _refreshPropertyBindings = true;
-    if (mounted) setState(() {});
-  }
-
-  void _propertyStoreChanged() {
-    final store = _requestedPropertyStore;
-    if (!mounted || store == null || _activePropertyBindings.isEmpty) return;
-    final generation = ++_propertyBindingGeneration;
-    unawaited(
-      _loadPropertyBindings(_activePropertyBindings, store, generation),
-    );
-  }
-
-  void _observePropertyBindings(
-    SuperValueConfig config,
-    JsonListScope? scope,
-    JsonRepositoryStore? store,
-  ) {
-    final bindings = config.propertyBindings;
-    final sameBindingContext =
-        mapEquals(_requestedPropertyBindings, bindings) &&
-        identical(_requestedPropertyStore, store) &&
-        _requestedPropertyRepositoryId == scope?.repositoryId &&
-        _requestedPropertyNodePath == scope?.nodePath &&
-        listEquals(_requestedPropertyIndices, scope?.indices ?? const []) &&
-        _requestedPropertyPlaceholder == (scope?.placeholder ?? false);
-    if (!_refreshPropertyBindings && sameBindingContext) {
-      return;
-    }
-    _refreshPropertyBindings = false;
-    _requestedPropertyBindings = Map.of(bindings);
-    if (!identical(_requestedPropertyStore, store)) {
-      _requestedPropertyStore?.unregisterBindings(this);
-      _requestedPropertyStore?.removeListener(_propertyStoreChanged);
-      store?.addListener(_propertyStoreChanged);
-      _requestedPropertyStore = store;
-    }
-    _requestedPropertyRepositoryId = scope?.repositoryId;
-    _requestedPropertyNodePath = scope?.nodePath;
-    _requestedPropertyIndices = List.of(scope?.indices ?? const []);
-    _requestedPropertyPlaceholder = scope?.placeholder ?? false;
-    final generation = ++_propertyBindingGeneration;
-    _propertyBindingErrors = const {};
-    if (bindings.isEmpty || (scope?.placeholder ?? false)) {
-      store?.unregisterBindings(this);
-      _boundPropertyValues = const {};
-      _activePropertyBindings = const {};
-      _listenPropertySelections(const []);
-      return;
-    }
-
-    store?.registerBindings(this, [
-      for (final b in bindings.values) b.repositoryId ?? scope?.repositoryId,
-    ]);
-
-    final selections = <JsonArrayBinding>[];
-    final resolved = <SuperValueProperty, JsonTextBinding>{};
-    final errors = <SuperValueProperty, String>{};
-    for (final entry in bindings.entries) {
-      try {
-        final result = JsonListScope.resolveSelected(entry.value, scope, store);
-        selections.addAll(result.arrays);
-        if (result.binding != null) resolved[entry.key] = result.binding!;
-      } on FormatException catch (error) {
-        errors[entry.key] = error.message;
-      }
-    }
-    _listenPropertySelections(selections.toSet().toList());
-    _activePropertyBindings = Map.of(resolved);
-    _propertyBindingErrors = errors;
-    if (resolved.isEmpty) {
-      _boundPropertyValues = const {};
-      return;
-    }
-    if (store == null) {
-      _boundPropertyValues = const {};
-      _propertyBindingErrors = {
-        ..._propertyBindingErrors,
-        for (final property in resolved.keys)
-          property: 'Service de repositories indisponible.',
-      };
-      return;
-    }
-    final syncedValues = <SuperValueProperty, Object>{
-      for (final entry in _boundPropertyValues.entries)
-        if (resolved.containsKey(entry.key)) entry.key: entry.value,
-    };
-    for (final entry in resolved.entries) {
-      final cached = store.peekAttribute(entry.value);
-      if (cached == null) continue;
-      try {
-        final value = _parseBoundProperty(entry.key, cached.value);
-        if (entry.key == SuperValueProperty.fontFamily &&
-            widget.availableFontFamilies.isNotEmpty &&
-            !widget.availableFontFamilies.contains(value)) {
-          continue;
-        }
-        syncedValues[entry.key] = value;
-      } on FormatException {
-        // Error will be reported by _loadPropertyBindings.
-      }
-    }
-    _boundPropertyValues = syncedValues;
-    unawaited(_loadPropertyBindings(resolved, store, generation));
-  }
-
-  Future<void> _loadPropertyBindings(
-    Map<SuperValueProperty, JsonTextBinding> bindings,
-    JsonRepositoryStore store,
-    int generation,
-  ) async {
-    final values = <SuperValueProperty, Object>{};
-    final errors = Map<SuperValueProperty, String>.of(_propertyBindingErrors);
-    final entries = bindings.entries.toList();
-    final outcomes = await Future.wait([
-      for (final entry in entries)
-        () async {
-          try {
-            final result = await store.readAttribute(entry.value);
-            final value = _parseBoundProperty(entry.key, result.value);
-            if (entry.key == SuperValueProperty.fontFamily &&
-                widget.availableFontFamilies.isNotEmpty &&
-                !widget.availableFontFamilies.contains(value)) {
-              throw FormatException(
-                'La police liée « $value » n’est pas disponible.',
-              );
-            }
-            return (property: entry.key, value: value, error: null);
-          } on FormatException catch (error) {
-            return (property: entry.key, value: null, error: error.message);
-          } on FileSystemException {
-            return (
-              property: entry.key,
-              value: null,
-              error: 'Impossible de lire le repository lié.',
-            );
-          }
-        }(),
-    ]);
-    if (!mounted || generation != _propertyBindingGeneration) return;
-    for (final outcome in outcomes) {
-      if (outcome.error != null) {
-        errors[outcome.property] = outcome.error!;
-      } else if (outcome.value != null) {
-        values[outcome.property] = outcome.value!;
-        errors.remove(outcome.property);
-      }
-    }
-    if (mapEquals(_boundPropertyValues, values) &&
-        mapEquals(_propertyBindingErrors, errors)) {
-      return;
-    }
-    setState(() {
-      _boundPropertyValues = values;
-      _propertyBindingErrors = errors;
-    });
-  }
-
   SuperValueConfig _withBoundProperties(SuperValueConfig config) {
     var result = config;
-    for (final entry in _boundPropertyValues.entries) {
+    for (final entry in boundPropertyValues.entries) {
       result = switch (entry.key) {
         SuperValueProperty.label => result.copyWith(
           label: entry.value as String,
@@ -745,17 +470,12 @@ class _SuperValueState extends State<SuperValue>
 
   @override
   void dispose() {
-    _focusNode.removeListener(_stateChanged);
+    _focusNode.removeListener(onComponentStateChanged);
     _focusNode.dispose();
-    _stateReader?.removeListener(_stateChanged);
-    _stateReader?.dispose();
+    disposeComponentStateReader();
     _bindingGeneration++;
     _listenSelections(const []);
-    _propertyBindingGeneration++;
-    _listenPropertySelections(const []);
-    _requestedPropertyStore?.unregisterBindings(this);
-    _requestedPropertyStore?.removeListener(_propertyStoreChanged);
-    _requestedPropertyStore = null;
+    disposePropertyBindings();
     _binding?.removeListener(_bindingChanged);
     _binding?.dispose();
     _resetGeneration++;
@@ -775,15 +495,8 @@ class _SuperValueState extends State<SuperValue>
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     final canConfigure = StyleEditScope.controllerOf(context)?.value ?? true;
 
-    return MouseRegion(
-      opaque: false,
-      onEnter: (_) {
-        if (!_hovered) setState(() => _hovered = true);
-      },
-      onExit: (_) {
-        if (_hovered) setState(() => _hovered = false);
-      },
-      child: ValueListenableBuilder<SuperValueConfig>(
+    return wrapWithComponentHoverRegion(
+      ValueListenableBuilder<SuperValueConfig>(
         valueListenable: configuration,
         builder: (context, savedConfig, _) {
           final effective = _resolveStates(
@@ -798,12 +511,12 @@ class _SuperValueState extends State<SuperValue>
               : [
                   for (final key in states.order)
                     if (key == ValueConfigStates.hoverKey
-                        ? _hovered && states.hover != null
+                        ? isComponentHovered && states.hover != null
                         : key == ValueConfigStates.selectedKey
                         ? listScope?.selected == true && states.selected != null
                         : AutomaticState.fromKey(key) != null
-                        ? _automaticActive.any((value) => value.key == key)
-                        : key == _stateReader?.stateName)
+                        ? automaticActiveStates.any((value) => value.key == key)
+                        : key == stateReader?.stateName)
                       key,
                 ];
           final transition =
@@ -832,24 +545,26 @@ class _SuperValueState extends State<SuperValue>
           } else if (states == null) {
             _observeConfig(effective);
           }
-          _observePropertyBindings(effective, listScope, repositories);
+          observePropertyBindings(
+            effective.propertyBindings,
+            listScope,
+            repositories,
+          );
           final config = _editorConfig ?? _withBoundProperties(effective);
           final controller = _editorText ?? _text;
-          final missingFont =
-              config.fontFamily != null &&
-              !widget.availableFontFamilies.contains(config.fontFamily);
-          final base = DefaultTextStyle.of(context).style;
-          final style = base.copyWith(
-            fontFamily: missingFont ? null : config.fontFamily,
+          final missingFont = isComponentFontMissing(
+            config.fontFamily,
+            widget.availableFontFamilies,
+          );
+          final style = buildComponentTextStyle(
+            context,
+            fontFamily: config.fontFamily,
+            missingFont: missingFont,
             fontSize: config.fontSize,
             fontWeight: config.fontWeight,
-            fontStyle: config.italic == null
-                ? null
-                : config.italic!
-                ? FontStyle.italic
-                : FontStyle.normal,
+            italic: config.italic,
             color: config.color,
-            height: config.lineHeight,
+            lineHeight: config.lineHeight,
             letterSpacing: config.letterSpacing,
           );
           return EditorSlot(
@@ -871,25 +586,36 @@ class _SuperValueState extends State<SuperValue>
             ),
             onEdit: () async {
               if (_editorText != null) return;
-              final initial = configuration.value;
               final originalText = _text.text;
               _editorText = TextEditingController.fromValue(_text.value);
-              final history = EditorHistoryScope.controllerOf(context);
-              history?.beginTransaction();
-              SuperValueConfig? result;
-              try {
-                result = await showSuperValueEditor(
+              await runComponentEditorTransaction<SuperValueConfig>(
+                context: context,
+                configuration: configuration,
+                onConfigChanged: widget.onConfigChanged,
+                onFinally: () {
+                  final previewText = _editorText;
+                  if (mounted) {
+                    setState(() {
+                      _editorConfig = null;
+                      _editorText = null;
+                    });
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => previewText?.dispose(),
+                    );
+                  }
+                },
+                showEditor: (initial) => showSuperValueEditor(
                   context: context,
                   config: initial,
                   availableFontFamilies: widget.availableFontFamilies,
                   allowBinding:
                       widget.controller == null && _controlledText == null,
-                  activeState: _stateReader?.stateName,
-                  stateError: _stateError,
-                  isHovered: _hovered,
+                  activeState: stateReader?.stateName,
+                  stateError: stateError,
+                  isHovered: isComponentHovered,
                   isSelected: listScope?.selected ?? false,
                   allowContentHover: ContentHoverScope.maybeOf(context) != null,
-                  activeAutomatic: _automaticActive,
+                  activeAutomatic: automaticActiveStates,
                   onPreviewChanged: (draft) {
                     if (!mounted || _editorText == null) return;
                     final text =
@@ -907,30 +633,8 @@ class _SuperValueState extends State<SuperValue>
                     if (_editorText!.text != text) _setText(_editorText!, text);
                     setState(() => _editorConfig = draft);
                   },
-                );
-                if (result != null &&
-                    context.mounted &&
-                    result != configuration.value) {
-                  configuration.value = result;
-                  widget.onConfigChanged?.call(result);
-                }
-              } finally {
-                final previewText = _editorText;
-                if (mounted) {
-                  setState(() {
-                    _editorConfig = null;
-                    _editorText = null;
-                  });
-                  WidgetsBinding.instance.addPostFrameCallback(
-                    (_) => previewText?.dispose(),
-                  );
-                }
-                if (result != null) {
-                  history?.commitTransaction();
-                } else {
-                  history?.cancelTransaction();
-                }
-              }
+                ),
+              );
             },
             child: ValueListenableBuilder<TextEditingValue>(
               valueListenable: controller,
@@ -1133,7 +837,7 @@ class _SuperValueState extends State<SuperValue>
                               color: Theme.of(context).colorScheme.error,
                             ),
                           ),
-                        for (final entry in _propertyBindingErrors.entries)
+                        for (final entry in propertyBindingErrors.entries)
                           Text(
                             'Liaison ${entry.key.name} : ${entry.value}',
                             key: ValueKey(
@@ -1174,9 +878,9 @@ class _SuperValueState extends State<SuperValue>
                             },
                             child: const Text('Recharger la liaison'),
                           ),
-                        if (_stateError != null)
+                        if (stateError != null)
                           Text(
-                            _stateError!,
+                            stateError!,
                             key: ValueKey(
                               'super-value-state-error-${widget.id}',
                             ),
@@ -1215,24 +919,13 @@ class _SuperValueState extends State<SuperValue>
     return _withBoundProperties(_effectiveConfig ?? saved);
   }
 
-  String get extractedKey {
-    final surface = _surface.currentState;
-    if (surface != null && surface.mounted && surface.hasCustomLabel) {
-      final renamed = surface.titleLabel.trim();
-      if (renamed.isNotEmpty) return renamed;
-    }
-    final config = _currentEffectiveConfig;
-    final configLabel = config.label.trim();
-    if (configLabel.isNotEmpty) return configLabel;
-    final instanceLabel = surface?.componentLabel?.label.trim();
-    if (instanceLabel != null &&
-        instanceLabel.isNotEmpty &&
-        instanceLabel != 'Value' &&
-        instanceLabel != 'Valeur') {
-      return instanceLabel;
-    }
-    return widget.id;
-  }
+  String get extractedKey => resolveExtractableComponentKey(
+    surface: _surface.currentState,
+    fallbackId: widget.id,
+    configLabel: _currentEffectiveConfig.label,
+    ignoredLabels: const {'Value', 'Valeur'},
+    preferConfigLabelFirst: true,
+  );
 
   Object get extractedValue {
     final config = _currentEffectiveConfig;
@@ -1284,43 +977,18 @@ class _SuperValueState extends State<SuperValue>
           label: 'Placeholder',
           value: config.placeholder,
         ),
-      if (config.fontFamily != null && config.fontFamily!.trim().isNotEmpty)
-        ExtractablePropertyOption(
-          id: SuperValueProperty.fontFamily.name,
-          label: 'Police',
-          value: config.fontFamily!,
+      ...buildTypographyExtractableOptions(
+        fontFamily: config.fontFamily,
+        color: config.color,
+        fontSize: config.fontSize,
+        fontWeight: config.fontWeight,
+        italic: config.italic,
+        textAlign: config.textAlign,
+        defaultTextAlign: const SuperValueConfig().textAlign,
+        hasTextAlignBinding: config.propertyBindings.containsKey(
+          SuperValueProperty.textAlign,
         ),
-      if (config.color != null)
-        ExtractablePropertyOption(
-          id: SuperValueProperty.color.name,
-          label: 'Couleur',
-          value: JsonColor.toHex(config.color!),
-        ),
-      if (config.fontSize != null)
-        ExtractablePropertyOption(
-          id: SuperValueProperty.fontSize.name,
-          label: 'Taille de police',
-          value: config.fontSize!,
-        ),
-      if (config.fontWeight != null)
-        ExtractablePropertyOption(
-          id: SuperValueProperty.fontWeight.name,
-          label: 'Graisse',
-          value: config.fontWeight!.value,
-        ),
-      if (config.italic != null)
-        ExtractablePropertyOption(
-          id: SuperValueProperty.italic.name,
-          label: 'Italique',
-          value: config.italic!,
-        ),
-      if (config.textAlign != const SuperValueConfig().textAlign ||
-          config.propertyBindings.containsKey(SuperValueProperty.textAlign))
-        ExtractablePropertyOption(
-          id: SuperValueProperty.textAlign.name,
-          label: 'Alignement',
-          value: config.textAlign.name,
-        ),
+      ),
     ];
 
     return ExtractableComponentTarget(

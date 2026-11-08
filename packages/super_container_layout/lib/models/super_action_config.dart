@@ -6,7 +6,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/foundation.dart' show mapEquals, setEquals;
+import 'package:flutter/foundation.dart' show mapEquals;
 
 import '../theme/container_style.dart';
 import 'automatic_state.dart';
@@ -64,10 +64,8 @@ enum SuperActionProperty {
 
 /// Catalogue d'icônes Material sérialisables par nom pour [SuperActionConfig].
 abstract final class SuperActionIcons {
-  static final Map<String, ({IconData icon, String label})> catalog = {
-    for (final entry in MaterialIconCatalog.entries)
-      entry.id: (icon: entry.icon, label: entry.label),
-  };
+  static Map<String, ({IconData icon, String label})> get catalog =>
+      MaterialIconCatalog.catalogMap;
 
   static bool isKnown(String name) => MaterialIconCatalog.isKnown(name);
 
@@ -156,19 +154,18 @@ class SuperActionConfig extends ComponentConfig {
       binding.validate();
     }
     if ((icon.trim().isNotEmpty && !SuperActionIcons.isKnown(icon)) ||
-        !iconSpacing.isFinite ||
-        iconSpacing < 0 ||
-        (iconSize != null && (!iconSize!.isFinite || iconSize! <= 0)) ||
-        (fontFamily != null && fontFamily!.trim().isEmpty) ||
-        (fontSize != null && (!fontSize!.isFinite || fontSize! <= 0)) ||
-        (letterSpacing != null && !letterSpacing!.isFinite) ||
-        (radius != null && (!radius!.isFinite || radius! < 0)) ||
-        (borderWidth != null && (!borderWidth!.isFinite || borderWidth! < 0)) ||
-        (elevation != null && (!elevation!.isFinite || elevation! < 0)) ||
-        (horizontalPadding != null &&
-            (!horizontalPadding!.isFinite || horizontalPadding! < 0)) ||
-        (verticalPadding != null &&
-            (!verticalPadding!.isFinite || verticalPadding! < 0)) ||
+        JsonReader.hasInvalidTypographyOrBox(
+          fontFamily: fontFamily,
+          fontSize: fontSize,
+          letterSpacing: letterSpacing,
+          iconSize: iconSize,
+          iconSpacing: iconSpacing,
+          radius: radius,
+          borderWidth: borderWidth,
+          elevation: elevation,
+          horizontalPadding: horizontalPadding,
+          verticalPadding: verticalPadding,
+        ) ||
         style.states != null) {
       throw ArgumentError('Invalid Action configuration.');
     }
@@ -413,19 +410,20 @@ class SuperActionConfig extends ComponentConfig {
       TextAlign.values,
       field('textAlign', fallback.textAlign.name),
     );
-    final hasWeight = value.containsKey('fontWeight');
-    final weight = value['fontWeight'];
-    final fontWeight = hasWeight
-        ? JsonReader.parseFontWeight(weight)
-        : fallback.fontWeight;
-    final hasFamily = value.containsKey('fontFamily');
-    final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
+    final fontWeight = JsonReader.readFontWeight(
+      value,
+      fallback.fontWeight,
+      errorMessage: 'Invalid Action style.',
+    );
+    final family = JsonReader.readFontFamily(
+      value,
+      fallback.fontFamily,
+      errorMessage: 'Invalid Action style.',
+    );
     if (kind == null ||
         (rawVariant != null && variant == null) ||
         iconPosition == null ||
-        align == null ||
-        (hasWeight && weight != null && fontWeight == null) ||
-        (family != null && family is! String)) {
+        align == null) {
       throw const FormatException('Invalid Action style.');
     }
 
@@ -436,25 +434,18 @@ class SuperActionConfig extends ComponentConfig {
       context: 'Action',
     );
 
-    final resolvedLabel = value.containsKey('label')
-        ? field('label', fallback.label)
-        : value.containsKey('text')
-        ? field('text', fallback.label)
-        : fallback.label;
-
+    final resolvedLabel = JsonReader.readLabelOrText(
+      value,
+      fallback.label,
+      context: 'Action',
+    );
     final resolvedIconSpacing =
         number('iconSpacing', fallback.iconSpacing) ?? fallback.iconSpacing;
-
-    final ContainerStyle resolvedStyle;
-    if (!value.containsKey('style') || value['style'] == null) {
-      resolvedStyle = value.containsKey('style')
-          ? const ContainerStyle()
-          : fallback.style;
-    } else if (value['style'] is Map) {
-      resolvedStyle = fallback.style.patchFromJson(value['style'] as Map);
-    } else {
-      throw const FormatException('Invalid Action "style".');
-    }
+    final resolvedStyle = JsonReader.readPatchedStyle(
+      value,
+      fallback.style,
+      context: 'Action',
+    );
 
     final rawIcon = !value.containsKey('icon')
         ? fallback.icon
@@ -473,7 +464,7 @@ class SuperActionConfig extends ComponentConfig {
       iconSize: number('iconSize', fallback.iconSize),
       iconSpacing: resolvedIconSpacing,
       enabled: field('enabled', fallback.enabled),
-      fontFamily: family as String?,
+      fontFamily: family,
       fontSize: number('fontSize', fallback.fontSize),
       fontWeight: fontWeight,
       italic: field<bool?>('italic', fallback.italic),
@@ -565,17 +556,10 @@ class SuperActionConfig extends ComponentConfig {
     textAlign,
     letterSpacing,
     style,
-    Object.hashAllUnordered(
-      propertyBindings.entries.map(
-        (entry) => Object.hash(entry.key, entry.value),
-      ),
-    ),
+    JsonReader.hashPropertyBindings(propertyBindings),
     states,
   ]);
 }
-
-String _formatActionNumber(double value) =>
-    value == value.roundToDouble() ? '${value.round()}' : '$value';
 
 /// Résumé des propriétés d'un [SuperActionConfig] pour l'info-bulle du menu contextuel.
 String formatSuperActionTooltip({
@@ -608,11 +592,11 @@ String formatSuperActionTooltip({
   ];
   final styleParts = <String>[
     'Police : ${config.fontFamily ?? 'Auto'}',
-    'Taille : ${config.fontSize != null ? '${_formatActionNumber(config.fontSize!)} px' : 'Auto'}',
+    'Taille : ${config.fontSize != null ? '${JsonReader.formatNumber(config.fontSize!)} px' : 'Auto'}',
     if (config.radius != null)
-      'Rayon : ${_formatActionNumber(config.radius!)} px',
+      'Rayon : ${JsonReader.formatNumber(config.radius!)} px',
     if (config.elevation != null)
-      'Élévation : ${_formatActionNumber(config.elevation!)}',
+      'Élévation : ${JsonReader.formatNumber(config.elevation!)}',
     if (config.color != null) 'Couleur : ${JsonColor.toHex(config.color!)}',
     if (config.iconColor != null)
       'Couleur icône : ${JsonColor.toHex(config.iconColor!)}',

@@ -5,7 +5,7 @@
 /// et les surcharges d'états standards et personnalisés ([IndicatorConfigStates]).
 library;
 
-import 'package:flutter/foundation.dart' show mapEquals, setEquals;
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:material_ui/material_ui.dart';
 
 import '../theme/container_style.dart';
@@ -43,10 +43,8 @@ enum SuperIndicatorProperty {
 
 /// Catalogue d'icônes Material sérialisables par nom pour [SuperIndicatorConfig].
 abstract final class SuperIndicatorIcons {
-  static final Map<String, ({IconData icon, String label})> catalog = {
-    for (final entry in MaterialIconCatalog.entries)
-      entry.id: (icon: entry.icon, label: entry.label),
-  };
+  static Map<String, ({IconData icon, String label})> get catalog =>
+      MaterialIconCatalog.catalogMap;
 
   static bool isKnown(String name) => MaterialIconCatalog.isKnown(name);
 
@@ -116,17 +114,12 @@ class SuperIndicatorConfig extends ComponentConfig {
   String get componentType => 'indicator';
 
   @override
-  Iterable<JsonTextBinding> get referencedBindings => [
-    ?states?.binding,
-    ...propertyBindings.values,
-    for (final cfg in states?.named.values ?? const <SuperIndicatorConfig>[])
-      ...cfg.propertyBindings.values,
-    if (states?.hover case final h?) ...h.config.propertyBindings.values,
-    if (states?.selected case final s?) ...s.config.propertyBindings.values,
-    for (final auto
-        in states?.automatic.values ?? const <IndicatorConfigOverride>[])
-      ...auto.config.propertyBindings.values,
-  ];
+  Iterable<JsonTextBinding> get referencedBindings =>
+      JsonReader.collectReferencedBindings(
+        propertyBindings,
+        states,
+        (c) => c.propertyBindings,
+      );
 
   @override
   void validate() {
@@ -139,19 +132,18 @@ class SuperIndicatorConfig extends ComponentConfig {
       binding.validate();
     }
     if ((icon.trim().isNotEmpty && !SuperIndicatorIcons.isKnown(icon)) ||
-        !iconSpacing.isFinite ||
-        iconSpacing < 0 ||
-        (iconSize != null && (!iconSize!.isFinite || iconSize! <= 0)) ||
-        (fontFamily != null && fontFamily!.trim().isEmpty) ||
-        (fontSize != null && (!fontSize!.isFinite || fontSize! <= 0)) ||
-        (letterSpacing != null && !letterSpacing!.isFinite) ||
-        (radius != null && (!radius!.isFinite || radius! < 0)) ||
-        (borderWidth != null && (!borderWidth!.isFinite || borderWidth! < 0)) ||
-        (elevation != null && (!elevation!.isFinite || elevation! < 0)) ||
-        (horizontalPadding != null &&
-            (!horizontalPadding!.isFinite || horizontalPadding! < 0)) ||
-        (verticalPadding != null &&
-            (!verticalPadding!.isFinite || verticalPadding! < 0)) ||
+        JsonReader.hasInvalidTypographyOrBox(
+          fontFamily: fontFamily,
+          fontSize: fontSize,
+          letterSpacing: letterSpacing,
+          iconSize: iconSize,
+          iconSpacing: iconSpacing,
+          radius: radius,
+          borderWidth: borderWidth,
+          elevation: elevation,
+          horizontalPadding: horizontalPadding,
+          verticalPadding: verticalPadding,
+        ) ||
         style.states != null) {
       throw ArgumentError('Invalid Indicator configuration.');
     }
@@ -376,17 +368,17 @@ class SuperIndicatorConfig extends ComponentConfig {
       TextAlign.values,
       field('textAlign', fallback.textAlign.name),
     );
-    final hasWeight = value.containsKey('fontWeight');
-    final weight = value['fontWeight'];
-    final fontWeight = hasWeight
-        ? JsonReader.parseFontWeight(weight)
-        : fallback.fontWeight;
-    final hasFamily = value.containsKey('fontFamily');
-    final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
-    if (iconPosition == null ||
-        align == null ||
-        (hasWeight && weight != null && fontWeight == null) ||
-        (family != null && family is! String)) {
+    final fontWeight = JsonReader.readFontWeight(
+      value,
+      fallback.fontWeight,
+      errorMessage: 'Invalid Indicator style.',
+    );
+    final family = JsonReader.readFontFamily(
+      value,
+      fallback.fontFamily,
+      errorMessage: 'Invalid Indicator style.',
+    );
+    if (iconPosition == null || align == null) {
       throw const FormatException('Invalid Indicator style.');
     }
 
@@ -397,25 +389,18 @@ class SuperIndicatorConfig extends ComponentConfig {
       context: 'Indicator',
     );
 
-    final resolvedLabel = value.containsKey('label')
-        ? field('label', fallback.label)
-        : value.containsKey('text')
-        ? field('text', fallback.label)
-        : fallback.label;
-
+    final resolvedLabel = JsonReader.readLabelOrText(
+      value,
+      fallback.label,
+      context: 'Indicator',
+    );
     final resolvedIconSpacing =
         number('iconSpacing', fallback.iconSpacing) ?? fallback.iconSpacing;
-
-    final ContainerStyle resolvedStyle;
-    if (!value.containsKey('style') || value['style'] == null) {
-      resolvedStyle = value.containsKey('style')
-          ? const ContainerStyle()
-          : fallback.style;
-    } else if (value['style'] is Map) {
-      resolvedStyle = fallback.style.patchFromJson(value['style'] as Map);
-    } else {
-      throw const FormatException('Invalid Indicator "style".');
-    }
+    final resolvedStyle = JsonReader.readPatchedStyle(
+      value,
+      fallback.style,
+      context: 'Indicator',
+    );
 
     final rawIcon = !value.containsKey('icon')
         ? fallback.icon
@@ -432,7 +417,7 @@ class SuperIndicatorConfig extends ComponentConfig {
       label: resolvedLabel,
       tooltip: field('tooltip', fallback.tooltip),
       enabled: field('enabled', fallback.enabled),
-      fontFamily: family as String?,
+      fontFamily: family,
       fontSize: number('fontSize', fallback.fontSize),
       fontWeight: fontWeight,
       italic: field<bool?>('italic', fallback.italic),
@@ -520,17 +505,10 @@ class SuperIndicatorConfig extends ComponentConfig {
     textAlign,
     letterSpacing,
     style,
-    Object.hashAllUnordered(
-      propertyBindings.entries.map(
-        (entry) => Object.hash(entry.key, entry.value),
-      ),
-    ),
+    JsonReader.hashPropertyBindings(propertyBindings),
     states,
   ]);
 }
-
-String _formatIndicatorNumber(double value) =>
-    value == value.roundToDouble() ? '${value.round()}' : '$value';
 
 /// Résumé des propriétés d'un [SuperIndicatorConfig] pour l'info-bulle du menu contextuel.
 String formatSuperIndicatorTooltip({
@@ -544,15 +522,15 @@ String formatSuperIndicatorTooltip({
       'Infobulle : ${config.tooltip.trim()}',
   ];
   final styleParts = <String>[
-    'Taille icône : ${config.iconSize != null ? '${_formatIndicatorNumber(config.iconSize!)} px' : 'Auto'}',
+    'Taille icône : ${config.iconSize != null ? '${JsonReader.formatNumber(config.iconSize!)} px' : 'Auto'}',
     if (config.label.isNotEmpty) ...[
       'Police : ${config.fontFamily ?? 'Auto'}',
-      'Taille texte : ${config.fontSize != null ? '${_formatIndicatorNumber(config.fontSize!)} px' : 'Auto'}',
+      'Taille texte : ${config.fontSize != null ? '${JsonReader.formatNumber(config.fontSize!)} px' : 'Auto'}',
     ],
     if (config.radius != null)
-      'Rayon : ${_formatIndicatorNumber(config.radius!)} px',
+      'Rayon : ${JsonReader.formatNumber(config.radius!)} px',
     if (config.elevation != null)
-      'Élévation : ${_formatIndicatorNumber(config.elevation!)}',
+      'Élévation : ${JsonReader.formatNumber(config.elevation!)}',
     if (config.color != null) 'Couleur : ${JsonColor.toHex(config.color!)}',
     if (config.iconColor != null)
       'Couleur icône : ${JsonColor.toHex(config.iconColor!)}',

@@ -28,7 +28,6 @@ library;
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
 import 'super_component.dart';
@@ -41,58 +40,19 @@ import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import 'component_common.dart';
+import 'json_collection_common.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../super_app.dart';
 import '../../theme/container_style.dart';
 import '../../theme/style_extras.dart';
 import '../editing/components/native_component_editor.dart';
 import '../editing/components/super_table_editor.dart';
-import '../editing/history/editor_history.dart';
 import '../editing/slots/editable_surface.dart';
 import '../surfaces/super_container.dart';
 import 'internal_widget/array/cw_table_layout.dart';
 import 'internal_widget/array/cw_table_row.dart';
 import 'super_layout/iterable_content.dart';
 import 'super_layout/slot_implementation.dart';
-
-@immutable
-class _TableSource {
-  const _TableSource({
-    this.binding,
-    this.error,
-    this.unselected = false,
-    this.parents = const [],
-    this.rowBase = const [],
-    this.arrays = const [],
-  });
-
-  final JsonTextBinding? binding;
-  final String? error;
-  final bool unselected;
-  final List<int> parents;
-  final List<int> rowBase;
-  final List<JsonArrayBinding> arrays;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _TableSource &&
-      other.binding == binding &&
-      other.error == error &&
-      other.unselected == unselected &&
-      listEquals(other.parents, parents) &&
-      listEquals(other.rowBase, rowBase) &&
-      listEquals(other.arrays, arrays);
-
-  @override
-  int get hashCode => Object.hash(
-    binding,
-    error,
-    unselected,
-    Object.hashAll(parents),
-    Object.hashAll(rowBase),
-    Object.hashAll(arrays),
-  );
-}
 
 /// Composant `SuperTable` avec `IterableContent` de ligne et liaison repository.
 class SuperTable extends SuperStatefulComponent<SuperTableConfig?> {
@@ -188,7 +148,7 @@ class _SuperTableState extends State<SuperTable> {
   );
 
   JsonRepositoryStore? _store;
-  _TableSource? _source;
+  ResolvedJsonArraySource? _source;
   String? _configPath;
   JsonArrayBinding? _selection;
   List<JsonArrayBinding> _listened = const [];
@@ -248,13 +208,7 @@ class _SuperTableState extends State<SuperTable> {
   }
 
   void _listen(List<JsonArrayBinding> arrays) {
-    for (final array in _listened) {
-      array.removeListener(_selectionChanged);
-    }
-    _listened = arrays;
-    for (final array in arrays) {
-      array.addListener(_selectionChanged);
-    }
+    _listened = updateWatchedArrayBindings(_listened, arrays, _selectionChanged);
   }
 
   void _selectionChanged() {
@@ -282,30 +236,6 @@ class _SuperTableState extends State<SuperTable> {
     widget.onRowSelected?.call(dataIndex);
   }
 
-  _TableSource _resolve(
-    SuperTableConfig config,
-    JsonListScope? scope,
-    JsonRepositoryStore? store,
-  ) {
-    final binding = config.binding;
-    if (binding == null) return const _TableSource();
-    try {
-      final resolved = JsonListScope.resolveSelected(binding, scope, store);
-      final scoped = scope?.indices ?? const <int>[];
-      return _TableSource(
-        binding: resolved.binding,
-        unselected: resolved.binding == null,
-        parents: resolved.indices,
-        rowBase: resolved.indices.length > scoped.length
-            ? resolved.indices
-            : scoped,
-        arrays: resolved.arrays,
-      );
-    } on FormatException catch (error) {
-      return _TableSource(error: error.message);
-    }
-  }
-
   void _observe(
     SuperTableConfig config,
     JsonListScope? scope,
@@ -313,7 +243,7 @@ class _SuperTableState extends State<SuperTable> {
   ) {
     _configPath = config.binding?.path;
     if (scope?.placeholder ?? false) return;
-    final source = _resolve(config, scope, store);
+    final source = resolveJsonArraySource(config.binding, scope, store);
     if (_source == source && identical(_store, store)) return;
     if (_source != source) {
       _items = null;
@@ -425,24 +355,8 @@ class _SuperTableState extends State<SuperTable> {
     final items = _items;
     if (items == null || index >= items.length) return;
     final expected = items[index];
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Supprimer l’élément ?'),
-        content: Text('L’élément ${index + 1} sera retiré du repository.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Supprimer'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
+    final confirmed = await confirmRemoveCollectionItemDialog(context, index);
+    if (!confirmed || !mounted) return;
     await _change((store, binding) async {
       final count = await store.removeArrayItem(
         binding.repositoryId!,
@@ -496,48 +410,23 @@ class _SuperTableState extends State<SuperTable> {
     ],
   ];
 
-  NativeComponentConfig _toNativeConfig(SuperTableConfig config) {
-    final activeRegionIds = {
-      for (final col in config.columns) ...[
-        if (config.showHeaderRow) SuperTableConfig.headerZoneFor(col.id),
-        SuperTableConfig.cellZoneFor(col.id),
-        if (config.showBottomRow) SuperTableConfig.bottomZoneFor(col.id),
-      ],
-    };
-    final activePlacements = <String, List<String>>{
-      for (final entry in config.placements.entries)
-        if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-    };
-    final activeSlotIds = activePlacements.values.expand((ids) => ids).toSet();
-    return NativeComponentConfig(
-      regions: {for (final id in activeRegionIds) id: true},
-      placements: activePlacements,
-      slotTypes: {
-        for (final entry in config.slotTypes.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      regionAxes: {
-        for (final entry in config.zoneAxes.entries)
-          if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-      },
-      regionFlows: {
-        for (final entry in config.zoneFlows.entries)
-          if (activeRegionIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotPreferredSizes: {
-        for (final entry in config.slotPreferredSizes.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotSizeConstraints: {
-        for (final entry in config.slotSizeConstraints.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-      slotLabels: {
-        for (final entry in config.slotLabels.entries)
-          if (activeSlotIds.contains(entry.key)) entry.key: entry.value,
-      },
-    );
-  }
+  NativeComponentConfig _toNativeConfig(SuperTableConfig config) =>
+      buildNativeComponentConfigFromRegions(
+        activeRegionIds: {
+          for (final col in config.columns) ...[
+            if (config.showHeaderRow) SuperTableConfig.headerZoneFor(col.id),
+            SuperTableConfig.cellZoneFor(col.id),
+            if (config.showBottomRow) SuperTableConfig.bottomZoneFor(col.id),
+          ],
+        },
+        placements: config.placements,
+        slotTypes: config.slotTypes,
+        zoneAxes: config.zoneAxes,
+        zoneFlows: config.zoneFlows,
+        slotPreferredSizes: config.slotPreferredSizes,
+        slotSizeConstraints: config.slotSizeConstraints,
+        slotLabels: config.slotLabels,
+      );
 
   SuperTableConfig _fromNativeConfig(
     SuperTableConfig current,
@@ -565,51 +454,24 @@ class _SuperTableState extends State<SuperTable> {
     Registry? registry,
     String region,
     SlotImplementation slot,
-  ) async {
-    final current = controller.value;
-    final removedIds = current.slotsRemovedWith(slot.id);
-    final removedTypes = {
-      for (final id in removedIds) id: current.slotTypeOf(id),
-    };
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    try {
-      controller.value = current.withoutSlot(slot.id);
-      if (registry != null) {
-        for (final entry in removedTypes.entries) {
-          registry.purgeInstance(
-            entry.key,
-            entry.value,
-            EditorConfigKind.table,
-          );
-        }
-      }
-    } finally {
-      history?.commitTransaction();
-    }
-  }
+  ) => purgeRemovedComponentSlots<SuperTableConfig>(
+    context: context,
+    controller: controller,
+    registry: registry,
+    ownerKind: EditorConfigKind.table,
+    removedIds: controller.value.slotsRemovedWith(slot.id),
+    slotTypeOf: controller.value.slotTypeOf,
+    nextConfig: controller.value.withoutSlot(slot.id),
+  );
 
-  Future<void> _openSettings(ValueNotifier<SuperTableConfig> controller) async {
-    final history = EditorHistoryScope.controllerOf(context);
-    history?.beginTransaction();
-    SuperTableConfig? result;
-    try {
-      result = await showSuperTableEditor(
+  Future<void> _openSettings(ValueNotifier<SuperTableConfig> controller) =>
+      runComponentEditorTransaction<SuperTableConfig>(
         context: context,
-        config: controller.value,
+        configuration: controller,
+        onConfigChanged: widget.onConfigChanged,
+        showEditor: (initial) =>
+            showSuperTableEditor(context: context, config: initial),
       );
-      if (result != null && mounted && result != controller.value) {
-        controller.value = result;
-        widget.onConfigChanged?.call(result);
-      }
-    } finally {
-      if (result != null) {
-        history?.commitTransaction();
-      } else {
-        history?.cancelTransaction();
-      }
-    }
-  }
 
   Widget _buildZoneContent(
     BuildContext context,
@@ -617,38 +479,14 @@ class _SuperTableState extends State<SuperTable> {
     SuperTableConfig config,
     String zoneId, {
     required bool isInteractiveRegion,
-  }) {
-    final Widget content;
-    if (isInteractiveRegion) {
-      content = editor.region(zoneId, expand: true, stretch: true);
-    } else {
-      final slots = editor.slotsFor(zoneId);
-      if (slots.isEmpty) {
-        return const SizedBox.shrink();
-      }
-      final axis = editor.axisOf(zoneId);
-      final flow = editor.flowOf(zoneId);
-      content = SlotStack(
-        slots: slots,
-        axis: axis,
-        flow: flow,
-        expand: true,
-        stretch: true,
-        preferredSizes: {
-          for (final slot in slots)
-            if (slot case NativePreferredSizeWidget native)
-              slot.id: native.preferredSizeIn(context),
-          ...config.slotPreferredSizes,
-        },
-        sizeConstraints: config.slotSizeConstraints,
-      );
-    }
-    return SlotContentFitScope(
-      fitWidth: false,
-      fitHeight: false,
-      child: content,
-    );
-  }
+  }) => buildRepeatedRegionZoneContent(
+    context: context,
+    editor: editor,
+    zoneId: zoneId,
+    isInteractiveRegion: isInteractiveRegion,
+    slotPreferredSizes: config.slotPreferredSizes,
+    slotSizeConstraints: config.slotSizeConstraints,
+  );
 
   void _updateZoneStyle(
     ValueNotifier<SuperTableConfig> controller,
