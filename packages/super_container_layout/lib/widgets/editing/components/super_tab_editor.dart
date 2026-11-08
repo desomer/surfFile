@@ -2,7 +2,6 @@
 library;
 
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
@@ -12,12 +11,43 @@ import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../../../theme/appearance.dart';
 import '../../../theme/container_style.dart';
-import '../../../theme/neon_style.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/container_style_editor.dart';
 import '../styles/style_editor_panel.dart';
+import 'shared/editor_color_fields.dart';
+
+Widget _buildTabBarPositionSegment({
+  required Key key,
+  required SuperTabBarPosition value,
+  required ValueChanged<SuperTabBarPosition> onChanged,
+}) => SegmentedButton<SuperTabBarPosition>(
+  key: key,
+  showSelectedIcon: false,
+  style: const ButtonStyle(
+    visualDensity: VisualDensity.compact,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  ),
+  segments: const [
+    ButtonSegment(
+      value: SuperTabBarPosition.top,
+      tooltip: 'En haut',
+      icon: Icon(Icons.vertical_align_top, size: 16),
+      label: Text('En haut', overflow: TextOverflow.ellipsis),
+    ),
+    ButtonSegment(
+      value: SuperTabBarPosition.bottom,
+      tooltip: 'En bas',
+      icon: Icon(Icons.vertical_align_bottom, size: 16),
+      label: Text('En bas', overflow: TextOverflow.ellipsis),
+    ),
+  ],
+  selected: {value},
+  onSelectionChanged: (selected) {
+    if (selected.isNotEmpty) onChanged(selected.first);
+  },
+);
 
 /// Ouvre la fenêtre simple des propriétés générales d'un composant [SuperTab]
 /// (utilisée sur le menu contextuel du composant `Tab` et de ses zones de contenu).
@@ -187,37 +217,11 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
                 'Position de la barre d’onglets',
                 style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
               ),
-              SegmentedButton<SuperTabBarPosition>(
+              _buildTabBarPositionSegment(
                 key: const ValueKey('super-tab-position'),
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                segments: const [
-                  ButtonSegment(
-                    value: SuperTabBarPosition.top,
-                    tooltip: 'En haut',
-                    icon: Icon(Icons.vertical_align_top, size: 16),
-                    label: Text('En haut', overflow: TextOverflow.ellipsis),
-                  ),
-                  ButtonSegment(
-                    value: SuperTabBarPosition.bottom,
-                    tooltip: 'En bas',
-                    icon: Icon(Icons.vertical_align_bottom, size: 16),
-                    label: Text('En bas', overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-                selected: {_draft.tabBarPosition},
-                onSelectionChanged: (selected) {
-                  if (selected.isNotEmpty) {
-                    setState(
-                      () => _draft = _draft.copyWith(
-                        tabBarPosition: selected.first,
-                      ),
-                    );
-                  }
-                },
+                value: _draft.tabBarPosition,
+                onChanged: (pos) =>
+                    setState(() => _draft = _draft.copyWith(tabBarPosition: pos)),
               ),
               SwitchListTile(
                 key: const ValueKey('super-tab-scrollable'),
@@ -362,12 +366,7 @@ class _SuperTabBarStyleEditor extends StatefulWidget {
 }
 
 class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
-  late EditorWizardTab _tab = EditorWizardNavigation.resolveInitialTab(
-    widget.initialTab,
-    widget.dimensionDelegate,
-  );
   late SuperTabConfig _draft = widget.config;
-  late bool _dense = StyleEditorPanel.preferredDense;
 
   void _update(SuperTabConfig next) {
     setState(() => _draft = next);
@@ -378,15 +377,9 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
     _update(_draft.copyWith(tabBarStyle: style));
   }
 
-  void _apply() {
-    final delegate = widget.dimensionDelegate;
-    if (delegate != null && !delegate.validate()) {
-      if (_tab != EditorWizardTab.dimensions) {
-        setState(() => _tab = EditorWizardTab.dimensions);
-      }
-      return;
-    }
+  bool _apply() {
     Navigator.of(context).pop(_draft..validate());
+    return true;
   }
 
   List<StyleEditorSection> _buildTabBarSections(BuildContext context) {
@@ -406,33 +399,10 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               'Position de la barre d’onglets',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
             ),
-            SegmentedButton<SuperTabBarPosition>(
+            _buildTabBarPositionSegment(
               key: const ValueKey('super-tab-bar-position'),
-              showSelectedIcon: false,
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              segments: const [
-                ButtonSegment(
-                  value: SuperTabBarPosition.top,
-                  tooltip: 'En haut',
-                  icon: Icon(Icons.vertical_align_top, size: 16),
-                  label: Text('En haut', overflow: TextOverflow.ellipsis),
-                ),
-                ButtonSegment(
-                  value: SuperTabBarPosition.bottom,
-                  tooltip: 'En bas',
-                  icon: Icon(Icons.vertical_align_bottom, size: 16),
-                  label: Text('En bas', overflow: TextOverflow.ellipsis),
-                ),
-              ],
-              selected: {_draft.tabBarPosition},
-              onSelectionChanged: (selected) {
-                if (selected.isNotEmpty) {
-                  _update(_draft.copyWith(tabBarPosition: selected.first));
-                }
-              },
+              value: _draft.tabBarPosition,
+              onChanged: (pos) => _update(_draft.copyWith(tabBarPosition: pos)),
             ),
             SwitchListTile(
               key: const ValueKey('super-tab-bar-scrollable'),
@@ -653,23 +623,17 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
                   }
                 },
               ),
-              styleColorTile(
-                'Couleur de l’indicateur',
-                _draft.indicatorColor ?? scheme.primary,
-                (color) => _update(_draft.copyWith(indicatorColor: color)),
-                key: const ValueKey('super-tab-indicator-color'),
+              ThemeResetColorTile(
+                label: 'Couleur de l’indicateur',
+                effectiveColor: _draft.indicatorColor ?? scheme.primary,
+                isOverridden: _draft.indicatorColor != null,
+                tileKey: const ValueKey('super-tab-indicator-color'),
+                resetLabel: 'Couleur d’indicateur du thème',
+                onChanged: (color) =>
+                    _update(_draft.copyWith(indicatorColor: color)),
                 onClear: () =>
                     _update(_draft.copyWith(clearIndicatorColor: true)),
               ),
-              if (_draft.indicatorColor != null)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton(
-                    onPressed: () =>
-                        _update(_draft.copyWith(clearIndicatorColor: true)),
-                    child: const Text('Couleur d’indicateur du thème'),
-                  ),
-                ),
               if (_draft.indicatorKind == SuperTabIndicatorKind.underline)
                 StyleSliderField(
                   label: 'Épaisseur de l’indicateur',
@@ -724,26 +688,22 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
               onChanged: (value) =>
                   _update(_draft.copyWith(dividerHeight: value)),
             ),
-            styleColorTile(
-              'Couleur du séparateur',
-              _draft.dividerColor ?? scheme.outlineVariant,
-              (color) => _update(_draft.copyWith(dividerColor: color)),
-              key: const ValueKey('super-tab-divider-color'),
-              onClear: () => _update(_draft.copyWith(clearDividerColor: true)),
-            ),
-            if (_draft.dividerColor != null || _draft.dividerHeight != null)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => _update(
-                    _draft.copyWith(
-                      clearDividerColor: true,
-                      clearDividerHeight: true,
-                    ),
-                  ),
-                  child: const Text('Séparateur par défaut'),
+            ThemeResetColorTile(
+              label: 'Couleur du séparateur',
+              effectiveColor: _draft.dividerColor ?? scheme.outlineVariant,
+              isOverridden:
+                  _draft.dividerColor != null || _draft.dividerHeight != null,
+              tileKey: const ValueKey('super-tab-divider-color'),
+              resetLabel: 'Séparateur par défaut',
+              onChanged: (color) =>
+                  _update(_draft.copyWith(dividerColor: color)),
+              onClear: () => _update(
+                _draft.copyWith(
+                  clearDividerColor: true,
+                  clearDividerHeight: true,
                 ),
               ),
+            ),
           ],
         ),
       ),
@@ -757,56 +717,39 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 8,
           children: [
-            styleColorTile(
-              'Onglet sélectionné (texte & icône)',
-              _draft.labelColor ?? scheme.primary,
-              (color) => _update(_draft.copyWith(labelColor: color)),
-              key: const ValueKey('super-tab-label-color'),
+            ThemeResetColorTile(
+              label: 'Onglet sélectionné (texte & icône)',
+              effectiveColor: _draft.labelColor ?? scheme.primary,
+              isOverridden: _draft.labelColor != null,
+              tileKey: const ValueKey('super-tab-label-color'),
+              resetLabel: 'Couleur active du thème',
+              onChanged: (color) =>
+                  _update(_draft.copyWith(labelColor: color)),
               onClear: () => _update(_draft.copyWith(clearLabelColor: true)),
             ),
-            if (_draft.labelColor != null)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () =>
-                      _update(_draft.copyWith(clearLabelColor: true)),
-                  child: const Text('Couleur active du thème'),
-                ),
-              ),
-            styleColorTile(
-              'Onglets non sélectionnés (texte & icône)',
-              _draft.unselectedLabelColor ?? scheme.onSurfaceVariant,
-              (color) => _update(_draft.copyWith(unselectedLabelColor: color)),
-              key: const ValueKey('super-tab-unselected-label-color'),
+            ThemeResetColorTile(
+              label: 'Onglets non sélectionnés (texte & icône)',
+              effectiveColor:
+                  _draft.unselectedLabelColor ?? scheme.onSurfaceVariant,
+              isOverridden: _draft.unselectedLabelColor != null,
+              tileKey: const ValueKey('super-tab-unselected-label-color'),
+              resetLabel: 'Couleur inactive du thème',
+              onChanged: (color) =>
+                  _update(_draft.copyWith(unselectedLabelColor: color)),
               onClear: () =>
                   _update(_draft.copyWith(clearUnselectedLabelColor: true)),
             ),
-            if (_draft.unselectedLabelColor != null)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () => _update(
-                    _draft.copyWith(clearUnselectedLabelColor: true),
-                  ),
-                  child: const Text('Couleur inactive du thème'),
-                ),
-              ),
-            styleColorTile(
-              'Voile au survol / clic (overlay)',
-              _draft.overlayColor ?? scheme.primary.withValues(alpha: 0.12),
-              (color) => _update(_draft.copyWith(overlayColor: color)),
-              key: const ValueKey('super-tab-overlay-color'),
+            ThemeResetColorTile(
+              label: 'Voile au survol / clic (overlay)',
+              effectiveColor:
+                  _draft.overlayColor ?? scheme.primary.withValues(alpha: 0.12),
+              isOverridden: _draft.overlayColor != null,
+              tileKey: const ValueKey('super-tab-overlay-color'),
+              resetLabel: 'Voile du thème par défaut',
+              onChanged: (color) =>
+                  _update(_draft.copyWith(overlayColor: color)),
               onClear: () => _update(_draft.copyWith(clearOverlayColor: true)),
             ),
-            if (_draft.overlayColor != null)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton(
-                  onPressed: () =>
-                      _update(_draft.copyWith(clearOverlayColor: true)),
-                  child: const Text('Voile du thème par défaut'),
-                ),
-              ),
           ],
         ),
       ),
@@ -815,141 +758,47 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final screen = MediaQuery.sizeOf(context);
-    final width = math.min(_dense ? 680.0 : 1080.0, screen.width - 96);
-    final height = math.max(320.0, math.min(680.0, screen.height - 260));
     final colors = Theme.of(context).colorScheme;
-    final style = _draft.tabBarStyle;
-    final delegate = widget.dimensionDelegate;
-    final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
-    return AlertDialog(
-      key: const ValueKey('super-tab-bar-style-settings'),
-      insetPadding: const EdgeInsets.all(24),
-      constraints: BoxConstraints(maxWidth: width + 48),
-      content: SizedBox(
-        width: width,
-        height: height,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EditorWizardTabBar(
-              selectedTab: _tab,
-              propertiesEnabled: true,
-              dimensionsEnabled: delegate != null,
-              onTabSelected: (next) {
-                if (next != _tab) setState(() => _tab = next);
-              },
-            ),
-            const SizedBox(height: 12),
-            if (onDimensions)
-              Expanded(child: EditorDimensionTabView(delegate: delegate))
-            else
-              Expanded(
-                child: ContainerStyleEditor(
-                  label: widget.label,
-                  collapsible: false,
-          dense: _dense,
-          onDenseChanged: (value) => setState(() {
-            _dense = value;
-            widget.dockWidth.value = value ? 680 : 1080;
-          }),
-          style: style,
-          onStyle: _updateStyle,
-          extended: true,
-          value: style.fill,
-          solidColor: style.color ?? colors.surface,
-          radius: style.radius,
-          borderWidth: style.borderWidth,
-          borderColor: style.borderColor ?? colors.outlineVariant,
-          elevation: style.elevation,
-          shadowOpacity: style.shadowOpacity,
-          opacity: style.opacity,
-          neon: style.neon ?? const NeonStyle(),
-          accent: widget.accent,
-          onChanged: (fill) => _updateStyle(style.copyWith(fill: fill)),
-          onSolidColorChanged: (color) =>
-              _updateStyle(style.copyWith(color: color)),
-          onRadiusChanged: (radius) =>
-              _updateStyle(style.copyWith(radius: radius)),
-          onBorderWidthChanged: (borderWidth) =>
-              _updateStyle(style.copyWith(borderWidth: borderWidth)),
-          onBorderColorChanged: (borderColor) =>
-              _updateStyle(style.copyWith(borderColor: borderColor)),
-          onResetBorderColor: () =>
-              _updateStyle(style.copyWith(resetBorderColor: true)),
-          onElevationChanged: (elevation) =>
-              _updateStyle(style.copyWith(elevation: elevation)),
-          onShadowOpacityChanged: (shadowOpacity) =>
-              _updateStyle(style.copyWith(shadowOpacity: shadowOpacity)),
-          padding: style.padding,
-          margin: style.margin,
-          onPaddingChanged: (padding) =>
-              _updateStyle(style.copyWith(padding: padding)),
-          onMarginChanged: (margin) =>
-              _updateStyle(style.copyWith(margin: margin)),
-          onNeonChanged: (neon) =>
-              _updateStyle(style.copyWith(neon: neon)),
-          hoverEffect: style.hoverEffect,
-          onHoverEffectChanged: (hover) =>
-              _updateStyle(style.copyWith(hoverEffect: hover)),
-          hoverTint: style.hoverTint,
-          hoverColor: style.hoverColor,
-          onHoverTintChanged: (tint) =>
-              _updateStyle(style.copyWith(hoverTint: tint)),
-          onHoverColorChanged: (color) =>
-              _updateStyle(style.copyWith(hoverColor: color)),
-          onResetHoverColor: () =>
-              _updateStyle(style.copyWith(resetHoverColor: true)),
-          interactionEffect: style.interactionEffect,
-          onInteractionEffectChanged: (effect) => _updateStyle(
-            style.copyWith(interactionEffect: effect),
-          ),
-          designSystem: style.designSystem,
-          onDesignSystemChanged: (system) =>
-              _updateStyle(system.apply(style)),
-          onResetColor: () =>
-              _updateStyle(style.copyWith(resetColor: true)),
-          onReset: () => _update(
-            _draft.copyWith(
-              tabBarStyle: const ContainerStyle(),
-              indicatorKind: SuperTabIndicatorKind.underline,
-              indicatorSize: TabBarIndicatorSize.tab,
-              clearIndicatorColor: true,
-              indicatorWeight: 2.0,
-              indicatorRadius: 0.0,
-              indicatorHorizontalPadding: 0.0,
-              indicatorVerticalPadding: 0.0,
-              clearLabelColor: true,
-              clearUnselectedLabelColor: true,
-              clearOverlayColor: true,
-              clearLabelHorizontalPadding: true,
-              clearDividerColor: true,
-              clearDividerHeight: true,
-              clearTabAlignment: true,
-            ),
-          ),
-          extraSections: _buildTabBarSections(context),
-        ),
+    return EditorStyleWizardDialog(
+      dialogKey: const ValueKey('super-tab-bar-style-settings'),
+      applyButtonKey: const ValueKey('super-tab-bar-style-apply'),
+      initialTab: widget.initialTab,
+      dimensionDelegate: widget.dimensionDelegate,
+      minHeight: 320.0,
+      verticalMargin: 260.0,
+      onWidthChanged: (value) => widget.dockWidth.value = value,
+      onApply: _apply,
+      propertiesBuilder: (context, dense, onDenseChanged) =>
+          ContainerStyleEditor.fromStyle(
+            label: widget.label,
+            dense: dense,
+            onDenseChanged: onDenseChanged,
+            style: _draft.tabBarStyle,
+            onStyleChanged: _updateStyle,
+            defaultSolidColor: colors.surface,
+            defaultBorderColor: colors.outlineVariant,
+            accent: widget.accent,
+            onReset: () => _update(
+              _draft.copyWith(
+                tabBarStyle: const ContainerStyle(),
+                indicatorKind: SuperTabIndicatorKind.underline,
+                indicatorSize: TabBarIndicatorSize.tab,
+                clearIndicatorColor: true,
+                indicatorWeight: 2.0,
+                indicatorRadius: 0.0,
+                indicatorHorizontalPadding: 0.0,
+                indicatorVerticalPadding: 0.0,
+                clearLabelColor: true,
+                clearUnselectedLabelColor: true,
+                clearOverlayColor: true,
+                clearLabelHorizontalPadding: true,
+                clearDividerColor: true,
+                clearDividerHeight: true,
+                clearTabAlignment: true,
               ),
-          ],
-        ),
-      ),
-      actions: [
-        if (onDimensions)
-          ...delegate.buildExtraActions(
-            context,
-            onResetAndClose: _apply,
+            ),
+            extraSections: _buildTabBarSections(context),
           ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          key: const ValueKey('super-tab-bar-style-apply'),
-          onPressed: _apply,
-          child: const Text('Appliquer'),
-        ),
-      ],
     );
   }
 }

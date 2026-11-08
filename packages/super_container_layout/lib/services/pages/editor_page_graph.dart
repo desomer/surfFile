@@ -232,7 +232,17 @@ abstract final class EditorPageGraph {
     visitInstance = (id, type, kind) {
       instances.add(id);
       final contract = _resolve(registry, type, kind).contract;
-      contract?.ownedConfigs(id).forEach(visitConfig);
+      if (contract != null) {
+        contract.ownedConfigs(id).forEach(visitConfig);
+      } else {
+        final guess = inferred(id);
+        if (guess != null) {
+          _resolve(registry, guess, kind)
+              .contract
+              ?.ownedConfigs(id)
+              .forEach(visitConfig);
+        }
+      }
     };
 
     final selected = <String, String>{};

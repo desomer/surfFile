@@ -73,6 +73,86 @@ class ContainerStyleEditor extends StatelessWidget {
     super.key,
   });
 
+  /// Constructeur simplifié branchant automatiquement toutes les propriétés d'un
+  /// [ContainerStyle] complet sur un unique callback [onStyleChanged].
+  factory ContainerStyleEditor.fromStyle({
+    required String label,
+    required ContainerStyle style,
+    required ValueChanged<ContainerStyle> onStyleChanged,
+    required Color defaultSolidColor,
+    required Color defaultBorderColor,
+    Color accent = const Color(0xFF5268D9),
+    bool collapsible = false,
+    bool extended = true,
+    bool? dense,
+    ValueChanged<bool>? onDenseChanged,
+    ValueChanged<String>? onLabelChanged,
+    VoidCallback? onReset,
+    List<StyleEditorSection> extraSections = const [],
+    BuildContext? ownerContext,
+    Key? key,
+  }) => ContainerStyleEditor(
+    key: key,
+    label: label,
+    collapsible: collapsible,
+    dense: dense,
+    onDenseChanged: onDenseChanged,
+    onLabelChanged: onLabelChanged,
+    ownerContext: ownerContext,
+    style: style,
+    onStyle: onStyleChanged,
+    extended: extended,
+    value: style.fill,
+    solidColor: style.color ?? defaultSolidColor,
+    radius: style.radius,
+    borderWidth: style.borderWidth,
+    borderColor: style.borderColor ?? defaultBorderColor,
+    elevation: style.elevation,
+    shadowOpacity: style.shadowOpacity,
+    opacity: style.opacity,
+    neon: style.neon ?? const NeonStyle(),
+    accent: accent,
+    onChanged: (fill) => onStyleChanged(style.copyWith(fill: fill)),
+    onSolidColorChanged: (color) =>
+        onStyleChanged(style.copyWith(color: color)),
+    onRadiusChanged: (radius) => onStyleChanged(style.copyWith(radius: radius)),
+    onBorderWidthChanged: (borderWidth) =>
+        onStyleChanged(style.copyWith(borderWidth: borderWidth)),
+    onBorderColorChanged: (borderColor) =>
+        onStyleChanged(style.copyWith(borderColor: borderColor)),
+    onResetBorderColor: () =>
+        onStyleChanged(style.copyWith(resetBorderColor: true)),
+    onElevationChanged: (elevation) =>
+        onStyleChanged(style.copyWith(elevation: elevation)),
+    onShadowOpacityChanged: (shadowOpacity) =>
+        onStyleChanged(style.copyWith(shadowOpacity: shadowOpacity)),
+    padding: style.padding,
+    margin: style.margin,
+    onPaddingChanged: (padding) =>
+        onStyleChanged(style.copyWith(padding: padding)),
+    onMarginChanged: (margin) => onStyleChanged(style.copyWith(margin: margin)),
+    onNeonChanged: (neon) => onStyleChanged(style.copyWith(neon: neon)),
+    hoverEffect: style.hoverEffect,
+    onHoverEffectChanged: (hover) =>
+        onStyleChanged(style.copyWith(hoverEffect: hover)),
+    hoverTint: style.hoverTint,
+    hoverColor: style.hoverColor,
+    onHoverTintChanged: (tint) =>
+        onStyleChanged(style.copyWith(hoverTint: tint)),
+    onHoverColorChanged: (color) =>
+        onStyleChanged(style.copyWith(hoverColor: color)),
+    onResetHoverColor: () =>
+        onStyleChanged(style.copyWith(resetHoverColor: true)),
+    interactionEffect: style.interactionEffect,
+    onInteractionEffectChanged: (effect) =>
+        onStyleChanged(style.copyWith(interactionEffect: effect)),
+    designSystem: style.designSystem,
+    onDesignSystemChanged: (system) => onStyleChanged(system.apply(style)),
+    onResetColor: () => onStyleChanged(style.copyWith(resetColor: true)),
+    onReset: onReset,
+    extraSections: extraSections,
+  );
+
   /// Système de design ; le sélecteur n'apparaît que si
   /// [onDesignSystemChanged] est fourni.
   final DesignSystem designSystem;
@@ -164,11 +244,7 @@ class ContainerStyleEditor extends StatelessWidget {
         title,
         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
       ),
-      if (helper != null)
-        Text(
-          helper,
-          style: const TextStyle(fontSize: 11),
-        ),
+      if (helper != null) Text(helper, style: const TextStyle(fontSize: 11)),
     ],
   );
 
@@ -225,10 +301,7 @@ class ContainerStyleEditor extends StatelessWidget {
   ];
 
   List<Widget> _interactionControls() => [
-    _fieldLabel(
-      'Effet d’interaction',
-      helper: interactionEffect.description,
-    ),
+    _fieldLabel('Effet d’interaction', helper: interactionEffect.description),
     SegmentedButton<InteractionEffect>(
       key: ValueKey('interaction-effect-$label'),
       showSelectedIcon: false,
@@ -407,10 +480,9 @@ class ContainerStyleEditor extends StatelessWidget {
       onChanged: (url) => onChanged(value.copyWith(imageUrl: url)),
       onBindingChanged: (binding) {
         if (style != null && onStyle != null) {
-          final bindings =
-              Map<ContainerStyleProperty, JsonTextBinding>.of(
-                style!.propertyBindings,
-              );
+          final bindings = Map<ContainerStyleProperty, JsonTextBinding>.of(
+            style!.propertyBindings,
+          );
           if (binding == null) {
             bindings.remove(ContainerStyleProperty.imageUrl);
           } else {
@@ -441,18 +513,12 @@ class ContainerStyleEditor extends StatelessWidget {
         isExpanded: true,
         decoration: const InputDecoration(labelText: 'Ajustement de l’image'),
         items: const [
-          DropdownMenuItem(
-            value: BoxFit.cover,
-            child: Text('Remplir (Cover)'),
-          ),
+          DropdownMenuItem(value: BoxFit.cover, child: Text('Remplir (Cover)')),
           DropdownMenuItem(
             value: BoxFit.contain,
             child: Text('Contenir (Contain)'),
           ),
-          DropdownMenuItem(
-            value: BoxFit.fill,
-            child: Text('Étirer (Fill)'),
-          ),
+          DropdownMenuItem(value: BoxFit.fill, child: Text('Étirer (Fill)')),
           DropdownMenuItem(
             value: BoxFit.fitWidth,
             child: Text('Ajuster à la largeur'),
@@ -461,10 +527,7 @@ class ContainerStyleEditor extends StatelessWidget {
             value: BoxFit.fitHeight,
             child: Text('Ajuster à la hauteur'),
           ),
-          DropdownMenuItem(
-            value: BoxFit.none,
-            child: Text('Taille originale'),
-          ),
+          DropdownMenuItem(value: BoxFit.none, child: Text('Taille originale')),
           DropdownMenuItem(
             value: BoxFit.scaleDown,
             child: Text('Réduire si nécessaire'),
@@ -1318,8 +1381,7 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
         JsonRepositoryScope.maybeOf(targetContext) ??
         JsonRepositoryScope.maybeOf(context);
     final listScope =
-        JsonListScope.maybeOf(targetContext) ??
-        JsonListScope.maybeOf(context);
+        JsonListScope.maybeOf(targetContext) ?? JsonListScope.maybeOf(context);
     return RepositoryBoundPropertyTile(
       buttonKey: widget.bindKey,
       keyPrefix: widget.bindingKeyPrefix ?? 'image-url-binding',
@@ -1338,8 +1400,7 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
                 binding: widget.binding,
                 store: repositories,
                 listScope: listScope,
-                helper:
-                    'Lecture seule : la valeur du repository remplace ce paramètre.',
+                helper: 'Lecture seule : la valeur du repository remplace ce paramètre.',
               );
               if (result != null && mounted) {
                 widget.onBindingChanged!(result.binding);
@@ -1352,4 +1413,3 @@ class _BackgroundImageUrlFieldState extends State<_BackgroundImageUrlField> {
     );
   }
 }
-

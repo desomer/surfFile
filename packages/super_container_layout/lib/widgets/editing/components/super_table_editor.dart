@@ -17,7 +17,6 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../../models/json_text_binding.dart';
 import '../../../models/super_table_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -26,6 +25,7 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
+import 'shared/collection_editor_controls.dart';
 
 /// Ouvre la fenêtre de réglage pour [config].
 Future<SuperTableConfig?> showSuperTableEditor({
@@ -70,39 +70,6 @@ String formatSuperTableTooltip({
   ].join('\n');
 }
 
-class _ColumnDraft {
-  _ColumnDraft({
-    required this.id,
-    required String title,
-    required double width,
-    double fillPercent = SuperTableColumnConfig.defaultFillPercent,
-  }) : title = TextEditingController(text: title),
-       width = TextEditingController(
-         text: width == width.roundToDouble() ? '${width.toInt()}' : '$width',
-       ),
-       fillPercent = TextEditingController(
-         text: fillPercent == fillPercent.roundToDouble()
-             ? '${fillPercent.toInt()}'
-             : '$fillPercent',
-       );
-
-  final String id;
-  final TextEditingController title;
-  final TextEditingController width;
-  final TextEditingController fillPercent;
-
-  bool get hasFill {
-    final val = double.tryParse(fillPercent.text.trim().replaceAll(',', '.'));
-    return val != null && val > 0;
-  }
-
-  void dispose() {
-    title.dispose();
-    width.dispose();
-    fillPercent.dispose();
-  }
-}
-
 class _SuperTableEditor extends StatefulWidget {
   const _SuperTableEditor({
     required this.initialTab,
@@ -131,18 +98,18 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
     text: '${widget.config.colFreezeLeftCount}',
   );
   late final _headerHeight = TextEditingController(
-    text: _number(widget.config.headerRowHeight),
+    text: formatCollectionEditorNumber(widget.config.headerRowHeight),
   );
   late final _rowHeight = TextEditingController(
-    text: _number(widget.config.rowHeight),
+    text: formatCollectionEditorNumber(widget.config.rowHeight),
   );
   late final _bottomHeight = TextEditingController(
-    text: _number(widget.config.bottomRowHeight),
+    text: formatCollectionEditorNumber(widget.config.bottomRowHeight),
   );
   late final _empty = TextEditingController(text: widget.config.emptyText);
-  late final List<_ColumnDraft> _columns = [
+  late final List<SuperTableColumnDraft> _columns = [
     for (final col in widget.config.columns)
-      _ColumnDraft(
+      SuperTableColumnDraft(
         id: col.id,
         title: col.title,
         width: col.width,
@@ -158,20 +125,8 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
   late bool _allowAdd = widget.config.allowAdd;
   late bool _allowRemove = widget.config.allowRemove;
   late bool _animateSelectionAndHover = widget.config.animateSelectionAndHover;
-  List<JsonRepositoryEntry> _repositories = [];
   String? _error;
   bool _busy = false;
-
-  static String _number(double value) =>
-      value == value.roundToDouble() ? '${value.toInt()}' : '$value';
-
-  int get _depth => widget.scope?.indices.length ?? 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRepositories();
-  }
 
   @override
   void dispose() {
@@ -187,21 +142,6 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
     super.dispose();
   }
 
-  Future<void> _loadRepositories() async {
-    final store = widget.repositories;
-    if (store == null) return;
-    try {
-      final entries = await store.catalog();
-      if (mounted) setState(() => _repositories = entries);
-    } on FormatException catch (error) {
-      if (mounted) setState(() => _error = error.message);
-    } on FileSystemException {
-      if (mounted) {
-        setState(() => _error = 'Impossible de charger les repositories.');
-      }
-    }
-  }
-
   void _addColumn() {
     final used = {for (final col in _columns) col.id};
     var index = _columns.length;
@@ -210,7 +150,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
     }
     setState(() {
       _columns.add(
-        _ColumnDraft(
+        SuperTableColumnDraft(
           id: 'col_$index',
           title: 'Colonne ${_columns.length + 1}',
           width: SuperTableColumnConfig.defaultWidth,
@@ -227,24 +167,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
     });
   }
 
-  JsonTextBinding? get _binding => _repository.isEmpty
-      ? null
-      : JsonTextBinding(
-          repositoryId: _repository == inheritedRepositoryValue
-              ? null
-              : _repository,
-          path: _path.text.trim(),
-        );
-
   SuperTableConfig _config() {
-    double number(TextEditingController field) {
-      final value = double.tryParse(field.text.trim().replaceAll(',', '.'));
-      if (value == null) {
-        throw const FormatException('Valeur numérique invalide.');
-      }
-      return value;
-    }
-
     final freeze = int.tryParse(_freezeCount.text.trim());
     if (freeze == null) {
       throw const FormatException(
@@ -252,18 +175,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
       );
     }
 
-    final columns = [
-      for (final col in _columns)
-        SuperTableColumnConfig(
-          id: col.id,
-          title: col.title.text.trim(),
-          width: number(col.width),
-          fillPercent: col.fillPercent.text.trim().isEmpty
-              ? 0.0
-              : number(col.fillPercent),
-        ),
-    ];
-
+    final columns = [for (final col in _columns) col.toConfig()];
     final keptColumnIds = {for (final col in columns) col.id};
     final validZones = {
       for (final id in keptColumnIds) ...[
@@ -279,17 +191,17 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
     };
     final keptSlots = nextPlacements.values.expand((ids) => ids).toSet();
 
-    final binding = _binding;
-    final result = widget.config.copyWith(
+    final binding = buildCollectionEditorBinding(_repository, _path.text);
+    return widget.config.copyWith(
       binding: binding,
       clearBinding: binding == null,
       columns: columns,
       colFreezeLeftCount: freeze,
       showHeaderRow: _showHeaderRow,
       showBottomRow: _showBottomRow,
-      headerRowHeight: number(_headerHeight),
-      rowHeight: number(_rowHeight),
-      bottomRowHeight: number(_bottomHeight),
+      headerRowHeight: parseCollectionEditorNumber(_headerHeight),
+      rowHeight: parseCollectionEditorNumber(_rowHeight),
+      bottomRowHeight: parseCollectionEditorNumber(_bottomHeight),
       allowAdd: _allowAdd,
       allowRemove: _allowRemove,
       animateSelectionAndHover: _animateSelectionAndHover,
@@ -323,9 +235,7 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
         for (final entry in widget.config.slotLabels.entries)
           if (keptSlots.contains(entry.key)) entry.key: entry.value,
       },
-    );
-    result.validate();
-    return result;
+    )..validate();
   }
 
   Future<bool> _apply() async {
@@ -336,22 +246,12 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
     });
     try {
       final config = _config();
-      final binding = config.binding;
-      final scope = widget.scope;
-      if (binding != null && !(scope?.placeholder ?? false)) {
-        final store = widget.repositories;
-        if (store == null) {
-          throw const FormatException('Service de repositories indisponible.');
-        }
-        final resolved = JsonListScope.resolveSelected(
-          binding,
-          scope,
-          store,
-        ).binding;
-        if (resolved != null) {
-          await store.readArray(resolved.repositoryId!, resolved.path);
-        }
-      }
+      await verifyCollectionBindingTarget(
+        binding: config.binding,
+        scope: widget.scope,
+        store: widget.repositories,
+        readTarget: (store, repoId, path) => store.readArray(repoId, path),
+      );
       if (mounted) Navigator.of(context).pop(config);
       return true;
     } on FormatException catch (error) {
@@ -366,303 +266,175 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final inheritable =
-        widget.scope != null || _repository == inheritedRepositoryValue;
-    final known =
-        _repository.isEmpty ||
-        _repository == inheritedRepositoryValue ||
-        _repositories.any((entry) => entry.id == _repository);
-    return EditorTabbedAlertDialog(
-      applyButtonKey: const ValueKey('super-table-apply'),
-      initialTab: widget.initialTab,
-      dimensionDelegate: widget.dimensionDelegate,
-      propertiesTitle: const Text('Table JSON'),
-      propertiesWidth: 520,
-      busy: _busy,
-      onApply: _apply,
-      onCancel: () => Navigator.of(context).pop(),
-      propertiesContentBuilder: (context) => Form(
-        key: _form,
-        child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 12,
-              children: [
-                DropdownButtonFormField<String>(
-                  key: const ValueKey('super-table-repository'),
-                  initialValue: _repository,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Repository'),
-                  items: [
-                    const DropdownMenuItem(
-                      value: '',
-                      child: Text('Sans liaison'),
-                    ),
-                    if (inheritable)
-                      const DropdownMenuItem(
-                        value: inheritedRepositoryValue,
-                        child: Text('Hérité de la liste englobante'),
-                      ),
-                    for (final entry in _repositories)
-                      DropdownMenuItem(
-                        value: entry.id,
-                        child: Text(
-                          entry.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    if (!known)
-                      DropdownMenuItem(
-                        value: _repository,
-                        child: const Text('Repository indisponible'),
-                      ),
-                  ],
-                  onChanged: _busy
-                      ? null
-                      : (value) => setState(() => _repository = value ?? ''),
-                ),
-                TextFormField(
-                  key: const ValueKey('super-table-path'),
-                  controller: _path,
-                  enabled: _repository.isNotEmpty && !_busy,
-                  decoration: InputDecoration(
-                    labelText: 'Chemin du tableau JSON',
-                    hintText: _depth == 0 ? 'clients' : 'clients[?].commandes',
-                    helperText:
-                        'Tableau JSON dont chaque élément devient une ligne.',
-                  ),
-                  validator: (value) {
-                    if (_repository.isEmpty) return null;
-                    try {
-                      JsonAttributePath(value?.trim() ?? '');
-                      return null;
-                    } on FormatException catch (error) {
-                      return error.message;
-                    }
-                  },
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'Colonnes (${_columns.length})',
-                        style: Theme.of(context).textTheme.titleSmall,
-                      ),
-                    ),
-                    TextButton.icon(
-                      key: const ValueKey('super-table-add-column'),
-                      onPressed: _busy ? null : _addColumn,
-                      icon: const Icon(Icons.add, size: 18),
-                      label: const Text('Ajouter une colonne'),
-                    ),
-                  ],
-                ),
-                for (var i = 0; i < _columns.length; i++)
-                  Row(
-                    key: ValueKey('super-table-col-row-${_columns[i].id}'),
-                    children: [
-                      Expanded(
-                        flex: 2,
-                        child: TextFormField(
-                          key: ValueKey(
-                            'super-table-col-title-${_columns[i].id}',
-                          ),
-                          controller: _columns[i].title,
-                          decoration: InputDecoration(
-                            isDense: true,
-                            labelText: 'Titre (${_columns[i].id})',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: _columns[i].fillPercent,
-                          builder: (context, _, _) => TextFormField(
-                            key: ValueKey(
-                              'super-table-col-width-${_columns[i].id}',
-                            ),
-                            controller: _columns[i].width,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              labelText: _columns[i].hasFill
-                                  ? 'Largeur min (px)'
-                                  : 'Largeur (px)',
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          key: ValueKey(
-                            'super-table-col-fill-${_columns[i].id}',
-                          ),
-                          controller: _columns[i].fillPercent,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Reste (%)',
-                            suffixText: '%',
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        key: ValueKey(
-                          'super-table-col-delete-${_columns[i].id}',
-                        ),
-                        tooltip: 'Supprimer la colonne',
-                        onPressed: _columns.length <= 1 || _busy
-                            ? null
-                            : () => _removeColumn(i),
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                      ),
-                    ],
-                  ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        key: const ValueKey('super-table-freeze-left'),
-                        controller: _freezeCount,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Colonnes figées à gauche',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        key: const ValueKey('super-table-row-height'),
-                        controller: _rowHeight,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Hauteur ligne (px)',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SwitchListTile(
-                        key: const ValueKey('super-table-show-header'),
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Ligne d’en-tête'),
-                        value: _showHeaderRow,
-                        onChanged: (value) =>
-                            setState(() => _showHeaderRow = value),
-                      ),
-                    ),
-                    if (_showHeaderRow) ...[
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 150,
-                        child: TextFormField(
-                          key: const ValueKey('super-table-header-height'),
-                          controller: _headerHeight,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Hauteur en-tête (px)',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: SwitchListTile(
-                        key: const ValueKey('super-table-show-bottom'),
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Ligne de pied figée'),
-                        value: _showBottomRow,
-                        onChanged: (value) =>
-                            setState(() => _showBottomRow = value),
-                      ),
-                    ),
-                    if (_showBottomRow) ...[
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 150,
-                        child: TextFormField(
-                          key: const ValueKey('super-table-bottom-height'),
-                          controller: _bottomHeight,
-                          keyboardType: const TextInputType.numberWithOptions(
-                            decimal: true,
-                          ),
-                          decoration: const InputDecoration(
-                            isDense: true,
-                            labelText: 'Hauteur pied (px)',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-table-allow-add'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Autoriser l’ajout d’éléments'),
-                  value: _allowAdd,
-                  onChanged: (value) => setState(() => _allowAdd = value),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-table-allow-remove'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Autoriser la suppression d’éléments'),
-                  value: _allowRemove,
-                  onChanged: (value) => setState(() => _allowRemove = value),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-table-animate-selection-hover'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Animer le déplacement de la sélection et du survol',
-                  ),
-                  value: _animateSelectionAndHover,
-                  onChanged: (value) =>
-                      setState(() => _animateSelectionAndHover = value),
-                ),
-                TextFormField(
-                  key: const ValueKey('super-table-empty'),
-                  controller: _empty,
+  Widget build(BuildContext context) => EditorTabbedAlertDialog(
+    applyButtonKey: const ValueKey('super-table-apply'),
+    initialTab: widget.initialTab,
+    dimensionDelegate: widget.dimensionDelegate,
+    propertiesTitle: const Text('Table JSON'),
+    propertiesWidth: 520,
+    busy: _busy,
+    onApply: _apply,
+    onCancel: () => Navigator.of(context).pop(),
+    propertiesContentBuilder: (context) => Form(
+      key: _form,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          CollectionRepositorySourceFields(
+            keyPrefix: 'super-table',
+            repositories: widget.repositories,
+            scope: widget.scope,
+            repository: _repository,
+            pathController: _path,
+            pathLabel: 'Chemin du tableau JSON',
+            rootHint: 'clients',
+            nestedHint: 'clients[?].commandes',
+            helperText:
+                'Tableau JSON dont chaque élément devient une ligne.',
+            busy: _busy,
+            onRepositoryChanged: (value) => setState(() => _repository = value),
+            onLoadError: (msg) => setState(() => _error = msg),
+          ),
+          SuperTableColumnsEditor(
+            columns: _columns,
+            busy: _busy,
+            onAddColumn: _addColumn,
+            onRemoveColumn: _removeColumn,
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('super-table-freeze-left'),
+                  controller: _freezeCount,
+                  keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'Texte si le tableau est vide',
+                    labelText: 'Colonnes figées à gauche',
                   ),
                 ),
-                const Text(
-                  'Chaque colonne expose une zone éditable de cellule (et '
-                  'optionnellement d’en-tête / de pied). Un SuperValue placé '
-                  'dans une colonne avec le repository hérité et un chemin '
-                  'comme nom ou clients[?].nom lit et modifie la ligne courante.',
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('super-table-row-height'),
+                  controller: _rowHeight,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Hauteur ligne (px)',
+                  ),
                 ),
-                if (_busy) const LinearProgressIndicator(),
-                if (_error != null)
-                  Text(
-                    _error!,
-                    key: const ValueKey('super-table-editor-error'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: SwitchListTile(
+                  key: const ValueKey('super-table-show-header'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Ligne d’en-tête'),
+                  value: _showHeaderRow,
+                  onChanged: (value) => setState(() => _showHeaderRow = value),
+                ),
+              ),
+              if (_showHeaderRow) ...[
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 150,
+                  child: TextFormField(
+                    key: const ValueKey('super-table-header-height'),
+                    controller: _headerHeight,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Hauteur en-tête (px)',
                     ),
                   ),
+                ),
               ],
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: SwitchListTile(
+                  key: const ValueKey('super-table-show-bottom'),
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Ligne de pied figée'),
+                  value: _showBottomRow,
+                  onChanged: (value) => setState(() => _showBottomRow = value),
+                ),
+              ),
+              if (_showBottomRow) ...[
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 150,
+                  child: TextFormField(
+                    key: const ValueKey('super-table-bottom-height'),
+                    controller: _bottomHeight,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      labelText: 'Hauteur pied (px)',
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-table-allow-add'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Autoriser l’ajout d’éléments'),
+            value: _allowAdd,
+            onChanged: (value) => setState(() => _allowAdd = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-table-allow-remove'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Autoriser la suppression d’éléments'),
+            value: _allowRemove,
+            onChanged: (value) => setState(() => _allowRemove = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-table-animate-selection-hover'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Animer le déplacement de la sélection et du survol',
             ),
+            value: _animateSelectionAndHover,
+            onChanged: (value) =>
+                setState(() => _animateSelectionAndHover = value),
+          ),
+          TextFormField(
+            key: const ValueKey('super-table-empty'),
+            controller: _empty,
+            decoration: const InputDecoration(
+              labelText: 'Texte si le tableau est vide',
+            ),
+          ),
+          const Text(
+            'Chaque colonne expose une zone éditable de cellule (et '
+            'optionnellement d’en-tête / de pied). Un SuperValue placé '
+            'dans une colonne avec le repository hérité et un chemin '
+            'comme nom ou clients[?].nom lit et modifie la ligne courante.',
+          ),
+          ...buildCollectionEditorStatusWidgets(
+            context: context,
+            keyPrefix: 'super-table',
+            busy: _busy,
+            error: _error,
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

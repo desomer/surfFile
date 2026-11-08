@@ -1022,7 +1022,26 @@ class Registry {
     if (components.containsKey(key) || registry.containsKey(key)) {
       throw StateError('Composant déjà enregistré : $key');
     }
-    components[key] = component;
+    components[key] = component.registeredKey == null &&
+            component.runtimeType == RegisteredComponent
+        ? RegisteredComponent(
+            label: component.label,
+            builder: component._builder,
+            instanceBuilder: component.instanceBuilder,
+            slotId: component.slotId,
+            sizing: component.sizing,
+            preferredSize: component.preferredSize,
+            isAvailable: component.isAvailable,
+            tags: component.tags,
+            placementTags: component.placementTags,
+            menuIcon: component.menuIcon,
+            duplication: component.duplication,
+            addConfigurator: component.addConfigurator,
+            previewBuilder: component.previewBuilder,
+            decomposableOnExport: component.decomposableOnExport,
+            registeredKey: key,
+          )
+        : component;
   }
 
   RegisteredComponent component(String key) {
@@ -1408,6 +1427,51 @@ class ComponentExportOptions {
   );
 }
 
+/// Portée `InheritedWidget` identifiant la racine d'un [RegisteredComponent] dans l'arbre de widgets.
+class RegisteredComponentScope extends InheritedWidget {
+  const RegisteredComponentScope({
+    required this.componentKey,
+    required this.label,
+    required this.composable,
+    required super.child,
+    super.key,
+  });
+
+  /// Clé sous laquelle le composant est enregistré dans `_registry.registerComponent(key, ...)`.
+  final String componentKey;
+
+  /// Libellé déclaré sur le [RegisteredComponent].
+  final String label;
+
+  /// Indique s'il s'agit d'un composant de composition (`RegisteredComponent.composable` / `decomposableOnExport: true`).
+  final bool composable;
+
+  /// Retourne le [RegisteredComponentScope] direct (sans traverser un `EditorSlotState` intermédiaire), ou `null`.
+  static RegisteredComponentScope? directOf(BuildContext context) {
+    final inherited = context
+        .getElementForInheritedWidgetOfExactType<RegisteredComponentScope>()
+        ?.widget;
+    if (inherited is! RegisteredComponentScope) return null;
+
+    var direct = true;
+    context.visitAncestorElements((ancestor) {
+      if (identical(ancestor.widget, inherited)) return false;
+      if (ancestor is StatefulElement && ancestor.state is EditorSlotState) {
+        direct = false;
+        return false;
+      }
+      return true;
+    });
+    return direct ? inherited : null;
+  }
+
+  @override
+  bool updateShouldNotify(RegisteredComponentScope oldWidget) =>
+      componentKey != oldWidget.componentKey ||
+      label != oldWidget.label ||
+      composable != oldWidget.composable;
+}
+
 /// Constructeur de widget pour un [RegisteredComponent] recevant le [BuildContext]
 /// et l'identifiant d'instance [id] du slot lors de son placement.
 typedef InstanceWidgetBuilder = Widget Function(
@@ -1432,6 +1496,7 @@ class RegisteredComponent {
     this.addConfigurator,
     this.previewBuilder,
     this.decomposableOnExport = false,
+    this.registeredKey,
   }) : _builder = builder,
        assert(
          builder != null || instanceBuilder != null,
@@ -1454,6 +1519,7 @@ class RegisteredComponent {
     this.duplication,
     this.addConfigurator,
     this.previewBuilder,
+    this.registeredKey,
   }) : _builder = builder,
        decomposableOnExport = true,
        assert(
@@ -1471,15 +1537,35 @@ class RegisteredComponent {
   /// peut être décomposé en widgets standards lors de l'export en code Dart.
   final bool decomposableOnExport;
 
+  /// Clé d'enregistrement dans le [Registry] (ex. `'panString'`).
+  final String? registeredKey;
+
+  Widget _wrapWithScope(Widget child) {
+    final key = registeredKey ?? (label.isNotEmpty ? label : null);
+    if (key == null || !decomposableOnExport && registeredKey == null) {
+      return child;
+    }
+    return RegisteredComponentScope(
+      componentKey: key,
+      label: label,
+      composable: decomposableOnExport,
+      child: child,
+    );
+  }
+
   /// Constructeur historique de widget.
-  WidgetBuilder get builder =>
-      _builder ??
-      ((context) => instanceBuilder!(
-        context,
-        slotId ??
-            editorComponentLabelOf(context)?.id ??
-            (label.isNotEmpty ? label : 'registered-component'),
-      ));
+  WidgetBuilder get builder => (context) {
+    final raw = _builder != null
+        ? _builder(context)
+        : instanceBuilder!(
+            context,
+            slotId ??
+                editorComponentLabelOf(context)?.id ??
+                registeredKey ??
+                (label.isNotEmpty ? label : 'registered-component'),
+          );
+    return _wrapWithScope(raw);
+  };
 
   /// Identifiant historique, conservé dans les dispositions existantes.
   final String? slotId;
@@ -1511,7 +1597,7 @@ class RegisteredComponent {
     preferredSize: preferredSize,
     visible: visible,
     builder: instanceBuilder != null
-        ? (context) => instanceBuilder!(context, id)
+        ? (context) => _wrapWithScope(instanceBuilder!(context, id))
         : builder,
     tags: tags,
     menuIcon: menuIcon,

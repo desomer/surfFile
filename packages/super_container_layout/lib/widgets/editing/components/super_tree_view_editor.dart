@@ -17,7 +17,6 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../../models/json_text_binding.dart';
 import '../../../models/super_tree_view_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
@@ -26,6 +25,7 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
+import 'shared/collection_editor_controls.dart';
 
 /// Ouvre la fenêtre de réglage pour [config].
 Future<SuperTreeViewConfig?> showSuperTreeViewEditor({
@@ -96,13 +96,13 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
     text: widget.config.childrenKey,
   );
   late final _headerSize = TextEditingController(
-    text: _number(widget.config.headerSize),
+    text: formatCollectionEditorNumber(widget.config.headerSize),
   );
   late final _rowHeight = TextEditingController(
-    text: _number(widget.config.rowHeight),
+    text: formatCollectionEditorNumber(widget.config.rowHeight),
   );
   late final _indent = TextEditingController(
-    text: _number(widget.config.indent),
+    text: formatCollectionEditorNumber(widget.config.indent),
   );
   late final _empty = TextEditingController(text: widget.config.emptyText);
 
@@ -113,20 +113,8 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
   late bool _showConnectors = widget.config.showConnectors;
   late bool _showCheckboxes = widget.config.showCheckboxes;
   late bool _animateSelectionAndHover = widget.config.animateSelectionAndHover;
-  List<JsonRepositoryEntry> _repositories = [];
   String? _error;
   bool _busy = false;
-
-  static String _number(double value) =>
-      value == value.roundToDouble() ? '${value.toInt()}' : '$value';
-
-  int get _depth => widget.scope?.indices.length ?? 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRepositories();
-  }
 
   @override
   void dispose() {
@@ -139,55 +127,21 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
     super.dispose();
   }
 
-  Future<void> _loadRepositories() async {
-    final store = widget.repositories;
-    if (store == null) return;
-    try {
-      final entries = await store.catalog();
-      if (mounted) setState(() => _repositories = entries);
-    } on FormatException catch (error) {
-      if (mounted) setState(() => _error = error.message);
-    } on FileSystemException {
-      if (mounted) {
-        setState(() => _error = 'Impossible de charger les repositories.');
-      }
-    }
-  }
-
-  JsonTextBinding? get _binding => _repository.isEmpty
-      ? null
-      : JsonTextBinding(
-          repositoryId: _repository == inheritedRepositoryValue
-              ? null
-              : _repository,
-          path: _path.text.trim(),
-        );
-
   SuperTreeViewConfig _config() {
-    double number(TextEditingController field) {
-      final value = double.tryParse(field.text.trim().replaceAll(',', '.'));
-      if (value == null) {
-        throw const FormatException('Valeur numérique invalide.');
-      }
-      return value;
-    }
-
-    final binding = _binding;
-    final result = widget.config.copyWith(
+    final binding = buildCollectionEditorBinding(_repository, _path.text);
+    return widget.config.copyWith(
       binding: binding,
       clearBinding: binding == null,
       childrenKey: _childrenKey.text.trim(),
-      headerSize: number(_headerSize),
-      rowHeight: number(_rowHeight),
-      indent: number(_indent),
+      headerSize: parseCollectionEditorNumber(_headerSize),
+      rowHeight: parseCollectionEditorNumber(_rowHeight),
+      indent: parseCollectionEditorNumber(_indent),
       initiallyExpanded: _initiallyExpanded,
       showConnectors: _showConnectors,
       showCheckboxes: _showCheckboxes,
       animateSelectionAndHover: _animateSelectionAndHover,
       emptyText: _empty.text,
-    );
-    result.validate();
-    return result;
+    )..validate();
   }
 
   Future<bool> _apply() async {
@@ -198,22 +152,12 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
     });
     try {
       final config = _config();
-      final binding = config.binding;
-      final scope = widget.scope;
-      if (binding != null && !(scope?.placeholder ?? false)) {
-        final store = widget.repositories;
-        if (store == null) {
-          throw const FormatException('Service de repositories indisponible.');
-        }
-        final resolved = JsonListScope.resolveSelected(
-          binding,
-          scope,
-          store,
-        ).binding;
-        if (resolved != null) {
-          await store.readTreeNodes(resolved.repositoryId!, resolved.path);
-        }
-      }
+      await verifyCollectionBindingTarget(
+        binding: config.binding,
+        scope: widget.scope,
+        store: widget.repositories,
+        readTarget: (store, repoId, path) => store.readTreeNodes(repoId, path),
+      );
       if (mounted) Navigator.of(context).pop(config);
       return true;
     } on FormatException catch (error) {
@@ -228,190 +172,140 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final inheritable =
-        widget.scope != null || _repository == inheritedRepositoryValue;
-    final known =
-        _repository.isEmpty ||
-        _repository == inheritedRepositoryValue ||
-        _repositories.any((entry) => entry.id == _repository);
-    return EditorTabbedAlertDialog(
-      applyButtonKey: const ValueKey('super-tree-apply'),
-      initialTab: widget.initialTab,
-      dimensionDelegate: widget.dimensionDelegate,
-      propertiesTitle: const Text('TreeView JSON'),
-      propertiesWidth: 440,
-      busy: _busy,
-      onApply: _apply,
-      onCancel: () => Navigator.of(context).pop(),
-      propertiesContentBuilder: (context) => Form(
-        key: _form,
-        child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: 12,
-              children: [
-                DropdownButtonFormField<String>(
-                  key: const ValueKey('super-tree-repository'),
-                  initialValue: _repository,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Repository'),
-                  items: [
-                    const DropdownMenuItem(
-                      value: '',
-                      child: Text('Sans liaison'),
-                    ),
-                    if (inheritable)
-                      const DropdownMenuItem(
-                        value: inheritedRepositoryValue,
-                        child: Text('Hérité de la liste englobante'),
-                      ),
-                    for (final entry in _repositories)
-                      DropdownMenuItem(
-                        value: entry.id,
-                        child: Text(
-                          entry.name,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    if (!known)
-                      DropdownMenuItem(
-                        value: _repository,
-                        child: const Text('Repository indisponible'),
-                      ),
-                  ],
-                  onChanged: _busy
-                      ? null
-                      : (value) => setState(() => _repository = value ?? ''),
-                ),
-                TextFormField(
-                  key: const ValueKey('super-tree-path'),
-                  controller: _path,
-                  enabled: _repository.isNotEmpty && !_busy,
-                  decoration: InputDecoration(
-                    labelText: 'Chemin de l’arbre JSON',
-                    hintText: _depth == 0 ? 'nodes' : 'clients[?].nodes',
-                    helperText:
-                        'Tableau ou objet JSON contenant les nœuds racines.',
-                  ),
-                  validator: (value) {
-                    if (_repository.isEmpty) return null;
-                    try {
-                      JsonAttributePath(value?.trim() ?? '');
-                      return null;
-                    } on FormatException catch (error) {
-                      return error.message;
-                    }
-                  },
-                ),
-                TextFormField(
-                  key: const ValueKey('super-tree-children-key'),
-                  controller: _childrenKey,
-                  decoration: const InputDecoration(
-                    labelText: 'Clé des nœuds enfants',
-                    hintText: 'children',
-                    helperText: 'Propriété JSON de chaque nœud contenant la liste de ses sous-nœuds.',
-                  ),
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        key: const ValueKey('super-tree-header-size'),
-                        controller: _headerSize,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Largeur Header (px)',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        key: const ValueKey('super-tree-row-height'),
-                        controller: _rowHeight,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Hauteur ligne (px)',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        key: const ValueKey('super-tree-indent'),
-                        controller: _indent,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Indentation (px)',
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                TextFormField(
-                  key: const ValueKey('super-tree-empty'),
-                  controller: _empty,
-                  decoration: const InputDecoration(
-                    labelText: 'Texte si l’arbre est vide',
-                  ),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-tree-initially-expanded'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Déplier les nœuds par défaut'),
-                  value: _initiallyExpanded,
-                  onChanged: (value) =>
-                      setState(() => _initiallyExpanded = value),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-tree-show-connectors'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Afficher les traits de connexion'),
-                  value: _showConnectors,
-                  onChanged: (value) => setState(() => _showConnectors = value),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-tree-show-checkboxes'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Afficher les cases à cocher'),
-                  value: _showCheckboxes,
-                  onChanged: (value) => setState(() => _showCheckboxes = value),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-tree-animate-selection-hover'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text(
-                    'Animer le déplacement de la sélection et du survol',
-                  ),
-                  value: _animateSelectionAndHover,
-                  onChanged: (value) =>
-                      setState(() => _animateSelectionAndHover = value),
-                ),
-                const Text(
-                  'Chaque ligne expose 2 zones éditables : « Header » et '
-                  '« Data ». Un SuperValue placé dans l’une de ces zones avec '
-                  'le repository hérité et un chemin comme key, data ou '
-                  'nodes[?].key lit et modifie la valeur du nœud courant.',
-                ),
-                if (_busy) const LinearProgressIndicator(),
-                if (_error != null)
-                  Text(
-                    _error!,
-                    key: const ValueKey('super-tree-editor-error'),
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-              ],
+  Widget build(BuildContext context) => EditorTabbedAlertDialog(
+    applyButtonKey: const ValueKey('super-tree-apply'),
+    initialTab: widget.initialTab,
+    dimensionDelegate: widget.dimensionDelegate,
+    propertiesTitle: const Text('TreeView JSON'),
+    propertiesWidth: 440,
+    busy: _busy,
+    onApply: _apply,
+    onCancel: () => Navigator.of(context).pop(),
+    propertiesContentBuilder: (context) => Form(
+      key: _form,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          CollectionRepositorySourceFields(
+            keyPrefix: 'super-tree',
+            repositories: widget.repositories,
+            scope: widget.scope,
+            repository: _repository,
+            pathController: _path,
+            pathLabel: 'Chemin de l’arbre JSON',
+            rootHint: 'nodes',
+            nestedHint: 'clients[?].nodes',
+            helperText: 'Tableau ou objet JSON contenant les nœuds racines.',
+            busy: _busy,
+            onRepositoryChanged: (value) => setState(() => _repository = value),
+            onLoadError: (msg) => setState(() => _error = msg),
+          ),
+          TextFormField(
+            key: const ValueKey('super-tree-children-key'),
+            controller: _childrenKey,
+            decoration: const InputDecoration(
+              labelText: 'Clé des nœuds enfants',
+              hintText: 'children',
+              helperText:
+                  'Propriété JSON de chaque nœud contenant la liste de ses sous-nœuds.',
             ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('super-tree-header-size'),
+                  controller: _headerSize,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Largeur Header (px)',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('super-tree-row-height'),
+                  controller: _rowHeight,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Hauteur ligne (px)',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  key: const ValueKey('super-tree-indent'),
+                  controller: _indent,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Indentation (px)',
+                  ),
+                ),
+              ),
+            ],
+          ),
+          TextFormField(
+            key: const ValueKey('super-tree-empty'),
+            controller: _empty,
+            decoration: const InputDecoration(
+              labelText: 'Texte si l’arbre est vide',
+            ),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-tree-initially-expanded'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Déplier les nœuds par défaut'),
+            value: _initiallyExpanded,
+            onChanged: (value) => setState(() => _initiallyExpanded = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-tree-show-connectors'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Afficher les traits de connexion'),
+            value: _showConnectors,
+            onChanged: (value) => setState(() => _showConnectors = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-tree-show-checkboxes'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Afficher les cases à cocher'),
+            value: _showCheckboxes,
+            onChanged: (value) => setState(() => _showCheckboxes = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-tree-animate-selection-hover'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Animer le déplacement de la sélection et du survol',
+            ),
+            value: _animateSelectionAndHover,
+            onChanged: (value) =>
+                setState(() => _animateSelectionAndHover = value),
+          ),
+          const Text(
+            'Chaque ligne expose 2 zones éditables : « Header » et '
+            '« Data ». Un SuperValue placé dans l’une de ces zones avec '
+            'le repository hérité et un chemin comme key, data ou '
+            'nodes[?].key lit et modifie la valeur du nœud courant.',
+          ),
+          ...buildCollectionEditorStatusWidgets(
+            context: context,
+            keyPrefix: 'super-tree',
+            busy: _busy,
+            error: _error,
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

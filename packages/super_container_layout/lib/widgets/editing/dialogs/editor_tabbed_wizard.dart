@@ -1,11 +1,15 @@
 /// Structure générique de boîte de dialogue à onglets pour les éditeurs ([EditorTabbedWizard]).
 library;
 
+import 'dart:async' show FutureOr;
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import '../history/editor_history.dart';
 import '../slots/editor_slot.dart';
+import '../styles/style_editor_panel.dart' show StyleEditorPanel;
 import 'editor_dialog_header.dart';
 
 /// Onglets du wizard unifié d'édition (Propriétés et Taille et marge).
@@ -489,6 +493,187 @@ class _EditorTabbedAlertDialogState extends State<EditorTabbedAlertDialog> {
                       '${(widget.dialogKey! as ValueKey<String>).value.substring(0, (widget.dialogKey! as ValueKey<String>).value.length - '-settings'.length)}-settings-apply',
                     )
                   : null),
+          onPressed: widget.busy ? null : _handleApply,
+          child: const Text('Appliquer'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Signature du constructeur de l'onglet « Propriétés » d'un [EditorStyleWizardDialog].
+typedef EditorStyleWizardContentBuilder =
+    Widget Function(
+      BuildContext context,
+      bool dense,
+      ValueChanged<bool> onDenseChanged,
+    );
+
+/// Enveloppe générique d'`AlertDialog` grand format à 2 onglets (« Propriétés »
+/// et « Taille et marge ») pour les éditeurs basés sur [StyleEditorPanel] ou
+/// `ContainerStyleEditor`.
+class EditorStyleWizardDialog extends StatefulWidget {
+  /// Crée un [EditorStyleWizardDialog].
+  const EditorStyleWizardDialog({
+    this.dialogKey,
+    this.applyButtonKey,
+    required this.initialTab,
+    required this.dimensionDelegate,
+    required this.propertiesBuilder,
+    required this.onApply,
+    this.onCancel,
+    this.onWidthChanged,
+    this.liveError,
+    this.liveErrorKey,
+    this.secondaryError,
+    this.busy = false,
+    this.minHeight = 0.0,
+    this.verticalMargin = 120.0,
+    super.key,
+  });
+
+  /// Clé optionnelle de l'`AlertDialog`.
+  final Key? dialogKey;
+
+  /// Clé optionnelle du bouton « Appliquer ».
+  final Key? applyButtonKey;
+
+  /// Onglet demandé à l'ouverture.
+  final EditorWizardTab initialTab;
+
+  /// Délégué de dimensionnement (« Taille et marge ») optionnel.
+  final EditorDimensionDelegate? dimensionDelegate;
+
+  /// Construit le contenu de l'onglet « Propriétés » en lui passant l'état `dense`.
+  final EditorStyleWizardContentBuilder propertiesBuilder;
+
+  /// Valide et applique les propriétés. Doit retourner `true` si la validation
+  /// a réussi (et fermer la boîte de dialogue), ou `false` pour rester ouvert
+  /// sur l'onglet « Propriétés ».
+  final FutureOr<bool> Function() onApply;
+
+  /// Callback optionnel d'annulation (ferme la boîte par défaut).
+  final VoidCallback? onCancel;
+
+  /// Notifié lorsque le mode compact (`680`) ou étendu (`1080`) change.
+  final ValueChanged<double>? onWidthChanged;
+
+  /// Message d'erreur principal affiché dans la barre d'actions.
+  final String? liveError;
+
+  /// Clé du widget texte affichant [liveError].
+  final Key? liveErrorKey;
+
+  /// Message d'erreur secondaire optionnel affiché dans la barre d'actions.
+  final String? secondaryError;
+
+  /// Désactive les boutons d'action pendant une validation asynchrone.
+  final bool busy;
+
+  /// Hauteur minimale du contenu du dialogue.
+  final double minHeight;
+
+  /// Marge verticale soustraite de la hauteur de l'écran.
+  final double verticalMargin;
+
+  @override
+  State<EditorStyleWizardDialog> createState() =>
+      _EditorStyleWizardDialogState();
+}
+
+class _EditorStyleWizardDialogState extends State<EditorStyleWizardDialog> {
+  late EditorWizardTab _tab = EditorWizardNavigation.resolveInitialTab(
+    widget.initialTab,
+    widget.dimensionDelegate,
+  );
+  late bool _dense = StyleEditorPanel.preferredDense;
+
+  Future<void> _handleApply() async {
+    final delegate = widget.dimensionDelegate;
+    if (delegate != null && !delegate.validate()) {
+      if (_tab != EditorWizardTab.dimensions) {
+        setState(() => _tab = EditorWizardTab.dimensions);
+      }
+      return;
+    }
+    final ok = await widget.onApply();
+    if (!ok && mounted && _tab != EditorWizardTab.properties) {
+      setState(() => _tab = EditorWizardTab.properties);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context);
+    final width = math.min(
+      _dense ? 680.0 : 1080.0,
+      math.max(0.0, screen.width - 96),
+    );
+    final height = math.max(
+      widget.minHeight,
+      math.min(680.0, math.max(0.0, screen.height - widget.verticalMargin)),
+    );
+    final scheme = Theme.of(context).colorScheme;
+    final delegate = widget.dimensionDelegate;
+    final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
+    return AlertDialog(
+      key: widget.dialogKey,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+      contentPadding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+      constraints: BoxConstraints(maxWidth: width + 48),
+      content: SizedBox(
+        width: width,
+        height: height,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EditorWizardTabBar(
+              selectedTab: _tab,
+              propertiesEnabled: true,
+              dimensionsEnabled: delegate != null,
+              onTabSelected: (next) {
+                if (next != _tab) setState(() => _tab = next);
+              },
+            ),
+            const SizedBox(height: 12),
+            if (onDimensions)
+              Expanded(child: EditorDimensionTabView(delegate: delegate))
+            else
+              Expanded(
+                child: widget.propertiesBuilder(context, _dense, (value) {
+                  setState(() => _dense = value);
+                  widget.onWidthChanged?.call(value ? 680 : 1080);
+                }),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        if (onDimensions)
+          ...delegate.buildExtraActions(
+            context,
+            onResetAndClose: _handleApply,
+          ),
+        if (widget.liveError != null)
+          Text(
+            widget.liveError!,
+            key: widget.liveErrorKey,
+            style: TextStyle(color: scheme.error),
+          ),
+        if (widget.secondaryError != null)
+          Text(
+            widget.secondaryError!,
+            style: TextStyle(color: scheme.error),
+          ),
+        TextButton(
+          onPressed: widget.busy
+              ? null
+              : (widget.onCancel ?? () => Navigator.of(context).pop()),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          key: widget.applyButtonKey,
           onPressed: widget.busy ? null : _handleApply,
           child: const Text('Appliquer'),
         ),

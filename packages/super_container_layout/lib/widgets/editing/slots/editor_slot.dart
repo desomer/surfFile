@@ -15,6 +15,7 @@ import '../../../theme/container_style.dart';
 import '../../../models/component_behavior.dart';
 import '../../../models/component_config.dart';
 import '../../../models/native_component_config.dart';
+import '../../../models/registry.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_tab_config.dart';
@@ -245,6 +246,91 @@ class EditorSlotState extends State<EditorSlot> {
   /// outermost editor target.
   EditorComponentLabel? get componentLabel => _instance;
 
+  /// Identité de composant enregistré / composé associée à ce slot (via [RegisteredComponentScope] ou « Configure as... »).
+  ({String componentName, bool composable})? get composedComponentInfo {
+    if (widget.zoneId != null) return null;
+    final registry = SuperApp.maybeOf(context)?.registry;
+    final id = effectiveComponentId;
+    final explicitOpts = registry?.exportOptionsFor(id);
+    if (explicitOpts != null && explicitOpts.generateComponentOnExport) {
+      final name = explicitOpts.componentName.trim().isNotEmpty
+          ? explicitOpts.componentName.trim()
+          : id;
+      return (
+        componentName: name,
+        composable: !explicitOpts.forceComponentOnExport,
+      );
+    }
+    final scope = RegisteredComponentScope.directOf(context);
+    if (scope != null) {
+      final scopeOpts = registry?.exportOptionsFor(scope.componentKey);
+      if (scopeOpts != null) {
+        final name = scopeOpts.componentName.trim().isNotEmpty
+            ? scopeOpts.componentName.trim()
+            : scope.componentKey;
+        return (
+          componentName: name,
+          composable: !scopeOpts.forceComponentOnExport,
+        );
+      }
+      return (
+        componentName: scope.componentKey,
+        composable: scope.composable,
+      );
+    }
+    return null;
+  }
+
+  CustomPainter? _buildForegroundPainter({
+    required bool showOutline,
+    required bool isSelectedLeaf,
+    required bool isEmphasizedHighlight,
+    required Color accentColor,
+    required double zoomScale,
+  }) {
+    final composed = composedComponentInfo;
+    final effectiveOutlineColor = composed != null
+        ? (composed.composable
+              ? EditorComposedComponentBadgePainter.composedPrimary
+              : EditorComposedComponentBadgePainter.forcedPrimary)
+        : accentColor;
+    final effectiveOutlineLabel = composed != null
+        ? '${composed.composable ? '🧩' : '📦'} ${composed.componentName} — $titleLabel'
+        : titleLabel;
+
+    final CustomPainter? basePainter = showOutline
+        ? EditorSelectionOutline(
+            color: effectiveOutlineColor,
+            radius: widget.outlineRadius,
+            emphasized: isEmphasizedHighlight,
+            label: effectiveOutlineLabel,
+            zoomScale: zoomScale,
+          )
+        : isSelectedLeaf
+        ? EditorSelectionBorderPainter(
+            color: composed != null
+                ? effectiveOutlineColor
+                : AppearanceScope.of(context).accent,
+            dashed: false,
+            strokeWidth: 2.0,
+            fillOpacity: 0.10,
+            animated:
+                !(MediaQuery.maybeDisableAnimationsOf(context) ?? false),
+          )
+        : null;
+
+    if (composed != null) {
+      return EditorComposedComponentBadgePainter(
+        componentName: composed.componentName,
+        composable: composed.composable,
+        radius: widget.outlineRadius,
+        zoomScale: zoomScale,
+        innerPainter: basePainter,
+      );
+    }
+    return basePainter;
+  }
+
   /// Scope descriptor targeting this component or container zone for AI edits.
   VibeChatScope get aiScope => _buildAiScope();
 
@@ -271,6 +357,10 @@ class EditorSlotState extends State<EditorSlot> {
       setState(() => _localLabel = value);
       widget.onLabelChanged?.call(value);
     }
+  }
+
+  void _refreshState() {
+    if (mounted) setState(() {});
   }
 
   /// Restores a label after cancelling the editor without changing its owner.
@@ -726,31 +816,17 @@ class EditorSlotState extends State<EditorSlot> {
               _sliverButtons = 0;
               _sliverMoved = false;
             },
-            foregroundPainter: showOutline
-                ? EditorSelectionOutline(
-                    color: accentColor,
-                    radius: widget.outlineRadius,
-                    emphasized: isEmphasizedHighlight,
-                    label: titleLabel,
-                    zoomScale:
-                        context
-                            .dependOnInheritedWidgetOfExactType<
-                              EditorZoomScope
-                            >()
-                            ?.scale ??
-                        1.0,
-                  )
-                : isSelectedLeaf
-                ? EditorSelectionBorderPainter(
-                    color: AppearanceScope.of(context).accent,
-                    dashed: false,
-                    strokeWidth: 2.0,
-                    fillOpacity: 0.10,
-                    animated:
-                        !(MediaQuery.maybeDisableAnimationsOf(context) ??
-                            false),
-                  )
-                : null,
+            foregroundPainter: _buildForegroundPainter(
+              showOutline: showOutline,
+              isSelectedLeaf: isSelectedLeaf,
+              isEmphasizedHighlight: isEmphasizedHighlight,
+              accentColor: accentColor,
+              zoomScale:
+                  context
+                      .dependOnInheritedWidgetOfExactType<EditorZoomScope>()
+                      ?.scale ??
+                  1.0,
+            ),
             child: child,
           );
         },
@@ -789,31 +865,17 @@ class EditorSlotState extends State<EditorSlot> {
               (EditorSelectionRegion.hoverTarget.value == null ||
                   isEmphasizedHighlight);
           return CustomPaint(
-            foregroundPainter: showOutline
-                ? EditorSelectionOutline(
-                    color: accentColor,
-                    radius: widget.outlineRadius,
-                    emphasized: isEmphasizedHighlight,
-                    label: titleLabel,
-                    zoomScale:
-                        context
-                            .dependOnInheritedWidgetOfExactType<
-                              EditorZoomScope
-                            >()
-                            ?.scale ??
-                        1.0,
-                  )
-                : isSelectedLeaf
-                ? EditorSelectionBorderPainter(
-                    color: AppearanceScope.of(context).accent,
-                    dashed: false,
-                    strokeWidth: 2.0,
-                    fillOpacity: 0.10,
-                    animated:
-                        !(MediaQuery.maybeDisableAnimationsOf(context) ??
-                            false),
-                  )
-                : null,
+            foregroundPainter: _buildForegroundPainter(
+              showOutline: showOutline,
+              isSelectedLeaf: isSelectedLeaf,
+              isEmphasizedHighlight: isEmphasizedHighlight,
+              accentColor: accentColor,
+              zoomScale:
+                  context
+                      .dependOnInheritedWidgetOfExactType<EditorZoomScope>()
+                      ?.scale ??
+                  1.0,
+            ),
             child: child,
           );
         },

@@ -117,6 +117,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     bool scrollable = false,
     bool fixedHeight = false,
     bool fixedWidth = false,
+    ({String componentName, bool composable})? composedComponent,
     String? indicatorKeySuffix,
   }) {
     final textWidget = Text(
@@ -154,6 +155,57 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                 )
               : textWidget,
         ),
+        if (composedComponent != null) ...[
+          const SizedBox(width: 6),
+          Tooltip(
+            message: composedComponent.composable
+                ? 'Composant composé : ${composedComponent.componentName}'
+                : 'Composant forcé : ${composedComponent.componentName}',
+            child: Container(
+              key: ValueKey('style-menu-composed-indicator-$suffix'),
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: composedComponent.composable
+                    ? EditorComposedComponentBadgePainter.composedPrimary
+                          .withValues(alpha: 0.16)
+                    : EditorComposedComponentBadgePainter.forcedPrimary
+                          .withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: composedComponent.composable
+                      ? EditorComposedComponentBadgePainter.composedPrimary
+                      : EditorComposedComponentBadgePainter.forcedPrimary,
+                  width: 0.8,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    composedComponent.composable
+                        ? Icons.extension_outlined
+                        : Icons.widgets_outlined,
+                    size: 11,
+                    color: composedComponent.composable
+                        ? EditorComposedComponentBadgePainter.composedPrimary
+                        : EditorComposedComponentBadgePainter.forcedPrimary,
+                  ),
+                  const SizedBox(width: 3),
+                  Text(
+                    composedComponent.componentName,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: composedComponent.composable
+                          ? EditorComposedComponentBadgePainter.composedPrimary
+                          : EditorComposedComponentBadgePainter.forcedPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
         if (scrollable) ...[
           const SizedBox(width: 4),
           _menuIndicatorIcon(
@@ -877,6 +929,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                                   scrollable: indicators.scrollable,
                                   fixedHeight: indicators.fixedHeight,
                                   fixedWidth: indicators.fixedWidth,
+                                  composedComponent:
+                                      state.composedComponentInfo,
                                   indicatorKeySuffix: state.label,
                                 );
                               }(),
@@ -944,9 +998,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                                   Navigator.of(context)
                                       .pop<Future<void> Function()>(() async {
                                         if (state.mounted) {
-                                          state.widget
-                                              .axisAction!()
-                                              .onToggle();
+                                          state.widget.axisAction!().onToggle();
                                         }
                                       }),
                             ),

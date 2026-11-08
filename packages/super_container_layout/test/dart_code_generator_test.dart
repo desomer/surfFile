@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_selection_region.dart';
 
 void main() {
   test(
@@ -502,6 +503,15 @@ void main() {
       expect(dartCode, contains("label: 'Tab 2'"));
       expect(dartCode, contains("label: 'Label A'"));
       expect(dartCode, contains("initialText: 'Hidden tab text'"));
+      // Le dartCode généré avec decomposeComponents: false régénère AUSSI
+      // le bloc _registry.registerComponent('sub-card', ...) du composant composé !
+      expect(
+        dartCode,
+        contains(
+          "_registry.registerComponent(\n  'sub-card',\n  RegisteredComponent.composable(",
+        ),
+      );
+      expect(dartCode, contains("initialText: 'Inside Card'"));
       expect(
         dartCode,
         contains(
@@ -753,6 +763,110 @@ void main() {
           "_registry.registerComponent(\n  'root-layout',\n  RegisteredComponent(",
         ),
       );
+    },
+  );
+
+  testWidgets(
+    'RegisteredComponent.composable (like panString) displays visual composed badge on canvas and in context menu',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier<Appearance>(DefaultAppearance());
+      addTearDown(appearance.dispose);
+      registry.bindAppearance(appearance);
+      final editMode = ValueNotifier<bool>(true);
+      addTearDown(editMode.dispose);
+
+      registry.registerComponent(
+        'panString',
+        RegisteredComponent.composable(
+          label: 'panString',
+          duplication: ComponentDuplicationContract.newContainer,
+          instanceBuilder: (_, id) => EditableSurface(
+            id: id,
+            label: 'WBYiTwqr2a',
+            menuType: 'Card',
+            style: const ContainerStyle(color: Color(0xFFC5A9F5)),
+            child: const SuperValue(
+              id: 'field-description',
+              config: SuperValueConfig(label: 'Description'),
+            ),
+          ),
+        ),
+      );
+
+      final router = GoRouter(
+        routes: [GoRoute(path: '/', builder: (_, _) => const SizedBox())],
+      );
+      addTearDown(router.dispose);
+      final app = SuperApp(router: router, registry: registry);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppearanceScope(
+              controller: appearance,
+              child: StyleEditScope(
+                controller: editMode,
+                child: SuperAppScope(
+                  app: app,
+                  child: Builder(
+                    builder: (context) =>
+                        SuperApp.of(context)
+                            .registry!
+                            .component('panString')
+                            .builder(context),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Le slot racine de panString porte l'identité de composant composé
+      final rootSlotFinder = find.byWidgetPredicate(
+        (w) => w is EditorSlot && w.label == 'WBYiTwqr2a' && w.zoneId == null,
+      );
+      expect(rootSlotFinder, findsOneWidget);
+      final rootSlotState = tester.state<EditorSlotState>(rootSlotFinder);
+      expect(rootSlotState.composedComponentInfo, isNotNull);
+      expect(rootSlotState.composedComponentInfo!.componentName, 'panString');
+      expect(rootSlotState.composedComponentInfo!.composable, isTrue);
+
+      // L'enfant interne (field-description) ne doit PAS hériter du badge de panString
+      final childSlotFinder = find.byWidgetPredicate(
+        (w) =>
+            w is EditorSlot &&
+            w.id == 'field-description' &&
+            w.zoneId == null,
+      );
+      expect(childSlotFinder, findsOneWidget);
+      final childSlotState = tester.state<EditorSlotState>(childSlotFinder);
+      expect(childSlotState.composedComponentInfo, isNull);
+
+      // Le CustomPaint sur le canevas utilise EditorComposedComponentBadgePainter
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is CustomPaint &&
+              w.foregroundPainter is EditorComposedComponentBadgePainter &&
+              (w.foregroundPainter as EditorComposedComponentBadgePainter)
+                      .componentName ==
+                  'panString',
+        ),
+        findsOneWidget,
+      );
+
+      // Dans le menu contextuel, l'indicateur 'style-menu-composed-indicator-WBYiTwqr2a' est affiché
+      unawaited(rootSlotState.openMenu(const Offset(100, 100)));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('style-menu-composed-indicator-WBYiTwqr2a')),
+        findsOneWidget,
+      );
+      expect(find.text('panString'), findsOneWidget);
     },
   );
 }

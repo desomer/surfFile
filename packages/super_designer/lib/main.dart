@@ -202,572 +202,572 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
     initRegistry(_registry);
 
-    _registry.registerComponent(
-      'model-code',
-      RegisteredComponent.composable(
-        label: 'model-code',
-        duplication: ComponentDuplicationContract.newContainer,
-        isAvailable: (context) {
-          return true;
-        },
-        instanceBuilder: (_, id) => EditableSurface(
-          id: id,
-          label: 'model-code',
-          menuType: 'Card',
-          style: const ContainerStyle(color: Color(0xFF2B382C)),
-          child: const SuperCode(
-            id: 'model-code-editor',
-            config: SuperCodeConfig(
-              style: SuperCodeStyle(transparentBackground: true),
-              binding: JsonTextBinding(
-                repositoryId: _repositoryId,
-                path: 'source',
-              ),
-              errorBinding: JsonTextBinding(
-                repositoryId: _repositoryId,
-                path: 'yamlError',
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
+    // _registry.registerComponent(
+    //   'model-code',
+    //   RegisteredComponent.composable(
+    //     label: 'model-code',
+    //     duplication: ComponentDuplicationContract.newContainer,
+    //     isAvailable: (context) {
+    //       return true;
+    //     },
+    //     instanceBuilder: (_, id) => EditableSurface(
+    //       id: id,
+    //       label: 'model-code',
+    //       menuType: 'Card',
+    //       style: const ContainerStyle(color: Color(0xFF2B382C)),
+    //       child: const SuperCode(
+    //         id: 'model-code-editor',
+    //         config: SuperCodeConfig(
+    //           style: SuperCodeStyle(transparentBackground: true),
+    //           binding: JsonTextBinding(
+    //             repositoryId: _repositoryId,
+    //             path: 'source',
+    //           ),
+    //           errorBinding: JsonTextBinding(
+    //             repositoryId: _repositoryId,
+    //             path: 'yamlError',
+    //           ),
+    //         ),
+    //       ),
+    //     ),
+    //   ),
+    // );
 
-    _registry.registerComponent(
-      'model-header',
-      RegisteredComponent.composable(
-        label: 'Model Header',
-        menuIcon: Icons.code,
-        duplication: ComponentDuplicationContract.newLayout,
-        instanceBuilder: (_, id) => SuperLayout(
-          id: id,
-          label: 'Node header',
-          config: const SuperLayoutConfig(
-            zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
-            zoneFlows: {
-              SuperLayoutZone.center: ZoneFlowConfig(expandSlots: false),
-            },
-            slotSizeConstraints: {
-              'tree-node-separator': SlotSizeConstraints(fitContent: false),
-              'tree-node-name': SlotSizeConstraints(
-                paddingInsets: EdgeInsets.fromLTRB(5, 0, 0, 0),
-                percentBasis: SlotPercentBasis.layout,
-              ),
-            },
-            placements: {
-              SuperLayoutZone.center: [
-                'tree-node-icon',
-                'tree-node-name',
-                'tree-node-separator',
-                'tree-node-type',
-              ],
-            },
-          ),
-          slots: [
-            BuilderSlot(
-              id: 'tree-node-icon',
-              label: 'Icon',
-              builder: (_) => SuperIndicator(
-                id: 'tree-node-icon',
-                config: SuperIndicatorConfig(
-                  icon: 'description',
-                  iconSize: 18,
-                  states: IndicatorConfigStates(
-                    binding: const JsonTextBinding(path: 'typeIcon'),
-                    named: const {
-                      'container': SuperIndicatorConfig(icon: 'folder'),
-                      'value': SuperIndicatorConfig(icon: 'description'),
-                    },
-                    namedProperties: const {
-                      'container': {IndicatorStateProperty.icon},
-                      'value': {IndicatorStateProperty.icon},
-                    },
-                  ),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'tree-node-name',
-              label: 'Name',
-              builder: (_) => SuperValue(
-                id: 'tree-node-name',
-                behaviours: [
-                  ComponentBehavior(
-                    id: 'tree-node-name-click',
-                    trigger: BehaviorTrigger.click,
-                    action: EmitEventAction(eventId: 'node.click'),
-                  ),
-                ],
-                config: const SuperValueConfig(
-                  binding: JsonTextBinding(path: 'name'),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'tree-node-separator',
-              label: 'Separator',
-              builder: (_) => const SuperSeparator(
-                id: 'tree-node-separator',
-                config: SuperSeparatorConfig(kind: SuperSeparatorKind.spacer),
-              ),
-            ),
-            BuilderSlot(
-              id: 'tree-node-type',
-              label: 'Type',
-              builder: (_) => const SuperValue(
-                id: 'tree-node-type',
-                config: SuperValueConfig(
-                  binding: JsonTextBinding(path: 'type'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // _registry.registerComponent(
+    //   'model-header',
+    //   RegisteredComponent.composable(
+    //     label: 'Model Header',
+    //     menuIcon: Icons.code,
+    //     duplication: ComponentDuplicationContract.newLayout,
+    //     instanceBuilder: (_, id) => SuperLayout(
+    //       id: id,
+    //       label: 'Node header',
+    //       config: const SuperLayoutConfig(
+    //         zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+    //         zoneFlows: {
+    //           SuperLayoutZone.center: ZoneFlowConfig(expandSlots: false),
+    //         },
+    //         slotSizeConstraints: {
+    //           'tree-node-separator': SlotSizeConstraints(fitContent: false),
+    //           'tree-node-name': SlotSizeConstraints(
+    //             paddingInsets: EdgeInsets.fromLTRB(5, 0, 0, 0),
+    //             percentBasis: SlotPercentBasis.layout,
+    //           ),
+    //         },
+    //         placements: {
+    //           SuperLayoutZone.center: [
+    //             'tree-node-icon',
+    //             'tree-node-name',
+    //             'tree-node-separator',
+    //             'tree-node-type',
+    //           ],
+    //         },
+    //       ),
+    //       slots: [
+    //         BuilderSlot(
+    //           id: 'tree-node-icon',
+    //           label: 'Icon',
+    //           builder: (_) => SuperIndicator(
+    //             id: 'tree-node-icon',
+    //             config: SuperIndicatorConfig(
+    //               icon: 'description',
+    //               iconSize: 18,
+    //               states: IndicatorConfigStates(
+    //                 binding: const JsonTextBinding(path: 'typeIcon'),
+    //                 named: const {
+    //                   'container': SuperIndicatorConfig(icon: 'folder'),
+    //                   'value': SuperIndicatorConfig(icon: 'description'),
+    //                 },
+    //                 namedProperties: const {
+    //                   'container': {IndicatorStateProperty.icon},
+    //                   'value': {IndicatorStateProperty.icon},
+    //                 },
+    //               ),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'tree-node-name',
+    //           label: 'Name',
+    //           builder: (_) => SuperValue(
+    //             id: 'tree-node-name',
+    //             behaviours: [
+    //               ComponentBehavior(
+    //                 id: 'tree-node-name-click',
+    //                 trigger: BehaviorTrigger.click,
+    //                 action: EmitEventAction(eventId: 'node.click'),
+    //               ),
+    //             ],
+    //             config: const SuperValueConfig(
+    //               binding: JsonTextBinding(path: 'name'),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'tree-node-separator',
+    //           label: 'Separator',
+    //           builder: (_) => const SuperSeparator(
+    //             id: 'tree-node-separator',
+    //             config: SuperSeparatorConfig(kind: SuperSeparatorKind.spacer),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'tree-node-type',
+    //           label: 'Type',
+    //           builder: (_) => const SuperValue(
+    //             id: 'tree-node-type',
+    //             config: SuperValueConfig(
+    //               binding: JsonTextBinding(path: 'type'),
+    //             ),
+    //           ),
+    //         ),
+    //       ],
+    //     ),
+    //   ),
+    // );
 
-    _registry.registerComponent(
-      'model-tab',
-      RegisteredComponent.composable(
-        label: 'model-tab',
-        duplication: ComponentDuplicationContract.superTab,
-        isAvailable: (context) {
-          return true;
-        },
-        instanceBuilder: (_, id) => SuperTab(
-          id: id,
-          label: 'Configurer les onglets',
-          config: SuperTabConfig(
-            tabBarStyle: const ContainerStyle(
-              radius: 12,
-              elevation: 3.685863874345599,
-              shadowOpacity: 0.6387434554973861,
-              neon: NeonStyle(),
-            ),
-            indicatorKind: SuperTabIndicatorKind.box,
-            indicatorRadius: 15.61465968586392,
-            indicatorHorizontalPadding: 0.13403141361261248,
-            indicatorVerticalPadding: 3.585340314136142,
-            overlayColor: const Color(0x00979AA9),
-            labelHorizontalPadding: 0,
-            dividerColor: const Color(0x00C6C5D0),
-            tabAlignment: TabAlignment.fill,
-            slotSizeConstraints: const {
-              'KlSbddMArN': SlotSizeConstraints(
-                preferredWidth: SlotDimension(124, SlotSizeUnit.pixels),
-                percentBasis: SlotPercentBasis.layout,
-              ),
-            },
-            placements: const {
-              'tabs': ['KlSbddMArN', 'I511oCPeBH', 'YM2KFsXQQz'],
-              'content:KlSbddMArN': ['tab-content-model-impl'],
-            },
-            slotTypes: const {'tab-content-model-impl': 'component:model-code'},
-          ),
-          slots: [
-            BuilderSlot(
-              id: 'KlSbddMArN',
-              label: 'Structure',
-              builder: (_) => const SuperAction(
-                id: 'KlSbddMArN',
-                config: SuperActionConfig(
-                  variant: SuperActionVariant.text,
-                  label: 'Structure',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'I511oCPeBH',
-              label: 'Info',
-              builder: (_) => const SuperAction(
-                id: 'I511oCPeBH',
-                config: SuperActionConfig(
-                  variant: SuperActionVariant.text,
-                  label: 'Info',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'YM2KFsXQQz',
-              label: 'Version',
-              builder: (_) => const SuperAction(
-                id: 'YM2KFsXQQz',
-                config: SuperActionConfig(
-                  variant: SuperActionVariant.text,
-                  label: 'Version',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'tab-content-model-impl',
-              label: 'tab-content-model',
-              builder: (context) =>
-                  SuperApp.of(context).registry!
-                      .component('model-code')
-                      .builder(context),
-            ),
-          ],
-        ),
-      ),
-    );
+    // _registry.registerComponent(
+    //   'model-tab',
+    //   RegisteredComponent.composable(
+    //     label: 'model-tab',
+    //     duplication: ComponentDuplicationContract.superTab,
+    //     isAvailable: (context) {
+    //       return true;
+    //     },
+    //     instanceBuilder: (_, id) => SuperTab(
+    //       id: id,
+    //       label: 'Configurer les onglets',
+    //       config: SuperTabConfig(
+    //         tabBarStyle: const ContainerStyle(
+    //           radius: 12,
+    //           elevation: 3.685863874345599,
+    //           shadowOpacity: 0.6387434554973861,
+    //           neon: NeonStyle(),
+    //         ),
+    //         indicatorKind: SuperTabIndicatorKind.box,
+    //         indicatorRadius: 15.61465968586392,
+    //         indicatorHorizontalPadding: 0.13403141361261248,
+    //         indicatorVerticalPadding: 3.585340314136142,
+    //         overlayColor: const Color(0x00979AA9),
+    //         labelHorizontalPadding: 0,
+    //         dividerColor: const Color(0x00C6C5D0),
+    //         tabAlignment: TabAlignment.fill,
+    //         slotSizeConstraints: const {
+    //           'KlSbddMArN': SlotSizeConstraints(
+    //             preferredWidth: SlotDimension(124, SlotSizeUnit.pixels),
+    //             percentBasis: SlotPercentBasis.layout,
+    //           ),
+    //         },
+    //         placements: const {
+    //           'tabs': ['KlSbddMArN', 'I511oCPeBH', 'YM2KFsXQQz'],
+    //           'content:KlSbddMArN': ['tab-content-model-impl'],
+    //         },
+    //         slotTypes: const {'tab-content-model-impl': 'component:model-code'},
+    //       ),
+    //       slots: [
+    //         BuilderSlot(
+    //           id: 'KlSbddMArN',
+    //           label: 'Structure',
+    //           builder: (_) => const SuperAction(
+    //             id: 'KlSbddMArN',
+    //             config: SuperActionConfig(
+    //               variant: SuperActionVariant.text,
+    //               label: 'Structure',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'I511oCPeBH',
+    //           label: 'Info',
+    //           builder: (_) => const SuperAction(
+    //             id: 'I511oCPeBH',
+    //             config: SuperActionConfig(
+    //               variant: SuperActionVariant.text,
+    //               label: 'Info',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'YM2KFsXQQz',
+    //           label: 'Version',
+    //           builder: (_) => const SuperAction(
+    //             id: 'YM2KFsXQQz',
+    //             config: SuperActionConfig(
+    //               variant: SuperActionVariant.text,
+    //               label: 'Version',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'tab-content-model-impl',
+    //           label: 'tab-content-model',
+    //           builder: (context) =>
+    //               SuperApp.of(context).registry!
+    //                   .component('model-code')
+    //                   .builder(context),
+    //         ),
+    //       ],
+    //     ),
+    //   ),
+    // );
 
-    _registry.registerComponent(
-      'main-tabs',
-      RegisteredComponent.composable(
-        label: 'main-tabs',
-        duplication: ComponentDuplicationContract.superTab,
-        isAvailable: (context) {
-          return true;
-        },
-        instanceBuilder: (_, id) => SuperTab(
-          id: id,
-          label: 'main tabs',
-          config: SuperTabConfig(
-            zoneFlows: const {
-              'content:tab-info': ZoneFlowConfig(
-                scrollable: true,
-                expandSlots: false,
-                spacing: 12,
-                padding: 16,
-              ),
-              'content:tab-validator': ZoneFlowConfig(
-                scrollable: true,
-                expandSlots: false,
-                spacing: 12,
-                padding: 16,
-              ),
-            },
-            slotSizeConstraints: const {'_wSA5mADEd': SlotSizeConstraints()},
-            placements: const {
-              'tabs': ['tab-info', 'tab-validator'],
-              'content:tab-info': [
-                'field-description',
-                'field-example',
-                'field-const',
-                'field-default',
-                'switch-nullable',
-                'switch-readonly',
-                'switch-writeonly',
-                'switch-deprecated',
-                'switch-search-ref',
-                '_wSA5mADEd',
-              ],
-              'content:tab-validator': ['val-placeholder'],
-            },
-          ),
-          slots: [
-            BuilderSlot(
-              id: 'tab-info',
-              label: 'tab-info',
-              builder: (_) => const SuperAction(
-                id: 'tab-info',
-                config: SuperActionConfig(
-                  kind: SuperActionKind.textAndIcon,
-                  label: 'Info',
-                  icon: 'info',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'tab-validator',
-              label: 'tab-validator',
-              builder: (_) => const SuperAction(
-                id: 'tab-validator',
-                config: SuperActionConfig(
-                  kind: SuperActionKind.textAndIcon,
-                  label: 'Validator',
-                  icon: 'check_circle',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'field-description',
-              label: 'field-description',
-              builder: (_) => const SuperValue(
-                id: 'field-description',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  label: 'Description',
-                  minLines: 4,
-                  maxLines: 4,
-                  field: SuperTextFieldConfig(
-                    variant: TextFieldVariant.outlined,
-                  ),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'field-example',
-              label: 'field-example',
-              builder: (_) => const SuperValue(
-                id: 'field-example',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  label: 'Example',
-                  minLines: 4,
-                  maxLines: 4,
-                  field: SuperTextFieldConfig(
-                    variant: TextFieldVariant.outlined,
-                  ),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'field-const',
-              label: 'field-const',
-              builder: (_) => const SuperValue(
-                id: 'field-const',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  label: 'Const',
-                  field: SuperTextFieldConfig(
-                    variant: TextFieldVariant.outlined,
-                  ),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'field-default',
-              label: 'field-default',
-              builder: (_) => const SuperValue(
-                id: 'field-default',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  label: 'Default',
-                  field: SuperTextFieldConfig(
-                    variant: TextFieldVariant.outlined,
-                  ),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'switch-nullable',
-              label: 'switch-nullable',
-              builder: (_) => const SuperValue(
-                id: 'switch-nullable',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  kind: SuperValueKind.switchControl,
-                  label: 'Nullable',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'switch-readonly',
-              label: 'switch-readonly',
-              builder: (_) => const SuperValue(
-                id: 'switch-readonly',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  kind: SuperValueKind.switchControl,
-                  label: 'ReadOnly',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'switch-writeonly',
-              label: 'switch-writeonly',
-              builder: (_) => const SuperValue(
-                id: 'switch-writeonly',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  kind: SuperValueKind.switchControl,
-                  label: 'WriteOnly',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'switch-deprecated',
-              label: 'switch-deprecated',
-              builder: (_) => const SuperValue(
-                id: 'switch-deprecated',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  kind: SuperValueKind.switchControl,
-                  label: 'Deprecated',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'switch-search-ref',
-              label: 'switch-search-ref',
-              builder: (_) => const SuperValue(
-                id: 'switch-search-ref',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  kind: SuperValueKind.switchControl,
-                  label: 'Search reference',
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: '_wSA5mADEd',
-              label: '_wSA5mADEd',
-              builder: (_) => const SuperValue(
-                id: '_wSA5mADEd',
-                config: SuperValueConfig(
-                  mode: SuperValueMode.input,
-                  label: 'Comment',
-                  minLines: 4,
-                  maxLines: 4,
-                  field: SuperTextFieldConfig(
-                    variant: TextFieldVariant.outlined,
-                  ),
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'val-placeholder',
-              label: 'val-placeholder',
-              builder: (_) => const SuperValue(
-                id: 'val-placeholder',
-                config: SuperValueConfig(
-                  initialText: 'Configuration des validateurs',
-                  color: Color(0xFF64748B),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // _registry.registerComponent(
+    //   'main-tabs',
+    //   RegisteredComponent.composable(
+    //     label: 'main-tabs',
+    //     duplication: ComponentDuplicationContract.superTab,
+    //     isAvailable: (context) {
+    //       return true;
+    //     },
+    //     instanceBuilder: (_, id) => SuperTab(
+    //       id: id,
+    //       label: 'main tabs',
+    //       config: SuperTabConfig(
+    //         zoneFlows: const {
+    //           'content:tab-info': ZoneFlowConfig(
+    //             scrollable: true,
+    //             expandSlots: false,
+    //             spacing: 12,
+    //             padding: 16,
+    //           ),
+    //           'content:tab-validator': ZoneFlowConfig(
+    //             scrollable: true,
+    //             expandSlots: false,
+    //             spacing: 12,
+    //             padding: 16,
+    //           ),
+    //         },
+    //         slotSizeConstraints: const {'_wSA5mADEd': SlotSizeConstraints()},
+    //         placements: const {
+    //           'tabs': ['tab-info', 'tab-validator'],
+    //           'content:tab-info': [
+    //             'field-description',
+    //             'field-example',
+    //             'field-const',
+    //             'field-default',
+    //             'switch-nullable',
+    //             'switch-readonly',
+    //             'switch-writeonly',
+    //             'switch-deprecated',
+    //             'switch-search-ref',
+    //             '_wSA5mADEd',
+    //           ],
+    //           'content:tab-validator': ['val-placeholder'],
+    //         },
+    //       ),
+    //       slots: [
+    //         BuilderSlot(
+    //           id: 'tab-info',
+    //           label: 'tab-info',
+    //           builder: (_) => const SuperAction(
+    //             id: 'tab-info',
+    //             config: SuperActionConfig(
+    //               kind: SuperActionKind.textAndIcon,
+    //               label: 'Info',
+    //               icon: 'info',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'tab-validator',
+    //           label: 'tab-validator',
+    //           builder: (_) => const SuperAction(
+    //             id: 'tab-validator',
+    //             config: SuperActionConfig(
+    //               kind: SuperActionKind.textAndIcon,
+    //               label: 'Validator',
+    //               icon: 'check_circle',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'field-description',
+    //           label: 'field-description',
+    //           builder: (_) => const SuperValue(
+    //             id: 'field-description',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               label: 'Description',
+    //               minLines: 4,
+    //               maxLines: 4,
+    //               field: SuperTextFieldConfig(
+    //                 variant: TextFieldVariant.outlined,
+    //               ),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'field-example',
+    //           label: 'field-example',
+    //           builder: (_) => const SuperValue(
+    //             id: 'field-example',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               label: 'Example',
+    //               minLines: 4,
+    //               maxLines: 4,
+    //               field: SuperTextFieldConfig(
+    //                 variant: TextFieldVariant.outlined,
+    //               ),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'field-const',
+    //           label: 'field-const',
+    //           builder: (_) => const SuperValue(
+    //             id: 'field-const',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               label: 'Const',
+    //               field: SuperTextFieldConfig(
+    //                 variant: TextFieldVariant.outlined,
+    //               ),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'field-default',
+    //           label: 'field-default',
+    //           builder: (_) => const SuperValue(
+    //             id: 'field-default',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               label: 'Default',
+    //               field: SuperTextFieldConfig(
+    //                 variant: TextFieldVariant.outlined,
+    //               ),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'switch-nullable',
+    //           label: 'switch-nullable',
+    //           builder: (_) => const SuperValue(
+    //             id: 'switch-nullable',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               kind: SuperValueKind.switchControl,
+    //               label: 'Nullable',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'switch-readonly',
+    //           label: 'switch-readonly',
+    //           builder: (_) => const SuperValue(
+    //             id: 'switch-readonly',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               kind: SuperValueKind.switchControl,
+    //               label: 'ReadOnly',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'switch-writeonly',
+    //           label: 'switch-writeonly',
+    //           builder: (_) => const SuperValue(
+    //             id: 'switch-writeonly',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               kind: SuperValueKind.switchControl,
+    //               label: 'WriteOnly',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'switch-deprecated',
+    //           label: 'switch-deprecated',
+    //           builder: (_) => const SuperValue(
+    //             id: 'switch-deprecated',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               kind: SuperValueKind.switchControl,
+    //               label: 'Deprecated',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'switch-search-ref',
+    //           label: 'switch-search-ref',
+    //           builder: (_) => const SuperValue(
+    //             id: 'switch-search-ref',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               kind: SuperValueKind.switchControl,
+    //               label: 'Search reference',
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: '_wSA5mADEd',
+    //           label: '_wSA5mADEd',
+    //           builder: (_) => const SuperValue(
+    //             id: '_wSA5mADEd',
+    //             config: SuperValueConfig(
+    //               mode: SuperValueMode.input,
+    //               label: 'Comment',
+    //               minLines: 4,
+    //               maxLines: 4,
+    //               field: SuperTextFieldConfig(
+    //                 variant: TextFieldVariant.outlined,
+    //               ),
+    //             ),
+    //           ),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'val-placeholder',
+    //           label: 'val-placeholder',
+    //           builder: (_) => const SuperValue(
+    //             id: 'val-placeholder',
+    //             config: SuperValueConfig(
+    //               initialText: 'Configuration des validateurs',
+    //               color: Color(0xFF64748B),
+    //             ),
+    //           ),
+    //         ),
+    //       ],
+    //     ),
+    //   ),
+    // );
 
-    _registry.registerComponent(
-      'ModelDesc',
-      RegisteredComponent.composable(
-        label: 'Model Desc',
-        duplication: ComponentDuplicationContract.newLayout,
-        isAvailable: (context) {
-          return true;
-        },
-        instanceBuilder: (_, id) => SuperLayout(
-          id: id,
-          label: 'layout',
-          behaviours: [
-            ComponentBehavior(
-              id: 'global-node-properties-size',
-              trigger: BehaviorTrigger.binding,
-              action: ZoneSizeBindingAction(
-                zone: SuperLayoutZone.east,
-                binding: _eastSizeBinding,
-              ),
-            ),
-          ],
-          config: const SuperLayoutConfig(
-            west: true,
-            westSize: 320,
-            east: true,
-            eastSize: 300,
-            autoSides: {SuperLayoutZone.center},
-            sideResizing: {SuperLayoutZone.west: true},
-            placements: {
-              SuperLayoutZone.west: ['input-code'],
-              SuperLayoutZone.center: ['explorer-tree'],
-              SuperLayoutZone.east: ['global-node-properties'],
-            },
-            slotTypes: {'input-code': 'component:model-tab'},
-          ),
-          slots: [
-            BuilderSlot(
-              id: 'input-code',
-              label: 'Input Code',
-              menuIcon: Icons.code,
-              builder: (context) =>
-                  SuperApp.of(context).registry!
-                      .component('model-tab')
-                      .builder(context),
-            ),
-            BuilderSlot(
-              id: 'global-node-properties',
-              label: 'Global Node Properties',
-              builder: (context) =>
-                  SuperApp.of(context).registry!
-                      .component('main-tabs')
-                      .builder(context),
-            ),
-            BuilderSlot(
-              id: 'explorer-tree',
-              label: 'TreeView',
-              builder: (_) => SuperTreeView(
-                id: 'explorer-tree',
-                slots: [
-                  BuilderSlot(
-                    id: 'input-header',
-                    label: 'Input Header',
-                    menuIcon: Icons.code,
-                    builder: (context) =>
-                        SuperApp.of(context).registry!
-                            .component('model-header')
-                            .builder(context),
-                  ),
-                  BuilderSlot(
-                    id: 'input-data',
-                    label: 'Input Data',
-                    menuIcon: Icons.code,
-                    builder: (context) => SuperLayout(
-                      id: 'input-data',
-                      label: 'Node data',
-                      config: const SuperLayoutConfig(
-                        zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
-                        zoneFlows: {
-                          SuperLayoutZone.center: ZoneFlowConfig(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          ),
-                        },
-                        slotSizeConstraints: {
-                          'tree-node-title': SlotSizeConstraints(
-                            padding: 1,
-                            percentBasis: SlotPercentBasis.layout,
-                          ),
-                        },
-                        placements: {
-                          SuperLayoutZone.center: ['tree-node-title'],
-                        },
-                      ),
-                      slots: [
-                        BuilderSlot(
-                          id: 'tree-node-title',
-                          label: 'Title',
-                          builder: (_) => const SuperValue(
-                            id: 'tree-node-title',
-                            config: SuperValueConfig(
-                              placeholder: 'title',
-                              mode: SuperValueMode.input,
-                              binding: JsonTextBinding(
-                                repositoryId:
-                                    '0123456789abcdef0123456789abcdef',
-                                path: 'nodes[?].title',
-                              ),
-                              field: SuperTextFieldConfig(
-                                variant: TextFieldVariant.outlined,
-                                borderWidth: 1,
-                                horizontalPadding: 0,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-                config: SuperTreeViewConfig(
-                  rowHeight: 28,
-                  binding: const JsonTextBinding(
-                    repositoryId: _repositoryId,
-                    path: 'nodes',
-                  ),
-                  placements: const {
-                    SuperTreeViewConfig.headerZone: ['input-header'],
-                    SuperTreeViewConfig.dataZone: ['input-data'],
-                  },
-                  slotTypes: const {'input-header': 'component:model-header'},
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    // _registry.registerComponent(
+    //   'ModelDesc',
+    //   RegisteredComponent.composable(
+    //     label: 'Model Desc',
+    //     duplication: ComponentDuplicationContract.newLayout,
+    //     isAvailable: (context) {
+    //       return true;
+    //     },
+    //     instanceBuilder: (_, id) => SuperLayout(
+    //       id: id,
+    //       label: 'layout',
+    //       behaviours: [
+    //         ComponentBehavior(
+    //           id: 'global-node-properties-size',
+    //           trigger: BehaviorTrigger.binding,
+    //           action: ZoneSizeBindingAction(
+    //             zone: SuperLayoutZone.east,
+    //             binding: _eastSizeBinding,
+    //           ),
+    //         ),
+    //       ],
+    //       config: const SuperLayoutConfig(
+    //         west: true,
+    //         westSize: 320,
+    //         east: true,
+    //         eastSize: 300,
+    //         autoSides: {SuperLayoutZone.center},
+    //         sideResizing: {SuperLayoutZone.west: true},
+    //         placements: {
+    //           SuperLayoutZone.west: ['input-code'],
+    //           SuperLayoutZone.center: ['explorer-tree'],
+    //           SuperLayoutZone.east: ['global-node-properties'],
+    //         },
+    //         slotTypes: {'input-code': 'component:model-tab'},
+    //       ),
+    //       slots: [
+    //         BuilderSlot(
+    //           id: 'input-code',
+    //           label: 'Input Code',
+    //           menuIcon: Icons.code,
+    //           builder: (context) =>
+    //               SuperApp.of(context).registry!
+    //                   .component('model-tab')
+    //                   .builder(context),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'global-node-properties',
+    //           label: 'Global Node Properties',
+    //           builder: (context) =>
+    //               SuperApp.of(context).registry!
+    //                   .component('main-tabs')
+    //                   .builder(context),
+    //         ),
+    //         BuilderSlot(
+    //           id: 'explorer-tree',
+    //           label: 'TreeView',
+    //           builder: (_) => SuperTreeView(
+    //             id: 'explorer-tree',
+    //             slots: [
+    //               BuilderSlot(
+    //                 id: 'input-header',
+    //                 label: 'Input Header',
+    //                 menuIcon: Icons.code,
+    //                 builder: (context) =>
+    //                     SuperApp.of(context).registry!
+    //                         .component('model-header')
+    //                         .builder(context),
+    //               ),
+    //               BuilderSlot(
+    //                 id: 'input-data',
+    //                 label: 'Input Data',
+    //                 menuIcon: Icons.code,
+    //                 builder: (context) => SuperLayout(
+    //                   id: 'input-data',
+    //                   label: 'Node data',
+    //                   config: const SuperLayoutConfig(
+    //                     zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+    //                     zoneFlows: {
+    //                       SuperLayoutZone.center: ZoneFlowConfig(
+    //                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    //                       ),
+    //                     },
+    //                     slotSizeConstraints: {
+    //                       'tree-node-title': SlotSizeConstraints(
+    //                         padding: 1,
+    //                         percentBasis: SlotPercentBasis.layout,
+    //                       ),
+    //                     },
+    //                     placements: {
+    //                       SuperLayoutZone.center: ['tree-node-title'],
+    //                     },
+    //                   ),
+    //                   slots: [
+    //                     BuilderSlot(
+    //                       id: 'tree-node-title',
+    //                       label: 'Title',
+    //                       builder: (_) => const SuperValue(
+    //                         id: 'tree-node-title',
+    //                         config: SuperValueConfig(
+    //                           placeholder: 'title',
+    //                           mode: SuperValueMode.input,
+    //                           binding: JsonTextBinding(
+    //                             repositoryId:
+    //                                 '0123456789abcdef0123456789abcdef',
+    //                             path: 'nodes[?].title',
+    //                           ),
+    //                           field: SuperTextFieldConfig(
+    //                             variant: TextFieldVariant.outlined,
+    //                             borderWidth: 1,
+    //                             horizontalPadding: 0,
+    //                           ),
+    //                         ),
+    //                       ),
+    //                     ),
+    //                   ],
+    //                 ),
+    //               ),
+    //             ],
+    //             config: SuperTreeViewConfig(
+    //               rowHeight: 28,
+    //               binding: const JsonTextBinding(
+    //                 repositoryId: _repositoryId,
+    //                 path: 'nodes',
+    //               ),
+    //               placements: const {
+    //                 SuperTreeViewConfig.headerZone: ['input-header'],
+    //                 SuperTreeViewConfig.dataZone: ['input-data'],
+    //               },
+    //               slotTypes: const {'input-header': 'component:model-header'},
+    //             ),
+    //           ),
+    //         ),
+    //       ],
+    //     ),
+    //   ),
+    // );
 
     _pageRouting = EditorPageRouter(
       baseConfig: RoutingConfig(

@@ -996,7 +996,7 @@ class DartCodegenContext {
       return 'const SizedBox.shrink()';
     }
     try {
-      // Vérifie si ce sous-composant a été configuré via « Configure as... »
+      // Vérifie si ce sous-composant a été configuré via « Configure as... » ou un RegisteredComponentScope
       final exportOpts = registry.exportOptionsFor(id);
       if (id != rootComponentId &&
           exportOpts != null &&
@@ -1012,14 +1012,16 @@ class DartCodegenContext {
             label: (label != null && label.trim().isNotEmpty)
                 ? label.trim()
                 : regName,
-            slotType: slotType,
+            slotType: null,
             forceComponentOnExport: exportOpts.forceComponentOnExport,
           ));
         }
         return 'SuperApp.of(context).registry!.component(${formatString(regName)}).builder(context)';
       }
 
-      if (slotType != null && slotType.startsWith('component:')) {
+      if (slotType != null &&
+          slotType.startsWith('component:') &&
+          id != rootComponentId) {
         final registeredKey = resolveRegisteredComponentKey(
           id,
           slotType: slotType,
@@ -1039,6 +1041,20 @@ class DartCodegenContext {
                     regExportOpts.componentName.trim().isNotEmpty)
                 ? regExportOpts.componentName.trim()
                 : registeredKey;
+            if ((appearance.components.containsKey(id) ||
+                    appearance.styles.containsKey(id)) &&
+                _extractedIds.add(id)) {
+              extractedSubComponents.add((
+                id: id,
+                registrationId: effectiveRegKey,
+                label: registeredComp?.label.trim().isNotEmpty == true
+                    ? registeredComp!.label.trim()
+                    : effectiveRegKey,
+                slotType: null,
+                forceComponentOnExport:
+                    forced || !(registeredComp?.decomposableOnExport ?? false),
+              ));
+            }
             return 'SuperApp.of(context).registry!.component(${formatString(effectiveRegKey)}).builder(context)';
           }
           final decomposedGenerator = resolveGenerator(id);

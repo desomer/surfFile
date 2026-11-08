@@ -1,36 +1,139 @@
 /// Fenêtre d'édition complète d'un composant [SuperValue].
 library;
 
-import 'dart:math' as math;
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/automatic_state.dart';
-
-import '../../../models/super_value_config.dart';
-import '../../../models/super_text_field_config.dart';
-import '../../components/super_text_field.dart';
 import '../../../models/json_text_binding.dart';
+import '../../../models/super_text_field_config.dart';
+import '../../../models/super_value_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
-import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
-import '../../../services/states/surface_state_binding.dart';
-import '../styles/container_style_editor.dart' show styleColorTile;
-import '../dialogs/editor_dialog.dart';
+import '../../components/super_text_field.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
+import '../styles/container_style_editor.dart' show styleColorTile;
 import '../styles/style_editor_panel.dart';
-import '../states/editor_state_controls.dart';
+import 'shared/component_state_editor_host.dart';
+import 'shared/component_typography_controls.dart';
+import 'shared/editor_color_fields.dart';
 import 'super_text_field_settings.dart';
 
+final _valueStateAdapter =
+    ComponentStateAdapter<
+      SuperValueConfig,
+      ValueConfigStates,
+      ValueConfigOverride,
+      ValueStateProperty
+    >(
+      stateKeyPrefix: 'value-state',
+      emptyStates: ValueConfigStates.new,
+      getStates: (root) => root.states,
+      withStates: (root, states) =>
+          root.copyWith(states: states, clearStates: states == null),
+      clearStates: (config) => config.copyWith(clearStates: true),
+      getNamed: (s) => s.named,
+      getNamedProperties: (s) => s.namedProperties,
+      getHover: (s) => s.hover,
+      getSelected: (s) => s.selected,
+      getAutomatic: (s) => s.automatic,
+      getOrder: (s) => s.order,
+      getBinding: (s) => s.binding,
+      copyStates: (
+        s, {
+        named,
+        namedProperties,
+        hover,
+        clearHover = false,
+        selected,
+        clearSelected = false,
+        automatic,
+        order,
+        binding,
+        clearBinding = false,
+      }) => s.copyWith(
+        named: named,
+        namedProperties: namedProperties,
+        hover: hover,
+        clearHover: clearHover,
+        selected: selected,
+        clearSelected: clearSelected,
+        automatic: automatic,
+        order: order,
+        binding: binding,
+        clearBinding: clearBinding,
+      ),
+      createOverride: (config, [properties]) => ValueConfigOverride(
+        config: config,
+        properties: properties ?? const {},
+      ),
+      getOverrideConfig: (override) => override.config,
+      getOverrideProperties: (override) => override.properties,
+      editOverride: (previous, nextLeaf) => previous.edited(nextLeaf),
+      resolvePreview: (
+        states,
+        root, {
+        name,
+        required isHovered,
+        required isSelected,
+        required activeStates,
+      }) => states.resolve(
+        root,
+        name: name,
+        isHovered: isHovered,
+        isSelected: isSelected,
+        activeStates: activeStates,
+      ),
+      validateName: (name) {
+        try {
+          ValueConfigStates(named: {name: const SuperValueConfig()});
+          return null;
+        } on FormatException catch (e) {
+          return e.message;
+        }
+      },
+      propertyLabels: {
+        for (final property in ValueStateProperty.values)
+          property: property.label,
+      },
+      validateRoot: (root, allowBinding) {
+        root.validate();
+        if (!allowBinding) {
+          final leaves = [
+            root,
+            ...?root.states?.named.values,
+            if (root.states?.hover case final value?) value.config,
+            if (root.states?.selected case final value?) value.config,
+            ...?root.states?.automatic.values.map((value) => value.config),
+          ];
+          if (leaves.any((leaf) => leaf.binding != null)) {
+            throw const FormatException(
+              'La liaison nécessite le contrôleur interne de Value.',
+            );
+          }
+        }
+      },
+      availableStatesBuilder: ({
+        required leaf,
+        required states,
+        required allowSelected,
+        required allowContentHover,
+      }) => {
+        AutomaticState.hover,
+        if (allowSelected) AutomaticState.selected,
+        if (allowContentHover) AutomaticState.contentHover,
+        if (leaf.mode == SuperValueMode.input) ...{
+          AutomaticState.focused,
+          AutomaticState.disabled,
+          AutomaticState.readOnly,
+        },
+      },
+    );
+
 /// Ouvre la boîte de dialogue d'édition complète d'un composant `SuperValue`.
-///
-/// Cette fonction récupère le contexte de thème (`DefaultTextStyle`), le
-/// gestionnaire de repositories JSON (`JsonRepositoryScope`) ainsi que le
-/// contexte de ligne englobante (`JsonListScope`), puis affiche
-/// `_ValueStateEditor` dans une fenêtre modale redimensionnable selon le mode
-/// compact ou étendu (`StyleEditorPanel.preferredDense`).
 ///
 /// Retourne la nouvelle configuration [SuperValueConfig] validée lorsque
 /// l'utilisateur clique sur « Appliquer », ou `null` en cas d'annulation.
@@ -46,532 +149,46 @@ Future<SuperValueConfig?> showSuperValueEditor({
   bool isSelected = false,
   bool allowContentHover = false,
   Set<AutomaticState> activeAutomatic = const {},
-}) async {
-  final width = ValueNotifier(StyleEditorPanel.preferredDense ? 680.0 : 1080.0);
-  final textStyle = DefaultTextStyle.of(context).style;
-  final repositories = JsonRepositoryScope.maybeOf(context);
-  final listScope = JsonListScope.maybeOf(context);
-  try {
-    return await runWithDimensionDelegate<SuperValueConfig>(
-      context: context,
-      runner: (initialTab, dimensionDelegate) =>
-          showEditorDialog<SuperValueConfig>(
-            context: context,
-            target: context,
-            preferredWidth: width,
-            builder: (_) => _ValueStateEditor(
-              ownerContext: context,
-              initialTab: initialTab,
-              dimensionDelegate: dimensionDelegate,
-              activeState: activeState,
-              stateError: stateError,
-              isHovered: isHovered,
-              isSelected: isSelected,
-              allowContentHover: allowContentHover,
-              activeAutomatic: activeAutomatic,
-              config: config,
-              availableFontFamilies: availableFontFamilies,
-              textStyle: textStyle,
-              onWidthChanged: (value) => width.value = value,
-              repositories: repositories,
-              listScope: listScope,
-              allowBinding: allowBinding,
-              onPreviewChanged: onPreviewChanged,
-            ),
-          ),
-    );
-  } finally {
-    width.dispose();
-  }
-}
-
-/// Widget conteneur orchestrant l'édition multi-états d'un `SuperValue`.
-///
-/// Il permet de basculer entre la configuration de base (état standard) et les
-/// surcharges d'états (états nommés liés à un repository, états d'interaction
-/// `hover` / `selected`, et états automatiques tels que `focused`, `disabled`,
-/// `readOnly` ou `contentHover`).
-class _ValueStateEditor extends StatefulWidget {
-  /// Crée l'éditeur multi-états pour la configuration [config].
-  const _ValueStateEditor({
-    required this.ownerContext,
-    required this.initialTab,
-    required this.dimensionDelegate,
-    required this.config,
-    required this.availableFontFamilies,
-    required this.textStyle,
-    required this.onWidthChanged,
-    required this.repositories,
-    required this.listScope,
-    required this.allowBinding,
-    required this.onPreviewChanged,
-    required this.activeState,
-    required this.stateError,
-    required this.isHovered,
-    required this.isSelected,
-    required this.allowContentHover,
-    required this.activeAutomatic,
-  });
-  final BuildContext ownerContext;
-  final EditorWizardTab initialTab;
-  final EditorDimensionDelegate? dimensionDelegate;
-  final SuperValueConfig config;
-  final List<String> availableFontFamilies;
-  final TextStyle textStyle;
-  final ValueChanged<double> onWidthChanged;
-  final JsonRepositoryStore? repositories;
-  final JsonListScope? listScope;
-  final bool allowBinding, isHovered, isSelected;
-  final bool allowContentHover;
-  final Set<AutomaticState> activeAutomatic;
-  final ValueChanged<SuperValueConfig>? onPreviewChanged;
-  final String? activeState, stateError;
-
-  /// Crée l'état mutable associé à [_ValueStateEditor].
-  @override
-  State<_ValueStateEditor> createState() => _ValueStateEditorState();
-}
-
-/// État gérant la sélection de l'état en cours d'édition, la synchronisation
-/// avec la liaison d'état du repository et la fusion des surcharges dans la
-/// configuration racine [_root].
-class _ValueStateEditorState extends State<_ValueStateEditor> {
-  late SuperValueConfig _root = widget.config;
-  String? _state;
-  String? _error;
-  GlobalKey<_SuperValueEditorState> _leafKey = GlobalKey();
-  SurfaceStateBinding? _reader;
-
-  /// Callback déclenché lorsque la liaison d'état ([_reader]) signale un
-  /// changement dans le repository JSON. Planifie un `setState` après la frame
-  /// courante pour rafraîchir l'état actif affiché dans l'éditeur.
-  void _stateChanged() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
-    WidgetsBinding.instance.ensureVisualUpdate();
-  }
-
-  /// Initialise, reconfigure ou libère l'écouteur [SurfaceStateBinding] ([_reader])
-  /// chargé de lire en temps réel le nom de l'état actif depuis le repository
-  /// JSON lorsque `_root.states?.binding` est défini.
-  void _syncReader() {
-    final binding = _root.states?.binding;
-    if (binding == null) {
-      _reader?.removeListener(_stateChanged);
-      _reader?.dispose();
-      _reader = null;
-    } else if (_reader == null) {
-      _reader = SurfaceStateBinding(
-        store: widget.repositories,
-        binding: binding,
-        scope: widget.listScope,
-        placeholder: widget.listScope?.placeholder ?? false,
-      )..addListener(_stateChanged);
-    } else {
-      _reader!.reconfigure(
-        store: widget.repositories,
-        binding: binding,
-        scope: widget.listScope,
-        placeholder: widget.listScope?.placeholder ?? false,
-      );
-    }
-  }
-
-  /// Libère l'écouteur de liaison d'état [_reader] à la fermeture de l'éditeur.
-  @override
-  void dispose() {
-    _reader?.removeListener(_stateChanged);
-    _reader?.dispose();
-    super.dispose();
-  }
-
-  /// Retourne la configuration unitaire ([SuperValueConfig] sans ses sous-états)
-  /// correspondant à l'état actuellement sélectionné dans l'éditeur ([_state]) :
-  /// - si [_state] est un état automatique (`focused`, `disabled`, etc.),
-  ///   retourne la configuration de cet état automatique ;
-  /// - si [_state] est `hover` ou `selected`, retourne la surcharge correspondante ;
-  /// - si [_state] est un état nommé, retourne la configuration de cet état ;
-  /// - si [_state] est `null` (état de base), retourne [_root] sans `states`.
-  SuperValueConfig get _leaf {
-    final states = _root.states;
-    final automatic = AutomaticState.fromKey(_state);
-    if (automatic != null &&
-        automatic != AutomaticState.hover &&
-        automatic != AutomaticState.selected) {
-      return states?.automatic[automatic]?.config ??
-          _root.copyWith(clearStates: true);
-    }
-    if (_state == hoverSurfaceStateKey) {
-      return states?.hover?.config ?? _root.copyWith(clearStates: true);
-    }
-    if (_state == selectedSurfaceStateKey) {
-      return states?.selected?.config ?? _root.copyWith(clearStates: true);
-    }
-    return states?.named[_state] ?? _root.copyWith(clearStates: true);
-  }
-
-  /// Réintègre la configuration modifiée [leaf] de l'état courant ([_state])
-  /// dans la configuration globale [_root], en calculant automatiquement les
-  /// propriétés surchargées via `ValueConfigOverride.edited(leaf)`.
-  SuperValueConfig _withLeaf(SuperValueConfig leaf) {
-    leaf = leaf.copyWith(clearStates: true);
-    final states = _root.states ?? ValueConfigStates();
-    if (_state == null) return leaf.copyWith(states: _root.states);
-    final automatic = AutomaticState.fromKey(_state);
-    if (automatic != null &&
-        automatic != AutomaticState.hover &&
-        automatic != AutomaticState.selected) {
-      final previous =
-          states.automatic[automatic] ??
-          ValueConfigOverride(config: _root.copyWith(clearStates: true));
-      return _root.copyWith(
-        states: states.copyWith(
-          automatic: {...states.automatic, automatic: previous.edited(leaf)},
-        ),
-      );
-    }
-    final previous = _state == hoverSurfaceStateKey
-        ? states.hover
-        : states.selected;
-    final overlay =
-        (previous ??
-                ValueConfigOverride(config: _root.copyWith(clearStates: true)))
-            .edited(leaf);
-    return _root.copyWith(
-      states: _state == hoverSurfaceStateKey
-          ? states.copyWith(hover: overlay)
-          : _state == selectedSurfaceStateKey
-          ? states.copyWith(selected: overlay)
-          : states.copyWith(
-              named: {...states.named, _state!: leaf},
-              namedProperties: {
-                ...states.namedProperties,
-                _state!: ValueConfigOverride(
-                  config: states.named[_state]!,
-                  properties: states.namedProperties[_state]!,
-                ).edited(leaf).properties,
-              },
-            ),
-    );
-  }
-
-  /// Valide la cohérence globale de la configuration [root] ainsi que de tous
-  /// ses états, et vérifie qu'aucune liaison repository n'est définie lorsque
-  /// [widget.allowBinding] vaut `false` (cas où un contrôleur externe est fourni).
-  void _validate(SuperValueConfig root) {
-    root.validate();
-    if (!widget.allowBinding) {
-      final leaves = [
-        root,
-        ...?root.states?.named.values,
-        if (root.states?.hover case final value?) value.config,
-        if (root.states?.selected case final value?) value.config,
-        ...?root.states?.automatic.values.map((value) => value.config),
-      ];
-      if (leaves.any((leaf) => leaf.binding != null)) {
-        throw const FormatException(
-          'La liaison nécessite le contrôleur interne de Value.',
-        );
-      }
-    }
-  }
-
-  /// Capture et valide les saisies en cours dans le formulaire enfant
-  /// ([_leafKey]) avant de changer d'état ou de modifier la liste des états.
-  ///
-  /// Met à jour [_root] et retourne `true` si la saisie courante est valide,
-  /// ou enregistre le message d'erreur dans [_error] et retourne `false` sinon.
-  bool _capture() {
-    if (_leafKey.currentState == null) return true;
-    final leaf = _leafKey.currentState?.capture();
-    if (leaf == null) return false;
-    try {
-      final root = _withLeaf(leaf);
-      _validate(root);
-      _root = root;
-      _error = null;
-      return true;
-    } on FormatException catch (e) {
-      setState(() => _error = e.message);
-    } on ArgumentError {
-      setState(() => _error = 'Combinaison de propriétés invalide.');
-    }
-    return false;
-  }
-
-  /// Résout la configuration effective à prévisualiser sur le composant
-  /// `SuperValue` en fonction de l'état en cours d'édition ([_state]) et la
-  /// transmet au callback [widget.onPreviewChanged].
-  void _preview(SuperValueConfig root) {
-    final states = root.states;
-    final config = _state == null
-        ? root.copyWith(clearStates: true)
-        : states?.resolve(
-                root,
-                name: AutomaticState.fromKey(_state) != null
-                    ? _reader?.stateName ?? widget.activeState
-                    : _state,
-                isHovered: _state == hoverSurfaceStateKey || widget.isHovered,
-                isSelected:
-                    _state == selectedSurfaceStateKey || widget.isSelected,
-                activeStates: {
-                  ...widget.activeAutomatic,
-                  ?AutomaticState.fromKey(_state),
-                },
-              ) ??
-              root.copyWith(clearStates: true);
-    widget.onPreviewChanged?.call(config);
-  }
-
-  /// Applique une transformation [update] sur la structure des états
-  /// ([ValueConfigStates]) après avoir capturé la saisie courante, valide le
-  /// résultat et met à jour l'aperçu en direct.
-  void _changeStates(
-    ValueConfigStates Function(ValueConfigStates states) update,
-  ) {
-    if (!_capture()) return;
-    try {
-      final root = _root.copyWith(
-        states: update(_root.states ?? ValueConfigStates()),
-      );
-      _validate(root);
-      setState(() {
-        _root = root;
-        _error = null;
-      });
-      _preview(root);
-    } on FormatException catch (e) {
-      setState(() => _error = e.message);
-    } on ArgumentError {
-      setState(() => _error = 'Combinaison de propriétés invalide.');
-    }
-  }
-
-  /// Construit l'interface d'édition combinant l'en-tête de gestion des états
-  /// ([EditorStateControls]) et le formulaire détaillé de la configuration de
-  /// l'état sélectionné ([_SuperValueEditor]).
-  @override
-  Widget build(BuildContext context) {
-    _syncReader();
-
-    final states = _root.states ?? ValueConfigStates();
-    final automatic = AutomaticState.fromKey(_state);
-    final overlay = states.named.containsKey(_state)
-        ? ValueConfigOverride(
-            config: states.named[_state]!,
-            properties: states.namedProperties[_state]!,
-          )
-        : automatic != null &&
-              automatic != AutomaticState.hover &&
-              automatic != AutomaticState.selected
-        ? states.automatic[automatic]
-        : _state == hoverSurfaceStateKey
-        ? states.hover
-        : states.selected;
-
-    return _SuperValueEditor(
-      key: _leafKey,
-      initialTab: widget.initialTab,
-      dimensionDelegate: widget.dimensionDelegate,
-      config: _leaf,
-      availableFontFamilies: widget.availableFontFamilies,
-      textStyle: widget.textStyle,
-      onWidthChanged: widget.onWidthChanged,
-      repositories: widget.repositories,
-      listScope: widget.listScope,
-      allowBinding: widget.allowBinding,
-      onPreviewChanged: (leaf) {
-        try {
-          final root = _withLeaf(leaf);
-          _validate(root);
-          if (_root != root) {
-            setState(() {
-              _root = root;
-              _error = null;
-            });
-          }
-          _preview(root);
-        } on FormatException catch (e) {
-          if (_error != e.message) setState(() => _error = e.message);
-        } on ArgumentError {
-          const message = 'Combinaison de propriétés invalide.';
-          if (_error != message) setState(() => _error = message);
-        }
-      },
-      onSave: (leaf) {
-        final root = _withLeaf(leaf);
-        _validate(root);
-        return root;
-      },
-      header: EditorStateControls<ValueStateProperty>(
-        keyPrefix: 'value-state',
-        names: states.named.keys,
-        order: states.order
-            .where(
-              (key) =>
-                  (key != ValueConfigStates.hoverKey || states.hover != null) &&
-                  (key != ValueConfigStates.selectedKey ||
-                      states.selected != null),
-            )
-            .toList(),
-        permanentInteractionStates: false,
-        binding: states.binding,
-        state: _state,
-        allowSelected: widget.listScope != null,
-        ownerContext: widget.ownerContext,
-        activeState: _reader?.stateName ?? widget.activeState,
-        error: _error ?? _reader?.error ?? widget.stateError,
-        onSelect: (value) {
-          if (value == _state || !_capture()) return;
-          setState(() {
-            _state = value;
-            _leafKey = GlobalKey();
-          });
-          _preview(_root);
-        },
-        availableStates: {
-          AutomaticState.hover,
-          if (widget.listScope != null) AutomaticState.selected,
-          if (widget.allowContentHover) AutomaticState.contentHover,
-          if (_leaf.mode == SuperValueMode.input) ...{
-            AutomaticState.focused,
-            AutomaticState.disabled,
-            AutomaticState.readOnly,
-          },
-        },
-        onAddAutomatic: (value) {
-          _changeStates((s) {
-            final override = ValueConfigOverride(
-              config: _leaf.copyWith(clearStates: true),
-            );
-            final order = [
-              ...s.order.where((key) => key != value.key),
-              value.key,
-            ];
-            if (value == AutomaticState.hover) {
-              return s.copyWith(hover: override, order: order);
-            }
-            if (value == AutomaticState.selected) {
-              return s.copyWith(selected: override, order: order);
-            }
-            return s.copyWith(
-              automatic: {...s.automatic, value: override},
-              order: order,
-            );
-          });
-          if ((value == AutomaticState.hover && _root.states?.hover != null) ||
-              (value == AutomaticState.selected &&
-                  _root.states?.selected != null) ||
-              _root.states?.automatic.containsKey(value) == true) {
-            setState(() {
-              _state = value.key;
-              _leafKey = GlobalKey();
-            });
-            _preview(_root);
-          }
-        },
-        onDeleteAutomatic: (value) {
-          if (!_capture()) return;
-          setState(() {
-            _root = _root.copyWith(
-              states: _root.states!.copyWith(
-                clearHover: value == AutomaticState.hover,
-                clearSelected: value == AutomaticState.selected,
-                automatic: {..._root.states!.automatic}..remove(value),
-              ),
-            );
-            _state = null;
-            _leafKey = GlobalKey();
-          });
-          _preview(_root);
-        },
-        validateName: (name) {
-          try {
-            ValueConfigStates(named: {name: const SuperValueConfig()});
-            return null;
-          } on FormatException catch (e) {
-            return e.message;
-          }
-        },
-        onAdd: (name) => _changeStates(
-          (s) => s.copyWith(
-            named: {...s.named, name: _root.copyWith(clearStates: true)},
-            order: [name, ...s.order],
-          ),
-        ),
-        onRename: (previous, name) {
-          _changeStates(
-            (s) => s.copyWith(
-              named: {...s.named}
-                ..remove(previous)
-                ..[name] = s.named[previous]!,
-              namedProperties: {...s.namedProperties}
-                ..remove(previous)
-                ..[name] = s.namedProperties[previous]!,
-              order: [
-                for (final key in s.order)
-                  if (key == previous) name else key,
-              ],
-            ),
-          );
-          if (_root.states?.named.containsKey(name) == true) {
-            setState(() {
-              _state = name;
-              _leafKey = GlobalKey();
-            });
-          }
-        },
-        onDelete: (name) =>
-            _changeStates((s) => s.copyWith(named: {...s.named}..remove(name))),
-        onReorder: (order) => _changeStates((s) => s.copyWith(order: order)),
-        onBindingChanged: (binding) => _changeStates(
-          (s) => s.copyWith(binding: binding, clearBinding: binding == null),
-        ),
-        properties: {
-          for (final property in ValueStateProperty.values)
-            property: property.label,
-        },
-        overrides: overlay?.properties ?? {},
-        onOverride: (property, enabled) => _changeStates((s) {
-          final current = s.named.containsKey(_state)
-              ? ValueConfigOverride(
-                  config: s.named[_state]!,
-                  properties: s.namedProperties[_state]!,
-                )
-              : automatic != null &&
-                    automatic != AutomaticState.hover &&
-                    automatic != AutomaticState.selected
-              ? s.automatic[automatic]
-              : _state == hoverSurfaceStateKey
-              ? s.hover
-              : s.selected;
-          final properties = {...?current?.properties};
-          if (enabled) {
-            properties.add(property);
-          } else {
-            properties.remove(property);
-          }
-          final value = ValueConfigOverride(
-            config: current?.config ?? _root.copyWith(clearStates: true),
-            properties: properties,
-          );
-          return s.named.containsKey(_state)
-              ? s.copyWith(
-                  namedProperties: {...s.namedProperties, _state!: properties},
-                )
-              : automatic != null &&
-                    automatic != AutomaticState.hover &&
-                    automatic != AutomaticState.selected
-              ? s.copyWith(automatic: {...s.automatic, automatic: value})
-              : _state == hoverSurfaceStateKey
-              ? s.copyWith(hover: value)
-              : s.copyWith(selected: value);
-        }),
-      ),
-    );
-  }
-}
+}) => showStatefulComponentEditorDialog(
+  context: context,
+  config: config,
+  adapter: _valueStateAdapter,
+  allowBinding: allowBinding,
+  onPreviewChanged: onPreviewChanged,
+  activeState: activeState,
+  stateError: stateError,
+  isHovered: isHovered,
+  isSelected: isSelected,
+  allowContentHover: allowContentHover,
+  activeAutomatic: activeAutomatic,
+  leafBuilder: ({
+    required key,
+    required initialTab,
+    required dimensionDelegate,
+    required config,
+    required onWidthChanged,
+    required repositories,
+    required listScope,
+    required textStyle,
+    required onPreviewChanged,
+    required onSave,
+    required header,
+  }) => _SuperValueEditor(
+    key: key,
+    initialTab: initialTab,
+    dimensionDelegate: dimensionDelegate,
+    config: config,
+    availableFontFamilies: availableFontFamilies,
+    textStyle: textStyle,
+    onWidthChanged: onWidthChanged,
+    repositories: repositories,
+    listScope: listScope,
+    allowBinding: allowBinding,
+    onPreviewChanged: onPreviewChanged,
+    onSave: onSave,
+    header: header,
+  ),
+);
 
 /// Formulaire d'édition d'une configuration unitaire [SuperValueConfig]
 /// (état de base ou surcharge d'un état spécifique).
@@ -613,18 +230,14 @@ class _SuperValueEditor extends StatefulWidget {
 /// État du formulaire [_SuperValueEditor] gérant les contrôleurs de saisie,
 /// la sélection du repository, les liaisons de propriétés individuelles,
 /// l'aperçu temps réel et la validation finale.
-class _SuperValueEditorState extends State<_SuperValueEditor> {
+class _SuperValueEditorState extends State<_SuperValueEditor>
+    implements ComponentLeafCapable<SuperValueConfig> {
   final _form = GlobalKey<FormState>();
   final _fieldSettings = GlobalKey<SuperTextFieldSettingsState>();
-  late EditorWizardTab _tab = EditorWizardNavigation.resolveInitialTab(
-    widget.initialTab,
-    widget.dimensionDelegate,
-  );
   late SuperTextFieldConfig _fieldConfig;
   String? _fieldError;
   late SuperValueConfig _draft;
   late final Map<String, TextEditingController> _fields;
-  late bool _dense = StyleEditorPanel.preferredDense;
   final _previewText = TextEditingController();
   List<JsonRepositoryEntry> _repositories = [];
   String? _repositoryId;
@@ -641,10 +254,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
   bool get _hasFieldSettings =>
       _draft.mode == SuperValueMode.input && !_draft.kind.isBoolean;
 
-  /// Valide le formulaire et les réglages du champ de texte, puis construit et
-  /// retourne la [SuperValueConfig] correspondante.
-  ///
-  /// Retourne `null` et met à jour [_liveError] si la validation échoue.
+  @override
   SuperValueConfig? capture() {
     if (!_form.currentState!.validate() ||
         (_hasFieldSettings &&
@@ -1019,79 +629,25 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
         },
       );
 
-  /// Ouvre la boîte de dialogue permettant de lier dynamiquement une propriété
-  /// visuelle ou textuelle spécifique ([property], par ex. `label`, `color`,
-  /// `fontSize`) à un attribut d'un repository JSON en lecture seule.
-  Future<void> _editPropertyBinding(
-    SuperValueProperty property,
-    String label,
-  ) async {
-    final result = await showRepositoryBindingDialog(
-      context: context,
-      title: 'Lier $label',
-      keyPrefix: 'super-value-property-${property.name}',
-      pathHint: 'client.${property.name}',
-      binding: _draft.propertyBindings[property],
-      store: widget.repositories,
-      listScope: widget.listScope,
-      helper: 'Lecture seule : la valeur du repository remplace ce paramètre.',
-    );
-    if (result == null || !mounted) return;
-    final bindings = Map<SuperValueProperty, JsonTextBinding>.of(
-      _draft.propertyBindings,
-    );
-    if (result.binding == null) {
-      bindings.remove(property);
-    } else {
-      bindings[property] = result.binding!;
-    }
-    setState(() => _draft = _draft.copyWith(propertyBindings: bindings));
-  }
+  EditablePropertyBindingScope<SuperValueProperty> get _bindingScope =>
+      EditablePropertyBindingScope<SuperValueProperty>(
+        context: context,
+        componentPrefix: 'super-value',
+        allowBinding: widget.allowBinding,
+        repositories: widget.repositories,
+        listScope: widget.listScope,
+        bindings: _draft.propertyBindings,
+        onBindingsChanged: (bindings) =>
+            setState(() => _draft = _draft.copyWith(propertyBindings: bindings)),
+      );
 
-  /// Enveloppe un champ de réglage [child] dans une ligne comportant à sa
-  /// droite un bouton d'icône permettant de configurer ou modifier la liaison
-  /// repository de la propriété [property] via [_editPropertyBinding], ainsi
-  /// qu'un encadrement et un bandeau d'indication visuelle si une liaison est active.
   Widget _withBinding(
     SuperValueProperty property,
     String label,
     Widget child,
-  ) {
-    final binding = _draft.propertyBindings[property];
-    final canBind = widget.allowBinding && widget.repositories != null;
-    return RepositoryBoundPropertyTile(
-      buttonKey: ValueKey('super-value-bind-${property.name}'),
-      keyPrefix: 'super-value-bind-${property.name}',
-      binding: binding,
-      tooltip: binding != null
-          ? 'Modifier la liaison de $label'
-          : 'Lier $label à un repository',
-      onPressed: !canBind ? null : () => _editPropertyBinding(property, label),
-      onClear: !canBind || binding == null
-          ? null
-          : () {
-              final bindings = Map<SuperValueProperty, JsonTextBinding>.of(
-                _draft.propertyBindings,
-              )..remove(property);
-              setState(
-                () => _draft = _draft.copyWith(propertyBindings: bindings),
-              );
-            },
-      child: child,
-    );
-  }
+  ) => _bindingScope.wrap(property, label, child);
 
-  /// Dispose verticalement une liste de widgets [children] avec un espacement
-  /// uniforme de 12 pixels entre chaque élément.
-  Widget _group(List<Widget> children) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      for (var i = 0; i < children.length; i++) ...[
-        if (i > 0) const SizedBox(height: 12),
-        children[i],
-      ],
-    ],
-  );
+  Widget _group(List<Widget> children) => buildEditorFieldGroup(children);
 
   /// Construit la carte d'aperçu en direct du `SuperValue` (en mode `Text`,
   /// `SuperTextField`, `Checkbox` ou `Switch`) reflétant les réglages actuels
@@ -1256,182 +812,127 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
     );
   }
 
-  /// Construit la boîte de dialogue complète ([AlertDialog]) contenant le
-  /// panneau d'édition par sections ([StyleEditorPanel] : États, Repository,
-  /// Contenu, Comportement, Typographie, Couleur, Alignement et espacement,
-  /// ainsi que les sections de `SuperTextFieldSettings`) et les boutons
-  /// d'action « Annuler » et « Appliquer ».
+  Future<bool> _handleApply() async {
+    if (_form.currentState != null && !_form.currentState!.validate()) {
+      return false;
+    }
+    if (_hasFieldSettings && _fieldSettings.currentState?.validate() == false) {
+      return false;
+    }
+    final field = _hasFieldSettings
+        ? _fieldSettings.currentState?.value() ?? _fieldConfig
+        : _fieldConfig;
+    try {
+      field.validateFor(
+        obscureText: _draft.obscureText,
+        maxLines: _draft.obscureText || _draft.kind.isBoolean
+            ? 1
+            : int.parse(_fields['maxLines']!.text),
+      );
+    } on FormatException catch (error) {
+      setState(() => _fieldError = error.message);
+      return false;
+    }
+    final binding = _binding;
+    if (binding != null) {
+      if (!widget.allowBinding || widget.repositories == null) {
+        setState(() {
+          _repositoryError =
+              'La liaison nécessite le service et un contrôleur interne.';
+        });
+        return false;
+      }
+      setState(() {
+        _validating = true;
+        _repositoryError = null;
+      });
+      try {
+        final scope = widget.listScope;
+        if (!(scope?.placeholder ?? false)) {
+          final resolved = JsonListScope.resolveSelected(
+            binding,
+            scope,
+            widget.repositories,
+          ).binding;
+          if (resolved != null) {
+            final attr = await widget.repositories!.readAttribute(resolved);
+            if (_draft.kind.isBoolean &&
+                attr.value != null &&
+                attr.value is! bool) {
+              throw const FormatException(
+                'L’attribut lié doit être un booléen.',
+              );
+            }
+          }
+        }
+      } on FormatException catch (error) {
+        if (mounted) {
+          setState(() => _repositoryError = error.message);
+        }
+        return false;
+      } on FileSystemException {
+        if (mounted) {
+          setState(
+            () => _repositoryError = 'Impossible de lire le repository.',
+          );
+        }
+        return false;
+      } finally {
+        if (mounted) setState(() => _validating = false);
+      }
+      if (!mounted) return false;
+    }
+    SuperValueConfig result;
+    try {
+      final leaf = _configuration(field, binding);
+      result = widget.onSave?.call(leaf) ?? leaf;
+    } on FormatException catch (e) {
+      setState(() => _liveError = e.message);
+      return false;
+    } on ArgumentError {
+      setState(() => _liveError = 'Combinaison de propriétés invalide.');
+      return false;
+    }
+    if (!context.mounted) return false;
+    Navigator.of(context).pop(result);
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     _schedulePreview();
     final fonts = widget.availableFontFamilies.toSet().toList();
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
-    final screen = MediaQuery.sizeOf(context);
-    final width = math.min(
-      _dense ? 680.0 : 1080.0,
-      math.max(0.0, screen.width - 96),
-    );
-    final height = math.min(680.0, math.max(0.0, screen.height - 180));
     final delegate = widget.dimensionDelegate;
-    final onDimensions = _tab == EditorWizardTab.dimensions && delegate != null;
-    Future<void> handleApply() async {
-      if (delegate != null && !delegate.validate()) {
-        if (_tab != EditorWizardTab.dimensions) {
-          setState(() => _tab = EditorWizardTab.dimensions);
-        }
-        return;
-      }
-      if (_form.currentState != null && !_form.currentState!.validate()) {
-        if (_tab != EditorWizardTab.properties) {
-          setState(() => _tab = EditorWizardTab.properties);
-        }
-        return;
-      }
-      if (_hasFieldSettings &&
-          _fieldSettings.currentState?.validate() == false) {
-        if (_tab != EditorWizardTab.properties) {
-          setState(() => _tab = EditorWizardTab.properties);
-        }
-        return;
-      }
-      final field = _hasFieldSettings
-          ? _fieldSettings.currentState?.value() ?? _fieldConfig
-          : _fieldConfig;
-      try {
-        field.validateFor(
-          obscureText: _draft.obscureText,
-          maxLines: _draft.obscureText || _draft.kind.isBoolean
-              ? 1
-              : int.parse(_fields['maxLines']!.text),
-        );
-      } on FormatException catch (error) {
-        setState(() {
-          _fieldError = error.message;
-          _tab = EditorWizardTab.properties;
-        });
-        return;
-      }
-      final binding = _binding;
-      if (binding != null) {
-        if (!widget.allowBinding || widget.repositories == null) {
-          setState(() {
-            _repositoryError =
-                'La liaison nécessite le service et un contrôleur interne.';
-            _tab = EditorWizardTab.properties;
-          });
-          return;
-        }
-        setState(() {
-          _validating = true;
-          _repositoryError = null;
-        });
-        try {
-          final scope = widget.listScope;
-          // A template row has no element to read yet.
-          if (!(scope?.placeholder ?? false)) {
-            final resolved = JsonListScope.resolveSelected(
-              binding,
-              scope,
-              widget.repositories,
-            ).binding;
-            // Without selected row, only the path is checked.
-            if (resolved != null) {
-              final attr = await widget.repositories!.readAttribute(resolved);
-              if (_draft.kind.isBoolean &&
-                  attr.value != null &&
-                  attr.value is! bool) {
-                throw const FormatException(
-                  'L’attribut lié doit être un booléen.',
-                );
-              }
-            }
-          }
-        } on FormatException catch (error) {
-          if (mounted) {
-            setState(() {
-              _repositoryError = error.message;
-              _tab = EditorWizardTab.properties;
-            });
-          }
-          return;
-        } on FileSystemException {
-          if (mounted) {
-            setState(() {
-              _repositoryError = 'Impossible de lire le repository.';
-              _tab = EditorWizardTab.properties;
-            });
-          }
-          return;
-        } finally {
-          if (mounted) setState(() => _validating = false);
-        }
-        if (!mounted) return;
-      }
-      SuperValueConfig result;
-      try {
-        final leaf = _configuration(field, binding);
-        result = widget.onSave?.call(leaf) ?? leaf;
-      } on FormatException catch (e) {
-        setState(() {
-          _liveError = e.message;
-          _tab = EditorWizardTab.properties;
-        });
-        return;
-      } on ArgumentError {
-        setState(() {
-          _liveError = 'Combinaison de propriétés invalide.';
-          _tab = EditorWizardTab.properties;
-        });
-        return;
-      }
-      if (!context.mounted) return;
-      Navigator.of(context).pop(result);
-    }
 
-    return AlertDialog(
-      key: const ValueKey('super-value-settings'),
-      insetPadding: const EdgeInsets.all(24),
-      constraints: BoxConstraints(maxWidth: width + 48),
-      content: SizedBox(
-        width: width,
-        height: height,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            EditorWizardTabBar(
-              selectedTab: _tab,
-              propertiesEnabled: true,
-              dimensionsEnabled: delegate != null,
-              onTabSelected: (next) {
-                if (next != _tab) setState(() => _tab = next);
-              },
-            ),
-            const SizedBox(height: 12),
-            if (onDimensions)
-              Expanded(child: EditorDimensionTabView(delegate: delegate))
-            else
-              Expanded(
-                child: Form(
-                  key: _form,
-                  onChanged: () => setState(() {}),
-                  child: SuperTextFieldSettings(
-                    key: _fieldSettings,
-                    value: _draft.field,
-                    onChanged: (value) => setState(() {
-                      _fieldConfig = value;
-                      _fieldError = null;
-                    }),
-                    builder: (fieldSections) => StyleEditorPanel(
-                      label: delegate?.editableLabel ?? 'Configurer la valeur',
-                      onLabelChanged: delegate?.onLabelChanged,
-                      dense: _dense,
-                      onDenseChanged: (value) => setState(() {
-                        _dense = value;
-                widget.onWidthChanged(value ? 680 : 1080);
-              }),
-              preview: _preview(unavailable),
-              sections: [
+    return EditorStyleWizardDialog(
+      dialogKey: const ValueKey('super-value-settings'),
+      initialTab: widget.initialTab,
+      dimensionDelegate: delegate,
+      onWidthChanged: widget.onWidthChanged,
+      liveError: _liveError,
+      liveErrorKey: const ValueKey('super-value-live-error'),
+      secondaryError: _fieldError,
+      busy: _validating,
+      onApply: _handleApply,
+      propertiesBuilder: (context, dense, onDenseChanged) => Form(
+        key: _form,
+        onChanged: () => setState(() {}),
+        child: SuperTextFieldSettings(
+          key: _fieldSettings,
+          value: _draft.field,
+          onChanged: (value) => setState(() {
+            _fieldConfig = value;
+            _fieldError = null;
+          }),
+          builder: (fieldSections) => StyleEditorPanel(
+            label: delegate?.editableLabel ?? 'Configurer la valeur',
+            onLabelChanged: delegate?.onLabelChanged,
+            dense: dense,
+            onDenseChanged: onDenseChanged,
+            preview: _preview(unavailable),
+            sections: [
                 if (widget.header != null)
                   StyleEditorSection(
                     id: 'value-states',
@@ -1671,30 +1172,16 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                     _withBinding(
                       SuperValueProperty.fontFamily,
                       'la police',
-                      DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        key: ValueKey(
-                          'super-value-setting-fontFamily-${_draft.fontFamily}',
-                        ),
-                        initialValue: unavailable ? null : _draft.fontFamily,
-                        hint: const Text('Police du thème'),
-                        items: [
-                          const DropdownMenuItem(
-                            value: '',
-                            child: Text('Police du thème'),
-                          ),
-                          for (final font in fonts)
-                            DropdownMenuItem(value: font, child: Text(font)),
-                        ],
+                      ComponentFontFamilyField(
+                        settingPrefix: 'super-value-setting',
+                        fontFamily: _draft.fontFamily,
+                        availableFontFamilies: fonts,
                         onChanged: (font) => setState(
                           () => _draft = _draft.copyWith(
                             fontFamily: font,
                             inheritFontFamily: font == null || font.isEmpty,
                           ),
                         ),
-                        validator: (_) => unavailable
-                            ? 'Choisissez une police disponible.'
-                            : null,
                       ),
                     ),
                     _withBinding(
@@ -1709,22 +1196,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                     _withBinding(
                       SuperValueProperty.fontWeight,
                       'la graisse',
-                      DropdownButtonFormField<FontWeight>(
-                        isExpanded: true,
-                        initialValue: _draft.fontWeight,
-                        decoration: const InputDecoration(labelText: 'Graisse'),
-                        hint: const Text('Graisse du thème'),
-                        items: [
-                          const DropdownMenuItem<FontWeight>(
-                            value: null,
-                            child: Text('Graisse du thème'),
-                          ),
-                          for (final weight in FontWeight.values)
-                            DropdownMenuItem(
-                              value: weight,
-                              child: Text('${weight.value}'),
-                            ),
-                        ],
+                      ComponentFontWeightField(
+                        fontWeight: _draft.fontWeight,
                         onChanged: (weight) => setState(
                           () => _draft = _draft.copyWith(
                             fontWeight: weight,
@@ -1736,72 +1209,16 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                     _withBinding(
                       SuperValueProperty.italic,
                       'le style italique',
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 4,
-                        children: [
-                          const Text(
-                            'Style de police',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                      ComponentItalicSegmentField(
+                        settingPrefix: 'super-value-setting',
+                        italic: _draft.italic,
+                        onChanged: ({required italic, required inherit}) =>
+                            setState(
+                              () => _draft = _draft.copyWith(
+                                italic: italic,
+                                inheritItalic: inherit,
+                              ),
                             ),
-                          ),
-                          SegmentedButton<String>(
-                            key: const ValueKey('super-value-setting-italic'),
-                            showSelectedIcon: false,
-                            style: const ButtonStyle(
-                              visualDensity: VisualDensity.compact,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            segments: const [
-                              ButtonSegment(
-                                value: 'inherit',
-                                tooltip: 'Style du parent',
-                                icon: Icon(Icons.hdr_auto_outlined, size: 16),
-                                label: Text(
-                                  'Style du parent',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              ButtonSegment(
-                                value: 'normal',
-                                tooltip: 'Normal',
-                                icon: Icon(Icons.text_format, size: 16),
-                                label: Text(
-                                  'Normal',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              ButtonSegment(
-                                value: 'italic',
-                                tooltip: 'Italique',
-                                icon: Icon(Icons.format_italic, size: 16),
-                                label: Text(
-                                  'Italique',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                            selected: {
-                              _draft.italic == null
-                                  ? 'inherit'
-                                  : _draft.italic!
-                                  ? 'italic'
-                                  : 'normal',
-                            },
-                            onSelectionChanged: (selected) {
-                              if (selected.isEmpty) return;
-                              final value = selected.first;
-                              setState(
-                                () => _draft = _draft.copyWith(
-                                  italic: value == 'italic',
-                                  inheritItalic: value == 'inherit',
-                                ),
-                              );
-                            },
-                          ),
-                        ],
                       ),
                     ),
                   ]),
@@ -1825,10 +1242,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                           : widget.textStyle.color ??
                                 Theme.of(context).colorScheme.onSurface,
                       (color) => setState(() {
-                        _fields['color']!.text = color
-                            .toARGB32()
-                            .toRadixString(16)
-                            .padLeft(8, '0');
+                        _fields['color']!.text = formatEditorColorHex(color);
                       }),
                       key: const ValueKey('super-value-color-picker'),
                       onClear: () => setState(() => _fields['color']!.clear()),
@@ -1855,57 +1269,12 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
                     _withBinding(
                       SuperValueProperty.textAlign,
                       'l’alignement',
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 4,
-                        children: [
-                          const Text(
-                            'Alignement',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          SegmentedButton<TextAlign>(
-                            key: const ValueKey(
-                              'super-value-setting-textAlign',
-                            ),
-                            showSelectedIcon: false,
-                            style: const ButtonStyle(
-                              visualDensity: VisualDensity.compact,
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            ),
-                            segments: [
-                              for (final align in TextAlign.values)
-                                ButtonSegment<TextAlign>(
-                                  value: align,
-                                  tooltip: align.name,
-                                  icon: Icon(switch (align) {
-                                    TextAlign.left => Icons.format_align_left,
-                                    TextAlign.right => Icons.format_align_right,
-                                    TextAlign.center =>
-                                      Icons.format_align_center,
-                                    TextAlign.justify =>
-                                      Icons.format_align_justify,
-                                    TextAlign.start =>
-                                      Icons.align_horizontal_left,
-                                    TextAlign.end =>
-                                      Icons.align_horizontal_right,
-                                  }, size: 16),
-                                ),
-                            ],
-                            selected: {_draft.textAlign},
-                            onSelectionChanged: (selected) {
-                              if (selected.isNotEmpty) {
-                                setState(
-                                  () => _draft = _draft.copyWith(
-                                    textAlign: selected.first,
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                        ],
+                      ComponentTextAlignSegmentField(
+                        settingPrefix: 'super-value-setting',
+                        textAlign: _draft.textAlign,
+                        onChanged: (align) => setState(
+                          () => _draft = _draft.copyWith(textAlign: align),
+                        ),
                       ),
                     ),
                     _field(
@@ -1925,36 +1294,6 @@ class _SuperValueEditorState extends State<_SuperValueEditor> {
             ),
           ),
         ),
-              ),
-          ],
-        ),
-      ),
-      actions: [
-        if (onDimensions)
-          ...delegate.buildExtraActions(
-            context,
-            onResetAndClose: handleApply,
-          ),
-        if (_liveError != null)
-          Text(
-            _liveError!,
-            key: const ValueKey('super-value-live-error'),
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        if (_fieldError != null)
-          Text(
-            _fieldError!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        TextButton(
-          onPressed: _validating ? null : () => Navigator.of(context).pop(),
-          child: const Text('Annuler'),
-        ),
-        FilledButton(
-          onPressed: _validating ? null : handleApply,
-          child: const Text('Appliquer'),
-        ),
-      ],
-    );
+      );
   }
 }

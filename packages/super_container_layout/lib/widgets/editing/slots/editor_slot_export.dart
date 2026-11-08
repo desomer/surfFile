@@ -74,7 +74,16 @@ extension _EditorSlotExportExtension on EditorSlotState {
     final registry = SuperApp.maybeOf(context)?.registry;
     if (registry == null) return;
     final id = effectiveComponentId;
-    final existing = registry.exportOptionsFor(id);
+    final scope = RegisteredComponentScope.directOf(context);
+    final existing =
+        registry.exportOptionsFor(id) ??
+        (scope != null
+            ? ComponentExportOptions(
+                componentName: scope.componentKey,
+                generateComponentOnExport: true,
+                forceComponentOnExport: !scope.composable,
+              )
+            : null);
     final result = await showComponentExportConfigDialog(
       context: context,
       componentId: id,
@@ -84,6 +93,10 @@ extension _EditorSlotExportExtension on EditorSlotState {
     );
     if (result != null && mounted) {
       registry.setExportOptions(id, result);
+      if (scope != null && scope.componentKey != id) {
+        registry.setExportOptions(scope.componentKey, result);
+      }
+      _refreshState();
     }
   }
 
@@ -101,6 +114,23 @@ extension _EditorSlotExportExtension on EditorSlotState {
 
     void inspectWidget(Widget? candidate, {String? slotId}) {
       if (candidate == null) return;
+      if (candidate is RegisteredComponentScope) {
+        if (slotId != null && slotId.isNotEmpty) {
+          final reg = SuperApp.maybeOf(context)?.registry;
+          if (reg != null && reg.exportOptionsFor(slotId) == null) {
+            reg.setExportOptions(
+              slotId,
+              ComponentExportOptions(
+                componentName: candidate.componentKey,
+                generateComponentOnExport: true,
+                forceComponentOnExport: !candidate.composable,
+              ),
+            );
+          }
+        }
+        inspectWidget(candidate.child, slotId: slotId);
+        return;
+      }
       if (candidate is SlotImplementation) {
         final effectiveSlotId = slotId ?? candidate.id;
         if (!visitedSlots.add('$effectiveSlotId:${candidate.hashCode}')) return;
@@ -138,8 +168,7 @@ extension _EditorSlotExportExtension on EditorSlotState {
         return;
       }
       if (candidate is SuperLayout) {
-        final targetId =
-            (candidate.id != null && candidate.id!.isNotEmpty)
+        final targetId = (candidate.id != null && candidate.id!.isNotEmpty)
             ? candidate.id!
             : slotId;
         if (targetId != null && targetId.isNotEmpty) {
@@ -346,6 +375,34 @@ extension _EditorSlotExportExtension on EditorSlotState {
         if (slot.widget.zoneId == null) {
           final id = slot.effectiveComponentId;
           final inheritedSlotId = slot._instance?.id;
+          final directScope = RegisteredComponentScope.directOf(slot.context);
+          if (directScope != null) {
+            final reg = SuperApp.maybeOf(context)?.registry;
+            if (reg != null) {
+              if (reg.exportOptionsFor(id) == null) {
+                reg.setExportOptions(
+                  id,
+                  ComponentExportOptions(
+                    componentName: directScope.componentKey,
+                    generateComponentOnExport: true,
+                    forceComponentOnExport: !directScope.composable,
+                  ),
+                );
+              }
+              if (inheritedSlotId != null &&
+                  inheritedSlotId.isNotEmpty &&
+                  reg.exportOptionsFor(inheritedSlotId) == null) {
+                reg.setExportOptions(
+                  inheritedSlotId,
+                  ComponentExportOptions(
+                    componentName: directScope.componentKey,
+                    generateComponentOnExport: true,
+                    forceComponentOnExport: !directScope.composable,
+                  ),
+                );
+              }
+            }
+          }
           if (slot.widget.exportConfig case final read?) {
             final cfg = read();
             final isSyntheticProvidedChild =

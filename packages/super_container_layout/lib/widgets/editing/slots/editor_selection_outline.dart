@@ -392,3 +392,159 @@ class EditorSelectionOutline extends CustomPainter {
       oldDelegate.label != label ||
       oldDelegate.zoomScale != zoomScale;
 }
+
+/// Peintre permanent en mode édition affichant un badge compact en haut à droite
+/// et un liseré subtil pour identifier visuellement un composant composé / enregistré.
+class EditorComposedComponentBadgePainter extends CustomPainter {
+  const EditorComposedComponentBadgePainter({
+    required this.componentName,
+    this.composable = true,
+    this.radius = 0,
+    this.zoomScale = 1.0,
+    this.innerPainter,
+  });
+
+  /// Nom du composant enregistré (ex: `'panString'`).
+  final String componentName;
+
+  /// Vrai s'il s'agit d'un composant décomposable (`RegisteredComponent.composable`), faux s'il est forcé/atomique.
+  final bool composable;
+
+  /// Rayon de courbure de la surface.
+  final double radius;
+
+  /// Facteur de zoom courant (`EditorZoomScope`) pour garder le badge à l'échelle 1:1.
+  final double zoomScale;
+
+  /// Peintre d'outline de sélection/survol éventuel à combiner.
+  final CustomPainter? innerPainter;
+
+  static const Color composedPrimary = Color(0xFF7C3AED);
+  static const Color composedSecondary = Color(0xFF6366F1);
+  static const Color forcedPrimary = Color(0xFF0D9488);
+  static const Color forcedSecondary = Color(0xFF0284C7);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = (Offset.zero & size).deflate(1.0);
+    if (!rect.isEmpty && rect.width > 4 && rect.height > 4) {
+      final primary = composable ? composedPrimary : forcedPrimary;
+      final secondary = composable ? composedSecondary : forcedSecondary;
+      final maxCorner = math.max(0.0, math.min(16.0, rect.shortestSide / 2));
+      final cornerRadius = (radius - 1.0).clamp(0.0, maxCorner).toDouble();
+      final rrect = RRect.fromRectAndRadius(rect, Radius.circular(cornerRadius));
+
+      // Fin liseré pointillé si aucun peintre de survol actif n'est présent
+      if (innerPainter == null) {
+        final path = Path()..addRRect(rrect);
+        final dashedPath = Path();
+        for (final metric in path.computeMetrics()) {
+          for (var offset = 0.0; offset < metric.length; offset += 10) {
+            dashedPath.addPath(
+              metric.extractPath(
+                offset,
+                (offset + 5.0).clamp(0.0, metric.length),
+              ),
+              Offset.zero,
+            );
+          }
+        }
+        canvas.drawPath(
+          dashedPath,
+          Paint()
+            ..color = primary.withValues(alpha: 0.55)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.4,
+        );
+      }
+
+      innerPainter?.paint(canvas, size);
+
+      // Badge permanent en haut à droite (maintenu à l'échelle écran 1:1)
+      final effectiveZoom =
+          zoomScale > 0 && zoomScale.isFinite ? zoomScale : 1.0;
+      final invZoom = 1.0 / effectiveZoom;
+      final screenWidth = rect.width * effectiveZoom;
+      final screenHeight = rect.height * effectiveZoom;
+      final text = componentName.trim();
+      if (text.isNotEmpty && screenWidth >= 48 && screenHeight >= 20) {
+        final prefix = composable ? '🧩 ' : '📦 ';
+        final textPainter = TextPainter(
+          text: TextSpan(
+            text: '$prefix$text',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10.0,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.2,
+              height: 1.1,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+          ellipsis: '…',
+        )..layout(maxWidth: (screenWidth - 20).clamp(24.0, 200.0));
+
+        const hPad = 7.0;
+        const vPad = 3.0;
+        final badgeWidth = textPainter.width + hPad * 2;
+        final badgeHeight = textPainter.height + vPad * 2;
+        final badgeLeft = screenWidth - badgeWidth - 6.0;
+        const badgeTop = 5.0;
+        final badgeRect = Rect.fromLTWH(
+          badgeLeft,
+          badgeTop,
+          badgeWidth,
+          badgeHeight,
+        );
+        final badgeRRect = RRect.fromRectAndRadius(
+          badgeRect,
+          Radius.circular(badgeHeight / 2),
+        );
+
+        canvas.save();
+        canvas.translate(rect.left, rect.top);
+        canvas.scale(invZoom, invZoom);
+
+        canvas.drawRRect(
+          badgeRRect.shift(const Offset(0, 1.0)),
+          Paint()
+            ..color = Colors.black.withValues(alpha: 0.24)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+        );
+
+        final pillShader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            primary.withValues(alpha: 0.92),
+            secondary.withValues(alpha: 0.92),
+          ],
+        ).createShader(badgeRect);
+        canvas.drawRRect(badgeRRect, Paint()..shader = pillShader);
+
+        canvas.drawRRect(
+          badgeRRect,
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.80)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.0,
+        );
+
+        textPainter.paint(canvas, Offset(badgeLeft + hPad, badgeTop + vPad));
+        textPainter.dispose();
+        canvas.restore();
+      }
+    } else {
+      innerPainter?.paint(canvas, size);
+    }
+  }
+
+  @override
+  bool shouldRepaint(EditorComposedComponentBadgePainter oldDelegate) =>
+      oldDelegate.componentName != componentName ||
+      oldDelegate.composable != composable ||
+      oldDelegate.radius != radius ||
+      oldDelegate.zoomScale != zoomScale ||
+      oldDelegate.innerPainter != innerPainter;
+}

@@ -19,19 +19,18 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../../models/json_text_binding.dart';
 import '../../../models/scrollbar_style_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
-import '../repositories/repository_binding_fields.dart'
-    show inheritedRepositoryValue;
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
+import '../repositories/repository_binding_fields.dart'
+    show inheritedRepositoryValue;
 import '../styles/scrollbar_style_editor.dart';
+import 'shared/collection_editor_controls.dart';
 
-/// Valeur de la liste déroulante pour « Hérité de la liste englobante ».
 /// Ouvre la fenêtre de réglage pour [config].
 ///
 /// Le repository et la ligne englobante sont lus depuis [context]
@@ -85,7 +84,7 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
     text: widget.config.binding?.path ?? '',
   );
   late final _spacing = TextEditingController(
-    text: _number(widget.config.spacing),
+    text: formatCollectionEditorNumber(widget.config.spacing),
   );
   late final _empty = TextEditingController(text: widget.config.emptyText);
   late String _repository = widget.config.binding == null
@@ -98,20 +97,10 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
   late bool _showScrollbar = widget.config.showScrollbar;
   late ScrollbarStyleConfig _scrollbarStyle = widget.config.scrollbarStyle;
   late bool _animateSelectionAndHover = widget.config.animateSelectionAndHover;
-  List<JsonRepositoryEntry> _repositories = [];
   String? _error;
   bool _busy = false;
 
-  static String _number(double value) =>
-      value == value.roundToDouble() ? '${value.toInt()}' : '$value';
-
   int get _depth => widget.scope?.indices.length ?? 0;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRepositories();
-  }
 
   @override
   void dispose() {
@@ -121,55 +110,21 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
     super.dispose();
   }
 
-  Future<void> _loadRepositories() async {
-    final store = widget.repositories;
-    if (store == null) return;
-    try {
-      final entries = await store.catalog();
-      if (mounted) setState(() => _repositories = entries);
-    } on FormatException catch (error) {
-      if (mounted) setState(() => _error = error.message);
-    } on FileSystemException {
-      if (mounted) {
-        setState(() => _error = 'Impossible de charger les repositories.');
-      }
-    }
-  }
-
-  JsonTextBinding? get _binding => _repository.isEmpty
-      ? null
-      : JsonTextBinding(
-          repositoryId: _repository == inheritedRepositoryValue
-              ? null
-              : _repository,
-          path: _path.text.trim(),
-        );
-
   SuperListViewConfig _config() {
-    double number(TextEditingController field) {
-      final value = double.tryParse(field.text.trim().replaceAll(',', '.'));
-      if (value == null) {
-        throw const FormatException('Valeur numérique invalide.');
-      }
-      return value;
-    }
-
-    final binding = _binding;
-    final result = widget.config.copyWith(
+    final binding = buildCollectionEditorBinding(_repository, _path.text);
+    return widget.config.copyWith(
       binding: binding,
       clearBinding: binding == null,
       axis: _axis,
       wrap: _wrap,
-      spacing: number(_spacing),
+      spacing: parseCollectionEditorNumber(_spacing),
       allowAdd: _allowAdd,
       allowRemove: _allowRemove,
       showScrollbar: _showScrollbar,
       scrollbarStyle: _scrollbarStyle,
       animateSelectionAndHover: _animateSelectionAndHover,
       emptyText: _empty.text,
-    );
-    result.validate();
-    return result;
+    )..validate();
   }
 
   Future<bool> _apply() async {
@@ -180,23 +135,12 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
     });
     try {
       final config = _config();
-      final binding = config.binding;
-      final scope = widget.scope;
-      if (binding != null && !(scope?.placeholder ?? false)) {
-        final store = widget.repositories;
-        if (store == null) {
-          throw const FormatException('Service de repositories indisponible.');
-        }
-        final resolved = JsonListScope.resolveSelected(
-          binding,
-          scope,
-          store,
-        ).binding;
-        // Sans ligne parente sélectionnée, seul le chemin est vérifié.
-        if (resolved != null) {
-          await store.readArray(resolved.repositoryId!, resolved.path);
-        }
-      }
+      await verifyCollectionBindingTarget(
+        binding: config.binding,
+        scope: widget.scope,
+        store: widget.repositories,
+        readTarget: (store, repoId, path) => store.readArray(repoId, path),
+      );
       if (mounted) Navigator.of(context).pop(config);
       return true;
     } on FormatException catch (error) {
@@ -211,213 +155,172 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final inheritable =
-        widget.scope != null || _repository == inheritedRepositoryValue;
-    final known =
-        _repository.isEmpty ||
-        _repository == inheritedRepositoryValue ||
-        _repositories.any((entry) => entry.id == _repository);
-    return EditorTabbedAlertDialog(
-      applyButtonKey: const ValueKey('super-list-apply'),
-      initialTab: widget.initialTab,
-      dimensionDelegate: widget.dimensionDelegate,
-      propertiesTitle: const Text('Liste JSON'),
-      propertiesWidth: 420,
-      busy: _busy,
-      onApply: _apply,
-      onCancel: () => Navigator.of(context).pop(),
-      propertiesContentBuilder: (context) => Form(
-        key: _form,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: 12,
-          children: [
-            DropdownButtonFormField<String>(
-              key: const ValueKey('super-list-repository'),
-              initialValue: _repository,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Repository'),
-              items: [
-                const DropdownMenuItem(value: '', child: Text('Sans liaison')),
-                if (inheritable)
-                  const DropdownMenuItem(
-                    value: inheritedRepositoryValue,
-                    child: Text('Hérité de la liste englobante'),
-                  ),
-                for (final entry in _repositories)
-                  DropdownMenuItem(
-                    value: entry.id,
-                    child: Text(entry.name, overflow: TextOverflow.ellipsis),
-                  ),
-                if (!known)
-                  DropdownMenuItem(
-                    value: _repository,
-                    child: const Text('Repository indisponible'),
-                  ),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (value) => setState(() => _repository = value ?? ''),
-            ),
-            TextFormField(
-              key: const ValueKey('super-list-path'),
-              controller: _path,
-              enabled: _repository.isNotEmpty && !_busy,
-              decoration: InputDecoration(
-                labelText: 'Chemin du tableau',
-                hintText: _depth == 0 ? 'clients' : 'clients[?].commandes',
-                helperText: _depth == 0
-                    ? '[?] = ligne sélectionnée du tableau parent'
-                    : 'Chaque [?] reçoit l’indice d’une liste englobante '
-                          '($_depth disponible(s)), puis la ligne '
-                          'sélectionnée.',
+  Widget build(BuildContext context) => EditorTabbedAlertDialog(
+    applyButtonKey: const ValueKey('super-list-apply'),
+    initialTab: widget.initialTab,
+    dimensionDelegate: widget.dimensionDelegate,
+    propertiesTitle: const Text('Liste JSON'),
+    propertiesWidth: 420,
+    busy: _busy,
+    onApply: _apply,
+    onCancel: () => Navigator.of(context).pop(),
+    propertiesContentBuilder: (context) => Form(
+      key: _form,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          CollectionRepositorySourceFields(
+            keyPrefix: 'super-list',
+            repositories: widget.repositories,
+            scope: widget.scope,
+            repository: _repository,
+            pathController: _path,
+            pathLabel: 'Chemin du tableau',
+            rootHint: 'clients',
+            nestedHint: 'clients[?].commandes',
+            helperText: _depth == 0
+                ? '[?] = ligne sélectionnée du tableau parent'
+                : 'Chaque [?] reçoit l’indice d’une liste englobante '
+                      '($_depth disponible(s)), puis la ligne '
+                      'sélectionnée.',
+            busy: _busy,
+            onRepositoryChanged: (value) => setState(() => _repository = value),
+            onLoadError: (msg) => setState(() => _error = msg),
+          ),
+          SegmentedButton<String>(
+            segments: const [
+              ButtonSegment(
+                value: 'vertical',
+                tooltip: 'Verticale',
+                label: Text('Verticale'),
+                icon: Icon(Icons.view_agenda_outlined),
               ),
-              validator: (value) {
-                if (_repository.isEmpty) return null;
-                try {
-                  JsonAttributePath(value?.trim() ?? '');
-                  return null;
-                } on FormatException catch (error) {
-                  return error.message;
-                }
-              },
-            ),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                  value: 'vertical',
-                  tooltip: 'Verticale',
-                  label: Text('Verticale'),
-                  icon: Icon(Icons.view_agenda_outlined),
-                ),
-                ButtonSegment(
-                  value: 'horizontal',
-                  tooltip: 'Horizontale',
-                  label: Text('Horizontale'),
-                  icon: Icon(Icons.view_week_outlined),
-                ),
-                ButtonSegment(
-                  value: 'wrap',
-                  tooltip: 'Wrap',
-                  label: Text('Wrap'),
-                  icon: Icon(Icons.wrap_text),
-                ),
-              ],
-              selected: {_wrap ? 'wrap' : _axis.name},
-              onSelectionChanged: (value) => setState(() {
-                _wrap = value.single == 'wrap';
-                if (!_wrap) {
-                  _axis = value.single == 'vertical'
-                      ? Axis.vertical
-                      : Axis.horizontal;
-                }
-              }),
-            ),
-            const Text(
-              'Les dimensions se règlent avec « Taille et marge » '
-              'sur l’entrée de style IterableContent du menu contextuel. '
-              'Laissez une dimension préférée vide pour une taille automatique.',
-            ),
-            TextFormField(
-              key: const ValueKey('super-list-spacing'),
-              controller: _spacing,
-              decoration: const InputDecoration(labelText: 'Espacement'),
-            ),
-            TextFormField(
-              key: const ValueKey('super-list-empty'),
-              controller: _empty,
-              decoration: const InputDecoration(
-                labelText: 'Texte si le tableau est vide',
+              ButtonSegment(
+                value: 'horizontal',
+                tooltip: 'Horizontale',
+                label: Text('Horizontale'),
+                icon: Icon(Icons.view_week_outlined),
               ),
-            ),
-            SwitchListTile(
-              key: const ValueKey('super-list-allow-add'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Autoriser l’ajout d’éléments'),
-              value: _allowAdd,
-              onChanged: (value) => setState(() => _allowAdd = value),
-            ),
-            SwitchListTile(
-              key: const ValueKey('super-list-allow-remove'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Autoriser la suppression d’éléments'),
-              value: _allowRemove,
-              onChanged: (value) => setState(() => _allowRemove = value),
-            ),
-            SwitchListTile(
-              key: const ValueKey('super-list-animate-selection-hover'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Animer le déplacement de la sélection et du survol',
+              ButtonSegment(
+                value: 'wrap',
+                tooltip: 'Wrap',
+                label: Text('Wrap'),
+                icon: Icon(Icons.wrap_text),
               ),
-              value: _animateSelectionAndHover,
-              onChanged: (value) =>
-                  setState(() => _animateSelectionAndHover = value),
+            ],
+            selected: {_wrap ? 'wrap' : _axis.name},
+            onSelectionChanged: (value) => setState(() {
+              _wrap = value.single == 'wrap';
+              if (!_wrap) {
+                _axis = value.single == 'vertical'
+                    ? Axis.vertical
+                    : Axis.horizontal;
+              }
+            }),
+          ),
+          const Text(
+            'Les dimensions se règlent avec « Taille et marge » '
+            'sur l’entrée de style IterableContent du menu contextuel. '
+            'Laissez une dimension préférée vide pour une taille automatique.',
+          ),
+          TextFormField(
+            key: const ValueKey('super-list-spacing'),
+            controller: _spacing,
+            decoration: const InputDecoration(labelText: 'Espacement'),
+          ),
+          TextFormField(
+            key: const ValueKey('super-list-empty'),
+            controller: _empty,
+            decoration: const InputDecoration(
+              labelText: 'Texte si le tableau est vide',
             ),
-            SwitchListTile(
-              key: const ValueKey('super-list-show-scrollbar'),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-list-allow-add'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Autoriser l’ajout d’éléments'),
+            value: _allowAdd,
+            onChanged: (value) => setState(() => _allowAdd = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-list-allow-remove'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Autoriser la suppression d’éléments'),
+            value: _allowRemove,
+            onChanged: (value) => setState(() => _allowRemove = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-list-animate-selection-hover'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Animer le déplacement de la sélection et du survol',
+            ),
+            value: _animateSelectionAndHover,
+            onChanged: (value) =>
+                setState(() => _animateSelectionAndHover = value),
+          ),
+          SwitchListTile(
+            key: const ValueKey('super-list-show-scrollbar'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Afficher la barre de défilement (ScrollBar)'),
+            value: _showScrollbar,
+            onChanged: (value) => setState(() => _showScrollbar = value),
+          ),
+          if (_showScrollbar)
+            ListTile(
+              key: const ValueKey('super-list-scrollbar-style'),
+              dense: true,
               contentPadding: EdgeInsets.zero,
-              title: const Text('Afficher la barre de défilement (ScrollBar)'),
-              value: _showScrollbar,
-              onChanged: (value) => setState(() => _showScrollbar = value),
-            ),
-            if (_showScrollbar)
-              ListTile(
-                key: const ValueKey('super-list-scrollbar-style'),
-                dense: true,
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  Icons.palette_outlined,
-                  size: 20,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                title: const Text('Style de la barre de défilement'),
-                subtitle: Text(
-                  _scrollbarStyle.summary,
-                  style: const TextStyle(fontSize: 11),
-                ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (!_scrollbarStyle.isDefault)
-                      IconButton(
-                        key: const ValueKey('super-list-scrollbar-style-reset'),
-                        tooltip: 'Style par défaut',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.restart_alt, size: 18),
-                        onPressed: () => setState(
-                          () => _scrollbarStyle = const ScrollbarStyleConfig(),
-                        ),
+              leading: Icon(
+                Icons.palette_outlined,
+                size: 20,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              title: const Text('Style de la barre de défilement'),
+              subtitle: Text(
+                _scrollbarStyle.summary,
+                style: const TextStyle(fontSize: 11),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (!_scrollbarStyle.isDefault)
+                    IconButton(
+                      key: const ValueKey('super-list-scrollbar-style-reset'),
+                      tooltip: 'Style par défaut',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.restart_alt, size: 18),
+                      onPressed: () => setState(
+                        () => _scrollbarStyle = const ScrollbarStyleConfig(),
                       ),
-                    const Icon(Icons.tune, size: 18),
-                  ],
-                ),
-                onTap: () => showScrollbarStyleEditor(
-                  context: context,
-                  axis: _wrap ? Axis.vertical : _axis,
-                  keyPrefix: 'super-list-scrollbar-editor',
-                  initialValue: _scrollbarStyle,
-                  onChanged: (nextStyle) =>
-                      setState(() => _scrollbarStyle = nextStyle),
-                ),
+                    ),
+                  const Icon(Icons.tune, size: 18),
+                ],
               ),
-            const Text(
-              'Chaque ligne répète la disposition modèle de la liste. Dans '
-              'cette disposition, un texte lié à clients[?].nom affiche '
-              'le nom de l’élément de sa ligne.',
+              onTap: () => showScrollbarStyleEditor(
+                context: context,
+                axis: _wrap ? Axis.vertical : _axis,
+                keyPrefix: 'super-list-scrollbar-editor',
+                initialValue: _scrollbarStyle,
+                onChanged: (nextStyle) =>
+                    setState(() => _scrollbarStyle = nextStyle),
+              ),
             ),
-            if (_busy) const LinearProgressIndicator(),
-            if (_error != null)
-              Text(
-                _error!,
-                key: const ValueKey('super-list-editor-error'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-          ],
-        ),
+          const Text(
+            'Chaque ligne répète la disposition modèle de la liste. Dans '
+            'cette disposition, un texte lié à clients[?].nom affiche '
+            'le nom de l’élément de sa ligne.',
+          ),
+          ...buildCollectionEditorStatusWidgets(
+            context: context,
+            keyPrefix: 'super-list',
+            busy: _busy,
+            error: _error,
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
 }

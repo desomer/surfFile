@@ -175,7 +175,7 @@ abstract final class DartCodeExporter {
     }
 
     generateSubComponents(context.extractedSubComponents);
-    return '${[...subBlocks, mainBlock].join('\n')}';
+    return [...subBlocks, mainBlock].join('\n');
   }
 
   static String _cleanRegistrationId(String rawId) {
