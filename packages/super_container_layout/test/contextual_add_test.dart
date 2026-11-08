@@ -231,7 +231,13 @@ void main() {
   }) async {
     await tester.tap(valueOf(id), buttons: kSecondaryMouseButton);
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('style-menu-insert')));
+    final insertButton =
+        find.byKey(const ValueKey('style-menu-insert-component'));
+    if (insertButton.evaluate().isNotEmpty) {
+      await tester.tap(insertButton);
+    } else {
+      await tester.tap(find.byKey(const ValueKey('style-menu-insert')));
+    }
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('contextual-add-wizard')), findsOneWidget);
   }
@@ -553,7 +559,13 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('style-menu-insert')));
+    final insertButton =
+        find.byKey(const ValueKey('style-menu-insert-component'));
+    if (insertButton.evaluate().isNotEmpty) {
+      await tester.tap(insertButton);
+    } else {
+      await tester.tap(find.byKey(const ValueKey('style-menu-insert')));
+    }
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('contextual-add-slot-factory:Value')),

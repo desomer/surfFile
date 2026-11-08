@@ -34,7 +34,7 @@ class SuperTabDartGenerator extends ComponentDartGenerator {
     ];
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (label != null && label != 'Onglets')
         'label': context.formatString(label),
       if (behaviors.isNotEmpty)

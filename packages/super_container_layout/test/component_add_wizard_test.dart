@@ -734,4 +734,67 @@ void main() {
       expect(find.byKey(overlayKey), findsNothing);
     },
   );
+
+  testWidgets(
+    'wizard builds and completes without targets when placements are provided',
+    (tester) async {
+      final result = ValueNotifier<ComponentAddRequest?>(null);
+      addTearDown(result.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  result.value = await showComponentAddWizard(
+                    context: context,
+                    title: 'Ajouter près de Root',
+                    keyPrefix: 'placement-test',
+                    candidates: const [
+                      ComponentAddCandidate(
+                        id: 'block',
+                        label: 'Bloc',
+                        tags: {'container'},
+                      ),
+                    ],
+                    placements: const [
+                      ComponentAddPlacement(
+                        id: 'p1',
+                        group: 'Root',
+                        label: 'En dessous',
+                        icon: Icons.arrow_downward,
+                      ),
+                    ],
+                  );
+                },
+                child: const Text('Ouvrir'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Ouvrir'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('placement-test-add-wizard')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tapKey(tester, 'placement-test-add-card-block');
+      await tapKey(tester, 'placement-test-add-next');
+      await tapKey(tester, 'placement-test-add-next');
+      await tapKey(tester, 'placement-test-add-next');
+      expect(
+        find.byKey(const ValueKey('placement-test-add-summary')),
+        findsOneWidget,
+      );
+      await tapKey(tester, 'placement-test-add-next');
+      await tester.pumpAndSettle();
+
+      expect(result.value, isNotNull);
+      expect(result.value!.component.id, 'block');
+      expect(result.value!.placementId, 'p1');
+    },
+  );
 }

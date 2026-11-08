@@ -36,10 +36,20 @@ typedef TestApp = SuperDesignerApp;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   var envText = '';
+  final sep = Platform.pathSeparator;
   final paths = [
     'env',
-    'packages${Platform.pathSeparator}super_designer${Platform.pathSeparator}env',
-    'packages${Platform.pathSeparator}super_container_layout${Platform.pathSeparator}env',
+    '.env',
+    ['packages', 'super_designer', 'env'].join(sep),
+    ['packages', 'super_designer', '.env'].join(sep),
+    ['packages', 'super_container_layout', 'env'].join(sep),
+    ['packages', 'super_container_layout', '.env'].join(sep),
+    ['..', 'super_container_layout', 'env'].join(sep),
+    ['..', 'super_container_layout', '.env'].join(sep),
+    ['..', 'super_designer', 'env'].join(sep),
+    ['..', 'super_designer', '.env'].join(sep),
+    ['..', 'env'].join(sep),
+    ['..', '.env'].join(sep),
   ];
   for (final path in paths) {
     final file = File(path);
@@ -47,6 +57,27 @@ Future<void> main() async {
       envText = await file.readAsString();
       break;
     }
+  }
+  if (envText.isEmpty) {
+    try {
+      var dir = Directory.current;
+      while (true) {
+        for (final candidate in [
+          'env',
+          '.env',
+          ['packages', 'super_designer', 'env'].join(sep),
+          ['packages', 'super_container_layout', 'env'].join(sep),
+        ]) {
+          final file = File('${dir.path}$sep$candidate');
+          if (await file.exists()) {
+            envText = await file.readAsString();
+            break;
+          }
+        }
+        if (envText.isNotEmpty || dir.parent.path == dir.path) break;
+        dir = dir.parent;
+      }
+    } catch (_) {}
   }
   final environmentKey = Platform.environment['GEMINI_API_KEY'];
   dotenv.loadFromString(
@@ -171,13 +202,13 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     _registry.registerComponent(
       'model-code',
       RegisteredComponent(
-        label: 'Card',
+        label: 'model-code',
         isAvailable: (context) {
           return true;
         },
         builder: (_) => EditableSurface(
           id: 'model-code',
-          label: 'Card',
+          label: 'model-code',
           menuType: 'Card',
           style: const ContainerStyle(color: Color(0xFF2B382C)),
           child: const SuperCode(
@@ -290,6 +321,309 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     );
 
     _registry.registerComponent(
+      'model-tab',
+      RegisteredComponent(
+        label: 'model-tab',
+        isAvailable: (context) {
+          return true;
+        },
+        builder: (_) => SuperTab(
+          id: 'model-tab',
+          label: 'Configurer les onglets',
+          config: SuperTabConfig(
+            tabBarStyle: const ContainerStyle(
+              radius: 12,
+              elevation: 3.685863874345599,
+              shadowOpacity: 0.6387434554973861,
+              neon: NeonStyle(),
+            ),
+            indicatorKind: SuperTabIndicatorKind.box,
+            indicatorRadius: 15.61465968586392,
+            indicatorHorizontalPadding: 0.13403141361261248,
+            indicatorVerticalPadding: 3.585340314136142,
+            overlayColor: const Color(0x00979AA9),
+            labelHorizontalPadding: 0,
+            dividerColor: const Color(0x00C6C5D0),
+            tabAlignment: TabAlignment.fill,
+            slotSizeConstraints: const {
+              'KlSbddMArN': SlotSizeConstraints(
+                preferredWidth: SlotDimension(124, SlotSizeUnit.pixels),
+                percentBasis: SlotPercentBasis.layout,
+              ),
+            },
+            placements: const {
+              'tabs': ['KlSbddMArN', 'I511oCPeBH', 'YM2KFsXQQz'],
+              'content:KlSbddMArN': ['tab-content-model-impl'],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'KlSbddMArN',
+              label: 'Structure',
+              builder: (_) => const SuperAction(
+                id: 'Structure',
+                config: SuperActionConfig(
+                  variant: SuperActionVariant.text,
+                  label: 'Structure',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'I511oCPeBH',
+              label: 'Info',
+              builder: (_) => const SuperAction(
+                id: 'Info',
+                config: SuperActionConfig(
+                  variant: SuperActionVariant.text,
+                  label: 'Info',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'YM2KFsXQQz',
+              label: 'Version',
+              builder: (_) => const SuperAction(
+                id: 'Version',
+                config: SuperActionConfig(
+                  variant: SuperActionVariant.text,
+                  label: 'Version',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tab-content-model-impl',
+              label: 'tab-content-model',
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('model-code')
+                      .builder(context),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    _registry.registerComponent(
+      'main-tabs',
+      RegisteredComponent(
+        label: 'main-tabs',
+        isAvailable: (context) {
+          return true;
+        },
+        builder: (_) => SuperTab(
+          id: 'main-tabs',
+          label: 'main tabs',
+          config: SuperTabConfig(
+            zoneFlows: const {
+              'content:tab-info': ZoneFlowConfig(
+                scrollable: true,
+                expandSlots: false,
+                spacing: 12,
+                padding: 16,
+              ),
+              'content:tab-validator': ZoneFlowConfig(
+                scrollable: true,
+                expandSlots: false,
+                spacing: 12,
+                padding: 16,
+              ),
+            },
+            slotSizeConstraints: const {'_wSA5mADEd': SlotSizeConstraints()},
+            placements: const {
+              'tabs': ['tab-info', 'tab-validator'],
+              'content:tab-info': [
+                'field-description',
+                'field-example',
+                'field-const',
+                'field-default',
+                'switch-nullable',
+                'switch-readonly',
+                'switch-writeonly',
+                'switch-deprecated',
+                'switch-search-ref',
+                '_wSA5mADEd',
+              ],
+              'content:tab-validator': ['val-placeholder'],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'tab-info',
+              label: 'tab-info',
+              builder: (_) => const SuperAction(
+                id: 'tab-info-i',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  label: 'Info',
+                  icon: 'info',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tab-validator',
+              label: 'tab-validator',
+              builder: (_) => const SuperAction(
+                id: 'tab-validator-i',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  label: 'Validator',
+                  icon: 'check_circle',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'field-description',
+              label: 'field-description',
+              builder: (_) => const SuperValue(
+                id: 'field-description-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  label: 'Description',
+                  minLines: 4,
+                  maxLines: 4,
+                  field: SuperTextFieldConfig(
+                    variant: TextFieldVariant.outlined,
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'field-example',
+              label: 'field-example',
+              builder: (_) => const SuperValue(
+                id: 'field-example-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  label: 'Example',
+                  minLines: 4,
+                  maxLines: 4,
+                  field: SuperTextFieldConfig(
+                    variant: TextFieldVariant.outlined,
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'field-const',
+              label: 'field-const',
+              builder: (_) => const SuperValue(
+                id: 'field-const-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  label: 'Const',
+                  field: SuperTextFieldConfig(
+                    variant: TextFieldVariant.outlined,
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'field-default',
+              label: 'field-default',
+              builder: (_) => const SuperValue(
+                id: 'field-default-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  label: 'Default',
+                  field: SuperTextFieldConfig(
+                    variant: TextFieldVariant.outlined,
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'switch-nullable',
+              label: 'switch-nullable',
+              builder: (_) => const SuperValue(
+                id: 'switch-nullable-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.switchControl,
+                  label: 'Nullable',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'switch-readonly',
+              label: 'switch-readonly',
+              builder: (_) => const SuperValue(
+                id: 'switch-readonly-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.switchControl,
+                  label: 'ReadOnly',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'switch-writeonly',
+              label: 'switch-writeonly',
+              builder: (_) => const SuperValue(
+                id: 'switch-writeonly-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.switchControl,
+                  label: 'WriteOnly',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'switch-deprecated',
+              label: 'switch-deprecated',
+              builder: (_) => const SuperValue(
+                id: 'switch-deprecated-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.switchControl,
+                  label: 'Deprecated',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'switch-search-ref',
+              label: 'switch-search-ref',
+              builder: (_) => const SuperValue(
+                id: 'switch-search-ref-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  kind: SuperValueKind.switchControl,
+                  label: 'Search reference',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: '_wSA5mADEd',
+              label: '_wSA5mADEd',
+              builder: (_) => const SuperValue(
+                id: '_wSA5mADEd-i',
+                config: SuperValueConfig(
+                  mode: SuperValueMode.input,
+                  label: 'Comment',
+                  minLines: 4,
+                  maxLines: 4,
+                  field: SuperTextFieldConfig(
+                    variant: TextFieldVariant.outlined,
+                  ),
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'val-placeholder',
+              label: 'val-placeholder',
+              builder: (_) => const SuperValue(
+                id: 'val-placeholder',
+                config: SuperValueConfig(
+                  initialText: 'Configuration des validateurs',
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    _registry.registerComponent(
       'ModelDesc',
       RegisteredComponent(
         label: 'Model Desc',
@@ -322,17 +656,15 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
             },
           ),
           slots: [
-            // _registry.component('model-code').createSlot('model-code'),
             BuilderSlot(
               id: 'input-code',
               label: 'Input Code',
               menuIcon: Icons.code,
               builder: (context) =>
                   SuperApp.of(context).registry!
-                      .component('model-code')
+                      .component('model-tab')
                       .builder(context),
             ),
-
             BuilderSlot(
               id: 'global-node-properties',
               label: 'Global Node Properties',
@@ -363,74 +695,56 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                             .component('model-header')
                             .builder(context),
                   ),
-                ],
-                data: SuperLayout(
-                  label: 'Node data',
-                  config: const SuperLayoutConfig(
-                    zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
-                    zoneFlows: {
-                      SuperLayoutZone.center: ZoneFlowConfig(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  BuilderSlot(
+                    id: 'input-data',
+                    label: 'Input Data',
+                    menuIcon: Icons.code,
+                    builder: (context) => SuperLayout(
+                      label: 'Node data',
+                      config: const SuperLayoutConfig(
+                        zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
+                        zoneFlows: {
+                          SuperLayoutZone.center: ZoneFlowConfig(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          ),
+                        },
+                        slotSizeConstraints: {
+                          'tree-node-title': SlotSizeConstraints(
+                            padding: 1,
+                            percentBasis: SlotPercentBasis.layout,
+                          ),
+                        },
+                        placements: {
+                          SuperLayoutZone.center: ['tree-node-title'],
+                        },
                       ),
-                    },
-                    slotSizeConstraints: {
-                      'tree-node-title': SlotSizeConstraints(
-                        padding: 1,
-                        percentBasis: SlotPercentBasis.layout,
-                      ),
-                    },
-                    placements: {
-                      SuperLayoutZone.center: [
-                        'tree-node-title',
-                        'tree-node-id',
-                        'tree-node-properties',
-                      ],
-                    },
-                  ),
-                  slots: [
-                    BuilderSlot(
-                      id: 'tree-node-title',
-                      label: 'Title',
-                      builder: (_) => const SuperValue(
-                        id: 'tree-node-title',
+                      slots: [
+                        BuilderSlot(
+                          id: 'tree-node-title',
+                          label: 'Title',
+                          builder: (_) => const SuperValue(
+                            id: 'tree-node-title',
 
-                        config: SuperValueConfig(
-                          placeholder: 'title',
-                          mode: SuperValueMode.input,
-                          binding: JsonTextBinding(
-                            repositoryId: '0123456789abcdef0123456789abcdef',
-                            path: 'nodes[?].title',
+                            config: SuperValueConfig(
+                              placeholder: 'title',
+                              mode: SuperValueMode.input,
+                              binding: JsonTextBinding(
+                                repositoryId:
+                                    '0123456789abcdef0123456789abcdef',
+                                path: 'nodes[?].title',
+                              ),
+                              field: SuperTextFieldConfig(
+                                variant: TextFieldVariant.outlined,
+                                borderWidth: 1,
+                                horizontalPadding: 0,
+                              ),
+                            ),
                           ),
-                          field: SuperTextFieldConfig(
-                            variant: TextFieldVariant.outlined,
-                            borderWidth: 1,
-                            horizontalPadding: 0,
-                          ),
                         ),
-                      ),
+                      ],
                     ),
-                    BuilderSlot(
-                      id: 'tree-node-id',
-                      label: 'ID',
-                      builder: (_) => const SuperValue(
-                        id: 'tree-node-id',
-                        config: SuperValueConfig(
-                          binding: JsonTextBinding(path: 'id'),
-                        ),
-                      ),
-                    ),
-                    BuilderSlot(
-                      id: 'tree-node-properties',
-                      label: 'Properties',
-                      builder: (_) => const SuperValue(
-                        id: 'tree-node-properties',
-                        config: SuperValueConfig(
-                          binding: JsonTextBinding(path: 'propertiesText'),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
                 config: SuperTreeViewConfig(
                   rowHeight: 28,
                   binding: const JsonTextBinding(
@@ -439,7 +753,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                   ),
                   placements: const {
                     SuperTreeViewConfig.headerZone: ['input-header'],
-                    SuperTreeViewConfig.dataZone: ['data'],
+                    SuperTreeViewConfig.dataZone: ['input-data'],
                   },
                 ),
               ),

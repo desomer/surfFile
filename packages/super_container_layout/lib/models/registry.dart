@@ -1330,11 +1330,19 @@ class ComponentBuilderDynamic extends ComponentBuilder {
   Widget getWidget(XuiBuildCtx ctx) => dynamicBuilder(ctx);
 }
 
+/// Constructeur de widget pour un [RegisteredComponent] recevant le [BuildContext]
+/// et l'identifiant d'instance [id] du slot lors de son placement.
+typedef InstanceWidgetBuilder = Widget Function(
+  BuildContext context,
+  String id,
+);
+
 /// Définition d'un composant applicatif enregistré dans le [Registry] pour être inséré comme slot.
 class RegisteredComponent {
   const RegisteredComponent({
     required this.label,
-    required this.builder,
+    WidgetBuilder? builder,
+    this.instanceBuilder,
     this.slotId,
     this.sizing = SlotSizing.fill,
     this.preferredSize,
@@ -1345,10 +1353,21 @@ class RegisteredComponent {
     this.duplication,
     this.addConfigurator,
     this.previewBuilder,
-  });
+  }) : _builder = builder,
+       assert(
+         builder != null || instanceBuilder != null,
+         'Au moins builder ou instanceBuilder doit être fourni.',
+       );
 
   final String label;
-  final WidgetBuilder builder;
+  final WidgetBuilder? _builder;
+
+  /// Constructeur de widget dynamique recevant l'identifiant d'instance du slot.
+  final InstanceWidgetBuilder? instanceBuilder;
+
+  /// Constructeur historique de widget.
+  WidgetBuilder get builder =>
+      _builder ?? ((context) => instanceBuilder!(context, slotId ?? ''));
 
   /// Identifiant historique, conservé dans les dispositions existantes.
   final String? slotId;
@@ -1379,7 +1398,9 @@ class RegisteredComponent {
     sizing: sizing,
     preferredSize: preferredSize,
     visible: visible,
-    builder: builder,
+    builder: instanceBuilder != null
+        ? (context) => instanceBuilder!(context, id)
+        : builder,
     tags: tags,
     menuIcon: menuIcon,
   );
@@ -1510,8 +1531,16 @@ Widget _buildIndicatorPreview(BuildContext context) {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Icon(Icons.check_circle_outline, size: 22, color: Colors.green.shade600),
-        Icon(Icons.warning_amber_rounded, size: 22, color: Colors.orange.shade700),
+        Icon(
+          Icons.check_circle_outline,
+          size: 22,
+          color: Colors.green.shade600,
+        ),
+        Icon(
+          Icons.warning_amber_rounded,
+          size: 22,
+          color: Colors.orange.shade700,
+        ),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           decoration: BoxDecoration(

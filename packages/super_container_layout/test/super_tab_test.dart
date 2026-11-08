@@ -788,4 +788,202 @@ void main() {
       expect(find.text('Cartes de fêtes'), findsNothing);
     },
   );
+
+  testWidgets(
+    'SuperAction inside SuperTab respects margin, elevation, padding and surface styles',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      registry.tabController(
+        'styled-action-tabs',
+        fallback: SuperTabConfig(
+          placements: const {
+            'tabs': ['tab-act-1', 'tab-act-2'],
+            'content:tab-act-1': ['content-1'],
+            'content:tab-act-2': ['content-2'],
+          },
+        ),
+      );
+      registry.actionController(
+        'tab-act-1',
+        fallback: const SuperActionConfig(
+          label: 'Onglet Style 1',
+          elevation: 4.0,
+          horizontalPadding: 16,
+          verticalPadding: 8,
+          style: ContainerStyle(
+            margin: 6,
+            radius: 10,
+            color: Color(0xFF1E293B),
+            elevation: 4.0,
+          ),
+        ),
+      );
+      registry.actionController(
+        'tab-act-2',
+        fallback: const SuperActionConfig(
+          label: 'Onglet Style 2',
+        ),
+      );
+
+      await mount(
+        SuperPage(
+          child: SuperTab(
+            id: 'styled-action-tabs',
+            config: SuperTabConfig(
+              placements: const {
+                'tabs': ['tab-act-1', 'tab-act-2'],
+                'content:tab-act-1': ['content-1'],
+                'content:tab-act-2': ['content-2'],
+              },
+            ),
+            tabs: const [
+              SuperAction(
+                id: 'tab-act-1',
+                config: SuperActionConfig(
+                  label: 'Onglet Style 1',
+                  elevation: 4.0,
+                  horizontalPadding: 16,
+                  verticalPadding: 8,
+                  style: ContainerStyle(
+                    margin: 6,
+                    radius: 10,
+                    color: Color(0xFF1E293B),
+                    elevation: 4.0,
+                  ),
+                ),
+              ),
+              SuperAction(
+                id: 'tab-act-2',
+                config: SuperActionConfig(label: 'Onglet Style 2'),
+              ),
+            ],
+            slots: [
+              BuilderSlot(
+                id: 'content-1',
+                label: 'C1',
+                builder: (_) => const Text('Contenu 1'),
+              ),
+              BuilderSlot(
+                id: 'content-2',
+                label: 'C2',
+                builder: (_) => const Text('Contenu 2'),
+              ),
+            ],
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      final surfaceFinder = find.byKey(
+        const ValueKey('super-action-surface-tab-act-1'),
+      );
+      expect(surfaceFinder, findsOneWidget);
+
+      final styledSurface = tester.widget<StyledSurface>(surfaceFinder);
+      expect(styledSurface.style.elevation, 4.0);
+      expect(styledSurface.style.radius, 10.0);
+      expect(styledSurface.style.color, const Color(0xFF1E293B));
+
+      // Vérifier la marge extérieure (outerMargin de 6 px)
+      final paddingWidgets = tester.widgetList<Padding>(
+        find.ancestor(
+          of: surfaceFinder,
+          matching: find.byType(Padding),
+        ),
+      );
+      expect(
+        paddingWidgets.any((p) => p.padding == const EdgeInsets.all(6.0)),
+        isTrue,
+      );
+
+      // Vérifier le padding intérieur (16 horiz, 8 vert)
+      final innerPadding = tester.widget<Padding>(
+        find.descendant(
+          of: surfaceFinder,
+          matching: find.byWidgetPredicate(
+            (w) =>
+                w is Padding &&
+                w.padding ==
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          ),
+        ),
+      );
+      expect(innerPadding, isNotNull);
+
+      // Le clic sur l'onglet change bien de vue
+      expect(find.text('Contenu 1'), findsOneWidget);
+      await tester.tap(find.text('Onglet Style 2'));
+      await tester.pumpAndSettle();
+      expect(find.text('Contenu 2'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'SuperActionConfig variant is null by default and resolves to text in tabs and filled elsewhere',
+    (tester) async {
+      const config = SuperActionConfig();
+      expect(config.variant, isNull);
+      expect(config.effectiveVariant(inTab: false), SuperActionVariant.filled);
+      expect(config.effectiveVariant(inTab: true), SuperActionVariant.text);
+
+      const explicit = SuperActionConfig(variant: SuperActionVariant.outlined);
+      expect(explicit.variant, SuperActionVariant.outlined);
+      expect(explicit.effectiveVariant(inTab: true), SuperActionVariant.outlined);
+      expect(explicit.effectiveVariant(inTab: false), SuperActionVariant.outlined);
+
+      final configurator = superActionAddConfigurator(const []);
+
+      // Hors zone onglets : SuperActionAddForm initialise le dropdown à filled
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) {
+                final draft =
+                    configurator.initialDraft(context) as SuperActionConfig;
+                return SuperActionAddForm(
+                  draft: draft,
+                  onChanged: (_) {},
+                  availableFontFamilies: const [],
+                );
+              },
+            ),
+          ),
+        ),
+      );
+      final dropdownOutside = tester.widget<DropdownButtonFormField<SuperActionVariant>>(
+        find.byKey(const ValueKey('add-action-variant')),
+      );
+      expect(dropdownOutside.initialValue, SuperActionVariant.filled);
+
+      // Dans la zone onglets via ComponentAddTargetScope : dropdown initialisé à text
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ComponentAddTargetScope(
+              targetId: SuperTabConfig.tabsZone,
+              targetLabel: 'Onglets',
+              child: Builder(
+                builder: (context) {
+                  final draft =
+                      configurator.initialDraft(context) as SuperActionConfig;
+                  return SuperActionAddForm(
+                    draft: draft,
+                    onChanged: (_) {},
+                    availableFontFamilies: const [],
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      final dropdownInside = tester.widget<DropdownButtonFormField<SuperActionVariant>>(
+        find.byKey(const ValueKey('add-action-variant')),
+      );
+      expect(dropdownInside.initialValue, SuperActionVariant.text);
+    },
+  );
 }

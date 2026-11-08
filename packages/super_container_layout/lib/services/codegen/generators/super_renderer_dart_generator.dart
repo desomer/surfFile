@@ -19,7 +19,8 @@ class SuperRendererDartGenerator extends ComponentDartGenerator {
         context.appearance.tryComponent<SuperRendererConfig>(id) ??
         const SuperRendererConfig();
     final behaviors = context.appearance.behaviorsFor(id);
-    final canBeConst = behaviors.isEmpty;
+    final isDynamic = context.isDynamicInstanceId(id);
+    final canBeConst = !isDynamic && behaviors.isEmpty;
 
     final configArgs = <String, String>{
       if (config.source.isNotEmpty)
@@ -28,7 +29,7 @@ class SuperRendererDartGenerator extends ComponentDartGenerator {
     };
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),
       if (configArgs.isNotEmpty)

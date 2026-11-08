@@ -19,13 +19,15 @@ class SuperActionDartGenerator extends ComponentDartGenerator {
         context.appearance.tryComponent<SuperActionConfig>(id) ??
         const SuperActionConfig();
     final behaviors = context.appearance.behaviorsFor(id);
+    final isDynamic = context.isDynamicInstanceId(id);
     final canWidgetBeConst =
+        !isDynamic &&
         behaviors.isEmpty &&
         config.states == null &&
         context.canContainerStyleBeConst(config.style);
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),
       if (config != const SuperActionConfig())
@@ -64,8 +66,8 @@ class SuperActionDartGenerator extends ComponentDartGenerator {
         context.canContainerStyleBeConst(config.style);
     final args = <String, String>{
       if (config.kind != d.kind) 'kind': 'SuperActionKind.${config.kind.name}',
-      if (config.variant != d.variant)
-        'variant': 'SuperActionVariant.${config.variant.name}',
+      if (config.variant != null)
+        'variant': 'SuperActionVariant.${config.variant!.name}',
       if (config.label != d.label) 'label': context.formatString(config.label),
       if (config.tooltip != d.tooltip)
         'tooltip': context.formatString(config.tooltip),

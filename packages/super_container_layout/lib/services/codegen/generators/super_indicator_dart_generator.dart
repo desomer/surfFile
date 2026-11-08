@@ -19,13 +19,15 @@ class SuperIndicatorDartGenerator extends ComponentDartGenerator {
         context.appearance.tryComponent<SuperIndicatorConfig>(id) ??
         const SuperIndicatorConfig();
     final behaviors = context.appearance.behaviorsFor(id);
+    final isDynamic = context.isDynamicInstanceId(id);
     final canWidgetBeConst =
+        !isDynamic &&
         behaviors.isEmpty &&
         config.states == null &&
         context.canContainerStyleBeConst(config.style);
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),
       if (config != const SuperIndicatorConfig())

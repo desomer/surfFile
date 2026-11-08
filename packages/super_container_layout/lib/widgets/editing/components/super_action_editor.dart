@@ -1050,7 +1050,7 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                       }
                     },
                   ),
-                  DropdownButtonFormField<SuperActionVariant>(
+                  DropdownButtonFormField<SuperActionVariant?>(
                     isExpanded: true,
                     key: const ValueKey('super-action-setting-variant'),
                     initialValue: _draft.variant,
@@ -1058,6 +1058,10 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                       labelText: 'Style / variante du bouton',
                     ),
                     items: const [
+                      DropdownMenuItem(
+                        value: null,
+                        child: Text('Automatique (selon contexte)'),
+                      ),
                       DropdownMenuItem(
                         value: SuperActionVariant.filled,
                         child: Text('Filled (plein)'),
@@ -1088,11 +1092,11 @@ class _SuperActionEditorState extends State<_SuperActionEditor> {
                       ),
                     ],
                     onChanged: (variant) {
-                      if (variant != null) {
-                        setState(
-                          () => _draft = _draft.copyWith(variant: variant),
-                        );
-                      }
+                      setState(
+                        () => _draft = variant == null
+                            ? _draft.copyWith(inheritVariant: true)
+                            : _draft.copyWith(variant: variant),
+                      );
                     },
                   ),
                   if (_draft.kind.hasText)

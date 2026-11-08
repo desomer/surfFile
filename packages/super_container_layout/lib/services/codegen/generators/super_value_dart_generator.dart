@@ -20,10 +20,12 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
         context.appearance.tryComponent<SuperValueConfig>(id) ??
         const SuperValueConfig();
     final behaviors = context.appearance.behaviorsFor(id);
-    final canWidgetBeConst = behaviors.isEmpty && config.states == null;
+    final isDynamic = context.isDynamicInstanceId(id);
+    final canWidgetBeConst =
+        !isDynamic && behaviors.isEmpty && config.states == null;
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),
       if (config != const SuperValueConfig())

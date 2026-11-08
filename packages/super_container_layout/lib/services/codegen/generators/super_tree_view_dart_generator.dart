@@ -67,7 +67,7 @@ class SuperTreeViewDartGenerator extends ComponentDartGenerator {
     ];
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (config.itemId != null) 'itemId': context.formatString(config.itemId!),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),

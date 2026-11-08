@@ -1139,11 +1139,12 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         final tabController = _tabController!;
 
         final tabs = [
-          for (final slot in tabSlots)
+          for (final (index, slot) in tabSlots.indexed)
             Tab(
               key: ValueKey('super-tab-item-${slot.id}'),
               child: SuperActionNavigationScope(
                 part: SuperActionNavigationPart.tab,
+                selected: index == effectiveIndex,
                 child: editor.slotItem(SuperTabConfig.tabsZone, slot),
               ),
             ),
@@ -1398,6 +1399,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                 Flexible(
                   child: SuperActionNavigationScope(
                     part: SuperActionNavigationPart.tab,
+                    selected: i == effectiveIndex,
                     child: i == 0
                         ? editor.slotItem(SuperTabConfig.tabsZone, templateSlot)
                         : templateSlot,

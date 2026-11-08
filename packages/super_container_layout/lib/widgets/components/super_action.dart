@@ -180,7 +180,9 @@ Widget buildSuperActionVisual({
   Key? buttonKey,
   Key? labelKey,
   Key? iconKey,
+  bool inTab = false,
 }) {
+  final variant = config.effectiveVariant(inTab: inTab);
   final scheme = Theme.of(context).colorScheme;
   final effectiveOnPressed = config.enabled ? (onPressed ?? () {}) : null;
   final align = switch (config.textAlign) {
@@ -239,7 +241,7 @@ Widget buildSuperActionVisual({
   };
 
   final hasCustomSurface =
-      config.variant == SuperActionVariant.surface ||
+      variant == SuperActionVariant.surface ||
       config.style.fill.type != FillType.solid ||
       config.style.hasImage ||
       config.style.neon != null ||
@@ -259,7 +261,7 @@ Widget buildSuperActionVisual({
       borderWidth: config.borderWidth ?? config.style.borderWidth,
       elevation: config.elevation ?? config.style.elevation,
     );
-    final defaultBg = switch (config.variant) {
+    final defaultBg = switch (variant) {
       SuperActionVariant.filled || SuperActionVariant.surface => scheme.primary,
       SuperActionVariant.tonal => scheme.secondaryContainer,
       SuperActionVariant.elevated => scheme.surfaceContainerLow,
@@ -267,7 +269,7 @@ Widget buildSuperActionVisual({
       SuperActionVariant.text ||
       SuperActionVariant.icon => Colors.transparent,
     };
-    final defaultFg = switch (config.variant) {
+    final defaultFg = switch (variant) {
       SuperActionVariant.filled ||
       SuperActionVariant.surface => scheme.onPrimary,
       SuperActionVariant.tonal => scheme.onSecondaryContainer,
@@ -371,7 +373,7 @@ Widget buildSuperActionVisual({
       side: side != null ? WidgetStatePropertyAll(side) : null,
     );
 
-    button = switch (config.variant) {
+    button = switch (variant) {
       SuperActionVariant.filled => FilledButton(
         key: buttonKey,
         focusNode: focusNode,
@@ -450,18 +452,20 @@ enum SuperActionNavigationPart { icon, label, tab }
 class SuperActionNavigationScope extends InheritedWidget {
   const SuperActionNavigationScope({
     required this.part,
+    this.selected = false,
     required super.child,
     super.key,
   });
 
   final SuperActionNavigationPart part;
+  final bool selected;
 
   static SuperActionNavigationScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<SuperActionNavigationScope>();
 
   @override
   bool updateShouldNotify(SuperActionNavigationScope oldWidget) =>
-      part != oldWidget.part;
+      part != oldWidget.part || selected != oldWidget.selected;
 }
 
 /// Executes [onPressed] and enabled click actions for [id].
@@ -546,8 +550,9 @@ class _SuperActionState extends State<SuperAction>
     SuperActionConfig saved,
     JsonListScope? scope,
     JsonRepositoryStore? store,
-    bool contentHovered,
-  ) {
+    bool contentHovered, {
+    bool? isSelected,
+  }) {
     final binding = saved.states?.binding;
     if (binding == null) {
       _stateReader?.removeListener(_stateChanged);
@@ -583,7 +588,7 @@ class _SuperActionState extends State<SuperAction>
             saved,
             name: _stateReader?.stateName,
             isHovered: _hovered,
-            isSelected: scope?.selected ?? false,
+            isSelected: isSelected ?? (scope?.selected ?? false),
             activeStates: _automaticActive,
           ) ??
           saved;
@@ -877,11 +882,15 @@ class _SuperActionState extends State<SuperAction>
       child: ValueListenableBuilder<SuperActionConfig>(
         valueListenable: configuration,
         builder: (context, savedConfig, _) {
+          final navScope = SuperActionNavigationScope.maybeOf(context);
+          final isSelected =
+              (listScope?.selected ?? false) || (navScope?.selected ?? false);
           final effective = _resolveStates(
             savedConfig,
             listScope,
             repositories,
             ContentHoverScope.maybeOf(context)?.hovered == true,
+            isSelected: isSelected,
           );
           _observePropertyBindings(effective, listScope, repositories);
           final config = _editorConfig ?? _withBoundProperties(effective);
@@ -902,7 +911,6 @@ class _SuperActionState extends State<SuperAction>
             letterSpacing: config.letterSpacing,
           );
 
-          final navScope = SuperActionNavigationScope.maybeOf(context);
           if (navScope?.part == SuperActionNavigationPart.label) {
             return Text(
               config.label,
@@ -994,6 +1002,45 @@ class _SuperActionState extends State<SuperAction>
           }
 
           if (navScope?.part == SuperActionNavigationPart.tab) {
+            final variant = config.effectiveVariant(inTab: true);
+            final scheme = Theme.of(context).colorScheme;
+            final defaultBg = switch (variant) {
+              SuperActionVariant.filled ||
+              SuperActionVariant.surface => scheme.primary,
+              SuperActionVariant.tonal => scheme.secondaryContainer,
+              SuperActionVariant.elevated => scheme.surfaceContainerLow,
+              SuperActionVariant.outlined ||
+              SuperActionVariant.text ||
+              SuperActionVariant.icon => Colors.transparent,
+            };
+            final defaultFg = switch (variant) {
+              SuperActionVariant.filled ||
+              SuperActionVariant.surface => scheme.onPrimary,
+              SuperActionVariant.tonal => scheme.onSecondaryContainer,
+              SuperActionVariant.elevated ||
+              SuperActionVariant.outlined ||
+              SuperActionVariant.text => scheme.primary,
+              SuperActionVariant.icon => scheme.onSurfaceVariant,
+            };
+            final fg = config.color ??
+                ((variant == SuperActionVariant.filled ||
+                        variant == SuperActionVariant.surface)
+                    ? defaultFg
+                    : null);
+            final effectiveIconColor = config.iconColor ?? fg ?? config.color;
+
+            final surfaceStyle = config.style.copyWith(
+              color: config.backgroundColor ?? config.style.color,
+              borderColor: config.borderColor ?? config.style.borderColor,
+              radius: config.radius ?? config.style.radius,
+              borderWidth: config.borderWidth ?? config.style.borderWidth,
+              elevation: config.elevation ??
+                  (variant == SuperActionVariant.elevated &&
+                          config.style.elevation == 0
+                      ? 1.0
+                      : config.style.elevation),
+            );
+
             final hasIcon =
                 config.kind.hasIcon && config.icon.trim().isNotEmpty;
             final iconWidget = hasIcon
@@ -1001,7 +1048,7 @@ class _SuperActionState extends State<SuperAction>
                     SuperActionIcons.resolve(config.icon),
                     key: ValueKey('super-action-icon-${widget.id}'),
                     size: config.iconSize ?? 18,
-                    color: config.iconColor ?? config.color,
+                    color: effectiveIconColor,
                   )
                 : SizedBox(
                     key: ValueKey('super-action-icon-${widget.id}'),
@@ -1011,7 +1058,7 @@ class _SuperActionState extends State<SuperAction>
             final textWidget = Text(
               config.label,
               key: ValueKey('super-action-label-${widget.id}'),
-              style: textStyle,
+              style: fg != null ? textStyle.copyWith(color: fg) : textStyle,
               textAlign: config.textAlign,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -1046,6 +1093,67 @@ class _SuperActionState extends State<SuperAction>
             if (config.tooltip.trim().isNotEmpty) {
               tabVisual = Tooltip(message: config.tooltip, child: tabVisual);
             }
+
+            final pad =
+                config.horizontalPadding != null || config.verticalPadding != null
+                    ? EdgeInsets.symmetric(
+                        horizontal:
+                            config.horizontalPadding ??
+                            (config.kind == SuperActionKind.icon ? 8 : 12),
+                        vertical: config.verticalPadding ?? 4,
+                      )
+                    : (surfaceStyle.padding > 0 || surfaceStyle.paddingInsets != null)
+                        ? surfaceStyle.contentPadding
+                        : const EdgeInsets.symmetric(horizontal: 8, vertical: 4);
+
+            final effectiveBorderColor = config.borderColor ??
+                (variant == SuperActionVariant.outlined
+                    ? scheme.outline
+                    : Colors.transparent);
+
+            final hasSurface =
+                (variant != SuperActionVariant.text &&
+                    variant != SuperActionVariant.icon) ||
+                config.backgroundColor != null ||
+                config.borderColor != null ||
+                (config.borderWidth != null && config.borderWidth! > 0) ||
+                (config.radius != null && config.radius! > 0) ||
+                (config.elevation != null && config.elevation! > 0) ||
+                surfaceStyle.color != null ||
+                surfaceStyle.fill.type != FillType.solid ||
+                surfaceStyle.elevation > 0 ||
+                surfaceStyle.borderWidth > 0 ||
+                surfaceStyle.radius > 0 ||
+                surfaceStyle.radii != null ||
+                surfaceStyle.hasImage ||
+                surfaceStyle.shadow != null ||
+                surfaceStyle.hasInnerShadow ||
+                surfaceStyle.neon != null ||
+                surfaceStyle.pattern != SurfacePattern.none;
+
+            Widget styledTab = hasSurface
+                ? StyledSurface(
+                    key: ValueKey('super-action-surface-${widget.id}'),
+                    style: surfaceStyle,
+                    fallbackColor: defaultBg,
+                    borderColor: effectiveBorderColor,
+                    child: Padding(
+                      padding: pad,
+                      child: Center(widthFactor: 1, child: tabVisual),
+                    ),
+                  )
+                : Padding(
+                    padding: pad,
+                    child: Center(widthFactor: 1, child: tabVisual),
+                  );
+
+            if (surfaceStyle.outerMargin != EdgeInsets.zero) {
+              styledTab = Padding(
+                padding: surfaceStyle.outerMargin,
+                child: styledTab,
+              );
+            }
+
             return EditorSlot(
               key: _surface,
               id: widget.id,
@@ -1057,10 +1165,7 @@ class _SuperActionState extends State<SuperAction>
                 config: config,
               ),
               onEdit: editAction,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: Center(widthFactor: 1, child: tabVisual),
-              ),
+              child: styledTab,
             );
           }
 
@@ -1140,11 +1245,15 @@ class _SuperActionState extends State<SuperAction>
             .value;
     final listScope = JsonListScope.maybeOf(context);
     final repositories = JsonRepositoryScope.maybeOf(context);
+    final navScope = SuperActionNavigationScope.maybeOf(context);
+    final isSelected =
+        (listScope?.selected ?? false) || (navScope?.selected ?? false);
     final effective = _resolveStates(
       saved,
       listScope,
       repositories,
       ContentHoverScope.maybeOf(context)?.hovered == true,
+      isSelected: isSelected,
     );
     return _withBoundProperties(effective);
   }

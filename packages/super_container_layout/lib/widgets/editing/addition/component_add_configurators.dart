@@ -98,7 +98,13 @@ ComponentAddConfigurator<SuperValueConfig> superValueAddConfigurator(
 ComponentAddConfigurator<SuperActionConfig> superActionAddConfigurator(
   List<String> availableFontFamilies,
 ) => ComponentAddConfigurator<SuperActionConfig>(
-  initial: (_) => const SuperActionConfig(),
+  initial: (context) {
+    final target = ComponentAddTargetScope.maybeOf(context);
+    final inTabZone = target?.isTabZone ?? false;
+    return SuperActionConfig(
+      variant: inTabZone ? SuperActionVariant.text : SuperActionVariant.filled,
+    );
+  },
   builder: (context, draft, onChanged) => SuperActionAddForm(
     draft: draft,
     onChanged: onChanged,
@@ -123,7 +129,7 @@ ComponentAddConfigurator<SuperActionConfig> superActionAddConfigurator(
         SuperActionKind.textAndIcon => 'Texte et icône',
       },
     ),
-    ('Variante', draft.variant.name),
+    ('Variante', draft.variant?.name ?? 'Automatique'),
     if (draft.kind.hasText && draft.label.isNotEmpty) ('Libellé', draft.label),
     if (draft.kind.hasIcon)
       (

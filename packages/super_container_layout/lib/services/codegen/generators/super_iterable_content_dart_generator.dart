@@ -38,7 +38,7 @@ class SuperIterableContentDartGenerator extends ComponentDartGenerator {
     ];
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (label != null && label != 'Iterable Content')
         'label': context.formatString(label),
       if (behaviors.isNotEmpty)

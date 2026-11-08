@@ -46,7 +46,7 @@ class SuperNativeComponentDartGenerator extends ComponentDartGenerator {
     ];
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (label != null && label != defaultLabel && label != id)
         'label': context.formatString(label),
       if (behaviors.isNotEmpty)

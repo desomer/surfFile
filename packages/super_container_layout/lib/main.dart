@@ -24,9 +24,20 @@ export 'package:super_container_layout/models/registry.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   var envText = '';
+  final sep = Platform.pathSeparator;
   final paths = [
     'env',
-    'packages${Platform.pathSeparator}super_container_layout${Platform.pathSeparator}env',
+    '.env',
+    ['packages', 'super_container_layout', 'env'].join(sep),
+    ['packages', 'super_container_layout', '.env'].join(sep),
+    ['packages', 'super_designer', 'env'].join(sep),
+    ['packages', 'super_designer', '.env'].join(sep),
+    ['..', 'super_container_layout', 'env'].join(sep),
+    ['..', 'super_container_layout', '.env'].join(sep),
+    ['..', 'super_designer', 'env'].join(sep),
+    ['..', 'super_designer', '.env'].join(sep),
+    ['..', 'env'].join(sep),
+    ['..', '.env'].join(sep),
   ];
   for (final path in paths) {
     final file = File(path);
@@ -34,6 +45,27 @@ Future<void> main() async {
       envText = await file.readAsString();
       break;
     }
+  }
+  if (envText.isEmpty) {
+    try {
+      var dir = Directory.current;
+      while (true) {
+        for (final candidate in [
+          'env',
+          '.env',
+          ['packages', 'super_container_layout', 'env'].join(sep),
+          ['packages', 'super_designer', 'env'].join(sep),
+        ]) {
+          final file = File('${dir.path}$sep$candidate');
+          if (await file.exists()) {
+            envText = await file.readAsString();
+            break;
+          }
+        }
+        if (envText.isNotEmpty || dir.parent.path == dir.path) break;
+        dir = dir.parent;
+      }
+    } catch (_) {}
   }
   final environmentKey = Platform.environment['GEMINI_API_KEY'];
   dotenv.loadFromString(

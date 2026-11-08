@@ -185,6 +185,59 @@ class ComponentAddPlacement {
       candidate.fitsIn(zoneTags, accept);
 }
 
+/// Scope informant les configurateurs d'ajout ([ComponentAddConfigurator]) de la zone ou région ciblée.
+class ComponentAddTargetScope extends InheritedWidget {
+  const ComponentAddTargetScope({
+    required this.targetId,
+    required this.targetLabel,
+    this.initialTargetId = '',
+    this.wizardTitle = '',
+    this.zoneTags = const {},
+    required super.child,
+    super.key,
+  });
+
+  /// Identifiant de la zone ciblée (ex: `'tabs'`, `'center'`, `'content'`).
+  final String targetId;
+
+  /// Libellé de la zone ciblée (ex: `'Onglets'`, `'Onglet gabarit'`).
+  final String targetLabel;
+
+  /// Cible initiale demandée à l'ouverture du wizard.
+  final String initialTargetId;
+
+  /// Titre du wizard (ex: `'Ajouter dans Onglets'`).
+  final String wizardTitle;
+
+  /// Tags associés à la zone.
+  final Set<String> zoneTags;
+
+  static ComponentAddTargetScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ComponentAddTargetScope>();
+
+  /// Indique si la zone cible correspond à la zone des onglets d'une [SuperTab].
+  bool get isTabZone {
+    final lowerId = targetId.toLowerCase();
+    final lowerInit = initialTargetId.toLowerCase();
+    final lowerLabel = targetLabel.toLowerCase();
+    final lowerTitle = wizardTitle.toLowerCase();
+    return lowerId == 'tabs' ||
+        lowerInit == 'tabs' ||
+        lowerId.contains('tab') ||
+        lowerInit.contains('tab') ||
+        lowerLabel.contains('onglet') ||
+        lowerTitle.contains('onglet');
+  }
+
+  @override
+  bool updateShouldNotify(ComponentAddTargetScope oldWidget) =>
+      targetId != oldWidget.targetId ||
+      targetLabel != oldWidget.targetLabel ||
+      initialTargetId != oldWidget.initialTargetId ||
+      wizardTitle != oldWidget.wizardTitle ||
+      zoneTags != oldWidget.zoneTags;
+}
+
 /// Result of the add wizard.
 class ComponentAddRequest {
   const ComponentAddRequest({
@@ -261,6 +314,8 @@ Future<ComponentAddRequest?> showComponentAddWizard({
       target: target,
       preferredWidth: width,
       builder: (_) {
+        final initialTarget =
+            targets.where((t) => t.id == initialTargetId).firstOrNull;
         Widget child = ComponentAddWizard(
           title: title,
           keyPrefix: keyPrefix,
@@ -270,6 +325,14 @@ Future<ComponentAddRequest?> showComponentAddWizard({
           placements: placements,
           editableLabel: editableLabel,
           emptyMessage: emptyMessage,
+        );
+        child = ComponentAddTargetScope(
+          targetId: initialTargetId,
+          targetLabel: initialTarget?.label ?? title,
+          initialTargetId: initialTargetId,
+          wizardTitle: title,
+          zoneTags: initialTarget?.zoneTags ?? const {},
+          child: child,
         );
         if (listScope != null) {
           child = JsonListScope(
@@ -360,9 +423,9 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     }
   }
 
-  ComponentAddTarget get _target =>
+  ComponentAddTarget? get _target =>
       widget.targets.where((target) => target.id == _targetId).firstOrNull ??
-      widget.targets.first;
+      widget.targets.firstOrNull;
 
   List<ComponentAddTarget> _targetsFor(ComponentAddCandidate candidate) => [
     for (final target in widget.targets)
@@ -392,12 +455,12 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
         options.firstOrNull;
   }
 
-  Object? _draftOf(ComponentAddCandidate candidate) {
+  Object? _draftOf(ComponentAddCandidate candidate, [BuildContext? ctx]) {
     final configurator = candidate.configurator;
     if (configurator == null) return null;
     return _drafts.putIfAbsent(
       candidate.id,
-      () => configurator.initialDraft(context),
+      () => configurator.initialDraft(ctx ?? context),
     );
   }
 
@@ -511,7 +574,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
           (widget.placements == null || _placementsFor(_selected!).isNotEmpty),
     _WizardStage.settings => _settingsError == null,
     _WizardStage.placement =>
-      (widget.placements == null || _placement != null) &&
+      (widget.placements != null ? _placement != null : _target != null) &&
           (!_customSize || _size.error == null),
     _WizardStage.binding => _bindingError == null,
     _WizardStage.summary => true,
@@ -526,11 +589,12 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     }
     final candidate = _selected!;
     final relative = widget.placements != null;
+    final target = _target;
     Navigator.of(context).pop(
       ComponentAddRequest(
         component: candidate,
-        targetId: relative ? widget.initialTargetId : _target.id,
-        beforeId: relative || _target.replaces ? null : _beforeId,
+        targetId: relative ? widget.initialTargetId : (target?.id ?? widget.initialTargetId),
+        beforeId: relative || (target?.replaces ?? false) ? null : _beforeId,
         placementId: relative ? _placement!.id : null,
         label: _labelValue,
         size: _customSize ? _size.value : null,
@@ -547,18 +611,38 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final availableHeight = constraints.maxHeight.isFinite
-          ? constraints.maxHeight
-          : MediaQuery.sizeOf(context).height;
-      return _buildDialog(
-        context,
-        availableHeight: availableHeight,
-        compact: availableHeight < 480,
-      );
-    },
-  );
+  Widget build(BuildContext context) {
+    final placement = _placement;
+    final target = widget.placements == null ? _target : null;
+    final targetId = widget.placements != null
+        ? (placement?.id ?? widget.initialTargetId)
+        : (target?.id ?? _targetId);
+    final targetLabel = widget.placements != null
+        ? (placement?.label ?? widget.title)
+        : (target?.label ?? widget.title);
+    final zoneTags = widget.placements != null
+        ? (placement?.zoneTags ?? const <String>{})
+        : (target?.zoneTags ?? const <String>{});
+    return ComponentAddTargetScope(
+      targetId: targetId,
+      targetLabel: targetLabel,
+      initialTargetId: widget.initialTargetId,
+      wizardTitle: widget.title,
+      zoneTags: zoneTags,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : MediaQuery.sizeOf(context).height;
+          return _buildDialog(
+            context,
+            availableHeight: availableHeight,
+            compact: availableHeight < 480,
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildDialog(
     BuildContext context, {
@@ -779,7 +863,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   Widget _buildSettings(BuildContext context, ComponentAddCandidate candidate) {
     final theme = Theme.of(context);
-    final draft = _draftOf(candidate);
+    final draft = _draftOf(candidate, context);
     final error = _settingsError;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -873,6 +957,9 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     final theme = Theme.of(context);
     final targets = _targetsFor(candidate);
     final target = _target;
+    if (target == null) {
+      return Text('Aucune zone disponible.', style: theme.textTheme.bodySmall);
+    }
     final endPreview = target.resolvePreview(null);
     final siblingPreviews = {
       for (final (id, _) in target.siblings) id: target.resolvePreview(id),
@@ -1130,7 +1217,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     final placement = widget.placements == null ? null : _placement;
     final target = placement == null ? _target : null;
     final position = target == null
-        ? placement!.label
+        ? (placement?.label ?? 'Emplacement par défaut')
         : target.replaces
         ? (target.siblings.isEmpty ? 'Unique' : 'Remplace le contenu actuel')
         : _beforeId == null

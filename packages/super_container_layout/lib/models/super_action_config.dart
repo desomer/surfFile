@@ -81,7 +81,7 @@ abstract final class SuperActionIcons {
 class SuperActionConfig extends ComponentConfig {
   const SuperActionConfig({
     this.kind = SuperActionKind.text,
-    this.variant = SuperActionVariant.filled,
+    this.variant,
     this.label = 'Action',
     this.tooltip = '',
     this.icon = 'touch_app',
@@ -110,7 +110,7 @@ class SuperActionConfig extends ComponentConfig {
   });
 
   final SuperActionKind kind;
-  final SuperActionVariant variant;
+  final SuperActionVariant? variant;
   final String label;
   final String tooltip;
   final String icon;
@@ -118,6 +118,11 @@ class SuperActionConfig extends ComponentConfig {
   final double? iconSize;
   final double iconSpacing;
   final bool enabled;
+
+  /// Retourne la variante effective : [variant] si spécifiée, sinon
+  /// [SuperActionVariant.text] si [inTab] est vrai, sinon [SuperActionVariant.filled].
+  SuperActionVariant effectiveVariant({bool inTab = false}) =>
+      variant ?? (inTab ? SuperActionVariant.text : SuperActionVariant.filled);
   final String? fontFamily;
   final double? fontSize;
   final FontWeight? fontWeight;
@@ -195,6 +200,7 @@ class SuperActionConfig extends ComponentConfig {
     TextAlign? textAlign,
     double? letterSpacing,
     ContainerStyle? style,
+    bool inheritVariant = false,
     bool inheritIconSize = false,
     bool inheritFontFamily = false,
     bool inheritFontSize = false,
@@ -215,7 +221,7 @@ class SuperActionConfig extends ComponentConfig {
     bool clearStates = false,
   }) => SuperActionConfig(
     kind: kind ?? this.kind,
-    variant: variant ?? this.variant,
+    variant: inheritVariant ? null : variant ?? this.variant,
     label: label ?? this.label,
     tooltip: tooltip ?? this.tooltip,
     icon: icon ?? this.icon,
@@ -256,7 +262,7 @@ class SuperActionConfig extends ComponentConfig {
     validate();
     return {
       'kind': kind.name,
-      'variant': variant.name,
+      'variant': variant?.name,
       'label': label,
       'tooltip': tooltip,
       'icon': icon,
@@ -292,7 +298,7 @@ class SuperActionConfig extends ComponentConfig {
     const d = SuperActionConfig();
     return {
       if (kind != d.kind) 'kind': kind.name,
-      if (variant != d.variant) 'variant': variant.name,
+      if (variant != null) 'variant': variant!.name,
       if (label != d.label) 'label': label,
       if (tooltip.isNotEmpty) 'tooltip': tooltip,
       if (icon != d.icon) 'icon': icon,
@@ -394,10 +400,11 @@ class SuperActionConfig extends ComponentConfig {
         'textIcon': SuperActionKind.textAndIcon,
       },
     );
-    final variant = JsonReader.enumByName(
-      SuperActionVariant.values,
-      field('variant', fallback.variant.name),
-    );
+    final hasVariant = value.containsKey('variant');
+    final rawVariant = hasVariant ? value['variant'] : fallback.variant?.name;
+    final variant = rawVariant == null
+        ? null
+        : JsonReader.enumByName(SuperActionVariant.values, rawVariant);
     final iconPosition = JsonReader.enumByName(
       SuperActionIconPosition.values,
       field('iconPosition', fallback.iconPosition.name),
@@ -414,7 +421,7 @@ class SuperActionConfig extends ComponentConfig {
     final hasFamily = value.containsKey('fontFamily');
     final family = hasFamily ? value['fontFamily'] : fallback.fontFamily;
     if (kind == null ||
-        variant == null ||
+        (rawVariant != null && variant == null) ||
         iconPosition == null ||
         align == null ||
         (hasWeight && weight != null && fontWeight == null) ||
@@ -580,15 +587,18 @@ String formatSuperActionTooltip({
     SuperActionKind.icon => 'Icône',
     SuperActionKind.textAndIcon => 'Texte et icône',
   };
-  final variantLabel = switch (config.variant) {
-    SuperActionVariant.filled => 'Plein',
-    SuperActionVariant.tonal => 'Tonal',
-    SuperActionVariant.elevated => 'Élevé',
-    SuperActionVariant.outlined => 'Contour',
-    SuperActionVariant.text => 'Texte',
-    SuperActionVariant.icon => 'Icône',
-    SuperActionVariant.surface => 'Surface',
-  };
+  final variant = config.variant;
+  final variantLabel = variant == null
+      ? 'Auto'
+      : switch (variant) {
+          SuperActionVariant.filled => 'Plein',
+          SuperActionVariant.tonal => 'Tonal',
+          SuperActionVariant.elevated => 'Élevé',
+          SuperActionVariant.outlined => 'Contour',
+          SuperActionVariant.text => 'Texte',
+          SuperActionVariant.icon => 'Icône',
+          SuperActionVariant.surface => 'Surface',
+        };
   final contentParts = <String>[
     if (config.kind.hasText)
       'Libellé : ${config.label.isEmpty ? 'Vide' : config.label}',

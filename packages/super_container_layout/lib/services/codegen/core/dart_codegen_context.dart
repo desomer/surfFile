@@ -30,7 +30,12 @@ import 'component_dart_generator.dart';
 /// Expose l'[Appearance] du fragment exporté, le [Registry] ainsi que les
 /// utilitaires de formatage d'expressions Dart et de résolution récursive des slots.
 class DartCodegenContext {
-  DartCodegenContext({required this.appearance, required this.registry});
+  DartCodegenContext({
+    required this.appearance,
+    required this.registry,
+    this.rootComponentId,
+    this.rootInstanceVariable,
+  });
 
   /// Apparence autonome contenant les configurations, styles et comportements à exporter.
   final Appearance appearance;
@@ -38,7 +43,21 @@ class DartCodegenContext {
   /// Registre permettant de résoudre les [ComponentDartGenerator] par type de composant.
   final Registry registry;
 
+  /// Identifiant du composant racine lorsqu'un identifiant dynamique est souhaité.
+  final String? rootComponentId;
+
+  /// Nom de variable Dart à utiliser pour l'identifiant d'instance du composant racine (ex. `'id'`).
+  final String? rootInstanceVariable;
+
   final Set<String> _visiting = <String>{};
+
+  /// Indique si l'identifiant [id] est résolu sous forme de variable d'instance dynamique.
+  bool isDynamicInstanceId(String id) =>
+      rootInstanceVariable != null && id == rootComponentId;
+
+  /// Formate l'identifiant [id] sous forme de code Dart (variable [rootInstanceVariable] si dynamique, sinon chaîne littérale).
+  String formatInstanceId(String id) =>
+      isDynamicInstanceId(id) ? rootInstanceVariable! : formatString(id);
 
   /// Retourne une chaîne de [count] espaces pour l'indentation.
   String spaces(int count) => ' ' * count;

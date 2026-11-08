@@ -4,7 +4,9 @@
 /// à partir de la clé `GEMINI_API_KEY` et journalise les métriques de génération.
 library;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'dart:io';
+
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
@@ -14,16 +16,101 @@ export 'vibe_chat_attachment.dart';
 
 const _geminiModel = 'gemini-flash-latest';
 
+/// Résout la clé d'API Gemini en interrogeant dans l'ordre :
+/// 1. Les variables déjà chargées dans [dotenv] (`GEMINI_API_KEY`).
+/// 2. Les variables d'environnement système (`Platform.environment['GEMINI_API_KEY']`).
+/// 3. Les fichiers `env` ou `.env` découverts dans le répertoire courant ou ses parents.
+Future<String> resolveGeminiApiKey() async {
+  if (dotenv.isInitialized) {
+    final key = dotenv.env['GEMINI_API_KEY'];
+    if (key != null && key.trim().isNotEmpty) {
+      return key.trim();
+    }
+  }
+
+  if (!kIsWeb) {
+    final envKey = Platform.environment['GEMINI_API_KEY'];
+    if (envKey != null && envKey.trim().isNotEmpty) {
+      final key = envKey.trim();
+      dotenv.loadFromString(
+        envString: '',
+        isOptional: true,
+        mergeWith: {'GEMINI_API_KEY': key},
+      );
+      return key;
+    }
+
+    final sep = Platform.pathSeparator;
+    final candidates = [
+      'env',
+      '.env',
+      ['packages', 'super_designer', 'env'].join(sep),
+      ['packages', 'super_designer', '.env'].join(sep),
+      ['packages', 'super_container_layout', 'env'].join(sep),
+      ['packages', 'super_container_layout', '.env'].join(sep),
+      ['..', 'super_container_layout', 'env'].join(sep),
+      ['..', 'super_container_layout', '.env'].join(sep),
+      ['..', 'super_designer', 'env'].join(sep),
+      ['..', 'super_designer', '.env'].join(sep),
+      ['..', 'env'].join(sep),
+      ['..', '.env'].join(sep),
+    ];
+
+    for (final path in candidates) {
+      final file = File(path);
+      if (await file.exists()) {
+        final content = await file.readAsString();
+        dotenv.loadFromString(
+          envString: content,
+          isOptional: true,
+        );
+        final key = dotenv.env['GEMINI_API_KEY'];
+        if (key != null && key.trim().isNotEmpty) {
+          return key.trim();
+        }
+      }
+    }
+
+    try {
+      var dir = Directory.current;
+      while (true) {
+        for (final candidate in [
+          'env',
+          '.env',
+          ['packages', 'super_container_layout', 'env'].join(sep),
+          ['packages', 'super_designer', 'env'].join(sep),
+        ]) {
+          final file = File('${dir.path}$sep$candidate');
+          if (await file.exists()) {
+            final content = await file.readAsString();
+            dotenv.loadFromString(
+              envString: content,
+              isOptional: true,
+            );
+            final key = dotenv.env['GEMINI_API_KEY'];
+            if (key != null && key.trim().isNotEmpty) {
+              return key.trim();
+            }
+          }
+        }
+        if (dir.parent.path == dir.path) break;
+        dir = dir.parent;
+      }
+    } catch (_) {}
+  }
+
+  return '';
+}
+
 Future<String> callGemini(
   String prompt, {
   List<VibeChatAttachment> attachments = const [],
 }) async {
-  final isDotenvInitialized = dotenv.isInitialized;
-  final apiKey = isDotenvInitialized ? dotenv.env['GEMINI_API_KEY'] ?? '' : '';
+  final apiKey = await resolveGeminiApiKey();
   if (apiKey.isEmpty) {
     debugPrint(
       '[Vibe IA][Gemini] Clé GEMINI_API_KEY absente '
-      '(dotenv.isInitialized=$isDotenvInitialized).',
+      '(dotenv.isInitialized=${dotenv.isInitialized}).',
     );
     throw Exception('GEMINI_API_KEY dotenv is not defined');
   }

@@ -35,7 +35,7 @@ class SuperCardDartGenerator extends ComponentDartGenerator {
           );
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       'label': context.formatString(label ?? 'Card'),
       'menuType': context.formatString('Card'),
       if (behaviors.isNotEmpty)

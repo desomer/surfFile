@@ -26,10 +26,11 @@ class SuperCodeDartGenerator extends ComponentDartGenerator {
         context.appearance.tryComponent<SuperCodeConfig>(id) ??
         const SuperCodeConfig();
     final behaviors = context.appearance.behaviorsFor(id);
-    final canWidgetBeConst = behaviors.isEmpty;
+    final isDynamic = context.isDynamicInstanceId(id);
+    final canWidgetBeConst = !isDynamic && behaviors.isEmpty;
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),
       if (config != const SuperCodeConfig())
@@ -137,10 +138,11 @@ class SuperChartDartGenerator extends ComponentDartGenerator {
         context.appearance.tryComponent<SuperChartConfig>(id) ??
         const SuperChartConfig();
     final behaviors = context.appearance.behaviorsFor(id);
-    final canWidgetBeConst = behaviors.isEmpty;
+    final isDynamic = context.isDynamicInstanceId(id);
+    final canWidgetBeConst = !isDynamic && behaviors.isEmpty;
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),
       if (config != const SuperChartConfig())

@@ -15,15 +15,17 @@ abstract final class DartCodeExporter {
     String? componentId,
     String? componentLabel,
   }) {
-    final context = DartCodegenContext(
-      appearance: appearance,
-      registry: registry,
-    );
-
     final resolved = _resolveExportRoot(
       appearance: appearance,
       componentId: componentId,
       componentLabel: componentLabel,
+    );
+
+    final context = DartCodegenContext(
+      appearance: appearance,
+      registry: registry,
+      rootComponentId: resolved.singleComponentId,
+      rootInstanceVariable: 'id',
     );
 
     final String builderExpression;
@@ -60,6 +62,7 @@ abstract final class DartCodeExporter {
         'SuperLayout',
         const [],
         {
+          'id': 'id',
           'label': context.formatString(resolved.label),
           'config': configCode,
           if (slotEntries.isNotEmpty)
@@ -80,7 +83,7 @@ abstract final class DartCodeExporter {
       {
         'label': context.formatString(resolved.label),
         'isAvailable': '(context) {\n      return true;\n    }',
-        'builder': '(_) => $builderExpression',
+        'instanceBuilder': '(_, id) => $builderExpression',
       },
       indent: 2,
       forceMultiline: true,
@@ -90,6 +93,12 @@ abstract final class DartCodeExporter {
         '  ${context.formatString(resolved.registrationId)},\n'
         '  $registeredComponentCode,\n'
         ');\n';
+  }
+
+  static String _cleanRegistrationId(String rawId) {
+    final trimmed = rawId.trim();
+    final stripped = trimmed.replaceFirst(RegExp(r'-(?:i|[0-9]+)$'), '');
+    return stripped.isNotEmpty ? stripped : trimmed;
   }
 
   static ({
@@ -118,10 +127,11 @@ abstract final class DartCodeExporter {
           homeConfig.placements[ScaffoldPageRegion.body] ?? const [];
       if (bodyIds.length == 1) {
         final targetId = bodyIds.single;
-        final effectiveRegId =
-            (componentId != null && componentId.trim().isNotEmpty)
-            ? componentId.trim()
-            : targetId;
+        final effectiveRegId = _cleanRegistrationId(
+          (componentId != null && componentId.trim().isNotEmpty)
+              ? componentId.trim()
+              : targetId,
+        );
         final effectiveLabel =
             (componentLabel != null && componentLabel.trim().isNotEmpty)
             ? componentLabel.trim()
@@ -135,10 +145,11 @@ abstract final class DartCodeExporter {
         );
       }
       if (bodyIds.isNotEmpty) {
-        final effectiveRegId =
-            (componentId != null && componentId.trim().isNotEmpty)
-            ? componentId.trim()
-            : (homePage?.name ?? 'export');
+        final effectiveRegId = _cleanRegistrationId(
+          (componentId != null && componentId.trim().isNotEmpty)
+              ? componentId.trim()
+              : (homePage?.name ?? 'export'),
+        );
         final effectiveLabel =
             (componentLabel != null && componentLabel.trim().isNotEmpty)
             ? componentLabel.trim()
@@ -161,7 +172,7 @@ abstract final class DartCodeExporter {
           ? componentLabel.trim()
           : componentId;
       return (
-        registrationId: componentId,
+        registrationId: _cleanRegistrationId(componentId),
         label: effectiveLabel,
         singleComponentId: componentId,
         multipleComponentIds: const [],
@@ -176,7 +187,7 @@ abstract final class DartCodeExporter {
       if (bodyIds.length == 1) {
         final single = bodyIds.single;
         return (
-          registrationId: componentId ?? single,
+          registrationId: _cleanRegistrationId(componentId ?? single),
           label: componentLabel ?? homePage?.name ?? single,
           singleComponentId: single,
           multipleComponentIds: const [],
@@ -184,7 +195,7 @@ abstract final class DartCodeExporter {
         );
       }
       return (
-        registrationId: componentId ?? homeId,
+        registrationId: _cleanRegistrationId(componentId ?? homeId),
         label: componentLabel ?? homePage?.name ?? homeId,
         singleComponentId: null,
         multipleComponentIds: bodyIds,
@@ -197,7 +208,7 @@ abstract final class DartCodeExporter {
       if (bodyIds.length == 1) {
         final single = bodyIds.single;
         return (
-          registrationId: componentId ?? single,
+          registrationId: _cleanRegistrationId(componentId ?? single),
           label: componentLabel ?? homePage?.name ?? single,
           singleComponentId: single,
           multipleComponentIds: const [],
@@ -206,7 +217,7 @@ abstract final class DartCodeExporter {
       }
       if (bodyIds.isNotEmpty) {
         return (
-          registrationId: componentId ?? homeId,
+          registrationId: _cleanRegistrationId(componentId ?? homeId),
           label: componentLabel ?? homePage?.name ?? homeId,
           singleComponentId: null,
           multipleComponentIds: bodyIds,
@@ -217,7 +228,7 @@ abstract final class DartCodeExporter {
 
     final firstId = appearance.components.keys.firstOrNull ?? 'export';
     return (
-      registrationId: componentId ?? firstId,
+      registrationId: _cleanRegistrationId(componentId ?? firstId),
       label: componentLabel ?? firstId,
       singleComponentId: firstId,
       multipleComponentIds: const [],

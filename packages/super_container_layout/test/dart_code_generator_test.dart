@@ -3,27 +3,63 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
-  test('every bootstrapped component registers a dedicated ComponentDartGenerator', () {
-    final registry = Registry()..bootstrap();
-    for (final entry in registry.registry.entries) {
+  test(
+    'every bootstrapped component registers a dedicated ComponentDartGenerator',
+    () {
+      final registry = Registry()..bootstrap();
+      for (final entry in registry.registry.entries) {
+        expect(
+          entry.value.dartGenerator,
+          isNotNull,
+          reason: 'Missing dartGenerator for registry component "${entry.key}"',
+        );
+      }
       expect(
-        entry.value.dartGenerator,
-        isNotNull,
-        reason: 'Missing dartGenerator for registry component "${entry.key}"',
+        registry.registry['Layout']!.dartGenerator,
+        isA<SuperLayoutDartGenerator>(),
       );
-    }
-    expect(registry.registry['Layout']!.dartGenerator, isA<SuperLayoutDartGenerator>());
-    expect(registry.registry['Value']!.dartGenerator, isA<SuperValueDartGenerator>());
-    expect(registry.registry['Action']!.dartGenerator, isA<SuperActionDartGenerator>());
-    expect(registry.registry['Indicator']!.dartGenerator, isA<SuperIndicatorDartGenerator>());
-    expect(registry.registry['Separator']!.dartGenerator, isA<SuperSeparatorDartGenerator>());
-    expect(registry.registry['ListView']!.dartGenerator, isA<SuperListViewDartGenerator>());
-    expect(registry.registry['TreeView']!.dartGenerator, isA<SuperTreeViewDartGenerator>());
-    expect(registry.registry['Tab']!.dartGenerator, isA<SuperTabDartGenerator>());
-    expect(registry.registry['Table']!.dartGenerator, isA<SuperTableDartGenerator>());
-    expect(registry.registry['Card']!.dartGenerator, isA<SuperCardDartGenerator>());
-    expect(registry.registry['Renderer']!.dartGenerator, isA<SuperRendererDartGenerator>());
-  });
+      expect(
+        registry.registry['Value']!.dartGenerator,
+        isA<SuperValueDartGenerator>(),
+      );
+      expect(
+        registry.registry['Action']!.dartGenerator,
+        isA<SuperActionDartGenerator>(),
+      );
+      expect(
+        registry.registry['Indicator']!.dartGenerator,
+        isA<SuperIndicatorDartGenerator>(),
+      );
+      expect(
+        registry.registry['Separator']!.dartGenerator,
+        isA<SuperSeparatorDartGenerator>(),
+      );
+      expect(
+        registry.registry['ListView']!.dartGenerator,
+        isA<SuperListViewDartGenerator>(),
+      );
+      expect(
+        registry.registry['TreeView']!.dartGenerator,
+        isA<SuperTreeViewDartGenerator>(),
+      );
+      expect(
+        registry.registry['Tab']!.dartGenerator,
+        isA<SuperTabDartGenerator>(),
+      );
+      expect(
+        registry.registry['Table']!.dartGenerator,
+        isA<SuperTableDartGenerator>(),
+      );
+      expect(
+        registry.registry['Card']!.dartGenerator,
+        isA<SuperCardDartGenerator>(),
+      );
+      expect(
+        registry.registry['Renderer']!.dartGenerator,
+        isA<SuperRendererDartGenerator>(),
+      );
+    },
+  );
 
   test('DartCodeExporter generates RegisteredComponent code matching main.dart structure', () {
     final registry = Registry()..bootstrap();
@@ -57,10 +93,7 @@ void main() {
           maxLines: 5,
         ),
         'explorer-tree': SuperTreeViewConfig(
-          binding: const JsonTextBinding(
-            repositoryId: repoId,
-            path: 'nodes',
-          ),
+          binding: const JsonTextBinding(repositoryId: repoId, path: 'nodes'),
           placements: const {
             SuperTreeViewConfig.headerZone: ['header'],
             SuperTreeViewConfig.dataZone: ['data'],
@@ -129,10 +162,7 @@ void main() {
             ),
           },
           placements: {
-            SuperLayoutZone.center: [
-              'tree-node-id',
-              'tree-node-properties',
-            ],
+            SuperLayoutZone.center: ['tree-node-id', 'tree-node-properties'],
           },
           slotLabels: {
             'tree-node-id': 'ID',
@@ -183,7 +213,10 @@ void main() {
       componentLabel: 'A',
     );
 
-    expect(dartCode, contains("_registry.registerComponent(\n  'A',\n  RegisteredComponent("));
+    expect(
+      dartCode,
+      contains("_registry.registerComponent(\n  'A',\n  RegisteredComponent("),
+    );
     expect(dartCode, contains('ZoneSizeBindingAction('));
     expect(dartCode, contains("SuperTreeView(\n"));
     expect(dartCode, contains('header: SuperLayout('));
@@ -195,55 +228,153 @@ void main() {
     expect(dartCode, contains('kind: SuperSeparatorKind.spacer'));
   });
 
-  testWidgets('AppearanceTransferDialog switches between JSON and Code Dart in content export', (
-    tester,
-  ) async {
-    final registry = Registry()..bootstrap();
-    final appearance = DefaultAppearance(
-      components: {
-        'my-value': const SuperValueConfig(
-          initialText: 'Bonjour',
-          fontSize: 16,
-        ),
-      },
-    );
-    final controller = ValueNotifier<Appearance>(appearance);
-    addTearDown(controller.dispose);
+  testWidgets(
+    'AppearanceTransferDialog switches between JSON and Code Dart in content export',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = DefaultAppearance(
+        components: {
+          'my-value': const SuperValueConfig(
+            initialText: 'Bonjour',
+            fontSize: 16,
+          ),
+        },
+      );
+      final controller = ValueNotifier<Appearance>(appearance);
+      addTearDown(controller.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: AppearanceTransferDialog(
-            controller: controller,
-            allowImport: false,
-            dartExportBuilder: (current) => DartCodeExporter.export(
-              appearance: current,
-              registry: registry,
-              componentId: 'my-value',
-              componentLabel: 'Ma Valeur',
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppearanceTransferDialog(
+              controller: controller,
+              allowImport: false,
+              dartExportBuilder: (current) => DartCodeExporter.export(
+                appearance: current,
+                registry: registry,
+                componentId: 'my-value',
+                componentLabel: 'Ma Valeur',
+              ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('transfer-export-format')), findsOneWidget);
-    final textField = tester.widget<TextField>(
-      find.byKey(const ValueKey('transfer-export-text')),
-    );
-    expect(textField.controller!.text, contains('"format"'));
+      expect(
+        find.byKey(const ValueKey('transfer-export-format')),
+        findsOneWidget,
+      );
+      final textField = tester.widget<TextField>(
+        find.byKey(const ValueKey('transfer-export-text')),
+      );
+      expect(textField.controller!.text, contains('"format"'));
 
-    await tester.tap(find.text('Code Dart'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Code Dart'));
+      await tester.pumpAndSettle();
 
-    expect(textField.controller!.text, contains("_registry.registerComponent("));
-    expect(textField.controller!.text, contains("'my-value'"));
-    expect(textField.controller!.text, contains("initialText: 'Bonjour'"));
+      expect(
+        textField.controller!.text,
+        contains("_registry.registerComponent("),
+      );
+      expect(textField.controller!.text, contains("'my-value'"));
+      expect(textField.controller!.text, contains("initialText: 'Bonjour'"));
 
-    final fileField = tester.widget<TextField>(
-      find.byKey(const ValueKey('transfer-file')),
-    );
-    expect(fileField.controller!.text, endsWith('appearance.dart'));
-  });
+      final fileField = tester.widget<TextField>(
+        find.byKey(const ValueKey('transfer-file')),
+      );
+      expect(fileField.controller!.text, endsWith('appearance.dart'));
+    },
+  );
+
+  test(
+    'RegisteredComponent with instanceBuilder propagates slot instance ID',
+    () {
+      final component = RegisteredComponent(
+        label: 'Dynamic Field',
+        instanceBuilder: (context, id) => SuperValue(id: id),
+      );
+
+      final slot1 = component.createSlot('slot-alpha');
+      final slot2 = component.createSlot('slot-beta');
+
+      expect(slot1.id, 'slot-alpha');
+      expect(slot2.id, 'slot-beta');
+
+      expect(component.builder, isNotNull);
+    },
+  );
+
+  testWidgets(
+    'RegisteredComponent with instanceBuilder produces independent widgets in tree',
+    (tester) async {
+      final component = RegisteredComponent(
+        label: 'Dynamic Field',
+        instanceBuilder: (context, id) => SuperValue(id: id),
+      );
+
+      final slot1 = component.createSlot('slot-alpha');
+      final slot2 = component.createSlot('slot-beta');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Column(
+                children: [slot1.buildSlot(context), slot2.buildSlot(context)],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final values = tester
+          .widgetList<SuperValue>(find.byType(SuperValue))
+          .toList();
+      expect(values.length, 2);
+      expect(values[0].id, 'slot-alpha');
+      expect(values[1].id, 'slot-beta');
+    },
+  );
+
+  test(
+    'DartCodeExporter generates dynamic instanceBuilder and cleans catalog key',
+    () {
+      final registry = Registry()..bootstrap();
+      final appearance = DefaultAppearance(
+        components: {
+          'field-default-i': const SuperValueConfig(
+            mode: SuperValueMode.input,
+            label: 'Default',
+            binding: JsonTextBinding(
+              repositoryId: 'cc326cbbacbbbf804230e59ff54534ce',
+              path: 'Default',
+            ),
+            field: SuperTextFieldConfig(variant: TextFieldVariant.outlined),
+          ),
+        },
+      );
+
+      final dartCode = DartCodeExporter.export(
+        appearance: appearance,
+        registry: registry,
+        componentId: 'field-default-i',
+        componentLabel: 'Valeur',
+      );
+
+      // Clé de catalogue nettoyée du suffixe d'instance technique '-i'
+      expect(
+        dartCode,
+        contains(
+          "_registry.registerComponent(\n  'field-default',\n  RegisteredComponent(",
+        ),
+      );
+      // Utilise instanceBuilder au lieu de builder
+      expect(dartCode, contains("instanceBuilder: (_, id) =>"));
+      // Le widget intérieur utilise l'ID dynamique du slot et n'est pas const
+      expect(dartCode, contains("SuperValue(\n          id: id,"));
+      // L'ID 'field-default-i' n'est plus dupliqué dans le code généré
+      expect(dartCode.contains("'field-default-i'"), isFalse);
+    },
+  );
 }

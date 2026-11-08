@@ -43,7 +43,7 @@ class SuperTableDartGenerator extends ComponentDartGenerator {
     ];
 
     final args = <String, String>{
-      'id': context.formatString(id),
+      'id': context.formatInstanceId(id),
       if (config.itemId != null) 'itemId': context.formatString(config.itemId!),
       if (label != null && label != 'Table')
         'label': context.formatString(label),

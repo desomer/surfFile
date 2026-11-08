@@ -56,7 +56,7 @@ class SuperLayoutDartGenerator extends ComponentDartGenerator {
     ];
 
     final args = <String, String>{
-      if (!omitId) 'id': context.formatString(id),
+      if (!omitId) 'id': context.formatInstanceId(id),
       'label': context.formatString(effectiveLabel),
       if (behaviors.isNotEmpty)
         'behaviours': context.formatBehaviors(behaviors, indent: indent + 2),

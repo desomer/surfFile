@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../../models/super_action_config.dart';
 import '../../components/super_action_editor.dart';
 import '../../icons/material_icon_picker.dart';
+import '../component_add_wizard.dart';
 import 'add_form_common.dart';
 
 double? _parse(String text) => parseAddFormDouble(text);
@@ -41,6 +42,9 @@ class _SuperActionAddFormState extends State<SuperActionAddForm>
   @override
   Widget build(BuildContext context) {
     final draft = widget.draft;
+    final inTabZone =
+        ComponentAddTargetScope.maybeOf(context)?.isTabZone ?? false;
+    final effectiveVariant = draft.effectiveVariant(inTab: inTabZone);
     return buildRevisionSubtree(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -80,7 +84,7 @@ class _SuperActionAddFormState extends State<SuperActionAddForm>
           DropdownButtonFormField<SuperActionVariant>(
             key: const ValueKey('add-action-variant'),
             isExpanded: true,
-            initialValue: draft.variant,
+            initialValue: effectiveVariant,
             decoration: const InputDecoration(
               isDense: true,
               labelText: 'Style / variante du bouton',
