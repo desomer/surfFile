@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_action_config.dart';
+import '../../components/shared/editor_segmented_field.dart';
 import '../../components/super_action_editor.dart';
 import '../../icons/material_icon_picker.dart';
 import '../component_add_wizard.dart';
@@ -49,36 +50,12 @@ class _SuperActionAddFormState extends State<SuperActionAddForm>
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SegmentedButton<SuperActionKind>(
-            key: const ValueKey('add-action-kind'),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(
-                value: SuperActionKind.text,
-                tooltip: 'Texte',
-                icon: Icon(Icons.text_fields, size: 16),
-                label: Text('Texte'),
-              ),
-              ButtonSegment(
-                value: SuperActionKind.icon,
-                tooltip: 'Icône',
-                icon: Icon(Icons.interests_outlined, size: 16),
-                label: Text('Icône'),
-              ),
-              ButtonSegment(
-                value: SuperActionKind.textAndIcon,
-                tooltip: 'Texte + Icône',
-                icon: Icon(Icons.smart_button_outlined, size: 16),
-                label: Text('Texte + Icône'),
-              ),
-            ],
-            selected: {draft.kind},
-            onSelectionChanged: (value) =>
-                widget.onChanged(draft.copyWith(kind: value.single)),
+          EditorSegmentedField.actionKind(
+            buttonKey: const ValueKey('add-action-kind'),
+            label: null,
+            textAndIconLabel: 'Texte + Icône',
+            value: draft.kind,
+            onChanged: (kind) => widget.onChanged(draft.copyWith(kind: kind)),
           ),
           const SizedBox(height: 8),
           DropdownButtonFormField<SuperActionVariant>(

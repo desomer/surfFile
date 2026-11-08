@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_separator_config.dart';
+import '../../components/shared/editor_segmented_field.dart';
 import '../../components/super_separator_editor.dart';
 import 'add_form_common.dart';
 
@@ -44,56 +45,18 @@ class _SuperSeparatorAddFormState extends State<SuperSeparatorAddForm>
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SegmentedButton<SuperSeparatorKind>(
-            key: const ValueKey('add-separator-kind'),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(
-                value: SuperSeparatorKind.divider,
-                tooltip: 'Divider (trait)',
-                icon: Icon(Icons.horizontal_rule, size: 16),
-                label: Text('Divider (trait)'),
-              ),
-              ButtonSegment(
-                value: SuperSeparatorKind.spacer,
-                tooltip: 'Spacer (espace)',
-                icon: Icon(Icons.space_bar, size: 16),
-                label: Text('Spacer (espace)'),
-              ),
-            ],
-            selected: {draft.kind},
-            onSelectionChanged: (value) =>
-                widget.onChanged(draft.copyWith(kind: value.single)),
+          EditorSegmentedField.separatorKind(
+            buttonKey: const ValueKey('add-separator-kind'),
+            label: null,
+            value: draft.kind,
+            onChanged: (kind) => widget.onChanged(draft.copyWith(kind: kind)),
           ),
           const SizedBox(height: 8),
-          SegmentedButton<Axis>(
-            key: const ValueKey('add-separator-axis'),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(
-                value: Axis.horizontal,
-                tooltip: 'Horizontal',
-                icon: Icon(Icons.swap_horiz, size: 16),
-                label: Text('Horizontal'),
-              ),
-              ButtonSegment(
-                value: Axis.vertical,
-                tooltip: 'Vertical',
-                icon: Icon(Icons.swap_vert, size: 16),
-                label: Text('Vertical'),
-              ),
-            ],
-            selected: {draft.axis},
-            onSelectionChanged: (value) =>
-                widget.onChanged(draft.copyWith(axis: value.single)),
+          EditorSegmentedField.axis(
+            buttonKey: const ValueKey('add-separator-axis'),
+            label: null,
+            value: draft.axis,
+            onChanged: (axis) => widget.onChanged(draft.copyWith(axis: axis)),
           ),
           const SizedBox(height: 8),
           TextFormField(

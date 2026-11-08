@@ -5,6 +5,9 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'editor_color_fields.dart';
+import 'editor_segmented_field.dart';
+
 /// Sélecteur de famille de police avec message d'avertissement lorsque la
 /// police configurée n'est pas disponible dans [availableFontFamilies].
 class ComponentFontFamilyField extends StatelessWidget {
@@ -93,55 +96,33 @@ class ComponentItalicSegmentField extends StatelessWidget {
   final void Function({required bool italic, required bool inherit}) onChanged;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    spacing: 4,
-    children: [
-      const Text(
-        'Style de police',
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+  Widget build(BuildContext context) => EditorSegmentedField<String>(
+    buttonKey: ValueKey('$settingPrefix-italic'),
+    label: 'Style de police',
+    value: italic == null
+        ? 'inherit'
+        : italic!
+        ? 'italic'
+        : 'normal',
+    options: const [
+      EditorSegmentOption(
+        value: 'inherit',
+        label: 'Style du parent',
+        icon: Icons.hdr_auto_outlined,
       ),
-      SegmentedButton<String>(
-        key: ValueKey('$settingPrefix-italic'),
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        segments: const [
-          ButtonSegment(
-            value: 'inherit',
-            tooltip: 'Style du parent',
-            icon: Icon(Icons.hdr_auto_outlined, size: 16),
-            label: Text('Style du parent', overflow: TextOverflow.ellipsis),
-          ),
-          ButtonSegment(
-            value: 'normal',
-            tooltip: 'Normal',
-            icon: Icon(Icons.text_format, size: 16),
-            label: Text('Normal', overflow: TextOverflow.ellipsis),
-          ),
-          ButtonSegment(
-            value: 'italic',
-            tooltip: 'Italique',
-            icon: Icon(Icons.format_italic, size: 16),
-            label: Text('Italique', overflow: TextOverflow.ellipsis),
-          ),
-        ],
-        selected: {
-          italic == null
-              ? 'inherit'
-              : italic!
-              ? 'italic'
-              : 'normal',
-        },
-        onSelectionChanged: (selected) {
-          if (selected.isEmpty) return;
-          final value = selected.first;
-          onChanged(italic: value == 'italic', inherit: value == 'inherit');
-        },
+      EditorSegmentOption(
+        value: 'normal',
+        label: 'Normal',
+        icon: Icons.text_format,
+      ),
+      EditorSegmentOption(
+        value: 'italic',
+        label: 'Italique',
+        icon: Icons.format_italic,
       ),
     ],
+    onChanged: (value) =>
+        onChanged(italic: value == 'italic', inherit: value == 'inherit'),
   );
 }
 
@@ -160,46 +141,107 @@ class ComponentTextAlignSegmentField extends StatelessWidget {
   final ValueChanged<TextAlign> onChanged;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    spacing: 4,
-    children: [
-      const Text(
-        'Alignement',
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-      ),
-      SegmentedButton<TextAlign>(
-        key: ValueKey('$settingPrefix-textAlign'),
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  Widget build(BuildContext context) => EditorSegmentedField<TextAlign>(
+    buttonKey: ValueKey('$settingPrefix-textAlign'),
+    label: 'Alignement',
+    value: textAlign,
+    options: [
+      for (final align in TextAlign.values)
+        EditorSegmentOption<TextAlign>(
+          value: align,
+          tooltip: align.name,
+          icon: switch (align) {
+            TextAlign.left => Icons.format_align_left,
+            TextAlign.right => Icons.format_align_right,
+            TextAlign.center => Icons.format_align_center,
+            TextAlign.justify => Icons.format_align_justify,
+            TextAlign.start => Icons.align_horizontal_left,
+            TextAlign.end => Icons.align_horizontal_right,
+          },
         ),
-        segments: [
-          for (final align in TextAlign.values)
-            ButtonSegment<TextAlign>(
-              value: align,
-              tooltip: align.name,
-              icon: Icon(
-                switch (align) {
-                  TextAlign.left => Icons.format_align_left,
-                  TextAlign.right => Icons.format_align_right,
-                  TextAlign.center => Icons.format_align_center,
-                  TextAlign.justify => Icons.format_align_justify,
-                  TextAlign.start => Icons.align_horizontal_left,
-                  TextAlign.end => Icons.align_horizontal_right,
-                },
-                size: 16,
-              ),
-            ),
-        ],
-        selected: {textAlign},
-        onSelectionChanged: (selected) {
-          if (selected.isNotEmpty) {
-            onChanged(selected.first);
-          }
-        },
-      ),
     ],
+    onChanged: onChanged,
   );
+}
+
+/// Construit la liste complète des contrôles de typographie (alerte de police
+/// indisponible, famille de police, taille de police, contrôles d'icône
+/// optionnels, graisse, italique, alignement optionnel et espacement des lettres).
+List<Widget> buildComponentTypographyFields<TProperty extends Enum>({
+  required BuildContext context,
+  required String settingPrefix,
+  required EditablePropertyBindingScope<TProperty> bindingScope,
+  required List<String> availableFontFamilies,
+  required String? fontFamily,
+  required ValueChanged<String?> onFontFamilyChanged,
+  required TProperty fontFamilyProperty,
+  required Widget fontSizeField,
+  required TProperty fontSizeProperty,
+  required FontWeight? fontWeight,
+  required ValueChanged<FontWeight?> onFontWeightChanged,
+  required TProperty fontWeightProperty,
+  required bool? italic,
+  required void Function({required bool italic, required bool inherit})
+  onItalicChanged,
+  required TProperty italicProperty,
+  List<Widget> afterFontSize = const [],
+  TextAlign? textAlign,
+  ValueChanged<TextAlign>? onTextAlignChanged,
+  TProperty? textAlignProperty,
+  List<Widget> beforeLetterSpacing = const [],
+  Widget? letterSpacingField,
+}) {
+  final fonts = availableFontFamilies.toSet().toList();
+  final unavailable = fontFamily != null && !fonts.contains(fontFamily);
+  final scheme = Theme.of(context).colorScheme;
+  return [
+    if (unavailable)
+      Text(
+        'Police indisponible : $fontFamily. Choisissez une police disponible.',
+        style: TextStyle(color: scheme.error),
+      ),
+    bindingScope.wrap(
+      fontFamilyProperty,
+      'la police',
+      ComponentFontFamilyField(
+        settingPrefix: settingPrefix,
+        fontFamily: fontFamily,
+        availableFontFamilies: fonts,
+        onChanged: onFontFamilyChanged,
+      ),
+    ),
+    bindingScope.wrap(fontSizeProperty, 'la taille de police', fontSizeField),
+    ...afterFontSize,
+    bindingScope.wrap(
+      fontWeightProperty,
+      'la graisse',
+      ComponentFontWeightField(
+        fontWeight: fontWeight,
+        onChanged: onFontWeightChanged,
+      ),
+    ),
+    bindingScope.wrap(
+      italicProperty,
+      'le style italique',
+      ComponentItalicSegmentField(
+        settingPrefix: settingPrefix,
+        italic: italic,
+        onChanged: onItalicChanged,
+      ),
+    ),
+    if (textAlign != null &&
+        onTextAlignChanged != null &&
+        textAlignProperty != null)
+      bindingScope.wrap(
+        textAlignProperty,
+        'l’alignement',
+        ComponentTextAlignSegmentField(
+          settingPrefix: settingPrefix,
+          textAlign: textAlign,
+          onChanged: onTextAlignChanged,
+        ),
+      ),
+    ...beforeLetterSpacing,
+    ?letterSpacingField,
+  ];
 }

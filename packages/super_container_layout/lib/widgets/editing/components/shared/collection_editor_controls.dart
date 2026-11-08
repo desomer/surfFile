@@ -12,6 +12,7 @@ import '../../../../services/repositories/json_list_scope.dart';
 import '../../../../services/repositories/json_repository_store.dart';
 import '../../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
+import 'editor_segmented_field.dart';
 
 /// Formate un `double` sans décimale inutile (`12.0` -> `'12'`).
 String formatCollectionEditorNumber(double value) =>
@@ -189,6 +190,41 @@ class _CollectionRepositorySourceFieldsState
     );
   }
 }
+
+/// Construit les interrupteurs standards de mutation et d'animation d'une
+/// collection JSON (`allowAdd`, `allowRemove`, `animateSelectionAndHover`).
+List<Widget> buildCollectionMutationSwitches({
+  required String keyPrefix,
+  required bool allowAdd,
+  required ValueChanged<bool> onAllowAddChanged,
+  required bool allowRemove,
+  required ValueChanged<bool> onAllowRemoveChanged,
+  bool? animateSelectionAndHover,
+  ValueChanged<bool>? onAnimateSelectionAndHoverChanged,
+  String addTitle = 'Autoriser l’ajout d’éléments',
+  String removeTitle = 'Autoriser la suppression d’éléments',
+}) => [
+  EditorSwitchTile(
+    tileKey: ValueKey('$keyPrefix-allow-add'),
+    title: addTitle,
+    value: allowAdd,
+    onChanged: onAllowAddChanged,
+  ),
+  EditorSwitchTile(
+    tileKey: ValueKey('$keyPrefix-allow-remove'),
+    title: removeTitle,
+    value: allowRemove,
+    onChanged: onAllowRemoveChanged,
+  ),
+  if (animateSelectionAndHover != null &&
+      onAnimateSelectionAndHoverChanged != null)
+    EditorSwitchTile(
+      tileKey: ValueKey('$keyPrefix-animate-selection-hover'),
+      title: 'Animer le déplacement de la sélection et du survol',
+      value: animateSelectionAndHover,
+      onChanged: onAnimateSelectionAndHoverChanged,
+    ),
+];
 
 /// Pied de formulaire d'éditeur de collection affichant l'indicateur de
 /// progression et le message d'erreur éventuel.

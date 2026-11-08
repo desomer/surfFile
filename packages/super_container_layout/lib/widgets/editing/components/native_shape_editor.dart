@@ -7,6 +7,7 @@ import '../../../models/native_shape_config.dart';
 import '../../../theme/style_extras.dart' show Quad;
 import '../dialogs/editor_dialog.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
+import 'shared/editor_segmented_field.dart';
 
 /// Ouvre l'éditeur dédié de [NativeShapeConfig] (`ShapeBorder` Flutter).
 ///
@@ -79,66 +80,41 @@ Future<void> showNativeShapeEditor({
                           ),
                         ),
                         const SizedBox(height: 12),
-                        const Text(
-                          'Type de forme (ShapeBorder)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        SegmentedButton<NativeShapeKind>(
-                          key: ValueKey('$keyPrefix-kind'),
-                          showSelectedIcon: false,
-                          style: const ButtonStyle(
-                            visualDensity: VisualDensity.compact,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          segments: [
+                        EditorSegmentedField<NativeShapeKind>(
+                          buttonKey: ValueKey('$keyPrefix-kind'),
+                          label: 'Type de forme (ShapeBorder)',
+                          spacing: 6,
+                          value: shape.kind,
+                          options: [
                             for (final kind in NativeShapeKind.values)
-                              ButtonSegment<NativeShapeKind>(
+                              EditorSegmentOption<NativeShapeKind>(
                                 value: kind,
-                                tooltip: kind.label,
-                                icon: Flexible(
-                                  flex: 0,
-                                  child: Icon(
-                                    switch (kind) {
-                                      NativeShapeKind.rounded =>
-                                        Icons.rounded_corner,
-                                      NativeShapeKind.continuous =>
-                                        Icons.crop_square,
-                                      NativeShapeKind.beveled =>
-                                        Icons.content_cut,
-                                      NativeShapeKind.stadium =>
-                                        Icons.stadium_outlined,
-                                      NativeShapeKind.linear =>
-                                        Icons.horizontal_rule,
-                                    },
-                                    size: 14,
-                                  ),
-                                ),
-                                label: Text(
-                                  kind.label,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                label: kind.label,
+                                iconSize: 14,
+                                flexibleIcon: true,
+                                icon: switch (kind) {
+                                  NativeShapeKind.rounded =>
+                                    Icons.rounded_corner,
+                                  NativeShapeKind.continuous =>
+                                    Icons.crop_square,
+                                  NativeShapeKind.beveled => Icons.content_cut,
+                                  NativeShapeKind.stadium =>
+                                    Icons.stadium_outlined,
+                                  NativeShapeKind.linear =>
+                                    Icons.horizontal_rule,
+                                },
                               ),
                           ],
-                          selected: {shape.kind},
-                          onSelectionChanged: (selected) {
-                            if (selected.isNotEmpty) {
-                              update(shape.copyWith(kind: selected.first));
-                            }
-                          },
+                          onChanged: (kind) =>
+                              update(shape.copyWith(kind: kind)),
                         ),
                         if (shape.kind.supportsCornerRadius) ...[
                           const SizedBox(height: 8),
-                          SwitchListTile(
-                            key: ValueKey('$keyPrefix-independent-corners'),
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('Coins indépendants'),
-                            subtitle: const Text(
-                              'Rayon distinct par angle (ex: arrondir uniquement le bas)',
-                            ),
+                          EditorSwitchTile(
+                            tileKey: ValueKey('$keyPrefix-independent-corners'),
+                            title: 'Coins indépendants',
+                            subtitle:
+                                'Rayon distinct par angle (ex: arrondir uniquement le bas)',
                             value: shape.radii != null,
                             onChanged: (independent) => update(
                               shape.copyWith(

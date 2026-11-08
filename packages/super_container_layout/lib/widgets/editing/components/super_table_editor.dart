@@ -26,6 +26,7 @@ import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
 import 'shared/collection_editor_controls.dart';
+import 'shared/editor_segmented_field.dart';
 
 /// Ouvre la fenêtre de réglage pour [config].
 Future<SuperTableConfig?> showSuperTableEditor({
@@ -333,10 +334,9 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
           Row(
             children: [
               Expanded(
-                child: SwitchListTile(
-                  key: const ValueKey('super-table-show-header'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Ligne d’en-tête'),
+                child: EditorSwitchTile(
+                  tileKey: const ValueKey('super-table-show-header'),
+                  title: 'Ligne d’en-tête',
                   value: _showHeaderRow,
                   onChanged: (value) => setState(() => _showHeaderRow = value),
                 ),
@@ -363,10 +363,9 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
           Row(
             children: [
               Expanded(
-                child: SwitchListTile(
-                  key: const ValueKey('super-table-show-bottom'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Ligne de pied figée'),
+                child: EditorSwitchTile(
+                  tileKey: const ValueKey('super-table-show-bottom'),
+                  title: 'Ligne de pied figée',
                   value: _showBottomRow,
                   onChanged: (value) => setState(() => _showBottomRow = value),
                 ),
@@ -390,28 +389,15 @@ class _SuperTableEditorState extends State<_SuperTableEditor> {
               ],
             ],
           ),
-          SwitchListTile(
-            key: const ValueKey('super-table-allow-add'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Autoriser l’ajout d’éléments'),
-            value: _allowAdd,
-            onChanged: (value) => setState(() => _allowAdd = value),
-          ),
-          SwitchListTile(
-            key: const ValueKey('super-table-allow-remove'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Autoriser la suppression d’éléments'),
-            value: _allowRemove,
-            onChanged: (value) => setState(() => _allowRemove = value),
-          ),
-          SwitchListTile(
-            key: const ValueKey('super-table-animate-selection-hover'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Animer le déplacement de la sélection et du survol',
-            ),
-            value: _animateSelectionAndHover,
-            onChanged: (value) =>
+          ...buildCollectionMutationSwitches(
+            keyPrefix: 'super-table',
+            allowAdd: _allowAdd,
+            onAllowAddChanged: (value) => setState(() => _allowAdd = value),
+            allowRemove: _allowRemove,
+            onAllowRemoveChanged: (value) =>
+                setState(() => _allowRemove = value),
+            animateSelectionAndHover: _animateSelectionAndHover,
+            onAnimateSelectionAndHoverChanged: (value) =>
                 setState(() => _animateSelectionAndHover = value),
           ),
           TextFormField(

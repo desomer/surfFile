@@ -14,6 +14,7 @@ import '../styles/style_editor_panel.dart';
 import 'shared/component_state_editor_host.dart';
 import 'shared/component_typography_controls.dart';
 import 'shared/editor_color_fields.dart';
+import 'shared/editor_segmented_field.dart';
 import 'shared/surface_quick_controls_section.dart';
 
 final _actionStateAdapter =
@@ -185,18 +186,28 @@ class _SuperActionEditor extends StatefulWidget {
 }
 
 class _SuperActionEditorState extends State<_SuperActionEditor>
-    implements ComponentLeafCapable<SuperActionConfig> {
-  final _form = GlobalKey<FormState>();
+    with ComponentLeafFormMixin<_SuperActionEditor, SuperActionConfig> {
   late SuperActionConfig _draft;
-  late final Map<String, TextEditingController> _fields;
-  SuperActionConfig? _lastPreview;
-  String? _liveError;
+
+  @override
+  String get settingKeyPrefix => 'super-action-setting';
+
+  @override
+  String get invalidConfigMessage => 'Réglages de l’action invalides.';
+
+  @override
+  ValueChanged<SuperActionConfig>? get onPreviewChangedCallback =>
+      widget.onPreviewChanged;
+
+  @override
+  SuperActionConfig Function(SuperActionConfig leaf)? get onSaveCallback =>
+      widget.onSave;
 
   @override
   void initState() {
     super.initState();
     _draft = widget.config;
-    _fields = {
+    fields = {
       'label': TextEditingController(text: _draft.label),
       'tooltip': TextEditingController(text: _draft.tooltip),
       'fontSize': TextEditingController(
@@ -238,65 +249,33 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
   }
 
   @override
-  void dispose() {
-    for (final field in _fields.values) {
-      field.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  SuperActionConfig? capture() {
-    if (!_form.currentState!.validate()) return null;
-    try {
-      return _configuration();
-    } on FormatException catch (e) {
-      setState(() => _liveError = e.message);
-    } on ArgumentError {
-      setState(() => _liveError = 'Réglages de l’action invalides.');
-    }
-    return null;
-  }
-
-  SuperActionConfig _configuration() {
-    double? number(
-      String key, {
-      bool allowZero = false,
-      bool allowNegative = false,
-    }) => parseEditorNumberField(
-      _fields[key]!.text,
-      allowZero: allowZero,
-      allowNegative: allowNegative,
-    );
-
-    Color? colorField(String key) => parseEditorColorHex(_fields[key]!.text);
-
+  SuperActionConfig buildConfiguration() {
     if (_draft.fontFamily != null &&
         !widget.availableFontFamilies.contains(_draft.fontFamily)) {
       throw const FormatException('Choisissez une police disponible.');
     }
 
-    final fontSize = number('fontSize');
-    final iconSize = number('iconSize');
-    final iconSpacing = number('iconSpacing', allowZero: true) ?? 8;
-    final letterSpacing = number(
+    final fontSize = numberField('fontSize');
+    final iconSize = numberField('iconSize');
+    final iconSpacing = numberField('iconSpacing', allowZero: true) ?? 8;
+    final letterSpacing = numberField(
       'letterSpacing',
       allowZero: true,
       allowNegative: true,
     );
-    final radius = number('radius', allowZero: true);
-    final borderWidth = number('borderWidth', allowZero: true);
-    final elevation = number('elevation', allowZero: true);
-    final horizontalPadding = number('horizontalPadding', allowZero: true);
-    final verticalPadding = number('verticalPadding', allowZero: true);
+    final radius = numberField('radius', allowZero: true);
+    final borderWidth = numberField('borderWidth', allowZero: true);
+    final elevation = numberField('elevation', allowZero: true);
+    final horizontalPadding = numberField('horizontalPadding', allowZero: true);
+    final verticalPadding = numberField('verticalPadding', allowZero: true);
     final color = colorField('color');
     final iconColor = colorField('iconColor');
     final backgroundColor = colorField('backgroundColor');
     final borderColor = colorField('borderColor');
 
-    final result = _draft.copyWith(
-      label: _fields['label']!.text,
-      tooltip: _fields['tooltip']!.text,
+    return _draft.copyWith(
+      label: fields['label']!.text,
+      tooltip: fields['tooltip']!.text,
       fontSize: fontSize,
       inheritFontSize: fontSize == null,
       iconSize: iconSize,
@@ -322,49 +301,8 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
       inheritHorizontalPadding: horizontalPadding == null,
       verticalPadding: verticalPadding,
       inheritVerticalPadding: verticalPadding == null,
-    );
-    result.validate();
-    return result;
+    )..validate();
   }
-
-  void _schedulePreview() {
-    if (widget.onPreviewChanged == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
-      try {
-        final config = _configuration();
-        if (_liveError != null) setState(() => _liveError = null);
-        if (_lastPreview != config) {
-          _lastPreview = config;
-          widget.onPreviewChanged!(config);
-        }
-      } on FormatException catch (error) {
-        if (_liveError != error.message) {
-          setState(() => _liveError = error.message);
-        }
-      } on ArgumentError {
-        const message = 'Réglages de l’action invalides.';
-        if (_liveError != message) setState(() => _liveError = message);
-      }
-    });
-  }
-
-  Widget _field(
-    String key,
-    String label, {
-    bool numeric = false,
-    bool allowZero = false,
-    bool allowNegative = false,
-    bool colorHex = false,
-  }) => buildEditorSettingTextField(
-    fieldKey: ValueKey('super-action-setting-$key'),
-    controller: _fields[key]!,
-    label: label,
-    numeric: numeric,
-    allowZero: allowZero,
-    allowNegative: allowNegative,
-    colorHex: colorHex,
-  );
 
   EditablePropertyBindingScope<SuperActionProperty> get _bindingScope =>
       EditablePropertyBindingScope<SuperActionProperty>(
@@ -390,7 +328,7 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
     required Color fallbackColor,
     required SuperActionProperty property,
   }) => BoundHexColorField(
-    controller: _fields[fieldKey]!,
+    controller: fields[fieldKey]!,
     label: label,
     fallbackColor: fallbackColor,
     pickerKey: ValueKey('super-action-color-picker-$fieldKey'),
@@ -403,11 +341,11 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
   Widget _preview(bool unavailable) {
     SuperActionConfig previewConfig;
     try {
-      previewConfig = _configuration();
+      previewConfig = buildConfiguration();
     } on Object {
       previewConfig = _draft.copyWith(
-        label: _fields['label']!.text,
-        tooltip: _fields['tooltip']!.text,
+        label: fields['label']!.text,
+        tooltip: fields['tooltip']!.text,
       );
     }
     final style = widget.textStyle.copyWith(
@@ -433,28 +371,9 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
     );
   }
 
-  bool _handleApply() {
-    if (_form.currentState != null && !_form.currentState!.validate()) {
-      return false;
-    }
-    SuperActionConfig result;
-    try {
-      final leaf = _configuration();
-      result = widget.onSave?.call(leaf) ?? leaf;
-    } on FormatException catch (e) {
-      setState(() => _liveError = e.message);
-      return false;
-    } on ArgumentError {
-      setState(() => _liveError = 'Combinaison de propriétés invalide.');
-      return false;
-    }
-    Navigator.of(context).pop(result);
-    return true;
-  }
-
   @override
   Widget build(BuildContext context) {
-    _schedulePreview();
+    schedulePreview();
     final fonts = widget.availableFontFamilies.toSet().toList();
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
@@ -466,11 +385,11 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
       initialTab: widget.initialTab,
       dimensionDelegate: delegate,
       onWidthChanged: widget.onWidthChanged,
-      liveError: _liveError,
+      liveError: liveError,
       liveErrorKey: const ValueKey('super-action-live-error'),
-      onApply: _handleApply,
+      onApply: handleApply,
       propertiesBuilder: (context, dense, onDenseChanged) => Form(
-        key: _form,
+        key: formKey,
         onChanged: () => setState(() {}),
         child: StyleEditorPanel(
           label: delegate?.editableLabel ?? 'Configurer l’action',
@@ -492,48 +411,11 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
               icon: Icons.smart_button_outlined,
               tag: 'kind · variant · label · icon',
               child: buildEditorFieldGroup([
-                const Text(
-                  'Type de bouton',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-                SegmentedButton<SuperActionKind>(
-                  key: const ValueKey('super-action-setting-kind'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: SuperActionKind.text,
-                      tooltip: 'Texte',
-                      icon: Icon(Icons.text_fields, size: 16),
-                      label: Text('Texte', overflow: TextOverflow.ellipsis),
-                    ),
-                    ButtonSegment(
-                      value: SuperActionKind.icon,
-                      tooltip: 'Icône',
-                      icon: Icon(Icons.interests_outlined, size: 16),
-                      label: Text('Icône', overflow: TextOverflow.ellipsis),
-                    ),
-                    ButtonSegment(
-                      value: SuperActionKind.textAndIcon,
-                      tooltip: 'Texte et icône',
-                      icon: Icon(Icons.smart_button_outlined, size: 16),
-                      label: Text(
-                        'Texte et icône',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                  selected: {_draft.kind},
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      setState(
-                        () => _draft = _draft.copyWith(kind: selected.first),
-                      );
-                    }
-                  },
+                EditorSegmentedField.actionKind(
+                  buttonKey: const ValueKey('super-action-setting-kind'),
+                  value: _draft.kind,
+                  onChanged: (kind) =>
+                      setState(() => _draft = _draft.copyWith(kind: kind)),
                 ),
                 DropdownButtonFormField<SuperActionVariant?>(
                   isExpanded: true,
@@ -588,7 +470,7 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
                   _withBinding(
                     SuperActionProperty.label,
                     'le libellé',
-                    _field('label', 'Libellé du bouton'),
+                    buildSettingField('label', 'Libellé du bouton'),
                   ),
                 if (_draft.kind.hasIcon)
                   _withBinding(
@@ -608,54 +490,20 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
                       ),
                     ),
                   ),
-                if (_draft.kind == SuperActionKind.textAndIcon) ...[
-                  const Text(
-                    'Position de l’icône',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  SegmentedButton<SuperActionIconPosition>(
-                    key: const ValueKey('super-action-setting-iconPosition'),
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                if (_draft.kind == SuperActionKind.textAndIcon)
+                  EditorSegmentedField.actionIconPosition(
+                    buttonKey: const ValueKey(
+                      'super-action-setting-iconPosition',
                     ),
-                    segments: const [
-                      ButtonSegment(
-                        value: SuperActionIconPosition.leading,
-                        tooltip: 'Début (avant le texte)',
-                        icon: Icon(Icons.first_page, size: 16),
-                        label: Text(
-                          'Début (avant le texte)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      ButtonSegment(
-                        value: SuperActionIconPosition.trailing,
-                        tooltip: 'Fin (après le texte)',
-                        icon: Icon(Icons.last_page, size: 16),
-                        label: Text(
-                          'Fin (après le texte)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                    selected: {_draft.iconPosition},
-                    onSelectionChanged: (selected) {
-                      if (selected.isNotEmpty) {
-                        setState(
-                          () => _draft = _draft.copyWith(
-                            iconPosition: selected.first,
-                          ),
-                        );
-                      }
-                    },
+                    value: _draft.iconPosition,
+                    onChanged: (pos) => setState(
+                      () => _draft = _draft.copyWith(iconPosition: pos),
+                    ),
                   ),
-                ],
                 _withBinding(
                   SuperActionProperty.tooltip,
                   'l’infobulle',
-                  _field('tooltip', 'Infobulle (tooltip)'),
+                  buildSettingField('tooltip', 'Infobulle (tooltip)'),
                 ),
               ]),
             ),
@@ -668,10 +516,9 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
                 _withBinding(
                   SuperActionProperty.enabled,
                   'l’activation',
-                  SwitchListTile(
-                    key: const ValueKey('super-action-setting-enabled'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Activé'),
+                  EditorSwitchTile(
+                    tileKey: const ValueKey('super-action-setting-enabled'),
+                    title: 'Activé',
                     value: _draft.enabled,
                     onChanged: (value) =>
                         setState(() => _draft = _draft.copyWith(enabled: value)),
@@ -684,99 +531,74 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
               title: 'Typographie et icône',
               icon: Icons.font_download_outlined,
               tag: 'TextStyle · Icon',
-              child: buildEditorFieldGroup([
-                if (unavailable)
-                  Text(
-                    'Police indisponible : ${_draft.fontFamily}. Choisissez une police disponible.',
-                    style: TextStyle(color: scheme.error),
-                  ),
-                _withBinding(
-                  SuperActionProperty.fontFamily,
-                  'la police',
-                  ComponentFontFamilyField(
-                    settingPrefix: 'super-action-setting',
-                    fontFamily: _draft.fontFamily,
-                    availableFontFamilies: fonts,
-                    onChanged: (font) => setState(
-                      () => _draft = _draft.copyWith(
-                        fontFamily: font,
-                        inheritFontFamily: font == null || font.isEmpty,
-                      ),
+              child: buildEditorFieldGroup(
+                buildComponentTypographyFields(
+                  context: context,
+                  settingPrefix: settingKeyPrefix,
+                  bindingScope: _bindingScope,
+                  availableFontFamilies: fonts,
+                  fontFamily: _draft.fontFamily,
+                  onFontFamilyChanged: (font) => setState(
+                    () => _draft = _draft.copyWith(
+                      fontFamily: font,
+                      inheritFontFamily: font == null || font.isEmpty,
                     ),
                   ),
-                ),
-                _withBinding(
-                  SuperActionProperty.fontSize,
-                  'la taille de police',
-                  _field(
+                  fontFamilyProperty: SuperActionProperty.fontFamily,
+                  fontSizeField: buildSettingField(
                     'fontSize',
                     'Taille de police (vide = thème)',
                     numeric: true,
                   ),
-                ),
-                _withBinding(
-                  SuperActionProperty.iconSize,
-                  'la taille de l’icône',
-                  _field(
-                    'iconSize',
-                    'Taille de l’icône (vide = thème)',
-                    numeric: true,
-                  ),
-                ),
-                if (_draft.kind == SuperActionKind.textAndIcon)
-                  _field(
-                    'iconSpacing',
-                    'Espacement icône / texte (px)',
-                    numeric: true,
-                    allowZero: true,
-                  ),
-                _withBinding(
-                  SuperActionProperty.fontWeight,
-                  'la graisse',
-                  ComponentFontWeightField(
-                    fontWeight: _draft.fontWeight,
-                    onChanged: (weight) => setState(
-                      () => _draft = _draft.copyWith(
-                        fontWeight: weight,
-                        inheritFontWeight: weight == null,
+                  fontSizeProperty: SuperActionProperty.fontSize,
+                  afterFontSize: [
+                    _withBinding(
+                      SuperActionProperty.iconSize,
+                      'la taille de l’icône',
+                      buildSettingField(
+                        'iconSize',
+                        'Taille de l’icône (vide = thème)',
+                        numeric: true,
                       ),
                     ),
-                  ),
-                ),
-                _withBinding(
-                  SuperActionProperty.italic,
-                  'le style italique',
-                  ComponentItalicSegmentField(
-                    settingPrefix: 'super-action-setting',
-                    italic: _draft.italic,
-                    onChanged: ({required italic, required inherit}) =>
-                        setState(
-                          () => _draft = _draft.copyWith(
-                            italic: italic,
-                            inheritItalic: inherit,
-                          ),
-                        ),
-                  ),
-                ),
-                _withBinding(
-                  SuperActionProperty.textAlign,
-                  'l’alignement',
-                  ComponentTextAlignSegmentField(
-                    settingPrefix: 'super-action-setting',
-                    textAlign: _draft.textAlign,
-                    onChanged: (align) => setState(
-                      () => _draft = _draft.copyWith(textAlign: align),
+                    if (_draft.kind == SuperActionKind.textAndIcon)
+                      buildSettingField(
+                        'iconSpacing',
+                        'Espacement icône / texte (px)',
+                        numeric: true,
+                        allowZero: true,
+                      ),
+                  ],
+                  fontWeight: _draft.fontWeight,
+                  onFontWeightChanged: (weight) => setState(
+                    () => _draft = _draft.copyWith(
+                      fontWeight: weight,
+                      inheritFontWeight: weight == null,
                     ),
                   ),
+                  fontWeightProperty: SuperActionProperty.fontWeight,
+                  italic: _draft.italic,
+                  onItalicChanged: ({required italic, required inherit}) =>
+                      setState(
+                        () => _draft = _draft.copyWith(
+                          italic: italic,
+                          inheritItalic: inherit,
+                        ),
+                      ),
+                  italicProperty: SuperActionProperty.italic,
+                  textAlign: _draft.textAlign,
+                  onTextAlignChanged: (align) =>
+                      setState(() => _draft = _draft.copyWith(textAlign: align)),
+                  textAlignProperty: SuperActionProperty.textAlign,
+                  letterSpacingField: buildSettingField(
+                    'letterSpacing',
+                    'Espacement des lettres (px)',
+                    numeric: true,
+                    allowZero: true,
+                    allowNegative: true,
+                  ),
                 ),
-                _field(
-                  'letterSpacing',
-                  'Espacement des lettres (px)',
-                  numeric: true,
-                  allowZero: true,
-                  allowNegative: true,
-                ),
-              ]),
+              ),
             ),
             StyleEditorSection(
               id: 'action-colors-shape',
@@ -811,7 +633,7 @@ class _SuperActionEditorState extends State<_SuperActionEditor>
                 ),
                 ...buildComponentBoxDimensionFields(
                   bindingScope: _bindingScope,
-                  buildField: _field,
+                  buildField: buildSettingField,
                   radiusProperty: SuperActionProperty.radius,
                   borderWidthProperty: SuperActionProperty.borderWidth,
                   elevationProperty: SuperActionProperty.elevation,

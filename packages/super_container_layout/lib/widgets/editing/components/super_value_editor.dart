@@ -20,6 +20,7 @@ import '../styles/style_editor_panel.dart';
 import 'shared/component_state_editor_host.dart';
 import 'shared/component_typography_controls.dart';
 import 'shared/editor_color_fields.dart';
+import 'shared/editor_segmented_field.dart';
 import 'super_text_field_settings.dart';
 
 final _valueStateAdapter =
@@ -953,119 +954,42 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                   icon: Icons.text_fields,
                   tag: 'kind · mode · initialText',
                   child: _group([
-                    const Text(
-                      'Type de valeur',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SegmentedButton<SuperValueKind>(
-                      key: const ValueKey('super-value-setting-kind'),
-                      showSelectedIcon: false,
-                      style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      segments: const [
-                        ButtonSegment(
-                          value: SuperValueKind.text,
-                          tooltip: 'Texte',
-                          icon: Icon(Icons.text_fields, size: 16),
-                          label: Text('Texte', overflow: TextOverflow.ellipsis),
-                        ),
-                        ButtonSegment(
-                          value: SuperValueKind.checkbox,
-                          tooltip: 'Case à cocher (Checkbox)',
-                          icon: Icon(Icons.check_box_outlined, size: 16),
-                          label: Text(
-                            'Case à cocher (Checkbox)',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        ButtonSegment(
-                          value: SuperValueKind.switchControl,
-                          tooltip: 'Interrupteur (Switch)',
-                          icon: Icon(Icons.toggle_on_outlined, size: 16),
-                          label: Text(
-                            'Interrupteur (Switch)',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                      selected: {_draft.kind},
-                      onSelectionChanged: (selected) {
-                        if (selected.isNotEmpty) {
-                          final kind = selected.first;
-                          setState(() {
-                            _draft = _draft.copyWith(
-                              kind: kind,
-                              obscureText: kind.isBoolean
-                                  ? false
-                                  : _draft.obscureText,
-                            );
-                            if (kind.isBoolean) {
-                              _fields['minLines']!.text = '1';
-                              _fields['maxLines']!.text = '1';
-                            }
-                          });
-                        }
-                      },
-                    ),
-                    const Text(
-                      'Mode',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SegmentedButton<SuperValueMode>(
-                      key: const ValueKey('super-value-setting-mode'),
-                      showSelectedIcon: false,
-                      style: const ButtonStyle(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      segments: const [
-                        ButtonSegment(
-                          value: SuperValueMode.display,
-                          tooltip: 'Affichage',
-                          icon: Icon(Icons.visibility_outlined, size: 16),
-                          label: Text(
-                            'Affichage',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        ButtonSegment(
-                          value: SuperValueMode.input,
-                          tooltip: 'Saisie',
-                          icon: Icon(Icons.edit_outlined, size: 16),
-                          label: Text(
-                            'Saisie',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                      selected: {_draft.mode},
-                      onSelectionChanged: (selected) {
-                        if (selected.isNotEmpty) {
-                          final mode = selected.first;
-                          setState(
-                            () => _draft = _draft.copyWith(
-                              mode: mode,
-                              obscureText: mode == SuperValueMode.display
-                                  ? false
-                                  : _draft.obscureText,
-                            ),
+                    EditorSegmentedField.valueKind(
+                      buttonKey: const ValueKey('super-value-setting-kind'),
+                      value: _draft.kind,
+                      onChanged: (kind) {
+                        setState(() {
+                          _draft = _draft.copyWith(
+                            kind: kind,
+                            obscureText: kind.isBoolean
+                                ? false
+                                : _draft.obscureText,
                           );
-                        }
+                          if (kind.isBoolean) {
+                            _fields['minLines']!.text = '1';
+                            _fields['maxLines']!.text = '1';
+                          }
+                        });
                       },
+                    ),
+                    EditorSegmentedField.valueMode(
+                      buttonKey: const ValueKey('super-value-setting-mode'),
+                      value: _draft.mode,
+                      onChanged: (mode) => setState(
+                        () => _draft = _draft.copyWith(
+                          mode: mode,
+                          obscureText: mode == SuperValueMode.display
+                              ? false
+                              : _draft.obscureText,
+                        ),
+                      ),
                     ),
                     if (_draft.kind.isBoolean && !_bound)
-                      SwitchListTile(
-                        key: const ValueKey('super-value-setting-initialBool'),
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Valeur initiale'),
+                      EditorSwitchTile(
+                        tileKey: const ValueKey(
+                          'super-value-setting-initialBool',
+                        ),
+                        title: 'Valeur initiale',
                         value: _draft.initialBool,
                         onChanged: (value) => setState(
                           () => _draft = _draft.copyWith(initialBool: value),
@@ -1161,67 +1085,45 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                   title: 'Typographie',
                   icon: Icons.font_download_outlined,
                   tag: 'TextStyle',
-                  child: _group([
-                    if (unavailable)
-                      Text(
-                        'Police indisponible : ${_draft.fontFamily}. Choisissez une police disponible.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                  child: _group(
+                    buildComponentTypographyFields(
+                      context: context,
+                      settingPrefix: 'super-value-setting',
+                      bindingScope: _bindingScope,
+                      availableFontFamilies: fonts,
+                      fontFamily: _draft.fontFamily,
+                      onFontFamilyChanged: (font) => setState(
+                        () => _draft = _draft.copyWith(
+                          fontFamily: font,
+                          inheritFontFamily: font == null || font.isEmpty,
                         ),
                       ),
-                    _withBinding(
-                      SuperValueProperty.fontFamily,
-                      'la police',
-                      ComponentFontFamilyField(
-                        settingPrefix: 'super-value-setting',
-                        fontFamily: _draft.fontFamily,
-                        availableFontFamilies: fonts,
-                        onChanged: (font) => setState(
-                          () => _draft = _draft.copyWith(
-                            fontFamily: font,
-                            inheritFontFamily: font == null || font.isEmpty,
-                          ),
-                        ),
-                      ),
-                    ),
-                    _withBinding(
-                      SuperValueProperty.fontSize,
-                      'la taille de police',
-                      _field(
+                      fontFamilyProperty: SuperValueProperty.fontFamily,
+                      fontSizeField: _field(
                         'fontSize',
                         'Taille de police (vide = thème)',
                         numeric: true,
                       ),
-                    ),
-                    _withBinding(
-                      SuperValueProperty.fontWeight,
-                      'la graisse',
-                      ComponentFontWeightField(
-                        fontWeight: _draft.fontWeight,
-                        onChanged: (weight) => setState(
-                          () => _draft = _draft.copyWith(
-                            fontWeight: weight,
-                            inheritFontWeight: weight == null,
-                          ),
+                      fontSizeProperty: SuperValueProperty.fontSize,
+                      fontWeight: _draft.fontWeight,
+                      onFontWeightChanged: (weight) => setState(
+                        () => _draft = _draft.copyWith(
+                          fontWeight: weight,
+                          inheritFontWeight: weight == null,
                         ),
                       ),
-                    ),
-                    _withBinding(
-                      SuperValueProperty.italic,
-                      'le style italique',
-                      ComponentItalicSegmentField(
-                        settingPrefix: 'super-value-setting',
-                        italic: _draft.italic,
-                        onChanged: ({required italic, required inherit}) =>
-                            setState(
-                              () => _draft = _draft.copyWith(
-                                italic: italic,
-                                inheritItalic: inherit,
-                              ),
+                      fontWeightProperty: SuperValueProperty.fontWeight,
+                      italic: _draft.italic,
+                      onItalicChanged: ({required italic, required inherit}) =>
+                          setState(
+                            () => _draft = _draft.copyWith(
+                              italic: italic,
+                              inheritItalic: inherit,
                             ),
-                      ),
+                          ),
+                      italicProperty: SuperValueProperty.italic,
                     ),
-                  ]),
+                  ),
                 ),
                 StyleEditorSection(
                   id: 'value-color',

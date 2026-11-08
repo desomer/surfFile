@@ -14,6 +14,7 @@ import '../styles/style_editor_panel.dart';
 import 'shared/component_state_editor_host.dart';
 import 'shared/component_typography_controls.dart';
 import 'shared/editor_color_fields.dart';
+import 'shared/editor_segmented_field.dart';
 import 'shared/surface_quick_controls_section.dart';
 
 final _indicatorStateAdapter =
@@ -201,18 +202,28 @@ class _SuperIndicatorEditor extends StatefulWidget {
 }
 
 class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
-    implements ComponentLeafCapable<SuperIndicatorConfig> {
-  final _form = GlobalKey<FormState>();
+    with ComponentLeafFormMixin<_SuperIndicatorEditor, SuperIndicatorConfig> {
   late SuperIndicatorConfig _draft;
-  late final Map<String, TextEditingController> _fields;
-  SuperIndicatorConfig? _lastPreview;
-  String? _liveError;
+
+  @override
+  String get settingKeyPrefix => 'super-indicator-setting';
+
+  @override
+  String get invalidConfigMessage => 'Réglages de l’indicateur invalides.';
+
+  @override
+  ValueChanged<SuperIndicatorConfig>? get onPreviewChangedCallback =>
+      widget.onPreviewChanged;
+
+  @override
+  SuperIndicatorConfig Function(SuperIndicatorConfig leaf)?
+  get onSaveCallback => widget.onSave;
 
   @override
   void initState() {
     super.initState();
     _draft = widget.config;
-    _fields = {
+    fields = {
       'label': TextEditingController(text: _draft.label),
       'tooltip': TextEditingController(text: _draft.tooltip),
       'fontSize': TextEditingController(
@@ -254,65 +265,33 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
   }
 
   @override
-  void dispose() {
-    for (final field in _fields.values) {
-      field.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  SuperIndicatorConfig? capture() {
-    if (!_form.currentState!.validate()) return null;
-    try {
-      return _configuration();
-    } on FormatException catch (e) {
-      setState(() => _liveError = e.message);
-    } on ArgumentError {
-      setState(() => _liveError = 'Réglages de l’indicateur invalides.');
-    }
-    return null;
-  }
-
-  SuperIndicatorConfig _configuration() {
-    double? number(
-      String key, {
-      bool allowZero = false,
-      bool allowNegative = false,
-    }) => parseEditorNumberField(
-      _fields[key]!.text,
-      allowZero: allowZero,
-      allowNegative: allowNegative,
-    );
-
-    Color? colorField(String key) => parseEditorColorHex(_fields[key]!.text);
-
+  SuperIndicatorConfig buildConfiguration() {
     if (_draft.fontFamily != null &&
         !widget.availableFontFamilies.contains(_draft.fontFamily)) {
       throw const FormatException('Choisissez une police disponible.');
     }
 
-    final fontSize = number('fontSize');
-    final iconSize = number('iconSize');
-    final iconSpacing = number('iconSpacing', allowZero: true) ?? 6;
-    final letterSpacing = number(
+    final fontSize = numberField('fontSize');
+    final iconSize = numberField('iconSize');
+    final iconSpacing = numberField('iconSpacing', allowZero: true) ?? 6;
+    final letterSpacing = numberField(
       'letterSpacing',
       allowZero: true,
       allowNegative: true,
     );
-    final radius = number('radius', allowZero: true);
-    final borderWidth = number('borderWidth', allowZero: true);
-    final elevation = number('elevation', allowZero: true);
-    final horizontalPadding = number('horizontalPadding', allowZero: true);
-    final verticalPadding = number('verticalPadding', allowZero: true);
+    final radius = numberField('radius', allowZero: true);
+    final borderWidth = numberField('borderWidth', allowZero: true);
+    final elevation = numberField('elevation', allowZero: true);
+    final horizontalPadding = numberField('horizontalPadding', allowZero: true);
+    final verticalPadding = numberField('verticalPadding', allowZero: true);
     final color = colorField('color');
     final iconColor = colorField('iconColor');
     final backgroundColor = colorField('backgroundColor');
     final borderColor = colorField('borderColor');
 
-    final result = _draft.copyWith(
-      label: _fields['label']!.text,
-      tooltip: _fields['tooltip']!.text,
+    return _draft.copyWith(
+      label: fields['label']!.text,
+      tooltip: fields['tooltip']!.text,
       fontSize: fontSize,
       inheritFontSize: fontSize == null,
       iconSize: iconSize,
@@ -338,49 +317,8 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
       inheritHorizontalPadding: horizontalPadding == null,
       verticalPadding: verticalPadding,
       inheritVerticalPadding: verticalPadding == null,
-    );
-    result.validate();
-    return result;
+    )..validate();
   }
-
-  void _schedulePreview() {
-    if (widget.onPreviewChanged == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
-      try {
-        final config = _configuration();
-        if (_liveError != null) setState(() => _liveError = null);
-        if (_lastPreview != config) {
-          _lastPreview = config;
-          widget.onPreviewChanged!(config);
-        }
-      } on FormatException catch (error) {
-        if (_liveError != error.message) {
-          setState(() => _liveError = error.message);
-        }
-      } on ArgumentError {
-        const message = 'Réglages de l’indicateur invalides.';
-        if (_liveError != message) setState(() => _liveError = message);
-      }
-    });
-  }
-
-  Widget _field(
-    String key,
-    String label, {
-    bool numeric = false,
-    bool allowZero = false,
-    bool allowNegative = false,
-    bool colorHex = false,
-  }) => buildEditorSettingTextField(
-    fieldKey: ValueKey('super-indicator-setting-$key'),
-    controller: _fields[key]!,
-    label: label,
-    numeric: numeric,
-    allowZero: allowZero,
-    allowNegative: allowNegative,
-    colorHex: colorHex,
-  );
 
   EditablePropertyBindingScope<SuperIndicatorProperty> get _bindingScope =>
       EditablePropertyBindingScope<SuperIndicatorProperty>(
@@ -406,7 +344,7 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
     required Color fallbackColor,
     required SuperIndicatorProperty property,
   }) => BoundHexColorField(
-    controller: _fields[fieldKey]!,
+    controller: fields[fieldKey]!,
     label: label,
     fallbackColor: fallbackColor,
     pickerKey: ValueKey('super-indicator-color-picker-$fieldKey'),
@@ -419,11 +357,11 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
   Widget _preview(bool unavailable) {
     SuperIndicatorConfig previewConfig;
     try {
-      previewConfig = _configuration();
+      previewConfig = buildConfiguration();
     } on Object {
       previewConfig = _draft.copyWith(
-        label: _fields['label']!.text,
-        tooltip: _fields['tooltip']!.text,
+        label: fields['label']!.text,
+        tooltip: fields['tooltip']!.text,
       );
     }
     final style = widget.textStyle.copyWith(
@@ -448,28 +386,9 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
     );
   }
 
-  bool _handleApply() {
-    if (_form.currentState != null && !_form.currentState!.validate()) {
-      return false;
-    }
-    SuperIndicatorConfig result;
-    try {
-      final leaf = _configuration();
-      result = widget.onSave?.call(leaf) ?? leaf;
-    } on FormatException catch (e) {
-      setState(() => _liveError = e.message);
-      return false;
-    } on ArgumentError {
-      setState(() => _liveError = 'Combinaison de propriétés invalide.');
-      return false;
-    }
-    Navigator.of(context).pop(result);
-    return true;
-  }
-
   @override
   Widget build(BuildContext context) {
-    _schedulePreview();
+    schedulePreview();
     final fonts = widget.availableFontFamilies.toSet().toList();
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
@@ -481,11 +400,11 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
       initialTab: widget.initialTab,
       dimensionDelegate: delegate,
       onWidthChanged: widget.onWidthChanged,
-      liveError: _liveError,
+      liveError: liveError,
       liveErrorKey: const ValueKey('super-indicator-live-error'),
-      onApply: _handleApply,
+      onApply: handleApply,
       propertiesBuilder: (context, dense, onDenseChanged) => Form(
-        key: _form,
+        key: formKey,
         onChanged: () => setState(() {}),
         child: StyleEditorPanel(
           label: delegate?.editableLabel ?? 'Configurer l’indicateur',
@@ -527,7 +446,7 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
                 _withBinding(
                   SuperIndicatorProperty.iconSize,
                   'la taille de l’icône',
-                  _field(
+                  buildSettingField(
                     'iconSize',
                     'Taille de l’icône (vide = 24 px)',
                     numeric: true,
@@ -536,51 +455,20 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
                 _withBinding(
                   SuperIndicatorProperty.label,
                   'le libellé',
-                  _field('label', 'Libellé optionnel (badge / statut)'),
-                ),
-                const Text(
-                  'Position de l’icône',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-                SegmentedButton<SuperIndicatorIconPosition>(
-                  key: const ValueKey('super-indicator-setting-iconPosition'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  buildSettingField(
+                    'label',
+                    'Libellé optionnel (badge / statut)',
                   ),
-                  segments: const [
-                    ButtonSegment(
-                      value: SuperIndicatorIconPosition.leading,
-                      tooltip: 'Début (avant le texte)',
-                      icon: Icon(Icons.first_page, size: 16),
-                      label: Text(
-                        'Début (avant le texte)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: SuperIndicatorIconPosition.trailing,
-                      tooltip: 'Fin (après le texte)',
-                      icon: Icon(Icons.last_page, size: 16),
-                      label: Text(
-                        'Fin (après le texte)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                  selected: {_draft.iconPosition},
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      setState(
-                        () => _draft = _draft.copyWith(
-                          iconPosition: selected.first,
-                        ),
-                      );
-                    }
-                  },
                 ),
-                _field(
+                EditorSegmentedField.indicatorIconPosition(
+                  buttonKey: const ValueKey(
+                    'super-indicator-setting-iconPosition',
+                  ),
+                  value: _draft.iconPosition,
+                  onChanged: (pos) =>
+                      setState(() => _draft = _draft.copyWith(iconPosition: pos)),
+                ),
+                buildSettingField(
                   'iconSpacing',
                   'Espacement icône / texte (px)',
                   numeric: true,
@@ -589,7 +477,7 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
                 _withBinding(
                   SuperIndicatorProperty.tooltip,
                   'l’infobulle',
-                  _field('tooltip', 'Infobulle (tooltip)'),
+                  buildSettingField('tooltip', 'Infobulle (tooltip)'),
                 ),
               ]),
             ),
@@ -602,10 +490,9 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
                 _withBinding(
                   SuperIndicatorProperty.enabled,
                   'l’activation',
-                  SwitchListTile(
-                    key: const ValueKey('super-indicator-setting-enabled'),
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Activé'),
+                  EditorSwitchTile(
+                    tileKey: const ValueKey('super-indicator-setting-enabled'),
+                    title: 'Activé',
                     value: _draft.enabled,
                     onChanged: (value) =>
                         setState(() => _draft = _draft.copyWith(enabled: value)),
@@ -645,7 +532,7 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
                 ),
                 ...buildComponentBoxDimensionFields(
                   bindingScope: _bindingScope,
-                  buildField: _field,
+                  buildField: buildSettingField,
                   radiusProperty: SuperIndicatorProperty.radius,
                   borderWidthProperty: SuperIndicatorProperty.borderWidth,
                   elevationProperty: SuperIndicatorProperty.elevation,
@@ -660,83 +547,56 @@ class _SuperIndicatorEditorState extends State<_SuperIndicatorEditor>
               title: 'Typographie et alignement',
               icon: Icons.font_download_outlined,
               tag: 'TextStyle · Align',
-              child: buildEditorFieldGroup([
-                if (unavailable)
-                  Text(
-                    'Police indisponible : ${_draft.fontFamily}. Choisissez une police disponible.',
-                    style: TextStyle(color: scheme.error),
-                  ),
-                _withBinding(
-                  SuperIndicatorProperty.fontFamily,
-                  'la police',
-                  ComponentFontFamilyField(
-                    settingPrefix: 'super-indicator-setting',
-                    fontFamily: _draft.fontFamily,
-                    availableFontFamilies: fonts,
-                    onChanged: (font) => setState(
-                      () => _draft = _draft.copyWith(
-                        fontFamily: font,
-                        inheritFontFamily: font == null || font.isEmpty,
-                      ),
+              child: buildEditorFieldGroup(
+                buildComponentTypographyFields(
+                  context: context,
+                  settingPrefix: settingKeyPrefix,
+                  bindingScope: _bindingScope,
+                  availableFontFamilies: fonts,
+                  fontFamily: _draft.fontFamily,
+                  onFontFamilyChanged: (font) => setState(
+                    () => _draft = _draft.copyWith(
+                      fontFamily: font,
+                      inheritFontFamily: font == null || font.isEmpty,
                     ),
                   ),
-                ),
-                _withBinding(
-                  SuperIndicatorProperty.fontSize,
-                  'la taille de police',
-                  _field(
+                  fontFamilyProperty: SuperIndicatorProperty.fontFamily,
+                  fontSizeField: buildSettingField(
                     'fontSize',
                     'Taille de police (vide = thème)',
                     numeric: true,
                   ),
-                ),
-                _withBinding(
-                  SuperIndicatorProperty.fontWeight,
-                  'la graisse',
-                  ComponentFontWeightField(
-                    fontWeight: _draft.fontWeight,
-                    onChanged: (weight) => setState(
-                      () => _draft = _draft.copyWith(
-                        fontWeight: weight,
-                        inheritFontWeight: weight == null,
-                      ),
+                  fontSizeProperty: SuperIndicatorProperty.fontSize,
+                  fontWeight: _draft.fontWeight,
+                  onFontWeightChanged: (weight) => setState(
+                    () => _draft = _draft.copyWith(
+                      fontWeight: weight,
+                      inheritFontWeight: weight == null,
                     ),
                   ),
-                ),
-                _withBinding(
-                  SuperIndicatorProperty.italic,
-                  'le style italique',
-                  ComponentItalicSegmentField(
-                    settingPrefix: 'super-indicator-setting',
-                    italic: _draft.italic,
-                    onChanged: ({required italic, required inherit}) =>
-                        setState(
-                          () => _draft = _draft.copyWith(
-                            italic: italic,
-                            inheritItalic: inherit,
-                          ),
+                  fontWeightProperty: SuperIndicatorProperty.fontWeight,
+                  italic: _draft.italic,
+                  onItalicChanged: ({required italic, required inherit}) =>
+                      setState(
+                        () => _draft = _draft.copyWith(
+                          italic: italic,
+                          inheritItalic: inherit,
                         ),
+                      ),
+                  italicProperty: SuperIndicatorProperty.italic,
+                  textAlign: _draft.textAlign,
+                  onTextAlignChanged: (align) =>
+                      setState(() => _draft = _draft.copyWith(textAlign: align)),
+                  textAlignProperty: SuperIndicatorProperty.textAlign,
+                  letterSpacingField: buildSettingField(
+                    'letterSpacing',
+                    'Espacement des lettres (px)',
+                    numeric: true,
+                    allowZero: true,
+                    allowNegative: true,
                   ),
                 ),
-                _withBinding(
-                  SuperIndicatorProperty.textAlign,
-                  'l’alignement',
-                  ComponentTextAlignSegmentField(
-                    settingPrefix: 'super-indicator-setting',
-                    textAlign: _draft.textAlign,
-                    onChanged: (align) => setState(
-                      () => _draft = _draft.copyWith(textAlign: align),
-                    ),
-                  ),
-                ),
-                _field(
-                  'letterSpacing',
-                  'Espacement des lettres (px)',
-                  numeric: true,
-                  allowZero: true,
-                  allowNegative: true,
-                ),
-              ]),
+              ),
             ),
             buildSurfaceQuickControlsSection(
               sectionId: 'indicator-surface',

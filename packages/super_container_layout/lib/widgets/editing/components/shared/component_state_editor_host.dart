@@ -15,6 +15,7 @@ import '../../dialogs/editor_dialog.dart';
 import '../../dialogs/editor_tabbed_wizard.dart';
 import '../../states/editor_state_controls.dart';
 import '../../styles/style_editor_panel.dart';
+import 'editor_color_fields.dart';
 
 /// Contrat implémenté par l'`State` d'un éditeur feuille pour permettre à
 /// [ComponentStateEditorHost] de capturer la saisie courante avant un
@@ -23,6 +24,143 @@ abstract interface class ComponentLeafCapable<TConfig extends Object> {
   /// Valide et retourne la configuration unitaire courante, ou `null` si la
   /// saisie contient une erreur.
   TConfig? capture();
+}
+
+/// Mixin mutualisant la gestion du formulaire (`FormState`), des contrôleurs de
+/// champs (`fields`), de la capture (`capture`), de l'aperçu temps réel
+/// (`schedulePreview`) et de la validation finale (`handleApply`) pour les
+/// éditeurs feuilles (`SuperAction`, `SuperIndicator`, `SuperSeparator`).
+mixin ComponentLeafFormMixin<
+  TWidget extends StatefulWidget,
+  TConfig extends Object
+>
+    on State<TWidget>
+    implements ComponentLeafCapable<TConfig> {
+  /// Clé du formulaire principal de l'onglet « Propriétés ».
+  final formKey = GlobalKey<FormState>();
+
+  /// Contrôleurs de saisie indexés par nom de champ.
+  late final Map<String, TextEditingController> fields;
+
+  TConfig? _lastPreview;
+
+  /// Message d'erreur de validation affiché en temps réel dans la barre d'actions.
+  String? liveError;
+
+  /// Préfixe de clé des champs de réglage (ex: `'super-action-setting'`).
+  String get settingKeyPrefix;
+
+  /// Message d'erreur générique affiché lorsqu'un `ArgumentError` survient.
+  String get invalidConfigMessage;
+
+  /// Callback d'aperçu temps réel fourni par le widget parent.
+  ValueChanged<TConfig>? get onPreviewChangedCallback;
+
+  /// Callback de transformation/sauvegarde de la feuille fourni par l'hôte d'état.
+  TConfig Function(TConfig leaf)? get onSaveCallback;
+
+  /// Assemble et valide l'instance `TConfig` courante à partir de [fields] et
+  /// du brouillon de l'éditeur.
+  TConfig buildConfiguration();
+
+  @override
+  void dispose() {
+    for (final controller in fields.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  /// Lit un nombre décimal optionnel depuis `fields[key]`.
+  double? numberField(
+    String key, {
+    bool allowZero = false,
+    bool allowNegative = false,
+  }) => parseEditorNumberField(
+    fields[key]!.text,
+    allowZero: allowZero,
+    allowNegative: allowNegative,
+  );
+
+  /// Lit une couleur hexadécimale `AARRGGBB` optionnelle depuis `fields[key]`.
+  Color? colorField(String key) => parseEditorColorHex(fields[key]!.text);
+
+  /// Construit un [TextFormField] standard relié à `fields[key]`.
+  Widget buildSettingField(
+    String key,
+    String label, {
+    bool numeric = false,
+    bool allowZero = false,
+    bool allowNegative = false,
+    bool colorHex = false,
+  }) => buildEditorSettingTextField(
+    fieldKey: ValueKey('$settingKeyPrefix-$key'),
+    controller: fields[key]!,
+    label: label,
+    numeric: numeric,
+    allowZero: allowZero,
+    allowNegative: allowNegative,
+    colorHex: colorHex,
+  );
+
+  @override
+  TConfig? capture() {
+    if (!formKey.currentState!.validate()) return null;
+    try {
+      return buildConfiguration();
+    } on FormatException catch (e) {
+      setState(() => liveError = e.message);
+    } on ArgumentError {
+      setState(() => liveError = invalidConfigMessage);
+    }
+    return null;
+  }
+
+  /// Planifie la mise à jour de l'aperçu après le rendu de la frame courante.
+  void schedulePreview() {
+    final callback = onPreviewChangedCallback;
+    if (callback == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
+      try {
+        final config = buildConfiguration();
+        if (liveError != null) setState(() => liveError = null);
+        if (_lastPreview != config) {
+          _lastPreview = config;
+          callback(config);
+        }
+      } on FormatException catch (error) {
+        if (liveError != error.message) {
+          setState(() => liveError = error.message);
+        }
+      } on ArgumentError {
+        final message = invalidConfigMessage;
+        if (liveError != message) setState(() => liveError = message);
+      }
+    });
+  }
+
+  /// Valide le formulaire, construit la configuration finale et ferme le dialogue.
+  bool handleApply() {
+    if (formKey.currentState != null && !formKey.currentState!.validate()) {
+      return false;
+    }
+    TConfig result;
+    try {
+      final leaf = buildConfiguration();
+      result = onSaveCallback?.call(leaf) ?? leaf;
+    } on FormatException catch (e) {
+      setState(() => liveError = e.message);
+      return false;
+    } on ArgumentError {
+      setState(
+        () => liveError = 'Combinaison de propriétés invalide.',
+      );
+      return false;
+    }
+    Navigator.of(context).pop(result);
+    return true;
+  }
 }
 
 /// Adaptateur typé décrivant les opérations de lecture/écriture des états

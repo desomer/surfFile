@@ -16,38 +16,9 @@ import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../styles/container_style_editor.dart';
 import '../styles/style_editor_panel.dart';
+import 'shared/collection_editor_controls.dart';
 import 'shared/editor_color_fields.dart';
-
-Widget _buildTabBarPositionSegment({
-  required Key key,
-  required SuperTabBarPosition value,
-  required ValueChanged<SuperTabBarPosition> onChanged,
-}) => SegmentedButton<SuperTabBarPosition>(
-  key: key,
-  showSelectedIcon: false,
-  style: const ButtonStyle(
-    visualDensity: VisualDensity.compact,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  ),
-  segments: const [
-    ButtonSegment(
-      value: SuperTabBarPosition.top,
-      tooltip: 'En haut',
-      icon: Icon(Icons.vertical_align_top, size: 16),
-      label: Text('En haut', overflow: TextOverflow.ellipsis),
-    ),
-    ButtonSegment(
-      value: SuperTabBarPosition.bottom,
-      tooltip: 'En bas',
-      icon: Icon(Icons.vertical_align_bottom, size: 16),
-      label: Text('En bas', overflow: TextOverflow.ellipsis),
-    ),
-  ],
-  selected: {value},
-  onSelectionChanged: (selected) {
-    if (selected.isNotEmpty) onChanged(selected.first);
-  },
-);
+import 'shared/editor_segmented_field.dart';
 
 /// Ouvre la fenêtre simple des propriétés générales d'un composant [SuperTab]
 /// (utilisée sur le menu contextuel du composant `Tab` et de ses zones de contenu).
@@ -169,105 +140,61 @@ class _SuperTabSimpleEditorState extends State<_SuperTabSimpleEditor> {
       onApply: _apply,
       onCancel: () => Navigator.of(context).pop(),
       propertiesContentBuilder: (context) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 12,
+        children: [
+          EditorSegmentedField.tabMode(
+            buttonKey: const ValueKey('super-tab-mode'),
             spacing: 12,
-            children: [
-              const Text(
-                'Mode des onglets',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            value: _draft.mode,
+            onChanged: (mode) =>
+                setState(() => _draft = _draft.copyWith(mode: mode)),
+          ),
+          EditorSegmentedField.tabBarPosition(
+            buttonKey: const ValueKey('super-tab-position'),
+            spacing: 12,
+            value: _draft.tabBarPosition,
+            onChanged: (pos) =>
+                setState(() => _draft = _draft.copyWith(tabBarPosition: pos)),
+          ),
+          EditorSwitchTile(
+            tileKey: const ValueKey('super-tab-scrollable'),
+            title: 'Onglets défilables',
+            subtitle:
+                'Défilement horizontal au lieu d’étirer sur toute la largeur',
+            value: _draft.isScrollable,
+            onChanged: (value) =>
+                setState(() => _draft = _draft.copyWith(isScrollable: value)),
+          ),
+          TextFormField(
+            key: const ValueKey('super-tab-initial-index'),
+            controller: _initialIndex,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Index d’onglet initial',
+            ),
+          ),
+          if (isDynamic) ...[
+            ...buildCollectionMutationSwitches(
+              keyPrefix: 'super-tab',
+              allowAdd: _draft.allowAdd,
+              onAllowAddChanged: (value) =>
+                  setState(() => _draft = _draft.copyWith(allowAdd: value)),
+              allowRemove: _draft.allowRemove,
+              onAllowRemoveChanged: (value) =>
+                  setState(() => _draft = _draft.copyWith(allowRemove: value)),
+              addTitle: 'Autoriser l’ajout d’onglet',
+              removeTitle: 'Autoriser la suppression d’onglet',
+            ),
+            TextFormField(
+              key: const ValueKey('super-tab-empty-text'),
+              controller: _emptyText,
+              decoration: const InputDecoration(
+                labelText: 'Message si aucun onglet',
               ),
-              SegmentedButton<SuperTabMode>(
-                key: const ValueKey('super-tab-mode'),
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                segments: const [
-                  ButtonSegment(
-                    value: SuperTabMode.static,
-                    tooltip: 'Statique (onglets fixes)',
-                    icon: Icon(Icons.tab, size: 16),
-                    label: Text(
-                      'Statique (onglets fixes)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  ButtonSegment(
-                    value: SuperTabMode.dynamic,
-                    tooltip: 'Dynamique (tableau JSON du repository)',
-                    icon: Icon(Icons.dynamic_feed, size: 16),
-                    label: Text(
-                      'Dynamique (tableau JSON du repository)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-                selected: {_draft.mode},
-                onSelectionChanged: (selected) {
-                  if (selected.isNotEmpty) {
-                    setState(
-                      () => _draft = _draft.copyWith(mode: selected.first),
-                    );
-                  }
-                },
-              ),
-              const Text(
-                'Position de la barre d’onglets',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-              ),
-              _buildTabBarPositionSegment(
-                key: const ValueKey('super-tab-position'),
-                value: _draft.tabBarPosition,
-                onChanged: (pos) =>
-                    setState(() => _draft = _draft.copyWith(tabBarPosition: pos)),
-              ),
-              SwitchListTile(
-                key: const ValueKey('super-tab-scrollable'),
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Onglets défilables'),
-                subtitle: const Text(
-                  'Défilement horizontal au lieu d’étirer sur toute la largeur',
-                ),
-                value: _draft.isScrollable,
-                onChanged: (value) =>
-                    setState(() => _draft = _draft.copyWith(isScrollable: value)),
-              ),
-              TextFormField(
-                key: const ValueKey('super-tab-initial-index'),
-                controller: _initialIndex,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Index d’onglet initial',
-                ),
-              ),
-              if (isDynamic) ...[
-                SwitchListTile(
-                  key: const ValueKey('super-tab-allow-add'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Autoriser l’ajout d’onglet'),
-                  value: _draft.allowAdd,
-                  onChanged: (value) =>
-                      setState(() => _draft = _draft.copyWith(allowAdd: value)),
-                ),
-                SwitchListTile(
-                  key: const ValueKey('super-tab-allow-remove'),
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('Autoriser la suppression d’onglet'),
-                  value: _draft.allowRemove,
-                  onChanged: (value) => setState(
-                    () => _draft = _draft.copyWith(allowRemove: value),
-                  ),
-                ),
-                TextFormField(
-                  key: const ValueKey('super-tab-empty-text'),
-                  controller: _emptyText,
-                  decoration: const InputDecoration(
-                    labelText: 'Message si aucun onglet',
-                  ),
-                ),
-              ],
+            ),
+          ],
               const Divider(),
               Text(
                 isDynamic
@@ -395,22 +322,17 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 10,
           children: [
-            const Text(
-              'Position de la barre d’onglets',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            _buildTabBarPositionSegment(
-              key: const ValueKey('super-tab-bar-position'),
+            EditorSegmentedField.tabBarPosition(
+              buttonKey: const ValueKey('super-tab-bar-position'),
+              spacing: 10,
               value: _draft.tabBarPosition,
               onChanged: (pos) => _update(_draft.copyWith(tabBarPosition: pos)),
             ),
-            SwitchListTile(
-              key: const ValueKey('super-tab-bar-scrollable'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Onglets défilables'),
-              subtitle: const Text(
-                'Défilement horizontal au lieu d’étirer sur toute la largeur',
-              ),
+            EditorSwitchTile(
+              tileKey: const ValueKey('super-tab-bar-scrollable'),
+              title: 'Onglets défilables',
+              subtitle:
+                  'Défilement horizontal au lieu d’étirer sur toute la largeur',
               value: _draft.isScrollable,
               onChanged: (value) => _update(
                 _draft.copyWith(
@@ -420,89 +342,57 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
                 ),
               ),
             ),
-            const Text(
-              'Alignement des onglets',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            SegmentedButton<TabAlignment?>(
-              key: const ValueKey('super-tab-alignment'),
-              showSelectedIcon: false,
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              segments: [
-                const ButtonSegment<TabAlignment?>(
+            EditorSegmentedField<TabAlignment?>(
+              buttonKey: const ValueKey('super-tab-alignment'),
+              label: 'Alignement des onglets',
+              spacing: 10,
+              value: _draft.tabAlignment,
+              options: [
+                const EditorSegmentOption<TabAlignment?>(
                   value: null,
-                  tooltip: 'Automatique',
-                  icon: Flexible(
-                    flex: 0,
-                    child: Icon(Icons.hdr_auto_outlined, size: 14),
-                  ),
-                  label: Text('Automatique', overflow: TextOverflow.ellipsis),
+                  label: 'Automatique',
+                  icon: Icons.hdr_auto_outlined,
+                  iconSize: 14,
+                  flexibleIcon: true,
                 ),
                 if (!_draft.isScrollable)
-                  const ButtonSegment<TabAlignment?>(
+                  const EditorSegmentOption<TabAlignment?>(
                     value: TabAlignment.fill,
-                    tooltip: 'Étirer (fill)',
-                    icon: Flexible(
-                      flex: 0,
-                      child: Icon(Icons.format_align_justify, size: 14),
-                    ),
-                    label: Text(
-                      'Étirer (fill)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: 'Étirer (fill)',
+                    icon: Icons.format_align_justify,
+                    iconSize: 14,
+                    flexibleIcon: true,
                   ),
                 if (_draft.isScrollable) ...const [
-                  ButtonSegment<TabAlignment?>(
+                  EditorSegmentOption<TabAlignment?>(
                     value: TabAlignment.start,
-                    tooltip: 'Début (start)',
-                    icon: Flexible(
-                      flex: 0,
-                      child: Icon(Icons.format_align_left, size: 14),
-                    ),
-                    label: Text(
-                      'Début (start)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: 'Début (start)',
+                    icon: Icons.format_align_left,
+                    iconSize: 14,
+                    flexibleIcon: true,
                   ),
-                  ButtonSegment<TabAlignment?>(
+                  EditorSegmentOption<TabAlignment?>(
                     value: TabAlignment.startOffset,
-                    tooltip: 'Début décalé (startOffset)',
-                    icon: Flexible(
-                      flex: 0,
-                      child: Icon(Icons.format_indent_increase, size: 14),
-                    ),
-                    label: Text(
-                      'Début décalé (startOffset)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: 'Début décalé (startOffset)',
+                    icon: Icons.format_indent_increase,
+                    iconSize: 14,
+                    flexibleIcon: true,
                   ),
                 ],
-                const ButtonSegment<TabAlignment?>(
+                const EditorSegmentOption<TabAlignment?>(
                   value: TabAlignment.center,
-                  tooltip: 'Centré (center)',
-                  icon: Flexible(
-                    flex: 0,
-                    child: Icon(Icons.format_align_center, size: 14),
-                  ),
-                  label: Text(
-                    'Centré (center)',
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  label: 'Centré (center)',
+                  icon: Icons.format_align_center,
+                  iconSize: 14,
+                  flexibleIcon: true,
                 ),
               ],
-              selected: {_draft.tabAlignment},
-              onSelectionChanged: (selected) {
-                final alignment = selected.first;
-                _update(
-                  _draft.copyWith(
-                    tabAlignment: alignment,
-                    clearTabAlignment: alignment == null,
-                  ),
-                );
-              },
+              onChanged: (alignment) => _update(
+                _draft.copyWith(
+                  tabAlignment: alignment,
+                  clearTabAlignment: alignment == null,
+                ),
+              ),
             ),
             StyleSliderField(
               label: 'Espacement horizontal des onglets',
@@ -537,91 +427,32 @@ class _SuperTabBarStyleEditorState extends State<_SuperTabBarStyleEditor> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 10,
           children: [
-            const Text(
-              'Style de l’indicateur',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-            ),
-            SegmentedButton<SuperTabIndicatorKind>(
-              key: const ValueKey('super-tab-indicator-kind'),
-              showSelectedIcon: false,
-              style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              segments: const [
-                ButtonSegment(
-                  value: SuperTabIndicatorKind.underline,
-                  tooltip: 'Soulignement (Underline)',
-                  icon: Icon(Icons.horizontal_rule, size: 16),
-                  label: Text(
-                    'Soulignement (Underline)',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                ButtonSegment(
-                  value: SuperTabIndicatorKind.box,
-                  tooltip: 'Pilule / Boîte remplie (Box)',
-                  icon: Icon(Icons.check_box_outline_blank, size: 16),
-                  label: Text(
-                    'Pilule / Boîte remplie (Box)',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                ButtonSegment(
-                  value: SuperTabIndicatorKind.none,
-                  tooltip: 'Aucun indicateur',
-                  icon: Icon(Icons.block, size: 16),
-                  label: Text(
-                    'Aucun indicateur',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-              selected: {_draft.indicatorKind},
-              onSelectionChanged: (selected) {
-                if (selected.isNotEmpty) {
-                  _update(_draft.copyWith(indicatorKind: selected.first));
-                }
-              },
+            EditorSegmentedField.tabIndicatorKind(
+              buttonKey: const ValueKey('super-tab-indicator-kind'),
+              spacing: 10,
+              value: _draft.indicatorKind,
+              onChanged: (kind) => _update(_draft.copyWith(indicatorKind: kind)),
             ),
             if (_draft.indicatorKind != SuperTabIndicatorKind.none) ...[
-              const Text(
-                'Largeur de l’indicateur',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-              ),
-              SegmentedButton<TabBarIndicatorSize>(
-                key: const ValueKey('super-tab-indicator-size'),
-                showSelectedIcon: false,
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                segments: const [
-                  ButtonSegment(
+              EditorSegmentedField<TabBarIndicatorSize>(
+                buttonKey: const ValueKey('super-tab-indicator-size'),
+                label: 'Largeur de l’indicateur',
+                spacing: 10,
+                value: _draft.indicatorSize,
+                options: const [
+                  EditorSegmentOption(
                     value: TabBarIndicatorSize.tab,
-                    tooltip: 'Toute la largeur de l’onglet (tab)',
-                    icon: Icon(Icons.swap_horiz, size: 16),
-                    label: Text(
-                      'Toute la largeur de l’onglet (tab)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: 'Toute la largeur de l’onglet (tab)',
+                    icon: Icons.swap_horiz,
                   ),
-                  ButtonSegment(
+                  EditorSegmentOption(
                     value: TabBarIndicatorSize.label,
-                    tooltip: 'Largeur du contenu (label)',
-                    icon: Icon(Icons.text_fields, size: 16),
-                    label: Text(
-                      'Largeur du contenu (label)',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    label: 'Largeur du contenu (label)',
+                    icon: Icons.text_fields,
                   ),
                 ],
-                selected: {_draft.indicatorSize},
-                onSelectionChanged: (selected) {
-                  if (selected.isNotEmpty) {
-                    _update(_draft.copyWith(indicatorSize: selected.first));
-                  }
-                },
+                onChanged: (size) =>
+                    _update(_draft.copyWith(indicatorSize: size)),
               ),
               ThemeResetColorTile(
                 label: 'Couleur de l’indicateur',

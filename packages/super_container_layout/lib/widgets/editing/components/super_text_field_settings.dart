@@ -7,6 +7,8 @@ import '../../../models/super_text_field_config.dart';
 import '../icons/material_icon_picker.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../styles/style_editor_panel.dart';
+import 'shared/editor_color_fields.dart';
+import 'shared/editor_segmented_field.dart';
 
 /// Keeps incomplete numeric/regex drafts out of the live preview.
 class SuperTextFieldSettings extends StatefulWidget {
@@ -104,11 +106,6 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
     super.dispose();
   }
 
-  static const _compactSegmentStyle = ButtonStyle(
-    visualDensity: VisualDensity.compact,
-    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  );
-
   static IconData _choiceIcon(String key, String value) =>
       switch ((key, value)) {
         (_, '') => Icons.hdr_auto_outlined,
@@ -149,54 +146,29 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
     final totalOptions = values.length + (nullable ? 1 : 0);
     final current = _values[key] as String? ?? '';
     if (totalOptions <= 5) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 4,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-          ),
-          SegmentedButton<String>(
-            key: ValueKey('text-field-setting-$key-${_values[key]}'),
-            showSelectedIcon: false,
-            style: _compactSegmentStyle,
-            segments: [
-              if (nullable)
-                ButtonSegment<String>(
-                  value: '',
-                  tooltip: 'Thème / aucune',
-                  icon: Flexible(
-                    flex: 0,
-                    child: Icon(_choiceIcon(key, ''), size: 14),
-                  ),
-                  label: const Text(
-                    'Thème / aucune',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              for (final value in values)
-                ButtonSegment<String>(
-                  value: value.name,
-                  tooltip: labels[value.name] ?? value.name,
-                  icon: Flexible(
-                    flex: 0,
-                    child: Icon(_choiceIcon(key, value.name), size: 14),
-                  ),
-                  label: Text(
-                    labels[value.name] ?? value.name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            selected: {current},
-            onSelectionChanged: (selected) {
-              if (selected.isEmpty) return;
-              final next = selected.first;
-              _update(key, next == '' ? null : next);
-            },
-          ),
+      return EditorSegmentedField<String>(
+        buttonKey: ValueKey('text-field-setting-$key-${_values[key]}'),
+        label: label,
+        value: current,
+        options: [
+          if (nullable)
+            EditorSegmentOption<String>(
+              value: '',
+              label: 'Thème / aucune',
+              icon: _choiceIcon(key, ''),
+              iconSize: 14,
+              flexibleIcon: true,
+            ),
+          for (final value in values)
+            EditorSegmentOption<String>(
+              value: value.name,
+              label: labels[value.name] ?? value.name,
+              icon: _choiceIcon(key, value.name),
+              iconSize: 14,
+              flexibleIcon: true,
+            ),
         ],
+        onChanged: (next) => _update(key, next == '' ? null : next),
       );
     }
     return DropdownButtonFormField<String>(
@@ -228,10 +200,9 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
         onChanged: (_) => _update(key, _fields[key]!.text),
       );
 
-  Widget _switch(String key, String label) => SwitchListTile(
-    key: ValueKey('text-field-setting-$key'),
-    contentPadding: EdgeInsets.zero,
-    title: Text(label),
+  Widget _switch(String key, String label) => EditorSwitchTile(
+    tileKey: ValueKey('text-field-setting-$key'),
+    title: label,
     value: _values[key] == true,
     onChanged: (value) => _update(key, value),
   );
@@ -259,15 +230,7 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
     );
   }
 
-  Widget _group(List<Widget> children) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      for (var i = 0; i < children.length; i++) ...[
-        if (i > 0) const SizedBox(height: 12),
-        children[i],
-      ],
-    ],
-  );
+  Widget _group(List<Widget> children) => buildEditorFieldGroup(children);
 
   @override
   Widget build(BuildContext context) => widget.builder([
@@ -306,49 +269,36 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
           'Marge interne verticale (vide = thème)',
           numeric: true,
         ),
-        const Text(
-          'Densité',
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-        ),
-        SegmentedButton<String>(
-          key: ValueKey('text-field-setting-dense-${_values['dense']}'),
-          showSelectedIcon: false,
-          style: _compactSegmentStyle,
-          segments: const [
-            ButtonSegment(
+        EditorSegmentedField<String>(
+          buttonKey: ValueKey('text-field-setting-dense-${_values['dense']}'),
+          label: 'Densité',
+          spacing: 12,
+          value: _values['dense']?.toString() ?? '',
+          options: const [
+            EditorSegmentOption(
               value: '',
-              tooltip: 'Par défaut',
-              icon: Flexible(
-                flex: 0,
-                child: Icon(Icons.hdr_auto_outlined, size: 14),
-              ),
-              label: Text('Par défaut', overflow: TextOverflow.ellipsis),
+              label: 'Par défaut',
+              icon: Icons.hdr_auto_outlined,
+              iconSize: 14,
+              flexibleIcon: true,
             ),
-            ButtonSegment(
+            EditorSegmentOption(
               value: 'true',
-              tooltip: 'Dense',
-              icon: Flexible(
-                flex: 0,
-                child: Icon(Icons.density_small, size: 14),
-              ),
-              label: Text('Dense', overflow: TextOverflow.ellipsis),
+              label: 'Dense',
+              icon: Icons.density_small,
+              iconSize: 14,
+              flexibleIcon: true,
             ),
-            ButtonSegment(
+            EditorSegmentOption(
               value: 'false',
-              tooltip: 'Confortable',
-              icon: Flexible(
-                flex: 0,
-                child: Icon(Icons.density_medium, size: 14),
-              ),
-              label: Text('Confortable', overflow: TextOverflow.ellipsis),
+              label: 'Confortable',
+              icon: Icons.density_medium,
+              iconSize: 14,
+              flexibleIcon: true,
             ),
           ],
-          selected: {_values['dense']?.toString() ?? ''},
-          onSelectionChanged: (selected) {
-            if (selected.isEmpty) return;
-            final value = selected.first;
-            _update('dense', value == '' ? null : value == 'true');
-          },
+          onChanged: (value) =>
+              _update('dense', value == '' ? null : value == 'true'),
         ),
       ]),
     ),

@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/super_value_config.dart';
+import '../../components/shared/editor_segmented_field.dart';
 import '../../components/super_value_editor.dart';
 import 'add_form_common.dart';
 
@@ -47,87 +48,39 @@ class _SuperValueAddFormState extends State<SuperValueAddForm>
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SegmentedButton<SuperValueKind>(
-            key: const ValueKey('add-value-kind'),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          EditorSegmentedField.valueKind(
+            buttonKey: const ValueKey('add-value-kind'),
+            label: null,
+            shortLabels: true,
+            value: draft.kind,
+            onChanged: (kind) => widget.onChanged(
+              draft.copyWith(
+                kind: kind,
+                obscureText: kind.isBoolean ? false : draft.obscureText,
+                minLines: kind.isBoolean ? 1 : draft.minLines,
+                maxLines: kind.isBoolean ? 1 : draft.maxLines,
+              ),
             ),
-            segments: const [
-              ButtonSegment(
-                value: SuperValueKind.text,
-                tooltip: 'Texte',
-                icon: Icon(Icons.text_fields, size: 16),
-                label: Text('Texte'),
-              ),
-              ButtonSegment(
-                value: SuperValueKind.checkbox,
-                tooltip: 'Checkbox',
-                icon: Icon(Icons.check_box_outlined, size: 16),
-                label: Text('Checkbox'),
-              ),
-              ButtonSegment(
-                value: SuperValueKind.switchControl,
-                tooltip: 'Switch',
-                icon: Icon(Icons.toggle_on_outlined, size: 16),
-                label: Text('Switch'),
-              ),
-            ],
-            selected: {draft.kind},
-            onSelectionChanged: (value) {
-              final kind = value.single;
-              widget.onChanged(
-                draft.copyWith(
-                  kind: kind,
-                  obscureText: kind.isBoolean ? false : draft.obscureText,
-                  minLines: kind.isBoolean ? 1 : draft.minLines,
-                  maxLines: kind.isBoolean ? 1 : draft.maxLines,
-                ),
-              );
-            },
           ),
           const SizedBox(height: 8),
-          SegmentedButton<SuperValueMode>(
-            key: const ValueKey('add-value-mode'),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          EditorSegmentedField.valueMode(
+            buttonKey: const ValueKey('add-value-mode'),
+            label: null,
+            value: draft.mode,
+            onChanged: (mode) => widget.onChanged(
+              draft.copyWith(
+                mode: mode,
+                obscureText: mode == SuperValueMode.display
+                    ? false
+                    : draft.obscureText,
+              ),
             ),
-            segments: const [
-              ButtonSegment(
-                value: SuperValueMode.display,
-                tooltip: 'Affichage',
-                icon: Icon(Icons.visibility_outlined, size: 16),
-                label: Text('Affichage'),
-              ),
-              ButtonSegment(
-                value: SuperValueMode.input,
-                tooltip: 'Saisie',
-                icon: Icon(Icons.edit_outlined, size: 16),
-                label: Text('Saisie'),
-              ),
-            ],
-            selected: {draft.mode},
-            onSelectionChanged: (value) {
-              final mode = value.single;
-              widget.onChanged(
-                draft.copyWith(
-                  mode: mode,
-                  obscureText: mode == SuperValueMode.display
-                      ? false
-                      : draft.obscureText,
-                ),
-              );
-            },
           ),
           if (draft.kind.isBoolean)
-            SwitchListTile(
-              key: const ValueKey('add-value-initial-bool'),
+            EditorSwitchTile(
+              tileKey: const ValueKey('add-value-initial-bool'),
               dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Valeur initiale'),
+              title: 'Valeur initiale',
               value: draft.initialBool,
               onChanged: (value) =>
                   widget.onChanged(draft.copyWith(initialBool: value)),

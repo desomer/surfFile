@@ -30,6 +30,7 @@ import '../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
 import '../styles/scrollbar_style_editor.dart';
 import 'shared/collection_editor_controls.dart';
+import 'shared/editor_segmented_field.dart';
 
 /// Ouvre la fenêtre de réglage pour [config].
 ///
@@ -237,34 +238,20 @@ class _SuperListViewEditorState extends State<_SuperListViewEditor> {
               labelText: 'Texte si le tableau est vide',
             ),
           ),
-          SwitchListTile(
-            key: const ValueKey('super-list-allow-add'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Autoriser l’ajout d’éléments'),
-            value: _allowAdd,
-            onChanged: (value) => setState(() => _allowAdd = value),
-          ),
-          SwitchListTile(
-            key: const ValueKey('super-list-allow-remove'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Autoriser la suppression d’éléments'),
-            value: _allowRemove,
-            onChanged: (value) => setState(() => _allowRemove = value),
-          ),
-          SwitchListTile(
-            key: const ValueKey('super-list-animate-selection-hover'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Animer le déplacement de la sélection et du survol',
-            ),
-            value: _animateSelectionAndHover,
-            onChanged: (value) =>
+          ...buildCollectionMutationSwitches(
+            keyPrefix: 'super-list',
+            allowAdd: _allowAdd,
+            onAllowAddChanged: (value) => setState(() => _allowAdd = value),
+            allowRemove: _allowRemove,
+            onAllowRemoveChanged: (value) =>
+                setState(() => _allowRemove = value),
+            animateSelectionAndHover: _animateSelectionAndHover,
+            onAnimateSelectionAndHoverChanged: (value) =>
                 setState(() => _animateSelectionAndHover = value),
           ),
-          SwitchListTile(
-            key: const ValueKey('super-list-show-scrollbar'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Afficher la barre de défilement (ScrollBar)'),
+          EditorSwitchTile(
+            tileKey: const ValueKey('super-list-show-scrollbar'),
+            title: 'Afficher la barre de défilement (ScrollBar)',
             value: _showScrollbar,
             onChanged: (value) => setState(() => _showScrollbar = value),
           ),

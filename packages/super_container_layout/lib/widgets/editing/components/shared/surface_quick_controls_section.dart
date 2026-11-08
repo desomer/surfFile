@@ -10,6 +10,7 @@ import '../../../../theme/interaction_effect.dart';
 import '../../../../theme/neon_style.dart';
 import '../../styles/style_editor_panel.dart';
 import 'editor_color_fields.dart';
+import 'editor_segmented_field.dart';
 
 /// Construit la [StyleEditorSection] « Effets et surface avancés » permettant
 /// de régler `designSystem`, `interactionEffect`, `hoverEffect` et `neon`.
@@ -26,89 +27,57 @@ StyleEditorSection buildSurfaceQuickControlsSection({
     icon: Icons.auto_fix_high_outlined,
     tag: 'ContainerStyle',
     child: buildEditorFieldGroup([
-      const Text(
-        'Système de design (Surface)',
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-      ),
-      SegmentedButton<DesignSystem>(
-        key: ValueKey('$settingPrefix-designSystem'),
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        segments: const [
-          ButtonSegment(
+      EditorSegmentedField<DesignSystem>(
+        buttonKey: ValueKey('$settingPrefix-designSystem'),
+        label: 'Système de design (Surface)',
+        value: style.designSystem,
+        options: const [
+          EditorSegmentOption(
             value: DesignSystem.material,
-            tooltip: 'Material',
-            icon: Icon(Icons.layers_outlined, size: 16),
-            label: Text('Material', overflow: TextOverflow.ellipsis),
+            label: 'Material',
+            icon: Icons.layers_outlined,
           ),
-          ButtonSegment(
+          EditorSegmentOption(
             value: DesignSystem.liquidGlass,
-            tooltip: 'Liquid Glass',
-            icon: Icon(Icons.blur_on, size: 16),
-            label: Text('Liquid Glass', overflow: TextOverflow.ellipsis),
+            label: 'Liquid Glass',
+            icon: Icons.blur_on,
           ),
-          ButtonSegment(
+          EditorSegmentOption(
             value: DesignSystem.neumorphism,
-            tooltip: 'Neumorphism',
-            icon: Icon(Icons.wb_twilight, size: 16),
-            label: Text('Neumorphism', overflow: TextOverflow.ellipsis),
+            label: 'Neumorphism',
+            icon: Icons.wb_twilight,
           ),
         ],
-        selected: {style.designSystem},
-        onSelectionChanged: (selected) {
-          if (selected.isNotEmpty) {
-            onStyleChanged(style.copyWith(designSystem: selected.first));
-          }
-        },
+        onChanged: (ds) => onStyleChanged(style.copyWith(designSystem: ds)),
       ),
-      const Text(
-        'Effet d’interaction (Surface)',
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-      ),
-      SegmentedButton<InteractionEffect>(
-        key: ValueKey('$settingPrefix-interactionEffect'),
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        segments: [
+      EditorSegmentedField<InteractionEffect>(
+        buttonKey: ValueKey('$settingPrefix-interactionEffect'),
+        label: 'Effet d’interaction (Surface)',
+        value: style.interactionEffect,
+        options: [
           for (final effect in InteractionEffect.values)
-            ButtonSegment<InteractionEffect>(
+            EditorSegmentOption<InteractionEffect>(
               value: effect,
-              tooltip: effect.label,
-              icon: Icon(
-                switch (effect) {
-                  InteractionEffect.ripple => Icons.touch_app_outlined,
-                  InteractionEffect.pressed => Icons.compress,
-                  InteractionEffect.elevation => Icons.trending_up,
-                },
-                size: 16,
-              ),
-              label: Text(effect.label, overflow: TextOverflow.ellipsis),
+              label: effect.label,
+              icon: switch (effect) {
+                InteractionEffect.ripple => Icons.touch_app_outlined,
+                InteractionEffect.pressed => Icons.compress,
+                InteractionEffect.elevation => Icons.trending_up,
+              },
             ),
         ],
-        selected: {style.interactionEffect},
-        onSelectionChanged: (selected) {
-          if (selected.isNotEmpty) {
-            onStyleChanged(style.copyWith(interactionEffect: selected.first));
-          }
-        },
+        onChanged: (effect) =>
+            onStyleChanged(style.copyWith(interactionEffect: effect)),
       ),
-      SwitchListTile(
-        key: ValueKey('$settingPrefix-hoverEffect'),
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Voile au survol (Surface)'),
+      EditorSwitchTile(
+        tileKey: ValueKey('$settingPrefix-hoverEffect'),
+        title: 'Voile au survol (Surface)',
         value: style.hoverEffect,
         onChanged: (value) => onStyleChanged(style.copyWith(hoverEffect: value)),
       ),
-      SwitchListTile(
-        key: ValueKey('$settingPrefix-neon'),
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Effet néon'),
+      EditorSwitchTile(
+        tileKey: ValueKey('$settingPrefix-neon'),
+        title: 'Effet néon',
         value: style.neon?.enabled ?? false,
         onChanged: (enabled) => onStyleChanged(
           style.copyWith(

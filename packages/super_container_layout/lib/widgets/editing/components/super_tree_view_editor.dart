@@ -26,6 +26,7 @@ import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart'
     show inheritedRepositoryValue;
 import 'shared/collection_editor_controls.dart';
+import 'shared/editor_segmented_field.dart';
 
 /// Ouvre la fenêtre de réglage pour [config].
 Future<SuperTreeViewConfig?> showSuperTreeViewEditor({
@@ -261,33 +262,27 @@ class _SuperTreeViewEditorState extends State<_SuperTreeViewEditor> {
               labelText: 'Texte si l’arbre est vide',
             ),
           ),
-          SwitchListTile(
-            key: const ValueKey('super-tree-initially-expanded'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Déplier les nœuds par défaut'),
+          EditorSwitchTile(
+            tileKey: const ValueKey('super-tree-initially-expanded'),
+            title: 'Déplier les nœuds par défaut',
             value: _initiallyExpanded,
             onChanged: (value) => setState(() => _initiallyExpanded = value),
           ),
-          SwitchListTile(
-            key: const ValueKey('super-tree-show-connectors'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Afficher les traits de connexion'),
+          EditorSwitchTile(
+            tileKey: const ValueKey('super-tree-show-connectors'),
+            title: 'Afficher les traits de connexion',
             value: _showConnectors,
             onChanged: (value) => setState(() => _showConnectors = value),
           ),
-          SwitchListTile(
-            key: const ValueKey('super-tree-show-checkboxes'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Afficher les cases à cocher'),
+          EditorSwitchTile(
+            tileKey: const ValueKey('super-tree-show-checkboxes'),
+            title: 'Afficher les cases à cocher',
             value: _showCheckboxes,
             onChanged: (value) => setState(() => _showCheckboxes = value),
           ),
-          SwitchListTile(
-            key: const ValueKey('super-tree-animate-selection-hover'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Animer le déplacement de la sélection et du survol',
-            ),
+          EditorSwitchTile(
+            tileKey: const ValueKey('super-tree-animate-selection-hover'),
+            title: 'Animer le déplacement de la sélection et du survol',
             value: _animateSelectionAndHover,
             onChanged: (value) =>
                 setState(() => _animateSelectionAndHover = value),

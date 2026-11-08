@@ -13,6 +13,7 @@ import '../styles/style_editor_panel.dart';
 import 'shared/component_state_editor_host.dart';
 import 'shared/component_typography_controls.dart';
 import 'shared/editor_color_fields.dart';
+import 'shared/editor_segmented_field.dart';
 
 final _separatorStateAdapter =
     ComponentStateAdapter<
@@ -198,18 +199,28 @@ class _SuperSeparatorEditor extends StatefulWidget {
 }
 
 class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
-    implements ComponentLeafCapable<SuperSeparatorConfig> {
-  final _form = GlobalKey<FormState>();
+    with ComponentLeafFormMixin<_SuperSeparatorEditor, SuperSeparatorConfig> {
   late SuperSeparatorConfig _draft;
-  late final Map<String, TextEditingController> _fields;
-  SuperSeparatorConfig? _lastPreview;
-  String? _liveError;
+
+  @override
+  String get settingKeyPrefix => 'super-separator-setting';
+
+  @override
+  String get invalidConfigMessage => 'Réglages du séparateur invalides.';
+
+  @override
+  ValueChanged<SuperSeparatorConfig>? get onPreviewChangedCallback =>
+      widget.onPreviewChanged;
+
+  @override
+  SuperSeparatorConfig Function(SuperSeparatorConfig leaf)?
+  get onSaveCallback => widget.onSave;
 
   @override
   void initState() {
     super.initState();
     _draft = widget.config;
-    _fields = {
+    fields = {
       'label': TextEditingController(text: _draft.label),
       'extent': TextEditingController(text: _draft.extent.toString()),
       'thickness': TextEditingController(text: _draft.thickness.toString()),
@@ -232,51 +243,19 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
   }
 
   @override
-  void dispose() {
-    for (final field in _fields.values) {
-      field.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  SuperSeparatorConfig? capture() {
-    if (!_form.currentState!.validate()) return null;
-    try {
-      return _configuration();
-    } on FormatException catch (e) {
-      setState(() => _liveError = e.message);
-    } on ArgumentError {
-      setState(() => _liveError = 'Réglages du séparateur invalides.');
-    }
-    return null;
-  }
-
-  SuperSeparatorConfig _configuration() {
-    double? number(
-      String key, {
-      bool allowZero = false,
-      bool allowNegative = false,
-    }) => parseEditorNumberField(
-      _fields[key]!.text,
-      allowZero: allowZero,
-      allowNegative: allowNegative,
-    );
-
-    Color? colorField(String key) => parseEditorColorHex(_fields[key]!.text);
-
+  SuperSeparatorConfig buildConfiguration() {
     if (_draft.fontFamily != null &&
         !widget.availableFontFamilies.contains(_draft.fontFamily)) {
       throw const FormatException('Choisissez une police disponible.');
     }
 
-    final extent = number('extent', allowZero: true) ?? 16;
-    final thickness = number('thickness') ?? 1;
-    final indent = number('indent', allowZero: true) ?? 0;
-    final endIndent = number('endIndent', allowZero: true) ?? 0;
-    final labelSpacing = number('labelSpacing', allowZero: true) ?? 8;
-    final fontSize = number('fontSize');
-    final letterSpacing = number(
+    final extent = numberField('extent', allowZero: true) ?? 16;
+    final thickness = numberField('thickness') ?? 1;
+    final indent = numberField('indent', allowZero: true) ?? 0;
+    final endIndent = numberField('endIndent', allowZero: true) ?? 0;
+    final labelSpacing = numberField('labelSpacing', allowZero: true) ?? 8;
+    final fontSize = numberField('fontSize');
+    final letterSpacing = numberField(
       'letterSpacing',
       allowZero: true,
       allowNegative: true,
@@ -284,8 +263,8 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
     final lineColor = colorField('lineColor');
     final color = colorField('color');
 
-    final result = _draft.copyWith(
-      label: _fields['label']!.text,
+    return _draft.copyWith(
+      label: fields['label']!.text,
       extent: extent,
       thickness: thickness,
       indent: indent,
@@ -299,49 +278,8 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
       inheritLineColor: lineColor == null,
       color: color,
       inheritColor: color == null,
-    );
-    result.validate();
-    return result;
+    )..validate();
   }
-
-  void _schedulePreview() {
-    if (widget.onPreviewChanged == null) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
-      try {
-        final config = _configuration();
-        if (_liveError != null) setState(() => _liveError = null);
-        if (_lastPreview != config) {
-          _lastPreview = config;
-          widget.onPreviewChanged!(config);
-        }
-      } on FormatException catch (error) {
-        if (_liveError != error.message) {
-          setState(() => _liveError = error.message);
-        }
-      } on ArgumentError {
-        const message = 'Réglages du séparateur invalides.';
-        if (_liveError != message) setState(() => _liveError = message);
-      }
-    });
-  }
-
-  Widget _field(
-    String key,
-    String label, {
-    bool numeric = false,
-    bool allowZero = false,
-    bool allowNegative = false,
-    bool colorHex = false,
-  }) => buildEditorSettingTextField(
-    fieldKey: ValueKey('super-separator-setting-$key'),
-    controller: _fields[key]!,
-    label: label,
-    numeric: numeric,
-    allowZero: allowZero,
-    allowNegative: allowNegative,
-    colorHex: colorHex,
-  );
 
   EditablePropertyBindingScope<SuperSeparatorProperty> get _bindingScope =>
       EditablePropertyBindingScope<SuperSeparatorProperty>(
@@ -367,7 +305,7 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
     required Color fallbackColor,
     required SuperSeparatorProperty property,
   }) => BoundHexColorField(
-    controller: _fields[fieldKey]!,
+    controller: fields[fieldKey]!,
     label: label,
     fallbackColor: fallbackColor,
     pickerKey: ValueKey('super-separator-color-picker-$fieldKey'),
@@ -380,9 +318,9 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
   Widget _preview(bool unavailable) {
     SuperSeparatorConfig previewConfig;
     try {
-      previewConfig = _configuration();
+      previewConfig = buildConfiguration();
     } on Object {
-      previewConfig = _draft.copyWith(label: _fields['label']!.text);
+      previewConfig = _draft.copyWith(label: fields['label']!.text);
     }
     final style = widget.textStyle.copyWith(
       fontFamily: unavailable ? null : previewConfig.fontFamily,
@@ -434,28 +372,9 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
     );
   }
 
-  bool _handleApply() {
-    if (_form.currentState != null && !_form.currentState!.validate()) {
-      return false;
-    }
-    SuperSeparatorConfig result;
-    try {
-      final leaf = _configuration();
-      result = widget.onSave?.call(leaf) ?? leaf;
-    } on FormatException catch (e) {
-      setState(() => _liveError = e.message);
-      return false;
-    } on ArgumentError {
-      setState(() => _liveError = 'Combinaison de propriétés invalide.');
-      return false;
-    }
-    Navigator.of(context).pop(result);
-    return true;
-  }
-
   @override
   Widget build(BuildContext context) {
-    _schedulePreview();
+    schedulePreview();
     final fonts = widget.availableFontFamilies.toSet().toList();
     final unavailable =
         _draft.fontFamily != null && !fonts.contains(_draft.fontFamily);
@@ -467,11 +386,11 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
       initialTab: widget.initialTab,
       dimensionDelegate: delegate,
       onWidthChanged: widget.onWidthChanged,
-      liveError: _liveError,
+      liveError: liveError,
       liveErrorKey: const ValueKey('super-separator-live-error'),
-      onApply: _handleApply,
+      onApply: handleApply,
       propertiesBuilder: (context, dense, onDenseChanged) => Form(
-        key: _form,
+        key: formKey,
         onChanged: () => setState(() {}),
         child: StyleEditorPanel(
           label: delegate?.editableLabel ?? 'Configurer le séparateur',
@@ -493,84 +412,22 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
               icon: Icons.horizontal_rule,
               tag: 'kind · axis · extent · indent',
               child: buildEditorFieldGroup([
-                const Text(
-                  'Type de composant',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                EditorSegmentedField.separatorKind(
+                  buttonKey: const ValueKey('super-separator-setting-kind'),
+                  value: _draft.kind,
+                  onChanged: (kind) =>
+                      setState(() => _draft = _draft.copyWith(kind: kind)),
                 ),
-                SegmentedButton<SuperSeparatorKind>(
-                  key: const ValueKey('super-separator-setting-kind'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: SuperSeparatorKind.divider,
-                      tooltip: 'Trait de séparation (Divider)',
-                      icon: Icon(Icons.horizontal_rule, size: 16),
-                      label: Text(
-                        'Divider (trait)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    ButtonSegment(
-                      value: SuperSeparatorKind.spacer,
-                      tooltip: 'Espace vide (Spacer)',
-                      icon: Icon(Icons.space_bar, size: 16),
-                      label: Text(
-                        'Spacer (espace)',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                  selected: {_draft.kind},
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      setState(
-                        () => _draft = _draft.copyWith(kind: selected.first),
-                      );
-                    }
-                  },
-                ),
-                const Text(
-                  'Orientation',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-                SegmentedButton<Axis>(
-                  key: const ValueKey('super-separator-setting-axis'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  segments: const [
-                    ButtonSegment(
-                      value: Axis.horizontal,
-                      tooltip: 'Horizontal',
-                      icon: Icon(Icons.swap_horiz, size: 16),
-                      label: Text('Horizontal', overflow: TextOverflow.ellipsis),
-                    ),
-                    ButtonSegment(
-                      value: Axis.vertical,
-                      tooltip: 'Vertical',
-                      icon: Icon(Icons.swap_vert, size: 16),
-                      label: Text('Vertical', overflow: TextOverflow.ellipsis),
-                    ),
-                  ],
-                  selected: {_draft.axis},
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      setState(
-                        () => _draft = _draft.copyWith(axis: selected.first),
-                      );
-                    }
-                  },
+                EditorSegmentedField.axis(
+                  buttonKey: const ValueKey('super-separator-setting-axis'),
+                  value: _draft.axis,
+                  onChanged: (axis) =>
+                      setState(() => _draft = _draft.copyWith(axis: axis)),
                 ),
                 _withBinding(
                   SuperSeparatorProperty.extent,
                   'la taille / l’espace',
-                  _field(
+                  buildSettingField(
                     'extent',
                     _draft.axis == Axis.horizontal
                         ? 'Hauteur / espace total (px)'
@@ -585,7 +442,7 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
                       child: _withBinding(
                         SuperSeparatorProperty.indent,
                         'le retrait de début',
-                        _field(
+                        buildSettingField(
                           'indent',
                           'Retrait début (indent px)',
                           numeric: true,
@@ -598,7 +455,7 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
                       child: _withBinding(
                         SuperSeparatorProperty.endIndent,
                         'le retrait de fin',
-                        _field(
+                        buildSettingField(
                           'endIndent',
                           'Retrait fin (endIndent px)',
                           numeric: true,
@@ -617,55 +474,37 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
                 icon: Icons.line_style,
                 tag: 'lineStyle · thickness · lineColor',
                 child: buildEditorFieldGroup([
-                  const Text(
-                    'Style du trait',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                  ),
-                  SegmentedButton<SuperSeparatorLineStyle>(
-                    key: const ValueKey('super-separator-setting-lineStyle'),
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  EditorSegmentedField<SuperSeparatorLineStyle>(
+                    buttonKey: const ValueKey(
+                      'super-separator-setting-lineStyle',
                     ),
-                    segments: const [
-                      ButtonSegment(
+                    label: 'Style du trait',
+                    value: _draft.lineStyle,
+                    options: const [
+                      EditorSegmentOption(
                         value: SuperSeparatorLineStyle.solid,
-                        tooltip: 'Continu',
-                        icon: Icon(Icons.horizontal_rule, size: 16),
-                        label: Text('Continu', overflow: TextOverflow.ellipsis),
+                        label: 'Continu',
+                        icon: Icons.horizontal_rule,
                       ),
-                      ButtonSegment(
+                      EditorSegmentOption(
                         value: SuperSeparatorLineStyle.dashed,
-                        tooltip: 'Tireté',
-                        icon: Icon(Icons.power_input, size: 16),
-                        label: Text('Tireté', overflow: TextOverflow.ellipsis),
+                        label: 'Tireté',
+                        icon: Icons.power_input,
                       ),
-                      ButtonSegment(
+                      EditorSegmentOption(
                         value: SuperSeparatorLineStyle.dotted,
-                        tooltip: 'Pointillé',
-                        icon: Icon(Icons.more_horiz, size: 16),
-                        label: Text(
-                          'Pointillé',
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        label: 'Pointillé',
+                        icon: Icons.more_horiz,
                       ),
                     ],
-                    selected: {_draft.lineStyle},
-                    onSelectionChanged: (selected) {
-                      if (selected.isNotEmpty) {
-                        setState(
-                          () => _draft = _draft.copyWith(
-                            lineStyle: selected.first,
-                          ),
-                        );
-                      }
-                    },
+                    onChanged: (lineStyle) => setState(
+                      () => _draft = _draft.copyWith(lineStyle: lineStyle),
+                    ),
                   ),
                   _withBinding(
                     SuperSeparatorProperty.thickness,
                     'l’épaisseur du trait',
-                    _field(
+                    buildSettingField(
                       'thickness',
                       'Épaisseur du trait (px)',
                       numeric: true,
@@ -688,126 +527,96 @@ class _SuperSeparatorEditorState extends State<_SuperSeparatorEditor>
                 _withBinding(
                   SuperSeparatorProperty.label,
                   'le libellé',
-                  _field('label', 'Libellé optionnel (vide = sans texte)'),
-                ),
-                const Text(
-                  'Position du libellé',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                ),
-                SegmentedButton<SuperSeparatorLabelPosition>(
-                  key: const ValueKey('super-separator-setting-labelPosition'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  buildSettingField(
+                    'label',
+                    'Libellé optionnel (vide = sans texte)',
                   ),
-                  segments: const [
-                    ButtonSegment(
+                ),
+                EditorSegmentedField<SuperSeparatorLabelPosition>(
+                  buttonKey: const ValueKey(
+                    'super-separator-setting-labelPosition',
+                  ),
+                  label: 'Position du libellé',
+                  value: _draft.labelPosition,
+                  options: const [
+                    EditorSegmentOption(
                       value: SuperSeparatorLabelPosition.start,
-                      tooltip: 'Début',
-                      icon: Icon(Icons.align_horizontal_left, size: 16),
-                      label: Text('Début', overflow: TextOverflow.ellipsis),
+                      label: 'Début',
+                      icon: Icons.align_horizontal_left,
                     ),
-                    ButtonSegment(
+                    EditorSegmentOption(
                       value: SuperSeparatorLabelPosition.center,
-                      tooltip: 'Centre',
-                      icon: Icon(Icons.align_horizontal_center, size: 16),
-                      label: Text('Centre', overflow: TextOverflow.ellipsis),
+                      label: 'Centre',
+                      icon: Icons.align_horizontal_center,
                     ),
-                    ButtonSegment(
+                    EditorSegmentOption(
                       value: SuperSeparatorLabelPosition.end,
-                      tooltip: 'Fin',
-                      icon: Icon(Icons.align_horizontal_right, size: 16),
-                      label: Text('Fin', overflow: TextOverflow.ellipsis),
+                      label: 'Fin',
+                      icon: Icons.align_horizontal_right,
                     ),
                   ],
-                  selected: {_draft.labelPosition},
-                  onSelectionChanged: (selected) {
-                    if (selected.isNotEmpty) {
-                      setState(
-                        () => _draft = _draft.copyWith(
-                          labelPosition: selected.first,
-                        ),
-                      );
-                    }
-                  },
+                  onChanged: (pos) => setState(
+                    () => _draft = _draft.copyWith(labelPosition: pos),
+                  ),
                 ),
-                _field(
+                buildSettingField(
                   'labelSpacing',
                   'Espacement trait / libellé (px)',
                   numeric: true,
                   allowZero: true,
                 ),
-                if (unavailable)
-                  Text(
-                    'Police indisponible : ${_draft.fontFamily}. Choisissez une police disponible.',
-                    style: TextStyle(color: scheme.error),
-                  ),
-                _withBinding(
-                  SuperSeparatorProperty.fontFamily,
-                  'la police',
-                  ComponentFontFamilyField(
-                    settingPrefix: 'super-separator-setting',
-                    fontFamily: _draft.fontFamily,
-                    availableFontFamilies: fonts,
-                    onChanged: (font) => setState(
-                      () => _draft = _draft.copyWith(
-                        fontFamily: font,
-                        inheritFontFamily: font == null || font.isEmpty,
-                      ),
+                ...buildComponentTypographyFields(
+                  context: context,
+                  settingPrefix: settingKeyPrefix,
+                  bindingScope: _bindingScope,
+                  availableFontFamilies: fonts,
+                  fontFamily: _draft.fontFamily,
+                  onFontFamilyChanged: (font) => setState(
+                    () => _draft = _draft.copyWith(
+                      fontFamily: font,
+                      inheritFontFamily: font == null || font.isEmpty,
                     ),
                   ),
-                ),
-                _withBinding(
-                  SuperSeparatorProperty.fontSize,
-                  'la taille de police',
-                  _field(
+                  fontFamilyProperty: SuperSeparatorProperty.fontFamily,
+                  fontSizeField: buildSettingField(
                     'fontSize',
                     'Taille de police (vide = thème)',
                     numeric: true,
                   ),
-                ),
-                _withBinding(
-                  SuperSeparatorProperty.fontWeight,
-                  'la graisse',
-                  ComponentFontWeightField(
-                    fontWeight: _draft.fontWeight,
-                    onChanged: (weight) => setState(
-                      () => _draft = _draft.copyWith(
-                        fontWeight: weight,
-                        inheritFontWeight: weight == null,
-                      ),
+                  fontSizeProperty: SuperSeparatorProperty.fontSize,
+                  fontWeight: _draft.fontWeight,
+                  onFontWeightChanged: (weight) => setState(
+                    () => _draft = _draft.copyWith(
+                      fontWeight: weight,
+                      inheritFontWeight: weight == null,
                     ),
                   ),
-                ),
-                _withBinding(
-                  SuperSeparatorProperty.italic,
-                  'le style italique',
-                  ComponentItalicSegmentField(
-                    settingPrefix: 'super-separator-setting',
-                    italic: _draft.italic,
-                    onChanged: ({required italic, required inherit}) =>
-                        setState(
-                          () => _draft = _draft.copyWith(
-                            italic: italic,
-                            inheritItalic: inherit,
-                          ),
+                  fontWeightProperty: SuperSeparatorProperty.fontWeight,
+                  italic: _draft.italic,
+                  onItalicChanged: ({required italic, required inherit}) =>
+                      setState(
+                        () => _draft = _draft.copyWith(
+                          italic: italic,
+                          inheritItalic: inherit,
                         ),
+                      ),
+                  italicProperty: SuperSeparatorProperty.italic,
+                  beforeLetterSpacing: [
+                    _colorSetting(
+                      fieldKey: 'color',
+                      label: 'Couleur du libellé',
+                      fallbackColor:
+                          widget.textStyle.color ?? scheme.onSurfaceVariant,
+                      property: SuperSeparatorProperty.color,
+                    ),
+                  ],
+                  letterSpacingField: buildSettingField(
+                    'letterSpacing',
+                    'Espacement des lettres (px)',
+                    numeric: true,
+                    allowZero: true,
+                    allowNegative: true,
                   ),
-                ),
-                _colorSetting(
-                  fieldKey: 'color',
-                  label: 'Couleur du libellé',
-                  fallbackColor:
-                      widget.textStyle.color ?? scheme.onSurfaceVariant,
-                  property: SuperSeparatorProperty.color,
-                ),
-                _field(
-                  'letterSpacing',
-                  'Espacement des lettres (px)',
-                  numeric: true,
-                  allowZero: true,
-                  allowNegative: true,
                 ),
               ]),
             ),
