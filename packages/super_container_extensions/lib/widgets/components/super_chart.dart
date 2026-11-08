@@ -1145,6 +1145,7 @@ class _SuperChartState extends State<SuperChart> {
 
         return EditorSlot(
           behaviors: widget.behaviours,
+          exportConfig: () => configuration.value,
           key: _surface,
           id: widget.id,
           label: 'Graphique',

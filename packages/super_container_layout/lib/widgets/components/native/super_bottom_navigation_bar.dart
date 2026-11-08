@@ -199,7 +199,11 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
       };
 
   Map<String, SuperAction> get _suppliedActions =>
-      suppliedActionDestinationMap(widget._allDestinations);
+      suppliedActionDestinationMap(
+        widget._allDestinations,
+        widget.slots,
+        context,
+      );
 
   List<SlotImplementation> get _slots =>
       buildActionDestinationSlots(widget._allDestinations, widget.slots);

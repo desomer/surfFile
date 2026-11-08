@@ -855,6 +855,7 @@ class _SuperValueState extends State<SuperValue>
           return EditorSlot(
             key: _surface,
             id: widget.id,
+            exportConfig: () => configuration.value,
             eventComponentType: 'value',
             behaviors: widget.behaviours,
             eventData: () => {

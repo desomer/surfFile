@@ -190,6 +190,7 @@ class _SuperCodeState extends State<SuperCode> {
         );
         return EditorSlot(
           behaviors: widget.behaviours,
+          exportConfig: () => configuration.value,
           key: _surface,
           id: widget.id,
           label: 'Code',

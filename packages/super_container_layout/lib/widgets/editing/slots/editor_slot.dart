@@ -11,8 +11,15 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
 import '../../../theme/appearance_slot.dart';
+import '../../../theme/container_style.dart';
 import '../../../models/component_behavior.dart';
 import '../../../models/component_config.dart';
+import '../../../models/native_component_config.dart';
+import '../../../models/super_layout_config.dart';
+import '../../../models/super_list_view_config.dart';
+import '../../../models/super_tab_config.dart';
+import '../../../models/super_table_config.dart';
+import '../../../models/super_tree_view_config.dart';
 import '../../../services/codegen/dart_code_generator.dart';
 import '../../../services/pages/editor_page_graph.dart';
 import '../../../services/appearance/appearance_store.dart';
@@ -21,14 +28,23 @@ import '../../../super_app.dart';
 import '../../appearance/appearance_transfer_dialog.dart';
 import '../../components/behavior_event_listener.dart';
 import '../../components/component_tooltip.dart';
+import '../../components/super_component.dart';
 import '../../components/super_layout/layout_selection.dart';
+import '../../components/super_layout/slot_implementation.dart';
+import '../../components/super_layout/super_layout.dart';
 import '../../components/super_layout/zone_axis_button.dart';
+import '../../components/super_list_view.dart';
+import '../../components/super_tab.dart';
+import '../../components/super_table.dart';
+import '../../components/super_tree_view.dart';
 import '../addition/contextual_add.dart';
 import '../addition/insertion_plan.dart';
 import '../ai/vibe_chat_dialog.dart';
 import '../behaviors/component_behavior_editor.dart';
+import 'editable_surface.dart';
 import 'editor_context_menu.dart';
 import 'editor_selection_region.dart';
+import 'provided_slot_scope.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
@@ -283,71 +299,377 @@ class EditorSlotState extends State<EditorSlot> {
         config is! SuperRendererConfig;
   }
 
-  /// Configurations vivantes de ce slot et de ses descendants declares en code.
-  Map<String, ComponentConfig> _liveConfigs() {
+  /// Configurations, styles et comportements vivants de ce slot et de ses descendants declares en code.
+  ({
+    Map<String, ComponentConfig> configs,
+    Map<String, ContainerStyle> styles,
+    Map<String, List<ComponentBehavior>> behaviors,
+  })
+  _liveGraph() {
     final configs = <String, ComponentConfig>{};
-    if (widget.exportConfig case final read?) {
-      configs[effectiveComponentId] = read();
-    }
-    void visit(Element element) {
-      if (element is StatefulElement && element.state is EditorSlotState) {
-        final slot = element.state as EditorSlotState;
-        if (slot.widget.zoneId == null) {
-          if (slot.widget.exportConfig case final read?) {
-            configs.putIfAbsent(slot.effectiveComponentId, read);
+    final styles = <String, ContainerStyle>{};
+    final behaviors = <String, List<ComponentBehavior>>{};
+    final visitedSlots = <String>{};
+
+    void inspectWidget(Widget? candidate, {String? slotId}) {
+      if (candidate == null) return;
+      if (candidate is SlotImplementation) {
+        final effectiveSlotId = slotId ?? candidate.id;
+        if (!visitedSlots.add('$effectiveSlotId:${candidate.hashCode}')) return;
+        try {
+          if (candidate is BuilderSlot) {
+            inspectWidget(candidate.builder(context), slotId: effectiveSlotId);
+          } else if (candidate is InstanceSlot) {
+            inspectWidget(candidate.component, slotId: effectiveSlotId);
+          }
+        } on Object {
+          // Ignore les builders dependant d'un InheritedWidget absent hors branche.
+        }
+        return;
+      }
+      if (candidate is EditableSurface) {
+        final targetId = slotId ?? candidate.id ?? candidate.slot?.name;
+        if (targetId != null && targetId.isNotEmpty) {
+          styles.putIfAbsent(targetId, () => candidate.style);
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+          }
+          if (candidate.child != null) {
+            final childId = '$targetId:child';
+            configs.putIfAbsent(
+              targetId,
+              () => NativeComponentConfig(
+                placements: {
+                  'child': [childId],
+                },
+              ),
+            );
+            inspectWidget(candidate.child, slotId: childId);
+          }
+        }
+        return;
+      }
+      if (candidate is SuperLayout) {
+        final targetId = (candidate.id != null && candidate.id!.isNotEmpty)
+            ? candidate.id!
+            : slotId;
+        if (targetId != null && targetId.isNotEmpty) {
+          configs.putIfAbsent(targetId, () => candidate.config);
+          if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+            configs.putIfAbsent(slotId, () => candidate.config);
+          }
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+            if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+              behaviors.putIfAbsent(slotId, () => list);
+            }
+          }
+        }
+        for (final slot in candidate.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+        return;
+      }
+      if (candidate is SuperTab) {
+        final targetId = candidate.id.isNotEmpty ? candidate.id : slotId;
+        final tabCfg = candidate.config ?? SuperTabConfig();
+        if (targetId != null && targetId.isNotEmpty) {
+          configs.putIfAbsent(targetId, () => tabCfg);
+          if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+            configs.putIfAbsent(slotId, () => tabCfg);
+          }
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+            if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+              behaviors.putIfAbsent(slotId, () => list);
+            }
+          }
+        }
+        for (final slot in candidate.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+        return;
+      }
+      if (candidate is SuperTreeView) {
+        final targetId = candidate.id.isNotEmpty ? candidate.id : slotId;
+        final treeCfg = candidate.config ?? SuperTreeViewConfig();
+        if (targetId != null && targetId.isNotEmpty) {
+          configs.putIfAbsent(targetId, () => treeCfg);
+          if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+            configs.putIfAbsent(slotId, () => treeCfg);
+          }
+          if (candidate.templateStyle != const ContainerStyle()) {
+            styles.putIfAbsent(
+              candidate.itemId ?? treeCfg.itemId ?? targetId,
+              () => candidate.templateStyle,
+            );
+          }
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+            if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+              behaviors.putIfAbsent(slotId, () => list);
+            }
+          }
+        }
+        if (candidate.header != null) {
+          inspectWidget(candidate.header, slotId: 'header');
+        }
+        for (final (i, h) in candidate.headers.indexed) {
+          inspectWidget(h, slotId: 'header:$i');
+        }
+        if (candidate.data != null) {
+          inspectWidget(candidate.data, slotId: 'data');
+        }
+        for (final (i, d) in candidate.datas.indexed) {
+          inspectWidget(d, slotId: 'data:$i');
+        }
+        for (final slot in candidate.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+        return;
+      }
+      if (candidate is SuperTable) {
+        final targetId = candidate.id.isNotEmpty ? candidate.id : slotId;
+        final tableCfg = candidate.config ?? SuperTableConfig();
+        if (targetId != null && targetId.isNotEmpty) {
+          configs.putIfAbsent(targetId, () => tableCfg);
+          if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+            configs.putIfAbsent(slotId, () => tableCfg);
+          }
+          if (candidate.templateStyle != const ContainerStyle()) {
+            styles.putIfAbsent(
+              candidate.itemId ?? tableCfg.itemId ?? targetId,
+              () => candidate.templateStyle,
+            );
+          }
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+            if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+              behaviors.putIfAbsent(slotId, () => list);
+            }
+          }
+        }
+        for (final slot in candidate.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+        return;
+      }
+      if (candidate is SuperListView) {
+        final targetId = candidate.id.isNotEmpty ? candidate.id : slotId;
+        final listCfg = candidate.config.copyWith(template: candidate.template);
+        if (targetId != null && targetId.isNotEmpty) {
+          configs.putIfAbsent(targetId, () => listCfg);
+          if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+            configs.putIfAbsent(slotId, () => listCfg);
+          }
+          if (candidate.templateStyle != const ContainerStyle()) {
+            styles.putIfAbsent(
+              candidate.itemId ?? listCfg.itemId ?? targetId,
+              () => candidate.templateStyle,
+            );
+          }
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+            if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+              behaviors.putIfAbsent(slotId, () => list);
+            }
+          }
+        }
+        for (final slot in candidate.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+        return;
+      }
+      if (candidate is SuperComponent) {
+        final comp = candidate as SuperComponent<ComponentConfig?>;
+        final compConfig = comp.config;
+        final compId = comp.id;
+        if (compConfig != null) {
+          if (compId != null && compId.isNotEmpty) {
+            configs.putIfAbsent(compId, () => compConfig);
+          }
+          if (slotId != null && slotId.isNotEmpty) {
+            configs.putIfAbsent(slotId, () => compConfig);
+          }
+        }
+        if (comp.behaviours case final list? when list.isNotEmpty) {
+          if (compId != null && compId.isNotEmpty) {
+            behaviors.putIfAbsent(compId, () => list);
+          }
+          if (slotId != null && slotId.isNotEmpty) {
+            behaviors.putIfAbsent(slotId, () => list);
           }
         }
       }
-      element.visitChildren(visit);
     }
 
-    context.visitChildElements(visit);
-    return configs;
-  }
-
-  /// Comportements vivants de ce slot et de ses descendants declares en code.
-  Map<String, List<ComponentBehavior>> _liveBehaviors() {
-    final behaviors = <String, List<ComponentBehavior>>{};
+    if (widget.exportConfig case final read?) {
+      final cfg = read();
+      final isSyntheticProvidedChild =
+          cfg is NativeComponentConfig &&
+          cfg.placements['child']?.length == 1 &&
+          cfg.placements['child']!.single == '__provided-child';
+      if (!isSyntheticProvidedChild) {
+        configs[effectiveComponentId] = cfg;
+      }
+    }
     if (widget.behaviors case final list? when list.isNotEmpty) {
       behaviors[effectiveComponentId] = list;
     }
+
     void visit(Element element) {
+      if (element.widget case final ProvidedSlotScope scope) {
+        for (final slot in scope.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+      }
+      if (element is StatefulElement && element.state is EditableSurfaceState) {
+        final surface = element.state as EditableSurfaceState;
+        final surfaceId = surface.extractableId;
+        if (surfaceId.isNotEmpty) {
+          styles.putIfAbsent(surfaceId, () => surface.style);
+          if (surface.widget.child != null) {
+            final childId = '$surfaceId:child';
+            configs.putIfAbsent(
+              surfaceId,
+              () => NativeComponentConfig(
+                placements: {
+                  'child': [childId],
+                },
+              ),
+            );
+            inspectWidget(surface.widget.child, slotId: childId);
+          } else {
+            configs.removeWhere((key, value) {
+              if (key != surfaceId || value is! NativeComponentConfig) {
+                return false;
+              }
+              final placed = value.placements['child'];
+              return placed != null &&
+                  placed.length == 1 &&
+                  placed.single == '__provided-child';
+            });
+          }
+        }
+      }
       if (element is StatefulElement && element.state is EditorSlotState) {
         final slot = element.state as EditorSlotState;
         if (slot.widget.zoneId == null) {
+          final id = slot.effectiveComponentId;
+          final inheritedSlotId = slot._instance?.id;
+          if (slot.widget.exportConfig case final read?) {
+            final cfg = read();
+            final isSyntheticProvidedChild =
+                cfg is NativeComponentConfig &&
+                cfg.placements['child']?.length == 1 &&
+                cfg.placements['child']!.single == '__provided-child';
+            if (!isSyntheticProvidedChild) {
+              configs.putIfAbsent(id, () => cfg);
+              if (inheritedSlotId != null &&
+                  inheritedSlotId.isNotEmpty &&
+                  inheritedSlotId != id) {
+                configs.putIfAbsent(inheritedSlotId, () => cfg);
+              }
+            }
+          }
           if (slot.widget.behaviors case final list? when list.isNotEmpty) {
-            behaviors.putIfAbsent(slot.effectiveComponentId, () => list);
+            behaviors.putIfAbsent(id, () => list);
+            if (inheritedSlotId != null &&
+                inheritedSlotId.isNotEmpty &&
+                inheritedSlotId != id) {
+              behaviors.putIfAbsent(inheritedSlotId, () => list);
+            }
           }
         }
       }
       element.visitChildren(visit);
     }
 
+    context.visitAncestorElements((ancestor) {
+      if (ancestor.widget case final ProvidedSlotScope scope) {
+        for (final slot in scope.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+      }
+      return true;
+    });
     context.visitChildElements(visit);
-    return behaviors;
+
+    // Inspecte egalement les RegisteredComponent references via slotTypes (meme dans des onglets non montes).
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry != null) {
+      for (var changed = true; changed;) {
+        changed = false;
+        final currentConfigs = configs.values.toList();
+        for (final cfg in currentConfigs) {
+          final slotTypes = switch (cfg) {
+            SuperLayoutConfig() => cfg.slotTypes,
+            SuperTabConfig() => cfg.slotTypes,
+            SuperTreeViewConfig() => cfg.slotTypes,
+            SuperTableConfig() => cfg.slotTypes,
+            SuperListViewConfig() => cfg.template.slotTypes,
+            NativeComponentConfig() => cfg.slotTypes,
+            _ => const <String, String>{},
+          };
+          for (final entry in slotTypes.entries) {
+            final slotId = entry.key;
+            final type = entry.value;
+            final regKey = type.startsWith('component:')
+                ? type.substring('component:'.length)
+                : type;
+            final registered = registry.components[regKey];
+            if (registered != null &&
+                !configs.containsKey(slotId) &&
+                !styles.containsKey(slotId)) {
+              try {
+                final built = registered.instanceBuilder != null
+                    ? registered.instanceBuilder!(context, slotId)
+                    : registered.builder(context);
+                inspectWidget(built, slotId: slotId);
+                if (configs.containsKey(slotId) || styles.containsKey(slotId)) {
+                  changed = true;
+                }
+              } on Object {
+                // Ignore les builders dependant d'un InheritedWidget absent hors branche.
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return (configs: configs, styles: styles, behaviors: behaviors);
   }
 
   /// Calcule l'export contextuel de ce slot (composant ou zone et descendants).
   ///
   /// Lève une [FormatException] si la cible n'est pas exportable.
-  EditorFragmentExport buildContentExport() => EditorPageGraph.export(
-    appearance: AppearanceScope.controllerOf(context)!.value,
-    registry: SuperApp.maybeOf(context)!.registry!,
-    componentId: effectiveComponentId,
-    zoneId: widget.zoneId,
-    registryType: widget.menuType,
-    liveConfigs: _liveConfigs(),
-    liveBehaviors: _liveBehaviors(),
-  );
+  EditorFragmentExport buildContentExport() {
+    final live = _liveGraph();
+    return EditorPageGraph.export(
+      appearance: AppearanceScope.controllerOf(context)!.value,
+      registry: SuperApp.maybeOf(context)!.registry!,
+      componentId: effectiveComponentId,
+      zoneId: widget.zoneId,
+      registryType: widget.menuType,
+      liveConfigs: live.configs,
+      liveStyles: live.styles,
+      liveBehaviors: live.behaviors,
+    );
+  }
 
   /// Génère le code Dart correspondant au contenu de ce slot.
-  String buildDartContentExport([EditorFragmentExport? export]) {
+  String buildDartContentExport([
+    EditorFragmentExport? export,
+    bool decomposeComponents = false,
+  ]) {
     final fragment = export ?? buildContentExport();
     return DartCodeExporter.export(
       appearance: fragment.appearance,
       registry: SuperApp.maybeOf(context)!.registry!,
       componentId: effectiveComponentId,
       componentLabel: label,
+      decomposeComponents: decomposeComponents,
     );
   }
 
@@ -368,12 +690,15 @@ class EditorSlotState extends State<EditorSlot> {
           controller: fragment!,
           codec: codec,
           allowImport: false,
-          dartExportBuilder: (appearance) => DartCodeExporter.export(
-            appearance: appearance,
-            registry: registry,
-            componentId: exportId,
-            componentLabel: exportLabel,
-          ),
+          dartExportWithOptionsBuilder:
+              (appearance, {required decomposeComponents}) =>
+                  DartCodeExporter.export(
+                    appearance: appearance,
+                    registry: registry,
+                    componentId: exportId,
+                    componentLabel: exportLabel,
+                    decomposeComponents: decomposeComponents,
+                  ),
           notice: export.omitted.isEmpty
               ? null
               : 'Widgets fournis par le code Dart, non exportables et retirés '
@@ -1273,117 +1598,136 @@ class EditorSlotState extends State<EditorSlot> {
     }
     final chain = editableChain;
     final origin = targetContext ?? context;
+    final zoomController = EditorZoomScope.controllerOf(context);
     if (selectTarget) {
-      final callbacks = <VoidCallback>[];
-      if (origin is Element) {
-        void collectElement(Element element) {
-          if (element is StatefulElement) {
-            final state = element.state;
-            if (state is EditorSlotState &&
-                chain.contains(state) &&
-                (StyleEditScope.controllerOf(state.context)?.value ?? false) &&
+      zoomController?.beginRightClickSelection();
+      try {
+        final callbacks = <VoidCallback>[];
+        if (origin is Element) {
+          void collectElement(Element element) {
+            if (element is StatefulElement) {
+              final state = element.state;
+              if (state is EditorSlotState &&
+                  chain.contains(state) &&
+                  (StyleEditScope.controllerOf(state.context)?.value ??
+                      false) &&
+                  state.widget.onContextMenu != null) {
+                final onContextMenu = state.widget.onContextMenu!;
+                callbacks.add(() => onContextMenu(globalPosition));
+              }
+            } else {
+              final widget = element.widget;
+              if (widget is EditorSlotAction &&
+                  widget.enabled &&
+                  widget.onSelect != null &&
+                  (StyleEditScope.controllerOf(element)?.value ?? false)) {
+                callbacks.add(widget.onSelect!);
+              }
+            }
+          }
+
+          collectElement(origin);
+          origin.visitAncestorElements((element) {
+            collectElement(element);
+            return true;
+          });
+        } else {
+          for (final state in chain) {
+            if ((StyleEditScope.controllerOf(state.context)?.value ?? false) &&
                 state.widget.onContextMenu != null) {
               final onContextMenu = state.widget.onContextMenu!;
               callbacks.add(() => onContextMenu(globalPosition));
             }
-          } else {
-            final widget = element.widget;
-            if (widget is EditorSlotAction &&
-                widget.enabled &&
-                widget.onSelect != null &&
-                (StyleEditScope.controllerOf(element)?.value ?? false)) {
-              callbacks.add(widget.onSelect!);
-            }
           }
         }
-
-        collectElement(origin);
-        origin.visitAncestorElements((element) {
-          collectElement(element);
-          return true;
-        });
-      } else {
-        for (final state in chain) {
-          if ((StyleEditScope.controllerOf(state.context)?.value ?? false) &&
-              state.widget.onContextMenu != null) {
-            final onContextMenu = state.widget.onContextMenu!;
-            callbacks.add(() => onContextMenu(globalPosition));
-          }
+        for (final callback in callbacks.reversed) {
+          callback();
         }
-      }
-      for (final callback in callbacks.reversed) {
-        callback();
-      }
-      if (origin is Element) {
-        final slotStates = <EditorSlotState>[];
-        var foundSlotBoundary = false;
-        void collectLeaf(Element element) {
-          if (foundSlotBoundary) return;
-          if (element is StatefulElement) {
-            final state = element.state;
-            if (state is EditorSlotState && chain.contains(state)) {
-              if (state.widget.onContextMenu != null) {
-                foundSlotBoundary = true;
-                return;
+        if (origin is Element) {
+          final slotStates = <EditorSlotState>[];
+          var foundSlotBoundary = false;
+          void collectLeaf(Element element) {
+            if (foundSlotBoundary) return;
+            if (element is StatefulElement) {
+              final state = element.state;
+              if (state is EditorSlotState && chain.contains(state)) {
+                if (state.widget.onContextMenu != null) {
+                  foundSlotBoundary = true;
+                  return;
+                }
+                slotStates.add(state);
               }
-              slotStates.add(state);
-            }
-          } else {
-            final widget = element.widget;
-            if ((widget is EditorSlotAction &&
-                    widget.enabled &&
-                    widget.onSelect != null) ||
-                widget is LayoutSelectionScope) {
-              foundSlotBoundary = true;
+            } else {
+              final widget = element.widget;
+              if ((widget is EditorSlotAction &&
+                      widget.enabled &&
+                      widget.onSelect != null) ||
+                  widget is LayoutSelectionScope) {
+                foundSlotBoundary = true;
+              }
             }
           }
-        }
 
-        collectLeaf(origin);
-        origin.visitAncestorElements((element) {
-          collectLeaf(element);
-          return !foundSlotBoundary;
-        });
-        if (slotStates.length > 1) {
-          final deepestLeaf = slotStates.first;
-          final leaves = [
-            for (final state in slotStates.reversed.skip(1)) state.label,
-          ];
-          final leafIds = [
-            for (final state in slotStates.reversed.skip(1))
-              state.effectiveComponentId,
-          ];
-          LayoutSelection.setLeafSuffix(
-            leaves,
-            focusContext: deepestLeaf.context,
-            ids: leafIds,
-          );
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              LayoutSelection.setLeafSuffix(
-                leaves,
-                focusContext: deepestLeaf.mounted ? deepestLeaf.context : null,
-                ids: leafIds,
-              );
-            }
+          collectLeaf(origin);
+          origin.visitAncestorElements((element) {
+            collectLeaf(element);
+            return !foundSlotBoundary;
           });
-        } else if (slotStates.length == 1) {
-          final leaf = slotStates.first;
-          if (!LayoutSelection.isSelectedSlotContext(leaf.context)) {
-            LayoutSelection.updateActiveFocus(
-              leaf.context,
-              id: leaf.effectiveComponentId,
+          if (slotStates.length > 1) {
+            final deepestLeaf = slotStates.first;
+            final leaves = [
+              for (final state in slotStates.reversed.skip(1)) state.label,
+            ];
+            final leafIds = [
+              for (final state in slotStates.reversed.skip(1))
+                state.effectiveComponentId,
+            ];
+            LayoutSelection.setLeafSuffix(
+              leaves,
+              focusContext: deepestLeaf.context,
+              ids: leafIds,
             );
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted && leaf.mounted) {
-                LayoutSelection.updateActiveFocus(
-                  leaf.context,
-                  id: leaf.effectiveComponentId,
-                );
+              if (mounted) {
+                zoomController?.beginRightClickSelection();
+                try {
+                  LayoutSelection.setLeafSuffix(
+                    leaves,
+                    focusContext: deepestLeaf.mounted
+                        ? deepestLeaf.context
+                        : null,
+                    ids: leafIds,
+                  );
+                } finally {
+                  zoomController?.endRightClickSelection();
+                }
               }
             });
+          } else if (slotStates.length == 1) {
+            final leaf = slotStates.first;
+            if (!LayoutSelection.isSelectedSlotContext(leaf.context)) {
+              LayoutSelection.updateActiveFocus(
+                leaf.context,
+                id: leaf.effectiveComponentId,
+              );
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted && leaf.mounted) {
+                  zoomController?.beginRightClickSelection();
+                  try {
+                    LayoutSelection.updateActiveFocus(
+                      leaf.context,
+                      id: leaf.effectiveComponentId,
+                    );
+                  } finally {
+                    zoomController?.endRightClickSelection();
+                  }
+                }
+              });
+            }
           }
         }
+      } finally {
+        zoomController?.endRightClickSelection();
       }
     }
     final extraActions = [
@@ -1424,6 +1768,10 @@ class EditorSlotState extends State<EditorSlot> {
           );
     Rect? resolveAvoidRect() {
       if (!selectTarget) return null;
+      final zoomOptions = zoomController?.options.value;
+      if (zoomOptions != null && !zoomOptions.zoomOnRightClick) {
+        return null;
+      }
       final overlayRect = Offset.zero & overlay.size;
       final candidateContexts = <BuildContext>[
         ?targetContext,
@@ -1438,6 +1786,15 @@ class EditorSlotState extends State<EditorSlot> {
             box.attached &&
             box.hasSize &&
             !box.size.isEmpty) {
+          if (zoomOptions != null &&
+              zoomOptions.skipLargeElementsOnRightClick &&
+              zoomController != null) {
+            final contentBounds = zoomController.targetBounds(candidate);
+            if (contentBounds != null &&
+                zoomOptions.isElementTooLarge(contentBounds, overlay.size)) {
+              return null;
+            }
+          }
           final rect = Rect.fromPoints(
             overlay.globalToLocal(box.localToGlobal(Offset.zero)),
             overlay.globalToLocal(
@@ -1445,6 +1802,11 @@ class EditorSlotState extends State<EditorSlot> {
             ),
           ).intersect(overlayRect);
           if (!rect.isEmpty && rect.isFinite) {
+            if (zoomOptions != null &&
+                zoomOptions.skipLargeElementsOnRightClick &&
+                zoomOptions.isElementTooLarge(rect, overlay.size)) {
+              return null;
+            }
             fallbackRect ??= rect;
             if (rect.width < overlay.size.width * .92 ||
                 rect.height < overlay.size.height * .92) {
@@ -2689,6 +3051,13 @@ class _EditorContextMenuDialogState<T>
         widget.avoidRectResolver == null) {
       return;
     }
+    final options = zoom.options.value;
+    if (!options.zoomOnRightClick) {
+      if (zoom.contextMenuAvailable.value != null) {
+        zoom.contextMenuAvailable.value = null;
+      }
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           zoom.disposed ||
@@ -2697,7 +3066,12 @@ class _EditorContextMenuDialogState<T>
       }
       final box = _viewportKey.currentContext?.findRenderObject();
       final available = _layout.availableViewport;
-      if (box is! RenderBox || !box.hasSize || available == null) return;
+      if (box is! RenderBox || !box.hasSize || available == null) {
+        if (zoom.contextMenuAvailable.value != null) {
+          zoom.contextMenuAvailable.value = null;
+        }
+        return;
+      }
       final screen = Rect.fromPoints(
         box.localToGlobal(available.topLeft),
         box.localToGlobal(available.bottomRight),

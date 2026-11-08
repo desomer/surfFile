@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
+import 'package:super_designer/impl.dart';
 
 import 'yaml2jsonschemas_parser.dart';
 
@@ -199,20 +200,23 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     _repositoryStore.registerRepository(repository);
     unawaited(_validateYaml(repository.json['source']));
 
+    initRegistry(_registry);
+
     _registry.registerComponent(
       'model-code',
-      RegisteredComponent(
+      RegisteredComponent.composable(
         label: 'model-code',
+        duplication: ComponentDuplicationContract.newContainer,
         isAvailable: (context) {
           return true;
         },
-        builder: (_) => EditableSurface(
-          id: 'model-code',
+        instanceBuilder: (_, id) => EditableSurface(
+          id: id,
           label: 'model-code',
           menuType: 'Card',
           style: const ContainerStyle(color: Color(0xFF2B382C)),
           child: const SuperCode(
-            id: 'model-code',
+            id: 'model-code-editor',
             config: SuperCodeConfig(
               style: SuperCodeStyle(transparentBackground: true),
               binding: JsonTextBinding(
@@ -231,10 +235,12 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
     _registry.registerComponent(
       'model-header',
-      RegisteredComponent(
+      RegisteredComponent.composable(
         label: 'Model Header',
         menuIcon: Icons.code,
-        builder: (_) => SuperLayout(
+        duplication: ComponentDuplicationContract.newLayout,
+        instanceBuilder: (_, id) => SuperLayout(
+          id: id,
           label: 'Node header',
           config: const SuperLayoutConfig(
             zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
@@ -322,13 +328,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
     _registry.registerComponent(
       'model-tab',
-      RegisteredComponent(
+      RegisteredComponent.composable(
         label: 'model-tab',
+        duplication: ComponentDuplicationContract.superTab,
         isAvailable: (context) {
           return true;
         },
-        builder: (_) => SuperTab(
-          id: 'model-tab',
+        instanceBuilder: (_, id) => SuperTab(
+          id: id,
           label: 'Configurer les onglets',
           config: SuperTabConfig(
             tabBarStyle: const ContainerStyle(
@@ -355,13 +362,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               'tabs': ['KlSbddMArN', 'I511oCPeBH', 'YM2KFsXQQz'],
               'content:KlSbddMArN': ['tab-content-model-impl'],
             },
+            slotTypes: const {'tab-content-model-impl': 'component:model-code'},
           ),
           slots: [
             BuilderSlot(
               id: 'KlSbddMArN',
               label: 'Structure',
               builder: (_) => const SuperAction(
-                id: 'Structure',
+                id: 'KlSbddMArN',
                 config: SuperActionConfig(
                   variant: SuperActionVariant.text,
                   label: 'Structure',
@@ -372,7 +380,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'I511oCPeBH',
               label: 'Info',
               builder: (_) => const SuperAction(
-                id: 'Info',
+                id: 'I511oCPeBH',
                 config: SuperActionConfig(
                   variant: SuperActionVariant.text,
                   label: 'Info',
@@ -383,7 +391,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'YM2KFsXQQz',
               label: 'Version',
               builder: (_) => const SuperAction(
-                id: 'Version',
+                id: 'YM2KFsXQQz',
                 config: SuperActionConfig(
                   variant: SuperActionVariant.text,
                   label: 'Version',
@@ -405,13 +413,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
     _registry.registerComponent(
       'main-tabs',
-      RegisteredComponent(
+      RegisteredComponent.composable(
         label: 'main-tabs',
+        duplication: ComponentDuplicationContract.superTab,
         isAvailable: (context) {
           return true;
         },
-        builder: (_) => SuperTab(
-          id: 'main-tabs',
+        instanceBuilder: (_, id) => SuperTab(
+          id: id,
           label: 'main tabs',
           config: SuperTabConfig(
             zoneFlows: const {
@@ -451,7 +460,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'tab-info',
               label: 'tab-info',
               builder: (_) => const SuperAction(
-                id: 'tab-info-i',
+                id: 'tab-info',
                 config: SuperActionConfig(
                   kind: SuperActionKind.textAndIcon,
                   label: 'Info',
@@ -463,7 +472,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'tab-validator',
               label: 'tab-validator',
               builder: (_) => const SuperAction(
-                id: 'tab-validator-i',
+                id: 'tab-validator',
                 config: SuperActionConfig(
                   kind: SuperActionKind.textAndIcon,
                   label: 'Validator',
@@ -475,7 +484,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'field-description',
               label: 'field-description',
               builder: (_) => const SuperValue(
-                id: 'field-description-i',
+                id: 'field-description',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   label: 'Description',
@@ -491,7 +500,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'field-example',
               label: 'field-example',
               builder: (_) => const SuperValue(
-                id: 'field-example-i',
+                id: 'field-example',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   label: 'Example',
@@ -507,7 +516,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'field-const',
               label: 'field-const',
               builder: (_) => const SuperValue(
-                id: 'field-const-i',
+                id: 'field-const',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   label: 'Const',
@@ -521,7 +530,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'field-default',
               label: 'field-default',
               builder: (_) => const SuperValue(
-                id: 'field-default-i',
+                id: 'field-default',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   label: 'Default',
@@ -535,7 +544,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'switch-nullable',
               label: 'switch-nullable',
               builder: (_) => const SuperValue(
-                id: 'switch-nullable-i',
+                id: 'switch-nullable',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   kind: SuperValueKind.switchControl,
@@ -547,7 +556,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'switch-readonly',
               label: 'switch-readonly',
               builder: (_) => const SuperValue(
-                id: 'switch-readonly-i',
+                id: 'switch-readonly',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   kind: SuperValueKind.switchControl,
@@ -559,7 +568,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'switch-writeonly',
               label: 'switch-writeonly',
               builder: (_) => const SuperValue(
-                id: 'switch-writeonly-i',
+                id: 'switch-writeonly',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   kind: SuperValueKind.switchControl,
@@ -571,7 +580,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'switch-deprecated',
               label: 'switch-deprecated',
               builder: (_) => const SuperValue(
-                id: 'switch-deprecated-i',
+                id: 'switch-deprecated',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   kind: SuperValueKind.switchControl,
@@ -583,7 +592,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: 'switch-search-ref',
               label: 'switch-search-ref',
               builder: (_) => const SuperValue(
-                id: 'switch-search-ref-i',
+                id: 'switch-search-ref',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   kind: SuperValueKind.switchControl,
@@ -595,7 +604,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               id: '_wSA5mADEd',
               label: '_wSA5mADEd',
               builder: (_) => const SuperValue(
-                id: '_wSA5mADEd-i',
+                id: '_wSA5mADEd',
                 config: SuperValueConfig(
                   mode: SuperValueMode.input,
                   label: 'Comment',
@@ -625,12 +634,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
 
     _registry.registerComponent(
       'ModelDesc',
-      RegisteredComponent(
+      RegisteredComponent.composable(
         label: 'Model Desc',
+        duplication: ComponentDuplicationContract.newLayout,
         isAvailable: (context) {
           return true;
         },
-        builder: (_) => SuperLayout(
+        instanceBuilder: (_, id) => SuperLayout(
+          id: id,
           label: 'layout',
           behaviours: [
             ComponentBehavior(
@@ -654,6 +665,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
               SuperLayoutZone.center: ['explorer-tree'],
               SuperLayoutZone.east: ['global-node-properties'],
             },
+            slotTypes: {'input-code': 'component:model-tab'},
           ),
           slots: [
             BuilderSlot(
@@ -668,17 +680,10 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
             BuilderSlot(
               id: 'global-node-properties',
               label: 'Global Node Properties',
-              builder: (_) => const SuperValue(
-                id: 'global-node-properties_text',
-                config: SuperValueConfig(
-                  binding: JsonTextBinding(
-                    repositoryId: _repositoryId,
-                    path: 'nodes[?].propertiesText',
-                  ),
-                  minLines: 5,
-                  maxLines: 5,
-                ),
-              ),
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('main-tabs')
+                      .builder(context),
             ),
             BuilderSlot(
               id: 'explorer-tree',
@@ -700,6 +705,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     label: 'Input Data',
                     menuIcon: Icons.code,
                     builder: (context) => SuperLayout(
+                      id: 'input-data',
                       label: 'Node data',
                       config: const SuperLayoutConfig(
                         zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
@@ -724,7 +730,6 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                           label: 'Title',
                           builder: (_) => const SuperValue(
                             id: 'tree-node-title',
-
                             config: SuperValueConfig(
                               placeholder: 'title',
                               mode: SuperValueMode.input,
@@ -755,6 +760,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                     SuperTreeViewConfig.headerZone: ['input-header'],
                     SuperTreeViewConfig.dataZone: ['input-data'],
                   },
+                  slotTypes: const {'input-header': 'component:model-header'},
                 ),
               ),
             ),

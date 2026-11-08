@@ -985,6 +985,7 @@ class _SuperActionState extends State<SuperAction>
             return EditorSlot(
               key: _surface,
               id: widget.id,
+              exportConfig: () => configuration.value,
               behaviors: widget.behaviours,
               label: 'Action',
               menuType: 'Action',
@@ -1157,6 +1158,7 @@ class _SuperActionState extends State<SuperAction>
             return EditorSlot(
               key: _surface,
               id: widget.id,
+              exportConfig: () => configuration.value,
               behaviors: widget.behaviours,
               label: 'Action',
               menuType: 'Action',
@@ -1172,6 +1174,7 @@ class _SuperActionState extends State<SuperAction>
           return EditorSlot(
             key: _surface,
             id: widget.id,
+            exportConfig: () => configuration.value,
             behaviors: widget.behaviours,
             label: 'Action',
             menuType: 'Action',

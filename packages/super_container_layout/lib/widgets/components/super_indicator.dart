@@ -791,6 +791,7 @@ class _SuperIndicatorState extends State<SuperIndicator> {
           return EditorSlot(
             key: _surface,
             id: widget.id,
+            exportConfig: () => configuration.value,
             behaviors: widget.behaviours,
             label: 'Indicator',
             menuType: 'Indicator',

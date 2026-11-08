@@ -10,8 +10,32 @@ import '../super_layout/slot_implementation.dart';
 
 /// Builds an ID-keyed map of supplied [SuperAction] destinations.
 Map<String, SuperAction> suppliedActionDestinationMap(
-  Iterable<SuperAction> destinations,
-) => {for (final action in destinations) action.id: action};
+  Iterable<SuperAction> destinations, [
+  List<SlotImplementation> extraSlots = const [],
+  BuildContext? context,
+]) {
+  final actions = <String, SuperAction>{
+    for (final action in destinations) action.id: action,
+  };
+  if (context != null) {
+    for (final slot in extraSlots) {
+      if (slot is BuilderSlot) {
+        try {
+          final built = slot.builder(context);
+          if (built is SuperAction) {
+            actions.putIfAbsent(slot.id, () => built);
+            if (built.id.isNotEmpty) {
+              actions.putIfAbsent(built.id, () => built);
+            }
+          }
+        } on Object {
+          // Ignore les builders dependant d'un InheritedWidget non monte.
+        }
+      }
+    }
+  }
+  return actions;
+}
 
 /// Wraps supplied [SuperAction] destinations as [BuilderSlot]s followed by [extraSlots].
 List<SlotImplementation> buildActionDestinationSlots(

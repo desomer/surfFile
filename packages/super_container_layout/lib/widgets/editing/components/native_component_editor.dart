@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
+import 'package:super_container_layout/models/component_config.dart';
 
 import '../../../models/json_syntax.dart';
 import '../../../models/component_behavior.dart';
@@ -168,12 +169,16 @@ class NativeComponentEditor extends StatefulWidget {
     this.propertyDescriptors = const [],
     this.isRegionAvailable,
     this.isPropertyAvailable,
+    this.exportConfig,
     super.key,
   });
 
   final String? id;
   final String label;
   final NativeComponentConfig config;
+
+  /// Configuration personnalisée à retourner lors de l'export (ex. `SuperTabConfig`, `SuperTreeViewConfig`, `SuperTableConfig`).
+  final ComponentConfig Function()? exportConfig;
 
   /// Comportements explicites de la surface complete du composant.
   final List<ComponentBehavior>? behaviours;
@@ -2966,6 +2971,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
       if (!widget.editSurface) {
         return EditorSlot(
           id: _effectiveComponentId,
+          exportConfig: widget.exportConfig ?? () => _config.value,
           behaviors: widget.behaviours,
           editable: false,
           child: child,
@@ -2979,6 +2985,7 @@ class NativeComponentEditorState extends State<NativeComponentEditor> {
         onSelect: () => select(null),
         child: EditorSlot(
           id: _effectiveComponentId,
+          exportConfig: widget.exportConfig ?? () => _config.value,
           behaviors: widget.behaviours,
           label: widget.settingsTitle,
           menuTitle: widget.label,

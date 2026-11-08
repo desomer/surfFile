@@ -110,8 +110,11 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
     }
   }
 
-  Map<String, SuperAction> get _suppliedActions =>
-      suppliedActionDestinationMap(widget._allDestinations);
+  Map<String, SuperAction> get _suppliedActions => suppliedActionDestinationMap(
+    widget._allDestinations,
+    widget.slots,
+    context,
+  );
 
   List<SlotImplementation> get _slots =>
       buildActionDestinationSlots(widget._allDestinations, widget.slots);

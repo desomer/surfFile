@@ -80,6 +80,7 @@ abstract final class EditorPageGraph {
     String? zoneId,
     String? registryType,
     Map<String, ComponentConfig> liveConfigs = const {},
+    Map<String, ContainerStyle> liveStyles = const {},
     Map<String, List<ComponentBehavior>> liveBehaviors = const {},
   }) => export(
     appearance: appearance,
@@ -88,6 +89,7 @@ abstract final class EditorPageGraph {
     zoneId: zoneId,
     registryType: registryType,
     liveConfigs: liveConfigs,
+    liveStyles: liveStyles,
     liveBehaviors: liveBehaviors,
   ).appearance;
 
@@ -109,13 +111,31 @@ abstract final class EditorPageGraph {
     String? zoneId,
     String? registryType,
     Map<String, ComponentConfig> liveConfigs = const {},
+    Map<String, ContainerStyle> liveStyles = const {},
     Map<String, List<ComponentBehavior>> liveBehaviors = const {},
   }) {
     final base = registry.appearanceSnapshot(appearance);
-    final snapshot = liveConfigs.isEmpty && liveBehaviors.isEmpty
+    final mergedComponents = <String, ComponentConfig>{
+      ...liveConfigs,
+      ...base.components,
+    };
+    for (final entry in liveConfigs.entries) {
+      final baseVal = base.components[entry.key];
+      final liveVal = entry.value;
+      if (baseVal is NativeComponentConfig &&
+          liveVal is NativeComponentConfig &&
+          baseVal.placements['child']?.length == 1 &&
+          baseVal.placements['child']!.single == '__provided-child' &&
+          liveVal.placements['child']?.single != '__provided-child') {
+        mergedComponents[entry.key] = liveVal;
+      }
+    }
+    final snapshot =
+        liveConfigs.isEmpty && liveStyles.isEmpty && liveBehaviors.isEmpty
         ? base
         : base.copyWith(
-            components: {...liveConfigs, ...base.components},
+            components: mergedComponents,
+            styles: {...liveStyles, ...base.styles},
             behaviors: {...liveBehaviors, ...base.behaviors},
           );
     final config = snapshot.components[componentId];
@@ -135,7 +155,9 @@ abstract final class EditorPageGraph {
         (componentId == 'root' && config is NativeComponentConfig);
 
     String? inferred(String id) => switch (snapshot.components[id]) {
-      null => null,
+      null => snapshot.styles.containsKey(id) ? 'registry:Card' : null,
+      NativeComponentConfig() when snapshot.styles.containsKey(id) =>
+        'registry:Card',
       SuperListViewConfig() => 'registry:ListView',
       SuperLayoutConfig() => 'registry:Layout',
       SuperValueConfig() => 'registry:Value',
@@ -732,7 +754,9 @@ _Resolution _resolve(Registry registry, String type, EditorConfigKind kind) {
     for (final entry in registry.components.entries) {
       final component = entry.value;
       if (component.slotId == type ||
+          type == entry.key ||
           type == 'component:${component.slotId ?? entry.key}' ||
+          type == 'component:${entry.key}' ||
           key == entry.key) {
         return found(component.label, component.duplication);
       }
@@ -745,7 +769,9 @@ _Resolution _resolve(Registry registry, String type, EditorConfigKind kind) {
   for (final entry in registry.components.entries) {
     final component = entry.value;
     if (type == 'component:${component.slotId ?? entry.key}' ||
+        type == 'component:${entry.key}' ||
         type == component.slotId ||
+        type == entry.key ||
         type == '$registryPrefix${Uri.encodeComponent(entry.key)}') {
       return found(component.label, component.duplication);
     }

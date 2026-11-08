@@ -1018,6 +1018,7 @@ class _SuperTableState extends State<SuperTable> {
           valueListenable: style,
           builder: (context, currentRowStyle, _) => NativeComponentEditor(
             behaviours: widget.behaviours,
+            exportConfig: () => controller.value,
             id: widget.id,
             label: widget.label,
             menuType: 'Table',

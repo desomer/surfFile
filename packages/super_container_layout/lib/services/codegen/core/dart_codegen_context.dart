@@ -35,6 +35,7 @@ class DartCodegenContext {
     required this.registry,
     this.rootComponentId,
     this.rootInstanceVariable,
+    this.decomposeComponents = false,
   });
 
   /// Apparence autonome contenant les configurations, styles et comportements à exporter.
@@ -48,6 +49,10 @@ class DartCodegenContext {
 
   /// Nom de variable Dart à utiliser pour l'identifiant d'instance du composant racine (ex. `'id'`).
   final String? rootInstanceVariable;
+
+  /// Indique si les [RegisteredComponent] ayant `decomposableOnExport: true`
+  /// doivent être décomposés en widgets standards au lieu d'être appelés via le registre.
+  final bool decomposeComponents;
 
   final Set<String> _visiting = <String>{};
 
@@ -931,6 +936,31 @@ class DartCodegenContext {
     return 'Card';
   }
 
+  /// Résout la clé d'un [RegisteredComponent] dans [Registry.components] pour [id] et [slotType].
+  String? resolveRegisteredComponentKey(String id, {String? slotType}) {
+    final candidates = <String>[
+      if (slotType != null && slotType.isNotEmpty) ...[
+        slotType,
+        if (slotType.startsWith('component:'))
+          slotType.substring('component:'.length),
+        if (slotType.startsWith('registry:'))
+          Uri.decodeComponent(slotType.substring('registry:'.length)),
+      ],
+      id,
+    ];
+    for (final candidate in candidates) {
+      if (registry.components.containsKey(candidate)) {
+        return candidate;
+      }
+      for (final entry in registry.components.entries) {
+        if (entry.value.slotId == candidate) {
+          return entry.key;
+        }
+      }
+    }
+    return null;
+  }
+
   /// Résout le [ComponentDartGenerator] associé à [id] (et au [slotType] éventuel).
   ComponentDartGenerator? resolveGenerator(String id, {String? slotType}) {
     final regType = resolveRegistryType(id, slotType: slotType);
@@ -952,6 +982,30 @@ class DartCodegenContext {
       return 'const SizedBox.shrink()';
     }
     try {
+      if (slotType != null && slotType.startsWith('component:')) {
+        final registeredKey = resolveRegisteredComponentKey(
+          id,
+          slotType: slotType,
+        );
+        if (registeredKey != null) {
+          final registeredComp = registry.components[registeredKey];
+          final shouldDecompose =
+              decomposeComponents &&
+              (registeredComp?.decomposableOnExport ?? false);
+          if (!shouldDecompose) {
+            return 'SuperApp.of(context).registry!.component(${formatString(registeredKey)}).builder(context)';
+          }
+          final decomposedGenerator = resolveGenerator(id);
+          if (decomposedGenerator != null) {
+            return decomposedGenerator.generateWidget(
+              this,
+              id: id,
+              label: label,
+              indent: indent,
+            );
+          }
+        }
+      }
       final generator = resolveGenerator(id, slotType: slotType);
       if (generator != null) {
         return generator.generateWidget(
@@ -960,6 +1014,13 @@ class DartCodegenContext {
           label: label,
           indent: indent,
         );
+      }
+      final registeredKey = resolveRegisteredComponentKey(
+        id,
+        slotType: slotType,
+      );
+      if (registeredKey != null) {
+        return 'SuperApp.of(context).registry!.component(${formatString(registeredKey)}).builder(context)';
       }
       return 'const SizedBox.shrink()';
     } finally {
@@ -984,12 +1045,13 @@ class DartCodegenContext {
       label: effectiveLabel,
       indent: indent + 2,
     );
+    final usesContext = widgetCode.contains('(context)');
     final args = <String, String>{
       'id': formatString(id),
       'label': formatString(effectiveLabel),
       if (preferredSize != null)
         'preferredSize': formatSize(preferredSize, includeConst: true),
-      'builder': '(_) => $widgetCode',
+      'builder': '(${usesContext ? 'context' : '_'}) => $widgetCode',
     };
     return formatCall(
       'BuilderSlot',

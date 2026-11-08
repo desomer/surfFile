@@ -961,6 +961,234 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'right-clicking a full-screen or large element keeps current view without zooming or shifting',
+    (tester) async {
+      // Full-screen element (800x600 in an 800x600 viewport).
+      await pumpPage(tester, size: const Size(800, 600));
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      final initialRect = screenRect(tester, target);
+      expect(initialRect, const Rect.fromLTWH(0, 0, 800, 600));
+
+      // Right-click on the full-screen element: context menu opens, view stays at (0, 0, 800, 600).
+      await tester.tapAt(
+        const Offset(400, 300),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+
+      final menu = find.byKey(const ValueKey('editor-context-menu-dialog'));
+      expect(menu, findsOneWidget);
+      expect(screenRect(tester, target), initialRect);
+
+      // Close context menu: view still stays unchanged.
+      await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(screenRect(tester, target), initialRect);
+
+      // If user manually pans/zooms first, right-clicking the large element preserves that custom view.
+      final slider = tester.widget<Slider>(
+        find.byKey(const ValueKey('editor-zoom-slider')),
+      );
+      slider.onChanged!(1.5);
+      await tester.pumpAndSettle();
+      final customZoomedRect = screenRect(tester, target);
+      expect(customZoomedRect.width, closeTo(800 * 1.5, 0.5));
+
+      await tester.tapAt(
+        const Offset(400, 300),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(screenRect(tester, target), customZoomedRect);
+
+      await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), customZoomedRect);
+
+      // Reset to 100% and open property editor dialog on the full-screen element:
+      // skipLargeElementsOnDialog is true by default, so it does not dezoom the full-page element.
+      slider.onChanged!(1.0);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), initialRect);
+
+      showEditorDialog<void>(
+        context: tester.element(target),
+        target: tester.element(target),
+        builder: (dialogCtx) => AlertDialog(
+          title: const Text('Propriétés page entière'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Fermer'),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+      expect(screenRect(tester, target), initialRect);
+
+      // If skipLargeElementsOnDialog is disabled, dezoom uses the progressive algorithm
+      // bounded by minDialogScale (50% by default, instead of ~22%).
+      final controller = EditorZoomScope.controllerOf(tester.element(target))!;
+      controller.options.value = controller.options.value.copyWith(
+        skipLargeElementsOnDialog: false,
+      );
+      await tester.pumpAndSettle();
+      expect(
+        screenRect(tester, target).width,
+        greaterThanOrEqualTo(800 * EditorZoomOptions.defaultMinDialogScale - 1),
+      );
+
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target), initialRect);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'zoom options dialog opens from toolbar and configures zoom behaviors',
+    (tester) async {
+      await pumpPage(tester);
+      final target = find.byKey(const ValueKey('zoom-target-content'));
+      final initialRect = screenRect(tester, target);
+
+      // Open zoom options dialog from the floating toolbar button.
+      final optionsButton = find.byKey(
+        const ValueKey('editor-zoom-options-button'),
+      );
+      expect(optionsButton, findsOneWidget);
+      await tester.tap(optionsButton);
+      await tester.pumpAndSettle();
+
+      final optionsDialog = find.byKey(
+        const ValueKey('editor-zoom-options-dialog'),
+      );
+      expect(optionsDialog, findsOneWidget);
+      expect(find.text('Options du zoom en mode édition'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('zoom-option-skip-large-right-click')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-skip-large-dialog')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-large-threshold-slider')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-right-click')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('zoom-option-hover')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('zoom-option-selection')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-editor-dialog')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-reset-on-dialog-exit')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-max-scale-slider')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-min-dialog-scale-slider')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('zoom-option-target-area-slider')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('zoom-option-animate')), findsOneWidget);
+
+      // Disable automatic zoom on right-click.
+      final rightClickOption = find.byKey(
+        const ValueKey('zoom-option-right-click'),
+      );
+      await tester.ensureVisible(rightClickOption);
+      await tester.pumpAndSettle();
+      await tester.tap(rightClickOption);
+      await tester.pumpAndSettle();
+
+      // Close options dialog.
+      await tester.tap(find.byKey(const ValueKey('zoom-option-close')));
+      await tester.pumpAndSettle();
+      expect(optionsDialog, findsNothing);
+
+      // Right-clicking the 320x240 target now keeps the initial 100% view.
+      await tester.tap(target, buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('editor-context-menu-dialog')),
+        findsOneWidget,
+      );
+      expect(screenRect(tester, target), initialRect);
+
+      await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
+      await tester.pumpAndSettle();
+
+      // Re-open options dialog, restore defaults, and verify reset 100% button.
+      await tester.tap(optionsButton);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('zoom-option-restore-defaults')),
+      );
+      await tester.pumpAndSettle();
+
+      final controller = EditorZoomScope.controllerOf(tester.element(target))!;
+      expect(controller.options.value, const EditorZoomOptions());
+      expect(controller.options.value.resetZoomOnDialogExit, isTrue);
+
+      await tester.tap(find.byKey(const ValueKey('zoom-option-close')));
+      await tester.pumpAndSettle();
+
+      // Set a specific zoom/position before opening property editor dialog (e.g. 1.6x via slider),
+      // open property editor dialog (which reframes beside the dialog), then close it:
+      // because resetZoomOnDialogExit is true by default, it restores the zoom & position from before opening the dialog.
+      final slider = tester.widget<Slider>(
+        find.byKey(const ValueKey('editor-zoom-slider')),
+      );
+      slider.onChanged!(1.6);
+      await tester.pumpAndSettle();
+      final rectBeforeDialog = screenRect(tester, target);
+      expect(rectBeforeDialog.width, closeTo(320 * 1.6, 0.5));
+
+      showEditorDialog<void>(
+        context: tester.element(target),
+        builder: (dialogCtx) => AlertDialog(
+          title: const Text('Propriétés'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Fermer propriétés'),
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsOneWidget);
+      expect(screenRect(tester, target), isNot(rectBeforeDialog));
+
+      await tester.tap(find.text('Fermer propriétés'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('editor-dialog-panel')), findsNothing);
+      expect(screenRect(tester, target), rectBeforeDialog);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Widget _target(BuildContext context) =>

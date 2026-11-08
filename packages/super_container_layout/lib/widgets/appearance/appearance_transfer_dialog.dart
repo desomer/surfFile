@@ -40,6 +40,8 @@ class AppearanceTransferDialog extends StatefulWidget {
     this.allowExport = true,
     this.notice,
     this.dartExportBuilder,
+    this.dartExportWithOptionsBuilder,
+    this.initialDecomposeComponents = true,
     super.key,
   }) : assert(allowImport || allowExport);
 
@@ -55,6 +57,13 @@ class AppearanceTransferDialog extends StatefulWidget {
 
   /// Générateur optionnel de code Dart pour « Exporter le contenu... ».
   final String Function(Appearance appearance)? dartExportBuilder;
+
+  /// Générateur optionnel de code Dart recevant l'option [decomposeComponents].
+  final String Function(Appearance appearance, {required bool decomposeComponents})?
+  dartExportWithOptionsBuilder;
+
+  /// État initial de l'option « Décomposer les composants composés » en mode Code Dart.
+  final bool initialDecomposeComponents;
 
   static Future<void> show(
     BuildContext context,
@@ -76,6 +85,7 @@ class AppearanceTransferDialog extends StatefulWidget {
 class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   bool _importing = false;
   ExportFormat _exportFormat = ExportFormat.json;
+  late bool _decomposeComponents = widget.initialDecomposeComponents;
   var _exportGroups = {...TransferGroup.values};
   var _importGroups = <TransferGroup>{};
   Set<TransferGroup> _available = const {};
@@ -86,6 +96,10 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
 
   String? _importError;
   String? _status;
+
+  bool get _hasDartExport =>
+      widget.dartExportWithOptionsBuilder != null ||
+      widget.dartExportBuilder != null;
 
   static String _defaultPath([ExportFormat format = ExportFormat.json]) {
     final home =
@@ -112,9 +126,15 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
   }
 
   void _refreshExport() {
-    if (_exportFormat == ExportFormat.dart &&
-        widget.dartExportBuilder != null) {
-      _exportText.text = widget.dartExportBuilder!(widget.controller.value);
+    if (_exportFormat == ExportFormat.dart && _hasDartExport) {
+      if (widget.dartExportWithOptionsBuilder != null) {
+        _exportText.text = widget.dartExportWithOptionsBuilder!(
+          widget.controller.value,
+          decomposeComponents: _decomposeComponents,
+        );
+      } else {
+        _exportText.text = widget.dartExportBuilder!(widget.controller.value);
+      }
       return;
     }
     _exportText.text = _exportGroups.isEmpty
@@ -267,7 +287,7 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         ),
         const SizedBox(height: 8),
       ],
-      if (widget.dartExportBuilder != null) ...[
+      if (_hasDartExport) ...[
         const Text('Format de l’export'),
         const SizedBox(height: 6),
         SegmentedButton<ExportFormat>(
@@ -286,6 +306,22 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
           ],
           selected: {_exportFormat},
           onSelectionChanged: (selection) => _setExportFormat(selection.first),
+        ),
+        const SizedBox(height: 12),
+      ],
+      if (_exportFormat == ExportFormat.dart &&
+          widget.dartExportWithOptionsBuilder != null) ...[
+        FilterChip(
+          key: const ValueKey('transfer-export-decompose'),
+          label: const Text('Décomposer les composants composés'),
+          selected: _decomposeComponents,
+          onSelected: (selected) {
+            setState(() {
+              _decomposeComponents = selected;
+              _status = null;
+              _refreshExport();
+            });
+          },
         ),
         const SizedBox(height: 12),
       ],

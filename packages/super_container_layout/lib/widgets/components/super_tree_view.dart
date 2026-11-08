@@ -908,6 +908,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
           valueListenable: style,
           builder: (context, currentRowStyle, _) => NativeComponentEditor(
             behaviours: widget.behaviours,
+            exportConfig: () => controller.value,
             id: widget.id,
             label: widget.label,
             menuType: 'TreeView',

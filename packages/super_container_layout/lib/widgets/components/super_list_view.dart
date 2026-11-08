@@ -1096,6 +1096,7 @@ class _SuperListViewState extends State<SuperListView> {
 
         return EditorSlot(
           id: widget.id,
+          exportConfig: () => configuration.value.copyWith(template: layout.value),
           behaviors: widget.behaviours,
           label: 'Liste',
           menuType: 'ListView',

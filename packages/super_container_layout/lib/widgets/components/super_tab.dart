@@ -253,9 +253,27 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     }
   }
 
-  Map<String, SuperAction> get _suppliedActions => {
-    for (final action in widget._allTabs) action.id: action,
-  };
+  Map<String, SuperAction> get _suppliedActions {
+    final actions = <String, SuperAction>{
+      for (final action in widget._allTabs) action.id: action,
+    };
+    for (final slot in widget.slots) {
+      if (slot is BuilderSlot) {
+        try {
+          final built = slot.builder(context);
+          if (built is SuperAction) {
+            actions.putIfAbsent(slot.id, () => built);
+            if (built.id.isNotEmpty) {
+              actions.putIfAbsent(built.id, () => built);
+            }
+          }
+        } on Object {
+          // Ignore les builders dependant d'un InheritedWidget non monte.
+        }
+      }
+    }
+    return actions;
+  }
 
   List<SlotImplementation> get _providedSlots => [
     for (final action in widget._allTabs)
@@ -1546,6 +1564,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
         return NativeComponentEditor(
           id: widget.id,
+          exportConfig: () => controller.value,
           behaviours: widget.behaviours,
           label: widget.label,
           menuType: 'Tab',

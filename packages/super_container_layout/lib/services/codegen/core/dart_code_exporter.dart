@@ -14,6 +14,7 @@ abstract final class DartCodeExporter {
     required Registry registry,
     String? componentId,
     String? componentLabel,
+    bool decomposeComponents = false,
   }) {
     final resolved = _resolveExportRoot(
       appearance: appearance,
@@ -26,6 +27,7 @@ abstract final class DartCodeExporter {
       registry: registry,
       rootComponentId: resolved.singleComponentId,
       rootInstanceVariable: 'id',
+      decomposeComponents: decomposeComponents,
     );
 
     final String builderExpression;

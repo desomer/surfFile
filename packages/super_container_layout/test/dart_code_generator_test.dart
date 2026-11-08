@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
@@ -375,6 +376,255 @@ void main() {
       expect(dartCode, contains("SuperValue(\n          id: id,"));
       // L'ID 'field-default-i' n'est plus dupliqué dans le code généré
       expect(dartCode.contains("'field-default-i'"), isFalse);
+    },
+  );
+
+  testWidgets(
+    'composed RegisteredComponent with unmounted tabs, mismatched slot IDs and EditableSurface exports without omitted widgets',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier<Appearance>(DefaultAppearance());
+      addTearDown(appearance.dispose);
+      registry.bindAppearance(appearance);
+
+      registry.registerComponent(
+        'sub-card',
+        RegisteredComponent.composable(
+          label: 'Sub Card',
+          duplication: ComponentDuplicationContract.newContainer,
+          instanceBuilder: (_, id) => EditableSurface(
+            id: id,
+            label: 'Sub Card',
+            menuType: 'Card',
+            style: const ContainerStyle(color: Color(0xFF2B382C)),
+            child: const SuperValue(
+              id: 'sub-card-value',
+              config: SuperValueConfig(initialText: 'Inside Card'),
+            ),
+          ),
+        ),
+      );
+
+      final router = GoRouter(
+        routes: [GoRoute(path: '/', builder: (_, _) => const SizedBox())],
+      );
+      addTearDown(router.dispose);
+      final app = SuperApp(router: router, registry: registry);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppearanceScope(
+              controller: appearance,
+              child: SuperAppScope(
+                app: app,
+                child: SuperTab(
+                  id: 'composed-tabs',
+                  label: 'Composed Tabs',
+                  config: SuperTabConfig(
+                    placements: const {
+                      'tabs': ['tab-1', 'tab-2'],
+                      'content:tab-1': ['field-a', 'card-slot'],
+                      'content:tab-2': ['unmounted-field'],
+                    },
+                    slotTypes: const {'card-slot': 'component:sub-card'},
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'tab-1',
+                      label: 'Tab 1',
+                      builder: (_) => const SuperAction(
+                        id: 'tab-1-i',
+                        config: SuperActionConfig(label: 'Tab 1'),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'tab-2',
+                      label: 'Tab 2',
+                      builder: (_) => const SuperAction(
+                        id: 'tab-2-i',
+                        config: SuperActionConfig(label: 'Tab 2'),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'field-a',
+                      label: 'Field A',
+                      builder: (_) => const SuperValue(
+                        id: 'field-a-i',
+                        config: SuperValueConfig(label: 'Label A'),
+                      ),
+                    ),
+                    BuilderSlot(
+                      id: 'card-slot',
+                      label: 'Card Slot',
+                      builder: (context) =>
+                          SuperApp.of(context).registry!
+                              .component('sub-card')
+                              .builder(context),
+                    ),
+                    BuilderSlot(
+                      id: 'unmounted-field',
+                      label: 'Unmounted Field',
+                      builder: (_) => const SuperValue(
+                        id: 'unmounted-field-i',
+                        config: SuperValueConfig(
+                          initialText: 'Hidden tab text',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final slotFinder = find.byWidgetPredicate(
+        (w) => w is EditorSlot && w.id == 'composed-tabs' && w.zoneId == null,
+      );
+      expect(slotFinder, findsOneWidget);
+      final slotState = tester.state<EditorSlotState>(slotFinder);
+
+      // Les actions des onglets fournies via BuilderSlot avec le même ID (ex. tab-1)
+      // conservent bien leur libellé configuré au lieu d'être écrasées par un fallback vide.
+      expect(find.text('Tab 1'), findsOneWidget);
+      expect(find.text('Tab 2'), findsOneWidget);
+
+      final export = slotState.buildContentExport();
+      expect(export.omitted, isEmpty);
+
+      final dartCode = slotState.buildDartContentExport(export);
+      expect(dartCode, contains("label: 'Tab 1'"));
+      expect(dartCode, contains("label: 'Tab 2'"));
+      expect(dartCode, contains("label: 'Label A'"));
+      expect(dartCode, contains("initialText: 'Hidden tab text'"));
+      expect(
+        dartCode,
+        contains(
+          "SuperApp.of(context).registry!.component('sub-card').builder(context)",
+        ),
+      );
+
+      // Avec decomposeComponents: true, le composant marqué composable (sub-card)
+      // est décomposé directement en EditableSurface + SuperValue sans appel au registre.
+      final decomposedDartCode = slotState.buildDartContentExport(export, true);
+      expect(
+        decomposedDartCode.contains("registry!.component('sub-card')"),
+        isFalse,
+      );
+      expect(decomposedDartCode, contains('EditableSurface('));
+      expect(decomposedDartCode, contains("initialText: 'Inside Card'"));
+    },
+  );
+
+  testWidgets(
+    'AppearanceTransferDialog toggles decomposeComponents option in Code Dart mode',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      registry.registerComponent(
+        'composable-child',
+        RegisteredComponent.composable(
+          label: 'Composable Child',
+          duplication: ComponentDuplicationContract.superValue,
+          instanceBuilder: (_, id) => SuperValue(
+            id: id,
+            config: const SuperValueConfig(initialText: 'Decomposed Value'),
+          ),
+        ),
+      );
+      registry.registerComponent(
+        'atomic-child',
+        RegisteredComponent(
+          label: 'Atomic Child',
+          duplication: ComponentDuplicationContract.superValue,
+          decomposableOnExport: false,
+          instanceBuilder: (_, id) => SuperValue(
+            id: id,
+            config: const SuperValueConfig(initialText: 'Atomic Value'),
+          ),
+        ),
+      );
+
+      final appearance = DefaultAppearance(
+        components: {
+          'parent-layout': const SuperLayoutConfig(
+            placements: {
+              SuperLayoutZone.center: ['slot-comp', 'slot-atom'],
+            },
+            slotTypes: {
+              'slot-comp': 'component:composable-child',
+              'slot-atom': 'component:atomic-child',
+            },
+          ),
+          'slot-comp': const SuperValueConfig(initialText: 'Decomposed Value'),
+          'slot-atom': const SuperValueConfig(initialText: 'Atomic Value'),
+        },
+      );
+      final controller = ValueNotifier<Appearance>(appearance);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppearanceTransferDialog(
+              controller: controller,
+              allowImport: false,
+              dartExportWithOptionsBuilder:
+                  (current, {required decomposeComponents}) =>
+                      DartCodeExporter.export(
+                        appearance: current,
+                        registry: registry,
+                        componentId: 'parent-layout',
+                        componentLabel: 'Parent Layout',
+                        decomposeComponents: decomposeComponents,
+                      ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Code Dart'));
+      await tester.pumpAndSettle();
+
+      final decomposeChip = find.byKey(
+        const ValueKey('transfer-export-decompose'),
+      );
+      expect(decomposeChip, findsOneWidget);
+
+      final textField = tester.widget<TextField>(
+        find.byKey(const ValueKey('transfer-export-text')),
+      );
+      // Coché par défaut : composable-child est décomposé, atomic-child reste en référence
+      expect(
+        textField.controller!.text,
+        contains("initialText: 'Decomposed Value'"),
+      );
+      expect(
+        textField.controller!.text.contains(
+          "component('composable-child')",
+        ),
+        isFalse,
+      );
+      expect(
+        textField.controller!.text,
+        contains("component('atomic-child')"),
+      );
+
+      // Décoche l'option : les deux composants sont conservés par référence
+      await tester.tap(decomposeChip);
+      await tester.pumpAndSettle();
+
+      expect(
+        textField.controller!.text,
+        contains("component('composable-child')"),
+      );
+      expect(
+        textField.controller!.text,
+        contains("component('atomic-child')"),
+      );
     },
   );
 }

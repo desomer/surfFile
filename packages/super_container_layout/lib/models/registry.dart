@@ -6,6 +6,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 import 'component_config.dart';
 import 'component_extension.dart';
@@ -1353,7 +1354,31 @@ class RegisteredComponent {
     this.duplication,
     this.addConfigurator,
     this.previewBuilder,
+    this.decomposableOnExport = false,
   }) : _builder = builder,
+       assert(
+         builder != null || instanceBuilder != null,
+         'Au moins builder ou instanceBuilder doit être fourni.',
+       );
+
+  /// Constructeur nommé pour un composant uniquement composé de composants standards ou d'extensions,
+  /// autorisant sa décomposition (inlining) lors d'un export en code Dart.
+  const RegisteredComponent.composable({
+    required this.label,
+    WidgetBuilder? builder,
+    this.instanceBuilder,
+    this.slotId,
+    this.sizing = SlotSizing.fill,
+    this.preferredSize,
+    this.isAvailable,
+    this.tags = const {},
+    this.placementTags = const {},
+    this.menuIcon,
+    this.duplication,
+    this.addConfigurator,
+    this.previewBuilder,
+  }) : _builder = builder,
+       decomposableOnExport = true,
        assert(
          builder != null || instanceBuilder != null,
          'Au moins builder ou instanceBuilder doit être fourni.',
@@ -1365,9 +1390,19 @@ class RegisteredComponent {
   /// Constructeur de widget dynamique recevant l'identifiant d'instance du slot.
   final InstanceWidgetBuilder? instanceBuilder;
 
+  /// Indique si ce composant (composé de composants standards ou d'extensions)
+  /// peut être décomposé en widgets standards lors de l'export en code Dart.
+  final bool decomposableOnExport;
+
   /// Constructeur historique de widget.
   WidgetBuilder get builder =>
-      _builder ?? ((context) => instanceBuilder!(context, slotId ?? ''));
+      _builder ??
+      ((context) => instanceBuilder!(
+        context,
+        slotId ??
+            editorComponentLabelOf(context)?.id ??
+            (label.isNotEmpty ? label : 'registered-component'),
+      ));
 
   /// Identifiant historique, conservé dans les dispositions existantes.
   final String? slotId;

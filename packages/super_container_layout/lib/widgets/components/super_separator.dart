@@ -814,6 +814,7 @@ class _SuperSeparatorState extends State<SuperSeparator> {
           return EditorSlot(
             key: _surface,
             id: widget.id,
+            exportConfig: () => configuration.value,
             behaviors: widget.behaviours,
             label: 'Separator',
             menuType: 'Separator',
