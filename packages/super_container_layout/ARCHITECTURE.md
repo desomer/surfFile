@@ -264,7 +264,15 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
 | `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA ("Vibe") construisant le prompt avec `SCREEN_JSON_AI_GUIDE.md`, l'export JSON courant (ou ciblé par `VibeChatScope`) et appliquant la réponse via `AppearanceTransfer.applyVibe`. |
 | `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée et info-bulle fixe ou liée au repository. |
-| `widgets/editing/components/native_component_editor.dart` | Éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
+| `widgets/editing/components/native_component_editor.dart` | Point d'entrée public de l'éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
+| `widgets/editing/components/native_editor/native_region_slot.dart` | Contrats de région (`NativeRegion`) et slots d'adaptation de taille préférée (`NativePreferredSizeWidget`, `NativeWidgetSlot`, `NativeInstanceSlot`). |
+| `widgets/editing/components/native_editor/native_property_control.dart` | Contrôles d'édition de propriétés déclaratives (`buildNativePropertyControl`) et délégué de flux (`NativeRegionFlowDimensionDelegate`). |
+| `widgets/editing/components/native_editor/native_editor_selection.dart` | Extension `NativeComponentEditorSelection` : enregistrement `LayoutSelection`, sélection des régions/slots, actions d'axe et infobulles. |
+| `widgets/editing/components/native_editor/native_editor_dialogs.dart` | Extension `NativeComponentEditorDialogs` : boîte de dialogue `configure()` et ouverture de l'éditeur de flux de région. |
+| `widgets/editing/components/native_editor/native_editor_slots.dart` | Extension `NativeComponentEditorSlots` : résolution des slots (`slotsFor`), renommage d'instance et dimensionnement (`preferredSizeFor`, `_editSize`). |
+| `widgets/editing/components/native_editor/native_editor_addition.dart` | Extension `NativeComponentEditorAddition` : assistant d'ajout (`add`) et insertion contextuelle autour d'un slot ou dans une région. |
+| `widgets/editing/components/native_editor/native_editor_interactions.dart` | Extension `NativeComponentEditorInteractions` : glisser-déposer de slots (`_moveSlot`) et actions d'encapsulation (`wrapActionsForSlot`, `wrapActionsForRegion`). |
+| `widgets/editing/components/native_editor/native_editor_regions.dart` | Extension `NativeComponentEditorRegions` : rendu des slots, régions Box/Sliver et cible de dépôt/overlays partagés (`_buildRegionZoneTarget`). |
 | `widgets/editing/components/native_shape_editor.dart` | Éditeur visuel de forme Material (`NativeShapeConfig`). |
 | `widgets/editing/components/super_action_editor.dart` | Fenêtre d'édition complète d'un `SuperAction` (contenu, icône, couleurs, typographie, surface, états, liaisons JSON, comportements). |
 | `widgets/editing/components/super_indicator_editor.dart` | Fenêtre d'édition complète d'un `SuperIndicator` (icône, libellé, badge/surface, typographie, états standards/nommés, liaisons JSON). |
@@ -292,12 +300,19 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/editing/repositories/repository_binding_fields.dart` | Champs d'interface réutilisables pour sélectionner un repository et un chemin `JsonTextBinding` avec autocomplétion. |
 | `widgets/editing/slots/editable_single_child.dart` | Conteneur éditable monoenfant (utilisé notamment pour la région `child` d'une `Card`). |
 | `widgets/editing/slots/editable_surface.dart` | `EditableSurface` : surface interactive en mode édition permettant d'éditer son `ContainerStyle`, son contenu et ses états. |
-| `widgets/editing/slots/editor_context_menu.dart` | `EditorContextMenu`, `VibeChatScope` : menu contextuel riche du mode édition (style, paramètres, IA ciblée, duplication, encapsulation, suppression). |
-| `widgets/editing/slots/editor_selection_region.dart` | `EditorSelectionRegion`, `EditorSelectionOutline` : détection des clics/doubles-clics et affichage du cadre de sélection d'un composant. |
-| `widgets/editing/slots/editor_slot.dart` | `EditorSlot` : wrapper d'édition universel autour d'un slot de composant (badge, drag-and-drop, menu contextuel, poignées de taille). |
+| `widgets/editing/slots/editor_context_menu.dart` | `EditorContextMenu`, `VibeChatScope` : modèles et `InheritedWidget` du menu contextuel riche du mode édition (`EditorSlotAction`, `EditorContextMenuEntry`, pastille de couleur). |
+| `widgets/editing/slots/editor_context_menu_dialog.dart` | `part of 'editor_slot.dart'` : route popup, boîte de dialogue flottante/déplaçable et délégué de positionnement du menu contextuel. |
+| `widgets/editing/slots/editor_selection_outline.dart` | `part of 'editor_selection_region.dart'` : animation et peintre `EditorSelectionOutline` du cadre de sélection et de survol. |
+| `widgets/editing/slots/editor_selection_region.dart` | `EditorSelectionRegion` : détection des clics/doubles-clics et sélection hiérarchique progressive d'un composant ou d'une zone. |
+| `widgets/editing/slots/editor_slot.dart` | `EditorSlot`, `EditorSlotState`, `StyleEditScope` : wrapper d'édition universel autour d'un slot de composant (cycle de vie, survol/highlight, rendu Box/Sliver). |
+| `widgets/editing/slots/editor_slot_export.dart` | `part of 'editor_slot.dart'` (`EditorSlotExportExtension`) : inspection du graphe vivant des composants et export JSON/Dart ou ouverture IA ciblée. |
+| `widgets/editing/slots/editor_slot_menu.dart` | `part of 'editor_slot.dart'` (`EditorSlotMenuExtension`) : construction et ouverture du menu contextuel hiérarchique (`openMenu`, badges, indicateurs, actions rapides). |
+| `widgets/editing/slots/editor_slot_targets.dart` | `part of 'editor_slot.dart'` (`EditorSlotTargetsExtension`) : renommage, résolution contextuelle et collecte des cibles (`editableChain`, insertions, comportements, données). |
 | `widgets/editing/slots/provided_slot_scope.dart` | `ProvidedSlotScope` : portée transmettant les métadonnées et actions du slot parent aux sous-composants. |
+| `widgets/editing/slots/sliver_pointer_region.dart` | `part of 'editor_selection_region.dart'` : `SliverSlotScope`, `SliverPointerRegion` et son `RenderProxySliver` pour le survol et la peinture d'enfants Sliver. |
 | `widgets/editing/slots/slot_removal.dart` | Logique de suppression sécurisée d'un slot et nettoyage de ses configurations via `EditorPageGraph`. |
-| `widgets/editing/slots/slot_size_editor.dart` | Dialogue et contrôles d'édition fine des contraintes `SlotSizeConstraints` d'un slot. |
+| `widgets/editing/slots/slot_size_editor.dart` | `SlotSizeDimensionDelegate`, `showSlotSizeEditor` : dialogue et contrôles d'édition fine des contraintes `SlotSizeConstraints` d'un slot. |
+| `widgets/editing/slots/slot_size_preview.dart` | `part of 'slot_size_editor.dart'` : aperçu géométrique interactif (Layout / Zone / Slot) dans l'éditeur de taille de slot. |
 | `widgets/editing/slots/slot_wrapping.dart` | Actions permettant d'envelopper un composant existant dans une `Card` ou un `SuperLayout`, ou de le désenvelopper. |
 | `widgets/editing/states/editor_state_controls.dart` | Contrôles génériques d'édition des surcharges d'états (`hover`, `selected`, `automatic`, états métier `named`). |
 | `widgets/editing/styles/container_style_dialog.dart` | Ouverture de l'éditeur de `ContainerStyle` dans une fenêtre de dialogue flottante. |

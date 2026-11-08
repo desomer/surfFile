@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -624,6 +626,132 @@ void main() {
       expect(
         textField.controller!.text,
         contains("component('atomic-child')"),
+      );
+    },
+  );
+
+  testWidgets(
+    'Context menu 3-dots Configure as... opens dialog and extracts subcomponent on export',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final appearance = ValueNotifier<Appearance>(DefaultAppearance());
+      addTearDown(appearance.dispose);
+      registry.bindAppearance(appearance);
+      final editMode = ValueNotifier<bool>(true);
+      addTearDown(editMode.dispose);
+
+      final router = GoRouter(
+        routes: [GoRoute(path: '/', builder: (_, _) => const SizedBox())],
+      );
+      addTearDown(router.dispose);
+      final app = SuperApp(router: router, registry: registry);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppearanceScope(
+              controller: appearance,
+              child: StyleEditScope(
+                controller: editMode,
+                child: SuperAppScope(
+                  app: app,
+                  child: SuperLayout(
+                    id: 'root-layout',
+                    label: 'Root Layout',
+                    config: const SuperLayoutConfig(
+                      placements: {
+                        SuperLayoutZone.center: ['sub-value'],
+                      },
+                    ),
+                    slots: [
+                      BuilderSlot(
+                        id: 'sub-value',
+                        label: 'Sub Value',
+                        builder: (_) => const SuperValue(
+                          id: 'sub-value',
+                          config: SuperValueConfig(initialText: 'Hello World'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final subSlotFinder = find.byWidgetPredicate(
+        (w) => w is EditorSlot && w.id == 'sub-value' && w.zoneId == null,
+      );
+      expect(subSlotFinder, findsOneWidget);
+      final subSlotState = tester.state<EditorSlotState>(subSlotFinder);
+
+      // Ouvre le menu contextuel sur le sous-composant
+      unawaited(subSlotState.openMenu(const Offset(100, 100)));
+      await tester.pumpAndSettle();
+
+      // Clique sur les 3 points verticaux de 'Valeur' (label par défaut de SuperValue)
+      final moreButton = find.byKey(const ValueKey('style-menu-more-Valeur'));
+      expect(moreButton, findsOneWidget);
+      await tester.tap(moreButton);
+      await tester.pumpAndSettle();
+
+      // Clique sur l'item 'Configure as...'
+      final configureAsItem = find.byKey(
+        const ValueKey('style-menu-configure-as-Valeur'),
+      );
+      expect(configureAsItem, findsOneWidget);
+      await tester.tap(configureAsItem);
+      await tester.pumpAndSettle();
+
+      // Vérifie que la boîte de dialogue 'Configure as...' est ouverte
+      expect(find.text('Configure as...'), findsOneWidget);
+      await tester.enterText(
+        find.byKey(const ValueKey('configure-as-component-name')),
+        'my-custom-sub',
+      );
+      // Active 'Forcer en composant à l’export' (qui active aussi 'Générer un composant à l’export')
+      await tester.tap(find.byKey(const ValueKey('configure-as-force-switch')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('configure-as-save')));
+      await tester.pumpAndSettle();
+
+      final savedOpts = registry.exportOptionsFor('sub-value');
+      expect(savedOpts, isNotNull);
+      expect(savedOpts!.componentName, 'my-custom-sub');
+      expect(savedOpts.generateComponentOnExport, isTrue);
+      expect(savedOpts.forceComponentOnExport, isTrue);
+
+      // Exporte le parent 'root-layout' même avec decomposeComponents: true :
+      // comme forceComponentOnExport est true, 'sub-value' génère son propre registerComponent
+      // et est référencé dans 'root-layout'.
+      final rootSlotFinder = find.byWidgetPredicate(
+        (w) => w is EditorSlot && w.id == 'root-layout' && w.zoneId == null,
+      );
+      final rootSlotState = tester.state<EditorSlotState>(rootSlotFinder);
+      final export = rootSlotState.buildContentExport();
+      final dartCode = rootSlotState.buildDartContentExport(export, true);
+
+      expect(
+        dartCode,
+        contains(
+          "_registry.registerComponent(\n  'my-custom-sub',\n  RegisteredComponent(",
+        ),
+      );
+      expect(
+        dartCode,
+        contains(
+          "SuperApp.of(context).registry!.component('my-custom-sub').builder(context)",
+        ),
+      );
+      expect(
+        dartCode,
+        contains(
+          "_registry.registerComponent(\n  'root-layout',\n  RegisteredComponent(",
+        ),
       );
     },
   );

@@ -820,9 +820,7 @@ void main() {
       );
       registry.actionController(
         'tab-act-2',
-        fallback: const SuperActionConfig(
-          label: 'Onglet Style 2',
-        ),
+        fallback: const SuperActionConfig(label: 'Onglet Style 2'),
       );
 
       await mount(
@@ -887,10 +885,7 @@ void main() {
 
       // Vérifier la marge extérieure (outerMargin de 6 px)
       final paddingWidgets = tester.widgetList<Padding>(
-        find.ancestor(
-          of: surfaceFinder,
-          matching: find.byType(Padding),
-        ),
+        find.ancestor(of: surfaceFinder, matching: find.byType(Padding)),
       );
       expect(
         paddingWidgets.any((p) => p.padding == const EdgeInsets.all(6.0)),
@@ -930,8 +925,14 @@ void main() {
 
       const explicit = SuperActionConfig(variant: SuperActionVariant.outlined);
       expect(explicit.variant, SuperActionVariant.outlined);
-      expect(explicit.effectiveVariant(inTab: true), SuperActionVariant.outlined);
-      expect(explicit.effectiveVariant(inTab: false), SuperActionVariant.outlined);
+      expect(
+        explicit.effectiveVariant(inTab: true),
+        SuperActionVariant.outlined,
+      );
+      expect(
+        explicit.effectiveVariant(inTab: false),
+        SuperActionVariant.outlined,
+      );
 
       final configurator = superActionAddConfigurator(const []);
 
@@ -953,9 +954,10 @@ void main() {
           ),
         ),
       );
-      final dropdownOutside = tester.widget<DropdownButtonFormField<SuperActionVariant>>(
-        find.byKey(const ValueKey('add-action-variant')),
-      );
+      final dropdownOutside = tester
+          .widget<DropdownButtonFormField<SuperActionVariant>>(
+            find.byKey(const ValueKey('add-action-variant')),
+          );
       expect(dropdownOutside.initialValue, SuperActionVariant.filled);
 
       // Dans la zone onglets via ComponentAddTargetScope : dropdown initialisé à text
@@ -980,10 +982,75 @@ void main() {
           ),
         ),
       );
-      final dropdownInside = tester.widget<DropdownButtonFormField<SuperActionVariant>>(
-        find.byKey(const ValueKey('add-action-variant')),
-      );
+      final dropdownInside = tester
+          .widget<DropdownButtonFormField<SuperActionVariant>>(
+            find.byKey(const ValueKey('add-action-variant')),
+          );
       expect(dropdownInside.initialValue, SuperActionVariant.text);
+    },
+  );
+
+  testWidgets(
+    'updating SuperTabConfig while a region flow ListenableBuilder dialog is open does not throw markNeedsBuild during build',
+    (tester) async {
+      final registry = Registry()..bootstrap();
+      final tabController = registry.tabController(
+        'flow-tabs',
+        fallback: SuperTabConfig(
+          placements: const {
+            'tabs': ['tab-a'],
+            'content:tab-a': ['slot-a'],
+          },
+        ),
+      );
+
+      await mount(
+        SuperPage(
+          child: SuperTab(
+            id: 'flow-tabs',
+            config: tabController.value,
+            tabs: const [
+              SuperAction(
+                id: 'tab-a',
+                config: SuperActionConfig(label: 'Onglet A'),
+              ),
+            ],
+            slots: [
+              BuilderSlot(
+                id: 'slot-a',
+                label: 'Contenu A',
+                builder: (_) => const Text('Vue A'),
+              ),
+            ],
+          ),
+        ),
+        tester,
+        registry,
+      );
+
+      final editorState = tester.state<NativeComponentEditorState>(
+        find.descendant(
+          of: find.byType(SuperTab),
+          matching: find.byType(NativeComponentEditor),
+        ),
+      );
+      final dialogFuture = editorState.configure(
+        regionId: 'content:tab-a',
+        initialTab: EditorWizardTab.dimensions,
+      );
+      await tester.pumpAndSettle();
+
+      // Mutate SuperTabConfig while the dimensions tab ListenableBuilder is mounted in the dialog route
+      tabController.value = tabController.value.copyWith(
+        zoneFlows: const {'content:tab-a': ZoneFlowConfig(spacing: 12)},
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Appliquer'));
+      await tester.pumpAndSettle();
+      await dialogFuture;
+      expect(tester.takeException(), isNull);
     },
   );
 }

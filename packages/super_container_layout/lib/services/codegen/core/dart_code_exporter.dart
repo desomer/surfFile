@@ -79,8 +79,22 @@ abstract final class DartCodeExporter {
       );
     }
 
+    final rootOpts = resolved.singleComponentId != null
+        ? registry.exportOptionsFor(resolved.singleComponentId!)
+        : (componentId != null ? registry.exportOptionsFor(componentId) : null);
+    final effectiveRootRegId =
+        (rootOpts != null && rootOpts.componentName.trim().isNotEmpty)
+        ? rootOpts.componentName.trim()
+        : resolved.registrationId;
+    final rootCtor =
+        (rootOpts != null &&
+            rootOpts.generateComponentOnExport &&
+            !rootOpts.forceComponentOnExport)
+        ? 'RegisteredComponent.composable'
+        : 'RegisteredComponent';
+
     final registeredComponentCode = context.formatCall(
-      'RegisteredComponent',
+      rootCtor,
       const [],
       {
         'label': context.formatString(resolved.label),
@@ -91,10 +105,77 @@ abstract final class DartCodeExporter {
       forceMultiline: true,
     );
 
-    return '_registry.registerComponent(\n'
-        '  ${context.formatString(resolved.registrationId)},\n'
+    final mainBlock =
+        '_registry.registerComponent(\n'
+        '  ${context.formatString(effectiveRootRegId)},\n'
         '  $registeredComponentCode,\n'
         ');\n';
+
+    if (context.extractedSubComponents.isEmpty) {
+      return mainBlock;
+    }
+
+    // Génère récursivement les sous-composants extraits (des feuilles vers le parent)
+    final subBlocks = <String>[];
+    final visitedSubIds = <String>{
+      if (resolved.singleComponentId != null) resolved.singleComponentId!,
+    };
+
+    void generateSubComponents(
+      List<
+        ({
+          String id,
+          String registrationId,
+          String label,
+          String? slotType,
+          bool forceComponentOnExport,
+        })
+      >
+      items,
+    ) {
+      for (final sub in items) {
+        if (!visitedSubIds.add(sub.id)) continue;
+        final subContext = DartCodegenContext(
+          appearance: appearance,
+          registry: registry,
+          rootComponentId: sub.id,
+          rootInstanceVariable: 'id',
+          decomposeComponents: decomposeComponents,
+        );
+        final subExpr = subContext.generateComponentWidget(
+          sub.id,
+          slotType: sub.slotType,
+          label: sub.label,
+          indent: 4,
+        );
+        if (subContext.extractedSubComponents.isNotEmpty) {
+          generateSubComponents(subContext.extractedSubComponents);
+        }
+        final subCtor = sub.forceComponentOnExport
+            ? 'RegisteredComponent'
+            : 'RegisteredComponent.composable';
+        final subRegCode = subContext.formatCall(
+          subCtor,
+          const [],
+          {
+            'label': subContext.formatString(sub.label),
+            'isAvailable': '(context) {\n      return true;\n    }',
+            'instanceBuilder': '(_, id) => $subExpr',
+          },
+          indent: 2,
+          forceMultiline: true,
+        );
+        subBlocks.add(
+          '_registry.registerComponent(\n'
+          '  ${subContext.formatString(sub.registrationId)},\n'
+          '  $subRegCode,\n'
+          ');\n',
+        );
+      }
+    }
+
+    generateSubComponents(context.extractedSubComponents);
+    return '${[...subBlocks, mainBlock].join('\n')}';
   }
 
   static String _cleanRegistrationId(String rawId) {

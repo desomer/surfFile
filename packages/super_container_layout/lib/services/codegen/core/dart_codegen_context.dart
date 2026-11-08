@@ -56,6 +56,20 @@ class DartCodegenContext {
 
   final Set<String> _visiting = <String>{};
 
+  /// Sous-composants extraits découverts pendant la génération de l'arbre.
+  final List<
+    ({
+      String id,
+      String registrationId,
+      String label,
+      String? slotType,
+      bool forceComponentOnExport,
+    })
+  >
+  extractedSubComponents = [];
+
+  final Set<String> _extractedIds = <String>{};
+
   /// Indique si l'identifiant [id] est résolu sous forme de variable d'instance dynamique.
   bool isDynamicInstanceId(String id) =>
       rootInstanceVariable != null && id == rootComponentId;
@@ -982,6 +996,29 @@ class DartCodegenContext {
       return 'const SizedBox.shrink()';
     }
     try {
+      // Vérifie si ce sous-composant a été configuré via « Configure as... »
+      final exportOpts = registry.exportOptionsFor(id);
+      if (id != rootComponentId &&
+          exportOpts != null &&
+          exportOpts.generateComponentOnExport &&
+          (!decomposeComponents || exportOpts.forceComponentOnExport)) {
+        final regName = exportOpts.componentName.trim().isNotEmpty
+            ? exportOpts.componentName.trim()
+            : id;
+        if (_extractedIds.add(id)) {
+          extractedSubComponents.add((
+            id: id,
+            registrationId: regName,
+            label: (label != null && label.trim().isNotEmpty)
+                ? label.trim()
+                : regName,
+            slotType: slotType,
+            forceComponentOnExport: exportOpts.forceComponentOnExport,
+          ));
+        }
+        return 'SuperApp.of(context).registry!.component(${formatString(regName)}).builder(context)';
+      }
+
       if (slotType != null && slotType.startsWith('component:')) {
         final registeredKey = resolveRegisteredComponentKey(
           id,
@@ -989,11 +1026,20 @@ class DartCodegenContext {
         );
         if (registeredKey != null) {
           final registeredComp = registry.components[registeredKey];
+          final regExportOpts =
+              exportOpts ?? registry.exportOptionsFor(registeredKey);
+          final forced = regExportOpts?.forceComponentOnExport ?? false;
           final shouldDecompose =
               decomposeComponents &&
+              !forced &&
               (registeredComp?.decomposableOnExport ?? false);
           if (!shouldDecompose) {
-            return 'SuperApp.of(context).registry!.component(${formatString(registeredKey)}).builder(context)';
+            final effectiveRegKey =
+                (regExportOpts != null &&
+                    regExportOpts.componentName.trim().isNotEmpty)
+                ? regExportOpts.componentName.trim()
+                : registeredKey;
+            return 'SuperApp.of(context).registry!.component(${formatString(effectiveRegKey)}).builder(context)';
           }
           final decomposedGenerator = resolveGenerator(id);
           if (decomposedGenerator != null) {
