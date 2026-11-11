@@ -385,6 +385,21 @@ class DartCodegenContext {
           if (tooltip.binding != null)
             'binding': formatBinding(tooltip.binding!, indent: indent + 2),
         }, indent: indent);
+      case final StateBindingAction stateBinding:
+        return formatCall(
+          'const StateBindingAction',
+          const [],
+          {
+            'state': 'BehaviorBoundState.${stateBinding.state.name}',
+            'binding': formatBinding(stateBinding.binding, indent: indent + 2),
+            if (!stateBinding.whenValue) 'whenValue': 'false',
+            if (stateBinding.maintainSize &&
+                stateBinding.state == BehaviorBoundState.invisible)
+              'maintainSize': 'true',
+          },
+          indent: indent,
+          forceMultiline: true,
+        );
       case final ZoneSizeBindingAction zoneSize:
         return formatCall(
           'ZoneSizeBindingAction',

@@ -9,6 +9,27 @@ cd packages/super_designer
 flutter run -d windows
 ```
 
+## Repository de SuperDesigner
+
+L'application charge automatiquement son repository au demarrage et enregistre
+ses modifications dans
+`%USERPROFILE%\.super_container_layout\repositories\registered\0123456789abcdef0123456789abcdef.json`
+sous Windows (`$HOME/.super_container_layout/repositories/registered/` ailleurs).
+Une erreur de chargement est affichee sans ecraser le fichier existant. Les
+identifiants et les champs saisis des nœuds sont conserves lors de la
+restauration et des modifications ulterieures du YAML.
+
+Le `main` active la persistance avec `SuperDesignerApp(persistRepository: true)`.
+Un hote peut fournir `repositoryDirectory` pour choisir un autre dossier ; sans
+activation explicite, `SuperDesignerApp` conserve son comportement en memoire.
+Les methodes `saveRepository` et `loadRepository` du store restent disponibles
+pour un enregistrement ou un rechargement manuel, ainsi que les boutons
+**Enregistrer** et **Recharger** du gestionnaire Repository. Lors d'une demande
+normale de fermeture, l'application attend les liaisons, la validation et la
+sauvegarde ; une erreur de sauvegarde est affichee et annule la fermeture.
+Les donnees d'une ancienne session uniquement en memoire ne sont pas importees
+automatiquement : les copier avant de redemarrer cette session.
+
 ## Evenements internes
 
 Le widget racine de [main.dart](lib/main.dart) fournit un `SuperEventBus` a

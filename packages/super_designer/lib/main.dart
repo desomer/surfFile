@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:go_router/go_router.dart';
@@ -14,6 +15,7 @@ import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:super_designer/impl.dart';
 
+import 'repository_schema_model.dart';
 import 'yaml2jsonschemas_parser.dart';
 
 export 'json_browser.dart';
@@ -60,6 +62,7 @@ Future<void> main() async {
     }
   }
   if (envText.isEmpty) {
+    // Permet aussi de lancer l'application depuis un sous-dossier du monorepo.
     try {
       var dir = Directory.current;
       while (true) {
@@ -88,13 +91,24 @@ Future<void> main() async {
         ? const {}
         : {'GEMINI_API_KEY': environmentKey},
   );
-  runApp(const SuperDesignerApp());
+  // Le point d'entrée de démonstration active la persistance par défaut.
+  runApp(const SuperDesignerApp(persistRepository: true));
 }
 
 /// Widget racine de l'application de démonstration et d'édition `super_designer`,
 /// donnant accès au moteur `super_container_layout` et à ses extensions.
 class SuperDesignerApp extends StatefulWidget {
-  const SuperDesignerApp({super.key});
+  const SuperDesignerApp({
+    super.key,
+    this.persistRepository = false,
+    this.repositoryDirectory,
+  });
+
+  /// Active la restauration et l'enregistrement automatique du repository.
+  final bool persistRepository;
+
+  /// Dossier du store ; `null` utilise le dossier utilisateur par défaut.
+  final Directory? repositoryDirectory;
 
   @override
   State<SuperDesignerApp> createState() => _SuperDesignerAppState();
@@ -110,57 +124,174 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     repositoryId: _repositoryId,
     path: 'estSize',
   );
-  late final _repositoryStore = JsonRepositoryStore.defaultStore();
+  static const _sourceBinding = JsonTextBinding(
+    repositoryId: _repositoryId,
+    path: 'source',
+  );
+  late final _repositoryStore = widget.repositoryDirectory == null
+      ? JsonRepositoryStore.defaultStore()
+      : JsonRepositoryStore(widget.repositoryDirectory!);
 
-  /// Schéma issu du DSL YAML de `source`, patché à chaque modification pour
-  /// garder les ID et les propriétés saisies dans l'IHM.
-  final _schemaParser = Yaml2JsonSchemasParser();
-  late final _jsonModel = _schemaParser.model('source', '');
+  late final _schemaModel = RepositorySchemaModel(Yaml2JsonSchemasParser());
 
+  // L'initialisation est distincte de la validation, que des edits peuvent
+  // ajouter à la file pendant une sauvegarde ou une fermeture.
+  Future<void>? _repositoryInitialization;
+  Future<void>? _validationQueue;
+  AppLifecycleListener? _lifecycle;
+  bool? _schemaModelReady;
+  Object? _validationFailure;
+  StackTrace? _validationFailureStack;
+
+  /// Publie les mises à jour du schéma après un changement du repository.
   void _onRepositoryChanged(ChangeContext change) {
+    final details = change.path.isEmpty
+        ? '(document entier)'
+        : '(${change.oldValue} -> ${change.newValue})';
     debugPrint(
       'Repository ${change.repositoryId}: ${change.path} changed by '
       '${change.componentId ?? 'unknown component'} '
-      '(${change.oldValue} -> ${change.newValue})',
+      '$details',
     );
-    if (change.path == 'source') unawaited(_validateYaml(change.newValue));
-  }
-
-  /// Patche [_jsonModel] avec le DSL de schéma de `source` : publie l'erreur
-  /// dans `yamlError` et, si le parsing réussit, écrit ses nœuds dans `nodes`.
-  Future<void> _validateYaml(Object? source) async {
-    var message = '';
-    try {
-      _schemaParser.patch(_jsonModel, source is String ? source : '');
-    } on FormatException catch (error) {
-      message = error.message;
-    }
-    const errorBinding = JsonTextBinding(
-      repositoryId: _repositoryId,
-      path: 'yamlError',
-    );
-    final current = await _repositoryStore.readAttribute(errorBinding);
-    if (current.value != message) {
-      await _repositoryStore.writeAttribute(
-        errorBinding,
-        message,
-        expectedValue: current.value,
-        componentId: 'yaml-validator',
+    if (change.path == 'source') {
+      _queueValidation();
+    } else if (change.path.isEmpty) {
+      final previous = change.oldValue;
+      final next = change.newValue;
+      final sourceChanged =
+          previous is Map &&
+          next is Map &&
+          previous['source'] != next['source'];
+      _queueValidation(
+        restoreModel: true,
+        updateNodes: !change.isReload && sourceChanged,
       );
     }
-    if (message.isEmpty) {
-      await _repositoryStore.replaceArray(_repositoryId, 'nodes', [
-        for (final node in _jsonModel.nodes) node.toJson(),
-      ], componentId: 'yaml-validator');
+  }
+
+  /// Rend l'erreur visible à l'hôte et dans les liaisons de l'application.
+  void _reportRepositoryFailure(Object error, StackTrace stack) {
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'super_designer',
+      ),
+    );
+    _repositoryStore.reportBindingError('Erreur du repository : $error');
+  }
+
+  /// Sérialise la validation YAML pour éviter qu'un résultat ancien écrase le
+  /// schéma correspondant à une source plus récente.
+  void _queueValidation({bool restoreModel = false, bool updateNodes = true}) {
+    _validationQueue = (_validationQueue ?? Future<void>.value())
+        .then((_) async {
+          if (!mounted) return;
+          if (restoreModel || _schemaModelReady != true) {
+            final nodes = await _repositoryStore.readArray(
+              _repositoryId,
+              'nodes',
+            );
+            if (!mounted) return;
+            _schemaModel.restore(nodes);
+            _schemaModelReady = true;
+          }
+          final source = await _repositoryStore.readAttribute(_sourceBinding);
+          if (!mounted) return;
+          await _validateYaml(source.value, updateNodes: updateNodes);
+          _validationFailure = null;
+          _validationFailureStack = null;
+        })
+        .catchError((Object error, StackTrace stack) {
+          _validationFailure = error;
+          _validationFailureStack = stack;
+          _reportRepositoryFailure(error, stack);
+        });
+  }
+
+  /// Charge d'abord le document sauvegardé, puis valide sa source YAML.
+  Future<void> _initializePersistentRepository(
+    RepositoryImpl repository,
+  ) async {
+    final restored = await _repositoryStore.registerPersistentRepository(
+      repository,
+    );
+    if (!mounted) return;
+    final nodes = await _repositoryStore.readArray(_repositoryId, 'nodes');
+    if (!mounted) return;
+    _schemaModel.restore(nodes);
+    _schemaModelReady = true;
+    final source = await _repositoryStore.readAttribute(_sourceBinding);
+    if (!mounted) return;
+    await _validateYaml(source.value, updateNodes: !restored);
+  }
+
+  /// Vérifie le YAML et patche les nœuds sans perdre leurs données éditées.
+  Future<void> _validateYaml(Object? source, {bool updateNodes = true}) async {
+    if (source is! String) {
+      throw const FormatException('Le champ source doit être une chaîne.');
+    }
+    for (var attempt = 0; attempt < 5; attempt++) {
+      final previousNodes = await _repositoryStore.readArray(
+        _repositoryId,
+        'nodes',
+      );
+      if (!mounted) return;
+      var message = '';
+      List<Object?>? nodes;
+      try {
+        nodes = _schemaModel.patch(source, previousNodes);
+      } on FormatException catch (error) {
+        message = error.message;
+      }
+      final currentSource = await _repositoryStore.readAttribute(
+        _sourceBinding,
+      );
+      if (!mounted || currentSource.value != source) return;
+      const errorBinding = JsonTextBinding(
+        repositoryId: _repositoryId,
+        path: 'yamlError',
+      );
+      final current = await _repositoryStore.readAttribute(errorBinding);
+      if (current.value != message) {
+        await _repositoryStore.writeAttribute(
+          errorBinding,
+          message,
+          expectedValue: current.value,
+          componentId: 'yaml-validator',
+        );
+      }
+      if (nodes == null || !updateNodes) return;
+      try {
+        await _repositoryStore.replaceArray(
+          _repositoryId,
+          'nodes',
+          nodes,
+          componentId: 'yaml-validator',
+          expectedValues: {'source': source, 'nodes': previousNodes},
+        );
+        return;
+      } on JsonRepositoryConflictException {
+        if (attempt == 4) rethrow;
+        final latestSource = await _repositoryStore.readAttribute(
+          _sourceBinding,
+        );
+        if (!mounted || latestSource.value != source) return;
+      }
     }
   }
 
+  /// Déclare la page d'entrée de l'éditeur SuperDesigner.
   late final EditorPageRouter _pageRouting;
   GoRouter get _router => _pageRouting.router;
 
   @override
   void initState() {
     super.initState();
+    if (widget.persistRepository) {
+      // Annule la fermeture si des saisies ou leur sauvegarde échouent.
+      _lifecycle = AppLifecycleListener(onExitRequested: _onExitRequested);
+    }
     _eventSubscription = _eventBus
         .on('node.click')
         .asyncMap((event) async {
@@ -186,588 +317,26 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
           );
         });
 
-    var repository = RepositoryImpl(
+    final repository = RepositoryImpl(
       id: _repositoryId,
       onChanged: _onRepositoryChanged,
       json: {
         'source': '',
         'estSize': 300,
         'yamlError': '',
-        'nodes': [{}],
+        'nodes': <Object?>[],
       },
     );
 
-    _repositoryStore.registerRepository(repository);
-    unawaited(_validateYaml(repository.json['source']));
+    if (widget.persistRepository) {
+      _repositoryInitialization = _initializePersistentRepository(repository);
+    } else {
+      _repositoryStore.registerRepository(repository);
+      _repositoryInitialization = null;
+      _queueValidation();
+    }
 
-    initRegistry(_registry);
-
-    // _registry.registerComponent(
-    //   'model-code',
-    //   RegisteredComponent.composable(
-    //     label: 'model-code',
-    //     duplication: ComponentDuplicationContract.newContainer,
-    //     isAvailable: (context) {
-    //       return true;
-    //     },
-    //     instanceBuilder: (_, id) => EditableSurface(
-    //       id: id,
-    //       label: 'model-code',
-    //       menuType: 'Card',
-    //       style: const ContainerStyle(color: Color(0xFF2B382C)),
-    //       child: const SuperCode(
-    //         id: 'model-code-editor',
-    //         config: SuperCodeConfig(
-    //           style: SuperCodeStyle(transparentBackground: true),
-    //           binding: JsonTextBinding(
-    //             repositoryId: _repositoryId,
-    //             path: 'source',
-    //           ),
-    //           errorBinding: JsonTextBinding(
-    //             repositoryId: _repositoryId,
-    //             path: 'yamlError',
-    //           ),
-    //         ),
-    //       ),
-    //     ),
-    //   ),
-    // );
-
-    // _registry.registerComponent(
-    //   'model-header',
-    //   RegisteredComponent.composable(
-    //     label: 'Model Header',
-    //     menuIcon: Icons.code,
-    //     duplication: ComponentDuplicationContract.newLayout,
-    //     instanceBuilder: (_, id) => SuperLayout(
-    //       id: id,
-    //       label: 'Node header',
-    //       config: const SuperLayoutConfig(
-    //         zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
-    //         zoneFlows: {
-    //           SuperLayoutZone.center: ZoneFlowConfig(expandSlots: false),
-    //         },
-    //         slotSizeConstraints: {
-    //           'tree-node-separator': SlotSizeConstraints(fitContent: false),
-    //           'tree-node-name': SlotSizeConstraints(
-    //             paddingInsets: EdgeInsets.fromLTRB(5, 0, 0, 0),
-    //             percentBasis: SlotPercentBasis.layout,
-    //           ),
-    //         },
-    //         placements: {
-    //           SuperLayoutZone.center: [
-    //             'tree-node-icon',
-    //             'tree-node-name',
-    //             'tree-node-separator',
-    //             'tree-node-type',
-    //           ],
-    //         },
-    //       ),
-    //       slots: [
-    //         BuilderSlot(
-    //           id: 'tree-node-icon',
-    //           label: 'Icon',
-    //           builder: (_) => SuperIndicator(
-    //             id: 'tree-node-icon',
-    //             config: SuperIndicatorConfig(
-    //               icon: 'description',
-    //               iconSize: 18,
-    //               states: IndicatorConfigStates(
-    //                 binding: const JsonTextBinding(path: 'typeIcon'),
-    //                 named: const {
-    //                   'container': SuperIndicatorConfig(icon: 'folder'),
-    //                   'value': SuperIndicatorConfig(icon: 'description'),
-    //                 },
-    //                 namedProperties: const {
-    //                   'container': {IndicatorStateProperty.icon},
-    //                   'value': {IndicatorStateProperty.icon},
-    //                 },
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'tree-node-name',
-    //           label: 'Name',
-    //           builder: (_) => SuperValue(
-    //             id: 'tree-node-name',
-    //             behaviours: [
-    //               ComponentBehavior(
-    //                 id: 'tree-node-name-click',
-    //                 trigger: BehaviorTrigger.click,
-    //                 action: EmitEventAction(eventId: 'node.click'),
-    //               ),
-    //             ],
-    //             config: const SuperValueConfig(
-    //               binding: JsonTextBinding(path: 'name'),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'tree-node-separator',
-    //           label: 'Separator',
-    //           builder: (_) => const SuperSeparator(
-    //             id: 'tree-node-separator',
-    //             config: SuperSeparatorConfig(kind: SuperSeparatorKind.spacer),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'tree-node-type',
-    //           label: 'Type',
-    //           builder: (_) => const SuperValue(
-    //             id: 'tree-node-type',
-    //             config: SuperValueConfig(
-    //               binding: JsonTextBinding(path: 'type'),
-    //             ),
-    //           ),
-    //         ),
-    //       ],
-    //     ),
-    //   ),
-    // );
-
-    // _registry.registerComponent(
-    //   'model-tab',
-    //   RegisteredComponent.composable(
-    //     label: 'model-tab',
-    //     duplication: ComponentDuplicationContract.superTab,
-    //     isAvailable: (context) {
-    //       return true;
-    //     },
-    //     instanceBuilder: (_, id) => SuperTab(
-    //       id: id,
-    //       label: 'Configurer les onglets',
-    //       config: SuperTabConfig(
-    //         tabBarStyle: const ContainerStyle(
-    //           radius: 12,
-    //           elevation: 3.685863874345599,
-    //           shadowOpacity: 0.6387434554973861,
-    //           neon: NeonStyle(),
-    //         ),
-    //         indicatorKind: SuperTabIndicatorKind.box,
-    //         indicatorRadius: 15.61465968586392,
-    //         indicatorHorizontalPadding: 0.13403141361261248,
-    //         indicatorVerticalPadding: 3.585340314136142,
-    //         overlayColor: const Color(0x00979AA9),
-    //         labelHorizontalPadding: 0,
-    //         dividerColor: const Color(0x00C6C5D0),
-    //         tabAlignment: TabAlignment.fill,
-    //         slotSizeConstraints: const {
-    //           'KlSbddMArN': SlotSizeConstraints(
-    //             preferredWidth: SlotDimension(124, SlotSizeUnit.pixels),
-    //             percentBasis: SlotPercentBasis.layout,
-    //           ),
-    //         },
-    //         placements: const {
-    //           'tabs': ['KlSbddMArN', 'I511oCPeBH', 'YM2KFsXQQz'],
-    //           'content:KlSbddMArN': ['tab-content-model-impl'],
-    //         },
-    //         slotTypes: const {'tab-content-model-impl': 'component:model-code'},
-    //       ),
-    //       slots: [
-    //         BuilderSlot(
-    //           id: 'KlSbddMArN',
-    //           label: 'Structure',
-    //           builder: (_) => const SuperAction(
-    //             id: 'KlSbddMArN',
-    //             config: SuperActionConfig(
-    //               variant: SuperActionVariant.text,
-    //               label: 'Structure',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'I511oCPeBH',
-    //           label: 'Info',
-    //           builder: (_) => const SuperAction(
-    //             id: 'I511oCPeBH',
-    //             config: SuperActionConfig(
-    //               variant: SuperActionVariant.text,
-    //               label: 'Info',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'YM2KFsXQQz',
-    //           label: 'Version',
-    //           builder: (_) => const SuperAction(
-    //             id: 'YM2KFsXQQz',
-    //             config: SuperActionConfig(
-    //               variant: SuperActionVariant.text,
-    //               label: 'Version',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'tab-content-model-impl',
-    //           label: 'tab-content-model',
-    //           builder: (context) =>
-    //               SuperApp.of(context).registry!
-    //                   .component('model-code')
-    //                   .builder(context),
-    //         ),
-    //       ],
-    //     ),
-    //   ),
-    // );
-
-    // _registry.registerComponent(
-    //   'main-tabs',
-    //   RegisteredComponent.composable(
-    //     label: 'main-tabs',
-    //     duplication: ComponentDuplicationContract.superTab,
-    //     isAvailable: (context) {
-    //       return true;
-    //     },
-    //     instanceBuilder: (_, id) => SuperTab(
-    //       id: id,
-    //       label: 'main tabs',
-    //       config: SuperTabConfig(
-    //         zoneFlows: const {
-    //           'content:tab-info': ZoneFlowConfig(
-    //             scrollable: true,
-    //             expandSlots: false,
-    //             spacing: 12,
-    //             padding: 16,
-    //           ),
-    //           'content:tab-validator': ZoneFlowConfig(
-    //             scrollable: true,
-    //             expandSlots: false,
-    //             spacing: 12,
-    //             padding: 16,
-    //           ),
-    //         },
-    //         slotSizeConstraints: const {'_wSA5mADEd': SlotSizeConstraints()},
-    //         placements: const {
-    //           'tabs': ['tab-info', 'tab-validator'],
-    //           'content:tab-info': [
-    //             'field-description',
-    //             'field-example',
-    //             'field-const',
-    //             'field-default',
-    //             'switch-nullable',
-    //             'switch-readonly',
-    //             'switch-writeonly',
-    //             'switch-deprecated',
-    //             'switch-search-ref',
-    //             '_wSA5mADEd',
-    //           ],
-    //           'content:tab-validator': ['val-placeholder'],
-    //         },
-    //       ),
-    //       slots: [
-    //         BuilderSlot(
-    //           id: 'tab-info',
-    //           label: 'tab-info',
-    //           builder: (_) => const SuperAction(
-    //             id: 'tab-info',
-    //             config: SuperActionConfig(
-    //               kind: SuperActionKind.textAndIcon,
-    //               label: 'Info',
-    //               icon: 'info',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'tab-validator',
-    //           label: 'tab-validator',
-    //           builder: (_) => const SuperAction(
-    //             id: 'tab-validator',
-    //             config: SuperActionConfig(
-    //               kind: SuperActionKind.textAndIcon,
-    //               label: 'Validator',
-    //               icon: 'check_circle',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'field-description',
-    //           label: 'field-description',
-    //           builder: (_) => const SuperValue(
-    //             id: 'field-description',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               label: 'Description',
-    //               minLines: 4,
-    //               maxLines: 4,
-    //               field: SuperTextFieldConfig(
-    //                 variant: TextFieldVariant.outlined,
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'field-example',
-    //           label: 'field-example',
-    //           builder: (_) => const SuperValue(
-    //             id: 'field-example',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               label: 'Example',
-    //               minLines: 4,
-    //               maxLines: 4,
-    //               field: SuperTextFieldConfig(
-    //                 variant: TextFieldVariant.outlined,
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'field-const',
-    //           label: 'field-const',
-    //           builder: (_) => const SuperValue(
-    //             id: 'field-const',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               label: 'Const',
-    //               field: SuperTextFieldConfig(
-    //                 variant: TextFieldVariant.outlined,
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'field-default',
-    //           label: 'field-default',
-    //           builder: (_) => const SuperValue(
-    //             id: 'field-default',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               label: 'Default',
-    //               field: SuperTextFieldConfig(
-    //                 variant: TextFieldVariant.outlined,
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'switch-nullable',
-    //           label: 'switch-nullable',
-    //           builder: (_) => const SuperValue(
-    //             id: 'switch-nullable',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               kind: SuperValueKind.switchControl,
-    //               label: 'Nullable',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'switch-readonly',
-    //           label: 'switch-readonly',
-    //           builder: (_) => const SuperValue(
-    //             id: 'switch-readonly',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               kind: SuperValueKind.switchControl,
-    //               label: 'ReadOnly',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'switch-writeonly',
-    //           label: 'switch-writeonly',
-    //           builder: (_) => const SuperValue(
-    //             id: 'switch-writeonly',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               kind: SuperValueKind.switchControl,
-    //               label: 'WriteOnly',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'switch-deprecated',
-    //           label: 'switch-deprecated',
-    //           builder: (_) => const SuperValue(
-    //             id: 'switch-deprecated',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               kind: SuperValueKind.switchControl,
-    //               label: 'Deprecated',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'switch-search-ref',
-    //           label: 'switch-search-ref',
-    //           builder: (_) => const SuperValue(
-    //             id: 'switch-search-ref',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               kind: SuperValueKind.switchControl,
-    //               label: 'Search reference',
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: '_wSA5mADEd',
-    //           label: '_wSA5mADEd',
-    //           builder: (_) => const SuperValue(
-    //             id: '_wSA5mADEd',
-    //             config: SuperValueConfig(
-    //               mode: SuperValueMode.input,
-    //               label: 'Comment',
-    //               minLines: 4,
-    //               maxLines: 4,
-    //               field: SuperTextFieldConfig(
-    //                 variant: TextFieldVariant.outlined,
-    //               ),
-    //             ),
-    //           ),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'val-placeholder',
-    //           label: 'val-placeholder',
-    //           builder: (_) => const SuperValue(
-    //             id: 'val-placeholder',
-    //             config: SuperValueConfig(
-    //               initialText: 'Configuration des validateurs',
-    //               color: Color(0xFF64748B),
-    //             ),
-    //           ),
-    //         ),
-    //       ],
-    //     ),
-    //   ),
-    // );
-
-    // _registry.registerComponent(
-    //   'ModelDesc',
-    //   RegisteredComponent.composable(
-    //     label: 'Model Desc',
-    //     duplication: ComponentDuplicationContract.newLayout,
-    //     isAvailable: (context) {
-    //       return true;
-    //     },
-    //     instanceBuilder: (_, id) => SuperLayout(
-    //       id: id,
-    //       label: 'layout',
-    //       behaviours: [
-    //         ComponentBehavior(
-    //           id: 'global-node-properties-size',
-    //           trigger: BehaviorTrigger.binding,
-    //           action: ZoneSizeBindingAction(
-    //             zone: SuperLayoutZone.east,
-    //             binding: _eastSizeBinding,
-    //           ),
-    //         ),
-    //       ],
-    //       config: const SuperLayoutConfig(
-    //         west: true,
-    //         westSize: 320,
-    //         east: true,
-    //         eastSize: 300,
-    //         autoSides: {SuperLayoutZone.center},
-    //         sideResizing: {SuperLayoutZone.west: true},
-    //         placements: {
-    //           SuperLayoutZone.west: ['input-code'],
-    //           SuperLayoutZone.center: ['explorer-tree'],
-    //           SuperLayoutZone.east: ['global-node-properties'],
-    //         },
-    //         slotTypes: {'input-code': 'component:model-tab'},
-    //       ),
-    //       slots: [
-    //         BuilderSlot(
-    //           id: 'input-code',
-    //           label: 'Input Code',
-    //           menuIcon: Icons.code,
-    //           builder: (context) =>
-    //               SuperApp.of(context).registry!
-    //                   .component('model-tab')
-    //                   .builder(context),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'global-node-properties',
-    //           label: 'Global Node Properties',
-    //           builder: (context) =>
-    //               SuperApp.of(context).registry!
-    //                   .component('main-tabs')
-    //                   .builder(context),
-    //         ),
-    //         BuilderSlot(
-    //           id: 'explorer-tree',
-    //           label: 'TreeView',
-    //           builder: (_) => SuperTreeView(
-    //             id: 'explorer-tree',
-    //             slots: [
-    //               BuilderSlot(
-    //                 id: 'input-header',
-    //                 label: 'Input Header',
-    //                 menuIcon: Icons.code,
-    //                 builder: (context) =>
-    //                     SuperApp.of(context).registry!
-    //                         .component('model-header')
-    //                         .builder(context),
-    //               ),
-    //               BuilderSlot(
-    //                 id: 'input-data',
-    //                 label: 'Input Data',
-    //                 menuIcon: Icons.code,
-    //                 builder: (context) => SuperLayout(
-    //                   id: 'input-data',
-    //                   label: 'Node data',
-    //                   config: const SuperLayoutConfig(
-    //                     zoneAxes: {SuperLayoutZone.center: Axis.horizontal},
-    //                     zoneFlows: {
-    //                       SuperLayoutZone.center: ZoneFlowConfig(
-    //                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    //                       ),
-    //                     },
-    //                     slotSizeConstraints: {
-    //                       'tree-node-title': SlotSizeConstraints(
-    //                         padding: 1,
-    //                         percentBasis: SlotPercentBasis.layout,
-    //                       ),
-    //                     },
-    //                     placements: {
-    //                       SuperLayoutZone.center: ['tree-node-title'],
-    //                     },
-    //                   ),
-    //                   slots: [
-    //                     BuilderSlot(
-    //                       id: 'tree-node-title',
-    //                       label: 'Title',
-    //                       builder: (_) => const SuperValue(
-    //                         id: 'tree-node-title',
-    //                         config: SuperValueConfig(
-    //                           placeholder: 'title',
-    //                           mode: SuperValueMode.input,
-    //                           binding: JsonTextBinding(
-    //                             repositoryId:
-    //                                 '0123456789abcdef0123456789abcdef',
-    //                             path: 'nodes[?].title',
-    //                           ),
-    //                           field: SuperTextFieldConfig(
-    //                             variant: TextFieldVariant.outlined,
-    //                             borderWidth: 1,
-    //                             horizontalPadding: 0,
-    //                           ),
-    //                         ),
-    //                       ),
-    //                     ),
-    //                   ],
-    //                 ),
-    //               ),
-    //             ],
-    //             config: SuperTreeViewConfig(
-    //               rowHeight: 28,
-    //               binding: const JsonTextBinding(
-    //                 repositoryId: _repositoryId,
-    //                 path: 'nodes',
-    //               ),
-    //               placements: const {
-    //                 SuperTreeViewConfig.headerZone: ['input-header'],
-    //                 SuperTreeViewConfig.dataZone: ['input-data'],
-    //               },
-    //               slotTypes: const {'input-header': 'component:model-header'},
-    //             ),
-    //           ),
-    //         ),
-    //       ],
-    //     ),
-    //   ),
-    // );
+    SuperDesignerRegistry(_registry).addRegistry();
 
     _pageRouting = EditorPageRouter(
       baseConfig: RoutingConfig(
@@ -781,8 +350,46 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     );
   }
 
+  /// Attend l'initialisation, les saisies et validations en attente avant
+  /// d'enregistrer un dernier état cohérent sur disque.
+  Future<AppExitResponse> _onExitRequested() async {
+    final initialization = _repositoryInitialization;
+    if (initialization == null) return AppExitResponse.exit;
+    try {
+      await initialization;
+    } catch (error, stack) {
+      _reportRepositoryFailure(error, stack);
+      return AppExitResponse.exit;
+    }
+    if (!mounted) return AppExitResponse.exit;
+    try {
+      while (true) {
+        await _repositoryStore.flushBindings();
+        final pending = _validationQueue;
+        if (pending != null) await pending;
+        if (!identical(pending, _validationQueue)) continue;
+        final error = _validationFailure;
+        if (error != null) {
+          Error.throwWithStackTrace(
+            error,
+            _validationFailureStack ?? StackTrace.current,
+          );
+        }
+        await _repositoryStore.saveRepository(_repositoryId);
+        if (identical(pending, _validationQueue)) {
+          return AppExitResponse.exit;
+        }
+      }
+    } catch (error, stack) {
+      _reportRepositoryFailure(error, stack);
+      return AppExitResponse.cancel;
+    }
+  }
+
+  /// Libère les ressources asynchrones possédées par ce widget.
   @override
   void dispose() {
+    _lifecycle?.dispose();
     unawaited(_eventSubscription.cancel());
     unawaited(_eventBus.close());
     _pageRouting.dispose();
@@ -790,8 +397,37 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     super.dispose();
   }
 
+  /// Affiche l'application seulement après la restauration du repository.
   @override
-  Widget build(BuildContext context) => SuperApp(
+  Widget build(BuildContext context) {
+    final initialization = _repositoryInitialization;
+    if (initialization == null) return _buildApp();
+    return FutureBuilder<void>(
+      future: initialization,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: Text(
+                  'Impossible de charger le repository : ${snapshot.error}',
+                ),
+              ),
+            ),
+          );
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const MaterialApp(
+            home: Scaffold(body: Center(child: CircularProgressIndicator())),
+          );
+        }
+        return _buildApp();
+      },
+    );
+  }
+
+  /// Construit l'application hôte avec le routeur et le repository partagés.
+  Widget _buildApp() => SuperApp(
     router: _router,
     pageRouting: _pageRouting,
     title: 'Card Layout demo 2',

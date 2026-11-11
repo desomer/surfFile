@@ -25,6 +25,7 @@ import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/slots/editor_slot.dart';
 import 'component_common.dart';
 import 'component_property_bindings.dart';
+import 'component_state_behavior.dart';
 import 'super_component.dart';
 import 'super_layout/slot_implementation.dart';
 import 'super_text_field.dart';
@@ -143,21 +144,27 @@ class _SuperValueState extends State<SuperValue>
     SuperValueConfig saved,
     JsonListScope? scope,
     JsonRepositoryStore? store,
-    bool contentHovered,
-  ) {
+    bool contentHovered, {
+    bool behaviorDisabled = false,
+    bool behaviorReadOnly = false,
+  }) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
     try {
       final source =
           saved.states?.resolve(saved, name: stateReader?.stateName) ??
           saved.copyWith(clearStates: true);
       final input = source.mode == SuperValueMode.input;
+      final effectiveDisabled =
+          behaviorDisabled || (input && !source.enabled);
+      final effectiveReadOnly =
+          behaviorReadOnly || (input && source.readOnly);
       automaticActiveStates = {
         if (contentHovered) AutomaticState.contentHover,
         if (input && _focusNode.hasFocus) AutomaticState.focused,
-        if (input && !source.enabled) AutomaticState.disabled,
-        if (input && source.readOnly) AutomaticState.readOnly,
+        if (effectiveDisabled) AutomaticState.disabled,
+        if (effectiveReadOnly) AutomaticState.readOnly,
       };
-      final config =
+      var config =
           saved.states?.resolve(
             saved,
             name: stateReader?.stateName,
@@ -166,6 +173,12 @@ class _SuperValueState extends State<SuperValue>
             activeStates: automaticActiveStates,
           ) ??
           saved;
+      if (behaviorDisabled && config.enabled) {
+        config = config.copyWith(enabled: false);
+      }
+      if (behaviorReadOnly && !config.readOnly) {
+        config = config.copyWith(readOnly: true);
+      }
       config.validate();
       return config;
     } on FormatException catch (error) {
@@ -173,7 +186,14 @@ class _SuperValueState extends State<SuperValue>
     } on ArgumentError {
       stateError = 'Combinaison d’états de la valeur invalide.';
     }
-    return saved.copyWith(clearStates: true);
+    var fallback = saved.copyWith(clearStates: true);
+    if (behaviorDisabled && fallback.enabled) {
+      fallback = fallback.copyWith(enabled: false);
+    }
+    if (behaviorReadOnly && !fallback.readOnly) {
+      fallback = fallback.copyWith(readOnly: true);
+    }
+    return fallback;
   }
 
   TextEditingController get _text => widget.controller ?? _internal;
@@ -486,7 +506,13 @@ class _SuperValueState extends State<SuperValue>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ComponentStateBehavior(
+    componentId: widget.id,
+    behaviors: widget.behaviours,
+    child: Builder(builder: _buildValueContent),
+  );
+
+  Widget _buildValueContent(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
     final repositories = JsonRepositoryScope.maybeOf(context);
     final listScope = JsonListScope.maybeOf(context);
@@ -494,6 +520,10 @@ class _SuperValueState extends State<SuperValue>
         registry?.valueController(widget.id, fallback: widget.config) ?? _local;
     final editing = StyleEditScope.controllerOf(context)?.value ?? false;
     final canConfigure = StyleEditScope.controllerOf(context)?.value ?? true;
+    final behaviorDisabled =
+        !editing && ComponentBehaviorStateScope.isDisabled(context);
+    final behaviorReadOnly =
+        !editing && ComponentBehaviorStateScope.isReadOnly(context);
 
     return wrapWithComponentHoverRegion(
       ValueListenableBuilder<SuperValueConfig>(
@@ -504,6 +534,8 @@ class _SuperValueState extends State<SuperValue>
             listScope,
             repositories,
             ContentHoverScope.maybeOf(context)?.hovered == true,
+            behaviorDisabled: behaviorDisabled,
+            behaviorReadOnly: behaviorReadOnly,
           );
           final states = savedConfig.states;
           final active = states == null

@@ -316,11 +316,37 @@ void main() {
         expect(runtime.error, isNotNull);
         await runtime.flush();
         expect((await store.readAttribute(binding)).text, 'Remote');
+        await expectLater(store.flushBindings(), throwsFormatException);
+        expect(controller.text, 'Draft');
         await runtime.discardAndReload();
         expect(controller.text, 'Remote');
         expect(runtime.error, isNull);
+        await store.flushBindings();
         runtime.dispose();
         controller.dispose();
+      },
+    );
+
+    test(
+      'a failed draft remains reported if its binding is disposed',
+      () async {
+        await store.writeAttribute(binding, 'Alice', expectedValue: null);
+        final controller = TextEditingController();
+        final runtime = JsonTextControllerBinding(
+          store: store,
+          binding: binding,
+          controller: controller,
+        );
+        await runtime.reload();
+        controller.text = 'Draft';
+        await store.writeAttribute(binding, 'Remote', expectedValue: 'Alice');
+
+        final pending = store.flushBindings();
+        runtime.dispose();
+        controller.dispose();
+
+        await expectLater(pending, throwsFormatException);
+        expect((await store.readAttribute(binding)).text, 'Remote');
       },
     );
 

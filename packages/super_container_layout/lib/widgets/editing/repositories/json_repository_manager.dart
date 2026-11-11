@@ -220,11 +220,14 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
   }
 
-  Future<void> _select(String name) async {
+  Future<void> _select(String name, {bool reloadPersistent = false}) async {
     if (!await _discard() || !mounted) return;
     await _run(() async {
-      final text = await _store!.read(name);
       final id = await _store!.idOf(name);
+      if (reloadPersistent && _store!.isPersistentRepository(id)) {
+        await _store!.loadRepository(id);
+      }
+      final text = await _store!.read(name);
       if (!mounted) return;
       setState(() {
         _selected = name;
@@ -415,7 +418,9 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
               child: const Text('Renommer'),
             ),
             TextButton(
-              onPressed: _busy ? null : () => _select(_selected!),
+              onPressed: _busy
+                  ? null
+                  : () => _select(_selected!, reloadPersistent: true),
               child: const Text('Recharger'),
             ),
             TextButton(

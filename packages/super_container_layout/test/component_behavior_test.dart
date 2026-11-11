@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -67,6 +70,52 @@ void main() {
       expect(decoded, equals(behavior));
 
       expect(BehaviorCatalog.items, contains(BehaviorCatalog.goToPage));
+      expect(BehaviorCatalog.items, contains(BehaviorCatalog.bindState));
+    });
+
+    test('StateBindingAction serialization, compact JSON, and validation', () {
+      const action = StateBindingAction(
+        state: BehaviorBoundState.invisible,
+        binding: JsonTextBinding(path: 'ui.hidden'),
+        whenValue: false,
+        maintainSize: true,
+      );
+      expect(action.type, 'bindState');
+      expect(action.description, contains('Invisible'));
+      expect(action.description, contains('si faux'));
+      expect(action.description, contains('espace conservé'));
+      expect(action.matchesValue(false), isTrue);
+      expect(action.matchesValue('false'), isTrue);
+      expect(action.matchesValue(true), isFalse);
+      expect(action.matchesValue(null), isFalse);
+
+      final behavior = const ComponentBehavior(
+        id: 'b-state',
+        trigger: BehaviorTrigger.binding,
+        action: action,
+      );
+      final json = behavior.toJson();
+      final compact = behavior.toCompactJson();
+      expect(
+        (compact['action'] as Map<String, Object?>)['binding'],
+        'ui.hidden',
+      );
+
+      final decoded = ComponentBehavior.fromJson(json);
+      expect(decoded, equals(behavior));
+      expect(
+        ComponentBehavior.fromJson(Map<String, dynamic>.from(compact)),
+        equals(behavior),
+      );
+
+      expect(
+        () => const ComponentBehavior(
+          id: 'bad-trigger',
+          trigger: BehaviorTrigger.click,
+          action: action,
+        ).validate(),
+        throwsFormatException,
+      );
     });
 
     test(
@@ -556,6 +605,179 @@ void main() {
           findsOneWidget,
         );
         expect(find.text('ID : clients-list'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'StateBindingAction dynamically toggles invisible, readOnly, and disabled from repository bool',
+      (tester) async {
+        late Directory tempDir;
+        late JsonRepositoryStore store;
+        late String repoId;
+
+        await tester.runAsync(() async {
+          tempDir = await Directory.systemTemp.createTemp(
+            'state_behavior_test_',
+          );
+          store = JsonRepositoryStore(tempDir);
+          await store.create('Flags');
+          repoId = await store.idOf('Flags');
+          final before = await store.read('Flags');
+          await store.save(
+            'Flags',
+            jsonEncode({'hidden': false, 'readOnly': false, 'active': true}),
+            expectedText: before,
+          );
+          // Warm cache via readAttribute
+          await store.readAttribute(
+            JsonTextBinding(repositoryId: repoId, path: 'hidden'),
+          );
+        });
+        addTearDown(() async {
+          store.dispose();
+          await tempDir.delete(recursive: true);
+        });
+
+        final editing = ValueNotifier(false);
+        addTearDown(editing.dispose);
+
+        final appearance = ValueNotifier(
+          Appearance(
+            behaviors: {
+              'box-hidden': [
+                ComponentBehavior(
+                  id: 'b-inv',
+                  trigger: BehaviorTrigger.binding,
+                  action: StateBindingAction(
+                    state: BehaviorBoundState.invisible,
+                    binding: JsonTextBinding(
+                      repositoryId: repoId,
+                      path: 'hidden',
+                    ),
+                  ),
+                ),
+              ],
+              'val-input': [
+                ComponentBehavior(
+                  id: 'b-ro',
+                  trigger: BehaviorTrigger.binding,
+                  action: StateBindingAction(
+                    state: BehaviorBoundState.readOnly,
+                    binding: JsonTextBinding(
+                      repositoryId: repoId,
+                      path: 'readOnly',
+                    ),
+                  ),
+                ),
+              ],
+              'btn-action': [
+                ComponentBehavior(
+                  id: 'b-dis',
+                  trigger: BehaviorTrigger.binding,
+                  action: StateBindingAction(
+                    state: BehaviorBoundState.disabled,
+                    binding: JsonTextBinding(
+                      repositoryId: repoId,
+                      path: 'active',
+                    ),
+                    whenValue: false,
+                  ),
+                ),
+              ],
+            },
+          ),
+        );
+        addTearDown(appearance.dispose);
+
+        var actionClicks = 0;
+
+        await tester.pumpWidget(
+          JsonRepositoryScope(
+            store: store,
+            child: AppearanceScope(
+              controller: appearance,
+              child: StyleEditScope(
+                controller: editing,
+                child: MaterialApp(
+                  home: Scaffold(
+                    body: Column(
+                      children: [
+                        const EditorSlot(
+                          id: 'box-hidden',
+                          label: 'Hidden Box',
+                          child: Text('Secret Content'),
+                        ),
+                        const SuperValue(
+                          id: 'val-input',
+                          config: SuperValueConfig(
+                            mode: SuperValueMode.input,
+                            initialText: 'Initial',
+                          ),
+                        ),
+                        SuperAction(
+                          id: 'btn-action',
+                          config: const SuperActionConfig(label: 'Valider'),
+                          onPressed: () => actionClicks++,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Initially: visible, editable, and enabled
+        expect(find.text('Secret Content'), findsOneWidget);
+        final textFieldBefore = tester.widget<TextField>(
+          find.byKey(const ValueKey('super-value-input-val-input')),
+        );
+        expect(textFieldBefore.readOnly, isFalse);
+
+        await tester.tap(
+          find.byKey(const ValueKey('super-action-button-btn-action')),
+        );
+        await tester.pump();
+        expect(actionClicks, 1);
+
+        // Update repository booleans: hidden=true, readOnly=true, active=false
+        await tester.runAsync(() async {
+          final before = await store.read('Flags');
+          await store.save(
+            'Flags',
+            jsonEncode({'hidden': true, 'readOnly': true, 'active': false}),
+            expectedText: before,
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+        });
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pumpAndSettle();
+
+        // Secret Content is now hidden offstage by Visibility(visible: false)
+        expect(find.text('Secret Content'), findsNothing);
+
+        // SuperValue input is now readOnly
+        final textFieldAfter = tester.widget<TextField>(
+          find.byKey(const ValueKey('super-value-input-val-input')),
+        );
+        expect(textFieldAfter.readOnly, isTrue);
+
+        // SuperAction is now disabled
+        await tester.tap(
+          find.byKey(const ValueKey('super-action-button-btn-action')),
+          warnIfMissed: false,
+        );
+        await tester.pump();
+        expect(actionClicks, 1);
+
+        // In edit mode, hidden component becomes visible again for editing
+        editing.value = true;
+        await tester.pumpAndSettle();
+        expect(find.text('Secret Content'), findsOneWidget);
       },
     );
   });

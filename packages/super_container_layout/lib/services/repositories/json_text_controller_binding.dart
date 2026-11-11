@@ -26,7 +26,15 @@ class JsonTextControllerBinding extends ChangeNotifier {
     store.registerBindings(this, [binding.repositoryId]);
     controller.addListener(_edited);
     store.addListener(_repositoryChanged);
-    store.addFlusher(flush);
+    store.addFlusher(
+      flush,
+      pendingError: () {
+        if (!dirty && (_ready || controller.text.isEmpty)) {
+          return null;
+        }
+        return error ?? 'Une saisie liée n’a pas pu être enregistrée.';
+      },
+    );
     _seedFromCache();
     reload();
   }

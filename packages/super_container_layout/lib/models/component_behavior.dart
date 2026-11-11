@@ -4,20 +4,28 @@
 /// ([BehaviorAction], telle que la navigation [GoToPageAction]), stockée dans
 /// `Appearance.behaviors`.
 ///
-/// Les actions réactives ([ZoneSizeBindingAction], déclencheur
-/// [BehaviorTrigger.binding]) ne sont pas exécutées par un geste : le
-/// composant qui les porte observe la valeur liée et s'y adapte.
+/// Les actions concrètes vivent dans `models/behaviours/` et sont réexportées ici :
+/// - [EmitEventAction] (`behaviours/emit_event_action.dart`)
+/// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
+/// - [StateBindingAction] (`behaviours/state_binding_action.dart`)
+/// - [TooltipAction] (`behaviours/tooltip_action.dart`)
+/// - [ZoneSizeBindingAction] (`behaviours/zone_size_binding_action.dart`)
 library;
 
-import 'dart:convert';
-
-import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../super_app.dart';
 import '../services/events/super_event_bus.dart';
-import 'json_text_binding.dart';
-import 'super_layout_config.dart';
+import 'behaviours/emit_event_action.dart';
+import 'behaviours/go_to_page_action.dart';
+import 'behaviours/state_binding_action.dart';
+import 'behaviours/tooltip_action.dart';
+import 'behaviours/zone_size_binding_action.dart';
+
+export 'behaviours/emit_event_action.dart';
+export 'behaviours/go_to_page_action.dart';
+export 'behaviours/state_binding_action.dart';
+export 'behaviours/tooltip_action.dart';
+export 'behaviours/zone_size_binding_action.dart';
 
 /// Déclencheur d'un comportement sur un composant.
 enum BehaviorTrigger {
@@ -76,358 +84,6 @@ class BehaviorExecutionData {
   final Map<String, Object?> data;
 }
 
-/// Publie un evenement interne avec les donnees automatiques et personnalisees.
-@immutable
-class EmitEventAction extends BehaviorAction {
-  EmitEventAction({
-    required this.eventId,
-    Map<String, Object?> custom = const {},
-  }) : custom = immutableEventJson(custom) {
-    if (eventId.trim().isEmpty || eventId != eventId.trim()) {
-      throw ArgumentError.value(
-        eventId,
-        'eventId',
-        'Expected a non-empty ID without surrounding whitespace.',
-      );
-    }
-  }
-
-  final String eventId;
-  final Map<String, Object?> custom;
-
-  @override
-  String get type => 'emitEvent';
-  @override
-  String get label => 'Emettre un evenement';
-  @override
-  String get description => eventId;
-  @override
-  IconData get icon => Icons.bolt;
-
-  @override
-  Future<void> execute(BuildContext context) async {
-    throw StateError('EmitEventAction requires component execution data.');
-  }
-
-  @override
-  Future<void> executeWithData(
-    BuildContext context,
-    BehaviorExecutionData data,
-  ) async {
-    final bus = SuperApp.maybeOf(context)?.eventBus;
-    if (bus == null) {
-      throw StateError('EmitEventAction requires SuperApp.eventBus.');
-    }
-    bus.emit(
-      SuperComponentEvent(
-        eventId: eventId,
-        componentId: data.componentId,
-        componentType: data.componentType,
-        trigger: data.trigger.name,
-        data: data.data,
-        custom: custom,
-      ),
-    );
-  }
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': type,
-    'eventId': eventId,
-    'custom': custom,
-  };
-
-  factory EmitEventAction.fromJson(Map<String, dynamic> json) =>
-      EmitEventAction(
-        eventId: json['eventId'] as String,
-        custom: (json['custom'] as Map<String, dynamic>?) ?? const {},
-      );
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is EmitEventAction &&
-          other.eventId == eventId &&
-          jsonEncode(other.custom) == jsonEncode(custom);
-
-  @override
-  int get hashCode => Object.hash(eventId, jsonEncode(custom));
-}
-
-/// Action de navigation vers une page.
-@immutable
-class GoToPageAction extends BehaviorAction {
-  const GoToPageAction({required this.pagePath, this.pageId, this.pageName});
-
-  final String pagePath;
-  final String? pageId;
-  final String? pageName;
-
-  @override
-  String get type => 'goToPage';
-
-  @override
-  String get label => 'Aller à la page';
-
-  @override
-  String get description => pageName != null && pageName!.trim().isNotEmpty
-      ? '$pageName ($pagePath)'
-      : pagePath;
-
-  @override
-  IconData get icon => Icons.alt_route;
-
-  @override
-  Future<void> execute(BuildContext context) async {
-    final path = pagePath.trim();
-    if (path.isEmpty) return;
-
-    final app = SuperApp.maybeOf(context);
-    if (app?.pageRouting != null) {
-      app!.pageRouting!.router.go(path);
-      return;
-    }
-    if (app != null) {
-      app.router.go(path);
-      return;
-    }
-    GoRouter.maybeOf(context)?.go(path);
-  }
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': type,
-    'pagePath': pagePath,
-    if (pageId != null) 'pageId': pageId,
-    if (pageName != null) 'pageName': pageName,
-  };
-
-  factory GoToPageAction.fromJson(Map<String, dynamic> json) {
-    final path = (json['pagePath'] ?? json['path'] ?? '') as String;
-    return GoToPageAction(
-      pagePath: path,
-      pageId: json['pageId'] as String?,
-      pageName: json['pageName'] as String?,
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is GoToPageAction &&
-          other.pagePath == pagePath &&
-          other.pageId == pageId &&
-          other.pageName == pageName;
-
-  @override
-  int get hashCode => Object.hash(pagePath, pageId, pageName);
-}
-
-/// Info-bulle déclarative, commune à tous les types de composants.
-@immutable
-class TooltipAction extends BehaviorAction {
-  const TooltipAction({this.message = '', this.binding});
-
-  /// Texte utilisé uniquement lorsqu'aucune liaison n'est configurée.
-  final String message;
-
-  /// Source réactive du texte, éventuellement héritée de la ligne.
-  final JsonTextBinding? binding;
-
-  /// Vérifie le texte fixe ou la syntaxe de la liaison.
-  void validate() {
-    binding?.validate();
-    if (binding == null && message.trim().isEmpty) {
-      throw const FormatException('Le texte de l’info-bulle est requis.');
-    }
-  }
-
-  @override
-  String get type => 'onTooltip';
-  @override
-  String get label => 'Afficher une info-bulle';
-  @override
-  String get description => binding?.path ?? message;
-  @override
-  IconData get icon => Icons.info_outline;
-
-  @override
-  Future<void> execute(BuildContext context) async {
-    throw StateError('TooltipAction is rendered by ComponentTooltip.');
-  }
-
-  /// Copie immuable ; permet aussi de supprimer la liaison.
-  TooltipAction copyWith({
-    String? message,
-    JsonTextBinding? binding,
-    bool clearBinding = false,
-  }) => TooltipAction(
-    message: message ?? this.message,
-    binding: clearBinding ? null : binding ?? this.binding,
-  );
-
-  @override
-  Map<String, Object?> toJson() {
-    validate();
-    return {
-      'type': type,
-      'message': message,
-      if (binding != null) 'binding': binding!.toJson(),
-    };
-  }
-
-  /// Forme compacte compatible avec les liaisons courtes.
-  Map<String, Object?> toCompactJson() {
-    validate();
-    return {
-      'type': type,
-      if (message.isNotEmpty) 'message': message,
-      if (binding != null) 'binding': binding!.toCompactJson(),
-    };
-  }
-
-  /// Décode et valide une info-bulle persistée.
-  factory TooltipAction.fromJson(Map<String, dynamic> json) {
-    final message = json['message'];
-    if (message != null && message is! String) {
-      throw const FormatException(
-        'Le texte de l’info-bulle doit être un texte.',
-      );
-    }
-    final result = TooltipAction(
-      message: message as String? ?? '',
-      binding: json['binding'] == null
-          ? null
-          : JsonTextBinding.fromJson(json['binding']),
-    );
-    result.validate();
-    return result;
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is TooltipAction &&
-          other.message == message &&
-          other.binding == binding;
-
-  @override
-  int get hashCode => Object.hash(message, binding);
-}
-
-/// Courbes d'animation sérialisables proposées par les comportements.
-enum BehaviorCurve {
-  linear('Linéaire', Curves.linear),
-  easeIn('Accélération', Curves.easeIn),
-  easeOut('Décélération', Curves.easeOut),
-  easeInOut('Douce', Curves.easeInOut),
-  fastOutSlowIn('Material', Curves.fastOutSlowIn),
-  easeOutBack('Rebond léger', Curves.easeOutBack);
-
-  const BehaviorCurve(this.label, this.curve);
-
-  final String label;
-  final Curve curve;
-}
-
-/// Lie la taille d'un côté d'un `SuperLayout` (ouest, est, nord ou sud) à une
-/// valeur numérique d'un repository JSON, avec une animation entre l'ancienne
-/// et la nouvelle taille.
-///
-/// La valeur est une épaisseur en pixels, ou un pourcentage de la largeur
-/// (ouest / est) ou de la hauteur (nord / sud) du layout. `0` (ou une valeur
-/// négative) ferme la zone ; une valeur absente ou non numérique rend la
-/// taille configurée. La taille appliquée n'est jamais enregistrée dans la
-/// configuration du layout.
-@immutable
-class ZoneSizeBindingAction extends BehaviorAction {
-  ZoneSizeBindingAction({
-    required this.zone,
-    required this.binding,
-    this.unit = SlotSizeUnit.pixels,
-    this.durationMs = defaultDurationMs,
-    this.curve = BehaviorCurve.easeInOut,
-  }) {
-    if (!zone.isSide) {
-      throw ArgumentError.value(zone, 'zone', 'Un côté est requis.');
-    }
-    if (durationMs < 0) {
-      throw ArgumentError.value(durationMs, 'durationMs', 'Durée négative.');
-    }
-    binding.validate();
-  }
-
-  static const defaultDurationMs = 250;
-
-  final SuperLayoutZone zone;
-  final JsonTextBinding binding;
-  final SlotSizeUnit unit;
-  final int durationMs;
-  final BehaviorCurve curve;
-
-  Duration get duration => Duration(milliseconds: durationMs);
-
-  @override
-  String get type => 'bindZoneSize';
-  @override
-  String get label => 'Taille de zone liée';
-  @override
-  String get description =>
-      '${zone.label} ← ${binding.path} '
-      '(${unit == SlotSizeUnit.percent ? '%' : 'px'}, $durationMs ms)';
-  @override
-  IconData get icon => Icons.width_normal_outlined;
-
-  /// Sans effet : le `SuperLayout` observe lui-même la valeur liée.
-  @override
-  Future<void> execute(BuildContext context) async {}
-
-  @override
-  Map<String, Object?> toJson() => {
-    'type': type,
-    'zone': zone.name,
-    'binding': binding.toJson(),
-    'unit': unit.name,
-    'durationMs': durationMs,
-    'curve': curve.name,
-  };
-
-  factory ZoneSizeBindingAction.fromJson(Map<String, dynamic> json) {
-    T byName<T extends Enum>(List<T> values, Object? name, T fallback) =>
-        values.where((value) => value.name == name).firstOrNull ?? fallback;
-    final zone = SuperLayoutZone.values
-        .where((zone) => zone.name == json['zone'])
-        .firstOrNull;
-    if (zone == null) {
-      throw FormatException('Zone invalide : ${json['zone']}');
-    }
-    return ZoneSizeBindingAction(
-      zone: zone,
-      binding: JsonTextBinding.fromJson(json['binding']),
-      unit: byName(SlotSizeUnit.values, json['unit'], SlotSizeUnit.pixels),
-      durationMs: (json['durationMs'] as num?)?.toInt() ?? defaultDurationMs,
-      curve: byName(
-        BehaviorCurve.values,
-        json['curve'],
-        BehaviorCurve.easeInOut,
-      ),
-    );
-  }
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ZoneSizeBindingAction &&
-          other.zone == zone &&
-          other.binding == binding &&
-          other.unit == unit &&
-          other.durationMs == durationMs &&
-          other.curve == curve;
-
-  @override
-  int get hashCode => Object.hash(zone, binding, unit, durationMs, curve);
-}
-
 /// Registre extensible pour décoder les actions polymorphes.
 abstract final class BehaviorActionCatalog {
   static final Map<String, BehaviorAction Function(Map<String, dynamic> json)>
@@ -435,6 +91,7 @@ abstract final class BehaviorActionCatalog {
     'goToPage': GoToPageAction.fromJson,
     'emitEvent': EmitEventAction.fromJson,
     'bindZoneSize': ZoneSizeBindingAction.fromJson,
+    'bindState': StateBindingAction.fromJson,
     'onTooltip': TooltipAction.fromJson,
   };
 
@@ -484,7 +141,7 @@ class ComponentBehavior {
     }
   }
 
-  /// Valide les invariants des comportements déclaratifs d'info-bulle.
+  /// Valide les invariants des comportements déclaratifs d'info-bulle et d'état lié.
   void validate() {
     if (action case final TooltipAction tooltip) {
       tooltip.validate();
@@ -493,6 +150,12 @@ class ComponentBehavior {
       }
     } else if (trigger == BehaviorTrigger.hover) {
       throw const FormatException('hover exige une action onTooltip.');
+    }
+    if (action case final StateBindingAction stateBinding) {
+      stateBinding.validate();
+      if (trigger != BehaviorTrigger.binding) {
+        throw const FormatException('bindState exige le déclencheur binding.');
+      }
     }
   }
 
@@ -511,6 +174,8 @@ class ComponentBehavior {
     ...toJson(),
     if (action case final TooltipAction tooltip)
       'action': tooltip.toCompactJson(),
+    if (action case final StateBindingAction stateBinding)
+      'action': stateBinding.toCompactJson(),
   };
 
   factory ComponentBehavior.fromJson(Map<String, dynamic> json) {
@@ -610,6 +275,16 @@ abstract final class BehaviorCatalog {
     actionType: 'bindZoneSize',
   );
 
+  /// Comportement réactif changeant l'état (invisible, lecture seule, inactif) selon un booléen lié.
+  static const bindState = BehaviorCatalogItem(
+    id: 'bind_state',
+    title: 'État lié (invisible, lecture seule, inactif)',
+    description: 'Rendre le composant invisible, en lecture seule ou inactif selon un booléen d’un repository',
+    icon: Icons.toggle_on_outlined,
+    trigger: BehaviorTrigger.binding,
+    actionType: 'bindState',
+  );
+
   /// Comportement disponible pour toute cible, sans restriction de type.
   static const onTooltip = BehaviorCatalogItem(
     id: 'onTooltip',
@@ -624,6 +299,7 @@ abstract final class BehaviorCatalog {
     goToPage,
     emitEvent,
     zoneSize,
+    bindState,
     onTooltip,
   ];
 }

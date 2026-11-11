@@ -110,9 +110,15 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState`, `ComponentStateProperty`, `ComponentConfigOverrideBase`, `ComponentConfigStatesBase`, `ComponentStateHelpers` : états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et classes de base génériques des surcharges d'états de composants. |
-| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `GoToPageAction`, `EmitEventAction`, `ZoneSizeBindingAction`, `TooltipAction` : navigation et événements (`click`, `doubleClick`), taille de côté liée (`binding`) et info-bulle générique (`onTooltip`, `hover`). |
+| `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `BehaviorActionCatalog`, `BehaviorCatalogItem`, `BehaviorCatalog` : socle des comportements, catalogue polymorphe et réexport des actions (`models/behaviours/`). |
+| `models/behaviours/emit_event_action.dart` | `EmitEventAction` : publication d'un événement interne sur `SuperEventBus` (`click`, `doubleClick`). |
+| `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée (`click`, `doubleClick`). |
+| `models/behaviours/state_binding_action.dart` | `StateBindingAction`, `BehaviorBoundState` : changement réactif d'état (`invisible`, `readOnly`, `disabled`) en fonction d'un booléen lié à un repository JSON (`binding`). |
+| `models/behaviours/tooltip_action.dart` | `TooltipAction` : info-bulle déclarative fixe ou liée à un repository JSON (`onTooltip`, `hover`). |
+| `models/behaviours/zone_size_binding_action.dart` | `ZoneSizeBindingAction`, `BehaviorCurve` : liaison réactive et animée de la taille d'une zone de `SuperLayout` (`binding`). |
 | `services/events/super_event_bus.dart` | `SuperEventBus`, `SuperComponentEvent` : bus applicatif et snapshots JSON immutables. |
 | `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
+| `widgets/components/component_state_behavior.dart` | `ComponentStateBehavior`, `ComponentBehaviorStateScope` : évaluation réactive des `StateBindingAction` (`invisible`, `readOnly`, `disabled`) et propagation aux composants enfants et à leurs états automatiques. |
 | `widgets/components/component_tooltip.dart` | `ComponentTooltip` : info-bulle fixe ou liée pour tout composant identifié, box/sliver, priorité, déduplication et conservation des configurations explicites. |
 | `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. |
 | `models/component_tag_filter.dart` | `ComponentTagFilter` : filtrage par tags (`include`/`exclude`) des composants autorisés dans une zone ou une région native. |

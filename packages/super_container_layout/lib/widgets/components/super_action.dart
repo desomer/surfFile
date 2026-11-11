@@ -19,6 +19,7 @@ import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/slots/editor_slot.dart';
 import 'component_common.dart';
 import 'component_property_bindings.dart';
+import 'component_state_behavior.dart';
 import 'super_action_visual.dart';
 import 'super_component.dart';
 import 'super_layout/slot_implementation.dart';
@@ -109,6 +110,8 @@ class _SuperActionState extends State<SuperAction>
     JsonRepositoryStore? store,
     bool contentHovered, {
     bool? isSelected,
+    bool behaviorDisabled = false,
+    bool behaviorReadOnly = false,
   }) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
     try {
@@ -118,9 +121,10 @@ class _SuperActionState extends State<SuperAction>
       automaticActiveStates = {
         if (contentHovered) AutomaticState.contentHover,
         if (_focusNode.hasFocus) AutomaticState.focused,
-        if (!source.enabled) AutomaticState.disabled,
+        if (behaviorDisabled || !source.enabled) AutomaticState.disabled,
+        if (behaviorReadOnly) AutomaticState.readOnly,
       };
-      final config =
+      var config =
           saved.states?.resolve(
             saved,
             name: stateReader?.stateName,
@@ -129,6 +133,9 @@ class _SuperActionState extends State<SuperAction>
             activeStates: automaticActiveStates,
           ) ??
           saved;
+      if (behaviorDisabled && config.enabled) {
+        config = config.copyWith(enabled: false);
+      }
       config.validate();
       return config;
     } on FormatException catch (error) {
@@ -136,7 +143,10 @@ class _SuperActionState extends State<SuperAction>
     } on ArgumentError {
       stateError = 'Combinaison d’états de l’action invalide.';
     }
-    return saved.copyWith(clearStates: true);
+    final fallback = saved.copyWith(clearStates: true);
+    return behaviorDisabled && fallback.enabled
+        ? fallback.copyWith(enabled: false)
+        : fallback;
   }
 
   @override
@@ -225,10 +235,21 @@ class _SuperActionState extends State<SuperAction>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ComponentStateBehavior(
+    componentId: widget.id,
+    behaviors: widget.behaviours,
+    child: Builder(builder: _buildActionContent),
+  );
+
+  Widget _buildActionContent(BuildContext context) {
     final registry = SuperApp.maybeOf(context)?.registry;
     final repositories = JsonRepositoryScope.maybeOf(context);
     final listScope = JsonListScope.maybeOf(context);
+    final editing = StyleEditScope.controllerOf(context)?.value ?? false;
+    final behaviorDisabled =
+        !editing && ComponentBehaviorStateScope.isDisabled(context);
+    final behaviorReadOnly =
+        !editing && ComponentBehaviorStateScope.isReadOnly(context);
     final configuration =
         registry?.actionController(widget.id, fallback: widget.config) ??
         _local;
@@ -246,13 +267,19 @@ class _SuperActionState extends State<SuperAction>
             repositories,
             ContentHoverScope.maybeOf(context)?.hovered == true,
             isSelected: isSelected,
+            behaviorDisabled: behaviorDisabled,
+            behaviorReadOnly: behaviorReadOnly,
           );
           observePropertyBindings(
             effective.propertyBindings,
             listScope,
             repositories,
           );
-          final config = _editorConfig ?? _withBoundProperties(effective);
+          var boundConfig = _withBoundProperties(effective);
+          if (behaviorDisabled && boundConfig.enabled) {
+            boundConfig = boundConfig.copyWith(enabled: false);
+          }
+          final config = _editorConfig ?? boundConfig;
           final missingFont = isComponentFontMissing(
             config.fontFamily,
             widget.availableFontFamilies,

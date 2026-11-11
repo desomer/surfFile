@@ -131,6 +131,412 @@ void main() {
     },
   );
 
+  test(
+    'persistent registered repositories save all mutation paths and restore',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      const name = JsonTextBinding(repositoryId: id, path: 'name');
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      final changes = <ChangeContext>[];
+      expect(
+        await store.registerPersistentRepository(
+          RepositoryImpl(
+            id: id,
+            json: {'name': 'Initial', 'nodes': <Object?>[]},
+            onChanged: changes.add,
+          ),
+        ),
+        isFalse,
+      );
+      expect(jsonDecode(await file.readAsString()), {
+        'name': 'Initial',
+        'nodes': <Object?>[],
+      });
+      expect(await store.catalog(), [(name: id, id: id)]);
+
+      await store.writeAttribute(
+        name,
+        'Changed',
+        expectedValue: 'Initial',
+        componentId: 'name',
+      );
+      await store.replaceArray(id, 'nodes', [
+        {'id': 'first'},
+      ]);
+      final previous = await store.read(id);
+      await store.save(
+        id,
+        jsonEncode({
+          'name': 'From document editor',
+          'nodes': [
+            {'id': 'second'},
+          ],
+        }),
+        expectedText: previous,
+      );
+      await store.saveRepository(id);
+      expect(jsonDecode(await file.readAsString()), {
+        'name': 'From document editor',
+        'nodes': [
+          {'id': 'second'},
+        ],
+      });
+      expect(changes.map((change) => change.path), ['name', 'nodes', '']);
+      expect(changes.last.isReload, isFalse);
+      expect(changes.last.oldValue, {
+        'name': 'Changed',
+        'nodes': [
+          {'id': 'first'},
+        ],
+      });
+
+      final restored = JsonRepositoryStore(directory);
+      addTearDown(restored.dispose);
+      expect(
+        await restored.registerPersistentRepository(
+          RepositoryImpl(id: id, json: {'name': 'Default'}),
+        ),
+        isTrue,
+      );
+      expect(
+        (await restored.readAttribute(name)).value,
+        'From document editor',
+      );
+      expect(await restored.readArray(id, 'nodes'), [
+        {'id': 'second'},
+      ]);
+      expect(await restored.catalog(), [(name: id, id: id)]);
+    },
+  );
+
+  test(
+    'manual persistence protects unsaved changes and supports reload',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      const name = JsonTextBinding(repositoryId: id, path: 'name');
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      final changes = <ChangeContext>[];
+      await store.registerPersistentRepository(
+        RepositoryImpl(
+          id: id,
+          json: {'name': 'Initial'},
+          onChanged: changes.add,
+        ),
+        autoSave: false,
+      );
+      expect(await file.exists(), isFalse);
+      await expectLater(
+        store.loadRepository(id),
+        throwsA(isA<FileSystemException>()),
+      );
+      await store.writeAttribute(name, 'Saved', expectedValue: 'Initial');
+      await store.saveRepository(id);
+      expect(jsonDecode(await file.readAsString()), {'name': 'Saved'});
+
+      await store.writeAttribute(name, 'Unsaved', expectedValue: 'Saved');
+      expect(jsonDecode(await file.readAsString()), {'name': 'Saved'});
+      await expectLater(store.loadRepository(id), throwsFormatException);
+      expect((await store.readAttribute(name)).value, 'Unsaved');
+      await store.loadRepository(id, discardChanges: true);
+      expect((await store.readAttribute(name)).value, 'Saved');
+      expect(changes.last.path, '');
+      expect(changes.last.isReload, isTrue);
+
+      await file.writeAsString('{"name":"External"}');
+      await store.loadRepository(id);
+      expect((await store.readAttribute(name)).value, 'External');
+      await store.writeAttribute(name, 'Local', expectedValue: 'External');
+      await file.writeAsString('{"name":"External again"}');
+      await expectLater(store.saveRepository(id), throwsFormatException);
+      expect(await file.readAsString(), '{"name":"External again"}');
+      await expectLater(store.loadRepository(id), throwsFormatException);
+      await store.loadRepository(id, discardChanges: true);
+      expect((await store.readAttribute(name)).value, 'External again');
+    },
+  );
+
+  test('manual document save flushes drafts and persists explicitly', () async {
+    const id = '0123456789abcdef0123456789abcdef';
+    const other = JsonTextBinding(repositoryId: id, path: 'other');
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}registered'
+      '${Platform.pathSeparator}$id.json',
+    );
+    await store.registerPersistentRepository(
+      RepositoryImpl(id: id, json: {'name': 'Initial'}),
+      autoSave: false,
+    );
+    expect(store.isPersistentRepository(id), isTrue);
+    final original = await store.read(id);
+    var flushed = false;
+    Future<void> pendingDraft() async {
+      if (flushed) return;
+      flushed = true;
+      await store.writeAttribute(other, 'Pending', expectedValue: null);
+    }
+
+    store.addFlusher(pendingDraft);
+    await expectLater(
+      store.save(id, '{"name":"Editor"}', expectedText: original),
+      throwsFormatException,
+    );
+    expect((await store.readAttribute(other)).value, 'Pending');
+    expect(await file.exists(), isFalse);
+    store.removeFlusher(pendingDraft);
+
+    await store.save(
+      id,
+      '{"name":"Editor","other":"Pending"}',
+      expectedText: await store.read(id),
+    );
+    expect(jsonDecode(await file.readAsString()), {
+      'name': 'Editor',
+      'other': 'Pending',
+    });
+    await store.save(
+      id,
+      '{"name":"Updated","other":"Pending"}',
+      expectedText: '{"name":"Editor","other":"Pending"}',
+    );
+    expect(jsonDecode(await file.readAsString()), {
+      'name': 'Updated',
+      'other': 'Pending',
+    });
+  });
+
+  test(
+    'automatic persistence rejects external changes before mutation',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      const name = JsonTextBinding(repositoryId: id, path: 'name');
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      final changes = <ChangeContext>[];
+      await store.registerPersistentRepository(
+        RepositoryImpl(
+          id: id,
+          json: {'name': 'Initial'},
+          onChanged: changes.add,
+        ),
+      );
+      await file.writeAsString('{"name":"External"}');
+
+      await expectLater(
+        store.writeAttribute(name, 'Local', expectedValue: 'Initial'),
+        throwsFormatException,
+      );
+      expect((await store.readAttribute(name)).value, 'Initial');
+      expect(changes, isEmpty);
+      expect(await file.readAsString(), '{"name":"External"}');
+
+      await store.loadRepository(id);
+      expect(changes.single.path, '');
+      await store.writeAttribute(name, 'Updated', expectedValue: 'External');
+      expect(jsonDecode(await file.readAsString()), {'name': 'Updated'});
+    },
+  );
+
+  test(
+    'persistent registration reports corrupt files without overwriting',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      await file.parent.create(recursive: true);
+      await file.writeAsString('{broken');
+      final repository = RepositoryImpl(id: id, json: {'name': 'Default'});
+      await expectLater(
+        store.registerPersistentRepository(repository),
+        throwsFormatException,
+      );
+      expect(await file.readAsString(), '{broken');
+      expect(await store.list(), isEmpty);
+
+      await file.writeAsString('[]');
+      await expectLater(
+        store.registerPersistentRepository(repository),
+        throwsFormatException,
+      );
+      expect(await file.readAsString(), '[]');
+      await file.writeAsString('{"name":"Recovered"}');
+      await store.registerPersistentRepository(repository);
+      expect(jsonDecode(await store.read(id)), {'name': 'Recovered'});
+    },
+  );
+
+  test(
+    'explicit save flushes bindings and registered deletion removes data',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      const name = JsonTextBinding(repositoryId: id, path: 'name');
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      await store.registerPersistentRepository(
+        RepositoryImpl(id: id, json: {'name': 'Initial', 'nodes': <Object?>[]}),
+        autoSave: false,
+      );
+      var flushed = false;
+      Future<void> flush() async {
+        if (flushed) return;
+        flushed = true;
+        await store.writeAttribute(name, 'Flushed', expectedValue: 'Initial');
+      }
+
+      store.addFlusher(flush);
+      await store.saveRepository(id);
+      store.removeFlusher(flush);
+      expect(jsonDecode(await file.readAsString()), {
+        'name': 'Flushed',
+        'nodes': <Object?>[],
+      });
+
+      final owner = Object();
+      store.registerBindings(owner, [id]);
+      await expectLater(store.delete(id), throwsFormatException);
+      expect(await file.exists(), isTrue);
+      store.unregisterBindings(owner);
+      final array = store.bindingOf(id).array('nodes')..select(const [], 0);
+      await store.delete(id);
+      expect(array.indexFor(const []), isNull);
+      expect(await file.exists(), isFalse);
+      expect(await store.list(), isEmpty);
+    },
+  );
+
+  test(
+    'persistent mutations are serialized and reject invalid roots',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      const first = JsonTextBinding(repositoryId: id, path: 'first');
+      const second = JsonTextBinding(repositoryId: id, path: 'second');
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      await store.registerPersistentRepository(
+        RepositoryImpl(id: id, json: {'first': 'A', 'second': 'B'}),
+      );
+      await Future.wait([
+        store.writeAttribute(first, 'A1', expectedValue: 'A'),
+        store.writeAttribute(second, 'B1', expectedValue: 'B'),
+      ]);
+      expect(jsonDecode(await file.readAsString()), {
+        'first': 'A1',
+        'second': 'B1',
+      });
+      final previous = await store.read(id);
+      await expectLater(
+        store.save(id, '[]', expectedText: previous),
+        throwsFormatException,
+      );
+      expect(await store.read(id), previous);
+      expect(jsonDecode(await file.readAsString()), {
+        'first': 'A1',
+        'second': 'B1',
+      });
+    },
+  );
+
+  test('conditional array replacement protects concurrent changes', () async {
+    const id = '0123456789abcdef0123456789abcdef';
+    const title = JsonTextBinding(repositoryId: id, path: 'nodes[0].title');
+    const source = JsonTextBinding(repositoryId: id, path: 'source');
+    store.registerRepository(
+      RepositoryImpl(
+        id: id,
+        json: {
+          'source': 'first',
+          'nodes': [
+            {'title': 'Initial'},
+          ],
+        },
+      ),
+    );
+    final oldNodes = await store.readArray(id, 'nodes');
+    await store.writeAttribute(title, 'Edited', expectedValue: 'Initial');
+    await expectLater(
+      store.replaceArray(
+        id,
+        'nodes',
+        [
+          {'title': 'Derived'},
+        ],
+        expectedValues: {'source': 'first', 'nodes': oldNodes},
+      ),
+      throwsA(isA<JsonRepositoryConflictException>()),
+    );
+    expect((await store.readAttribute(title)).value, 'Edited');
+
+    final currentNodes = await store.readArray(id, 'nodes');
+    await store.writeAttribute(source, 'second', expectedValue: 'first');
+    await expectLater(
+      store.replaceArray(
+        id,
+        'nodes',
+        [
+          {'title': 'Derived'},
+        ],
+        expectedValues: {'source': 'first', 'nodes': currentNodes},
+      ),
+      throwsA(isA<JsonRepositoryConflictException>()),
+    );
+    await store.replaceArray(
+      id,
+      'nodes',
+      [
+        {'title': 'Derived'},
+      ],
+      expectedValues: {'source': 'second', 'nodes': currentNodes},
+    );
+    expect((await store.readAttribute(title)).value, 'Derived');
+  });
+
+  test('persistent file errors do not commit an in-memory mutation', () async {
+    const id = '0123456789abcdef0123456789abcdef';
+    const name = JsonTextBinding(repositoryId: id, path: 'name');
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}registered'
+      '${Platform.pathSeparator}$id.json',
+    );
+    await store.registerPersistentRepository(
+      RepositoryImpl(id: id, json: {'name': 'Initial'}),
+    );
+    await file.delete();
+    await Directory(file.path).create();
+    await expectLater(
+      store.writeAttribute(name, 'Changed', expectedValue: 'Initial'),
+      throwsA(isA<FileSystemException>()),
+    );
+    expect((await store.readAttribute(name)).value, 'Initial');
+  });
+
+  test(
+    'persistent registration refuses a conflicting named repository',
+    () async {
+      const id = '0123456789abcdef0123456789abcdef';
+      await store.create(id);
+      await expectLater(
+        store.registerPersistentRepository(
+          RepositoryImpl(id: id, json: {'name': 'Initial'}),
+        ),
+        throwsFormatException,
+      );
+      expect(await store.read(id), '{}\n');
+    },
+  );
+
   test('delete removes JSON and ID files and clears array selection', () async {
     await store.create('Clients');
     await store.create('Articles');

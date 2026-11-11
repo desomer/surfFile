@@ -21,7 +21,14 @@ typedef JsonRepositoryEntry = ({String name, String id});
 /// Couple associant un chemin d'attribut JSON à sa valeur brute ou résolue.
 typedef JsonAttributeValue = ({Object? value, String text});
 
+/// Conflit détecté lors d'une modification conditionnelle d'un repository.
+class JsonRepositoryConflictException extends FormatException {
+  const JsonRepositoryConflictException(super.message);
+}
+
 /// Describes a change made to a registered in-memory repository.
+///
+/// An empty [path] denotes replacement of the whole document.
 class ChangeContext {
   ChangeContext({
     required this.repositoryId,
@@ -29,6 +36,7 @@ class ChangeContext {
     required Object? oldValue,
     required Object? newValue,
     this.componentId,
+    this.isReload = false,
   }) : oldValue = _snapshot(oldValue),
        newValue = _snapshot(newValue);
 
@@ -37,6 +45,9 @@ class ChangeContext {
   final Object? oldValue;
   final Object? newValue;
   final String? componentId;
+
+  /// Indique que le document entier provient d'un rechargement explicite.
+  final bool isReload;
 
   static Object? _snapshot(Object? value) => switch (value) {
     Map() => Map<Object?, Object?>.unmodifiable({
@@ -75,6 +86,17 @@ class RepositoryImpl {
   final ValueChanged<ChangeContext>? onChanged;
 }
 
+class _RegisteredRepositoryPersistence {
+  _RegisteredRepositoryPersistence({
+    required this.file,
+    required this.autoSave,
+  });
+
+  final File file;
+  final bool autoSave;
+  String? savedText;
+}
+
 /// One repository is one named JSON file, without an application envelope.
 class JsonRepositoryStore extends ChangeNotifier {
   JsonRepositoryStore(this.directory);
@@ -101,6 +123,9 @@ class JsonRepositoryStore extends ChangeNotifier {
   final _documentCache = <String, Object?>{};
   final _memoryRepositories = <String, Object?>{};
   final _memoryRepositoryCallbacks = <String, ValueChanged<ChangeContext>?>{};
+  Map<String, _RegisteredRepositoryPersistence>? _persistentRepositoryState;
+  Map<String, _RegisteredRepositoryPersistence> get _persistentRepositories =>
+      _persistentRepositoryState ??= {};
   final _loadingDocuments = <String, Future<Object?>>{};
   Map<String, String>? _idToNameCache;
   Future<Map<String, String>>? _loadingCatalog;
@@ -121,6 +146,230 @@ class JsonRepositoryStore extends ChangeNotifier {
     _documentCache[repository.id] = document;
     _idToNameCache?[repository.id] = repository.id;
     _changed();
+  }
+
+  /// Enregistre un repository applicatif et restaure son document s'il existe.
+  ///
+  /// Le fichier est `registered/<id>.json` dans [directory]. Par défaut,
+  /// chaque modification est enregistrée avant d'être publiée. Avec
+  /// [autoSave] désactivé, [saveRepository] effectue les écritures explicites.
+  /// Retourne `true` si un document existant a été chargé.
+  Future<bool> registerPersistentRepository(
+    RepositoryImpl repository, {
+    bool autoSave = true,
+  }) => _exclusive(() async {
+    if (_memoryRepositories.containsKey(repository.id)) {
+      throw ArgumentError.value(
+        repository.id,
+        'repository.id',
+        'Repository déjà enregistré.',
+      );
+    }
+    final catalog = await _catalog();
+    if (catalog.any(
+      (entry) =>
+          entry.id == repository.id ||
+          entry.name.toLowerCase() == repository.id,
+    )) {
+      throw const FormatException(
+        'Un repository utilise déjà cet identifiant ou ce nom.',
+      );
+    }
+    final persistence = _RegisteredRepositoryPersistence(
+      file: File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}${repository.id}.json',
+      ),
+      autoSave: autoSave,
+    );
+    final text = await _readRegisteredText(persistence.file);
+    final document = text == null
+        ? repository.json
+        : _decodeRegisteredDocument(text);
+    persistence.savedText = text;
+    if (autoSave && text == null) {
+      await _writeRegisteredDocument(persistence, document);
+    }
+    if (_memoryRepositories.containsKey(repository.id)) {
+      throw ArgumentError.value(
+        repository.id,
+        'repository.id',
+        'Repository déjà enregistré.',
+      );
+    }
+    _persistentRepositories[repository.id] = persistence;
+    registerRepository(
+      RepositoryImpl(
+        id: repository.id,
+        json: document,
+        onChanged: repository.onChanged,
+      ),
+    );
+    return text != null;
+  });
+
+  /// Enregistre explicitement l'état courant d'un repository persistant.
+  ///
+  /// Les liaisons en attente sont d'abord vidées. Une modification externe
+  /// du fichier depuis le dernier chargement ou enregistrement est refusée.
+  Future<void> saveRepository(String repositoryId) async {
+    await flushBindings();
+    await _exclusive(() async {
+      final persistence = _registeredPersistenceOf(repositoryId);
+      await _writeRegisteredDocument(
+        persistence,
+        _memoryRepositories[repositoryId],
+      );
+    });
+  }
+
+  /// Recharge un repository persistant et notifie ses composants liés.
+  ///
+  /// Les modifications locales non enregistrées sont protégées, sauf si
+  /// [discardChanges] vaut `true`. Le callback reçoit un chemin vide lorsque
+  /// le document entier a changé.
+  Future<void> loadRepository(
+    String repositoryId, {
+    bool discardChanges = false,
+  }) async {
+    await flushBindings();
+    await _exclusive(() async {
+      final persistence = _registeredPersistenceOf(repositoryId);
+      final text = await _readRegisteredText(persistence.file);
+      if (text == null) {
+        throw FileSystemException(
+          'Fichier du repository persistant introuvable.',
+          persistence.file.path,
+        );
+      }
+      final document = _decodeRegisteredDocument(text);
+      final previous = _memoryRepositories[repositoryId];
+      final savedText = persistence.savedText;
+      if (!discardChanges &&
+          (savedText == null ||
+              !jsonEquals(previous, _decodeRegisteredDocument(savedText)))) {
+        throw const FormatException(
+          'Le repository contient des modifications non enregistrées.',
+        );
+      }
+      _memoryRepositories[repositoryId] = document;
+      _documentCache[repositoryId] = document;
+      persistence.savedText = text;
+      _changed();
+      _notifyMemoryRepositoryChanged(
+        repositoryId: repositoryId,
+        path: '',
+        oldValue: previous,
+        newValue: document,
+        isReload: true,
+      );
+    });
+  }
+
+  _RegisteredRepositoryPersistence _registeredPersistenceOf(String id) {
+    final persistence = _persistentRepositories[id];
+    if (persistence == null || !_memoryRepositories.containsKey(id)) {
+      throw ArgumentError.value(
+        id,
+        'repositoryId',
+        'Repository non persistant.',
+      );
+    }
+    return persistence;
+  }
+
+  /// Indique si un repository applicatif est associé à un fichier persistant.
+  bool isPersistentRepository(String repositoryId) =>
+      _persistentRepositoryState?.containsKey(repositoryId) ?? false;
+
+  Future<String?> _readRegisteredText(File file) async {
+    final parentType = await FileSystemEntity.type(
+      file.parent.path,
+      followLinks: false,
+    );
+    if (parentType == FileSystemEntityType.notFound) return null;
+    if (parentType != FileSystemEntityType.directory) {
+      throw FileSystemException(
+        'Dossier des repositories applicatifs invalide ou lien refusé.',
+        file.parent.path,
+      );
+    }
+    final type = await FileSystemEntity.type(file.path, followLinks: false);
+    if (type == FileSystemEntityType.notFound) return null;
+    if (type != FileSystemEntityType.file) {
+      throw FileSystemException(
+        'Fichier du repository persistant invalide ou lien refusé.',
+        file.path,
+      );
+    }
+    return file.readAsString();
+  }
+
+  Map<String, Object?> _decodeRegisteredDocument(String text) {
+    final document = _decode(text);
+    if (document is! Map<String, dynamic>) {
+      throw const FormatException(
+        'Le repository applicatif doit être un objet JSON.',
+      );
+    }
+    return Map<String, Object?>.from(document);
+  }
+
+  Future<void> _writeRegisteredDocument(
+    _RegisteredRepositoryPersistence persistence,
+    Object? document,
+  ) async {
+    if (document is! Map<String, Object?>) {
+      throw const FormatException(
+        'Le repository applicatif doit être un objet JSON.',
+      );
+    }
+    final file = persistence.file;
+    if (await _readRegisteredText(file) != persistence.savedText) {
+      throw const FormatException(
+        'Le repository a été modifié sur le disque. Rechargez-le avant '
+        'de réessayer.',
+      );
+    }
+    final text = _encode(document);
+    if (text == persistence.savedText) return;
+    await file.parent.create(recursive: true);
+    if (await _readRegisteredText(file) != persistence.savedText) {
+      throw const FormatException(
+        'Le repository a été modifié sur le disque. Rechargez-le avant '
+        'de réessayer.',
+      );
+    }
+    final random = Random.secure();
+    final suffix = List.generate(
+      16,
+      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    final temporary = File('${file.path}.$suffix.tmp');
+    await temporary.create(exclusive: true);
+    try {
+      await temporary.writeAsString(text, flush: true);
+      if (await _readRegisteredText(file) != persistence.savedText) {
+        throw const FormatException(
+          'Le repository a été modifié sur le disque. Rechargez-le avant '
+          'de réessayer.',
+        );
+      }
+      await temporary.rename(file.path);
+      persistence.savedText = text;
+    } finally {
+      if (await FileSystemEntity.type(temporary.path, followLinks: false) ==
+          FileSystemEntityType.file) {
+        await temporary.delete();
+      }
+    }
+  }
+
+  Future<void> _saveRegisteredAutomatically(String id, Object? document) async {
+    final persistence = _persistentRepositories[id];
+    if (persistence != null && persistence.autoSave) {
+      await _writeRegisteredDocument(persistence, document);
+    }
   }
 
   /// Vide le cache mémoire des documents JSON (ou uniquement celui de
@@ -178,8 +427,27 @@ class JsonRepositoryStore extends ChangeNotifier {
   }
 
   Future<void> _pending = Future.value();
-  final _flushers = <Future<void> Function()>{};
+  final Object _flushers = <Future<void> Function()>{};
+  Set<Future<void> Function()>? _migratedFlushers;
+  Map<Future<void> Function(), String? Function()>? _flusherErrors;
   bool _disposed = false;
+
+  Set<Future<void> Function()> get _activeFlushers {
+    final flushers = _flushers;
+    if (flushers is Set<Future<void> Function()>) return flushers;
+    // Une session rechargée à chaud peut encore contenir l'ancienne map.
+    if (flushers is Map<Future<void> Function(), String? Function()?>) {
+      final migrated = _migratedFlushers;
+      if (migrated != null) return migrated;
+      final errors = _flusherErrors ??= {};
+      for (final entry in flushers.entries) {
+        final pendingError = entry.value;
+        if (pendingError != null) errors[entry.key] = pendingError;
+      }
+      return _migratedFlushers = flushers.keys.toSet();
+    }
+    throw StateError('Collection de liaisons en attente invalide.');
+  }
 
   Future<T> _exclusive<T>(Future<T> Function() action) {
     final result = Completer<T>();
@@ -206,6 +474,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     required Object? oldValue,
     required Object? newValue,
     String? componentId,
+    bool isReload = false,
   }) {
     if (jsonEquals(oldValue, newValue)) return;
     _memoryRepositoryCallbacks[repositoryId]?.call(
@@ -215,18 +484,41 @@ class JsonRepositoryStore extends ChangeNotifier {
         oldValue: oldValue,
         newValue: newValue,
         componentId: componentId,
+        isReload: isReload,
       ),
     );
   }
 
-  /// Live bindings register their pending-write flush here, so that a list
-  /// can save drafts before it moves or removes array elements.
-  void addFlusher(Future<void> Function() flush) => _flushers.add(flush);
+  /// Enregistre une liaison et, si fourni, son éventuel échec non résolu.
+  void addFlusher(
+    Future<void> Function() flush, {
+    String? Function()? pendingError,
+  }) {
+    _activeFlushers.add(flush);
+    if (pendingError == null) {
+      _flusherErrors?.remove(flush);
+    } else {
+      (_flusherErrors ??= {})[flush] = pendingError;
+    }
+  }
 
-  void removeFlusher(Future<void> Function() flush) => _flushers.remove(flush);
+  /// Désenregistre une liaison de la synchronisation des saisies en attente.
+  void removeFlusher(Future<void> Function() flush) {
+    _activeFlushers.remove(flush);
+    _flusherErrors?.remove(flush);
+  }
 
-  Future<void> flushBindings() =>
-      Future.wait([for (final flush in _flushers.toList()) flush()]);
+  /// Enregistre les saisies liées ou signale celles qui restent en échec.
+  Future<void> flushBindings() async {
+    final flushers = {
+      for (final flusher in _activeFlushers) flusher: _flusherErrors?[flusher],
+    };
+    await Future.wait([for (final flusher in flushers.keys) flusher()]);
+    for (final pendingError in flushers.values) {
+      final error = pendingError?.call();
+      if (error != null) throw FormatException(error);
+    }
+  }
 
   void reportBindingError(String message) {
     if (!_disposed) errors.value = message;
@@ -384,6 +676,9 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
+  static String _encode(Object? document) =>
+      '${const JsonEncoder.withIndent('  ').convert(document)}\n';
+
   Future<Object?> _getDocument(String repoId) async {
     if (_activeMutations > 0) {
       await _pending;
@@ -527,6 +822,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         );
       }
       final updated = path.write(root, text, expectedValue, asBool: asBool);
+      await _saveRegisteredAutomatically(repoId, updated);
       final value = path.read(updated);
       _memoryRepositories[repoId] = updated;
       _documentCache[repoId] = updated;
@@ -550,11 +846,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       );
     }
     final updated = path.write(root, text, expectedValue, asBool: asBool);
-    await _save(
-      name,
-      '${const JsonEncoder.withIndent('  ').convert(updated)}\n',
-      expectedText: original,
-    );
+    await _save(name, _encode(updated), expectedText: original);
     _documentCache[repoId] = updated;
     final value = path.read(updated);
     return (value: value, text: value?.toString() ?? '');
@@ -637,20 +929,46 @@ class JsonRepositoryStore extends ChangeNotifier {
     'La liste a été modifiée. Rechargez-la avant de réessayer.',
   );
 
-  /// Replaces a whole array (created when absent) with JSON [items].
+  /// Remplace un tableau entier (créé s'il est absent) par [items].
+  ///
+  /// Les chemins et valeurs de [expectedValues] doivent encore correspondre
+  /// au document au moment de l'écriture, sinon un
+  /// [JsonRepositoryConflictException] est levé.
   Future<int> replaceArray(
     String repositoryId,
     String path,
     List<Object?> items, {
     String? componentId,
+    Map<String, Object?>? expectedValues,
   }) {
     final copy = jsonDecode(jsonEncode(items)) as List<Object?>;
+    final expectations = expectedValues == null
+        ? null
+        : Map<String, Object?>.from(
+            jsonDecode(jsonEncode(expectedValues)) as Map<String, dynamic>,
+          );
     return _updateArray(
       repositoryId,
       path,
       (_) => copy,
       componentId: componentId,
+      expectedValues: expectations,
     );
+  }
+
+  static void _checkExpectedValues(
+    Object? root,
+    Map<String, Object?>? expectedValues,
+  ) {
+    if (expectedValues == null) return;
+    for (final entry in expectedValues.entries) {
+      final path = JsonAttributePath(entry.key)..requireResolved();
+      if (!jsonEquals(path.readNode(root), entry.value)) {
+        throw const JsonRepositoryConflictException(
+          'Le repository a été modifié. Rechargez les données avant de réessayer.',
+        );
+      }
+    }
   }
 
   Future<int> _updateArray(
@@ -658,15 +976,18 @@ class JsonRepositoryStore extends ChangeNotifier {
     String path,
     List<Object?> Function(List<Object?>) change, {
     String? componentId,
+    Map<String, Object?>? expectedValues,
   }) => _exclusive(() async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
     if (_memoryRepositories.containsKey(repositoryId)) {
       final root = _memoryRepositories[repositoryId];
+      _checkExpectedValues(root, expectedValues);
       final attribute = JsonAttributePath(binding.path);
       final previous = _array(attribute.readNode(root));
       final items = change(previous);
       final updated = attribute.replaceNode(root, items);
+      await _saveRegisteredAutomatically(repositoryId, updated);
       _memoryRepositories[repositoryId] = updated;
       _documentCache[repositoryId] = updated;
       _changed();
@@ -682,14 +1003,11 @@ class JsonRepositoryStore extends ChangeNotifier {
     final name = await _nameOf(repositoryId);
     final original = await read(name);
     final root = _decode(original);
+    _checkExpectedValues(root, expectedValues);
     final attribute = JsonAttributePath(binding.path);
     final items = change(_array(attribute.readNode(root)));
     final updated = attribute.replaceNode(root, items);
-    await _save(
-      name,
-      '${const JsonEncoder.withIndent('  ').convert(updated)}\n',
-      expectedText: original,
-    );
+    await _save(name, _encode(updated), expectedText: original);
     return items.length;
   });
 
@@ -738,7 +1056,7 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   Future<String> read(String name) async {
     if (_memoryRepositories.containsKey(name)) {
-      return '${const JsonEncoder.withIndent('  ').convert(_memoryRepositories[name])}\n';
+      return _encode(_memoryRepositories[name]);
     }
     final file = _file(name);
     if (await FileSystemEntity.type(file.path, followLinks: false) !=
@@ -761,8 +1079,20 @@ class JsonRepositoryStore extends ChangeNotifier {
     _changed();
   });
 
-  Future<void> save(String name, String text, {required String expectedText}) =>
-      _exclusive(() => _save(name, text, expectedText: expectedText));
+  /// Enregistre un document entier après contrôle de sa version précédente.
+  ///
+  /// Pour un repository applicatif persistant, les liaisons sont vidées et
+  /// le fichier est enregistré même lorsque la sauvegarde automatique est
+  /// désactivée. La version précédente est comparée comme un document JSON,
+  /// indépendamment de sa mise en forme.
+  Future<void> save(
+    String name,
+    String text, {
+    required String expectedText,
+  }) async {
+    if (isPersistentRepository(name)) await flushBindings();
+    await _exclusive(() => _save(name, text, expectedText: expectedText));
+  }
 
   Future<void> _save(
     String name,
@@ -771,14 +1101,35 @@ class JsonRepositoryStore extends ChangeNotifier {
   }) async {
     final decoded = jsonDecode(text);
     if (_memoryRepositories.containsKey(name)) {
-      if (await read(name) != expectedText) {
+      final persistence = _persistentRepositories[name];
+      final matches = persistence == null
+          ? await read(name) == expectedText
+          : jsonEquals(_memoryRepositories[name], _decode(expectedText));
+      if (!matches) {
         throw const FormatException(
           'Le repository a été modifié. Copiez vos modifications puis rechargez-le.',
         );
       }
+      if (persistence != null && decoded is! Map<String, dynamic>) {
+        throw const FormatException(
+          'Le repository applicatif doit être un objet JSON.',
+        );
+      }
+      final previous = _memoryRepositories[name];
+      if (persistence != null) {
+        await _writeRegisteredDocument(persistence, decoded);
+      }
       _memoryRepositories[name] = decoded;
       _documentCache[name] = decoded;
       _changed();
+      if (persistence != null) {
+        _notifyMemoryRepositoryChanged(
+          repositoryId: name,
+          path: '',
+          oldValue: previous,
+          newValue: decoded,
+        );
+      }
       return;
     }
     if (await read(name) != expectedText) {
@@ -827,6 +1178,24 @@ class JsonRepositoryStore extends ChangeNotifier {
           'Impossible de supprimer « $validated » : '
           'ce repository est encore utilisé par un bind de l’application.',
         );
+      }
+      final persistence = _persistentRepositories[validated];
+      if (persistence != null) {
+        final text = await _readRegisteredText(persistence.file);
+        if (text != persistence.savedText) {
+          throw const FormatException(
+            'Le repository a été modifié sur le disque. Rechargez-le avant '
+            'de le supprimer.',
+          );
+        }
+        if (text != null) await persistence.file.delete();
+        _persistentRepositories.remove(validated);
+        final binding = _bindings[validated];
+        if (binding != null) {
+          for (final array in binding.arrays) {
+            array.clear();
+          }
+        }
       }
       _memoryRepositories.remove(validated);
       _memoryRepositoryCallbacks.remove(validated);

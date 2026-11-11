@@ -432,7 +432,10 @@ class EditorComposedComponentBadgePainter extends CustomPainter {
       final secondary = composable ? composedSecondary : forcedSecondary;
       final maxCorner = math.max(0.0, math.min(16.0, rect.shortestSide / 2));
       final cornerRadius = (radius - 1.0).clamp(0.0, maxCorner).toDouble();
-      final rrect = RRect.fromRectAndRadius(rect, Radius.circular(cornerRadius));
+      final rrect = RRect.fromRectAndRadius(
+        rect,
+        Radius.circular(cornerRadius),
+      );
 
       // Fin liseré pointillé si aucun peintre de survol actif n'est présent
       if (innerPainter == null) {
@@ -461,80 +464,80 @@ class EditorComposedComponentBadgePainter extends CustomPainter {
       innerPainter?.paint(canvas, size);
 
       // Badge permanent en haut à droite (maintenu à l'échelle écran 1:1)
-      final effectiveZoom =
-          zoomScale > 0 && zoomScale.isFinite ? zoomScale : 1.0;
-      final invZoom = 1.0 / effectiveZoom;
-      final screenWidth = rect.width * effectiveZoom;
-      final screenHeight = rect.height * effectiveZoom;
-      final text = componentName.trim();
-      if (text.isNotEmpty && screenWidth >= 48 && screenHeight >= 20) {
-        final prefix = composable ? '🧩 ' : '📦 ';
-        final textPainter = TextPainter(
-          text: TextSpan(
-            text: '$prefix$text',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 10.0,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.2,
-              height: 1.1,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-          maxLines: 1,
-          ellipsis: '…',
-        )..layout(maxWidth: (screenWidth - 20).clamp(24.0, 200.0));
+      // final effectiveZoom =
+      //     zoomScale > 0 && zoomScale.isFinite ? zoomScale : 1.0;
+      // final invZoom = 1.0 / effectiveZoom;
+      // final screenWidth = rect.width * effectiveZoom;
+      // final screenHeight = rect.height * effectiveZoom;
+      // final text = componentName.trim();
+      // if (text.isNotEmpty && screenWidth >= 48 && screenHeight >= 20) {
+      //   final prefix = composable ? '🧩 ' : '📦 ';
+      //   final textPainter = TextPainter(
+      //     text: TextSpan(
+      //       text: '$prefix$text',
+      //       style: const TextStyle(
+      //         color: Colors.white,
+      //         fontSize: 10.0,
+      //         fontWeight: FontWeight.w700,
+      //         letterSpacing: 0.2,
+      //         height: 1.1,
+      //       ),
+      //     ),
+      //     textDirection: TextDirection.ltr,
+      //     maxLines: 1,
+      //     ellipsis: '…',
+      //   )..layout(maxWidth: (screenWidth - 20).clamp(24.0, 200.0));
 
-        const hPad = 7.0;
-        const vPad = 3.0;
-        final badgeWidth = textPainter.width + hPad * 2;
-        final badgeHeight = textPainter.height + vPad * 2;
-        final badgeLeft = screenWidth - badgeWidth - 6.0;
-        const badgeTop = 5.0;
-        final badgeRect = Rect.fromLTWH(
-          badgeLeft,
-          badgeTop,
-          badgeWidth,
-          badgeHeight,
-        );
-        final badgeRRect = RRect.fromRectAndRadius(
-          badgeRect,
-          Radius.circular(badgeHeight / 2),
-        );
+      //   const hPad = 7.0;
+      //   const vPad = 3.0;
+      //   final badgeWidth = textPainter.width + hPad * 2;
+      //   final badgeHeight = textPainter.height + vPad * 2;
+      //   final badgeLeft = screenWidth - badgeWidth - 6.0;
+      //   const badgeTop = 5.0;
+      //   final badgeRect = Rect.fromLTWH(
+      //     badgeLeft,
+      //     badgeTop,
+      //     badgeWidth,
+      //     badgeHeight,
+      //   );
+      //   final badgeRRect = RRect.fromRectAndRadius(
+      //     badgeRect,
+      //     Radius.circular(badgeHeight / 2),
+      //   );
 
-        canvas.save();
-        canvas.translate(rect.left, rect.top);
-        canvas.scale(invZoom, invZoom);
+      //   canvas.save();
+      //   canvas.translate(rect.left, rect.top);
+      //   canvas.scale(invZoom, invZoom);
 
-        canvas.drawRRect(
-          badgeRRect.shift(const Offset(0, 1.0)),
-          Paint()
-            ..color = Colors.black.withValues(alpha: 0.24)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
-        );
+      // canvas.drawRRect(
+      //   badgeRRect.shift(const Offset(0, 1.0)),
+      //   Paint()
+      //     ..color = Colors.black.withValues(alpha: 0.24)
+      //     ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5),
+      // );
 
-        final pillShader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            primary.withValues(alpha: 0.92),
-            secondary.withValues(alpha: 0.92),
-          ],
-        ).createShader(badgeRect);
-        canvas.drawRRect(badgeRRect, Paint()..shader = pillShader);
+      // final pillShader = LinearGradient(
+      //   begin: Alignment.topLeft,
+      //   end: Alignment.bottomRight,
+      //   colors: [
+      //     primary.withValues(alpha: 0.92),
+      //     secondary.withValues(alpha: 0.92),
+      //   ],
+      // ).createShader(badgeRect);
+      // canvas.drawRRect(badgeRRect, Paint()..shader = pillShader);
 
-        canvas.drawRRect(
-          badgeRRect,
-          Paint()
-            ..color = Colors.white.withValues(alpha: 0.80)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.0,
-        );
+      // canvas.drawRRect(
+      //   badgeRRect,
+      //   Paint()
+      //     ..color = Colors.white.withValues(alpha: 0.80)
+      //     ..style = PaintingStyle.stroke
+      //     ..strokeWidth = 1.0,
+      // );
 
-        textPainter.paint(canvas, Offset(badgeLeft + hPad, badgeTop + vPad));
-        textPainter.dispose();
-        canvas.restore();
-      }
+      // textPainter.paint(canvas, Offset(badgeLeft + hPad, badgeTop + vPad));
+      //textPainter.dispose();
+      //canvas.restore();
+      //}
     } else {
       innerPainter?.paint(canvas, size);
     }

@@ -152,6 +152,10 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   BehaviorCurve _curve = BehaviorCurve.easeInOut;
   final _tooltipMessage = TextEditingController();
   JsonTextBinding? _tooltipBinding;
+  BehaviorBoundState _boundState = BehaviorBoundState.invisible;
+  JsonTextBinding? _stateBinding;
+  bool _stateWhenValue = true;
+  bool _stateMaintainSize = false;
 
   @override
   void initState() {
@@ -201,6 +205,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   }
 
   bool get _isZoneSize => _selectedCatalogItem.actionType == 'bindZoneSize';
+  bool get _isBindState => _selectedCatalogItem.actionType == 'bindState';
 
   EditorSlotState? get _targetSlot {
     final slot = _selectedTarget.slot;
@@ -271,6 +276,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     BehaviorWizardStage.settings =>
       _isTooltip
           ? _tooltipError == null
+          : _isBindState
+          ? _stateBinding != null
           : _isZoneSize
           ? _zoneBinding != null && _durationMs != null
           : _isEvent
@@ -305,6 +312,15 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
     final BehaviorAction action = _isTooltip
         ? TooltipAction(message: _tooltipMessage.text, binding: _tooltipBinding)
+        : _isBindState
+        ? StateBindingAction(
+            state: _boundState,
+            binding: _stateBinding!,
+            whenValue: _stateWhenValue,
+            maintainSize:
+                _boundState == BehaviorBoundState.invisible &&
+                _stateMaintainSize,
+          )
         : _isZoneSize
         ? ZoneSizeBindingAction(
             zone: _effectiveZone,
@@ -674,6 +690,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   Widget _buildSettingsStep(BuildContext context) {
     if (_isTooltip) return _buildTooltipSettings(context);
+    if (_isBindState) return _buildBindStateSettings(context);
     if (_isEvent) return _buildEventSettings(context);
     if (_isZoneSize) return _buildZoneSizeSettings(context);
     final theme = Theme.of(context);
@@ -883,7 +900,44 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                           : '${_tooltipBinding!.repositoryId ?? 'liste'} : '
                                 '${_tooltipBinding!.path}',
                     )
-                  else if (_isZoneSize) ...[
+                  else if (_isBindState) ...[
+                    _summaryRow(
+                      context,
+                      icon: _boundState.icon,
+                      label: 'État appliqué',
+                      value: _boundState.label,
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.link,
+                      label: 'Liaison',
+                      value: _stateBinding == null
+                          ? '-'
+                          : '${_stateBinding!.repositoryId ?? 'liste'} : '
+                                '${_stateBinding!.path}',
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.rule_outlined,
+                      label: 'Condition',
+                      value: _stateWhenValue
+                          ? 'Quand vrai (true)'
+                          : 'Quand faux (false)',
+                    ),
+                    if (_boundState == BehaviorBoundState.invisible) ...[
+                      const Divider(height: 16),
+                      _summaryRow(
+                        context,
+                        icon: Icons.aspect_ratio_outlined,
+                        label: 'Encombrement',
+                        value: _stateMaintainSize
+                            ? 'Conserver l’espace'
+                            : 'Masquer sans occuper d’espace',
+                      ),
+                    ],
+                  ] else if (_isZoneSize) ...[
                     _summaryRow(
                       context,
                       icon: Icons.view_sidebar_outlined,
@@ -978,6 +1032,90 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBindStateSettings(BuildContext context) {
+    final theme = Theme.of(context);
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'État à appliquer',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<BehaviorBoundState>(
+            key: const ValueKey('behavior-bind-state-target'),
+            segments: [
+              for (final state in BehaviorBoundState.values)
+                ButtonSegment(
+                  value: state,
+                  icon: Icon(state.icon),
+                  label: Text(state.label),
+                ),
+            ],
+            selected: {_boundState},
+            onSelectionChanged: (set) =>
+                setState(() => _boundState = set.first),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Condition sur le booléen lié',
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SegmentedButton<bool>(
+            key: const ValueKey('behavior-bind-state-when'),
+            segments: const [
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.check_circle_outline),
+                label: Text('Quand vrai (true)'),
+              ),
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.cancel_outlined),
+                label: Text('Quand faux (false)'),
+              ),
+            ],
+            selected: {_stateWhenValue},
+            onSelectionChanged: (set) =>
+                setState(() => _stateWhenValue = set.first),
+          ),
+          if (_boundState == BehaviorBoundState.invisible) ...[
+            const SizedBox(height: 8),
+            SwitchListTile(
+              key: const ValueKey('behavior-bind-state-maintain-size'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Conserver l’espace du composant'),
+              subtitle: const Text(
+                'Masque visuellement le composant tout en gardant sa place dans la mise en page.',
+              ),
+              value: _stateMaintainSize,
+              onChanged: (value) => setState(() => _stateMaintainSize = value),
+            ),
+          ],
+          const SizedBox(height: 16),
+          RepositoryBindingFields(
+            keyPrefix: 'behavior-bind-state-binding',
+            binding: _stateBinding,
+            store: JsonRepositoryScope.maybeOf(targetContext),
+            listScope: JsonListScope.maybeOf(targetContext),
+            pathHint: 'clients[?].estVerrouille',
+            helper:
+                'Booléen du repository (true/false) ; [?] suit la ligne courante ou sélectionnée.',
+            onChanged: (binding) => setState(() => _stateBinding = binding),
+          ),
         ],
       ),
     );

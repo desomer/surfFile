@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -128,6 +129,62 @@ void main() {
     expect(await tester.runAsync(() => store.idOf('Contacts')), id);
     expect(tester.takeException(), isNull);
   });
+
+  for (final autoSave in [true, false]) {
+    testWidgets('persistent repository editor saves and reloads ($autoSave)', (
+      tester,
+    ) async {
+      const id = '0123456789abcdef0123456789abcdef';
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}registered'
+        '${Platform.pathSeparator}$id.json',
+      );
+      await tester.runAsync(
+        () => store.registerPersistentRepository(
+          RepositoryImpl(id: id, json: {'name': 'Initial'}),
+          autoSave: autoSave,
+        ),
+      );
+      await open(tester);
+      await tap(tester, find.byKey(const ValueKey('repository-entry-$id')));
+      await settle(tester);
+
+      final editor = find.byKey(const ValueKey('repository-json'));
+      await tester.enterText(editor, '{"name":"Saved"}');
+      await tap(tester, find.byKey(const ValueKey('repository-save')));
+      await settle(tester);
+      expect(jsonDecode(await tester.runAsync(file.readAsString) as String), {
+        'name': 'Saved',
+      });
+
+      await tester.runAsync(() => file.writeAsString('{"name":"External"}'));
+      await tester.enterText(editor, '{"name":"Local"}');
+      await tap(tester, find.byKey(const ValueKey('repository-save')));
+      await settle(tester);
+      expect(find.textContaining('modifié sur le disque'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(editor).controller!.text,
+        contains('Local'),
+      );
+      expect(jsonDecode(await tester.runAsync(file.readAsString) as String), {
+        'name': 'External',
+      });
+
+      await tap(tester, find.text('Recharger'));
+      await tester.pumpAndSettle();
+      await tap(tester, find.text('Abandonner'));
+      await settle(tester);
+      expect(
+        tester.widget<TextField>(editor).controller!.text,
+        contains('External'),
+      );
+      expect(
+        jsonDecode(await tester.runAsync(() => store.read(id)) as String),
+        {'name': 'External'},
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets(
     'unsaved edits require confirmation before switching or closing',

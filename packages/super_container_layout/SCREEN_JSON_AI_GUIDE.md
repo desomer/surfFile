@@ -1052,7 +1052,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
 - **Déclencheurs (`trigger`)** :
   - `"click"` : Déclenché lors d'un clic (ou tap) sur le composant lorsque le mode édition est désactivé. Le curseur passe automatiquement en pointeur (`click`).
   - `"doubleClick"` : Double-clic pour l'action `"emitEvent"`. Les deux clics simples restent emis si un behaviour `"click"` est aussi configure ; le double-clic est emis en supplement.
-  - `"binding"` : Reactif, reserve a l'action `"bindZoneSize"` ; s'applique a chaque changement de la valeur liee (aucun clic).
+  - `"binding"` : Réactif, réservé aux actions `"bindZoneSize"` et `"bindState"` ; s'applique à chaque changement de la valeur liée (aucun clic).
   - `"hover"` : Survol hors édition, réservé à l'action `"onTooltip"`, sans action au clic ni curseur de clic ajouté.
 - **Actions polymorphes (`action`)** :
   - `"onTooltip"` (`TooltipAction`, déclencheur `"hover"`) : info-bulle disponible sur **tous les composants par ID**, sans restriction de type (natifs, pages, layouts, collections, extensions et slivers).
@@ -1077,6 +1077,11 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
     - `unit` (optionnel, defaut `"pixels"`) : `"pixels"` ou `"percent"` (largeur du layout pour ouest/est, hauteur pour nord/sud).
     - `durationMs` (optionnel, defaut `250`, `0` sans animation) et `curve` (optionnel, defaut `"easeInOut"` ; `"linear"`, `"easeIn"`, `"easeOut"`, `"fastOutSlowIn"`, `"easeOutBack"`).
     - `0` ferme la zone ; une valeur absente ou non numerique rend la taille de la configuration. La taille n'est jamais enregistree dans la configuration et la poignee de redimensionnement du cote est masquee. La premiere valeur s'applique sans animation.
+  - `"bindState"` (`StateBindingAction`, déclencheur `"binding"`, disponible sur tous les composants par ID) : change l'état d'un composant en fonction d'un booléen d'un repository JSON.
+    - `state` : `"invisible"` (masque le composant hors mode édition) | `"readOnly"` (passe en lecture seule et active `AutomaticState.readOnly`) | `"disabled"` (désactive les interactions et active `AutomaticState.disabled`).
+    - `binding` : `{"repositoryId": "...", "path": "clients[?].estVerrouille"}` ou forme courte `"clients[?].estVerrouille"` avec repository hérité.
+    - `whenValue` (optionnel, défaut `true`) : `true` applique l'état quand le booléen vaut `true`, `false` l'applique quand il vaut `false`.
+    - `maintainSize` (optionnel, défaut `false`, utilisé uniquement avec `state: "invisible"`) : conserve l'espace du composant dans la mise en page lorsqu'il est masqué.
 
 #### Exemple : info-bulle fixe et info-bulle liée sur une ligne
 

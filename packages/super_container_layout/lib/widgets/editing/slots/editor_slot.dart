@@ -28,6 +28,7 @@ import '../../../models/super_renderer_config.dart';
 import '../../../super_app.dart';
 import '../../appearance/appearance_transfer_dialog.dart';
 import '../../components/behavior_event_listener.dart';
+import '../../components/component_state_behavior.dart';
 import '../../components/component_tooltip.dart';
 import '../../components/super_component.dart';
 import '../../components/super_layout/layout_selection.dart';
@@ -686,23 +687,40 @@ class EditorSlotState extends State<EditorSlot> {
 
   @override
   Widget build(BuildContext context) {
-    final editMode = StyleEditScope.controllerOf(context);
     final isSliver = SliverSlotScope.isSliver(context);
+    return ComponentStateBehavior(
+      componentId: effectiveComponentId,
+      behaviors: widget.behaviors,
+      sliver: isSliver,
+      child: Builder(
+        builder: (context) => _buildSlotContent(context, isSliver: isSliver),
+      ),
+    );
+  }
+
+  Widget _buildSlotContent(BuildContext context, {required bool isSliver}) {
+    final editMode = StyleEditScope.controllerOf(context);
     final inEditMode = editMode?.value ?? false;
+    final behaviorDisabled =
+        !inEditMode &&
+        (ComponentBehaviorStateScope.isDisabled(context) ||
+            ComponentBehaviorStateScope.isInvisible(context));
     final appearance = AppearanceScope.controllerOf(context)?.value;
     final behaviors =
         widget.behaviors ??
         appearance?.behaviorsFor(effectiveComponentId) ??
         const [];
-    final clickBehaviors = behaviors
-        .where(
-          (b) =>
-              b.enabled &&
-              b.trigger == BehaviorTrigger.click &&
-              b.action is! EmitEventAction,
-        )
-        .toList();
-    final eventBehaviors = inEditMode
+    final clickBehaviors = behaviorDisabled
+        ? const <ComponentBehavior>[]
+        : behaviors
+              .where(
+                (b) =>
+                    b.enabled &&
+                    b.trigger == BehaviorTrigger.click &&
+                    b.action is! EmitEventAction,
+              )
+              .toList();
+    final eventBehaviors = inEditMode || behaviorDisabled
         ? <ComponentBehavior>[]
         : behaviors
               .where((b) => b.enabled && b.action is EmitEventAction)

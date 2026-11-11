@@ -161,7 +161,7 @@ class _FloatingToolbarLayoutDelegate extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    final desired = position ?? Offset(size.width - childSize.width - 16, 56);
+    final desired = position ?? Offset(size.width - childSize.width - 16,  size.height - childSize.height - 50);
     resolvedPosition = Offset(
       desired.dx.clamp(
         0.0,

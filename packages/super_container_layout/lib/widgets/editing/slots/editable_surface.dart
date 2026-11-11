@@ -15,6 +15,7 @@ import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/states/surface_state_binding.dart';
 import '../../surfaces/super_container.dart';
+import '../../components/component_state_behavior.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../dialogs/super_value_json_extract_dialog.dart';
 import '../styles/container_style_dialog.dart';
@@ -342,6 +343,7 @@ class EditableSurfaceState extends State<EditableSurface>
                   isHovered: widget.resolveSelectionAndHover && _hovered.value,
                   activeStates: {
                     if (content?.hovered == true) AutomaticState.contentHover,
+                    ...ComponentBehaviorStateScope.automaticStatesOf(context),
                   },
                 ) ??
                 currentBase;

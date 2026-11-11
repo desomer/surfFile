@@ -1540,6 +1540,56 @@ editable ; deplacer ou sauvegarder un repository doit inclure les deux fichiers.
 Les repositories existants recoivent un ID au premier acces, sans modification
 de leur contenu. Un fichier d'ID corrompu est signale, jamais regenere en silence.
 
+Un repository fourni par l'application avec `registerRepository` reste
+uniquement en memoire. Pour conserver son ID et son callback tout en ajoutant
+la persistance, utiliser `registerPersistentRepository` :
+
+```dart
+const id = '0123456789abcdef0123456789abcdef';
+final store = JsonRepositoryStore.defaultStore();
+final restored = await store.registerPersistentRepository(
+  RepositoryImpl(
+    id: id,
+    json: {'source': '', 'nodes': <Object?>[]},
+    onChanged: (change) {
+      // Reagir a la modification.
+    },
+  ),
+);
+```
+
+Le document existant est charge avant l'enregistrement ; `restored` indique
+s'il a ete trouve. Sinon, les donnees initiales sont enregistrees. Par defaut,
+chaque mutation est enregistree avant d'etre publiee aux composants. Le fichier
+est `registered/<id>.json` dans le dossier du store : son nom contient deja
+l'ID, sans fichier `.id` supplementaire. Le repository reste accessible dans
+le gestionnaire sous son ID, sans apparaitre en double dans le catalogue.
+
+Pour choisir des sauvegardes manuelles, passer `autoSave: false` a
+`registerPersistentRepository`. Aucun fichier n'est cree avant le premier
+enregistrement explicite s'il n'existe pas deja. Dans les deux modes :
+
+```dart
+await store.saveRepository(id);
+await store.loadRepository(id);
+// Pour abandonner volontairement les modifications locales non enregistrees :
+await store.loadRepository(id, discardChanges: true);
+```
+
+Ces methodes vident d'abord les liaisons en attente. Un rechargement refuse
+par defaut d'abandonner des modifications locales ; une sauvegarde refuse
+d'ecraser un fichier modifie depuis le dernier chargement ou enregistrement.
+La methode `save` et le bouton **Enregistrer** du gestionnaire constituent
+egalement des sauvegardes explicites, meme lorsque `autoSave` est desactive.
+Le bouton **Recharger** du gestionnaire relit le fichier persistant et refuse
+de perdre des modifications locales non enregistrees.
+Les erreurs de fichier et les JSON invalides sont remontees sans reinitialiser
+les donnees. La suppression du repository enregistre supprime aussi son fichier.
+Lors d'un remplacement complet ou d'un rechargement, `ChangeContext.path` est
+vide et `ChangeContext.isReload` distingue le rechargement explicite. Avant
+une fermeture normale, attendre les traitements applicatifs asynchrones puis
+`saveRepository` ; `dispose` ne peut pas attendre ces operations.
+
 En mode edition dans une `SuperPage`, les dialogues de style, de taille,
 de configuration du layout, d'ajout de slot et d'apparence utilisent un panneau
 a droite. Un bouton permet de le placer a gauche. Le composant edite est cadre
