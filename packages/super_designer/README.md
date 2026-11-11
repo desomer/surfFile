@@ -9,6 +9,10 @@ cd packages/super_designer
 flutter run -d windows
 ```
 
+La bannière du mode édition apparaît initialement en bas de la page et reste
+déplaçable à la souris. Le chat Vibe et le menu du chemin restent accessibles
+lorsqu'ils sont ouverts.
+
 ## Repository de SuperDesigner
 
 L'application charge automatiquement son repository au demarrage et enregistre

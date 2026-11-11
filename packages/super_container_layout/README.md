@@ -1908,7 +1908,12 @@ La banniere `StyleEditBanner` se deplace par glisser-deposer, notamment depuis
 son titre « Mode édition ». Elle reste dans les limites de la fenetre, meme
 lors d'un redimensionnement. La position est conservee tant que le widget reste
 monte (y compris en quittant puis en reactivant le mode edition), sans sauvegarde
-dans les preferences. Les boutons et les segments du chemin restent cliquables.
+dans les preferences. Par defaut, elle apparait en haut au centre ; pour la placer
+initialement en bas, utiliser `SuperApp(editorBannerAlignment: Alignment.bottomCenter, ...)`.
+Le chat Vibe est alors repositionne si necessaire pour laisser la banniere
+accessible ; le menu du chemin s'affiche au-dessus du chat. La banniere et le
+chat restent deplacables independamment. Dans une fenetre tres basse, le chat
+devient defilable pour conserver l'acces a ses commandes.
 
 Un `AppearanceStore` personnalise peut etre fourni via `appearanceStore`.
 Son `AppearanceCodec` definit les valeurs par defaut, le format/version JSON,

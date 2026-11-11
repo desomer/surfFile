@@ -312,7 +312,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/editing/overlay/editor_resize_handle.dart` | Poignées carrées de 8 px (zone de saisie de 32 px) aux coins et côtés pour redimensionner un slot à la souris. |
 | `widgets/editing/overlay/editor_zone_badge.dart` | `EditorZoneBadge`, `EditorZoneHighlight`, `EditorSelectionBorder` : badges déplaçables et contours de survol/sélection des zones et composants. |
 | `widgets/editing/overlay/editor_zoom.dart` | Contrôleur et raccourcis de zoom/panoramique du canevas en mode édition. |
-| `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière supérieure du mode édition hébergeant les contrôles rapides et le panneau latéral Vibe IA. |
+| `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière déplaçable du mode édition hébergeant les contrôles rapides et le panneau latéral Vibe IA. |
 | `widgets/editing/pages/editor_page_manager.dart` | Gestionnaire des pages de l'application (`EditorPageCatalog` : création, renommage, duplication, suppression, page d'accueil). |
 | `widgets/editing/repositories/json_repository_manager.dart` | Éditeur et gestionnaire des documents `JsonRepositoryDocument` (import/export JSON, édition de schéma/données). |
 | `widgets/editing/repositories/repository_binding_fields.dart` | Champs d'interface réutilisables pour sélectionner un repository et un chemin `JsonTextBinding` avec autocomplétion. |

@@ -49,6 +49,7 @@ class SuperApp extends StatefulWidget {
     this.pageRouting,
     this.repositoryStore,
     this.eventBus,
+    this.editorBannerAlignment,
   });
 
   final GoRouter router;
@@ -56,6 +57,9 @@ class SuperApp extends StatefulWidget {
   final String title;
   final Registry? registry;
   final JsonRepositoryStore? repositoryStore;
+
+  /// Position initiale de la bannière d'édition ; `null` la place en haut.
+  final Alignment? editorBannerAlignment;
 
   /// Application-owned event bus; this widget never closes it.
   final SuperEventBus? eventBus;
@@ -442,6 +446,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
         Positioned.fill(
           child: StyleEditBanner(
             navigatorKey: navigatorKey,
+            initialAlignment: widget.editorBannerAlignment,
             validateAppearance: (appearance) =>
                 widget.pageRouting?.validate(appearance.pageCatalog),
             onManagePages: widget.pageRouting == null || widget.registry == null

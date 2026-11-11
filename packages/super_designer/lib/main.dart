@@ -434,6 +434,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
     registry: _registry,
     repositoryStore: _repositoryStore,
     eventBus: _eventBus,
+    editorBannerAlignment: Alignment.bottomCenter,
   );
 
   /// Construit la surface racine contenant la [SuperPage] et la barre d'outils flottante.

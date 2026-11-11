@@ -13,21 +13,60 @@ import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 
 void main() {
-  Future<void> pump(WidgetTester tester, ValueNotifier<bool> editMode) =>
-      tester.pumpWidget(
-        StyleEditScope(
-          controller: editMode,
+  Future<void> pump(
+    WidgetTester tester,
+    ValueNotifier<bool> editMode, {
+    Alignment? initialAlignment,
+    Widget home = const Scaffold(),
+  }) => tester.pumpWidget(
+    StyleEditScope(
+      controller: editMode,
+      child: MaterialApp(
+        builder: (context, child) => Stack(
+          children: [
+            child!,
+            Positioned.fill(
+              child: StyleEditBanner(initialAlignment: initialAlignment),
+            ),
+          ],
+        ),
+        home: home,
+      ),
+    ),
+  );
+
+  Future<void> pumpWithAppearance(
+    WidgetTester tester,
+    ValueNotifier<bool> editMode,
+    ValueNotifier<Appearance> appearance, {
+    Alignment? initialAlignment,
+    double textScale = 1,
+  }) => tester.pumpWidget(
+    StyleEditScope(
+      controller: editMode,
+      child: AppearanceScope(
+        controller: appearance,
+        child: AppearanceServicesScope(
+          codec: const AppearanceCodec(),
           child: MaterialApp(
-            builder: (context, child) => Stack(
-              children: [
-                child!,
-                const Positioned.fill(child: StyleEditBanner()),
-              ],
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(textScale)),
+              child: Stack(
+                children: [
+                  child!,
+                  Positioned.fill(
+                    child: StyleEditBanner(initialAlignment: initialAlignment),
+                  ),
+                ],
+              ),
             ),
             home: const Scaffold(),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Rect banner(WidgetTester tester) =>
       tester.getRect(find.byKey(const ValueKey('style-edit-banner')));
@@ -90,6 +129,83 @@ void main() {
     expect(banner(tester), moved);
     await move(tester, const Offset(-50, 30));
     expect(banner(tester).left, closeTo(moved.left - 50, 1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bottom alignment follows the viewport and stays draggable', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    addTearDown(tester.view.reset);
+    addTearDown(() => LayoutSelection.editorViewport.value = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    await pump(tester, mode, initialAlignment: Alignment.bottomCenter);
+    expect(banner(tester).center.dx, 400);
+    expect(banner(tester).bottom, 592);
+
+    LayoutSelection.editorViewport.value = const Rect.fromLTWH(
+      100,
+      50,
+      600,
+      400,
+    );
+    await tester.pumpAndSettle();
+    expect(banner(tester).center.dx, 400);
+    expect(banner(tester).bottom, 442);
+    LayoutSelection.editorViewport.value = null;
+    tester.view.physicalSize = const Size(800, 700);
+    await tester.pumpAndSettle();
+    expect(banner(tester).bottom, 692);
+
+    await move(tester, const Offset(60, -100));
+    final moved = banner(tester);
+    expect(moved.bottom, lessThan(620));
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-close')));
+    await tester.pump();
+    mode.value = true;
+    await tester.pump();
+    expect(banner(tester), moved);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('changing the initial alignment repositions the banner', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(tester, mode);
+    expect(banner(tester).top, 8);
+    await pump(tester, mode, initialAlignment: Alignment.bottomCenter);
+    expect(banner(tester).bottom, 592);
+    await pump(tester, mode);
+    expect(banner(tester).top, 8);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bottom banner allows clicks through to the page', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    var clicks = 0;
+    await pump(
+      tester,
+      mode,
+      initialAlignment: Alignment.bottomCenter,
+      home: Scaffold(
+        body: Center(
+          child: TextButton(
+            onPressed: () => clicks++,
+            child: const Text('Page action'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Page action'));
+    await tester.pump();
+    expect(clicks, 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -318,32 +434,14 @@ void main() {
     final appearance = ValueNotifier(Appearance());
     addTearDown(mode.dispose);
     addTearDown(appearance.dispose);
-    await tester.pumpWidget(
-      StyleEditScope(
-        controller: mode,
-        child: AppearanceScope(
-          controller: appearance,
-          child: AppearanceServicesScope(
-            codec: const AppearanceCodec(),
-            child: MaterialApp(
-              builder: (context, child) => Stack(
-                children: [
-                  child!,
-                  const Positioned.fill(child: StyleEditBanner()),
-                ],
-              ),
-              home: const Scaffold(),
-            ),
-          ),
-        ),
-      ),
-    );
+    await pumpWithAppearance(tester, mode, appearance);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
     await tester.pumpAndSettle();
     final initial = tester.getRect(
       find.byKey(const ValueKey('vibe-chat-dialog')),
     );
+    expect(initial, const Rect.fromLTWH(544, 184, 440, 600));
     final gesture = await tester.startGesture(
       tester.getCenter(find.byKey(const ValueKey('vibe-chat-drag'))),
     );
@@ -358,6 +456,320 @@ void main() {
     expect(moved.top, closeTo(initial.top - 40, 1));
     expect(moved.right, lessThanOrEqualTo(1000));
     expect(moved.bottom, lessThanOrEqualTo(800));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bottom banner remains usable while AI chat is open', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    addTearDown(() => LayoutSelection.editorViewport.value = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.bottomCenter,
+    );
+    await tester.pumpAndSettle();
+    final aiButton = find.byKey(const ValueKey('style-edit-banner-ai'));
+    final chat = find.byKey(const ValueKey('vibe-chat-dialog'));
+    await tester.tap(aiButton);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+
+    tester.view.physicalSize = const Size(400, 320);
+    await tester.pumpAndSettle();
+    final chatViewport = find.byKey(
+      const ValueKey('style-edit-banner-chat-viewport'),
+    );
+    expect(tester.getRect(chatViewport).overlaps(banner(tester)), isFalse);
+    expect(tester.takeException(), isNull);
+    expect(
+      VibeChatScope.onOpenRequested!(
+        const VibeChatScope(componentId: 'page', label: 'Page'),
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('vibe-chat-scope-banner')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(const ValueKey('vibe-chat-clear-scope')));
+    await tester.pumpAndSettle();
+
+    tester.view.physicalSize = const Size(400, 260);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(chatViewport).overlaps(banner(tester)), isFalse);
+    expect(tester.getSize(chatViewport).height, 200);
+    expect(tester.getSize(chat).height, 260);
+    expect(tester.takeException(), isNull);
+    final input = find.byKey(const ValueKey('vibe-chat-input'));
+    await tester.ensureVisible(input);
+    await tester.pumpAndSettle();
+    await tester.enterText(input, 'Texte dans une petite fenêtre');
+    expect(
+      tester.widget<TextField>(input).controller!.text,
+      'Texte dans une petite fenêtre',
+    );
+    final send = find.byKey(const ValueKey('vibe-chat-send'));
+    await tester.ensureVisible(send);
+    await tester.pumpAndSettle();
+    expect(send.hitTestable(), findsOneWidget);
+    await tester.tap(aiButton);
+    await tester.pumpAndSettle();
+    expect(chat, findsNothing);
+    await tester.tap(aiButton);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(chatViewport).overlaps(banner(tester)), isFalse);
+
+    tester.view.physicalSize = const Size(1000, 800);
+    await tester.pumpAndSettle();
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+
+    LayoutSelection.editorViewport.value = const Rect.fromLTWH(
+      100,
+      50,
+      700,
+      600,
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+
+    LayoutSelection.editorViewport.value = null;
+    await tester.pumpAndSettle();
+    await move(tester, const Offset(-60, -200));
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+
+    await tester.tap(aiButton);
+    await tester.pumpAndSettle();
+    expect(chat, findsNothing);
+
+    expect(
+      VibeChatScope.onOpenRequested!(
+        const VibeChatScope(componentId: 'page', label: 'Page'),
+      ),
+      isTrue,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('vibe-chat-scope-banner')),
+      findsOneWidget,
+    );
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+    final initialChat = tester.getRect(chat);
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('vibe-chat-drag'))),
+    );
+    await gesture.moveBy(const Offset(-50, 40));
+    await tester.pumpAndSettle();
+    await gesture.up();
+    expect(tester.getRect(chat).left, closeTo(initialChat.left - 50, 1));
+    expect(tester.getRect(chat).top, closeTo(initialChat.top + 40, 1));
+    await tester.tap(find.byKey(const ValueKey('vibe-chat-close')));
+    await tester.pumpAndSettle();
+    expect(chat, findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a growing bottom banner keeps the AI chat accessible', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    final owner = Object();
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    addTearDown(() => LayoutSelection.report(owner, const []));
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.bottomCenter,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
+    await tester.pumpAndSettle();
+    final chat = find.byKey(const ValueKey('vibe-chat-dialog'));
+    expect(tester.getRect(chat).bottom, 884);
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+
+    LayoutSelection.report(owner, [
+      'Une disposition avec un titre suffisamment long pour elargir la banniere',
+      'Nord',
+    ]);
+    await tester.pumpAndSettle();
+    expect(banner(tester).right, greaterThan(tester.getRect(chat).left));
+    expect(tester.getRect(chat).bottom, lessThan(banner(tester).top));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('explicit top alignment keeps the AI chat below the banner', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 600);
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.topCenter,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
+    await tester.pumpAndSettle();
+    final chat = tester.getRect(find.byKey(const ValueKey('vibe-chat-dialog')));
+    expect(chat.top, greaterThanOrEqualTo(banner(tester).bottom + 8));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('changing banner alignment preserves an open AI chat', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    await pumpWithAppearance(tester, mode, appearance);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
+    await tester.pumpAndSettle();
+    final input = find.byKey(const ValueKey('vibe-chat-input'));
+    await tester.enterText(input, 'brouillon');
+    await tester.pumpAndSettle();
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.bottomCenter,
+    );
+    await tester.pumpAndSettle();
+    final chat = find.byKey(const ValueKey('vibe-chat-dialog'));
+    expect(banner(tester).bottom, 592);
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+    expect(tester.widget<TextField>(input).controller!.text, 'brouillon');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('text scaling keeps the bottom banner clear of the AI chat', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1300, 900);
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.bottomCenter,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
+    await tester.pumpAndSettle();
+    final chat = find.byKey(const ValueKey('vibe-chat-dialog'));
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+    expect(tester.getRect(chat).bottom, 884);
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.bottomCenter,
+      textScale: 1.75,
+    );
+    await tester.pumpAndSettle();
+    expect(banner(tester).right, greaterThan(tester.getRect(chat).left));
+    expect(tester.getRect(chat).bottom, lessThan(banner(tester).top));
+    expect(tester.getRect(chat).overlaps(banner(tester)), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('bottom breadcrumb tree remains usable with AI chat open', (
+    tester,
+  ) async {
+    addTearDown(tester.view.reset);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1000, 800);
+    final mode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    final owner = Object();
+    var selections = 0;
+    addTearDown(mode.dispose);
+    addTearDown(appearance.dispose);
+    addTearDown(() => LayoutSelection.report(owner, const []));
+    addTearDown(() => LayoutSelection.unregister(owner));
+    LayoutSelection.register(
+      owner,
+      ['Main'],
+      (_) {},
+      treeBuilder: () => [
+        LayoutSelectionNode(
+          label: 'Nord',
+          path: const ['Main', 'Nord'],
+          onSelect: () => selections++,
+        ),
+      ],
+    );
+    LayoutSelection.report(owner, ['Main', 'Nord']);
+    await pumpWithAppearance(
+      tester,
+      mode,
+      appearance,
+      initialAlignment: Alignment.bottomCenter,
+    );
+    await tester.pumpAndSettle();
+    final chevron = find.byKey(const ValueKey('style-edit-banner-chevron-0'));
+    final dialog = find.byKey(const ValueKey('style-edit-banner-tree-dialog'));
+    final node = find.byKey(
+      const ValueKey('style-edit-banner-tree-node-Main/Nord'),
+    );
+    await tester.tap(chevron);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(dialog).bottom,
+      lessThan(tester.getRect(chevron).top),
+    );
+    await tester.tap(node);
+    await tester.pumpAndSettle();
+    expect(selections, 1);
+
+    await tester.tap(find.byKey(const ValueKey('style-edit-banner-ai')));
+    await tester.pumpAndSettle();
+    final input = find.byKey(const ValueKey('vibe-chat-input'));
+    await tester.enterText(input, 'brouillon');
+    await tester.pumpAndSettle();
+    await tester.tap(chevron);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('style-edit-banner-tree-close')),
+    );
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+    expect(tester.widget<TextField>(input).controller!.text, 'brouillon');
+    await tester.tap(chevron);
+    await tester.pumpAndSettle();
+    await tester.tap(node);
+    await tester.pumpAndSettle();
+    expect(selections, 2);
+    expect(tester.widget<TextField>(input).controller!.text, 'brouillon');
     expect(tester.takeException(), isNull);
   });
 

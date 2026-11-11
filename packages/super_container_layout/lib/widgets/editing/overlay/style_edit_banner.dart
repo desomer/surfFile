@@ -1,4 +1,4 @@
-/// Bannière supérieure du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA.
+/// Bannière du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA.
 library;
 
 import 'dart:math' as math;
@@ -16,7 +16,7 @@ import 'package:super_container_layout/widgets/editing/repositories/json_reposit
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 
-/// Pastille deplacable, initialement en haut au centre du mode edition.
+/// Pastille déplaçable, initialement en haut au centre par défaut.
 ///
 /// Peut être placée au-dessus du [Navigator] (ex. `MaterialApp.builder`) :
 /// elle fournit alors son propre [Overlay] pour l'info-bulle du bouton.
@@ -27,6 +27,7 @@ class StyleEditBanner extends StatefulWidget {
     this.onManagePages,
     this.aiResponseGenerator,
     this.validateAppearance,
+    this.initialAlignment,
     super.key,
   });
 
@@ -36,6 +37,9 @@ class StyleEditBanner extends StatefulWidget {
   final Future<void> Function()? onManagePages;
   final Future<String> Function(String prompt)? aiResponseGenerator;
   final void Function(Appearance appearance)? validateAppearance;
+
+  /// Position initiale dans l'espace disponible ; `null` conserve le haut.
+  final Alignment? initialAlignment;
 
   @override
   State<StyleEditBanner> createState() => _StyleEditBannerState();
@@ -83,14 +87,21 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       _chatScope = scope;
       if (!_chatOpen) {
         _chatOpen = true;
-        _chatLayout = _VibeChatLayout(
+        _chatLayout = _newChatLayout(
           null,
-          available: LayoutSelection.editorViewport.value,
+          LayoutSelection.editorViewport.value,
         );
       }
     });
     return true;
   }
+
+  _VibeChatLayout _newChatLayout(Offset? position, Rect? available) =>
+      _VibeChatLayout(
+        position,
+        available: available,
+        banner: widget.initialAlignment == null ? null : _layout,
+      );
 
   @override
   void initState() {
@@ -98,11 +109,28 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     _layout = _BannerLayout(
       null,
       available: LayoutSelection.editorViewport.value,
+      initialAlignment: widget.initialAlignment,
     );
     LayoutSelection.bannerBounds = _bannerRect;
     VibeChatScope.onOpenRequested = _openScopedChat;
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
+  }
+
+  @override
+  void didUpdateWidget(StyleEditBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialAlignment != widget.initialAlignment) {
+      _layout = _BannerLayout(
+        null,
+        available: LayoutSelection.editorViewport.value,
+        initialAlignment: widget.initialAlignment,
+      );
+      _chatLayout = _newChatLayout(
+        _chatLayout.position,
+        LayoutSelection.editorViewport.value,
+      );
+    }
   }
 
   void _onPathChanged() {
@@ -157,10 +185,11 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
       _layout = _BannerLayout(
         _layout.position,
         available: LayoutSelection.editorViewport.value,
+        initialAlignment: widget.initialAlignment,
       );
-      _chatLayout = _VibeChatLayout(
+      _chatLayout = _newChatLayout(
         _chatLayout.position,
-        available: LayoutSelection.editorViewport.value,
+        LayoutSelection.editorViewport.value,
       );
     });
   }
@@ -211,7 +240,9 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
             _layout = _BannerLayout(
               _layout.resolvedPosition + details.delta,
               available: available,
+              initialAlignment: widget.initialAlignment,
             );
+            _chatLayout = _newChatLayout(_chatLayout.position, available);
           });
         },
         child: Material(
@@ -319,10 +350,7 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
                       _chatOpen = !_chatOpen;
                       _chatScope = null;
                       if (_chatOpen) {
-                        _chatLayout = _VibeChatLayout(
-                          null,
-                          available: available,
-                        );
+                        _chatLayout = _newChatLayout(null, available);
                       }
                     }),
                   ),
@@ -442,7 +470,83 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     );
     final showChat = _chatOpen && appearance != null;
     final popup = _treePopup;
-    if (!showChat && popup == null) return banner;
+    final popupChild = popup == null
+        ? null
+        : _PathTreeDialog(
+            parentLabel: popup.prefix.last,
+            nodes: popup.nodes,
+            currentPath: LayoutSelection.path.value,
+            onClose: () {
+              LayoutSelection.highlightNode(null);
+              setState(() => _treePopup = null);
+            },
+            onSelectNode: (node) {
+              LayoutSelection.highlightNode(null);
+              EditorSlotState.closeActiveMenu();
+              setState(() => _treePopup = null);
+              if (node.onSelect != null) {
+                node.onSelect!();
+              } else {
+                LayoutSelection.select(node.path);
+              }
+            },
+            onContextMenuNode: (node, position) {
+              LayoutSelection.highlightNode(null);
+              EditorSlotState.closeActiveMenu();
+              setState(() => _treePopup = null);
+              final targetPosition = _menuPositionForBanner(position);
+              if (node.onContextMenu != null) {
+                node.onContextMenu!(targetPosition);
+              } else {
+                LayoutSelection.openContextMenu(node.path, targetPosition);
+              }
+            },
+          );
+    final chatChild = !showChat
+        ? null
+        : LayoutBuilder(
+            builder: (context, constraints) {
+              final fullHeight = _chatLayout.unreservedHeight;
+              if (fullHeight == null) {
+                throw StateError('La hauteur disponible du chat est inconnue.');
+              }
+              final textScale = MediaQuery.textScalerOf(context).scale(16) / 16;
+              final minimumContentHeight = 320.0 * math.max(1.0, textScale);
+              final contentHeight = widget.initialAlignment == null
+                  ? constraints.maxHeight
+                  : math.min(
+                      fullHeight,
+                      math.max(constraints.maxHeight, minimumContentHeight),
+                    );
+              return SingleChildScrollView(
+                key: const ValueKey('style-edit-banner-chat-viewport'),
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  height: contentHeight,
+                  child: VibeChatDialog(
+                    registry: SuperApp.maybeOf(context)?.registry,
+                    controller: appearance,
+                    codec: codec,
+                    scope: _chatScope,
+                    onScopeChanged: (scope) =>
+                        setState(() => _chatScope = scope),
+                    onClose: () => setState(() {
+                      _chatOpen = false;
+                      _chatScope = null;
+                    }),
+                    onDrag: (delta) => setState(
+                      () => _chatLayout = _newChatLayout(
+                        _chatLayout.resolvedPosition + delta,
+                        available,
+                      ),
+                    ),
+                    generate: widget.aiResponseGenerator ?? callGemini,
+                    validateAppearance: widget.validateAppearance,
+                  ),
+                ),
+              );
+            },
+          );
     return Stack(
       children: [
         if (popup != null)
@@ -456,79 +560,95 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
               },
             ),
           ),
-        banner,
-        if (popup != null)
-          CustomSingleChildLayout(
-            delegate: _TreePopupLayout(
-              anchor: popup.anchor,
-              available: available,
-            ),
-            child: _PathTreeDialog(
-              parentLabel: popup.prefix.last,
-              nodes: popup.nodes,
-              currentPath: LayoutSelection.path.value,
-              onClose: () {
-                LayoutSelection.highlightNode(null);
-                setState(() => _treePopup = null);
-              },
-              onSelectNode: (node) {
-                LayoutSelection.highlightNode(null);
-                EditorSlotState.closeActiveMenu();
-                setState(() => _treePopup = null);
-                if (node.onSelect != null) {
-                  node.onSelect!();
-                } else {
-                  LayoutSelection.select(node.path);
-                }
-              },
-              onContextMenuNode: (node, position) {
-                LayoutSelection.highlightNode(null);
-                EditorSlotState.closeActiveMenu();
-                setState(() => _treePopup = null);
-                final targetPosition = _menuPositionForBanner(position);
-                if (node.onContextMenu != null) {
-                  node.onContextMenu!(targetPosition);
-                } else {
-                  LayoutSelection.openContextMenu(node.path, targetPosition);
-                }
-              },
-            ),
+        CustomMultiChildLayout(
+          delegate: _BannerOverlayLayout(
+            banner: _layout,
+            chat: _chatLayout,
+            popup: popup == null
+                ? null
+                : _TreePopupLayout(anchor: popup.anchor, available: available),
           ),
-        if (showChat)
-          CustomSingleChildLayout(
-            delegate: _chatLayout,
-            child: VibeChatDialog(
-              registry: SuperApp.maybeOf(context)?.registry,
-              controller: appearance,
-              codec: codec,
-              scope: _chatScope,
-              onScopeChanged: (scope) => setState(() => _chatScope = scope),
-              onClose: () => setState(() {
-                _chatOpen = false;
-                _chatScope = null;
-              }),
-              onDrag: (delta) => setState(
-                () => _chatLayout = _VibeChatLayout(
-                  _chatLayout.resolvedPosition + delta,
-                  available: available,
-                ),
+          children: [
+            LayoutId(id: _BannerOverlayChild.banner, child: banner),
+            if (widget.initialAlignment == null && popupChild != null)
+              LayoutId(id: _BannerOverlayChild.popup, child: popupChild),
+            if (chatChild != null)
+              LayoutId(
+                id: _BannerOverlayChild.chat,
+                key: const ValueKey('style-edit-banner-chat-layout'),
+                child: chatChild,
               ),
-              generate: widget.aiResponseGenerator ?? callGemini,
-              validateAppearance: widget.validateAppearance,
-            ),
-          ),
+            if (widget.initialAlignment != null && popupChild != null)
+              LayoutId(id: _BannerOverlayChild.popup, child: popupChild),
+          ],
+        ),
       ],
     );
   }
 }
 
+enum _BannerOverlayChild { banner, chat, popup }
+
+class _BannerOverlayLayout extends MultiChildLayoutDelegate {
+  _BannerOverlayLayout({
+    required this.banner,
+    required this.chat,
+    required this.popup,
+  });
+
+  final _BannerLayout banner;
+  final _VibeChatLayout chat;
+  final _TreePopupLayout? popup;
+
+  @override
+  void performLayout(Size size) {
+    final constraints = BoxConstraints.tight(size);
+    // Des contraintes souples propagent les changements de taille au chat.
+    layoutChild(_BannerOverlayChild.banner, constraints.loosen());
+    positionChild(_BannerOverlayChild.banner, Offset.zero);
+    if (hasChild(_BannerOverlayChild.chat)) {
+      final chatSize = layoutChild(
+        _BannerOverlayChild.chat,
+        chat.getConstraintsForChild(constraints),
+      );
+      positionChild(
+        _BannerOverlayChild.chat,
+        chat.getPositionForChild(size, chatSize),
+      );
+    }
+    if (popup case final popup?) {
+      final popupSize = layoutChild(
+        _BannerOverlayChild.popup,
+        popup.getConstraintsForChild(constraints),
+      );
+      positionChild(
+        _BannerOverlayChild.popup,
+        popup.getPositionForChild(size, popupSize),
+      );
+    }
+  }
+
+  @override
+  bool shouldRelayout(_BannerOverlayLayout oldDelegate) =>
+      banner != oldDelegate.banner ||
+      chat != oldDelegate.chat ||
+      popup != oldDelegate.popup;
+}
+
 class _BannerLayout extends SingleChildLayoutDelegate {
-  _BannerLayout(this.position, {this.available})
+  _BannerLayout(this.position, {this.available, this.initialAlignment})
     : resolvedPosition = position ?? Offset.zero;
 
   final Offset? position;
   Offset resolvedPosition;
+  Size? resolvedSize;
   final Rect? available;
+  final Alignment? initialAlignment;
+
+  Rect? get resolvedBounds {
+    final size = resolvedSize;
+    return size == null ? null : resolvedPosition & size;
+  }
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
@@ -543,9 +663,13 @@ class _BannerLayout extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    final desired = position ?? Offset((size.width - childSize.width) / 2, 8);
+    resolvedSize = childSize;
     final bounds =
         available?.intersect(Offset.zero & size) ?? (Offset.zero & size);
+    final desired =
+        position ??
+        (initialAlignment?.inscribe(childSize, bounds.deflate(8)).topLeft ??
+            Offset((size.width - childSize.width) / 2, 8));
     resolvedPosition = Offset(
       desired.dx.clamp(
         bounds.left,
@@ -561,23 +685,58 @@ class _BannerLayout extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_BannerLayout oldDelegate) =>
-      position != oldDelegate.position || available != oldDelegate.available;
+      position != oldDelegate.position ||
+      available != oldDelegate.available ||
+      initialAlignment != oldDelegate.initialAlignment;
 }
 
 class _VibeChatLayout extends SingleChildLayoutDelegate {
-  _VibeChatLayout(this.position, {this.available})
+  _VibeChatLayout(this.position, {this.available, this.banner})
     : resolvedPosition = position ?? Offset.zero;
 
   final Offset? position;
   Offset resolvedPosition;
   final Rect? available;
+  final _BannerLayout? banner;
+  double? unreservedHeight;
 
   Rect _bounds(Size size) =>
       available?.intersect(Offset.zero & size) ?? (Offset.zero & size);
 
+  Rect _chatBounds(Size size) {
+    final bounds = _bounds(size);
+    // Le layout commun calcule d'abord la géométrie de la bannière.
+    final bannerBounds = banner?.resolvedBounds?.intersect(bounds);
+    if (bannerBounds == null || bannerBounds.isEmpty) return bounds;
+    final width = math.min(bounds.width, 440.0);
+    final height = math.min(bounds.height, 600.0);
+    final left = (bounds.right - width - 16).clamp(
+      bounds.left,
+      bounds.right - width,
+    );
+    final top = (bounds.bottom - height - 16).clamp(
+      bounds.top,
+      bounds.bottom - height,
+    );
+    if (!Rect.fromLTWH(left, top, width, height).overlaps(bannerBounds)) {
+      return bounds;
+    }
+
+    final aboveBottom = math.max(bounds.top, bannerBounds.top - 8);
+    final belowTop = math.min(bounds.bottom, bannerBounds.bottom + 8);
+    final aboveHeight = aboveBottom - bounds.top;
+    final belowHeight = bounds.bottom - belowTop;
+    if (aboveHeight == 0 && belowHeight == 0) return bounds;
+    if (aboveHeight >= height || aboveHeight >= belowHeight) {
+      return Rect.fromLTRB(bounds.left, bounds.top, bounds.right, aboveBottom);
+    }
+    return Rect.fromLTRB(bounds.left, belowTop, bounds.right, bounds.bottom);
+  }
+
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    final bounds = _bounds(constraints.biggest);
+    unreservedHeight = _bounds(constraints.biggest).height.clamp(0.0, 600.0);
+    final bounds = _chatBounds(constraints.biggest);
     return BoxConstraints.tightFor(
       width: bounds.width.clamp(0.0, 440.0),
       height: bounds.height.clamp(0.0, 600.0),
@@ -587,20 +746,28 @@ class _VibeChatLayout extends SingleChildLayoutDelegate {
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     final bounds = _bounds(size);
+    final chatBounds = _chatBounds(size);
+    final placementBounds = position == null ? chatBounds : bounds;
     final desired =
         position ??
         Offset(
-          bounds.right - childSize.width - 16,
-          bounds.bottom - childSize.height - 16,
+          chatBounds.right - childSize.width - 16,
+          chatBounds.bottom - childSize.height - 16,
         );
     resolvedPosition = Offset(
       desired.dx.clamp(
-        bounds.left,
-        (bounds.right - childSize.width).clamp(bounds.left, double.infinity),
+        placementBounds.left,
+        (placementBounds.right - childSize.width).clamp(
+          placementBounds.left,
+          double.infinity,
+        ),
       ),
       desired.dy.clamp(
-        bounds.top,
-        (bounds.bottom - childSize.height).clamp(bounds.top, double.infinity),
+        placementBounds.top,
+        (placementBounds.bottom - childSize.height).clamp(
+          placementBounds.top,
+          double.infinity,
+        ),
       ),
     );
     return resolvedPosition;
@@ -608,7 +775,9 @@ class _VibeChatLayout extends SingleChildLayoutDelegate {
 
   @override
   bool shouldRelayout(_VibeChatLayout oldDelegate) =>
-      position != oldDelegate.position || available != oldDelegate.available;
+      position != oldDelegate.position ||
+      available != oldDelegate.available ||
+      banner != oldDelegate.banner;
 }
 
 /// Chevron cliquable entre deux segments du chemin pour afficher l'arbre

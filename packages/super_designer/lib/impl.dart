@@ -31,7 +31,6 @@ class SuperDesignerRegistry {
 
   SuperDesignerRegistry(this._registry);
 
-
   void addRegistryTreeAttributData() {
     _registry.registerComponent(
       'tree-attribut-data',
@@ -57,15 +56,27 @@ class SuperDesignerRegistry {
               'tree-node-title': SlotSizeConstraints(
                 preferredWidth: SlotDimension(250, SlotSizeUnit.pixels),
               ),
+              'action-is-required': SlotSizeConstraints(
+                preferredWidth: SlotDimension(22, SlotSizeUnit.pixels),
+              ),
+              'action-search': SlotSizeConstraints(
+                preferredWidth: SlotDimension(22, SlotSizeUnit.pixels),
+              ),
+              'action-checklist': SlotSizeConstraints(
+                preferredWidth: SlotDimension(22, SlotSizeUnit.pixels),
+              ),
+              'action-tune': SlotSizeConstraints(
+                preferredWidth: SlotDimension(22, SlotSizeUnit.pixels),
+              ),
             },
             placements: {
               SuperLayoutZone.center: [
                 'tree-node-title',
-                'action-validate',
+                'action-is-required',
                 'action-search',
                 'action-checklist',
                 'action-tune',
-                '9cRKl15nDw',
+                'action-format',
               ],
             },
           ),
@@ -92,10 +103,10 @@ class SuperDesignerRegistry {
               ),
             ),
             BuilderSlot(
-              id: 'action-validate',
-              label: 'action-validate',
+              id: 'action-is-required',
+              label: 'action-is-required',
               builder: (_) => const SuperAction(
-                id: 'action-validate',
+                id: 'action-is-required',
                 behaviours: [
                   ComponentBehavior(
                     id: 'behavior-wSORuaA18y',
@@ -112,12 +123,10 @@ class SuperDesignerRegistry {
                 ],
                 config: SuperActionConfig(
                   kind: SuperActionKind.icon,
-                  variant: SuperActionVariant.surface,
+                  variant: SuperActionVariant.icon,
                   tooltip: 'Valider',
                   icon: 'check_circle',
                   iconSize: 20,
-                  iconColor: Color(0xFF050505),
-                  backgroundColor: Color(0x00222327),
                   horizontalPadding: 0,
                   verticalPadding: 0,
                 ),
@@ -144,12 +153,10 @@ class SuperDesignerRegistry {
                 ],
                 config: SuperActionConfig(
                   kind: SuperActionKind.icon,
-                  variant: SuperActionVariant.surface,
+                  variant: SuperActionVariant.icon,
                   tooltip: 'Rechercher',
                   icon: 'search',
                   iconSize: 20,
-                  iconColor: Color(0xFF050505),
-                  backgroundColor: Color(0x00222327),
                   horizontalPadding: 0,
                   verticalPadding: 0,
                 ),
@@ -162,12 +169,10 @@ class SuperDesignerRegistry {
                 id: 'action-checklist',
                 config: SuperActionConfig(
                   kind: SuperActionKind.icon,
-                  variant: SuperActionVariant.surface,
+                  variant: SuperActionVariant.icon,
                   tooltip: 'Règles',
                   icon: 'checklist',
                   iconSize: 20,
-                  iconColor: Color(0xFF050505),
-                  backgroundColor: Color(0x00222327),
                   horizontalPadding: 0,
                   verticalPadding: 0,
                 ),
@@ -180,29 +185,26 @@ class SuperDesignerRegistry {
                 id: 'action-tune',
                 config: SuperActionConfig(
                   kind: SuperActionKind.icon,
-                  variant: SuperActionVariant.surface,
+                  variant: SuperActionVariant.icon,
                   tooltip: 'Paramètres',
                   icon: 'tune',
                   iconSize: 20,
-                  iconColor: Color(0xFF050505),
-                  backgroundColor: Color(0x00222327),
                   horizontalPadding: 0,
                   verticalPadding: 0,
                 ),
               ),
             ),
             BuilderSlot(
-              id: '9cRKl15nDw',
-              label: '9cRKl15nDw',
+              id: 'action-format',
+              label: 'action-format',
               builder: (_) => EditableSurface(
-                id: '9cRKl15nDw',
-                label: '9cRKl15nDw',
+                id: 'action-format',
+                label: 'action-format',
                 menuType: 'Card',
                 style: const ContainerStyle(
-                  color: Color(0x00F5F2FA),
-                  radius: 2.8649214659685946,
-                  borderWidth: 0.980104712041886,
-                  borderColor: Color(0xFF1A1928),
+                  color: Color(0x00000000),
+                  radius: 8,
+                  borderWidth: 2,
                   paddingInsets: Quad(0, 4, 0, 4),
                   marginInsets: Quad(0, 3, 0, 3),
                 ),
@@ -361,6 +363,10 @@ class SuperDesignerRegistry {
                 builder: (_) => const SuperValue(
                   id: 'field-description',
                   config: SuperValueConfig(
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.description',
+                    ),
                     mode: SuperValueMode.input,
                     label: 'Description',
                     minLines: 4,
@@ -377,6 +383,10 @@ class SuperDesignerRegistry {
                 builder: (_) => const SuperValue(
                   id: 'field-example',
                   config: SuperValueConfig(
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.example',
+                    ),
                     mode: SuperValueMode.input,
                     label: 'Example',
                     minLines: 4,
@@ -395,6 +405,10 @@ class SuperDesignerRegistry {
                   config: SuperValueConfig(
                     mode: SuperValueMode.input,
                     label: 'Const',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.const',
+                    ),
                     field: SuperTextFieldConfig(
                       variant: TextFieldVariant.outlined,
                     ),
@@ -409,6 +423,10 @@ class SuperDesignerRegistry {
                   config: SuperValueConfig(
                     mode: SuperValueMode.input,
                     label: 'Default',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.default',
+                    ),
                     field: SuperTextFieldConfig(
                       variant: TextFieldVariant.outlined,
                     ),
@@ -424,6 +442,10 @@ class SuperDesignerRegistry {
                     mode: SuperValueMode.input,
                     kind: SuperValueKind.switchControl,
                     label: 'Nullable',
+                      binding: JsonTextBinding(
+                        repositoryId: '0123456789abcdef0123456789abcdef',
+                        path: 'nodes[?].properties.nullable',
+                      ),
                   ),
                 ),
               ),
@@ -436,6 +458,10 @@ class SuperDesignerRegistry {
                     mode: SuperValueMode.input,
                     kind: SuperValueKind.switchControl,
                     label: 'ReadOnly',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.readonly',
+                    ),
                   ),
                 ),
               ),
@@ -448,6 +474,10 @@ class SuperDesignerRegistry {
                     mode: SuperValueMode.input,
                     kind: SuperValueKind.switchControl,
                     label: 'WriteOnly',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.writeonly',
+                    ),
                   ),
                 ),
               ),
@@ -460,6 +490,10 @@ class SuperDesignerRegistry {
                     mode: SuperValueMode.input,
                     kind: SuperValueKind.switchControl,
                     label: 'Deprecated',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.deprecated',
+                    ),
                   ),
                 ),
               ),
@@ -472,6 +506,10 @@ class SuperDesignerRegistry {
                     mode: SuperValueMode.input,
                     kind: SuperValueKind.switchControl,
                     label: 'Search reference',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.searchRef',
+                    ),
                   ),
                 ),
               ),
@@ -483,6 +521,10 @@ class SuperDesignerRegistry {
                   config: SuperValueConfig(
                     mode: SuperValueMode.input,
                     label: 'Comment',
+                    binding: JsonTextBinding(
+                      repositoryId: '0123456789abcdef0123456789abcdef',
+                      path: 'nodes[?].properties.comment',
+                    ),
                     minLines: 4,
                     maxLines: 4,
                     field: SuperTextFieldConfig(
