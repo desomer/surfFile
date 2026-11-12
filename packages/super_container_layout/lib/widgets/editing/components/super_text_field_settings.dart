@@ -4,6 +4,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/super_text_field_config.dart';
+import '../../../models/json_syntax.dart';
 import '../icons/material_icon_picker.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
 import '../styles/style_editor_panel.dart';
@@ -208,13 +209,13 @@ class SuperTextFieldSettingsState extends State<SuperTextFieldSettings> {
   );
 
   Widget _color(String key, String label) {
-    final color = _values[key] as int?;
+    final color = JsonColor.parseNullable(_values[key], key);
     return Column(
       children: [
         styleColorTile(
           label,
-          color == null ? Theme.of(context).colorScheme.primary : Color(color),
-          (color) => _update(key, color.toARGB32()),
+          color ?? Theme.of(context).colorScheme.primary,
+          (color) => _update(key, JsonColor.toJson(color)),
           dense: true,
           key: ValueKey('text-field-setting-$key'),
           onClear: () => _update(key, null),

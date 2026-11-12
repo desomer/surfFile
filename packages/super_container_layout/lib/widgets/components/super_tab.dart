@@ -9,6 +9,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import 'super_component.dart';
 
 import '../../models/component_tag_filter.dart';
@@ -856,11 +858,11 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
 
   Decoration? _buildTabIndicator(BuildContext context, SuperTabConfig config) {
     final scheme = Theme.of(context).colorScheme;
-    final color = config.indicatorColor ?? scheme.primary;
+    final color = config.indicatorColor.resolveTheme(context) ?? scheme.primary;
     return switch (config.indicatorKind) {
       SuperTabIndicatorKind.none => const BoxDecoration(),
       SuperTabIndicatorKind.box => BoxDecoration(
-        color: config.indicatorColor ?? scheme.primaryContainer,
+        color: config.indicatorColor.resolveTheme(context) ?? scheme.primaryContainer,
         borderRadius: BorderRadius.circular(config.indicatorRadius),
       ),
       SuperTabIndicatorKind.underline =>
@@ -910,7 +912,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     tabAlignment: config.tabAlignment,
     indicator: _buildTabIndicator(context, config),
     indicatorSize: config.indicatorSize,
-    indicatorColor: config.indicatorColor,
+    indicatorColor: config.indicatorColor.resolveTheme(context),
     indicatorWeight: config.indicatorKind == SuperTabIndicatorKind.none
         ? 0
         : config.indicatorWeight,
@@ -918,15 +920,15 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
       horizontal: config.indicatorHorizontalPadding,
       vertical: config.indicatorVerticalPadding,
     ),
-    labelColor: config.labelColor,
-    unselectedLabelColor: config.unselectedLabelColor,
-    overlayColor: config.overlayColor != null
-        ? WidgetStatePropertyAll(config.overlayColor)
+    labelColor: config.labelColor.resolveTheme(context),
+    unselectedLabelColor: config.unselectedLabelColor.resolveTheme(context),
+    overlayColor: config.overlayColor.resolveTheme(context) != null
+        ? WidgetStatePropertyAll(config.overlayColor.resolveTheme(context))
         : null,
     labelPadding: config.labelHorizontalPadding != null
         ? EdgeInsets.symmetric(horizontal: config.labelHorizontalPadding!)
         : null,
-    dividerColor: config.dividerColor,
+    dividerColor: config.dividerColor.resolveTheme(context),
     dividerHeight: config.dividerHeight,
     tabs: tabs,
     onTap: onTap,

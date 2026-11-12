@@ -6,6 +6,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/automatic_state.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_action_config.dart';
@@ -291,7 +293,7 @@ class _SuperActionState extends State<SuperAction>
             fontSize: config.fontSize,
             fontWeight: config.fontWeight,
             italic: config.italic,
-            color: config.color,
+            color: config.color.resolveTheme(context),
             letterSpacing: config.letterSpacing,
           );
 
@@ -341,7 +343,7 @@ class _SuperActionState extends State<SuperAction>
                     SuperActionIcons.resolve(config.icon),
                     key: ValueKey('super-action-icon-${widget.id}'),
                     size: config.iconSize,
-                    color: config.iconColor ?? config.color,
+                    color: config.iconColor.resolveTheme(context) ?? config.color.resolveTheme(context),
                   )
                 : SizedBox(
                     key: ValueKey('super-action-icon-${widget.id}'),

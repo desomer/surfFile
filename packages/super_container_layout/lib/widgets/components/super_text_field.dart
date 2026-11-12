@@ -6,6 +6,8 @@ library;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/super_value_config.dart';
 import '../../models/super_text_field_config.dart';
 
@@ -55,10 +57,20 @@ class _SuperTextFieldState extends State<SuperTextField> {
   @override
   Widget build(BuildContext context) {
     final config = widget.config;
-    final field = config.field;
+    final scheme = Theme.of(context).colorScheme;
+    final source = config.field;
+    final field = source.copyWith(
+      fillColor: resolveOptionalThemeColor(source.fillColor, scheme),
+      focusFillColor: resolveOptionalThemeColor(source.focusFillColor, scheme),
+      disabledFillColor: resolveOptionalThemeColor(source.disabledFillColor, scheme),
+      errorFillColor: resolveOptionalThemeColor(source.errorFillColor, scheme),
+      borderColor: resolveOptionalThemeColor(source.borderColor, scheme),
+      focusBorderColor: resolveOptionalThemeColor(source.focusBorderColor, scheme),
+      disabledBorderColor: resolveOptionalThemeColor(source.disabledBorderColor, scheme),
+      errorBorderColor: resolveOptionalThemeColor(source.errorBorderColor, scheme),
+    );
     final enabled = widget.enabled ?? config.enabled;
     final readOnly = widget.readOnly ?? config.readOnly;
-    final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context).inputDecorationTheme;
     final customizedBorder =
         field.variant != TextFieldVariant.theme ||

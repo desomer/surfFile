@@ -14,6 +14,7 @@ import 'package:flutter_localizations/flutter_localizations.dart'
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+import 'theme/theme_color.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/material_compatibility_bridge.dart';
 
@@ -420,7 +421,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
             decoration: BoxDecoration(
               border: Border.all(
                 color:
-                    value.backgroundStyle.borderColor ??
+                    value.backgroundStyle.borderColor.resolveTheme(context) ??
                     Theme.of(context).colorScheme.outlineVariant,
                 width: value.backgroundStyle.borderWidth,
                 style: value.backgroundStyle.borderWidth == 0
@@ -433,7 +434,10 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
               binding: value.backgroundStyle.imageBinding,
               builder: (context, fill) => DecoratedBox(
                 decoration: BoxDecoration(
-                  gradient: fill.gradient(opacity: value.backgroundOpacity),
+                  gradient: fill.gradient(
+                    opacity: value.backgroundOpacity,
+                    colorScheme: Theme.of(context).colorScheme,
+                  ),
                   image: fill.decorationImage(opacity: value.backgroundOpacity),
                 ),
                 child: child,

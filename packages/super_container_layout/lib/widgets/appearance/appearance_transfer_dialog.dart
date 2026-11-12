@@ -7,12 +7,15 @@ library;
 import 'dart:io';
 
 import 'package:flutter/services.dart';
+import 'package:highlight/languages/dart.dart' as hl_dart;
+import 'package:highlight/languages/json.dart' as hl_json;
 import 'package:material_ui/material_ui.dart';
 
 import '../../services/appearance/appearance_codec.dart';
 import '../../services/appearance/appearance_transfer.dart';
 import '../../services/appearance/appearance_store.dart';
 import '../../theme/appearance.dart';
+import '../components/internal_widget/code_editor.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/dialogs/editor_dialog_header.dart';
 
@@ -187,6 +190,18 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
     if (mounted) setState(() => _status = 'Copié dans le presse-papiers.');
   }
 
+  Future<void> _openMaximizedCodeEditor() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => _MaximizedExportCodeDialog(
+        controller: _exportText,
+        format: _exportFormat,
+        onCopy: _copy,
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _paste() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     if (!mounted) return;
@@ -290,22 +305,34 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
       if (_hasDartExport) ...[
         const Text('Format de l’export'),
         const SizedBox(height: 6),
-        SegmentedButton<ExportFormat>(
-          key: const ValueKey('transfer-export-format'),
-          segments: const [
-            ButtonSegment<ExportFormat>(
-              value: ExportFormat.json,
-              icon: Icon(Icons.data_object),
-              label: Text('JSON'),
+        Row(
+          children: [
+            SegmentedButton<ExportFormat>(
+              key: const ValueKey('transfer-export-format'),
+              segments: const [
+                ButtonSegment<ExportFormat>(
+                  value: ExportFormat.json,
+                  icon: Icon(Icons.data_object),
+                  label: Text('JSON'),
+                ),
+                ButtonSegment<ExportFormat>(
+                  value: ExportFormat.dart,
+                  icon: Icon(Icons.code),
+                  label: Text('Code Dart'),
+                ),
+              ],
+              selected: {_exportFormat},
+              onSelectionChanged: (selection) =>
+                  _setExportFormat(selection.first),
             ),
-            ButtonSegment<ExportFormat>(
-              value: ExportFormat.dart,
-              icon: Icon(Icons.code),
-              label: Text('Code Dart'),
+            const SizedBox(width: 8),
+            IconButton(
+              key: const ValueKey('transfer-maximize-code'),
+              tooltip: 'Ouvrir en maximisé dans l’éditeur de code',
+              onPressed: _openMaximizedCodeEditor,
+              icon: const Icon(Icons.open_in_full),
             ),
           ],
-          selected: {_exportFormat},
-          onSelectionChanged: (selection) => _setExportFormat(selection.first),
         ),
         const SizedBox(height: 12),
       ],
@@ -326,7 +353,18 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
         const SizedBox(height: 12),
       ],
       if (_exportFormat == ExportFormat.json) ...[
-        const Text('Contenu de l’export'),
+        Row(
+          children: [
+            const Expanded(child: Text('Contenu de l’export')),
+            if (!_hasDartExport)
+              IconButton(
+                key: const ValueKey('transfer-maximize-code'),
+                tooltip: 'Ouvrir en maximisé dans l’éditeur de code',
+                onPressed: _openMaximizedCodeEditor,
+                icon: const Icon(Icons.open_in_full),
+              ),
+          ],
+        ),
         const SizedBox(height: 6),
         _groupChips(_exportGroups, (group) {
           final next = {..._exportGroups};
@@ -486,3 +524,87 @@ class _AppearanceTransferDialogState extends State<AppearanceTransferDialog> {
     ],
   );
 }
+
+class _MaximizedExportCodeDialog extends StatefulWidget {
+  const _MaximizedExportCodeDialog({
+    required this.controller,
+    required this.format,
+    required this.onCopy,
+  });
+
+  final TextEditingController controller;
+  final ExportFormat format;
+  final Future<void> Function() onCopy;
+
+  @override
+  State<_MaximizedExportCodeDialog> createState() =>
+      _MaximizedExportCodeDialogState();
+}
+
+class _MaximizedExportCodeDialogState
+    extends State<_MaximizedExportCodeDialog> {
+  final _error = ValueNotifier<String>('');
+  late final CodeEditorConfig _config = CodeEditorConfig(
+    mode: widget.format == ExportFormat.dart ? hl_dart.dart : hl_json.json,
+    getText: () => widget.controller.text,
+    onChange: (String text, CodeEditorConfig config) {
+      if (widget.controller.text != text) {
+        widget.controller.text = text;
+      }
+    },
+    notifError: _error,
+    readOnly: false,
+    useLargeTextViewer: false,
+    type: widget.format.name,
+  );
+
+  @override
+  void dispose() {
+    _error.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    key: const ValueKey('transfer-maximized-dialog'),
+    insetPadding: const EdgeInsets.all(16),
+    clipBehavior: Clip.antiAlias,
+    child: SizedBox.expand(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            EditorDialogHeader(
+              label: widget.format == ExportFormat.dart
+                  ? 'Export Code Dart'
+                  : 'Export JSON',
+              actions: [
+                OutlinedButton.icon(
+                  key: const ValueKey('transfer-maximized-copy'),
+                  onPressed: widget.onCopy,
+                  icon: const Icon(Icons.copy, size: 18),
+                  label: const Text('Copier'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  key: const ValueKey('transfer-maximized-close'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Fermer'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CodeEditor(config: _config),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+

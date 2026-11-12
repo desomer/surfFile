@@ -2,9 +2,13 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
+
 import '../../../theme/surffile_appearance_slots.dart';
+
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
+
 import '../../../services/favorites.dart';
+
 import 'package:surf_file/theme/explorer_colors.dart';
 
 class ExplorerBreadcrumbs extends StatelessWidget {
@@ -27,7 +31,9 @@ class ExplorerBreadcrumbs extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = AppearanceScope.of(context).style('pathBar');
     final colors = Theme.of(context).colorScheme;
-    final foreground = style.foreground ?? colors.onSurfaceVariant;
+    final foreground =
+        style.foregroundForTheme(Theme.of(context).colorScheme) ??
+        colors.onSurfaceVariant;
     final normalizedPath = path.replaceAll('\\', '/');
     final parts = normalizedPath
         .split('/')
@@ -97,7 +103,10 @@ class ExplorerBreadcrumbs extends StatelessWidget {
                           child: Ink(
                             decoration: BoxDecoration(
                               color: index == crumbs.length - 1
-                                  ? (style.foreground ?? colors.primary)
+                                  ? (style.foregroundForTheme(
+                                              Theme.of(context).colorScheme,
+                                            ) ??
+                                            colors.primary)
                                         .withValues(alpha: .10)
                                   : null,
                               borderRadius: BorderRadius.circular(9),
@@ -113,7 +122,11 @@ class ExplorerBreadcrumbs extends StatelessWidget {
                                   Icon(
                                     Icons.folder_open_rounded,
                                     size: 16,
-                                    color: style.foreground ?? colors.primary,
+                                    color:
+                                        style.foregroundForTheme(
+                                          Theme.of(context).colorScheme,
+                                        ) ??
+                                        colors.primary,
                                   ),
                                   const SizedBox(width: 7),
                                 ],
@@ -122,7 +135,9 @@ class ExplorerBreadcrumbs extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 13,
                                     color:
-                                        style.foreground ??
+                                        style.foregroundForTheme(
+                                          Theme.of(context).colorScheme,
+                                        ) ??
                                         explorerColor(
                                           context,
                                           index == crumbs.length - 1

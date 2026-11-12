@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/automatic_state.dart';
 import '../../models/json_text_binding.dart';
 import '../../models/super_value_config.dart';
@@ -595,7 +597,7 @@ class _SuperValueState extends State<SuperValue>
             fontSize: config.fontSize,
             fontWeight: config.fontWeight,
             italic: config.italic,
-            color: config.color,
+            color: config.color.resolveTheme(context),
             lineHeight: config.lineHeight,
             letterSpacing: config.letterSpacing,
           );
@@ -707,7 +709,7 @@ class _SuperValueState extends State<SuperValue>
                           key: ValueKey('super-value-checkbox-${widget.id}'),
                           focusNode: _focusNode,
                           value: boolCurrent,
-                          activeColor: config.color,
+                          activeColor: config.color.resolveTheme(context),
                           onChanged: interactive
                               ? (next) => toggleBool(next ?? false)
                               : null,
@@ -716,7 +718,7 @@ class _SuperValueState extends State<SuperValue>
                           key: ValueKey('super-value-switch-${widget.id}'),
                           focusNode: _focusNode,
                           value: boolCurrent,
-                          activeThumbColor: config.color,
+                          activeThumbColor: config.color.resolveTheme(context),
                           onChanged: interactive ? toggleBool : null,
                         );
                   final align = switch (config.textAlign) {

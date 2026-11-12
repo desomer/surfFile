@@ -64,7 +64,7 @@ Future<void> showNativeShapeEditor({
                             key: ValueKey('$keyPrefix-preview'),
                             color: colors.primaryContainer,
                             elevation: 2,
-                            shape: shape.toShapeBorder(),
+                            shape: shape.toShapeBorder(colorScheme: colors),
                             clipBehavior: Clip.antiAlias,
                             child: Center(
                               child: Text(
@@ -113,8 +113,7 @@ Future<void> showNativeShapeEditor({
                           EditorSwitchTile(
                             tileKey: ValueKey('$keyPrefix-independent-corners'),
                             title: 'Coins indépendants',
-                            subtitle:
-                                'Rayon distinct par angle (ex: arrondir uniquement le bas)',
+                            subtitle: 'Rayon distinct par angle (ex: arrondir uniquement le bas)',
                             value: shape.radii != null,
                             onChanged: (independent) => update(
                               shape.copyWith(

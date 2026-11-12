@@ -17,6 +17,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../models/json_syntax.dart';
 import '../models/json_text_binding.dart';
+import 'theme_color.dart';
 
 /// Type de remplissage d'une surface (`solid`, `linear`, `radial` ou `sweep`).
 enum FillType { solid, linear, radial, sweep }
@@ -98,7 +99,9 @@ class ContainerFill {
     );
   }
 
-  Gradient? gradient({double opacity = 1}) {
+  Gradient? gradient({double opacity = 1, ColorScheme? colorScheme}) {
+    final start = colorScheme == null ? this.start : resolveThemeColor(this.start, colorScheme);
+    final end = colorScheme == null ? this.end : resolveThemeColor(this.end, colorScheme);
     final colors = [
       start.withValues(alpha: start.a * opacity),
       end.withValues(alpha: end.a * opacity),
@@ -121,8 +124,8 @@ class ContainerFill {
 
   Map<String, Object> toJson() => {
     'type': type.name,
-    'start': start.toARGB32(),
-    'end': end.toARGB32(),
+    'start': JsonColor.toJson(start),
+    'end': JsonColor.toJson(end),
     'angle': angle,
     'radius': radius,
     if (imageUrl.isNotEmpty) 'imageUrl': imageUrl,
@@ -208,8 +211,8 @@ class ContainerFill {
       identical(this, other) ||
       (other is ContainerFill &&
           other.type == type &&
-          other.start.toARGB32() == start.toARGB32() &&
-          other.end.toARGB32() == end.toARGB32() &&
+          JsonColor.toJson(other.start) == JsonColor.toJson(start) &&
+          JsonColor.toJson(other.end) == JsonColor.toJson(end) &&
           other.angle == angle &&
           other.radius == radius &&
           other.imageUrl == imageUrl &&
@@ -220,8 +223,8 @@ class ContainerFill {
   @override
   int get hashCode => Object.hash(
     type,
-    start.toARGB32(),
-    end.toARGB32(),
+    JsonColor.toJson(start),
+    JsonColor.toJson(end),
     angle,
     radius,
     imageUrl,

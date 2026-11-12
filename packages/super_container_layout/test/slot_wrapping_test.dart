@@ -219,7 +219,12 @@ void main() {
 
   for (final owner in ['layout', 'grid', 'native', 'surface']) {
     for (final provided in [true, false]) {
-      for (final wrapper in ['Card', 'Layout', 'IterableContent']) {
+      for (final wrapper in [
+        'Card',
+        'Layout',
+        'Conditional',
+        'IterableContent',
+      ]) {
         testWidgets(
           '$owner wraps ${provided ? 'provided' : 'catalog'} in $wrapper',
           (tester) async {
@@ -260,6 +265,17 @@ void main() {
               expect(after.nativeComponent(id).slotsOf('child'), [sourceId]);
               expect(
                 after.nativeComponent(id).slotLabels[sourceId],
+                'My child',
+              );
+            } else if (wrapper == 'Conditional') {
+              expect(
+                after
+                    .conditionalComponent(id)
+                    .slotsOf(SuperConditionalConfig.defaultZone),
+                [sourceId],
+              );
+              expect(
+                after.conditionalComponent(id).slotLabels[sourceId],
                 'My child',
               );
             } else {
@@ -387,7 +403,12 @@ void main() {
     });
   }
 
-  for (final wrapperType in ['Card', 'Layout', 'IterableContent']) {
+  for (final wrapperType in [
+    'Card',
+    'Layout',
+    'Conditional',
+    'IterableContent',
+  ]) {
     testWidgets(
       '$wrapperType preserves catalog configurations during duplication',
       (tester) async {
@@ -409,6 +430,11 @@ void main() {
         final wrapper = copy.nativeComponent('copy').slotsOf('body').single;
         final source = wrapperType == 'Card'
             ? copy.nativeComponent(wrapper).slotsOf('child').single
+            : wrapperType == 'Conditional'
+            ? copy
+                  .conditionalComponent(wrapper)
+                  .slotsOf(SuperConditionalConfig.defaultZone)
+                  .single
             : copy.layouts[wrapper]!.placedSlotIds.single;
         expect(source, isNot('source'));
         expect(copy.valueComponent(source).initialText, 'Saved target');

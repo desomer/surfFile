@@ -5,6 +5,7 @@ import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/registry.dart';
 import 'package:super_container_layout/models/super_action_config.dart';
+import 'package:super_container_layout/models/super_conditional_config.dart';
 import 'package:super_container_layout/models/super_indicator_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_separator_config.dart';
@@ -16,6 +17,7 @@ import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/style_extras.dart';
 import 'package:super_container_layout/widgets/components/super_action.dart';
+import 'package:super_container_layout/widgets/components/super_conditional.dart';
 import 'package:super_container_layout/widgets/components/super_indicator.dart';
 import 'package:super_container_layout/widgets/components/super_layout/slot_implementation.dart';
 import 'package:super_container_layout/widgets/components/super_layout/super_layout.dart';
@@ -29,6 +31,53 @@ class SuperDesignerRegistry {
   final Registry _registry;
 
   SuperDesignerRegistry(this._registry);
+
+  void addRegistryPropConditional() {
+    _registry.registerComponent(
+      'panPropConditionnal',
+      RegisteredComponent(
+        label: 'panPropConditionnal',
+        isAvailable: (context) {
+          return true;
+        },
+        instanceBuilder: (_, id) => SuperConditional(
+          id: id,
+          label: 'panPropConditionnal',
+          config: SuperConditionalConfig(
+            binding: const JsonTextBinding(
+              repositoryId: 'pan_model_repository',
+              path: 'nodes[?].typePropEditor',
+            ),
+            cases: const ['number'],
+            placements: const {
+              'default': ['panPropString'],
+              'case:string': ['panPropString'],
+              'case:number': ['panPropNumber'],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'panPropString',
+              label: 'panPropString',
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('panAttrStringValidator')
+                      .builder(context),
+            ),
+            BuilderSlot(
+              id: 'panPropNumber',
+              label: 'panPropNumber',
+              builder: (_) => EditableSurface(
+                id: 'panPropNumber',
+                label: 'panPropNumber',
+                menuType: 'Card',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   void addRegistryTreeAttributData() {
     _registry.registerComponent(
@@ -283,9 +332,9 @@ class SuperDesignerRegistry {
             //   shadowOpacity: 0.6,
             // ),
             indicatorKind: SuperTabIndicatorKind.box,
-            indicatorRadius: 15.61465968586392,
-            indicatorHorizontalPadding: 0.13403141361261248,
-            indicatorVerticalPadding: 3.585340314136142,
+            indicatorRadius: 16,
+            indicatorHorizontalPadding: 0.14,
+            indicatorVerticalPadding: 3.6,
             overlayColor: const Color(0x00979AA9),
             labelHorizontalPadding: 0,
             dividerColor: const Color(0x00C6C5D0),
@@ -517,7 +566,7 @@ class SuperDesignerRegistry {
                   placements: const {
                     'tabs': ['tab-info', 'tab-validator'],
                     'content:tab-info': ['WBYiTwqr2a'],
-                    'content:tab-validator': ['_cpAVbj6Cd'],
+                    'content:tab-validator': ['panPropString'],
                   },
                 ),
                 slots: [
@@ -554,8 +603,8 @@ class SuperDesignerRegistry {
                             .builder(context),
                   ),
                   BuilderSlot(
-                    id: '_cpAVbj6Cd',
-                    label: '_cpAVbj6Cd',
+                    id: 'panPropString',
+                    label: 'panPropString',
                     builder: (context) =>
                         SuperApp.of(context).registry!
                             .component('panAttrStringValidator')
@@ -679,7 +728,7 @@ class SuperDesignerRegistry {
           label: 'panAttrStringValidator',
           menuType: 'Card',
           child: SuperLayout(
-            id: '_cpAVbj6Cd:child',
+            id: 'panPropString:child',
             label: 'Layout',
             config: const SuperLayoutConfig(
               zoneFlows: {

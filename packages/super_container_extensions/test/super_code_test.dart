@@ -12,7 +12,6 @@ import 'package:highlight/languages/javascript.dart' as javascript;
 import 'package:highlight/languages/yaml.dart' as yaml;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_extensions/super_container_extensions.dart';
-import 'package:super_container_extensions/widgets/components/internal_widget/code_editor.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {

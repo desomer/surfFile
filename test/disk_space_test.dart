@@ -2,6 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/services/disk_space.dart';
+import 'package:surf_file/theme/disk_gauge_style.dart';
+import 'package:super_container_layout/super_container_layout.dart';
 import 'package:surf_file/widgets/disk_space/disk_gauge.dart';
 import 'package:surf_file/widgets/disk_space/disk_space_panel.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
@@ -25,6 +27,46 @@ void main() {
     }),
   );
   tearDown(() => messenger.setMockMethodCallHandler(DiskSpace.channel, null));
+
+  test('disk gauge preserves theme colors through its preferences codec', () {
+    const primary = ThemeColor(ThemeColorRole.primary);
+    const outline = ThemeColor(ThemeColorRole.outline);
+    const style = DiskGaugeStyle(
+      fillColor: primary,
+      trackColor: outline,
+      gradient: [primary, outline],
+    );
+    final restored = DiskGaugeStyle.fromJson(style.toJson());
+    expect(restored.fillColor, primary);
+    expect(restored.trackColor, outline);
+    expect(restored.gradient, [primary, outline]);
+  });
+
+  testWidgets('disk gauge resolves theme references before painting', (tester) async {
+    const primary = ThemeColor(ThemeColorRole.primary);
+    final scheme = ColorScheme.fromSeed(seedColor: Colors.indigo);
+    await tester.pumpWidget(MaterialApp(
+      theme: ThemeData(colorScheme: scheme),
+      home: const Scaffold(
+        body: DiskGauge(
+          value: .4,
+          style: DiskGaugeStyle(gradient: [primary, primary]),
+          fillColor: primary,
+          alertColor: primary,
+          trackColor: primary,
+          foreground: Colors.black,
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final paints = tester.widgetList<CustomPaint>(find.byType(CustomPaint));
+    final painter = paints.map((paint) => paint.painter)
+        .whereType<DiskGaugePainter>().single;
+    expect(painter.fillColor, scheme.primary);
+    expect(painter.trackColor, scheme.primary);
+    expect(painter.gradient, [scheme.primary, scheme.primary]);
+    expect(tester.takeException(), isNull);
+  });
 
   test('capacity reports real used fractions and unavailable media', () async {
     final values = await DiskSpace.load();

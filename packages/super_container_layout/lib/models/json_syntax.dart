@@ -11,6 +11,7 @@ import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 import 'package:flutter/painting.dart' show Axis, EdgeInsets;
 
 import '../theme/container_style.dart';
+import '../theme/theme_color.dart';
 import 'automatic_state.dart';
 import 'component_config.dart';
 import 'json_text_binding.dart';
@@ -24,8 +25,17 @@ import 'super_layout_config.dart'
 
 /// Primitives de sérialisation et désérialisation JSON adaptées aux humains et aux IA.
 abstract final class JsonColor {
-  /// Formate une couleur en `#RRGGBB` (si opaque) ou `#AARRGGBB`.
+  /// Préserve les références de thème et le format ARGB historique.
+  static Object toJson(Color color) =>
+      color is ThemeColor ? color.toJson() : color.toARGB32();
+
+  /// Variante nullable du format de persistance.
+  static Object? toJsonNullable(Color? color) =>
+      color == null ? null : toJson(color);
+
+  /// Formate une couleur en hexadécimal ou conserve sa référence `theme:rôle`.
   static String toHex(Color color) {
+    if (color is ThemeColor) return color.toJson();
     final argb = color.toARGB32();
     final alpha = (argb >>> 24) & 0xFF;
     final rgb = argb & 0xFFFFFF;
@@ -49,6 +59,7 @@ abstract final class JsonColor {
     }
     if (value is String) {
       final trimmed = value.trim();
+      if (trimmed.startsWith('theme:')) return ThemeColor.fromJson(trimmed);
       if (trimmed.startsWith('#')) {
         final hex = trimmed.substring(1);
         if (_hexPattern.hasMatch(hex)) {
@@ -90,6 +101,15 @@ abstract final class JsonColor {
   static Color? parseNullable(Object? value, [String field = 'color']) =>
       value == null ? null : parse(value, field);
 
+  /// Lit une couleur fixe, notamment l'accent qui sert à générer le thème.
+  static Color parseLiteral(Object? value, [String field = 'color']) {
+    final color = parse(value, field);
+    if (color is ThemeColor) {
+      throw FormatException('Couleur fixe requise : $field.');
+    }
+    return color;
+  }
+
   static final _hexPattern = RegExp(r'^[0-9a-fA-F]+$');
 }
 
@@ -122,6 +142,9 @@ abstract final class JsonComponentType {
     'SuperMenuAnchor': 'Menu',
     'Tab': 'Tab',
     'Tabs': 'Tab',
+    'Conditional': 'Conditional',
+    'SuperConditional': 'Conditional',
+    'SwitchCase': 'Conditional',
     'AppBar': 'ApplicationBar',
     'BottomBar': 'BottomAppBar',
     'Rail': 'NavigationRail',

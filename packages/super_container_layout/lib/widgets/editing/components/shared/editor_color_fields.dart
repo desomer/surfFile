@@ -6,6 +6,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/json_text_binding.dart';
+import '../../../../theme/theme_color.dart';
 import '../../../../services/repositories/json_list_scope.dart';
 import '../../../../services/repositories/json_repository_store.dart';
 import '../../repositories/repository_binding_fields.dart';
@@ -16,12 +17,15 @@ final RegExp _hexColorPattern = RegExp(r'^[0-9a-fA-F]{8}$');
 /// Formate une [Color] nullable en chaîne hexadécimale AARRGGBB de 8 caractères.
 String formatEditorColorHex(Color? color) => color == null
     ? ''
+    : color is ThemeColor
+    ? color.toJson()
     : color.toARGB32().toRadixString(16).padLeft(8, '0');
 
 /// Analyse une chaîne hexadécimale AARRGGBB issue d'un [TextEditingController].
 Color? parseEditorColorHex(String text) {
   final trimmed = text.trim();
   if (trimmed.isEmpty) return null;
+  if (trimmed.startsWith('theme:')) return ThemeColor.fromJson(trimmed);
   if (!_hexColorPattern.hasMatch(trimmed)) {
     throw const FormatException('Couleur AARRGGBB à 8 chiffres requise.');
   }
@@ -75,12 +79,19 @@ Widget buildEditorSettingTextField({
       }
     } else if (colorHex &&
         value.isNotEmpty &&
-        !_hexColorPattern.hasMatch(value)) {
+        !isEditorColorValue(value)) {
       return invalidColorMessage;
     }
     return null;
   },
 );
+
+/// Indique si une saisie contient une couleur AARRGGBB ou un rôle de thème connu.
+bool isEditorColorValue(String value) {
+  if (_hexColorPattern.hasMatch(value)) return true;
+  if (!value.startsWith('theme:')) return false;
+  return ThemeColorRole.values.any((role) => value == 'theme:${role.name}');
+}
 
 /// Empile verticalement une liste de widgets avec un espacement uniforme (12 px par défaut).
 Widget buildEditorFieldGroup(List<Widget> children, {double spacing = 12}) =>
@@ -246,13 +257,13 @@ class BoundHexColorField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final raw = controller.text.trim();
-    final current = _hexColorPattern.hasMatch(raw)
-        ? Color(int.parse(raw, radix: 16))
+    final current = isEditorColorValue(raw)
+        ? parseEditorColorHex(raw)!
         : fallbackColor;
     final textField = buildEditorSettingTextField(
       fieldKey: fieldKey,
       controller: controller,
-      label: fieldLabel ?? '$label AARRGGBB (vide = thème)',
+      label: fieldLabel ?? '$label AARRGGBB / theme:rôle (vide = thème)',
       colorHex: true,
     );
     final resetButton = TextButton(
@@ -391,4 +402,3 @@ List<Widget> buildComponentBoxDimensionFields<TProperty extends Enum>({
     ],
   ),
 ];
-

@@ -208,6 +208,26 @@ extension _EditorSlotExportExtension on EditorSlotState {
         }
         return;
       }
+      if (candidate is SuperConditional) {
+        final targetId = candidate.id.isNotEmpty ? candidate.id : slotId;
+        final condCfg = candidate.config ?? SuperConditionalConfig();
+        if (targetId != null && targetId.isNotEmpty) {
+          configs.putIfAbsent(targetId, () => condCfg);
+          if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+            configs.putIfAbsent(slotId, () => condCfg);
+          }
+          if (candidate.behaviours case final list? when list.isNotEmpty) {
+            behaviors.putIfAbsent(targetId, () => list);
+            if (slotId != null && slotId.isNotEmpty && slotId != targetId) {
+              behaviors.putIfAbsent(slotId, () => list);
+            }
+          }
+        }
+        for (final slot in candidate.slots) {
+          inspectWidget(slot, slotId: slot.id);
+        }
+        return;
+      }
       if (candidate is SuperTreeView) {
         final targetId = candidate.id.isNotEmpty ? candidate.id : slotId;
         final treeCfg = candidate.config ?? SuperTreeViewConfig();

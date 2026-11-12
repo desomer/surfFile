@@ -8,6 +8,8 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
+import '../../../theme/theme_color.dart';
+
 import '../super_component.dart';
 
 import '../../../models/super_layout_config.dart' show SlotSizeUnit;
@@ -495,10 +497,10 @@ class _SuperAppBarState extends State<SuperAppBar> {
               leadingWidth: config.doubleProperty('leadingWidth'),
               titleSpacing: config.doubleProperty('titleSpacing') ?? 0,
               centerTitle: config.boolProperty('centerTitle'),
-              backgroundColor: config.colorProperty('backgroundColor'),
-              foregroundColor: config.colorProperty('foregroundColor'),
-              surfaceTintColor: config.colorProperty('surfaceTintColor'),
-              shadowColor: config.colorProperty('shadowColor'),
+              backgroundColor: config.colorProperty('backgroundColor').resolveTheme(context),
+              foregroundColor: config.colorProperty('foregroundColor').resolveTheme(context),
+              surfaceTintColor: config.colorProperty('surfaceTintColor').resolveTheme(context),
+              shadowColor: config.colorProperty('shadowColor').resolveTheme(context),
               elevation: config.doubleProperty('elevation'),
               scrolledUnderElevation: config.doubleProperty(
                 'scrolledUnderElevation',
@@ -506,7 +508,7 @@ class _SuperAppBarState extends State<SuperAppBar> {
               forceElevated: effectiveForceElevated,
               forceMaterialTransparency:
                   config.boolProperty('forceMaterialTransparency') ?? false,
-              shape: config.shapeBorderProperty('shape'),
+              shape: config.shapeBorderProperty('shape', colorScheme: Theme.of(context).colorScheme),
               primary: config.boolProperty('primary') ?? true,
               excludeHeaderSemantics:
                   config.boolProperty('excludeHeaderSemantics') ?? false,
@@ -536,17 +538,17 @@ class _SuperAppBarState extends State<SuperAppBar> {
             leadingWidth: config.doubleProperty('leadingWidth'),
             titleSpacing: config.doubleProperty('titleSpacing') ?? 0,
             centerTitle: config.boolProperty('centerTitle'),
-            backgroundColor: config.colorProperty('backgroundColor'),
-            foregroundColor: config.colorProperty('foregroundColor'),
-            surfaceTintColor: config.colorProperty('surfaceTintColor'),
-            shadowColor: config.colorProperty('shadowColor'),
+            backgroundColor: config.colorProperty('backgroundColor').resolveTheme(context),
+            foregroundColor: config.colorProperty('foregroundColor').resolveTheme(context),
+            surfaceTintColor: config.colorProperty('surfaceTintColor').resolveTheme(context),
+            shadowColor: config.colorProperty('shadowColor').resolveTheme(context),
             elevation: config.doubleProperty('elevation'),
             scrolledUnderElevation: config.doubleProperty(
               'scrolledUnderElevation',
             ),
             forceMaterialTransparency:
                 config.boolProperty('forceMaterialTransparency') ?? false,
-            shape: config.shapeBorderProperty('shape'),
+            shape: config.shapeBorderProperty('shape', colorScheme: Theme.of(context).colorScheme),
             toolbarOpacity: config.doubleProperty('toolbarOpacity') ?? 1.0,
             bottomOpacity: config.doubleProperty('bottomOpacity') ?? 1.0,
             primary: config.boolProperty('primary') ?? true,

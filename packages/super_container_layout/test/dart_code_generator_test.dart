@@ -288,6 +288,44 @@ void main() {
         find.byKey(const ValueKey('transfer-file')),
       );
       expect(fileField.controller!.text, endsWith('appearance.dart'));
+
+      // Ouverture en maximisé dans CodeEditor
+      expect(
+        find.byKey(const ValueKey('transfer-maximize-code')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('transfer-maximize-code')));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('transfer-maximized-dialog')),
+        findsOneWidget,
+      );
+      expect(find.byType(CodeEditor), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('transfer-maximized-copy')),
+        findsOneWidget,
+      );
+
+      final codeEditorState = tester.state<CodeEditorState>(
+        find.byType(CodeEditor),
+      );
+      expect(
+        codeEditorState.controller.fullText,
+        contains("_registry.registerComponent("),
+      );
+
+      // Édition dans le CodeEditor maximisé synchronisée avec l'export
+      codeEditorState.controller.fullText = '// custom dart export';
+      await tester.pump();
+      expect(textField.controller!.text, '// custom dart export');
+
+      await tester.tap(find.byKey(const ValueKey('transfer-maximized-close')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('transfer-maximized-dialog')),
+        findsNothing,
+      );
     },
   );
 

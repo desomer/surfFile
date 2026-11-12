@@ -136,8 +136,8 @@ class _DiskSpacePanelState extends State<DiskSpacePanel>
     final colors = Theme.of(context).colorScheme;
     final appearance = AppearanceScope.of(context);
     final foreground =
-        appearance.style('diskPanel').foreground ??
-        appearance.style('sidebar').foreground ??
+        appearance.style('diskPanel').foregroundForTheme(Theme.of(context).colorScheme) ??
+        appearance.style('sidebar').foregroundForTheme(Theme.of(context).colorScheme) ??
         colors.onSurfaceVariant;
     return EditableSurface(
       key: const ValueKey('disk-panel-surface'),
@@ -258,11 +258,11 @@ class _DiskTile extends StatelessWidget {
             .read(appearance);
     final gauge = SurfFilePreferencesScope.of(context).diskGaugeStyle;
     final foreground =
-        style.foreground ??
+        style.foregroundForTheme(Theme.of(context).colorScheme) ??
         (selected
             ? colors.onPrimaryContainer
-            : appearance.style('diskPanel').foreground ??
-                  appearance.style('sidebar').foreground ??
+            : appearance.style('diskPanel').foregroundForTheme(Theme.of(context).colorScheme) ??
+                  appearance.style('sidebar').foregroundForTheme(Theme.of(context).colorScheme) ??
                   colors.onSurface);
     final used = disk.usedFraction;
     final percentage = used == null ? null : (used * 100).round();

@@ -7,15 +7,17 @@ import 'package:shortid/shortid.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/registry.dart';
+import '../../../models/super_conditional_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../theme/appearance.dart';
 import '../history/editor_history.dart';
 import 'editor_context_menu.dart';
 
-/// Type de conteneur (`Card` ou `SuperLayout`) dans lequel envelopper un slot existant.
+/// Type de conteneur (`Card`, `SuperLayout`, `SuperConditional`, etc.) dans lequel envelopper un slot existant.
 enum EditorSlotWrapper {
   container('Card', 'Card', Icons.crop_square),
   layout('Layout', 'Layout', Icons.dashboard_outlined),
+  conditional('Conditional', 'Conditional', Icons.call_split_outlined),
   iterableContent('IterableContent', 'IterableContent', Icons.article_outlined);
 
   const EditorSlotWrapper(this.label, this.factory, this.icon);
@@ -184,6 +186,7 @@ String uniqueInstanceId(
       ...registry.actionConfigById.keys,
       ...registry.listConfigById.keys,
       ...registry.tabConfigById.keys,
+      ...registry.conditionalConfigById.keys,
       ...registry.treeViewConfigById.keys,
       ...registry.tableConfigById.keys,
     ],
@@ -192,7 +195,9 @@ String uniqueInstanceId(
       if (config case final NativeComponentConfig native)
         for (final ids in native.placements.values) ...ids
       else if (config case final ScaffoldPageConfig scaffold)
-        for (final ids in scaffold.native.placements.values) ...ids,
+        for (final ids in scaffold.native.placements.values) ...ids
+      else if (config case final SuperConditionalConfig cond)
+        ...cond.placedSlotIds,
   };
   for (var attempt = 0; attempt < 1000; attempt++) {
     final candidate = shortid.generate();
@@ -243,6 +248,15 @@ void wrapSlotInstance(
           slotTypes: {id: type},
           slotLabels: {id: label},
         );
+      case EditorSlotWrapper.conditional:
+        registry.conditionalController(wrapperId).value =
+            SuperConditionalConfig(
+              placements: {
+                SuperConditionalConfig.defaultZone: [id],
+              },
+              slotTypes: {id: type},
+              slotLabels: {id: label},
+            );
       case EditorSlotWrapper.layout:
       case EditorSlotWrapper.iterableContent:
         registry.layoutController(wrapperId).value = SuperLayoutConfig(

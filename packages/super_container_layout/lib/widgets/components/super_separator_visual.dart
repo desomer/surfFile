@@ -6,6 +6,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/super_separator_config.dart';
 
 class _SeparatorLinePainter extends CustomPainter {
@@ -108,7 +110,7 @@ Widget buildSuperSeparatorVisual({
   final dividerTheme = DividerTheme.of(context);
   final isHorizontal = config.axis == Axis.horizontal;
   final hasLabel = config.label.trim().isNotEmpty;
-  final fg = config.color ?? scheme.onSurfaceVariant;
+  final fg = config.color.resolveTheme(context) ?? scheme.onSurfaceVariant;
   final effectiveTextStyle = textStyle.copyWith(color: fg);
 
   final indentPadding = isHorizontal
@@ -146,7 +148,7 @@ Widget buildSuperSeparatorVisual({
   }
 
   final effectiveLineColor =
-      config.lineColor ?? dividerTheme.color ?? scheme.outlineVariant;
+      config.lineColor.resolveTheme(context) ?? dividerTheme.color ?? scheme.outlineVariant;
   final crossExtent = math.max(config.extent, config.thickness);
 
   if (!hasLabel && config.lineStyle == SuperSeparatorLineStyle.solid) {

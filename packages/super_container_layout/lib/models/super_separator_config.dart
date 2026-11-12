@@ -195,7 +195,7 @@ class SuperSeparatorConfig extends ComponentConfig {
       'indent': indent,
       'endIndent': endIndent,
       'lineStyle': lineStyle.name,
-      'lineColor': lineColor?.toARGB32(),
+      'lineColor': JsonColor.toJsonNullable(lineColor),
       'label': label,
       'labelPosition': labelPosition.name,
       'labelSpacing': labelSpacing,
@@ -203,7 +203,7 @@ class SuperSeparatorConfig extends ComponentConfig {
       'fontSize': fontSize,
       'fontWeight': fontWeight?.value,
       'italic': italic,
-      'color': color?.toARGB32(),
+      'color': JsonColor.toJsonNullable(color),
       'letterSpacing': letterSpacing,
       if (propertyBindings.isNotEmpty)
         'propertyBindings': JsonReader.encodePropertyBindings(propertyBindings),

@@ -9,6 +9,8 @@ library;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/json_text_binding.dart';
 import '../../models/native_component_config.dart';
 import '../../models/registry.dart';
@@ -162,13 +164,13 @@ Widget wrapWithConfiguredScrollbar({
       mainAxisMargin: scrollbarStyle.mainAxisMargin,
       crossAxisMargin: scrollbarStyle.crossAxisMargin,
       thumbColor:
-          scrollbarStyle.thumbColor ??
+          scrollbarStyle.thumbColor.resolveTheme(context) ??
           colors.onSurfaceVariant.withValues(alpha: 0.45),
       trackColor:
-          scrollbarStyle.trackColor ??
+          scrollbarStyle.trackColor.resolveTheme(context) ??
           colors.surfaceContainerHighest.withValues(alpha: 0.35),
       trackBorderColor:
-          scrollbarStyle.trackBorderColor ??
+          scrollbarStyle.trackBorderColor.resolveTheme(context) ??
           (scrollbarStyle.trackVisibility
               ? colors.outlineVariant.withValues(alpha: 0.5)
               : const Color(0x00000000)),

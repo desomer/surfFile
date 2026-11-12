@@ -8,6 +8,8 @@ library;
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
+import 'theme_color.dart';
+
 import '../models/component_config.dart';
 import '../models/component_behavior.dart';
 import '../models/super_layout_config.dart';
@@ -18,6 +20,7 @@ import '../models/super_action_config.dart';
 import '../models/super_indicator_config.dart';
 import '../models/super_separator_config.dart';
 import '../models/super_list_view_config.dart';
+import '../models/super_conditional_config.dart';
 import '../models/super_tab_config.dart';
 import '../models/super_table_config.dart';
 import '../models/super_tree_view_config.dart';
@@ -45,7 +48,15 @@ class Appearance {
        behaviors = Map.unmodifiable({
          for (final entry in behaviors.entries)
            entry.key: List<ComponentBehavior>.unmodifiable(entry.value),
-       });
+       }) {
+    if (accent is ThemeColor) {
+      throw ArgumentError.value(
+        accent,
+        'accent',
+        'Une couleur fixe est requise pour générer le thème.',
+      );
+    }
+  }
 
   static SuperLayoutConfig _freezeLayout(SuperLayoutConfig l) => l.copyWith(
     swaps: Set.unmodifiable(l.swaps),
@@ -100,8 +111,7 @@ class Appearance {
   final Map<String, List<ComponentBehavior>> behaviors;
   final EditorPageCatalog pageCatalog;
 
-  List<ComponentBehavior> behaviorsFor(String id) =>
-      behaviors[id] ?? const [];
+  List<ComponentBehavior> behaviorsFor(String id) => behaviors[id] ?? const [];
 
   Appearance withBehaviors(String id, List<ComponentBehavior> list) {
     final next = Map<String, List<ComponentBehavior>>.from(behaviors);
@@ -192,13 +202,24 @@ class Appearance {
   Appearance withSeparatorComponent(String id, SuperSeparatorConfig value) =>
       withComponent(id, value);
 
-  SuperTabConfig tabComponent(
-    String id, {
-    SuperTabConfig? fallback,
-  }) => component<SuperTabConfig>(id, fallback: fallback ?? SuperTabConfig());
+  SuperTabConfig tabComponent(String id, {SuperTabConfig? fallback}) =>
+      component<SuperTabConfig>(id, fallback: fallback ?? SuperTabConfig());
 
   Appearance withTabComponent(String id, SuperTabConfig value) =>
       withComponent(id, value);
+
+  SuperConditionalConfig conditionalComponent(
+    String id, {
+    SuperConditionalConfig? fallback,
+  }) => component<SuperConditionalConfig>(
+    id,
+    fallback: fallback ?? SuperConditionalConfig(),
+  );
+
+  Appearance withConditionalComponent(
+    String id,
+    SuperConditionalConfig value,
+  ) => withComponent(id, value);
 
   SuperTreeViewConfig treeViewComponent(
     String id, {
@@ -211,13 +232,8 @@ class Appearance {
   Appearance withTreeViewComponent(String id, SuperTreeViewConfig value) =>
       withComponent(id, value);
 
-  SuperTableConfig tableComponent(
-    String id, {
-    SuperTableConfig? fallback,
-  }) => component<SuperTableConfig>(
-    id,
-    fallback: fallback ?? SuperTableConfig(),
-  );
+  SuperTableConfig tableComponent(String id, {SuperTableConfig? fallback}) =>
+      component<SuperTableConfig>(id, fallback: fallback ?? SuperTableConfig());
 
   Appearance withTableComponent(String id, SuperTableConfig value) =>
       withComponent(id, value);
@@ -401,13 +417,29 @@ class Appearance {
       countRepositoryBindings(repositoryId) > 0;
 
   ThemeData theme(Brightness brightness) {
+    final seedScheme = ColorScheme.fromSeed(
+      seedColor: accent,
+      brightness: brightness,
+    );
+    final resolvedBackground = backgroundStyle.resolveThemeColors(seedScheme);
     final defaultSurface = brightness == Brightness.dark
         ? const Color(0xFF171A23)
         : const Color(0xFFF8F9FC);
-    final surface = backgroundStyle.fill.type != FillType.solid
-        ? Color.lerp(backgroundStyle.fill.start, backgroundStyle.fill.end, .5)!
-        : (backgroundStyle.color ?? defaultSurface);
-    final effectiveBrightness = ThemeData.estimateBrightnessForColor(surface);
+    final surface = resolvedBackground.fill.type != FillType.solid
+        ? Color.lerp(
+            resolvedBackground.fill.start,
+            resolvedBackground.fill.end,
+            .5,
+          )!
+        : (resolvedBackground.color ?? defaultSurface);
+    final usesThemeColor =
+        backgroundStyle.color is ThemeColor ||
+        (backgroundStyle.fill.type != FillType.solid &&
+            (backgroundStyle.fill.start is ThemeColor ||
+                backgroundStyle.fill.end is ThemeColor));
+    final effectiveBrightness = usesThemeColor
+        ? brightness
+        : ThemeData.estimateBrightnessForColor(surface);
     final generated = ColorScheme.fromSeed(
       seedColor: accent,
       brightness: effectiveBrightness,

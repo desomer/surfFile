@@ -4,8 +4,6 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-import 'super_code_style.dart';
-
 export 'super_code_style.dart';
 
 /// Langages proposes par SuperCode (coloration uniquement, sans execution).

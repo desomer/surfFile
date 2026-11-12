@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../theme/theme_color.dart';
+
 import '../super_component.dart';
 import '../component_tooltip.dart';
 
@@ -264,8 +266,8 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
               final slots = editor.slotsFor('destinations');
               final supplied = _suppliedActions;
               final effectiveBackgroundColor =
-                  config.colorProperty('backgroundColor') ??
-                  config.colorProperty('color') ??
+                  config.colorProperty('backgroundColor').resolveTheme(context) ??
+                  config.colorProperty('color').resolveTheme(context) ??
                   widget.backgroundColor ??
                   widget.color;
               final effectiveElevation =
@@ -327,18 +329,18 @@ class _SuperBottomNavigationBarState extends State<SuperBottomNavigationBar> {
                               ? actionConfig.tooltip
                               : null,
                           backgroundColor:
-                              actionConfig.backgroundColor ??
-                              actionConfig.style.color,
+                              actionConfig.backgroundColor.resolveTheme(context) ??
+                              actionConfig.style.color.resolveTheme(context),
                         );
                       }(),
                   ];
                   final effectiveSelectedItemColor =
-                      config.colorProperty('selectedItemColor') ??
-                      config.colorProperty('fixedColor') ??
+                      config.colorProperty('selectedItemColor').resolveTheme(context) ??
+                      config.colorProperty('fixedColor').resolveTheme(context) ??
                       widget.selectedItemColor ??
                       widget.fixedColor;
                   final effectiveUnselectedItemColor =
-                      config.colorProperty('unselectedItemColor') ??
+                      config.colorProperty('unselectedItemColor').resolveTheme(context) ??
                       widget.unselectedItemColor;
                   final effectiveIconSize =
                       config.doubleProperty('iconSize') ?? widget.iconSize;

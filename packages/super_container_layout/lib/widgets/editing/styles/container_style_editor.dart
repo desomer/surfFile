@@ -1,7 +1,6 @@
 /// Éditeur visuel complet d'un [ContainerStyle] ([ContainerStyleEditor]) et du halo néon ([NeonStyleEditor]).
 library;
 
-import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
@@ -17,7 +16,9 @@ import '../../../theme/neon_style.dart';
 import '../../../theme/appearance.dart';
 import '../../surfaces/neon_surface.dart';
 import '../../../theme/container_style.dart';
+import '../../../theme/theme_color.dart';
 import 'style_editor_panel.dart';
+import 'editor_color_tile.dart';
 import 'style_extras_controls.dart';
 import '../../surfaces/styled_surface.dart';
 
@@ -632,15 +633,17 @@ class ContainerStyleEditor extends StatelessWidget {
 
   BoxDecoration _decoration(BuildContext context, [ContainerFill? resolved]) {
     final fill = resolved ?? value;
+    final scheme = Theme.of(context).colorScheme;
+    final solidColor = resolveThemeColor(this.solidColor, scheme);
     return BoxDecoration(
       color: fill.type == FillType.solid
           ? solidColor.withValues(alpha: solidColor.a * opacity)
           : null,
-      gradient: fill.gradient(opacity: opacity),
+      gradient: fill.gradient(opacity: opacity, colorScheme: scheme),
       image: fill.decorationImage(opacity: opacity),
       borderRadius: BorderRadius.circular(radius),
       border: Border.all(
-        color: borderColor ?? Theme.of(context).colorScheme.outlineVariant,
+        color: borderColor.resolveTheme(context) ?? scheme.outlineVariant,
         width: borderWidth,
         style: borderWidth == 0 ? BorderStyle.none : BorderStyle.solid,
       ),
@@ -996,7 +999,7 @@ Widget _color(
   onClear: onClear,
 );
 
-/// Ligne repliable avec pastille et sélecteur de couleur (palette, roue).
+/// Sélecteur repliable partagé : couleur personnalisée ou rôle Material 3.
 Widget styleColorTile(
   String label,
   Color color,
@@ -1004,64 +1007,13 @@ Widget styleColorTile(
   Key? key,
   bool dense = false,
   VoidCallback? onClear,
-}) => ExpansionTile(
-  key: key,
-  title: onClear == null
-      ? Text(label, style: dense ? const TextStyle(fontSize: 13) : null)
-      : Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: dense ? const TextStyle(fontSize: 13) : null,
-              ),
-            ),
-            IconButton(
-              key: key is ValueKey
-                  ? ValueKey('${key.value}-clear')
-                  : ValueKey('clear-color-$label'),
-              tooltip: 'Retirer la couleur',
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-              style: IconButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                minimumSize: Size.zero,
-                padding: EdgeInsets.zero,
-              ),
-              iconSize: 16,
-              onPressed: onClear,
-              icon: const Icon(Icons.format_color_reset_outlined),
-            ),
-          ],
-        ),
+}) => EditorColorTile(
+  label: label,
+  color: color,
+  onChanged: onChanged,
+  tileKey: key,
   dense: dense,
-  tilePadding: dense ? EdgeInsets.zero : null,
-  childrenPadding: dense ? const EdgeInsets.only(bottom: 8) : null,
-  leading: CircleAvatar(backgroundColor: color, radius: dense ? 10 : 12),
-  children: [
-    ColorPicker(
-      color: color,
-      onColorChanged: onChanged,
-      enableOpacity: true,
-      showColorCode: true,
-      showEditIconButton: true,
-      opacitySubheading: const Text('Opacité'),
-      width: 30,
-      height: 30,
-      wheelDiameter: 180,
-      pickersEnabled: const {
-        ColorPickerType.both: true,
-        ColorPickerType.primary: false,
-        ColorPickerType.accent: false,
-        ColorPickerType.wheel: true,
-      },
-      pickerTypeLabels: const {
-        ColorPickerType.both: 'Palette',
-        ColorPickerType.wheel: 'Roue',
-      },
-    ),
-  ],
+  onClear: onClear,
 );
 
 /// Prévisualisation du panneau : la surface éditée, avec en option les zones
@@ -1092,9 +1044,9 @@ class _PreviewPaneState extends State<_PreviewPane> {
     final muted = scheme.onSurfaceVariant;
     final spacing = _spacing;
     final textColor = Appearance.foreground(
-      editor.value.type == FillType.solid
+      resolveThemeColor(editor.value.type == FillType.solid
           ? editor.solidColor
-          : editor.value.start,
+          : editor.value.start, scheme),
     );
     final guide = scheme.primary.withValues(alpha: .7);
     final st = editor.style;

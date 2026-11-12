@@ -3,6 +3,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/super_indicator_config.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/style_extras.dart';
@@ -27,7 +29,7 @@ Widget buildSuperIndicatorVisual({
   final hasIcon = config.icon.trim().isNotEmpty;
   final hasLabel = config.label.trim().isNotEmpty;
   final iconData = hasIcon ? SuperIndicatorIcons.resolve(config.icon) : null;
-  final effectiveIconColor = config.iconColor ?? config.color ?? scheme.primary;
+  final effectiveIconColor = config.iconColor.resolveTheme(context) ?? config.color.resolveTheme(context) ?? scheme.primary;
   final effectiveIconSize = config.iconSize ?? 24.0;
 
   final iconWidget = hasIcon
@@ -43,7 +45,7 @@ Widget buildSuperIndicatorVisual({
           height: effectiveIconSize,
         );
 
-  final fg = config.color ?? scheme.onSurface;
+  final fg = config.color.resolveTheme(context) ?? scheme.onSurface;
   final textWidget = hasLabel
       ? Text(
           config.label,
@@ -76,13 +78,13 @@ Widget buildSuperIndicatorVisual({
         );
 
   final hasCustomSurface =
-      config.backgroundColor != null ||
-      config.borderColor != null ||
+      config.backgroundColor.resolveTheme(context) != null ||
+      config.borderColor.resolveTheme(context) != null ||
       config.radius != null ||
       config.borderWidth != null ||
       config.elevation != null ||
-      config.style.color != null ||
-      config.style.borderColor != null ||
+      config.style.color.resolveTheme(context) != null ||
+      config.style.borderColor.resolveTheme(context) != null ||
       config.style.borderWidth > 0 ||
       config.style.borderWidths != null ||
       config.style.elevation > 0 ||
@@ -111,8 +113,8 @@ Widget buildSuperIndicatorVisual({
   Widget indicator;
   if (hasCustomSurface) {
     final surfaceStyle = config.style.copyWith(
-      color: config.backgroundColor ?? config.style.color,
-      borderColor: config.borderColor ?? config.style.borderColor,
+      color: config.backgroundColor.resolveTheme(context) ?? config.style.color.resolveTheme(context),
+      borderColor: config.borderColor.resolveTheme(context) ?? config.style.borderColor.resolveTheme(context),
       radius: config.radius ?? config.style.radius,
       borderWidth: config.borderWidth ?? config.style.borderWidth,
       elevation: config.elevation ?? config.style.elevation,
@@ -123,10 +125,10 @@ Widget buildSuperIndicatorVisual({
         key: surfaceKey,
         style: surfaceStyle,
         fallbackColor:
-            config.backgroundColor ??
+            config.backgroundColor.resolveTheme(context) ??
             surfaceStyle.color ??
             Colors.transparent,
-        borderColor: config.borderColor ?? scheme.outline,
+        borderColor: config.borderColor.resolveTheme(context) ?? scheme.outline,
         child: Padding(
           padding: pad,
           child: IconTheme.merge(

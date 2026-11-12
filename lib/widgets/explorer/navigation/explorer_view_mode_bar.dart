@@ -110,7 +110,7 @@ class ExplorerViewModeBar extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: style.foreground,
+                    color: style.foregroundForTheme(Theme.of(context).colorScheme),
                   ),
                 ),
               ),
@@ -136,7 +136,7 @@ class ExplorerViewModeBar extends StatelessWidget {
                     : '$itemCount élément${itemCount == 1 ? '' : 's'}',
                 style: TextStyle(
                   color:
-                      style.foreground ??
+                      style.foregroundForTheme(Theme.of(context).colorScheme) ??
                       explorerColor(
                         context,
                         const Color(0xFF82899A),

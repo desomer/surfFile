@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../theme/theme_color.dart';
+
 import '../super_component.dart';
 
 import '../../../models/native_component_config.dart';
@@ -201,7 +203,7 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
             onSlotAdded: widget.onNativeSlotAdded,
             regions: _regions(config, effectiveHeight),
             builder: (context, editor) {
-              final shapeBorder = config.shapeBorderProperty('shape');
+              final shapeBorder = config.shapeBorderProperty('shape', colorScheme: Theme.of(context).colorScheme);
               final effectiveShape = shapeBorder != null
                   ? AutomaticNotchedShape(shapeBorder)
                   : widget.shape;
@@ -213,14 +215,14 @@ class _SuperBottomAppBarState extends State<SuperBottomAppBar> {
                 height: effectiveHeight,
                 padding: effectivePadding,
                 color:
-                    config.colorProperty('color') ??
-                    config.colorProperty('backgroundColor') ??
+                    config.colorProperty('color').resolveTheme(context) ??
+                    config.colorProperty('backgroundColor').resolveTheme(context) ??
                     widget.color,
                 surfaceTintColor:
-                    config.colorProperty('surfaceTintColor') ??
+                    config.colorProperty('surfaceTintColor').resolveTheme(context) ??
                     widget.surfaceTintColor,
                 shadowColor:
-                    config.colorProperty('shadowColor') ?? widget.shadowColor,
+                    config.colorProperty('shadowColor').resolveTheme(context) ?? widget.shadowColor,
                 elevation:
                     config.doubleProperty('elevation') ?? widget.elevation,
                 shape: effectiveShape,

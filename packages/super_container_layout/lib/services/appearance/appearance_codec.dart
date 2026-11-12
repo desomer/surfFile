@@ -16,6 +16,7 @@ import 'package:super_container_layout/models/native_component_config.dart';
 import 'package:super_container_layout/models/scaffold_page_config.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/models/super_list_view_config.dart';
+import 'package:super_container_layout/models/super_conditional_config.dart';
 import 'package:super_container_layout/models/super_tab_config.dart';
 import 'package:super_container_layout/models/super_table_config.dart';
 import 'package:super_container_layout/models/super_tree_view_config.dart';
@@ -102,7 +103,7 @@ class AppearanceCodec {
     final rawAccent = json['accent'] ?? 0xFF5268D9;
     final Color parsedAccent;
     try {
-      parsedAccent = JsonColor.parse(rawAccent, 'accent');
+      parsedAccent = JsonColor.parseLiteral(rawAccent, 'accent');
     } on FormatException {
       throw const FormatException('Invalid theme or window preferences.');
     }
@@ -217,6 +218,9 @@ class AppearanceCodec {
         } else if (comp is SuperTabConfig &&
             comp.placedSlotIds.contains(slotId)) {
           comp = comp.withSlotSizeConstraints(slotId, constraints);
+        } else if (comp is SuperConditionalConfig &&
+            comp.placedSlotIds.contains(slotId)) {
+          comp = comp.withSlotSizeConstraints(slotId, constraints);
         } else if (comp is SuperTreeViewConfig &&
             comp.placedSlotIds.contains(slotId)) {
           comp = comp.withSlotSizeConstraints(slotId, constraints);
@@ -275,7 +279,7 @@ class AppearanceCodec {
     var accent = current.accent;
     if (patch.containsKey('accent') && patch['accent'] != null) {
       try {
-        accent = JsonColor.parse(patch['accent'], 'accent');
+        accent = JsonColor.parseLiteral(patch['accent'], 'accent');
       } on FormatException {
         throw const FormatException('Invalid theme or window preferences.');
       }
@@ -443,6 +447,9 @@ class AppearanceCodec {
               template: comp.template.withoutSlot(removedId),
             );
           } else if (comp is SuperTabConfig &&
+              comp.placedSlotIds.contains(removedId)) {
+            comp = comp.withoutSlot(removedId);
+          } else if (comp is SuperConditionalConfig &&
               comp.placedSlotIds.contains(removedId)) {
             comp = comp.withoutSlot(removedId);
           } else if (comp is SuperTreeViewConfig &&

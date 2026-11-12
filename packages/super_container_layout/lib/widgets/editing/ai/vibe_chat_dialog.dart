@@ -16,6 +16,7 @@ import '../../../models/registry.dart';
 import '../../../models/scaffold_page_config.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
+import '../../../models/super_conditional_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
@@ -123,6 +124,7 @@ class VibeChatDialog extends StatefulWidget {
               : list.template.placementsOf(list.template.contentZone(zone));
         }(),
         final SuperTabConfig tab => tab.slotsOf(onlyZoneId),
+        final SuperConditionalConfig cond => cond.slotsOf(onlyZoneId),
         final SuperTreeViewConfig tree => tree.slotsOf(onlyZoneId),
         final SuperTableConfig table => table.slotsOf(onlyZoneId),
         final NativeComponentConfig native => native.slotsOf(onlyZoneId),
@@ -135,6 +137,7 @@ class VibeChatDialog extends StatefulWidget {
       final SuperLayoutConfig layout => layout.placedSlotIds,
       final SuperListViewConfig list => list.template.placedSlotIds,
       final SuperTabConfig tab => tab.placedSlotIds,
+      final SuperConditionalConfig cond => cond.placedSlotIds,
       final SuperTreeViewConfig tree => tree.placedSlotIds,
       final SuperTableConfig table => table.placedSlotIds,
       final NativeComponentConfig native =>
@@ -944,6 +947,7 @@ $response
           final SuperLayoutConfig layout => layout.placedSlotIds,
           final SuperListViewConfig list => list.template.placedSlotIds,
           final SuperTabConfig tab => tab.placedSlotIds,
+          final SuperConditionalConfig cond => cond.placedSlotIds,
           final NativeComponentConfig native =>
             native.placements.values.expand((ids) => ids),
           final ScaffoldPageConfig scaffold =>

@@ -19,6 +19,7 @@ import '../../super_app.dart';
 import '../../theme/appearance.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
+import '../../theme/theme_color.dart';
 import '../editing/dialogs/super_value_json_extract_dialog.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
@@ -71,7 +72,7 @@ ValueNotifier<ContainerStyle> resolveRowStyleController(
 }) {
   if (isHover) {
     final accent = AppearanceScope.of(context).accent;
-    final hoverBase = currentRowStyle.hoverBase(accent);
+    final hoverBase = currentRowStyle.hoverBase(accent).resolveTheme(context);
     final defaultColor = (hoverBase ?? Theme.of(context).colorScheme.onSurface)
         .withValues(alpha: 0.08);
     final hasCustomHover = currentRowStyle.states?.hover?.isEmpty == false;
@@ -407,4 +408,3 @@ List<ExtractablePropertyOption> buildTypographyExtractableOptions({
       value: elevation,
     ),
 ];
-

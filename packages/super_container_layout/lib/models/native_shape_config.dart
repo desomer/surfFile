@@ -6,6 +6,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../theme/theme_color.dart';
+
 import '../theme/style_extras.dart' show Quad;
 import 'json_syntax.dart';
 
@@ -80,32 +82,39 @@ class NativeShapeConfig {
   BorderRadius get borderRadius =>
       radii?.radii ?? BorderRadius.circular(radius);
 
-  BorderSide _borderSide({double fallbackWidth = 0}) {
+  BorderSide _borderSide({double fallbackWidth = 0, ColorScheme? colorScheme}) {
     final effectiveWidth = borderWidth > 0 ? borderWidth : fallbackWidth;
     if (effectiveWidth <= 0) return BorderSide.none;
     return BorderSide(
       width: effectiveWidth,
-      color: borderColor ?? const Color(0xFF000000),
+      color: colorScheme == null
+          ? borderColor ?? const Color(0xFF000000)
+          : resolveThemeColor(
+              borderColor ?? const Color(0xFF000000),
+              colorScheme,
+            ),
     );
   }
 
   /// Construit le [ShapeBorder] Flutter correspondant.
-  ShapeBorder toShapeBorder() => switch (kind) {
+  ShapeBorder toShapeBorder({ColorScheme? colorScheme}) => switch (kind) {
     NativeShapeKind.rounded => RoundedRectangleBorder(
       borderRadius: borderRadius,
-      side: _borderSide(),
+      side: _borderSide(colorScheme: colorScheme),
     ),
     NativeShapeKind.continuous => ContinuousRectangleBorder(
       borderRadius: borderRadius,
-      side: _borderSide(),
+      side: _borderSide(colorScheme: colorScheme),
     ),
     NativeShapeKind.beveled => BeveledRectangleBorder(
       borderRadius: borderRadius,
-      side: _borderSide(),
+      side: _borderSide(colorScheme: colorScheme),
     ),
-    NativeShapeKind.stadium => StadiumBorder(side: _borderSide()),
+    NativeShapeKind.stadium => StadiumBorder(
+      side: _borderSide(colorScheme: colorScheme),
+    ),
     NativeShapeKind.linear => LinearBorder(
-      side: _borderSide(fallbackWidth: 1),
+      side: _borderSide(fallbackWidth: 1, colorScheme: colorScheme),
       top: top ? const LinearBorderEdge() : null,
       bottom: bottom ? const LinearBorderEdge() : null,
       start: left ? const LinearBorderEdge() : null,

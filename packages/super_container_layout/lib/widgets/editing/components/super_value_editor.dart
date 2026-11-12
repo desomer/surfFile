@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import '../../../theme/theme_color.dart';
 
 import '../../../models/automatic_state.dart';
 import '../../../models/json_text_binding.dart';
@@ -311,7 +312,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       throw const FormatException('Nombre de lignes invalide.');
     }
     final color = _fields['color']!.text.trim();
-    if (color.isNotEmpty && !RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(color)) {
+    if (color.isNotEmpty && !isEditorColorValue(color)) {
       throw const FormatException('Couleur AARRGGBB à 8 chiffres requise.');
     }
     if (_draft.fontFamily != null &&
@@ -337,7 +338,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       inheritLineHeight: number('lineHeight') == null,
       letterSpacing: number('letterSpacing'),
       inheritLetterSpacing: number('letterSpacing') == null,
-      color: color.isEmpty ? null : Color(int.parse(color, radix: 16)),
+      color: parseEditorColorHex(color),
       inheritColor: color.isEmpty,
     );
     result.validate();
@@ -407,7 +408,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
         text: _draft.letterSpacing?.toString() ?? '',
       ),
       'color': TextEditingController(
-        text: _draft.color?.toARGB32().toRadixString(16).padLeft(8, '0') ?? '',
+        text: formatEditorColorHex(_draft.color),
       ),
     };
     if (widget.repositories != null) _loadRepositories();
@@ -623,7 +624,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
             }
           } else if (key == 'color' &&
               value.isNotEmpty &&
-              !RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(value)) {
+              !isEditorColorValue(value)) {
             return 'Couleur AARRGGBB à 8 chiffres hexadécimaux requise.';
           }
           return null;
@@ -664,8 +665,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     }
 
     final color = _fields['color']!.text.trim();
-    final parsedColor = RegExp(r'^[0-9a-fA-F]{8}$').hasMatch(color)
-        ? Color(int.parse(color, radix: 16))
+    final parsedColor = isEditorColorValue(color)
+        ? parseEditorColorHex(color).resolveTheme(context)
         : null;
     final style = widget.textStyle.copyWith(
       fontFamily: unavailable ? null : _draft.fontFamily,
@@ -1133,14 +1134,8 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                   child: _group([
                     styleColorTile(
                       'Couleur de la valeur',
-                      RegExp(r'^[0-9a-fA-F]{8}$')
-                              .hasMatch(_fields['color']!.text.trim())
-                          ? Color(
-                              int.parse(
-                                _fields['color']!.text.trim(),
-                                radix: 16,
-                              ),
-                            )
+                      isEditorColorValue(_fields['color']!.text.trim())
+                          ? parseEditorColorHex(_fields['color']!.text.trim())!
                           : widget.textStyle.color ??
                                 Theme.of(context).colorScheme.onSurface,
                       (color) => setState(() {
@@ -1152,7 +1147,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                     _withBinding(
                       SuperValueProperty.color,
                       'la couleur',
-                      _field('color', 'Couleur AARRGGBB (vide = parent)'),
+                      _field('color', 'AARRGGBB / theme:rôle (vide = parent)'),
                     ),
                     TextButton(
                       key: const ValueKey('super-value-inherit-color'),

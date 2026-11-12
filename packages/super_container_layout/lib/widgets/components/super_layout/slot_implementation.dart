@@ -18,6 +18,7 @@ import 'package:flutter/gestures.dart'
         kPrimaryButton,
         kTouchSlop;
 import 'package:material_ui/material_ui.dart';
+import '../../../theme/theme_color.dart';
 
 import '../../../models/super_layout_config.dart';
 import '../component_tooltip.dart';
@@ -659,12 +660,12 @@ class _ZoneScrollableViewportState extends State<ZoneScrollableViewport> {
         mainAxisMargin: style.mainAxisMargin,
         crossAxisMargin: style.crossAxisMargin,
         thumbColor:
-            style.thumbColor ?? colors.onSurfaceVariant.withValues(alpha: 0.45),
+            style.thumbColor.resolveTheme(context) ?? colors.onSurfaceVariant.withValues(alpha: 0.45),
         trackColor:
-            style.trackColor ??
+            style.trackColor.resolveTheme(context) ??
             colors.surfaceContainerHighest.withValues(alpha: 0.35),
         trackBorderColor:
-            style.trackBorderColor ??
+            style.trackBorderColor.resolveTheme(context) ??
             (style.trackVisibility
                 ? colors.outlineVariant.withValues(alpha: 0.5)
                 : const Color(0x00000000)),

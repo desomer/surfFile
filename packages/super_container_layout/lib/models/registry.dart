@@ -12,6 +12,7 @@ import 'component_config.dart';
 import 'component_extension.dart';
 import 'native_component_config.dart';
 import 'super_list_view_config.dart';
+import 'super_conditional_config.dart';
 import 'super_tab_config.dart';
 import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
@@ -22,6 +23,7 @@ import 'super_separator_config.dart';
 import '../widgets/components/super_renderer.dart';
 import '../widgets/editing/components/super_renderer_editor.dart';
 import '../widgets/components/super_list_view.dart';
+import '../widgets/components/super_conditional.dart';
 import '../widgets/components/super_tab.dart';
 import '../widgets/components/super_table.dart';
 import '../widgets/components/super_tree_view.dart';
@@ -75,6 +77,7 @@ enum EditorConfigKind {
   separator,
   list,
   tab,
+  conditional,
   treeView,
   table,
 }
@@ -97,6 +100,8 @@ class EditorConfigRef {
   const EditorConfigRef.separator(this.id) : kind = EditorConfigKind.separator;
   const EditorConfigRef.list(this.id) : kind = EditorConfigKind.list;
   const EditorConfigRef.tab(this.id) : kind = EditorConfigKind.tab;
+  const EditorConfigRef.conditional(this.id)
+    : kind = EditorConfigKind.conditional;
   const EditorConfigRef.treeView(this.id) : kind = EditorConfigKind.treeView;
   const EditorConfigRef.table(this.id) : kind = EditorConfigKind.table;
 
@@ -181,6 +186,9 @@ class ComponentDuplicationContract {
     EditorConfigRef.nativeComponent(id),
   ];
   static List<EditorConfigRef> _tab(String id) => [EditorConfigRef.tab(id)];
+  static List<EditorConfigRef> _conditional(String id) => [
+    EditorConfigRef.conditional(id),
+  ];
   static List<EditorConfigRef> _component(String id) => [
     EditorConfigRef.component(id),
   ];
@@ -208,6 +216,9 @@ class ComponentDuplicationContract {
     ownedConfigs: _separator,
   );
   static const superTab = ComponentDuplicationContract(ownedConfigs: _tab);
+  static const superConditional = ComponentDuplicationContract(
+    ownedConfigs: _conditional,
+  );
   static const superTreeView = ComponentDuplicationContract(
     ownedConfigs: _treeView,
   );
@@ -356,6 +367,9 @@ class Registry {
   final Map<String, SuperListViewConfig> _listDefaults = {};
   final Map<String, ValueNotifier<SuperTabConfig>> tabConfigById = {};
   final Map<String, SuperTabConfig> _tabDefaults = {};
+  final Map<String, ValueNotifier<SuperConditionalConfig>>
+  conditionalConfigById = {};
+  final Map<String, SuperConditionalConfig> _conditionalDefaults = {};
   final Map<String, ValueNotifier<SuperTreeViewConfig>> treeViewConfigById = {};
   final Map<String, SuperTreeViewConfig> _treeViewDefaults = {};
   final Map<String, ValueNotifier<SuperTableConfig>> tableConfigById = {};
@@ -376,6 +390,7 @@ class Registry {
     ...separatorConfigById.keys,
     ...listConfigById.keys,
     ...tabConfigById.keys,
+    ...conditionalConfigById.keys,
     ...treeViewConfigById.keys,
     ...tableConfigById.keys,
   };
@@ -399,6 +414,8 @@ class Registry {
         entry.key: entry.value.value,
       for (final entry in listConfigById.entries) entry.key: entry.value.value,
       for (final entry in tabConfigById.entries) entry.key: entry.value.value,
+      for (final entry in conditionalConfigById.entries)
+        entry.key: entry.value.value,
       for (final entry in treeViewConfigById.entries)
         entry.key: entry.value.value,
       for (final entry in tableConfigById.entries) entry.key: entry.value.value,
@@ -461,6 +478,10 @@ class Registry {
       _tabDefaults[entry.key] = entry.value.value;
       tabController(entry.key, fallback: entry.value.value);
     }
+    for (final entry in conditionalConfigById.entries.toList()) {
+      _conditionalDefaults[entry.key] = entry.value.value;
+      conditionalController(entry.key, fallback: entry.value.value);
+    }
     for (final entry in treeViewConfigById.entries.toList()) {
       _treeViewDefaults[entry.key] = entry.value.value;
       treeViewController(entry.key, fallback: entry.value.value);
@@ -513,6 +534,7 @@ class Registry {
       ...separatorConfigById.values,
       ...listConfigById.values,
       ...tabConfigById.values,
+      ...conditionalConfigById.values,
       ...treeViewConfigById.values,
       ...tableConfigById.values,
     };
@@ -669,6 +691,12 @@ class Registry {
         entry.value.value = appearance.tabComponent(
           entry.key,
           fallback: _tabDefaults[entry.key]!,
+        );
+      }
+      for (final entry in conditionalConfigById.entries) {
+        entry.value.value = appearance.conditionalComponent(
+          entry.key,
+          fallback: _conditionalDefaults[entry.key]!,
         );
       }
       for (final entry in treeViewConfigById.entries) {
@@ -828,6 +856,19 @@ class Registry {
     controllers: tabConfigById,
     read: (a, k, f) => a.tabComponent(k, fallback: f),
     write: (a, k, v) => a.withTabComponent(k, v),
+    validate: (v) => v.validate(),
+  );
+
+  ValueNotifier<SuperConditionalConfig> conditionalController(
+    String id, {
+    SuperConditionalConfig? fallback,
+  }) => _bindTypedController(
+    id,
+    fallback: fallback ?? SuperConditionalConfig(),
+    defaults: _conditionalDefaults,
+    controllers: conditionalConfigById,
+    read: (a, k, f) => a.conditionalComponent(k, fallback: f),
+    write: (a, k, v) => a.withConditionalComponent(k, v),
     validate: (v) => v.validate(),
   );
 
@@ -1168,6 +1209,17 @@ class Registry {
       previewBuilder: _buildTabPreview,
       dartGenerator: const SuperTabDartGenerator(),
       dynamicBuilder: (ctx) => SuperTab(id: ctx.id),
+    );
+
+    registry['Conditional'] = ComponentBuilderDynamic(
+      label: 'Conditional / Switch',
+      menuIcon: Icons.call_split_outlined,
+      duplication: ComponentDuplicationContract.superConditional,
+      tags: const {'container', 'layout', 'conditional', 'data'},
+      addConfigurator: conditionalAddConfigurator,
+      previewBuilder: _buildConditionalPreview,
+      dartGenerator: const SuperConditionalDartGenerator(),
+      dynamicBuilder: (ctx) => SuperConditional(id: ctx.id),
     );
 
     registry['IterableContent'] = ComponentBuilderDynamic(

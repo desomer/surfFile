@@ -8,6 +8,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/component_behavior.dart';
 import '../../models/super_action_config.dart';
 import '../../theme/appearance.dart';
@@ -30,6 +32,7 @@ Widget buildSuperActionVisual({
 }) {
   final variant = config.effectiveVariant(inTab: inTab);
   final scheme = Theme.of(context).colorScheme;
+  textStyle = textStyle.copyWith(color: textStyle.color.resolveTheme(context));
   final effectiveOnPressed = config.enabled ? (onPressed ?? () {}) : null;
   final align = switch (config.textAlign) {
     TextAlign.start || TextAlign.left => MainAxisAlignment.start,
@@ -38,7 +41,9 @@ Widget buildSuperActionVisual({
   };
   final hasIcon = config.kind.hasIcon && config.icon.trim().isNotEmpty;
   final iconData = hasIcon ? SuperActionIcons.resolve(config.icon) : null;
-  final effectiveIconColor = config.iconColor ?? config.color;
+  final effectiveIconColor =
+      config.iconColor.resolveTheme(context) ??
+      config.color.resolveTheme(context);
   final iconWidget = hasIcon
       ? Icon(
           iconData,
@@ -101,8 +106,12 @@ Widget buildSuperActionVisual({
   Widget button;
   if (hasCustomSurface) {
     final surfaceStyle = config.style.copyWith(
-      color: config.backgroundColor ?? config.style.color,
-      borderColor: config.borderColor ?? config.style.borderColor,
+      color:
+          config.backgroundColor.resolveTheme(context) ??
+          config.style.color.resolveTheme(context),
+      borderColor:
+          config.borderColor.resolveTheme(context) ??
+          config.style.borderColor.resolveTheme(context),
       radius: config.radius ?? config.style.radius,
       borderWidth: config.borderWidth ?? config.style.borderWidth,
       elevation: config.elevation ?? config.style.elevation,
@@ -138,14 +147,14 @@ Widget buildSuperActionVisual({
             horizontal: config.kind == SuperActionKind.icon ? 10 : 16,
             vertical: 10,
           );
-    final fg = config.color ?? defaultFg;
+    final fg = config.color.resolveTheme(context) ?? defaultFg;
     button = Padding(
       padding: surfaceStyle.outerMargin,
       child: StyledSurface(
         key: buttonKey,
         style: surfaceStyle,
         fallbackColor: defaultBg,
-        borderColor: config.borderColor ?? scheme.outline,
+        borderColor: config.borderColor.resolveTheme(context) ?? scheme.outline,
         child: InkWell(
           focusNode: focusNode,
           borderRadius: surfaceStyle.borderRadius,
@@ -170,9 +179,13 @@ Widget buildSuperActionVisual({
       button = Opacity(opacity: 0.45, child: button);
     }
   } else {
-    final bg = config.backgroundColor ?? config.style.color;
-    final fg = config.color;
-    final bColor = config.borderColor ?? config.style.borderColor;
+    final bg =
+        config.backgroundColor.resolveTheme(context) ??
+        config.style.color.resolveTheme(context);
+    final fg = config.color.resolveTheme(context);
+    final bColor =
+        config.borderColor.resolveTheme(context) ??
+        config.style.borderColor.resolveTheme(context);
     final bWidth =
         config.borderWidth ??
         (config.style.borderWidth > 0 ? config.style.borderWidth : null);
@@ -316,16 +329,23 @@ Widget buildSuperActionTabVisual({
     SuperActionVariant.icon => scheme.onSurfaceVariant,
   };
   final fg =
-      config.color ??
+      config.color.resolveTheme(context) ??
       ((variant == SuperActionVariant.filled ||
               variant == SuperActionVariant.surface)
           ? defaultFg
           : null);
-  final effectiveIconColor = config.iconColor ?? fg ?? config.color;
+  final effectiveIconColor =
+      config.iconColor.resolveTheme(context) ??
+      fg ??
+      config.color.resolveTheme(context);
 
   final surfaceStyle = config.style.copyWith(
-    color: config.backgroundColor ?? config.style.color,
-    borderColor: config.borderColor ?? config.style.borderColor,
+    color:
+        config.backgroundColor.resolveTheme(context) ??
+        config.style.color.resolveTheme(context),
+    borderColor:
+        config.borderColor.resolveTheme(context) ??
+        config.style.borderColor.resolveTheme(context),
     radius: config.radius ?? config.style.radius,
     borderWidth: config.borderWidth ?? config.style.borderWidth,
     elevation:
@@ -397,7 +417,7 @@ Widget buildSuperActionTabVisual({
       : const EdgeInsets.symmetric(horizontal: 8, vertical: 4);
 
   final effectiveBorderColor =
-      config.borderColor ??
+      config.borderColor.resolveTheme(context) ??
       (variant == SuperActionVariant.outlined
           ? scheme.outline
           : Colors.transparent);
@@ -405,8 +425,8 @@ Widget buildSuperActionTabVisual({
   final hasSurface =
       (variant != SuperActionVariant.text &&
           variant != SuperActionVariant.icon) ||
-      config.backgroundColor != null ||
-      config.borderColor != null ||
+      config.backgroundColor.resolveTheme(context) != null ||
+      config.borderColor.resolveTheme(context) != null ||
       (config.borderWidth != null && config.borderWidth! > 0) ||
       (config.radius != null && config.radius! > 0) ||
       (config.elevation != null && config.elevation! > 0) ||

@@ -165,7 +165,7 @@ class ShadowSpec {
 
   Map<String, Object?> toJson() => {
     'enabled': enabled,
-    'color': color.toARGB32(),
+    'color': JsonColor.toJson(color),
     'opacity': opacity,
     'blur': blur,
     'spread': spread,
@@ -223,7 +223,7 @@ class ShadowSpec {
       identical(this, other) ||
       (other is ShadowSpec &&
           other.enabled == enabled &&
-          other.color.toARGB32() == color.toARGB32() &&
+          JsonColor.toJson(other.color) == JsonColor.toJson(color) &&
           other.opacity == opacity &&
           other.blur == blur &&
           other.spread == spread &&
@@ -232,7 +232,7 @@ class ShadowSpec {
 
   @override
   int get hashCode =>
-      Object.hash(enabled, color.toARGB32(), opacity, blur, spread, dx, dy);
+      Object.hash(enabled, JsonColor.toJson(color), opacity, blur, spread, dx, dy);
 }
 
 /// Transformation appliquée à la surface (rotation en degrés).

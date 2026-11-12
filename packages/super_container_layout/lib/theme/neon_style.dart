@@ -32,7 +32,7 @@ class NeonStyle {
 
   Map<String, Object?> toJson() => {
     'enabled': enabled,
-    'color': color?.toARGB32(),
+    'color': JsonColor.toJsonNullable(color),
     'intensity': intensity,
   };
 
@@ -76,9 +76,9 @@ class NeonStyle {
       identical(this, other) ||
       (other is NeonStyle &&
           other.enabled == enabled &&
-          other.color?.toARGB32() == color?.toARGB32() &&
+          JsonColor.toJsonNullable(other.color) == JsonColor.toJsonNullable(color) &&
           other.intensity == intensity);
 
   @override
-  int get hashCode => Object.hash(enabled, color?.toARGB32(), intensity);
+  int get hashCode => Object.hash(enabled, JsonColor.toJsonNullable(color), intensity);
 }

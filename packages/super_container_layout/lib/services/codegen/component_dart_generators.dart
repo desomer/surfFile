@@ -6,6 +6,7 @@ library;
 
 export 'generators/super_action_dart_generator.dart';
 export 'generators/super_card_dart_generator.dart';
+export 'generators/super_conditional_dart_generator.dart';
 export 'generators/super_indicator_dart_generator.dart';
 export 'generators/super_iterable_content_dart_generator.dart';
 export 'generators/super_layout_dart_generator.dart';

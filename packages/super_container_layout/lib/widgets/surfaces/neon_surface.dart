@@ -4,6 +4,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import '../../theme/theme_color.dart';
 
 import '../../theme/neon_style.dart';
 
@@ -29,7 +30,7 @@ class NeonSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!style.enabled || style.intensity == 0) return child;
-    final color = style.color ?? accent;
+    final color = (style.color ?? accent).resolveTheme(context)!;
     final strength = style.intensity;
     final borderRadius = corners ?? BorderRadius.circular(radius);
     return Container(

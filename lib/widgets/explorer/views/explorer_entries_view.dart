@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout, kDoubleTapSlop;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/theme_color.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 
 import '../../../theme/surffile_appearance_slots.dart';
@@ -355,7 +356,7 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                   hover: (selected ? style : cardStyle).hoverEffect,
                   hoverColor: (selected ? style : cardStyle).hoverBase(
                     appearance.accent,
-                  ),
+                  ).resolveTheme(context),
                   radius: radius,
                   builder: (context, boost) => NeonSurface(
                     key: cardKey,
@@ -378,9 +379,9 @@ class _ExplorerEntriesViewState extends State<ExplorerEntriesView> {
                         borderRadius: BorderRadius.circular(radius),
                         side: BorderSide(
                           color: selected
-                              ? style.borderColor ??
+                              ? style.borderColor.resolveTheme(context) ??
                                     Theme.of(context).colorScheme.primary
-                              : cardStyle.borderColor ??
+                              : cardStyle.borderColor.resolveTheme(context) ??
                                     Theme.of(context)
                                         .colorScheme
                                         .outlineVariant,
@@ -573,7 +574,7 @@ class _EntryRowState extends State<_EntryRow> {
           effect: rowStyle.interactionEffect,
           ownsHover: true,
           hover: rowStyle.hoverEffect,
-          hoverColor: rowStyle.hoverBase(appearance.accent),
+          hoverColor: rowStyle.hoverBase(appearance.accent).resolveTheme(context),
           radius: radius,
           builder: (context, _) => Material(
             type: MaterialType.transparency,

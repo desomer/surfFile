@@ -14,6 +14,7 @@ import '../../services/repositories/json_repository_scope.dart';
 import '../../services/states/surface_state_binding.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/container_style.dart';
+import '../../theme/theme_color.dart';
 import '../../theme/design_system.dart';
 import '../../theme/interaction_effect.dart';
 import '../../theme/style_extras.dart';
@@ -132,8 +133,9 @@ class StyledSurface extends StatelessWidget {
     return _buildBox(context, style);
   }
 
-  Widget _buildBox(BuildContext context, ContainerStyle effectiveStyle) =>
-      InteractionEffectBox(
+  Widget _buildBox(BuildContext context, ContainerStyle sourceStyle) {
+    final effectiveStyle = sourceStyle.resolveThemeColors(Theme.of(context).colorScheme);
+    return InteractionEffectBox(
         effect: effectiveStyle.interactionEffect,
         hover: effectiveStyle.hoverEffect,
         hoverColor: effectiveStyle.hoverBase(
@@ -144,6 +146,7 @@ class StyledSurface extends StatelessWidget {
         builder: (context, elevationBoost) =>
             _surface(context, effectiveStyle, elevationBoost),
       );
+  }
 
   Widget _surface(
     BuildContext context,
@@ -157,7 +160,7 @@ class StyledSurface extends StatelessWidget {
     final gradient = style.fill.gradient();
     final image = style.fill.decorationImage();
     final borderSide = BorderSide(
-      color: style.borderColor ?? borderColor,
+      color: style.borderColor ?? resolveThemeColor(borderColor, Theme.of(context).colorScheme),
       width: style.borderWidth,
       style: style.borderWidth == 0 ? BorderStyle.none : BorderStyle.solid,
     );
@@ -168,7 +171,7 @@ class StyledSurface extends StatelessWidget {
     final plain = style.plainBorder;
     final hasOverlay =
         style.pattern != SurfacePattern.none || style.hasInnerShadow;
-    final baseColor = style.color ?? fallbackColor;
+    final baseColor = style.color ?? resolveThemeColor(fallbackColor, Theme.of(context).colorScheme);
     Widget content = hasOverlay
         ? Stack(
             fit: StackFit.passthrough,
@@ -217,7 +220,7 @@ class StyledSurface extends StatelessWidget {
       material = CustomPaint(
         foregroundPainter: StyleBorderPainter(
           widths: style.sideWidths,
-          color: style.borderColor ?? borderColor,
+          color: style.borderColor ?? resolveThemeColor(borderColor, Theme.of(context).colorScheme),
           radii: radius,
           line: style.borderLine,
         ),

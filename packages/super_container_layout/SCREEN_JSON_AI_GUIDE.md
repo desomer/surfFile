@@ -15,6 +15,7 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | Concept | Syntaxe recommandée pour l'IA | Syntaxes alternatives acceptées |
 | :--- | :--- | :--- |
 | **Couleurs** | Chaîne hexadécimale `"#RRGGBB"` (ex: `"#5268D9"`) ou `"#AARRGGBB"` avec transparence (ex: `"#80FFFFFF"`) | `"#RGB"`, `"#ARGB"`, `"0xAARRGGBB"` ou entier ARGB 32 bits |
+| **Couleurs du thème** | `"theme:primary"`, `"theme:onPrimary"`, `"theme:primaryContainer"`, `"theme:onPrimaryContainer"` | Rôles `ColorScheme` Material 3 : `secondary*`, `tertiary*`, `surface`, `onSurface`, `onSurfaceVariant`, `surfaceDim`, `surfaceBright`, `surfaceContainer*`, `outline`, `outlineVariant`, `inverseSurface`, `onInverseSurface`, `inversePrimary`, `error*`, `onError*`, `shadow`, `scrim`, `surfaceTint` et rôles `*Fixed*` |
 | **Dimensions de slot** | `"64px"`, `"50%"`, ou nombre `64` (pixels) | `{"value": 64, "unit": "px" \| "percent"}` |
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
@@ -22,6 +23,16 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:Indicator"`, `"registry:Separator"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:Chart"`, `"registry:TreeView"`, `"registry:Table"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"`, `"registry:BottomAppBar"`, `"registry:NavigationRail"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"Indicator"`, `"SuperIndicator"`, `"Icon"`, `"Separator"`, `"SuperSeparator"`, `"Divider"`, `"Spacer"`, `"ListView"`, `"List"`, `"Tab"`, `"Tabs"`, `"Chart"`, `"Graph"`, `"SuperChart"`, `"AppBar"`, `"BottomBar"`, `"NavigationRail"`, `"Rail"` |
 
 ---
+
+Les références `theme:rôle` sont sensibles à la casse et suivent le thème actif
+au rendu : elles ne sont pas converties en hexadécimal lors de la sauvegarde ou
+de l'export compact. Les rôles inconnus sont rejetés. Elles s'utilisent dans les
+propriétés de couleur des composants, styles, états, dégradés, ombres et néons.
+Exemple : `"styles": {"card": {"color": "theme:primaryContainer",
+"borderColor": "theme:outline"}}`. La propriété racine `accent` reste une couleur
+fixe, puisqu'elle sert à générer le `ColorScheme`. Pour le style `background`,
+les rôles sont résolus depuis le schéma généré par cet accent et la luminosité
+demandée, sans boucle de dépendance avec la couleur du fond.
 
 ## 2. Architecture GenUI : Un seul format plat par ID
 
@@ -36,6 +47,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
    - `"separator"` (`SuperSeparatorConfig`, séparateur `divider` ou espaceur `spacer`, horizontal ou vertical, avec ou sans libellé)
    - `"list"` (`SuperListViewConfig`, qui embarque directement son `"template"` de ligne)
    - `"tab"` (`SuperTabConfig`, barre d'onglets `TabBar` + vues `TabBarView` en mode statique ou dynamique)
+   - `"conditional"` (`SuperConditionalConfig`, conteneur conditionnel choisissant la branche `"case:<valeur>"` ou `"default"` selon une liaison de repository)
    - `"chart"` (`SuperChartConfig`, graphique `fl_chart` lié à un tableau JSON)
    - `"treeView"` (`SuperTreeViewConfig`, arbre hiérarchique à 2 zones `header` et `data`)
    - `"table"` (`SuperTableConfig`, tableau multi-colonnes avec colonnes figées et `IterableContent` de ligne)
@@ -561,6 +573,43 @@ Affiche un conteneur à onglets combinant une barre d'onglets (`TabBar`) et une 
       "type": "value",
       "mode": "display",
       "binding": "pan_model_repository:categories[?].description"
+    }
+  }
+}
+```
+
+### 4.6 bis. `"conditional"` (`SuperConditionalConfig`) — Conteneur conditionnel par valeur de repository
+
+Affiche dynamiquement la branche d'enfants correspondant à la valeur courante d'un attribut de repository JSON (sans barre d'onglets en mode normal, et avec une barre de sélection des cas en mode édition). Pour placer un `SuperConditional` dans un parent, utilise le type `"registry:Conditional"` (ou `"Conditional"`, `"SuperConditional"`, `"SwitchCase"`), et déclare sa configuration dans `components[conditionalId]` avec `"type": "conditional"`.
+
+- **Propriétés de `SuperConditionalConfig`** :
+  - `binding` : chemin vers l'attribut scalaire du repository (`string`, `bool` ou `number`), avec support des jokers `[?]` résolus via `JsonListScope` ou la sélection Maître / Détail (ex: `"pan_model_repository:nodes[?].type"`).
+  - `cases` : `List<String>` — liste ordonnée des valeurs de cas nommés (ex: `["string", "number", "boolean"]`). Tout cas `"case:<valeur>"` présent dans `placements` est automatiquement inclus dans `cases`.
+  - `hasDefaultCase` : `bool` (`true` par défaut) — active la zone de repli `"default"` lorsque la valeur liée ne correspond à aucun cas de `cases`.
+  - `initialCase` : `string` (`""` par défaut) — cas affiché avant résolution ou lorsque la valeur liée est vide.
+  - `maintainState` : `bool` (`false` par défaut) — maintient en mémoire l'état des branches inactives via `IndexedStack`.
+  - `emptyText` : `string` (`""` par défaut) — message affiché hors édition si aucune branche ne correspond et que `hasDefaultCase` vaut `false`.
+  - `placements` : associe chaque zone `"case:<valeur>"` (et `"default"`) à la liste des composants enfants placés dans cette branche. Supporte également `zoneAxes`, `zoneFlows`, `slotSizeConstraints`, `slotPreferredSizes` et `slotLabels`.
+
+```json
+{
+  "components": {
+    "cond-validator": {
+      "type": "conditional",
+      "binding": "pan_model_repository:nodes[?].type",
+      "cases": ["string", "number"],
+      "hasDefaultCase": true,
+      "placements": {
+        "case:string": [
+          { "id": "pan-string-validator", "type": "panAttrStringValidator" }
+        ],
+        "case:number": [
+          { "id": "val-num-min", "type": "Value" }
+        ],
+        "default": [
+          { "id": "val-no-validator", "type": "Value" }
+        ]
+      }
     }
   }
 }

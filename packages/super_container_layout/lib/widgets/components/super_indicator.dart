@@ -8,6 +8,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/automatic_state.dart';
 import '../../models/super_indicator_config.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -46,10 +48,8 @@ Object _parseBoundIndicatorProperty(
   SuperIndicatorProperty.iconColor ||
   SuperIndicatorProperty.backgroundColor ||
   SuperIndicatorProperty.borderColor => BoundPropertyParsers.parseColor(value),
-  SuperIndicatorProperty.fontSize ||
-  SuperIndicatorProperty.iconSize => BoundPropertyParsers.parsePositiveDouble(
-    value,
-  ),
+  SuperIndicatorProperty.fontSize || SuperIndicatorProperty.iconSize =>
+    BoundPropertyParsers.parsePositiveDouble(value),
   SuperIndicatorProperty.radius ||
   SuperIndicatorProperty.borderWidth ||
   SuperIndicatorProperty.elevation =>
@@ -281,7 +281,7 @@ class _SuperIndicatorState extends State<SuperIndicator>
             fontSize: config.fontSize,
             fontWeight: config.fontWeight,
             italic: config.italic,
-            color: config.color,
+            color: config.color.resolveTheme(context),
             letterSpacing: config.letterSpacing,
           );
 

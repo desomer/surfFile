@@ -14,6 +14,7 @@ import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_renderer_config.dart';
 import '../../../models/super_separator_config.dart';
+import '../../../models/super_conditional_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
@@ -23,6 +24,7 @@ import '../../../theme/container_fill.dart';
 import '../../../theme/container_style.dart';
 import '../../../theme/neon_style.dart';
 import '../../../theme/style_extras.dart';
+import '../../../theme/theme_color.dart';
 import 'component_dart_generator.dart';
 
 /// Contexte partagé lors de la génération d'un arbre de composants en code Dart.
@@ -223,6 +225,9 @@ class DartCodegenContext {
 
   /// Formate une couleur en expression `Color(0xAARRGGBB)`.
   String formatColor(Color color, {bool includeConst = false}) {
+    if (color is ThemeColor) {
+      return '${includeConst ? 'const ' : ''}ThemeColor(ThemeColorRole.${color.role.name})';
+    }
     final hex = color
         .toARGB32()
         .toRadixString(16)
@@ -928,6 +933,7 @@ class DartCodegenContext {
       SuperSeparatorConfig() => 'Separator',
       SuperListViewConfig() => 'ListView',
       SuperTabConfig() => 'Tab',
+      SuperConditionalConfig() => 'Conditional',
       SuperTreeViewConfig() => 'TreeView',
       SuperTableConfig() => 'Table',
       SuperRendererConfig() => 'Renderer',

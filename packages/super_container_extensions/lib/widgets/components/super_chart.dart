@@ -397,7 +397,7 @@ class _SuperChartState extends State<SuperChart> {
 
   Color _seriesColor(SuperChartConfig config, int seriesIndex) {
     final explicit = config.series[seriesIndex].color;
-    if (explicit != null) return explicit;
+    if (explicit != null) return resolveThemeColor(explicit, Theme.of(context).colorScheme);
     return defaultChartSeriesPalette[seriesIndex %
         defaultChartSeriesPalette.length];
   }

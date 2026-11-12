@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:super_container_layout/theme/neon_style.dart';
+import 'package:super_container_layout/models/json_syntax.dart';
 
 /// Forme de la jauge d'occupation d'un disque.
 enum DiskGaugeShape {
@@ -189,10 +190,10 @@ class DiskGaugeStyle {
     'size': size,
     'thickness': thickness,
     'roundCaps': roundCaps,
-    'trackColor': trackColor?.toARGB32(),
-    'fillColor': fillColor?.toARGB32(),
-    'gradient': [for (final color in gradient) color.toARGB32()],
-    'alertColor': alertColor?.toARGB32(),
+    'trackColor': JsonColor.toJsonNullable(trackColor),
+    'fillColor': JsonColor.toJsonNullable(fillColor),
+    'gradient': [for (final color in gradient) JsonColor.toJson(color)],
+    'alertColor': JsonColor.toJsonNullable(alertColor),
     'alertThreshold': alertThreshold,
     'start': start.name,
     'clockwise': clockwise,
@@ -238,10 +239,7 @@ class DiskGaugeStyle {
     }
 
     Color toColor(Object? v, String key) {
-      if (v is! int || v < 0 || v > 0xFFFFFFFF) {
-        throw FormatException('Couleur invalide pour "$key".');
-      }
-      return Color(v);
+      return JsonColor.parse(v, key);
     }
 
     Color? color(String key) {

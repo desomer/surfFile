@@ -17,6 +17,7 @@ import '../models/super_action_config.dart';
 import '../models/super_indicator_config.dart';
 import '../models/super_separator_config.dart';
 import '../models/super_list_view_config.dart';
+import '../models/super_conditional_config.dart';
 import '../models/editor_page_config.dart';
 import 'appearance.dart';
 import 'container_fill.dart';
@@ -133,6 +134,12 @@ class DefaultAppearance extends Appearance {
   ) => withComponent(id, value);
 
   @override
+  DefaultAppearance withConditionalComponent(
+    String id,
+    SuperConditionalConfig value,
+  ) => withComponent(id, value);
+
+  @override
   DefaultAppearance withListComponent(String id, SuperListViewConfig value) {
     final existing = components[id];
     final merged =
@@ -227,12 +234,13 @@ Color defaultCardColor(BuildContext context) {
       : Colors.white;
 }
 
-/// Solid color of a card drawn with the resolved [style].
+/// Solid color of a card drawn with the resolved [sourceStyle].
 Color cardColor(
   BuildContext context,
-  ContainerStyle style, {
+  ContainerStyle sourceStyle, {
   bool selected = false,
 }) {
+  final style = sourceStyle.resolveThemeColors(Theme.of(context).colorScheme);
   if (style.fill.type != FillType.solid) {
     return Color.lerp(style.fill.start, style.fill.end, .5)!;
   }
@@ -244,4 +252,3 @@ Color cardColor(
 
 Color foregroundForCard(Color background) =>
     ContainerStyle.foregroundFor(background);
-

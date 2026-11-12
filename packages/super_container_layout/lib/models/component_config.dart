@@ -14,6 +14,7 @@ import 'super_indicator_config.dart';
 import 'super_separator_config.dart';
 import 'super_layout_config.dart';
 import 'super_list_view_config.dart';
+import 'super_conditional_config.dart';
 import 'super_tab_config.dart';
 import 'super_table_config.dart';
 import 'super_tree_view_config.dart';
@@ -72,6 +73,10 @@ abstract final class ComponentConfigCatalog {
     'tab': ComponentConfigCodec<SuperTabConfig>(
       type: 'tab',
       fromJson: SuperTabConfig.fromJson,
+    ),
+    'conditional': ComponentConfigCodec<SuperConditionalConfig>(
+      type: 'conditional',
+      fromJson: SuperConditionalConfig.fromJson,
     ),
     'treeView': ComponentConfigCodec<SuperTreeViewConfig>(
       type: 'treeView',

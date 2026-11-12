@@ -11,7 +11,6 @@ import 'package:super_container_layout/super_container_layout.dart';
 import '../../extensions_registry.dart';
 import '../../models/super_code_config.dart';
 import '../editing/components/super_code_editor.dart';
-import 'internal_widget/code_editor.dart';
 
 /// Composant Code configurable; aucune execution du code saisi.
 class SuperCode extends SuperStatefulComponent<SuperCodeConfig>

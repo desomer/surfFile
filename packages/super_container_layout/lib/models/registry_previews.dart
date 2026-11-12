@@ -536,6 +536,53 @@ Widget _buildTabPreview(BuildContext context) {
   );
 }
 
+Widget _buildConditionalPreview(BuildContext context) {
+  final colors = Theme.of(context).colorScheme;
+  Widget chip(String title, {bool selected = false}) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: selected ? colors.primaryContainer : colors.surfaceContainerHigh,
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+        color: selected ? colors.primary : colors.outlineVariant,
+      ),
+    ),
+    child: Text(
+      title,
+      style: TextStyle(
+        fontSize: 10,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+        color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+      ),
+    ),
+  );
+  return IgnorePointer(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.call_split_outlined, size: 15, color: colors.primary),
+            const SizedBox(width: 6),
+            chip('string', selected: true),
+            const SizedBox(width: 4),
+            chip('number'),
+            const SizedBox(width: 4),
+            chip('default'),
+          ],
+        ),
+        const SizedBox(height: 6),
+        _previewZoneBox(
+          context,
+          'Contenu du cas actif (selon binding)',
+          highlighted: true,
+        ),
+      ],
+    ),
+  );
+}
+
 Widget _buildIterableContentPreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;

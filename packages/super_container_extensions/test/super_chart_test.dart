@@ -66,6 +66,18 @@ void main() {
   }
 
   group('SuperChartConfig serialization & validation', () {
+    test('series preserve dynamic theme colors in both JSON formats', () {
+      const color = ThemeColor(ThemeColorRole.primary);
+      const series = SuperChartSeries(
+        id: 'themed',
+        label: 'Thème',
+        valuePath: 'ca',
+        color: color,
+      );
+      expect(SuperChartSeries.fromJson(series.toJson()).color, color);
+      expect(SuperChartSeries.fromJson(series.toCompactJson()).color, color);
+    });
+
     test('round-trips through toTypedJson and ComponentConfig.fromJson', () {
       final config = SuperChartConfig(
         binding: JsonTextBinding(repositoryId: repository, path: 'ventes'),

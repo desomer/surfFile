@@ -8,6 +8,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../theme/theme_color.dart';
+
 import '../../models/automatic_state.dart';
 import '../../models/super_separator_config.dart';
 import '../../services/repositories/json_list_scope.dart';
@@ -37,12 +39,11 @@ Object _parseBoundSeparatorProperty(
   ),
   SuperSeparatorProperty.lineColor ||
   SuperSeparatorProperty.color => BoundPropertyParsers.parseColor(value),
-  SuperSeparatorProperty.thickness || SuperSeparatorProperty.fontSize =>
-    BoundPropertyParsers.parsePositiveDouble(
-      value,
-      errorMessage:
-          'La taille ou épaisseur liée doit être un nombre positif.',
-    ),
+  SuperSeparatorProperty.thickness ||
+  SuperSeparatorProperty.fontSize => BoundPropertyParsers.parsePositiveDouble(
+    value,
+    errorMessage: 'La taille ou épaisseur liée doit être un nombre positif.',
+  ),
   SuperSeparatorProperty.extent ||
   SuperSeparatorProperty.indent ||
   SuperSeparatorProperty.endIndent =>
@@ -100,9 +101,7 @@ class _SuperSeparatorState extends State<SuperSeparator>
   ) {
     syncSurfaceStateReader(saved.states?.binding, scope, store);
     try {
-      automaticActiveStates = {
-        if (contentHovered) AutomaticState.contentHover,
-      };
+      automaticActiveStates = {if (contentHovered) AutomaticState.contentHover};
       final config =
           saved.states?.resolve(
             saved,
@@ -222,7 +221,7 @@ class _SuperSeparatorState extends State<SuperSeparator>
             fontSize: config.fontSize,
             fontWeight: config.fontWeight,
             italic: config.italic,
-            color: config.color,
+            color: config.color.resolveTheme(context),
             letterSpacing: config.letterSpacing,
           );
 

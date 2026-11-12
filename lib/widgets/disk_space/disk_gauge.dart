@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/theme/theme_color.dart';
 import 'package:surf_file/theme/disk_gauge_style.dart';
 
 
@@ -121,10 +122,11 @@ class _DiskGaugeState extends State<DiskGauge> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final style = widget.style;
     final alert = widget.alert;
-    final color = alert ? widget.alertColor : widget.fillColor;
-    final neonColor = alert
+    final scheme = Theme.of(context).colorScheme;
+    final color = resolveThemeColor(alert ? widget.alertColor : widget.fillColor, scheme);
+    final neonColor = resolveThemeColor(alert
         ? widget.alertColor
-        : style.trackNeon.color ?? color;
+        : style.trackNeon.color ?? color, scheme);
     final percentage = widget.value == null
         ? '—'
         : '${(widget.value! * 100).round()} %';
@@ -166,8 +168,10 @@ class _DiskGaugeState extends State<DiskGauge> with TickerProviderStateMixin {
             value: _current,
             style: style,
             fillColor: color,
-            gradient: alert ? const [] : style.gradient,
-            trackColor: widget.trackColor,
+            gradient: alert ? const [] : [
+              for (final color in style.gradient) resolveThemeColor(color, scheme),
+            ],
+            trackColor: resolveThemeColor(widget.trackColor, scheme),
             neonColor: neonColor,
             glow: glow,
           );

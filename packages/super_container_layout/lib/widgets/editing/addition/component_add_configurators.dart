@@ -4,12 +4,14 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import '../../../models/json_syntax.dart';
 
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
+import '../../../models/super_conditional_config.dart';
 import '../../../models/super_tab_config.dart';
 import '../../../models/super_table_config.dart';
 import '../../../models/super_tree_view_config.dart';
@@ -28,6 +30,7 @@ import 'forms/super_action_add_form.dart';
 import 'forms/super_indicator_add_form.dart';
 import 'forms/super_separator_add_form.dart';
 import 'forms/super_value_add_form.dart';
+import 'forms/conditional_add_form.dart';
 import 'forms/tab_add_form.dart';
 import 'forms/table_add_form.dart';
 import 'forms/tree_view_add_form.dart';
@@ -44,6 +47,7 @@ export 'forms/super_action_add_form.dart' show SuperActionAddForm;
 export 'forms/super_indicator_add_form.dart' show SuperIndicatorAddForm;
 export 'forms/super_separator_add_form.dart' show SuperSeparatorAddForm;
 export 'forms/super_value_add_form.dart' show SuperValueAddForm;
+export 'forms/conditional_add_form.dart' show ConditionalAddForm;
 export 'forms/tab_add_form.dart' show TabAddForm;
 export 'forms/table_add_form.dart' show TableAddForm;
 export 'forms/tree_view_add_form.dart' show TreeViewAddForm;
@@ -402,7 +406,7 @@ final containerAddConfigurator = ComponentAddConfigurator<ContainerStyle>(
       'Couleur',
       draft.color == null
           ? 'Par défaut'
-          : '#${draft.color!.toARGB32().toRadixString(16).padLeft(8, '0')}',
+          : JsonColor.toHex(draft.color!),
     ),
     ('Rayon', draft.radius.toStringAsFixed(0)),
     ('Bordure', draft.borderWidth.toStringAsFixed(0)),
@@ -543,6 +547,45 @@ final tabAddConfigurator = ComponentAddConfigurator<SuperTabConfig>(
   bindingPathHint: 'categories ou ui.ongletActif',
   bindingHelp: 'En mode dynamique : tableau JSON générant les onglets. En mode statique : index actif.',
 );
+
+/// Add wizard settings of a `SuperConditional`, written to `Registry.conditionalController`.
+final conditionalAddConfigurator =
+    ComponentAddConfigurator<SuperConditionalConfig>(
+      initial: (_) => SuperConditionalConfig(),
+      builder: (context, draft, onChanged) =>
+          ConditionalAddForm(draft: draft, onChanged: onChanged),
+      validate: (draft) {
+        if (draft.binding?.path.trim().isEmpty ?? false) {
+          return 'Chemin de liaison requis.';
+        }
+        try {
+          draft.validate();
+          return null;
+        } on FormatException catch (error) {
+          return error.message;
+        } on Object {
+          return 'Configuration conditionnelle invalide.';
+        }
+      },
+      summary: (draft) => [
+        (
+          'Cas',
+          draft.cases.isEmpty ? 'Aucun' : draft.cases.join(', '),
+        ),
+        ('Branche default', _yes(draft.hasDefaultCase)),
+        ('Maintenir l’état', _yes(draft.maintainState)),
+        ('Liaison', _bindingLabel(draft.binding)),
+      ],
+      apply: (registry, id, draft) =>
+          registry.conditionalController(id).value = draft,
+      readBinding: (draft) => draft.binding,
+      writeBinding: (draft, binding) =>
+          draft.copyWith(binding: binding, clearBinding: binding == null),
+      bindingKeyPrefix: 'add-conditional',
+      bindingPathHint: 'nodes[?].type ou ui.mode',
+      bindingHelp:
+          'La valeur de cet attribut sélectionne la branche « case:<valeur> » affichée.',
+    );
 
 String _yes(bool value) => value ? 'oui' : 'non';
 

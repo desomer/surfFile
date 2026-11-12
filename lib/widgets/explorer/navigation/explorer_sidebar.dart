@@ -89,7 +89,7 @@ class ExplorerSidebar extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: style.foreground,
+                        color: style.foregroundForTheme(Theme.of(context).colorScheme),
                       ),
                     ),
                   ),
@@ -131,7 +131,7 @@ class ExplorerSidebarPlaces extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = AppearanceScope.of(context).style('sidebar').foreground;
+    final foreground = AppearanceScope.of(context).style('sidebar').foregroundForTheme(Theme.of(context).colorScheme);
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -386,8 +386,8 @@ class _LocationItemState extends State<_LocationItem> {
                 : SurfFileAppearanceSlots.folder)
             .read(appearance);
     final foreground = selected
-        ? style.foreground
-        : style.foreground ?? appearance.style('sidebar').foreground;
+        ? style.foregroundForTheme(Theme.of(context).colorScheme)
+        : style.foregroundForTheme(Theme.of(context).colorScheme) ?? appearance.style('sidebar').foregroundForTheme(Theme.of(context).colorScheme);
     final item = Padding(
       padding: const EdgeInsets.only(bottom: 3),
       child: EditableSurface(

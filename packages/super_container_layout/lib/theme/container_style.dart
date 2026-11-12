@@ -16,6 +16,7 @@ import 'design_system.dart';
 import 'interaction_effect.dart';
 import 'neon_style.dart';
 import 'style_extras.dart';
+import 'theme_color.dart';
 
 import '../models/automatic_state.dart';
 
@@ -118,6 +119,24 @@ class ContainerStyle {
   final SurfaceStyleStates? states;
 
   static const maxBlur = 40.0;
+
+  /// Résout les couleurs pour le rendu sans altérer les références persistées.
+  ContainerStyle resolveThemeColors(ColorScheme scheme) => copyWith(
+    color: resolveOptionalThemeColor(color, scheme),
+    borderColor: resolveOptionalThemeColor(borderColor, scheme),
+    hoverColor: resolveOptionalThemeColor(hoverColor, scheme),
+    fill: fill.copyWith(
+      start: resolveThemeColor(fill.start, scheme),
+      end: resolveThemeColor(fill.end, scheme),
+    ),
+    neon: neon?.copyWith(color: resolveOptionalThemeColor(neon?.color, scheme)),
+    shadow: shadow?.copyWith(
+      color: resolveThemeColor(shadow!.color, scheme),
+    ),
+    innerShadow: innerShadow?.copyWith(
+      color: resolveThemeColor(innerShadow!.color, scheme),
+    ),
+  );
 
   JsonTextBinding? get imageBinding =>
       propertyBindings[ContainerStyleProperty.imageUrl] ?? fill.imageBinding;
@@ -276,17 +295,21 @@ class ContainerStyle {
       ? null
       : foregroundFor(color!);
 
+  /// Calcule le contraste après résolution des références de thème.
+  Color? foregroundForTheme(ColorScheme scheme) =>
+      resolveThemeColors(scheme).foreground;
+
   static Color foregroundFor(Color background) =>
       ThemeData.estimateBrightnessForColor(background) == Brightness.dark
       ? const Color(0xFFF1F3F8)
       : const Color(0xFF262B38);
 
   Map<String, Object?> toJson() => {
-    'color': color?.toARGB32(),
+    'color': JsonColor.toJsonNullable(color),
     'fill': fill.toJson(),
     'radius': radius,
     'borderWidth': borderWidth,
-    'borderColor': borderColor?.toARGB32(),
+    'borderColor': JsonColor.toJsonNullable(borderColor),
     'elevation': elevation,
     'shadowOpacity': shadowOpacity,
     'neon': neon?.toJson(),
@@ -296,7 +319,7 @@ class ContainerStyle {
     'interactionEffect': interactionEffect.name,
     'hoverEffect': hoverEffect,
     'hoverTint': hoverTint.name,
-    'hoverColor': hoverColor?.toARGB32(),
+    'hoverColor': JsonColor.toJsonNullable(hoverColor),
     if (radii != null) 'radii': radii!.toJson(),
     if (borderWidths != null) 'borderWidths': borderWidths!.toJson(),
     if (borderLine != BorderLine.solid) 'borderLine': borderLine.name,
@@ -582,11 +605,11 @@ class ContainerStyle {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ContainerStyle &&
-          color?.toARGB32() == other.color?.toARGB32() &&
+          JsonColor.toJsonNullable(color) == JsonColor.toJsonNullable(other.color) &&
           fill == other.fill &&
           radius == other.radius &&
           borderWidth == other.borderWidth &&
-          borderColor?.toARGB32() == other.borderColor?.toARGB32() &&
+          JsonColor.toJsonNullable(borderColor) == JsonColor.toJsonNullable(other.borderColor) &&
           elevation == other.elevation &&
           shadowOpacity == other.shadowOpacity &&
           neon == other.neon &&
@@ -596,7 +619,7 @@ class ContainerStyle {
           interactionEffect == other.interactionEffect &&
           hoverEffect == other.hoverEffect &&
           hoverTint == other.hoverTint &&
-          hoverColor?.toARGB32() == other.hoverColor?.toARGB32() &&
+          JsonColor.toJsonNullable(hoverColor) == JsonColor.toJsonNullable(other.hoverColor) &&
           radii == other.radii &&
           borderWidths == other.borderWidths &&
           borderLine == other.borderLine &&
@@ -614,11 +637,11 @@ class ContainerStyle {
 
   @override
   int get hashCode => Object.hashAll([
-    color?.toARGB32(),
+    JsonColor.toJsonNullable(color),
     fill,
     radius,
     borderWidth,
-    borderColor?.toARGB32(),
+    JsonColor.toJsonNullable(borderColor),
     elevation,
     shadowOpacity,
     neon,
@@ -628,7 +651,7 @@ class ContainerStyle {
     interactionEffect,
     hoverEffect,
     hoverTint,
-    hoverColor?.toARGB32(),
+    JsonColor.toJsonNullable(hoverColor),
     radii,
     borderWidths,
     borderLine,

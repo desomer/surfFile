@@ -4,6 +4,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import '../../../theme/theme_color.dart';
 
 import '../super_component.dart';
 
@@ -227,7 +228,7 @@ class _SuperNavigationRailState extends State<SuperNavigationRail> {
                               : (actionConfig.italic!
                                     ? FontStyle.italic
                                     : FontStyle.normal),
-                          color: actionConfig.color,
+                          color: actionConfig.color.resolveTheme(context),
                           letterSpacing: actionConfig.letterSpacing,
                         ),
                       ),

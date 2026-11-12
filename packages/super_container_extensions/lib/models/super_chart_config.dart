@@ -163,7 +163,7 @@ class SuperChartSeries {
       'valuePath': valuePath,
       if (secondaryValuePath.isNotEmpty)
         'secondaryValuePath': secondaryValuePath,
-      if (color != null) 'color': color!.toARGB32(),
+      if (color != null) 'color': JsonColor.toJson(color!),
       'strokeWidth': strokeWidth,
       'radius': radius,
       'isCurved': isCurved,

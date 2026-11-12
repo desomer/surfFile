@@ -18,6 +18,7 @@ import '../../models/super_action_config.dart';
 import '../../models/super_indicator_config.dart';
 import '../../models/super_separator_config.dart';
 import '../../models/super_list_view_config.dart';
+import '../../models/super_conditional_config.dart';
 import '../../models/super_tab_config.dart';
 import '../../models/super_table_config.dart';
 import '../../models/super_tree_view_config.dart';
@@ -165,6 +166,7 @@ abstract final class EditorPageGraph {
       SuperIndicatorConfig() => 'registry:Indicator',
       SuperSeparatorConfig() => 'registry:Separator',
       SuperTabConfig() => 'registry:Tab',
+      SuperConditionalConfig() => 'registry:Conditional',
       SuperTreeViewConfig() => 'registry:TreeView',
       SuperTableConfig() => 'registry:Table',
       final value =>
@@ -264,6 +266,7 @@ abstract final class EditorPageGraph {
         NativeComponentConfig() => config.placements[zoneId],
         ScaffoldPageConfig() => config.native.placements[zoneId],
         SuperTabConfig() => config.placements[zoneId],
+        SuperConditionalConfig() => config.placements[zoneId],
         SuperTreeViewConfig() => config.placements[zoneId],
         SuperTableConfig() => config.placements[zoneId],
         _ => null,
@@ -819,6 +822,8 @@ Object? _read(Appearance appearance, EditorConfigRef ref) => switch (ref.kind) {
   ),
   EditorConfigKind.list => appearance.tryComponent<SuperListViewConfig>(ref.id),
   EditorConfigKind.tab => appearance.tryComponent<SuperTabConfig>(ref.id),
+  EditorConfigKind.conditional =>
+    appearance.tryComponent<SuperConditionalConfig>(ref.id),
   EditorConfigKind.treeView => appearance.tryComponent<SuperTreeViewConfig>(
     ref.id,
   ),
@@ -837,6 +842,7 @@ bool _hasKind(Object value, EditorConfigKind kind) => switch (kind) {
   EditorConfigKind.separator => value is SuperSeparatorConfig,
   EditorConfigKind.list => value is SuperListViewConfig,
   EditorConfigKind.tab => value is SuperTabConfig,
+  EditorConfigKind.conditional => value is SuperConditionalConfig,
   EditorConfigKind.treeView => value is SuperTreeViewConfig,
   EditorConfigKind.table => value is SuperTableConfig,
 };
@@ -853,6 +859,7 @@ Iterable<EditorConfigRef> _allRefs(Appearance appearance) => [
       SuperIndicatorConfig() => [EditorConfigRef.indicator(entry.key)],
       SuperSeparatorConfig() => [EditorConfigRef.separator(entry.key)],
       SuperTabConfig() => [EditorConfigRef.tab(entry.key)],
+      SuperConditionalConfig() => [EditorConfigRef.conditional(entry.key)],
       SuperTreeViewConfig() => [EditorConfigRef.treeView(entry.key)],
       SuperTableConfig() => [EditorConfigRef.table(entry.key)],
       SuperListViewConfig() => [
@@ -1146,6 +1153,10 @@ Object _exportSlots(Object value, Map<String, String> types, Set<String> drop) {
       slotTypes: retype(value.slotTypes),
     ),
     SuperTabConfig() => value.copyWith(
+      placements: placements(value.placements),
+      slotTypes: retype(value.slotTypes),
+    ),
+    SuperConditionalConfig() => value.copyWith(
       placements: placements(value.placements),
       slotTypes: retype(value.slotTypes),
     ),

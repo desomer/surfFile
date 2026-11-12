@@ -205,7 +205,7 @@ class SuperValueConfig extends ComponentConfig {
       'fontSize': fontSize,
       'fontWeight': fontWeight?.value,
       'italic': italic,
-      'color': color?.toARGB32(),
+      'color': JsonColor.toJsonNullable(color),
       'textAlign': textAlign.name,
       'lineHeight': lineHeight,
       'letterSpacing': letterSpacing,
@@ -247,8 +247,7 @@ class SuperValueConfig extends ComponentConfig {
           propertyBindings,
           compact: true,
         ),
-      if (field != const SuperTextFieldConfig())
-        'field': field.toCompactJson(),
+      if (field != const SuperTextFieldConfig()) 'field': field.toCompactJson(),
       if (states != null) 'states': states!.toCompactJson(),
     };
   }
@@ -473,8 +472,9 @@ String formatSuperValueTooltip({
   required String title,
   required SuperValueConfig config,
 }) {
-  final modeLabel =
-      config.mode == SuperValueMode.input ? 'Saisie' : 'Affichage';
+  final modeLabel = config.mode == SuperValueMode.input
+      ? 'Saisie'
+      : 'Affichage';
   final kindLabel = switch (config.kind) {
     SuperValueKind.text => 'Texte',
     SuperValueKind.checkbox => 'Case à cocher',
@@ -507,13 +507,8 @@ String formatSuperValueTooltip({
   ];
   return [
     title,
-    [
-      'Mode : $modeLabel',
-      'Type : $kindLabel',
-      ...flags,
-    ].join(' · '),
+    ['Mode : $modeLabel', 'Type : $kindLabel', ...flags].join(' · '),
     contentParts.join(' · '),
     styleParts.join(' · '),
   ].join('\n');
 }
-

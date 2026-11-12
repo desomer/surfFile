@@ -51,6 +51,34 @@ La lecture, les migrations et les imports utilisent le même codec.
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
+### Couleurs personnalisées et rôles Material 3
+
+Le sélecteur partagé des éditeurs affiche un panneau repliable avec aperçu,
+valeur et remise à zéro. L'onglet **Personnalisée** conserve la palette, la roue,
+la saisie hexadécimale et l'opacité. L'onglet **Thème** propose une recherche parmi
+les rôles `ColorScheme`, regroupés par marque, surfaces, contours, couleurs
+inversées, erreurs, effets et couleurs fixes.
+
+Choisir un rôle conserve une référence dynamique, par exemple `theme:primary`,
+et non sa couleur actuelle. Elle suit le thème local, le mode clair/sombre et
+l'accent, y compris après sauvegarde, import/export ou changement d'état.
+Revenir à **Personnalisée** convertit explicitement le rôle en sa couleur actuelle.
+Retirer la couleur restaure l'héritage existant.
+
+```dart
+const ContainerStyle(
+  color: ThemeColor(ThemeColorRole.primaryContainer),
+  borderColor: ThemeColor(ThemeColorRole.outline),
+)
+```
+
+Les composants standard résolvent ces références au rendu. Un composant hôte
+personnalisé doit appeler `resolveThemeColor(color, Theme.of(context).colorScheme)`
+(ou `color.resolveTheme(context)` pour une couleur nullable) avant de peindre ou
+de calculer une couleur dérivée. Pour ses modèles, utiliser `JsonColor.toJson`
+et `JsonColor.parse`, plutôt que `toARGB32`, afin de conserver les références.
+L'accent générateur du thème reste nécessairement une couleur fixe.
+
 Dans l'application de démonstration, la barre d'apparence en haut à droite
 se déplace en faisant glisser la poignée à six points placée avant les boutons.
 Elle reste dans les limites de la fenêtre, y compris après redimensionnement.

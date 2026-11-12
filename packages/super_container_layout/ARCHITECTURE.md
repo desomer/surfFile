@@ -28,6 +28,7 @@ Ce document cartographie l'architecture interne du package `super_container_layo
      - `"separator"` → `SuperSeparatorConfig`
      - `"list"` → `SuperListViewConfig`
      - `"tab"` → `SuperTabConfig`
+     - `"conditional"` → `SuperConditionalConfig`
      - `"treeView"` → `SuperTreeViewConfig`
      - `"table"` → `SuperTableConfig`
      - Extensions externes enregistrées via `SuperComponentExtension` / `ComponentConfigCatalog.register` (ex: `"chart"` → `SuperChartConfig` dans le package `super_container_extensions`)
@@ -142,11 +143,13 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/super_separator_states.dart` | `SeparatorConfigStates`, `SeparatorConfigOverride`, `SeparatorStateProperty` : surcharges conditionnelles de `SuperSeparatorConfig` par état (`hover`, `selected`, `automatic`, `named`). |
 | `models/super_layout_config.dart` | `SuperLayoutConfig`, `SuperLayoutMode`, `ZoneFlowConfig`, `SlotSizeConstraints`, `SlotDimension` : configuration d'un `SuperLayout` (zones N/S/E/W/Center ou Grille, flux flex, contraintes par slot). |
 | `models/super_list_view_config.dart` | `SuperListViewConfig` : configuration d'une liste répétée liée à un tableau JSON avec son `SuperLayoutConfig` de gabarit (`template`). |
+| `models/super_conditional_config.dart` | `SuperConditionalConfig` : configuration d'un conteneur conditionnel sélectionnant la zone d'enfants (`'case:<valeur>'` ou `'default'`) selon un `JsonTextBinding`. |
 | `models/super_tab_config.dart` | `SuperTabConfig`, `SuperTabMode`, `SuperTabIndicatorType` : configuration d'une barre d'onglets `TabBar` + `TabBarView` en mode statique ou dynamique lié au JSON. |
 | `models/super_table_config.dart` | `SuperTableConfig`, `SuperTableColumnConfig` : configuration d'un tableau multi-colonnes avec colonnes figées, en-tête, pied et zones par colonne. |
 | `models/super_text_field_config.dart` | `SuperTextFieldConfig` : configuration de compatibilité pour les champs de texte éditables. |
 | `models/super_tree_view_config.dart` | `SuperTreeViewConfig` : configuration d'un arbre hiérarchique récursif à 2 zones (`header` et `data`). |
 | `models/super_value_config.dart` | `SuperValueConfig`, `SuperValueMode`, `SuperValueKind`, `SuperValueProperty` : configuration d'un composant d'affichage ou de saisie (`text`, `checkbox`, `switchControl`). |
+| `models/super_code_style.dart` | `SuperCodeStyle`, `SuperCodeTheme` : options visuelles, typographiques et thèmes de coloration syntaxique pour `CodeEditor` / `SuperCode`. |
 | `models/super_value_states.dart` | `SuperValueStates`, `SuperValueStateOverride` : surcharges conditionnelles de `SuperValueConfig` selon les états interactifs ou métier. |
 
 ### 3.4. Thème et Styles (`lib/theme/` — 11 fichiers)
@@ -160,6 +163,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `theme/design_system.dart` | `DesignSystem` : énumération des systèmes visuels (`material`, `neumorphism`, `liquidGlass`). |
 | `theme/interaction_effect.dart` | `InteractionEffect`, `HoverTint` : effets visuels au clic (`none`, `pressed`, `scale`, `elevation`, `ripple`) et teintes de survol. |
 | `theme/neon_style.dart` | `NeonStyle` : paramètres du halo lumineux néon autour d'une surface. |
+| `theme/theme_color.dart` | `ThemeColor`, `ThemeColorRole` : références persistées aux rôles Material 3 et résolution locale au rendu. |
 | `theme/style_extras.dart` | `BorderLineStyle`, `ShadowSpec`, `SurfacePattern`, `SurfaceTransform` : primitives avancées d'ombres, traits de bordure, motifs et transformations 2D. |
 | `theme/surface_style_states.dart` | `SurfaceStyleStates`, `SurfaceStyleOverride`, `SurfaceStylePropertyGroup` : surcharges conditionnelles d'un `ContainerStyle` par état. |
 | `theme/typed_appearance_scope.dart` | `TypedAppearanceScope<T extends Appearance>` : pont typé raccordant un `ValueNotifier<T>` applicatif au `AppearanceScope` générique avec validation par codec. |
@@ -195,7 +199,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/appearance/appearance_settings.dart` | `AppearanceSettings`, `showAppearanceSettingsDialog` : boîte de dialogue complète de configuration du thème, des polices, de la transparence et des slots de style. |
 | `widgets/appearance/appearance_style_section.dart` | `AppearanceStyleSection` : section réutilisable d'édition des slots de style avec aperçu en direct. |
 | `widgets/appearance/appearance_toolbar.dart` | `AppearanceToolbar` : barre d'outils flottante et déplaçable donnant accès au thème, au mode édition, à l'historique undo/redo, aux pages, aux repositories et au chat Vibe IA. |
-| `widgets/appearance/appearance_transfer_dialog.dart` | `AppearanceTransferDialog` : dialogue d'import/export JSON des styles et dispositions (presse-papiers ou fichier). |
+| `widgets/appearance/appearance_transfer_dialog.dart` | `AppearanceTransferDialog` : dialogue d'import/export JSON et Code Dart des styles et dispositions (presse-papiers, fichier ou vue maximisée dans `CodeEditor`). |
 | `widgets/surfaces/interaction_effect_box.dart` | `InteractionEffectBox` : wrapper animant les effets d'interaction au survol et au clic (`pressed`, `scale`, `elevation`, `ripple`). |
 | `widgets/surfaces/neon_surface.dart` | `NeonSurface` : rendu du halo lumineux néon externe autour d'un conteneur. |
 | `widgets/surfaces/scroll_edge_fade.dart` | `ScrollEdgeFade` : masque de fondu progressif en haut et en bas d'une zone défilante. |
@@ -217,6 +221,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_separator.dart` | `SuperSeparator` : séparateur (`divider`) ou espaceur (`spacer`) horizontal/vertical avec libellé optionnel, style de trait (`solid`/`dashed`/`dotted`), états et liaisons JSON. |
 | `widgets/components/super_separator_visual.dart` | `buildSuperSeparatorVisual` : rendu visuel d'un `SuperSeparator` (trait plein/tireté/pointillé, libellé aligné) partagé entre le widget runtime et l'aperçu de l'éditeur. |
 | `widgets/components/super_list_view.dart` | `SuperListView` : liste dynamique liée à un tableau JSON, répétant un gabarit `IterableContent` par ligne avec ajout/suppression et sélection. |
+| `widgets/components/super_conditional.dart` | `SuperConditional` : conteneur conditionnel affichant la branche correspondant à la valeur d'une liaison de repository JSON, avec barre de sélection des cas en mode édition. |
 | `widgets/components/super_tab.dart` | `SuperTab` : composant d'onglets (`TabBar` + `TabBarView`) en mode statique (vues par onglet) ou dynamique (lié à un tableau JSON). |
 | `widgets/components/super_table.dart` | `SuperTable` : tableau multi-colonnes avec colonnes figées à gauche, en-tête, pied, redimensionnement de colonnes et `JsonListScope` par ligne. |
 | `widgets/components/super_text_field.dart` | `SuperTextField` : champ de saisie stylable lié à `SuperTextFieldConfig`. |
@@ -227,6 +232,11 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/internal_widget/treeview/tree_view.dart` | Primitives internes d'aplatissement, d'expansion/repli et de peinture des connecteurs hiérarchiques pour `SuperTreeView`. |
 | `widgets/components/internal_widget/widget_breadcrumb.dart` | Fil d'Ariane interne pour la navigation hiérarchique dans les composants/éditeurs. |
 | `widgets/components/internal_widget/widget_overflow.dart` | Gestion du débordement gracieux de widgets dans les barres et zones contraintes. |
+| `widgets/components/internal_widget/code_editor.dart` | `CodeEditor`, `CodeEditorConfig` : éditeur de code coloré (`flutter_code_editor` / `highlight`) avec numéros de ligne et pliage. |
+| `widgets/components/internal_widget/widget_error_banner.dart` | `WidgetErrorBanner` : bandeau d'affichage des erreurs ou de conformité sous `CodeEditor`. |
+| `widgets/components/internal_widget/widget_long_json_viewer.dart` | `LongJsonViewerSelectableColored` : visualiseur optimisé pour les documents JSON volumineux. |
+| `widgets/components/internal_widget/widget_scroller.dart` | `WidgetScroller` : conteneur à double défilement (horizontal et vertical). |
+| `widgets/components/internal_widget/yaml_browser.dart` | `YamlDoc`, `ParseYamlManager` : analyse et navigation par chemin dans les documents YAML de `CodeEditor`. |
 | `widgets/components/native/native_component_common.dart` | `NativePreferredSizeWidget`, helpers de construction des régions et slots pour les composants Material natifs. |
 | `widgets/components/native/scaffold_page_layout.dart` | `ScaffoldPageLayout` : assemblage d'un `Scaffold` Flutter (ou `CustomScrollView` avec `SliverAppBar`) piloté par `ScaffoldPageConfig` et `NativeComponentConfig`. |
 | `widgets/components/native/super_app_bar.dart` | `SuperAppBar` : barre d'application Material 3 (`AppBar` / `SliverAppBar`) à régions éditables (`leading`, `title`, `actions`, `bottom`, `flexibleSpace`). |
@@ -271,6 +281,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/editing/addition/forms/super_indicator_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperIndicator`. |
 | `widgets/editing/addition/forms/super_separator_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperSeparator`. |
 | `widgets/editing/addition/forms/super_value_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperValue`. |
+| `widgets/editing/addition/forms/conditional_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperConditional`. |
 | `widgets/editing/addition/forms/tab_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTab`. |
 | `widgets/editing/addition/forms/table_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTable`. |
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
@@ -296,6 +307,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/editing/components/super_indicator_editor.dart` | Fenêtre d'édition complète d'un `SuperIndicator` (icône, libellé, badge/surface, typographie, états standards/nommés, liaisons JSON). |
 | `widgets/editing/components/super_separator_editor.dart` | Fenêtre d'édition complète d'un `SuperSeparator` (type divider/spacer, orientation, style de trait, libellé, états, liaisons JSON). |
 | `widgets/editing/components/super_list_view_editor.dart` | Fenêtre d'édition d'un `SuperListView` (liaison JSON, dimensions de ligne, ajout/suppression, message vide). |
+| `widgets/editing/components/super_conditional_editor.dart` | Fenêtre d'édition d'un `SuperConditional` (cas nommés, branche par défaut, maintien d'état, liaison JSON). |
 | `widgets/editing/components/super_tab_editor.dart` | Fenêtre d'édition d'un `SuperTab` (mode statique/dynamique, onglets, indicateur, style de barre, liaison JSON). |
 | `widgets/editing/components/super_table_editor.dart` | Fenêtre d'édition d'un `SuperTable` (colonnes, largeurs/fillPercent, colonnes figées, en-tête/pied, liaison JSON). |
 | `widgets/editing/components/super_text_field_settings.dart` | Dialogue de paramètres d'un `SuperTextField`. |
@@ -335,6 +347,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/editing/states/editor_state_controls.dart` | Contrôles génériques d'édition des surcharges d'états (`hover`, `selected`, `automatic`, états métier `named`). |
 | `widgets/editing/styles/container_style_dialog.dart` | Ouverture de l'éditeur de `ContainerStyle` dans une fenêtre de dialogue flottante. |
 | `widgets/editing/styles/container_style_editor.dart` | `ContainerStyleEditor` : éditeur complet d'un `ContainerStyle` (système de design, fond, dégradé, image, coins, bordures, ombres, néon, états). |
+| `widgets/editing/styles/editor_color_tile.dart` | `EditorColorTile` : sélecteur partagé repliable, palette/roue personnalisée et recherche de rôles Material 3. |
 | `widgets/editing/styles/independent_spacing_editor.dart` | Éditeur de marges/paddings/rayons/bordures uniformes ou indépendants par côté/coin. |
 | `widgets/editing/styles/scrollbar_style_editor.dart` | Éditeur visuel d'un `ScrollbarStyleConfig`. |
 | `widgets/editing/styles/style_editor_panel.dart` | Panneau modulaire d'édition des sections d'un style de surface. |

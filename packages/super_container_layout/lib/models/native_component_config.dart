@@ -9,6 +9,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/painting.dart' show Axis, ShapeBorder;
+import 'package:material_ui/material_ui.dart' show ColorScheme;
 
 import 'component_config.dart';
 import 'json_syntax.dart';
@@ -185,8 +186,9 @@ class NativeComponentConfig extends ComponentConfig {
     final Object value => NativeShapeConfig.fromJson(value),
     null => null,
   };
-  ShapeBorder? shapeBorderProperty(String id) =>
-      shapeProperty(id)?.toShapeBorder();
+  /// Construit une forme en résolvant sa couleur dans le thème de rendu.
+  ShapeBorder? shapeBorderProperty(String id, {ColorScheme? colorScheme}) =>
+      shapeProperty(id)?.toShapeBorder(colorScheme: colorScheme);
 
   NativeComponentConfig copyWith({
     JsonTextBinding? binding,
@@ -621,4 +623,3 @@ String formatNativeComponentTooltip({
     if (propSummary.isNotEmpty) propSummary.join(' · '),
   ].join('\n');
 }
-
