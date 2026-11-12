@@ -65,8 +65,8 @@ class RepositoryImpl {
     required Map<String, Object?> json,
     ValueChanged<ChangeContext>? onChanged,
   }) {
-    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(id)) {
-      throw const FormatException('ID de repository invalide.');
+    if (!RegExp(r'^[a-z0-9_]{1,32}$').hasMatch(id)) {
+      throw FormatException('ID de repository invalide. $id');
     }
     final copy = jsonDecode(jsonEncode(json));
     if (copy is! Map<String, dynamic>) {

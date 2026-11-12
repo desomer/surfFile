@@ -57,7 +57,7 @@ void main() {
   );
 
   test('tooltip model, compact binding and appearance round-trip', () {
-    const repositoryId = '0123456789abcdef0123456789abcdef';
+    const repositoryId = 'pan_model_repository';
     for (final binding in [
       null,
       const JsonTextBinding(path: 'rows[?].description'),

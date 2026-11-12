@@ -818,7 +818,7 @@ void main() {
     testWidgets(
       'surface propertyBindings.imageUrl round-trips, resolves from repository and can be bound in editor',
       (tester) async {
-        const repoId = '0123456789abcdef0123456789abcdef';
+        const repoId = 'pan_model_repository';
         const styleWithBinding = ContainerStyle(
           fill: ContainerFill(imageFit: BoxFit.contain, imageOpacity: .8),
           propertyBindings: {

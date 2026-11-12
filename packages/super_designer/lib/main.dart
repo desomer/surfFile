@@ -119,7 +119,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
   final _eventBus = SuperEventBus();
   late final StreamSubscription<SuperComponentEvent> _eventSubscription;
 
-  static const _repositoryId = '0123456789abcdef0123456789abcdef';
+  static const _repositoryId = 'pan_model_repository';
   static const _eastSizeBinding = JsonTextBinding(
     repositoryId: _repositoryId,
     path: 'estSize',

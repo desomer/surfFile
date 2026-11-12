@@ -148,7 +148,7 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
       "type": "value",
       "mode": "input",
       "label": "Nom complet",
-      "binding": "0123456789abcdef0123456789abcdef:clients[?].nom"
+      "binding": "pan_model_repository:clients[?].nom"
     },
     "btn-save": {
       "type": "action",
@@ -538,7 +538,7 @@ Affiche un conteneur à onglets combinant une barre d'onglets (`TabBar`) et une 
     "dyn-tabs": {
       "type": "tab",
       "mode": "dynamic",
-      "binding": "0123456789abcdef0123456789abcdef:categories",
+      "binding": "pan_model_repository:categories",
       "isScrollable": true,
       "tabAlignment": "start",
       "allowAdd": true,
@@ -554,13 +554,13 @@ Affiche un conteneur à onglets combinant une barre d'onglets (`TabBar`) et une 
       "kind": "text",
       "label": "Catégorie",
       "propertyBindings": {
-        "label": "0123456789abcdef0123456789abcdef:categories[?].nom"
+        "label": "pan_model_repository:categories[?].nom"
       }
     },
     "tpl-tab-detail": {
       "type": "value",
       "mode": "display",
-      "binding": "0123456789abcdef0123456789abcdef:categories[?].description"
+      "binding": "pan_model_repository:categories[?].description"
     }
   }
 }
@@ -572,7 +572,7 @@ Place un composant `"registry:Chart"` (alias `"Chart"`, `"Graph"`, `"SuperChart"
 
 - **Propriétés principales de `SuperChartConfig`** :
   - `kind` : `"line"` (courbe / aire, défaut), `"bar"` (barres groupées ou empilées), `"pie"` (camembert / donut), `"scatter"` (nuage de points), `"radar"` (radar / toile).
-  - `binding` : chemin du tableau JSON source (ex: `"ventes"` ou `"0123456789abcdef0123456789abcdef:clients[?].commandes"`).
+  - `binding` : chemin du tableau JSON source (ex: `"ventes"` ou `"pan_model_repository:clients[?].commandes"`).
   - `labelPath` : `string` (`"label"` par défaut) — chemin relatif à l'élément du tableau pour le libellé de l'axe X, de la part de camembert ou de l'axe radar (ex: `"mois"`, `"categorie"`). **Ne doit jamais contenir `[?]`.**
   - `series` (`List<SuperChartSeries>`, au moins 1 série requise) :
     - `id` (`"series-1"` par défaut, unique dans le graphique), `label` (`"Série 1"` par défaut, affiché dans la légende et l'infobulle).
@@ -589,7 +589,7 @@ Place un composant `"registry:Chart"` (alias `"Chart"`, `"Graph"`, `"SuperChart"
     "chart-ca": {
       "type": "chart",
       "kind": "bar",
-      "binding": "0123456789abcdef0123456789abcdef:ventesMensuelles",
+      "binding": "pan_model_repository:ventesMensuelles",
       "labelPath": "mois",
       "barStacked": false,
       "showLegend": true,
@@ -622,7 +622,7 @@ Place un composant `"registry:TreeView"` dans le `placements` du parent, et conf
   - Zone `"data"` : colonne de données à droite, occupant l'espace restant.
   - Chaque ligne de nœud fournit un `JsonListScope` résolvant le chemin récursif du nœud (`dossiers[0]`, `dossiers[0].children[1]`, etc.) : les composants `Value` / `Action` placés dans `header` ou `data` peuvent utiliser un chemin relatif (`"nom"`, `"taille"`) ou un chemin avec joker (`"dossiers[?].nom"`).
 - **Propriétés principales de `SuperTreeViewConfig`** :
-  - `binding` : tableau ou objet JSON racine de l'arbre (ex: `"0123456789abcdef0123456789abcdef:dossiers"`).
+  - `binding` : tableau ou objet JSON racine de l'arbre (ex: `"pan_model_repository:dossiers"`).
   - `childrenKey` : `string` (`"children"` par défaut) — clé JSON contenant le sous-tableau d'enfants de chaque nœud.
   - `headerSize` (`100`..`2000`, défaut `220.0`), `rowHeight` (`16`..`400`, défaut `32.0`), `indent` (`8`..`120`, défaut `20.0`).
   - `initiallyExpanded` (`true`), `showConnectors` (`true`), `showCheckboxes` (`false`), `animateSelectionAndHover` (`true`), `emptyText` (`"Aucun élément"`), `itemId` (`string?`, identifiant du style de ligne dans `styles`).
@@ -633,7 +633,7 @@ Place un composant `"registry:TreeView"` dans le `placements` du parent, et conf
   "components": {
     "tree-org": {
       "type": "treeView",
-      "binding": "0123456789abcdef0123456789abcdef:departements",
+      "binding": "pan_model_repository:departements",
       "childrenKey": "equipes",
       "headerSize": 240,
       "rowHeight": 36,
@@ -667,7 +667,7 @@ Place un composant `"registry:Table"` dans le `placements` du parent, et configu
     - `"header:<colId>"` : cellule d'en-tête personnalisée optionnelle (si vide, affiche automatiquement `column.title`).
     - `"bottom:<colId>"` : cellule de pied de colonne (affichée lorsque `showBottomRow: true`).
 - **Propriétés principales de `SuperTableConfig`** :
-  - `binding` : tableau JSON source (ex: `"0123456789abcdef0123456789abcdef:clients"`).
+  - `binding` : tableau JSON source (ex: `"pan_model_repository:clients"`).
   - `colFreezeLeftCount` (`int`, défaut `0`) : nombre de colonnes figées à gauche lors du défilement horizontal.
   - `showHeaderRow` (`true`), `showBottomRow` (`false`), `headerRowHeight` (`16`..`400`, défaut `40.0`), `rowHeight` (`16`..`400`, défaut `40.0`), `bottomRowHeight` (`16`..`400`, défaut `40.0`).
   - `allowAdd` (`false`), `allowRemove` (`false`), `animateSelectionAndHover` (`true`), `emptyText` (`"Aucun élément"`), `itemId` (`string?`, identifiant du `ContainerStyle` de la ligne `CwTableRow` dans `styles`).
@@ -678,7 +678,7 @@ Place un composant `"registry:Table"` dans le `placements` du parent, et configu
   "components": {
     "table-clients": {
       "type": "table",
-      "binding": "0123456789abcdef0123456789abcdef:clients",
+      "binding": "pan_model_repository:clients",
       "colFreezeLeftCount": 1,
       "showHeaderRow": true,
       "allowAdd": true,
@@ -1029,7 +1029,7 @@ Pour un style dépendant des données, utilise `states.binding` pour lire un **n
 ```json
 {
   "states": {
-    "binding": "0123456789abcdef0123456789abcdef:clients[?].statut",
+    "binding": "pan_model_repository:clients[?].statut",
     "named": {
       "urgent": { "color": "#FFF0F0" }
     },
@@ -1122,7 +1122,7 @@ Le dictionnaire `behaviors` (`Map<String, List<ComponentBehavior>>`) associe des
         "action": {
           "type": "bindZoneSize",
           "zone": "west",
-          "binding": {"repositoryId": "0123456789abcdef0123456789abcdef", "path": "ui.westWidth"},
+          "binding": {"repositoryId": "pan_model_repository", "path": "ui.westWidth"},
           "unit": "pixels",
           "durationMs": 300,
           "curve": "easeInOut"

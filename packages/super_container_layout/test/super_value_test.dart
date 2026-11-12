@@ -228,7 +228,7 @@ void main() {
       letterSpacing: -.5,
       propertyBindings: {
         SuperValueProperty.label: JsonTextBinding(
-          repositoryId: '0123456789abcdef0123456789abcdef',
+          repositoryId: 'pan_model_repository',
           path: 'client.name',
         ),
         SuperValueProperty.color: JsonTextBinding(path: 'client.color'),

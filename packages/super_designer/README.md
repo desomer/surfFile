@@ -17,7 +17,7 @@ lorsqu'ils sont ouverts.
 
 L'application charge automatiquement son repository au demarrage et enregistre
 ses modifications dans
-`%USERPROFILE%\.super_container_layout\repositories\registered\0123456789abcdef0123456789abcdef.json`
+`%USERPROFILE%\.super_container_layout\repositories\registered\pan_model_repository.json`
 sous Windows (`$HOME/.super_container_layout/repositories/registered/` ailleurs).
 Une erreur de chargement est affichee sans ecraser le fichier existant. Les
 identifiants et les champs saisis des nœuds sont conserves lors de la

@@ -7,7 +7,7 @@ import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const id = '0123456789abcdef0123456789abcdef';
+  const id = 'pan_model_repository';
 
   test(
     'binding configuration is strict, immutable and backwards compatible',
@@ -26,7 +26,7 @@ void main() {
       expect(SuperValueConfig.fromJson(<String, dynamic>{}).binding, isNull);
       for (final json in [
         {'repositoryId': id, 'path': 'client..name'},
-        {'repositoryId': 'invalid', 'path': 'name'},
+        {'repositoryId': 'invalid-id', 'path': 'name'},
         {'repositoryId': id, 'path': 'name', 'extra': true},
       ]) {
         expect(() => JsonTextBinding.fromJson(json), throwsFormatException);
@@ -267,7 +267,7 @@ void main() {
     test(
       'text controller reports its component ID in repository changes',
       () async {
-        const memoryId = '0123456789abcdef0123456789abcdef';
+        const memoryId = 'pan_model_repository';
         final changes = <ChangeContext>[];
         store.registerRepository(
           RepositoryImpl(

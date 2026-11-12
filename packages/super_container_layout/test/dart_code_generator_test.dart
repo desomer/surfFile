@@ -67,7 +67,7 @@ void main() {
 
   test('DartCodeExporter generates RegisteredComponent code matching main.dart structure', () {
     final registry = Registry()..bootstrap();
-    const repoId = '0123456789abcdef0123456789abcdef';
+    const repoId = 'pan_model_repository';
 
     final appearance = DefaultAppearance(
       components: {
@@ -615,15 +615,10 @@ void main() {
         contains("initialText: 'Decomposed Value'"),
       );
       expect(
-        textField.controller!.text.contains(
-          "component('composable-child')",
-        ),
+        textField.controller!.text.contains("component('composable-child')"),
         isFalse,
       );
-      expect(
-        textField.controller!.text,
-        contains("component('atomic-child')"),
-      );
+      expect(textField.controller!.text, contains("component('atomic-child')"));
 
       // Décoche l'option : les deux composants sont conservés par référence
       await tester.tap(decomposeChip);
@@ -633,10 +628,7 @@ void main() {
         textField.controller!.text,
         contains("component('composable-child')"),
       );
-      expect(
-        textField.controller!.text,
-        contains("component('atomic-child')"),
-      );
+      expect(textField.controller!.text, contains("component('atomic-child')"));
     },
   );
 
@@ -811,8 +803,7 @@ void main() {
                   app: app,
                   child: Builder(
                     builder: (context) =>
-                        SuperApp.of(context)
-                            .registry!
+                        SuperApp.of(context).registry!
                             .component('panString')
                             .builder(context),
                   ),
@@ -837,9 +828,7 @@ void main() {
       // L'enfant interne (field-description) ne doit PAS hériter du badge de panString
       final childSlotFinder = find.byWidgetPredicate(
         (w) =>
-            w is EditorSlot &&
-            w.id == 'field-description' &&
-            w.zoneId == null,
+            w is EditorSlot && w.id == 'field-description' && w.zoneId == null,
       );
       expect(childSlotFinder, findsOneWidget);
       final childSlotState = tester.state<EditorSlotState>(childSlotFinder);

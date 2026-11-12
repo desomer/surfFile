@@ -9,7 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_designer/super_designer.dart';
 
 void main() {
-  const repositoryId = '0123456789abcdef0123456789abcdef';
+  const repositoryId = 'pan_model_repository';
   const sourceBinding = JsonTextBinding(
     repositoryId: repositoryId,
     path: 'source',

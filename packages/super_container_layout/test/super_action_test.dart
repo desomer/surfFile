@@ -86,7 +86,7 @@ void main() {
       style: const ContainerStyle(hoverEffect: true),
       propertyBindings: const {
         SuperActionProperty.label: JsonTextBinding(
-          repositoryId: '0123456789abcdef0123456789abcdef',
+          repositoryId: 'pan_model_repository',
           path: 'action.label',
         ),
       },

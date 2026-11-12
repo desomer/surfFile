@@ -28,12 +28,12 @@ String document([String text = 'Imported']) => AppearanceTransfer.export(
 Widget host(Widget child) => MaterialApp(home: Scaffold(body: child));
 
 void main() {
-  testWidgets('navigation stays within the imported page catalog', (tester) async {
-    final initial = AppearanceTransfer.import(
-      Appearance(),
-      document(),
-      {...TransferGroup.values},
-    );
+  testWidgets('navigation stays within the imported page catalog', (
+    tester,
+  ) async {
+    final initial = AppearanceTransfer.import(Appearance(), document(), {
+      ...TransferGroup.values,
+    });
     final appearance = initial.copyWith(
       components: {
         ...initial.components,
@@ -65,7 +65,9 @@ void main() {
     await tester.pumpWidget(
       host(
         SuperRenderer(
-          source: AppearanceTransfer.export(appearance, {...TransferGroup.values}),
+          source: AppearanceTransfer.export(appearance, {
+            ...TransferGroup.values,
+          }),
         ),
       ),
     );
@@ -77,7 +79,7 @@ void main() {
   });
 
   testWidgets('bindings and events use host-owned services', (tester) async {
-    const repositoryId = '0123456789abcdef0123456789abcdef';
+    const repositoryId = 'pan_model_repository';
     final store = JsonRepositoryStore(Directory.systemTemp)
       ..registerRepository(
         RepositoryImpl(id: repositoryId, json: {'name': 'Bound value'}),
@@ -109,7 +111,9 @@ void main() {
     await tester.pumpWidget(
       host(
         SuperRenderer(
-          source: AppearanceTransfer.export(appearance, {...TransferGroup.values}),
+          source: AppearanceTransfer.export(appearance, {
+            ...TransferGroup.values,
+          }),
           repositoryStore: store,
           eventBus: bus,
         ),
@@ -153,13 +157,14 @@ void main() {
     final state = tester.state<EditorSlotState>(target.first);
     final menu = state.openMenu(tester.getCenter(target.first));
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('style-menu-SuperRenderer')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('style-menu-SuperRenderer')),
+      findsNothing,
+    );
     final more = find.byKey(ValueKey('style-menu-more-${state.label}'));
     await tester.tap(more);
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(ValueKey('style-menu-export-${state.label}')),
-    );
+    await tester.tap(find.byKey(ValueKey('style-menu-export-${state.label}')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('transfer-mode')), findsNothing);
     expect(find.byKey(const ValueKey('transfer-import-text')), findsNothing);
@@ -167,11 +172,9 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('transfer-copy')));
     await tester.pumpAndSettle();
     expect(copied, isNotNull);
-    final imported = AppearanceTransfer.import(
-      Appearance(),
-      copied!,
-      {...TransferGroup.values},
-    );
+    final imported = AppearanceTransfer.import(Appearance(), copied!, {
+      ...TransferGroup.values,
+    });
     expect(imported.components.containsKey('text'), isTrue);
     expect(imported.components.containsKey('page'), isFalse);
     await tester.tap(find.text('Fermer'));
@@ -179,7 +182,8 @@ void main() {
     await menu;
 
     final renderer = find.byWidgetPredicate(
-      (widget) => widget is EditorSlot && widget.eventComponentType == 'renderer',
+      (widget) =>
+          widget is EditorSlot && widget.eventComponentType == 'renderer',
     );
     final rendererState = tester.state<EditorSlotState>(renderer);
     final outerMenu = rendererState.openMenu(tester.getCenter(renderer));
@@ -204,28 +208,30 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('explicit component root and root picker render the selected item', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      host(SuperRenderer(source: document(), rootId: 'text')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Imported'), findsOneWidget);
-    final context = tester.element(find.text('Imported'));
-    final local = SuperApp.of(context).registry!;
-    local.valueController('text').value =
-        const SuperValueConfig(initialText: 'Root changed');
-    await tester.pumpAndSettle();
-    expect(find.text('Root changed'), findsOneWidget);
-    expect(local.scaffoldPageConfigById.length, 1);
-    await tester.tap(find.byKey(const ValueKey('renderer-select-root')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('page').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Root changed'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'explicit component root and root picker render the selected item',
+    (tester) async {
+      await tester.pumpWidget(
+        host(SuperRenderer(source: document(), rootId: 'text')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Imported'), findsOneWidget);
+      final context = tester.element(find.text('Imported'));
+      final local = SuperApp.of(context).registry!;
+      local.valueController('text').value = const SuperValueConfig(
+        initialText: 'Root changed',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Root changed'), findsOneWidget);
+      expect(local.scaffoldPageConfigById.length, 1);
+      await tester.tap(find.byKey(const ValueKey('renderer-select-root')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('page').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Root changed'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   test('renderer codec, aliases and patches round trip', () {
     final config = SuperRendererConfig(source: document(), rootId: 'page');

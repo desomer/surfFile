@@ -8,15 +8,24 @@ void main() {
       ..bootstrap()
       ..registerAllExtensions();
 
-    expect(registry.registry['Code']!.dartGenerator, isA<SuperCodeDartGenerator>());
-    expect(registry.registry['Chart']!.dartGenerator, isA<SuperChartDartGenerator>());
+    expect(
+      registry.registry['Code']!.dartGenerator,
+      isA<SuperCodeDartGenerator>(),
+    );
+    expect(
+      registry.registry['Chart']!.dartGenerator,
+      isA<SuperChartDartGenerator>(),
+    );
 
-    const repoId = '0123456789abcdef0123456789abcdef';
+    const repoId = 'pan_model_repository';
     final appearance = DefaultAppearance(
       components: {
         'explorer-code': const SuperCodeConfig(
           binding: JsonTextBinding(repositoryId: repoId, path: 'source'),
-          errorBinding: JsonTextBinding(repositoryId: repoId, path: 'yamlError'),
+          errorBinding: JsonTextBinding(
+            repositoryId: repoId,
+            path: 'yamlError',
+          ),
         ),
         'sales-chart': const SuperChartConfig(
           kind: SuperChartKind.bar,

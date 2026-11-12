@@ -78,13 +78,13 @@ void main() {
         letterSpacing: 0.4,
         propertyBindings: const {
           SuperSeparatorProperty.label: JsonTextBinding(
-            repositoryId: '0123456789abcdef0123456789abcdef',
+            repositoryId: 'pan_model_repository',
             path: 'section.title',
           ),
         },
         states: SeparatorConfigStates(
           binding: const JsonTextBinding(
-            repositoryId: '0123456789abcdef0123456789abcdef',
+            repositoryId: 'pan_model_repository',
             path: 'section.mode',
           ),
           named: const {

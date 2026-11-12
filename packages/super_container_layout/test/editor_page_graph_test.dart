@@ -156,7 +156,7 @@ void main() {
     'page duplication preserves external repository IDs and binding paths',
     () {
       const binding = JsonTextBinding(
-        repositoryId: '0123456789abcdef0123456789abcdef',
+        repositoryId: 'pan_model_repository',
         path: 'client.name',
       );
       final source = _sample().withValueComponent(
@@ -165,7 +165,7 @@ void main() {
           binding: binding,
           states: ValueConfigStates(
             binding: const JsonTextBinding(
-              repositoryId: '0123456789abcdef0123456789abcdef',
+              repositoryId: 'pan_model_repository',
               path: 'client.status',
             ),
             named: {'ready': const SuperValueConfig(binding: binding)},
@@ -202,18 +202,14 @@ void main() {
         targetPageId: 'p2',
         generateId: _ids(),
       );
-      final copies = result
-          .componentsOfType<SuperValueConfig>()
-          .entries
-          .where((entry) => entry.key != 'txt1' && entry.value.binding != null);
+      final copies = result.componentsOfType<SuperValueConfig>().entries.where(
+        (entry) => entry.key != 'txt1' && entry.value.binding != null,
+      );
       expect(copies, hasLength(1));
       expect(copies.single.value.binding, binding);
       expect(copies.single.value.field, source.valueComponent('txt1').field);
       expect(source.valueComponent('txt1').binding, binding);
-      expect(
-        copies.single.value.states,
-        source.valueComponent('txt1').states,
-      );
+      expect(copies.single.value.states, source.valueComponent('txt1').states);
       final removed = EditorPageGraph.remove(
         appearance: result,
         registry: _registry(),
@@ -377,10 +373,7 @@ void main() {
         ),
       ),
     );
-    expect(
-      source.componentsOfType<NativeComponentConfig>().keys,
-      ['p1'],
-    );
+    expect(source.componentsOfType<NativeComponentConfig>().keys, ['p1']);
     expect(source.layouts.keys, ['lay']);
 
     final replaced = _registry()..registerFactory('Value', const SizedBox());
@@ -554,10 +547,13 @@ void main() {
       registry.registry['Layout']!.duplication,
       same(ComponentDuplicationContract.newLayout),
     );
-    expect(registry.registry['ApplicationBar']!.duplication!.ownedConfigs('x'), [
-      const EditorConfigRef.nativeComponent('x'),
-      const EditorConfigRef.layout('x'),
-    ]);
+    expect(
+      registry.registry['ApplicationBar']!.duplication!.ownedConfigs('x'),
+      [
+        const EditorConfigRef.nativeComponent('x'),
+        const EditorConfigRef.layout('x'),
+      ],
+    );
     expect(registry.registry['A']!.duplication, isNull);
   });
 

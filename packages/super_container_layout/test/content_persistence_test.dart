@@ -5,7 +5,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channels = [
@@ -36,7 +35,7 @@ void main() {
             radius: 14,
             states: SurfaceStyleStates(
               binding: const JsonTextBinding(
-                repositoryId: '0123456789abcdef0123456789abcdef',
+                repositoryId: 'pan_model_repository',
                 path: 'items[?].status',
               ),
               named: {'ready': const ContainerStyle(color: Colors.green)},
@@ -79,7 +78,7 @@ void main() {
       expect(copy.styles[id]!.states, original.styles['item']!.states);
       expect(
         copy.styles[id]!.states!.binding!.repositoryId,
-        '0123456789abcdef0123456789abcdef',
+        'pan_model_repository',
       );
       final child = copy.layouts[id]!.placedSlotIds.single;
       expect(child, isNot('text'));
@@ -89,10 +88,7 @@ void main() {
       }
       final removed = EditorPageGraph.removeInstance(
         appearance: original.copyWith(
-          components: {
-            ...original.components,
-            'page': NativeComponentConfig(),
-          },
+          components: {...original.components, 'page': NativeComponentConfig()},
         ),
         registry: registry,
         instanceId: 'item',

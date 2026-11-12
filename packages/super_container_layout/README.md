@@ -1545,7 +1545,7 @@ uniquement en memoire. Pour conserver son ID et son callback tout en ajoutant
 la persistance, utiliser `registerPersistentRepository` :
 
 ```dart
-const id = '0123456789abcdef0123456789abcdef';
+const id = 'pan_model_repository';
 final store = JsonRepositoryStore.defaultStore();
 final restored = await store.registerPersistentRepository(
   RepositoryImpl(

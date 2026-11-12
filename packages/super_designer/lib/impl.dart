@@ -14,7 +14,6 @@ import 'package:super_container_layout/models/super_tree_view_config.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/super_app.dart';
 import 'package:super_container_layout/theme/container_style.dart';
-import 'package:super_container_layout/theme/neon_style.dart';
 import 'package:super_container_layout/theme/style_extras.dart';
 import 'package:super_container_layout/widgets/components/super_action.dart';
 import 'package:super_container_layout/widgets/components/super_indicator.dart';
@@ -90,7 +89,7 @@ class SuperDesignerRegistry {
                   mode: SuperValueMode.input,
                   placeholder: 'title',
                   binding: JsonTextBinding(
-                    repositoryId: '0123456789abcdef0123456789abcdef',
+                    repositoryId: 'pan_model_repository',
                     path: 'nodes[?].title',
                   ),
                   field: SuperTextFieldConfig(
@@ -115,7 +114,7 @@ class SuperDesignerRegistry {
                       state: BehaviorBoundState.invisible,
                       whenValue: false,
                       binding: JsonTextBinding(
-                        repositoryId: '0123456789abcdef0123456789abcdef',
+                        repositoryId: 'pan_model_repository',
                         path: 'nodes[?].isRequired',
                       ),
                     ),
@@ -145,7 +144,7 @@ class SuperDesignerRegistry {
                       state: BehaviorBoundState.invisible,
                       whenValue: false,
                       binding: JsonTextBinding(
-                        repositoryId: '0123456789abcdef0123456789abcdef',
+                        repositoryId: 'pan_model_repository',
                         path: 'nodes[?].isSearchable',
                       ),
                     ),
@@ -221,6 +220,357 @@ class SuperDesignerRegistry {
   }
 
   void addRegistry() {
+    addRegistryTreeAttributHeader();
+    addRegistryTreeAttributData();
+    addRegistryPanAttrInfo();
+    addRegistryPanAttrStringValidator();
+    _registry.registerComponent(
+      'attribut-tree',
+      RegisteredComponent(
+        label: 'attribut-tree',
+        isAvailable: (context) {
+          return true;
+        },
+        instanceBuilder: (_, id) => SuperTreeView(
+          id: 'attribut-tree',
+          slots: [
+            BuilderSlot(
+              id: 'input-header',
+              label: 'input-header',
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('tree-attribut-header')
+                      .builder(context),
+            ),
+            BuilderSlot(
+              id: 'input-data',
+              label: 'input-data',
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('tree-attribut-data')
+                      .builder(context),
+            ),
+          ],
+          config: SuperTreeViewConfig(
+            binding: const JsonTextBinding(
+              repositoryId: 'pan_model_repository',
+              path: 'nodes',
+            ),
+            rowHeight: 28,
+            placements: const {
+              SuperTreeViewConfig.headerZone: ['input-header'],
+              SuperTreeViewConfig.dataZone: ['input-data'],
+            },
+          ),
+        ),
+      ),
+    );
+
+    _registry.registerComponent(
+      'tab-properties',
+      RegisteredComponent(
+        label: 'tab-properties',
+        isAvailable: (context) {
+          return true;
+        },
+        instanceBuilder: (_, id) => SuperTab(
+          id: 'tab-properties',
+          label: 'tab-properties',
+          config: SuperTabConfig(
+            // tabBarStyle: const ContainerStyle(
+            //   radius: 12,
+            //   elevation: 4,
+            //   shadowOpacity: 0.6,
+            // ),
+            indicatorKind: SuperTabIndicatorKind.box,
+            indicatorRadius: 15.61465968586392,
+            indicatorHorizontalPadding: 0.13403141361261248,
+            indicatorVerticalPadding: 3.585340314136142,
+            overlayColor: const Color(0x00979AA9),
+            labelHorizontalPadding: 0,
+            dividerColor: const Color(0x00C6C5D0),
+            tabAlignment: TabAlignment.center,
+            placements: const {
+              'tabs': ['tab-tree', 'tab-context', 'tab-behaviours'],
+              'content:tab-tree': ['tab-content-tree'],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'tab-tree',
+              label: 'tab-tree',
+              builder: (_) => const SuperAction(
+                id: 'tab-tree',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  variant: SuperActionVariant.text,
+                  label: 'Properties',
+                  icon: 'storage',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tab-context',
+              label: 'tab-context',
+              builder: (_) => const SuperAction(
+                id: 'tab-context',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  variant: SuperActionVariant.text,
+                  label: 'Documentation',
+                  icon: 'menu_book',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tab-behaviours',
+              label: 'tab-behaviours',
+              builder: (_) => const SuperAction(
+                id: 'tab-behaviours',
+                config: SuperActionConfig(
+                  kind: SuperActionKind.textAndIcon,
+                  variant: SuperActionVariant.text,
+                  label: 'Behaviours',
+                  icon: 'manage_accounts',
+                ),
+              ),
+            ),
+            BuilderSlot(
+              id: 'tab-content-tree',
+              label: 'tab-content-tree',
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('attribut-tree')
+                      .builder(context),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    _registry.registerComponent(
+      'panModel',
+      RegisteredComponent(
+        label: 'panModel',
+        isAvailable: (context) {
+          return true;
+        },
+        instanceBuilder: (_, id) => SuperLayout(
+          id: id,
+          label: 'panModel',
+          behaviours: [
+            ComponentBehavior(
+              id: 'global-node-properties-size',
+              trigger: BehaviorTrigger.binding,
+              action: ZoneSizeBindingAction(
+                zone: SuperLayoutZone.east,
+                binding: const JsonTextBinding(
+                  repositoryId: 'pan_model_repository',
+                  path: 'estSize',
+                ),
+              ),
+            ),
+          ],
+          config: const SuperLayoutConfig(
+            west: true,
+            east: true,
+            westSize: 320,
+            eastSize: 300,
+            sideResizing: {SuperLayoutZone.west: true},
+            autoSides: {SuperLayoutZone.center},
+            placements: {
+              SuperLayoutZone.west: ['input-code'],
+              SuperLayoutZone.center: ['explorer-tree'],
+              SuperLayoutZone.east: ['global-node-properties'],
+            },
+          ),
+          slots: [
+            BuilderSlot(
+              id: 'input-code',
+              label: 'input-code',
+              builder: (_) => SuperTab(
+                id: 'input-code',
+                label: 'input-code',
+                config: SuperTabConfig(
+                  tabBarStyle: const ContainerStyle(
+                    radius: 12,
+                    elevation: 4,
+                    shadowOpacity: 0.6387434554973861,
+                    //neon: NeonStyle(),
+                  ),
+                  indicatorKind: SuperTabIndicatorKind.box,
+                  indicatorRadius: 15.61465968586392,
+                  indicatorHorizontalPadding: 0.13403141361261248,
+                  indicatorVerticalPadding: 3.585340314136142,
+                  overlayColor: const Color(0x00979AA9),
+                  labelHorizontalPadding: 0,
+                  dividerColor: const Color(0x00C6C5D0),
+                  tabAlignment: TabAlignment.fill,
+                  slotSizeConstraints: const {
+                    'tab-structure': SlotSizeConstraints(
+                      preferredWidth: SlotDimension(124, SlotSizeUnit.pixels),
+                      percentBasis: SlotPercentBasis.layout,
+                    ),
+                  },
+                  placements: const {
+                    'tabs': ['tab-structure', 'tab-info', 'tab-version'],
+                    'content:tab-structure': ['tab-content-model-impl'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'tab-structure',
+                    label: 'tab-structure',
+                    builder: (_) => const SuperAction(
+                      id: 'tab-structure',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        variant: SuperActionVariant.text,
+                        label: 'Structure',
+                        icon: 'grid_view',
+                      ),
+                    ),
+                  ),
+                  BuilderSlot(
+                    id: 'tab-info',
+                    label: 'tab-info',
+                    builder: (_) => const SuperAction(
+                      id: 'tab-info',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        variant: SuperActionVariant.text,
+                        label: 'Info',
+                        icon: 'info',
+                      ),
+                    ),
+                  ),
+                  BuilderSlot(
+                    id: 'tab-version',
+                    label: 'tab-version',
+                    builder: (_) => const SuperAction(
+                      id: 'tab-version',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        variant: SuperActionVariant.text,
+                        label: 'Version',
+                        icon: 'schedule',
+                      ),
+                    ),
+                  ),
+                  BuilderSlot(
+                    id: 'tab-content-model-impl',
+                    label: 'tab-content-model-impl',
+                    builder: (_) => EditableSurface(
+                      id: 'tab-content-model-impl',
+                      label: 'tab-content-model-impl',
+                      menuType: 'Card',
+                      style: const ContainerStyle(color: Color(0xFF2B382C)),
+                      child: const SuperCode(
+                        id: 'tab-content-model-impl:child',
+                        config: SuperCodeConfig(
+                          binding: JsonTextBinding(
+                            repositoryId: 'pan_model_repository',
+                            path: 'source',
+                          ),
+                          errorBinding: JsonTextBinding(
+                            repositoryId: 'pan_model_repository',
+                            path: 'yamlError',
+                          ),
+                          style: SuperCodeStyle(transparentBackground: true),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            BuilderSlot(
+              id: 'explorer-tree',
+              label: 'explorer-tree',
+              builder: (context) =>
+                  SuperApp.of(context).registry!
+                      .component('tab-properties')
+                      .builder(context),
+            ),
+            BuilderSlot(
+              id: 'global-node-properties',
+              label: 'global-node-properties',
+              builder: (context) => SuperTab(
+                id: 'global-node-properties',
+                label: 'global-node-properties',
+                config: SuperTabConfig(
+                  indicatorKind: SuperTabIndicatorKind.box,
+                  indicatorRadius: 27.610471204188492,
+                  overlayColor: const Color(0x00979AA9),
+                  indicatorHorizontalPadding: 1.8764397905758665,
+                  indicatorVerticalPadding: 3.6523560209424106,
+                  zoneFlows: const {
+                    'content:tab-info': ZoneFlowConfig(
+                      scrollable: true,
+                      expandSlots: false,
+                    ),
+                    'content:tab-validator': ZoneFlowConfig(
+                      scrollable: true,
+                      expandSlots: false,
+                    ),
+                  },
+                  placements: const {
+                    'tabs': ['tab-info', 'tab-validator'],
+                    'content:tab-info': ['WBYiTwqr2a'],
+                    'content:tab-validator': ['_cpAVbj6Cd'],
+                  },
+                ),
+                slots: [
+                  BuilderSlot(
+                    id: 'tab-info',
+                    label: 'tab-info',
+                    builder: (_) => const SuperAction(
+                      id: 'tab-info',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        label: 'Info',
+                        icon: 'info',
+                      ),
+                    ),
+                  ),
+                  BuilderSlot(
+                    id: 'tab-validator',
+                    label: 'tab-validator',
+                    builder: (_) => const SuperAction(
+                      id: 'tab-validator',
+                      config: SuperActionConfig(
+                        kind: SuperActionKind.textAndIcon,
+                        label: 'Validator',
+                        icon: 'check_circle',
+                      ),
+                    ),
+                  ),
+                  BuilderSlot(
+                    id: 'WBYiTwqr2a',
+                    label: 'WBYiTwqr2a',
+                    builder: (context) =>
+                        SuperApp.of(context).registry!
+                            .component('panAttrInfo')
+                            .builder(context),
+                  ),
+                  BuilderSlot(
+                    id: '_cpAVbj6Cd',
+                    label: '_cpAVbj6Cd',
+                    builder: (context) =>
+                        SuperApp.of(context).registry!
+                            .component('panAttrStringValidator')
+                            .builder(context),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void addRegistryTreeAttributHeader() {
     _registry.registerComponent(
       'tree-attribut-header',
       RegisteredComponent(
@@ -314,231 +664,9 @@ class SuperDesignerRegistry {
         ),
       ),
     );
+  }
 
-    addRegistryTreeAttributData();
-
-    _registry.registerComponent(
-      'panAttrInfo',
-      RegisteredComponent(
-        label: 'panAttrInfo',
-        isAvailable: (context) {
-          return true;
-        },
-        instanceBuilder: (_, id) => EditableSurface(
-          id: id,
-          label: 'panAttrInfo',
-          menuType: 'Card',
-          child: SuperLayout(
-            id: 'WBYiTwqr2a:child',
-            label: 'Layout',
-            config: const SuperLayoutConfig(
-              zoneFlows: {
-                SuperLayoutZone.center: ZoneFlowConfig(
-                  scrollable: true,
-                  expandSlots: false,
-                  spacing: 12,
-                  padding: 16,
-                ),
-              },
-              slotSizeConstraints: {'_wSA5mADEd': SlotSizeConstraints()},
-              placements: {
-                SuperLayoutZone.center: [
-                  'field-description',
-                  'field-example',
-                  'field-const',
-                  'field-default',
-                  'switch-nullable',
-                  'switch-readonly',
-                  'switch-writeonly',
-                  'switch-deprecated',
-                  'switch-search-ref',
-                  '_wSA5mADEd',
-                ],
-              },
-            ),
-            slots: [
-              BuilderSlot(
-                id: 'field-description',
-                label: 'field-description',
-                builder: (_) => const SuperValue(
-                  id: 'field-description',
-                  config: SuperValueConfig(
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.description',
-                    ),
-                    mode: SuperValueMode.input,
-                    label: 'Description',
-                    minLines: 4,
-                    maxLines: 4,
-                    field: SuperTextFieldConfig(
-                      variant: TextFieldVariant.outlined,
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'field-example',
-                label: 'field-example',
-                builder: (_) => const SuperValue(
-                  id: 'field-example',
-                  config: SuperValueConfig(
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.example',
-                    ),
-                    mode: SuperValueMode.input,
-                    label: 'Example',
-                    minLines: 4,
-                    maxLines: 4,
-                    field: SuperTextFieldConfig(
-                      variant: TextFieldVariant.outlined,
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'field-const',
-                label: 'field-const',
-                builder: (_) => const SuperValue(
-                  id: 'field-const',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    label: 'Const',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.const',
-                    ),
-                    field: SuperTextFieldConfig(
-                      variant: TextFieldVariant.outlined,
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'field-default',
-                label: 'field-default',
-                builder: (_) => const SuperValue(
-                  id: 'field-default',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    label: 'Default',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.default',
-                    ),
-                    field: SuperTextFieldConfig(
-                      variant: TextFieldVariant.outlined,
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'switch-nullable',
-                label: 'switch-nullable',
-                builder: (_) => const SuperValue(
-                  id: 'switch-nullable',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    kind: SuperValueKind.switchControl,
-                    label: 'Nullable',
-                      binding: JsonTextBinding(
-                        repositoryId: '0123456789abcdef0123456789abcdef',
-                        path: 'nodes[?].properties.nullable',
-                      ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'switch-readonly',
-                label: 'switch-readonly',
-                builder: (_) => const SuperValue(
-                  id: 'switch-readonly',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    kind: SuperValueKind.switchControl,
-                    label: 'ReadOnly',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.readonly',
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'switch-writeonly',
-                label: 'switch-writeonly',
-                builder: (_) => const SuperValue(
-                  id: 'switch-writeonly',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    kind: SuperValueKind.switchControl,
-                    label: 'WriteOnly',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.writeonly',
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'switch-deprecated',
-                label: 'switch-deprecated',
-                builder: (_) => const SuperValue(
-                  id: 'switch-deprecated',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    kind: SuperValueKind.switchControl,
-                    label: 'Deprecated',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.deprecated',
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: 'switch-search-ref',
-                label: 'switch-search-ref',
-                builder: (_) => const SuperValue(
-                  id: 'switch-search-ref',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    kind: SuperValueKind.switchControl,
-                    label: 'Search reference',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.searchRef',
-                    ),
-                  ),
-                ),
-              ),
-              BuilderSlot(
-                id: '_wSA5mADEd',
-                label: '_wSA5mADEd',
-                builder: (_) => const SuperValue(
-                  id: '_wSA5mADEd',
-                  config: SuperValueConfig(
-                    mode: SuperValueMode.input,
-                    label: 'Comment',
-                    binding: JsonTextBinding(
-                      repositoryId: '0123456789abcdef0123456789abcdef',
-                      path: 'nodes[?].properties.comment',
-                    ),
-                    minLines: 4,
-                    maxLines: 4,
-                    field: SuperTextFieldConfig(
-                      variant: TextFieldVariant.outlined,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-
+  void addRegistryPanAttrStringValidator() {
     _registry.registerComponent(
       'panAttrStringValidator',
       RegisteredComponent(
@@ -741,251 +869,227 @@ class SuperDesignerRegistry {
         ),
       ),
     );
+  }
 
+  void addRegistryPanAttrInfo() {
     _registry.registerComponent(
-      'panModel',
+      'panAttrInfo',
       RegisteredComponent(
-        label: 'panModel',
+        label: 'panAttrInfo',
         isAvailable: (context) {
           return true;
         },
-        instanceBuilder: (_, id) => SuperLayout(
+        instanceBuilder: (_, id) => EditableSurface(
           id: id,
-          label: 'panModel',
-          behaviours: [
-            ComponentBehavior(
-              id: 'global-node-properties-size',
-              trigger: BehaviorTrigger.binding,
-              action: ZoneSizeBindingAction(
-                zone: SuperLayoutZone.east,
-                binding: const JsonTextBinding(
-                  repositoryId: '0123456789abcdef0123456789abcdef',
-                  path: 'estSize',
+          label: 'panAttrInfo',
+          menuType: 'Card',
+          child: SuperLayout(
+            id: 'WBYiTwqr2a:child',
+            label: 'Layout',
+            config: const SuperLayoutConfig(
+              zoneFlows: {
+                SuperLayoutZone.center: ZoneFlowConfig(
+                  scrollable: true,
+                  expandSlots: false,
+                  spacing: 12,
+                  padding: 16,
+                ),
+              },
+              slotSizeConstraints: {'_wSA5mADEd': SlotSizeConstraints()},
+              placements: {
+                SuperLayoutZone.center: [
+                  'field-description',
+                  'field-example',
+                  'field-const',
+                  'field-default',
+                  'switch-nullable',
+                  'switch-readonly',
+                  'switch-writeonly',
+                  'switch-deprecated',
+                  'switch-search-ref',
+                  '_wSA5mADEd',
+                ],
+              },
+            ),
+            slots: [
+              BuilderSlot(
+                id: 'field-description',
+                label: 'field-description',
+                builder: (_) => const SuperValue(
+                  id: 'field-description',
+                  config: SuperValueConfig(
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.description',
+                    ),
+                    mode: SuperValueMode.input,
+                    label: 'description',
+                    minLines: 4,
+                    maxLines: 4,
+                    field: SuperTextFieldConfig(
+                      variant: TextFieldVariant.outlined,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
-          config: const SuperLayoutConfig(
-            west: true,
-            east: true,
-            westSize: 320,
-            eastSize: 300,
-            sideResizing: {SuperLayoutZone.west: true},
-            autoSides: {SuperLayoutZone.center},
-            placements: {
-              SuperLayoutZone.west: ['input-code'],
-              SuperLayoutZone.center: ['explorer-tree'],
-              SuperLayoutZone.east: ['global-node-properties'],
-            },
+              BuilderSlot(
+                id: 'field-example',
+                label: 'field-example',
+                builder: (_) => const SuperValue(
+                  id: 'field-example',
+                  config: SuperValueConfig(
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.example',
+                    ),
+                    mode: SuperValueMode.input,
+                    label: 'example',
+                    minLines: 4,
+                    maxLines: 4,
+                    field: SuperTextFieldConfig(
+                      variant: TextFieldVariant.outlined,
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'field-const',
+                label: 'field-const',
+                builder: (_) => const SuperValue(
+                  id: 'field-const',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    label: 'const',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.const',
+                    ),
+                    field: SuperTextFieldConfig(
+                      variant: TextFieldVariant.outlined,
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'field-default',
+                label: 'field-default',
+                builder: (_) => const SuperValue(
+                  id: 'field-default',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    label: 'default',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.default',
+                    ),
+                    field: SuperTextFieldConfig(
+                      variant: TextFieldVariant.outlined,
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'switch-nullable',
+                label: 'switch-nullable',
+                builder: (_) => const SuperValue(
+                  id: 'switch-nullable',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    kind: SuperValueKind.switchControl,
+                    label: 'nullable',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.nullable',
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'switch-readonly',
+                label: 'switch-readonly',
+                builder: (_) => const SuperValue(
+                  id: 'switch-readonly',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    kind: SuperValueKind.switchControl,
+                    label: 'read Only',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.readonly',
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'switch-writeonly',
+                label: 'switch-writeonly',
+                builder: (_) => const SuperValue(
+                  id: 'switch-writeonly',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    kind: SuperValueKind.switchControl,
+                    label: 'write Only',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.writeonly',
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'switch-deprecated',
+                label: 'switch-deprecated',
+                builder: (_) => const SuperValue(
+                  id: 'switch-deprecated',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    kind: SuperValueKind.switchControl,
+                    label: 'deprecated',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.deprecated',
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: 'switch-search-ref',
+                label: 'switch-search-ref',
+                builder: (_) => const SuperValue(
+                  id: 'switch-search-ref',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    kind: SuperValueKind.switchControl,
+                    label: 'search reference',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.searchRef',
+                    ),
+                  ),
+                ),
+              ),
+              BuilderSlot(
+                id: '_wSA5mADEd',
+                label: '_wSA5mADEd',
+                builder: (_) => const SuperValue(
+                  id: '_wSA5mADEd',
+                  config: SuperValueConfig(
+                    mode: SuperValueMode.input,
+                    label: 'comment',
+                    binding: JsonTextBinding(
+                      repositoryId: 'pan_model_repository',
+                      path: 'nodes[?].properties.comment',
+                    ),
+                    minLines: 4,
+                    maxLines: 4,
+                    field: SuperTextFieldConfig(
+                      variant: TextFieldVariant.outlined,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-          slots: [
-            BuilderSlot(
-              id: 'input-code',
-              label: 'input-code',
-              builder: (_) => SuperTab(
-                id: 'input-code',
-                label: 'input-code',
-                config: SuperTabConfig(
-                  tabBarStyle: const ContainerStyle(
-                    radius: 12,
-                    elevation: 3.685863874345599,
-                    shadowOpacity: 0.6387434554973861,
-                    neon: NeonStyle(),
-                  ),
-                  indicatorKind: SuperTabIndicatorKind.box,
-                  indicatorRadius: 15.61465968586392,
-                  indicatorHorizontalPadding: 0.13403141361261248,
-                  indicatorVerticalPadding: 3.585340314136142,
-                  overlayColor: const Color(0x00979AA9),
-                  labelHorizontalPadding: 0,
-                  dividerColor: const Color(0x00C6C5D0),
-                  tabAlignment: TabAlignment.fill,
-                  slotSizeConstraints: const {
-                    'KlSbddMArN': SlotSizeConstraints(
-                      preferredWidth: SlotDimension(124, SlotSizeUnit.pixels),
-                      percentBasis: SlotPercentBasis.layout,
-                    ),
-                  },
-                  placements: const {
-                    'tabs': ['KlSbddMArN', 'I511oCPeBH', 'YM2KFsXQQz'],
-                    'content:KlSbddMArN': ['tab-content-model-impl'],
-                  },
-                ),
-                slots: [
-                  BuilderSlot(
-                    id: 'KlSbddMArN',
-                    label: 'KlSbddMArN',
-                    builder: (_) => const SuperAction(
-                      id: 'KlSbddMArN',
-                      config: SuperActionConfig(
-                        kind: SuperActionKind.textAndIcon,
-                        variant: SuperActionVariant.text,
-                        label: 'Structure',
-                        icon: 'grid_view',
-                      ),
-                    ),
-                  ),
-                  BuilderSlot(
-                    id: 'I511oCPeBH',
-                    label: 'I511oCPeBH',
-                    builder: (_) => const SuperAction(
-                      id: 'I511oCPeBH',
-                      config: SuperActionConfig(
-                        kind: SuperActionKind.textAndIcon,
-                        variant: SuperActionVariant.text,
-                        label: 'Info',
-                        icon: 'info',
-                      ),
-                    ),
-                  ),
-                  BuilderSlot(
-                    id: 'YM2KFsXQQz',
-                    label: 'YM2KFsXQQz',
-                    builder: (_) => const SuperAction(
-                      id: 'YM2KFsXQQz',
-                      config: SuperActionConfig(
-                        kind: SuperActionKind.textAndIcon,
-                        variant: SuperActionVariant.text,
-                        label: 'Version',
-                        icon: 'schedule',
-                      ),
-                    ),
-                  ),
-                  BuilderSlot(
-                    id: 'tab-content-model-impl',
-                    label: 'tab-content-model-impl',
-                    builder: (_) => EditableSurface(
-                      id: 'tab-content-model-impl',
-                      label: 'tab-content-model-impl',
-                      menuType: 'Card',
-                      style: const ContainerStyle(color: Color(0xFF2B382C)),
-                      child: const SuperCode(
-                        id: 'tab-content-model-impl:child',
-                        config: SuperCodeConfig(
-                          binding: JsonTextBinding(
-                            repositoryId: '0123456789abcdef0123456789abcdef',
-                            path: 'source',
-                          ),
-                          errorBinding: JsonTextBinding(
-                            repositoryId: '0123456789abcdef0123456789abcdef',
-                            path: 'yamlError',
-                          ),
-                          style: SuperCodeStyle(transparentBackground: true),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            BuilderSlot(
-              id: 'explorer-tree',
-              label: 'explorer-tree',
-              builder: (context) => SuperTreeView(
-                id: 'explorer-tree',
-                slots: [
-                  BuilderSlot(
-                    id: 'input-header',
-                    label: 'input-header',
-                    builder: (context) =>
-                        SuperApp.of(context).registry!
-                            .component('tree-attribut-header')
-                            .builder(context),
-                  ),
-                  BuilderSlot(
-                    id: 'input-data',
-                    label: 'input-data',
-                    builder: (context) =>
-                        SuperApp.of(context).registry!
-                            .component('tree-attribut-data')
-                            .builder(context),
-                  ),
-                ],
-                config: SuperTreeViewConfig(
-                  binding: const JsonTextBinding(
-                    repositoryId: '0123456789abcdef0123456789abcdef',
-                    path: 'nodes',
-                  ),
-                  rowHeight: 28,
-                  placements: const {
-                    SuperTreeViewConfig.headerZone: ['input-header'],
-                    SuperTreeViewConfig.dataZone: ['input-data'],
-                  },
-                ),
-              ),
-            ),
-            BuilderSlot(
-              id: 'global-node-properties',
-              label: 'global-node-properties',
-              builder: (context) => SuperTab(
-                id: 'global-node-properties',
-                label: 'global-node-properties',
-                config: SuperTabConfig(
-                  indicatorKind: SuperTabIndicatorKind.box,
-                  indicatorRadius: 27.610471204188492,
-                  indicatorHorizontalPadding: 1.8764397905758665,
-                  indicatorVerticalPadding: 3.6523560209424106,
-                  zoneFlows: const {
-                    'content:tab-info': ZoneFlowConfig(
-                      scrollable: true,
-                      expandSlots: false,
-                    ),
-                    'content:tab-validator': ZoneFlowConfig(
-                      scrollable: true,
-                      expandSlots: false,
-                    ),
-                  },
-                  placements: const {
-                    'tabs': ['tab-info', 'tab-validator'],
-                    'content:tab-info': ['WBYiTwqr2a'],
-                    'content:tab-validator': ['_cpAVbj6Cd'],
-                  },
-                ),
-                slots: [
-                  BuilderSlot(
-                    id: 'tab-info',
-                    label: 'tab-info',
-                    builder: (_) => const SuperAction(
-                      id: 'tab-info',
-                      config: SuperActionConfig(
-                        kind: SuperActionKind.textAndIcon,
-                        label: 'Info',
-                        icon: 'info',
-                      ),
-                    ),
-                  ),
-                  BuilderSlot(
-                    id: 'tab-validator',
-                    label: 'tab-validator',
-                    builder: (_) => const SuperAction(
-                      id: 'tab-validator',
-                      config: SuperActionConfig(
-                        kind: SuperActionKind.textAndIcon,
-                        label: 'Validator',
-                        icon: 'check_circle',
-                      ),
-                    ),
-                  ),
-                  BuilderSlot(
-                    id: 'WBYiTwqr2a',
-                    label: 'WBYiTwqr2a',
-                    builder: (context) =>
-                        SuperApp.of(context).registry!
-                            .component('panAttrInfo')
-                            .builder(context),
-                  ),
-                  BuilderSlot(
-                    id: '_cpAVbj6Cd',
-                    label: '_cpAVbj6Cd',
-                    builder: (context) =>
-                        SuperApp.of(context).registry!
-                            .component('panAttrStringValidator')
-                            .builder(context),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );

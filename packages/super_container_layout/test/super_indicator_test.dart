@@ -86,13 +86,13 @@ void main() {
         style: const ContainerStyle(hoverEffect: true),
         propertyBindings: const {
           SuperIndicatorProperty.tooltip: JsonTextBinding(
-            repositoryId: '0123456789abcdef0123456789abcdef',
+            repositoryId: 'pan_model_repository',
             path: 'item.tooltip',
           ),
         },
         states: IndicatorConfigStates(
           binding: const JsonTextBinding(
-            repositoryId: '0123456789abcdef0123456789abcdef',
+            repositoryId: 'pan_model_repository',
             path: 'item.status',
           ),
           named: const {

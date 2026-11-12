@@ -55,7 +55,7 @@ void main() {
   test(
     'registered repositories stay in memory and support component bindings',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       final changes = <ChangeContext>[];
       store.registerRepository(
         RepositoryImpl(
@@ -134,7 +134,7 @@ void main() {
   test(
     'persistent registered repositories save all mutation paths and restore',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       const name = JsonTextBinding(repositoryId: id, path: 'name');
       final file = File(
         '${directory.path}${Platform.pathSeparator}registered'
@@ -215,7 +215,7 @@ void main() {
   test(
     'manual persistence protects unsaved changes and supports reload',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       const name = JsonTextBinding(repositoryId: id, path: 'name');
       final file = File(
         '${directory.path}${Platform.pathSeparator}registered'
@@ -262,7 +262,7 @@ void main() {
   );
 
   test('manual document save flushes drafts and persists explicitly', () async {
-    const id = '0123456789abcdef0123456789abcdef';
+    const id = 'pan_model_repository';
     const other = JsonTextBinding(repositoryId: id, path: 'other');
     final file = File(
       '${directory.path}${Platform.pathSeparator}registered'
@@ -313,7 +313,7 @@ void main() {
   test(
     'automatic persistence rejects external changes before mutation',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       const name = JsonTextBinding(repositoryId: id, path: 'name');
       final file = File(
         '${directory.path}${Platform.pathSeparator}registered'
@@ -347,7 +347,7 @@ void main() {
   test(
     'persistent registration reports corrupt files without overwriting',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       final file = File(
         '${directory.path}${Platform.pathSeparator}registered'
         '${Platform.pathSeparator}$id.json',
@@ -377,7 +377,7 @@ void main() {
   test(
     'explicit save flushes bindings and registered deletion removes data',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       const name = JsonTextBinding(repositoryId: id, path: 'name');
       final file = File(
         '${directory.path}${Platform.pathSeparator}registered'
@@ -418,7 +418,7 @@ void main() {
   test(
     'persistent mutations are serialized and reject invalid roots',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       const first = JsonTextBinding(repositoryId: id, path: 'first');
       const second = JsonTextBinding(repositoryId: id, path: 'second');
       final file = File(
@@ -450,7 +450,7 @@ void main() {
   );
 
   test('conditional array replacement protects concurrent changes', () async {
-    const id = '0123456789abcdef0123456789abcdef';
+    const id = 'pan_model_repository';
     const title = JsonTextBinding(repositoryId: id, path: 'nodes[0].title');
     const source = JsonTextBinding(repositoryId: id, path: 'source');
     store.registerRepository(
@@ -504,7 +504,7 @@ void main() {
   });
 
   test('persistent file errors do not commit an in-memory mutation', () async {
-    const id = '0123456789abcdef0123456789abcdef';
+    const id = 'pan_model_repository';
     const name = JsonTextBinding(repositoryId: id, path: 'name');
     final file = File(
       '${directory.path}${Platform.pathSeparator}registered'
@@ -525,7 +525,7 @@ void main() {
   test(
     'persistent registration refuses a conflicting named repository',
     () async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       await store.create(id);
       await expectLater(
         store.registerPersistentRepository(
@@ -665,7 +665,7 @@ void main() {
 
   test('orphan IDs are not reused for a different repository', () async {
     final metadata = File('${directory.path}\\Clients.json.id');
-    await metadata.writeAsString('0123456789abcdef0123456789abcdef');
+    await metadata.writeAsString('pan_model_repository');
     await expectLater(store.create('Clients'), throwsFormatException);
     await store.create('Contacts');
     await expectLater(
@@ -673,7 +673,7 @@ void main() {
       throwsFormatException,
     );
     expect(await store.list(), ['Contacts']);
-    expect(await metadata.readAsString(), '0123456789abcdef0123456789abcdef');
+    expect(await metadata.readAsString(), 'pan_model_repository');
   });
 
   test('rejects unsafe filenames', () {

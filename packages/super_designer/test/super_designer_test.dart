@@ -77,7 +77,7 @@ void main() {
         slotTypes: {'explorer': 'registry:A'},
       );
       await superApp.repositoryStore!.replaceArray(
-        '0123456789abcdef0123456789abcdef',
+        'pan_model_repository',
         'nodes',
         [
           {
@@ -119,7 +119,7 @@ void main() {
         isEmpty,
       );
       const sizeBinding = JsonTextBinding(
-        repositoryId: '0123456789abcdef0123456789abcdef',
+        repositoryId: 'pan_model_repository',
         path: 'estSize',
       );
       final tree = find.byType(SuperTreeView);

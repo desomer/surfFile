@@ -9,7 +9,7 @@ void main() {
     final configured = original.copyWith(
       states: ValueConfigStates(
         binding: const JsonTextBinding(
-          repositoryId: '0123456789abcdef0123456789abcdef',
+          repositoryId: 'pan_model_repository',
           path: 'status',
         ),
         named: {'ready': const SuperValueConfig(initialText: 'Ready')},

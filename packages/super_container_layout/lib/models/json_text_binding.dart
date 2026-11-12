@@ -1,8 +1,8 @@
 /// Liaison de composants aux attributs d'un repository JSON.
 ///
 /// Un *repository* est un fichier JSON nommé, géré par `JsonRepositoryStore`
-/// et identifié par un ID stable de 32 caractères hexadécimaux. Ce fichier
-/// définit :
+/// et identifié par un ID stable en minuscules, chiffres et `_`. Cet ID
+/// comporte au plus 32 caractères. Ce fichier définit :
 ///
 /// * [JsonTextBinding] : la liaison persistée d'un composant (repository +
 ///   chemin), par exemple la valeur d'un `SuperValue` ou le tableau d'une
@@ -70,14 +70,14 @@
 /// chemin.read(document); // 'Bob'
 /// final nouveau = chemin.write(document, 'Robert', 'Bob'); // copie modifiée
 /// ```
-/// 
+///
 library;
 
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-final _repositoryIdPattern = RegExp(r'^[0-9a-f]{32}$');
+final _repositoryIdPattern = RegExp(r'^[a-z0-9_]{1,32}$');
 
 /// Liaison persistée d'un composant à un attribut (ou un tableau) d'un
 /// repository JSON.
@@ -109,8 +109,8 @@ final _repositoryIdPattern = RegExp(r'^[0-9a-f]{32}$');
 class JsonTextBinding {
   const JsonTextBinding({this.repositoryId, required this.path});
 
-  /// ID du repository (32 caractères hexadécimaux), ou `null` pour hériter
-  /// celui de la liste englobante.
+  /// ID du repository (minuscules, chiffres et `_`, 1 à 32 caractères),
+  /// ou `null` pour hériter celui de la liste englobante.
   final String? repositoryId;
 
   /// Chemin de l'attribut, par exemple `clients[?].nom`.
@@ -122,7 +122,7 @@ class JsonTextBinding {
   /// Lève une [FormatException] avec un message affichable sinon.
   void validate() {
     if (repositoryId != null && !_repositoryIdPattern.hasMatch(repositoryId!)) {
-      throw const FormatException('ID de repository invalide.');
+      throw FormatException('ID de repository invalide. <$repositoryId> path <$path>');
     }
     JsonAttributePath(path);
   }

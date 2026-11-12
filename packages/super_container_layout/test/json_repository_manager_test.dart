@@ -134,7 +134,7 @@ void main() {
     testWidgets('persistent repository editor saves and reloads ($autoSave)', (
       tester,
     ) async {
-      const id = '0123456789abcdef0123456789abcdef';
+      const id = 'pan_model_repository';
       final file = File(
         '${directory.path}${Platform.pathSeparator}registered'
         '${Platform.pathSeparator}$id.json',
@@ -305,83 +305,85 @@ void main() {
     },
   );
 
-  testWidgets(
-    'repository dialog docks on the right and zooms out the screen',
-    (tester) async {
-      await tester.binding.setSurfaceSize(const Size(1400, 900));
-      addTearDown(() => tester.binding.setSurfaceSize(null));
-      final editMode = ValueNotifier(true);
-      final appearance = ValueNotifier(Appearance());
-      final navigatorKey = GlobalKey<NavigatorState>();
-      final pageKey = GlobalKey();
-      addTearDown(editMode.dispose);
-      addTearDown(appearance.dispose);
+  testWidgets('repository dialog docks on the right and zooms out the screen', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final editMode = ValueNotifier(true);
+    final appearance = ValueNotifier(Appearance());
+    final navigatorKey = GlobalKey<NavigatorState>();
+    final pageKey = GlobalKey();
+    addTearDown(editMode.dispose);
+    addTearDown(appearance.dispose);
 
-      Rect screenRect(Finder finder) {
-        final box = tester.renderObject<RenderBox>(finder);
-        return MatrixUtils.transformRect(
-          box.getTransformTo(null),
-          Offset.zero & box.size,
-        );
-      }
+    Rect screenRect(Finder finder) {
+      final box = tester.renderObject<RenderBox>(finder);
+      return MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      );
+    }
 
-      await tester.pumpWidget(
-        JsonRepositoryScope(
-          store: store,
-          child: AppearanceScope(
-            controller: appearance,
-            child: StyleEditScope(
-              controller: editMode,
-              child: MaterialApp(
-                navigatorKey: navigatorKey,
-                builder: (context, child) => Stack(
-                  children: [
-                    child!,
-                    Positioned.fill(
-                      child: StyleEditBanner(navigatorKey: navigatorKey),
-                    ),
-                  ],
-                ),
-                home: Scaffold(
-                  body: EditorZoom(
-                    child: SizedBox.expand(
-                      key: pageKey,
-                      child: const ColoredBox(color: Colors.blue),
-                    ),
+    await tester.pumpWidget(
+      JsonRepositoryScope(
+        store: store,
+        child: AppearanceScope(
+          controller: appearance,
+          child: StyleEditScope(
+            controller: editMode,
+            child: MaterialApp(
+              navigatorKey: navigatorKey,
+              builder: (context, child) => Stack(
+                children: [
+                  child!,
+                  Positioned.fill(
+                    child: StyleEditBanner(navigatorKey: navigatorKey),
+                  ),
+                ],
+              ),
+              home: Scaffold(
+                body: EditorZoom(
+                  child: SizedBox.expand(
+                    key: pageKey,
+                    child: const ColoredBox(color: Colors.blue),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      );
-      await settle(tester);
+      ),
+    );
+    await settle(tester);
 
-      final pageFinder = find.byKey(pageKey);
-      final before = screenRect(pageFinder);
-      expect(before, const Rect.fromLTWH(0, 0, 1400, 900));
+    final pageFinder = find.byKey(pageKey);
+    final before = screenRect(pageFinder);
+    expect(before, const Rect.fromLTWH(0, 0, 1400, 900));
 
-      await tap(tester, find.byKey(const ValueKey('style-edit-banner-repository')));
-      await settle(tester);
+    await tap(
+      tester,
+      find.byKey(const ValueKey('style-edit-banner-repository')),
+    );
+    await settle(tester);
 
-      expect(find.byType(JsonRepositoryManager), findsOneWidget);
-      final panel = find.byKey(const ValueKey('editor-dialog-panel'));
-      expect(panel, findsOneWidget);
-      final panelBounds = screenRect(panel);
-      expect(panelBounds.right, 1400);
-      expect(panelBounds.width, closeTo(770, .01));
+    expect(find.byType(JsonRepositoryManager), findsOneWidget);
+    final panel = find.byKey(const ValueKey('editor-dialog-panel'));
+    expect(panel, findsOneWidget);
+    final panelBounds = screenRect(panel);
+    expect(panelBounds.right, 1400);
+    expect(panelBounds.width, closeTo(770, .01));
 
-      final zoomedOut = screenRect(pageFinder);
-      expect(zoomedOut.width, lessThan(before.width));
-      expect(zoomedOut.overlaps(panelBounds), isFalse);
-      expect(zoomedOut.center.dx, closeTo((1400 - panelBounds.width) / 2, .01));
+    final zoomedOut = screenRect(pageFinder);
+    expect(zoomedOut.width, lessThan(before.width));
+    expect(zoomedOut.overlaps(panelBounds), isFalse);
+    expect(zoomedOut.center.dx, closeTo((1400 - panelBounds.width) / 2, .01));
 
-      await tap(tester, find.text('Fermer'));
-      await settle(tester);
+    await tap(tester, find.text('Fermer'));
+    await settle(tester);
 
-      expect(find.byType(JsonRepositoryManager), findsNothing);
-      expect(screenRect(pageFinder), before);
-      expect(tester.takeException(), isNull);
-    },
-  );
+    expect(find.byType(JsonRepositoryManager), findsNothing);
+    expect(screenRect(pageFinder), before);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -17,10 +17,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
-
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  const id = '0123456789abcdef0123456789abcdef';
+  const id = 'pan_model_repository';
 
   group('[?] paths', () {
     test('wildcards resolve from the outer list to the inner list', () {

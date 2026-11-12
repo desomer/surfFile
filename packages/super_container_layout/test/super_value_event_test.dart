@@ -199,7 +199,7 @@ void main() {
   testWidgets('bound values reflect the clicked runtime instance', (
     tester,
   ) async {
-    const repositoryId = '0123456789abcdef0123456789abcdef';
+    const repositoryId = 'pan_model_repository';
     final store = JsonRepositoryStore.defaultStore();
     addTearDown(store.dispose);
     store.registerRepository(

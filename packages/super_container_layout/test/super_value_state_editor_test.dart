@@ -132,7 +132,9 @@ void main() {
         onPreview: previews.add,
       );
       await choose(tester, 'ready');
-      final toggle = find.byKey(const ValueKey('value-state-override-fontSize'));
+      final toggle = find.byKey(
+        const ValueKey('value-state-override-fontSize'),
+      );
       expect(tester.widget<FilterChip>(toggle).selected, isFalse);
       expect(tester.widget<FilterChip>(toggle).onSelected, isNotNull);
       expect(previews.last.fontSize, 16);
@@ -261,7 +263,10 @@ void main() {
         findsNothing,
       );
     }
-    expect(find.byKey(const ValueKey('value-state-add-custom')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('value-state-add-custom')),
+      findsOneWidget,
+    );
     await tester.tapAt(const Offset(5, 5));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Annuler').last);
@@ -489,7 +494,7 @@ void main() {
             named: {
               'hidden': const SuperValueConfig(
                 binding: JsonTextBinding(
-                  repositoryId: '0123456789abcdef0123456789abcdef',
+                  repositoryId: 'pan_model_repository',
                   path: 'name',
                 ),
               ),
