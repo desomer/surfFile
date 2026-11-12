@@ -1152,6 +1152,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Flux de la zone : Centre'), findsOneWidget);
       expect(find.text('Taille de la zone'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('editor-wizard-tab-dimensions')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Taille et marge de la zone : Centre'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('zone-flow-dialog-center-axis')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('zone-flow-dialog-center-spacing')).first,
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey('zone-flow-dialog-center-padding-independent'),
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Annuler'));
       await tester.pumpAndSettle();
 
@@ -1160,22 +1179,27 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('style-menu-zone-flow-Nord')));
       await tester.pumpAndSettle();
-      expect(find.text('Flux de la zone : Nord'), findsOneWidget);
+      expect(find.text('Taille et marge de la zone : Nord'), findsOneWidget);
       expect(find.text('Taille de la zone'), findsOneWidget);
       expect(find.text('Taille automatique (hauteur)'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('zone-flow-dialog-north-auto-size')),
         findsOneWidget,
       );
-      final fitContentFinder = find.byKey(
-        const ValueKey('zone-flow-dialog-north-fit-content'),
+      expect(
+        find.byKey(const ValueKey('zone-flow-dialog-north-fit-content')),
+        findsNothing,
       );
       expect(
-        find.text('Étirer les éléments sur la colonne (flex : 1)'),
+        find.byKey(const ValueKey('zone-flow-dialog-north-spacing')).first,
         findsOneWidget,
       );
-      expect(tester.widget<SwitchListTile>(fitContentFinder).value, isFalse);
-      expect(tester.widget<SwitchListTile>(fitContentFinder).onChanged, isNull);
+      expect(
+        find.byKey(
+          const ValueKey('zone-flow-dialog-north-padding-independent'),
+        ),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('zone-flow-dialog-north-resizable')),
         findsOneWidget,
@@ -1184,14 +1208,23 @@ void main() {
         find.byKey(const ValueKey('zone-flow-dialog-north-auto-size')),
       );
       await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('editor-wizard-tab-properties')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Flux de la zone : Nord'), findsOneWidget);
+      expect(find.text('Taille de la zone'), findsNothing);
+      final fitContentFinder = find.byKey(
+        const ValueKey('zone-flow-dialog-north-fit-content'),
+      );
+      expect(
+        find.text('Étirer les éléments sur la colonne (flex : 1)'),
+        findsOneWidget,
+      );
       expect(tester.widget<SwitchListTile>(fitContentFinder).value, isTrue);
       expect(
         tester.widget<SwitchListTile>(fitContentFinder).onChanged,
         isNotNull,
-      );
-      expect(
-        find.byKey(const ValueKey('zone-flow-dialog-north-size')),
-        findsWidgets,
       );
       await tester.tap(find.text('Appliquer'));
       await tester.pumpAndSettle();

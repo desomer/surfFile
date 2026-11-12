@@ -2036,7 +2036,18 @@ void main() {
           find.byKey(const ValueKey('super-layout-flow-center')),
         );
         await tester.pumpAndSettle();
-        expect(find.text('Flux de la zone : Centre'), findsOneWidget);
+        expect(
+          find.text('Taille et marge de la zone : Centre'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('zone-flow-dialog-center-spacing')).first,
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('editor-wizard-tab-properties')),
+        );
+        await tester.pumpAndSettle();
 
         await tester.tap(
           find.byKey(const ValueKey('zone-flow-dialog-center-scrollable')),
@@ -2064,6 +2075,10 @@ void main() {
           findsOneWidget,
         );
         await tester.tap(rulerButton);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('editor-wizard-tab-properties')),
+        );
         await tester.pumpAndSettle();
 
         final mainAlignDropdown = find.byKey(

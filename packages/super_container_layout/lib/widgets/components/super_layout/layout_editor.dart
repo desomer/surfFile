@@ -194,9 +194,9 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
                             tooltip: _mergeLabel(corner, merge),
                             icon: Icon(
                               switch (merge) {
-                                CornerMerge.none => Icons.crop_square,
-                                CornerMerge.row => Icons.swap_horiz,
-                                CornerMerge.column => Icons.swap_vert,
+                              CornerMerge.none => Icons.crop_square,
+                              CornerMerge.row => Icons.swap_horiz,
+                              CornerMerge.column => Icons.swap_vert,
                               },
                               size: 16,
                             ),
@@ -320,6 +320,8 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
     required this.onAxisChanged,
     required this.onFlowChanged,
     this.showAxis = true,
+    this.showProperties = true,
+    this.showDimensions = true,
     this.isSide = false,
     this.sizeAxis,
     this.autoSize = true,
@@ -337,6 +339,12 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
   final ValueChanged<Axis> onAxisChanged;
   final ValueChanged<ZoneFlowConfig> onFlowChanged;
   final bool showAxis;
+
+  /// Affiche la direction, le comportement et l’alignement du contenu.
+  final bool showProperties;
+
+  /// Affiche les dimensions des côtés, l’espacement et les marges intérieures.
+  final bool showDimensions;
   final bool isSide;
   final Axis? sizeAxis;
   final bool autoSize;
@@ -373,7 +381,7 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (isSide)
+        if (showDimensions && isSide)
           _FlowSectionCard(
             title: 'Taille de la zone',
             icon: Icons.straighten,
@@ -415,7 +423,7 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                           horizontal: 8,
                           vertical: 2,
                         ),
-                      decoration: BoxDecoration(
+                        decoration: BoxDecoration(
                           color: colors.secondaryContainer,
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -465,7 +473,7 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
               ],
             ],
           ),
-        if (showAxis)
+        if (showProperties && showAxis)
           _FlowSectionCard(
             title: 'Direction du flux',
             icon: Icons.alt_route_rounded,
@@ -499,237 +507,240 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
               ),
             ],
           ),
-        _FlowSectionCard(
-          title: 'Comportement du contenu',
-          icon: Icons.tune_rounded,
-          subtitle: 'Dimensionnement des éléments et défilement',
-          children: [
-            SwitchListTile(
-              key: ValueKey('$keyPrefix-fit-content'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              secondary: Icon(
-                Icons.open_in_full_rounded,
-                size: 20,
-                color: colors.onSurfaceVariant,
-              ),
-              title: Text(
-                expandTitle,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+        if (showProperties) ...[
+          _FlowSectionCard(
+            title: 'Comportement du contenu',
+            icon: Icons.tune_rounded,
+            subtitle: 'Dimensionnement des éléments et défilement',
+            children: [
+              SwitchListTile(
+                key: ValueKey('$keyPrefix-fit-content'),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                secondary: Icon(
+                  Icons.open_in_full_rounded,
+                  size: 20,
+                  color: colors.onSurfaceVariant,
                 ),
+                title: Text(
+                  expandTitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                subtitle: Text(
+                  expandSubtitle,
+                  style: const TextStyle(fontSize: 11),
+                ),
+                value: !autoOnFlowAxis && flow.expandSlots,
+                onChanged: autoOnFlowAxis
+                    ? null
+                    : (expand) =>
+                          onFlowChanged(flow.copyWith(expandSlots: expand)),
               ),
-              subtitle: Text(
-                expandSubtitle,
-                style: const TextStyle(fontSize: 11),
-              ),
-              value: !autoOnFlowAxis && flow.expandSlots,
-              onChanged: autoOnFlowAxis
-                  ? null
-                  : (expand) =>
-                        onFlowChanged(flow.copyWith(expandSlots: expand)),
-            ),
-            Divider(
-              height: 12,
-              color: colors.outlineVariant.withValues(alpha: 0.4),
-            ),
-            SwitchListTile(
-              key: ValueKey('$keyPrefix-scrollable'),
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              secondary: Icon(
-                Icons.swap_vert_circle_outlined,
-                size: 20,
-                color: colors.onSurfaceVariant,
-              ),
-              title: const Text(
-                'Défilement automatique (scroll)',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              subtitle: const Text(
-                'Empile les éléments sans les compresser et active le scroll si besoin.',
-                style: TextStyle(fontSize: 11),
-              ),
-              value: flow.scrollable,
-              onChanged: (value) =>
-                  onFlowChanged(flow.copyWith(scrollable: value)),
-            ),
-            if (flow.scrollable) ...[
               Divider(
                 height: 12,
                 color: colors.outlineVariant.withValues(alpha: 0.4),
               ),
               SwitchListTile(
-                key: ValueKey('$keyPrefix-show-scrollbar'),
+                key: ValueKey('$keyPrefix-scrollable'),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 secondary: Icon(
-                  Icons.linear_scale_rounded,
+                  Icons.swap_vert_circle_outlined,
                   size: 20,
                   color: colors.onSurfaceVariant,
                 ),
                 title: const Text(
-                  'Afficher la barre de défilement (ScrollBar)',
+                  'Défilement automatique (scroll)',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                 ),
                 subtitle: const Text(
-                  'Rend visible une barre de défilement personnalisable.',
+                  'Empile les éléments sans les compresser et active le scroll si besoin.',
                   style: TextStyle(fontSize: 11),
                 ),
-                value: flow.showScrollbar,
+                value: flow.scrollable,
                 onChanged: (value) =>
-                    onFlowChanged(flow.copyWith(showScrollbar: value)),
+                    onFlowChanged(flow.copyWith(scrollable: value)),
               ),
-              if (flow.showScrollbar) ...[
-                const SizedBox(height: 4),
-                ListTile(
-                  key: ValueKey('$keyPrefix-scrollbar-style'),
+              if (flow.scrollable) ...[
+                Divider(
+                  height: 12,
+                  color: colors.outlineVariant.withValues(alpha: 0.4),
+                ),
+                SwitchListTile(
+                  key: ValueKey('$keyPrefix-show-scrollbar'),
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: Icon(
-                    Icons.palette_outlined,
+                  secondary: Icon(
+                    Icons.linear_scale_rounded,
                     size: 20,
-                    color: colors.primary,
-                  ),
-                  title: const Text(
-                    'Style de la barre de défilement',
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                  ),
-                  subtitle: Text(
-                    flow.scrollbarStyle.summary,
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (!flow.scrollbarStyle.isDefault)
-                        IconButton(
-                          key: ValueKey('$keyPrefix-scrollbar-style-reset'),
-                          tooltip: 'Style par défaut',
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.restart_alt, size: 18),
-                          onPressed: () => onFlowChanged(
-                            flow.copyWith(
-                              scrollbarStyle: const ScrollbarStyleConfig(),
-                            ),
-                          ),
-                        ),
-                      const Icon(Icons.tune, size: 18),
-                    ],
-                  ),
-                  onTap: () => showScrollbarStyleEditor(
-                    context: context,
-                    axis: axis,
-                    keyPrefix: '$keyPrefix-scrollbar-editor',
-                    initialValue: flow.scrollbarStyle,
-                    onChanged: (nextStyle) => onFlowChanged(
-                      flow.copyWith(scrollbarStyle: nextStyle),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ],
-        ),
-        _FlowSectionCard(
-          title: 'Alignement & Distribution',
-          icon: Icons.format_align_center_rounded,
-          subtitle: 'Positionnement sur les axes principal et transversal',
-          children: [
-            Text(
-              'Alignement principal (${axis == Axis.horizontal ? "Horizontal" : "Vertical"})',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 6),
-            getSegmentedMainAlign(),
-            const SizedBox(height: 14),
-            Text(
-              'Alignement transversal (${axis == Axis.horizontal ? "Vertical" : "Horizontal"})',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: colors.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 6),
-            getSegmentedCrossAlign(),
-          ],
-        ),
-        _FlowSectionCard(
-          title: 'Espacement & Marges',
-          icon: Icons.space_dashboard_outlined,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Espacement entre éléments',
-                  style: TextStyle(
-                    fontSize: 12,
                     color: colors.onSurfaceVariant,
                   ),
+                  title: const Text(
+                    'Afficher la barre de défilement (ScrollBar)',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  ),
+                  subtitle: const Text(
+                    'Rend visible une barre de défilement personnalisable.',
+                    style: TextStyle(fontSize: 11),
+                  ),
+                  value: flow.showScrollbar,
+                  onChanged: (value) =>
+                      onFlowChanged(flow.copyWith(showScrollbar: value)),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colors.secondaryContainer,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${flow.spacing.round()} px',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: colors.onSecondaryContainer,
+                if (flow.showScrollbar) ...[
+                  const SizedBox(height: 4),
+                  ListTile(
+                    key: ValueKey('$keyPrefix-scrollbar-style'),
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.palette_outlined,
+                      size: 20,
+                      color: colors.primary,
+                    ),
+                    title: const Text(
+                      'Style de la barre de défilement',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    subtitle: Text(
+                      flow.scrollbarStyle.summary,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!flow.scrollbarStyle.isDefault)
+                          IconButton(
+                            key: ValueKey('$keyPrefix-scrollbar-style-reset'),
+                            tooltip: 'Style par défaut',
+                            visualDensity: VisualDensity.compact,
+                            icon: const Icon(Icons.restart_alt, size: 18),
+                            onPressed: () => onFlowChanged(
+                              flow.copyWith(
+                                scrollbarStyle: const ScrollbarStyleConfig(),
+                              ),
+                            ),
+                          ),
+                        const Icon(Icons.tune, size: 18),
+                      ],
+                    ),
+                    onTap: () => showScrollbarStyleEditor(
+                      context: context,
+                      axis: axis,
+                      keyPrefix: '$keyPrefix-scrollbar-editor',
+                      initialValue: flow.scrollbarStyle,
+                      onChanged: (nextStyle) => onFlowChanged(
+                        flow.copyWith(scrollbarStyle: nextStyle),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ],
-            ),
-            EditorHistorySlider(
-              key: ValueKey('$keyPrefix-spacing'),
-              min: 0,
-              max: ZoneFlowConfig.maxSpacing,
-              value: flow.spacing.clamp(0, ZoneFlowConfig.maxSpacing),
-              label: '${flow.spacing.round()}',
-              onChanged: (next) =>
-                  onFlowChanged(flow.copyWith(spacing: next.roundToDouble())),
-            ),
-            Divider(
-              height: 10,
-              color: colors.outlineVariant.withValues(alpha: 0.4),
-            ),
-            IndependentSpacingEditor(
-              label: 'Marge intérieure',
-              value: flow.padding,
-              sides: flow.paddingInsets,
-              max: ZoneFlowConfig.maxPadding,
-              keyPrefix: '$keyPrefix-padding',
-              onChanged: (padding, sides) => onFlowChanged(
-                flow.copyWith(
-                  padding: padding.roundToDouble(),
-                  paddingInsets: sides == null
-                      ? null
-                      : EdgeInsets.fromLTRB(
-                          sides.left.roundToDouble(),
-                          sides.top.roundToDouble(),
-                          sides.right.roundToDouble(),
-                          sides.bottom.roundToDouble(),
-                        ),
-                  clearPaddingInsets: sides == null,
+            ],
+          ),
+          _FlowSectionCard(
+            title: 'Alignement & Distribution',
+            icon: Icons.format_align_center_rounded,
+            subtitle: 'Positionnement sur les axes principal et transversal',
+            children: [
+              Text(
+                'Alignement principal (${axis == Axis.horizontal ? "Horizontal" : "Vertical"})',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: colors.onSurfaceVariant,
                 ),
               ),
-            ),
-          ],
-        ),
+              const SizedBox(height: 6),
+              getSegmentedMainAlign(),
+              const SizedBox(height: 14),
+              Text(
+                'Alignement transversal (${axis == Axis.horizontal ? "Vertical" : "Horizontal"})',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 6),
+              getSegmentedCrossAlign(),
+            ],
+          ),
+        ],
+        if (showDimensions)
+          _FlowSectionCard(
+            title: 'Espacement & Marges',
+            icon: Icons.space_dashboard_outlined,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Espacement entre éléments',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.secondaryContainer,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${flow.spacing.round()} px',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSecondaryContainer,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              EditorHistorySlider(
+                key: ValueKey('$keyPrefix-spacing'),
+                min: 0,
+                max: ZoneFlowConfig.maxSpacing,
+                value: flow.spacing.clamp(0, ZoneFlowConfig.maxSpacing),
+                label: '${flow.spacing.round()}',
+                onChanged: (next) =>
+                    onFlowChanged(flow.copyWith(spacing: next.roundToDouble())),
+              ),
+              Divider(
+                height: 10,
+                color: colors.outlineVariant.withValues(alpha: 0.4),
+              ),
+              IndependentSpacingEditor(
+                label: 'Marge intérieure',
+                value: flow.padding,
+                sides: flow.paddingInsets,
+                max: ZoneFlowConfig.maxPadding,
+                keyPrefix: '$keyPrefix-padding',
+                onChanged: (padding, sides) => onFlowChanged(
+                  flow.copyWith(
+                    padding: padding.roundToDouble(),
+                    paddingInsets: sides == null
+                        ? null
+                        : EdgeInsets.fromLTRB(
+                            sides.left.roundToDouble(),
+                            sides.top.roundToDouble(),
+                            sides.right.roundToDouble(),
+                            sides.bottom.roundToDouble(),
+                          ),
+                    clearPaddingInsets: sides == null,
+                  ),
+                ),
+              ),
+            ],
+          ),
       ],
     );
   }

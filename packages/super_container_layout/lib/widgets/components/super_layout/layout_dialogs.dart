@@ -119,7 +119,11 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       _update(next);
     }
 
-    Widget buildZoneFlowContent(BuildContext context) => ListenableBuilder(
+    Widget buildZoneFlowContent(
+      BuildContext context, {
+      required bool showProperties,
+      required bool showDimensions,
+    }) => ListenableBuilder(
       listenable: _config,
       builder: (context, _) {
         final current = _config.value;
@@ -127,6 +131,8 @@ extension _SuperLayoutDialogs on SuperLayoutState {
           keyPrefix: 'zone-flow-dialog-${zone.name}',
           axis: current.axisOf(zone),
           flow: current.flowOf(zone),
+          showProperties: showProperties,
+          showDimensions: showDimensions,
           isSide: zone.isSide,
           sizeAxis: !zone.isSide
               ? null
@@ -151,13 +157,27 @@ extension _SuperLayoutDialogs on SuperLayoutState {
       },
     );
 
+    Widget buildZonePropertiesContent(BuildContext context) =>
+        buildZoneFlowContent(
+          context,
+          showProperties: true,
+          showDimensions: false,
+        );
+
+    Widget buildZoneDimensionsContent(BuildContext context) =>
+        buildZoneFlowContent(
+          context,
+          showProperties: false,
+          showDimensions: true,
+        );
+
     final delegate = _SuperLayoutZoneFlowDelegate(
-      title: 'Flux de la zone : ${widget.zoneLabel(zone)}',
+      title: 'Taille et marge de la zone : ${widget.zoneLabel(zone)}',
       onRestore: () {
         if (mounted) _update(initial, validateTags: false);
       },
       onReset: resetZoneFlow,
-      builder: buildZoneFlowContent,
+      builder: buildZoneDimensionsContent,
     );
 
     final history = EditorHistoryScope.controllerOf(context);
@@ -177,7 +197,7 @@ extension _SuperLayoutDialogs on SuperLayoutState {
                 'Flux de la zone : ${widget.zoneLabel(zone)}',
               ),
               propertiesWidth: 400,
-              propertiesContentBuilder: buildZoneFlowContent,
+              propertiesContentBuilder: buildZonePropertiesContent,
               propertiesExtraActions: [
                 TextButton(
                   onPressed: resetZoneFlow,
