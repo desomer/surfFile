@@ -77,7 +77,15 @@ ComponentAddConfigurator<SuperValueConfig> superValueAddConfigurator(
   },
   summary: (draft) => [
     if (draft.kind != SuperValueKind.text)
-      ('Type', draft.kind == SuperValueKind.checkbox ? 'Checkbox' : 'Switch'),
+      (
+        'Type',
+        switch (draft.kind) {
+          SuperValueKind.checkbox => 'Checkbox',
+          SuperValueKind.switchControl => 'Switch',
+          SuperValueKind.choice => 'Choix (${draft.choice.variant.shortLabel})',
+          SuperValueKind.text => 'Texte',
+        },
+      ),
     ('Mode', draft.mode == SuperValueMode.input ? 'Saisie' : 'Affichage'),
     if (!draft.kind.isBoolean && draft.initialText.isNotEmpty)
       ('Texte initial', draft.initialText),

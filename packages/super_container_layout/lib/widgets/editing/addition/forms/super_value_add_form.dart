@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../../models/super_choice_config.dart';
 import '../../../../models/super_value_config.dart';
 import '../../components/shared/editor_segmented_field.dart';
 import '../../components/super_value_editor.dart';
@@ -56,12 +57,48 @@ class _SuperValueAddFormState extends State<SuperValueAddForm>
             onChanged: (kind) => widget.onChanged(
               draft.copyWith(
                 kind: kind,
-                obscureText: kind.isBoolean ? false : draft.obscureText,
-                minLines: kind.isBoolean ? 1 : draft.minLines,
-                maxLines: kind.isBoolean ? 1 : draft.maxLines,
+                mode: kind.isChoice ? SuperValueMode.input : draft.mode,
+                obscureText: !kind.isText ? false : draft.obscureText,
+                minLines: !kind.isText ? 1 : draft.minLines,
+                maxLines: !kind.isText ? 1 : draft.maxLines,
+                choice: kind.isChoice && draft.choice.options.isEmpty
+                    ? draft.choice.copyWith(
+                        options: SuperChoiceConfig.defaultFallbackOptions,
+                      )
+                    : draft.choice,
               ),
             ),
           ),
+          if (draft.kind.isChoice) ...[
+            const SizedBox(height: 8),
+            DropdownButtonFormField<ChoiceVariant>(
+              key: ValueKey('add-value-choice-variant-${draft.choice.variant.name}'),
+              initialValue: draft.choice.variant,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Type de composant de choix',
+              ),
+              items: [
+                for (final variant in ChoiceVariant.values)
+                  DropdownMenuItem(
+                    value: variant,
+                    child: Text(
+                      variant.displayLabel,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+              ],
+              onChanged: (variant) {
+                if (variant == null) return;
+                widget.onChanged(
+                  draft.copyWith(
+                    choice: draft.choice.copyWith(variant: variant),
+                  ),
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 8),
           EditorSegmentedField.valueMode(
             buttonKey: const ValueKey('add-value-mode'),
@@ -90,23 +127,31 @@ class _SuperValueAddFormState extends State<SuperValueAddForm>
               key: const ValueKey('add-value-initial'),
               initialValue: draft.initialText,
               minLines: 1,
-              maxLines: 3,
-              keyboardType: TextInputType.multiline,
-              decoration: const InputDecoration(
+              maxLines: draft.kind.isChoice ? 1 : 3,
+              keyboardType: draft.kind.isChoice
+                  ? TextInputType.text
+                  : TextInputType.multiline,
+              decoration: InputDecoration(
                 isDense: true,
-                labelText: 'Texte initial',
+                labelText: draft.kind.isChoice
+                    ? 'Valeur initiale sélectionnée'
+                    : 'Texte initial',
               ),
               onChanged: (value) {
-                final lines = '\n'.allMatches(value).length + 1;
+                final lines = draft.kind.isChoice
+                    ? 1
+                    : '\n'.allMatches(value).length + 1;
                 widget.onChanged(
                   draft.copyWith(
                     initialText: value,
-                    maxLines: math.max(draft.maxLines, lines),
+                    maxLines: draft.kind.isChoice
+                        ? 1
+                        : math.max(draft.maxLines, lines),
                   ),
                 );
               },
             ),
-          if (input || draft.kind.isBoolean) ...[
+          if (input || draft.kind.isBoolean || draft.kind.isChoice) ...[
             TextFormField(
               key: const ValueKey('add-value-label'),
               initialValue: draft.label,

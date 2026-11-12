@@ -21,6 +21,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
     this.componentId,
     this.onChanged,
     this.asBool = false,
+    this.asStringList = false,
     this.requireString = false,
   }) {
     store.registerBindings(this, [binding.repositoryId]);
@@ -45,6 +46,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
   final String? componentId;
   final ValueChanged<String>? onChanged;
   final bool asBool;
+  final bool asStringList;
 
   /// Rejects non-text attributes for code editors; null remains an empty field.
   final bool requireString;
@@ -77,9 +79,18 @@ class JsonTextControllerBinding extends ChangeNotifier {
   }
 
   void _seedFromCache() {
-    final cached = store.peekAttribute(binding);
+    final cached = store.peekAttribute(
+      binding,
+      allowStringList: asStringList,
+    );
     if (cached == null) return;
     if (asBool && cached.value != null && cached.value is! bool) return;
+    if (asStringList &&
+        cached.value != null &&
+        cached.value is! String &&
+        cached.value is! List) {
+      return;
+    }
     if (requireString && cached.value != null && cached.value is! String) {
       return;
     }
@@ -112,10 +123,21 @@ class JsonTextControllerBinding extends ChangeNotifier {
       _notify();
     }
     try {
-      final result = await store.readAttribute(binding);
+      final result = await store.readAttribute(
+        binding,
+        allowStringList: asStringList,
+      );
       if (_disposed || generation != _generation) return;
       if (asBool && result.value != null && result.value is! bool) {
         throw const FormatException('L’attribut lié doit être un booléen.');
+      }
+      if (asStringList &&
+          result.value != null &&
+          result.value is! String &&
+          result.value is! List) {
+        throw const FormatException(
+          'L’attribut lié doit être un tableau ou une chaîne.',
+        );
       }
       if (requireString && result.value != null && result.value is! String) {
         throw const FormatException(
@@ -126,7 +148,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
           ? (result.value == true ? 'true' : 'false')
           : result.text;
       if (dirty) {
-        if (result.value != _expected) {
+        if (!JsonRepositoryStore.jsonEquals(result.value, _expected)) {
           _failure(
             'Conflit sur l’attribut lié. Conservez votre saisie puis rechargez.',
           );
@@ -204,6 +226,7 @@ class JsonTextControllerBinding extends ChangeNotifier {
           text,
           expectedValue: _expected,
           asBool: asBool,
+          asStringList: asStringList,
           componentId: componentId,
         );
         _expected = result.value;

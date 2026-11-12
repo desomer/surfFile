@@ -9,10 +9,12 @@ import '../../../theme/theme_color.dart';
 
 import '../../../models/automatic_state.dart';
 import '../../../models/json_text_binding.dart';
+import '../../../models/super_choice_config.dart';
 import '../../../models/super_text_field_config.dart';
 import '../../../models/super_value_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
+import '../../components/super_choice.dart';
 import '../../components/super_text_field.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
 import '../repositories/repository_binding_fields.dart';
@@ -22,6 +24,7 @@ import 'shared/component_state_editor_host.dart';
 import 'shared/component_typography_controls.dart';
 import 'shared/editor_color_fields.dart';
 import 'shared/editor_segmented_field.dart';
+import 'super_choice_settings.dart';
 import 'super_text_field_settings.dart';
 
 final _valueStateAdapter =
@@ -236,7 +239,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     implements ComponentLeafCapable<SuperValueConfig> {
   final _form = GlobalKey<FormState>();
   final _fieldSettings = GlobalKey<SuperTextFieldSettingsState>();
+  final _choiceSettings = GlobalKey<SuperChoiceSettingsState>();
   late SuperTextFieldConfig _fieldConfig;
+  late SuperChoiceConfig _choiceConfig;
   String? _fieldError;
   late SuperValueConfig _draft;
   late final Map<String, TextEditingController> _fields;
@@ -251,16 +256,21 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
   String? _liveError;
 
   /// Indique si les sections de réglages propres au `SuperTextField` doivent
-  /// être affichées (uniquement en mode saisie `input` pour une valeur textuelle
-  /// non booléenne).
+  /// être affichées (uniquement en mode saisie `input` pour une valeur textuelle).
   bool get _hasFieldSettings =>
-      _draft.mode == SuperValueMode.input && !_draft.kind.isBoolean;
+      _draft.mode == SuperValueMode.input && _draft.kind.isText;
+
+  /// Indique si les sections de réglages propres au `SuperChoice` doivent
+  /// être affichées.
+  bool get _hasChoiceSettings => _draft.kind.isChoice;
 
   @override
   SuperValueConfig? capture() {
     if (!_form.currentState!.validate() ||
         (_hasFieldSettings &&
-            _fieldSettings.currentState?.validate() == false)) {
+            _fieldSettings.currentState?.validate() == false) ||
+        (_hasChoiceSettings &&
+            _choiceSettings.currentState?.validate() == false)) {
       return null;
     }
     try {
@@ -268,6 +278,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
         _hasFieldSettings
             ? _fieldSettings.currentState?.value() ?? _fieldConfig
             : _fieldConfig,
+        _hasChoiceSettings
+            ? _choiceSettings.currentState?.value() ?? _choiceConfig
+            : _choiceConfig,
         _binding,
       );
     } on FormatException catch (e) {
@@ -280,12 +293,14 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
 
   /// Assemble et valide une instance de [SuperValueConfig] à partir du brouillon
   /// [_draft], des contrôleurs de texte [_fields], de la configuration de champ
-  /// [field] et de la liaison repository [binding].
+  /// [field], de la configuration de choix [choice] et de la liaison repository
+  /// [binding].
   ///
   /// Lève une [FormatException] si une valeur numérique, un nombre de lignes,
   /// un code couleur hexadécimal ou une famille de police est invalide.
   SuperValueConfig _configuration(
     SuperTextFieldConfig field,
+    SuperChoiceConfig choice,
     JsonTextBinding? binding,
   ) {
     /// Convertit le texte du champ [key] en `double`, ou retourne `null` s'il
@@ -300,14 +315,15 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       return value;
     }
 
-    final min = _draft.mode == SuperValueMode.display || _draft.kind.isBoolean
+    final singleLineKind = !_draft.kind.isText;
+    final min = _draft.mode == SuperValueMode.display || singleLineKind
         ? _draft.minLines
         : int.tryParse(_fields['minLines']!.text);
-    final max = _draft.kind.isBoolean
+    final max = singleLineKind
         ? _draft.maxLines
         : int.tryParse(_fields['maxLines']!.text);
     if (!_draft.obscureText &&
-        !_draft.kind.isBoolean &&
+        !singleLineKind &&
         (min == null || max == null)) {
       throw const FormatException('Nombre de lignes invalide.');
     }
@@ -321,17 +337,18 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     }
     final result = _draft.copyWith(
       field: field,
+      choice: choice,
       binding: binding,
       clearBinding: binding == null,
       initialText: _draft.obscureText ? '' : _fields['initialText']!.text,
       label: _fields['label']!.text,
       placeholder: _fields['placeholder']!.text,
-      minLines: _draft.obscureText || _draft.kind.isBoolean
+      minLines: _draft.obscureText || singleLineKind
           ? 1
           : _draft.mode == SuperValueMode.display && max != null
           ? math.min(min!, max)
           : min,
-      maxLines: _draft.obscureText || _draft.kind.isBoolean ? 1 : max,
+      maxLines: _draft.obscureText || singleLineKind ? 1 : max,
       fontSize: number('fontSize'),
       inheritFontSize: number('fontSize') == null,
       lineHeight: number('lineHeight'),
@@ -361,6 +378,9 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
           _hasFieldSettings
               ? _fieldSettings.currentState?.value() ?? _fieldConfig
               : _fieldConfig,
+          _hasChoiceSettings
+              ? _choiceSettings.currentState?.value() ?? _choiceConfig
+              : _choiceConfig,
           binding,
         );
         if (_liveError != null) setState(() => _liveError = null);
@@ -388,6 +408,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     super.initState();
     _draft = widget.config;
     _fieldConfig = _draft.field;
+    _choiceConfig = _draft.choice;
     _repositoryId = _draft.binding?.repositoryId;
     _inheritRepository =
         _draft.binding != null && _draft.binding!.repositoryId == null;
@@ -589,7 +610,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
         onChanged: (value) {
           if (key == 'initialText' &&
               !_draft.obscureText &&
-              !_draft.kind.isBoolean) {
+              _draft.kind.isText) {
             final lines = '\n'.allMatches(value).length + 1;
             final currentMax = int.tryParse(_fields['maxLines']!.text) ?? 1;
             if (lines > currentMax) {
@@ -695,21 +716,29 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
       overflow: TextOverflow.ellipsis,
     );
     final scheme = Theme.of(context).colorScheme;
+    final singleLineKind = !_draft.kind.isText;
     final previewConfig = _draft.copyWith(
       field: _fieldConfig,
+      choice: _choiceConfig,
       initialText: _draft.obscureText ? '' : text,
       label: label,
       placeholder: placeholder,
-      minLines: _draft.obscureText || _draft.kind.isBoolean ? 1 : min,
-      maxLines: _draft.obscureText || _draft.kind.isBoolean ? 1 : max,
+      minLines: _draft.obscureText || singleLineKind ? 1 : min,
+      maxLines: _draft.obscureText || singleLineKind ? 1 : max,
     );
     String? previewError;
-    if (!_draft.kind.isBoolean) {
+    if (_draft.kind.isText) {
       try {
         _fieldConfig.validateFor(
           obscureText: previewConfig.obscureText,
           maxLines: previewConfig.maxLines,
         );
+      } on FormatException catch (error) {
+        previewError = error.message;
+      }
+    } else if (_draft.kind.isChoice) {
+      try {
+        _choiceConfig.validate();
       } on FormatException catch (error) {
         previewError = error.message;
       }
@@ -759,6 +788,15 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
             ),
         ],
       );
+    } else if (_draft.kind.isChoice) {
+      previewBody = previewError != null
+          ? Text(previewError, style: TextStyle(color: scheme.error))
+          : SuperChoice(
+              config: previewConfig,
+              controller: _previewText,
+              readOnly: true,
+              style: style,
+            );
     } else if (_draft.mode == SuperValueMode.input) {
       previewBody = previewError != null
           ? Text(previewError, style: TextStyle(color: scheme.error))
@@ -824,13 +862,18 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     final field = _hasFieldSettings
         ? _fieldSettings.currentState?.value() ?? _fieldConfig
         : _fieldConfig;
+    SuperChoiceConfig choice = _choiceConfig;
     try {
       field.validateFor(
         obscureText: _draft.obscureText,
-        maxLines: _draft.obscureText || _draft.kind.isBoolean
+        maxLines: _draft.obscureText || !_draft.kind.isText
             ? 1
             : int.parse(_fields['maxLines']!.text),
       );
+      if (_hasChoiceSettings) {
+        choice = _choiceSettings.currentState?.value() ?? _choiceConfig;
+      }
+      choice.validate();
     } on FormatException catch (error) {
       setState(() => _fieldError = error.message);
       return false;
@@ -857,7 +900,11 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
             widget.repositories,
           ).binding;
           if (resolved != null) {
-            final attr = await widget.repositories!.readAttribute(resolved);
+            final attr = await widget.repositories!.readAttribute(
+              resolved,
+              allowStringList:
+                  _draft.kind.isChoice && choice.variant.isMultiple,
+            );
             if (_draft.kind.isBoolean &&
                 attr.value != null &&
                 attr.value is! bool) {
@@ -886,7 +933,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
     }
     SuperValueConfig result;
     try {
-      final leaf = _configuration(field, binding);
+      final leaf = _configuration(field, choice, binding);
       result = widget.onSave?.call(leaf) ?? leaf;
     } on FormatException catch (e) {
       setState(() => _liveError = e.message);
@@ -928,13 +975,23 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
             _fieldConfig = value;
             _fieldError = null;
           }),
-          builder: (fieldSections) => StyleEditorPanel(
-            label: delegate?.editableLabel ?? 'Configurer la valeur',
-            onLabelChanged: delegate?.onLabelChanged,
-            dense: dense,
-            onDenseChanged: onDenseChanged,
-            preview: _preview(unavailable),
-            sections: [
+          builder: (fieldSections) => SuperChoiceSettings(
+            key: _choiceSettings,
+            value: _draft.choice,
+            repositories: _repositories,
+            listScope: widget.listScope,
+            allowBinding: widget.allowBinding,
+            onChanged: (value) => setState(() {
+              _choiceConfig = value;
+              _fieldError = null;
+            }),
+            builder: (choiceSections) => StyleEditorPanel(
+              label: delegate?.editableLabel ?? 'Configurer la valeur',
+              onLabelChanged: delegate?.onLabelChanged,
+              dense: dense,
+              onDenseChanged: onDenseChanged,
+              preview: _preview(unavailable),
+              sections: [
                 if (widget.header != null)
                   StyleEditorSection(
                     id: 'value-states',
@@ -962,11 +1019,11 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                         setState(() {
                           _draft = _draft.copyWith(
                             kind: kind,
-                            obscureText: kind.isBoolean
+                            obscureText: !kind.isText
                                 ? false
                                 : _draft.obscureText,
                           );
-                          if (kind.isBoolean) {
+                          if (!kind.isText) {
                             _fields['minLines']!.text = '1';
                             _fields['maxLines']!.text = '1';
                           }
@@ -999,7 +1056,14 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                     else if (!_draft.kind.isBoolean &&
                         !_draft.obscureText &&
                         !_bound)
-                      _field('initialText', 'Texte initial'),
+                      _field(
+                        'initialText',
+                        _draft.kind.isChoice
+                            ? (_choiceConfig.variant.isMultiple
+                                  ? 'Valeurs initiales (séparées par virgules)'
+                                  : 'Valeur initiale sélectionnée')
+                            : 'Texte initial',
+                      ),
                     _withBinding(
                       SuperValueProperty.label,
                       'le label',
@@ -1026,7 +1090,7 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                       ? 'enabled · readOnly'
                       : 'maxLines',
                   child: _group([
-                    if (!_draft.kind.isBoolean) ...[
+                    if (_draft.kind.isText) ...[
                       if (_draft.mode == SuperValueMode.input)
                         SwitchListTile(
                           key: const ValueKey(
@@ -1187,10 +1251,12 @@ class _SuperValueEditorState extends State<_SuperValueEditor>
                   ]),
                 ),
                 if (_hasFieldSettings) ...fieldSections,
+                if (_hasChoiceSettings) ...choiceSections,
               ],
             ),
           ),
         ),
-      );
+      ),
+    );
   }
 }

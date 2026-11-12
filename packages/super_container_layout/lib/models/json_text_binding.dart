@@ -422,12 +422,13 @@ class JsonAttributePath {
   }
 
   /// Lit une valeur simple (`String`, `num` fini, `bool` ou `null`) pour un
-  /// champ texte.
+  /// champ texte, ou également une liste de valeurs simples si
+  /// [allowStringList] vaut `true`.
   ///
   /// Une clé absente donne `null`. Lève une [FormatException] si la valeur
-  /// est un objet ou un tableau, si un indice n'existe pas ou si la structure
-  /// ne correspond pas au chemin.
-  Object? read(Object? root) {
+  /// est un objet ou un tableau non autorisé, si un indice n'existe pas ou si
+  /// la structure ne correspond pas au chemin.
+  Object? read(Object? root, {bool allowStringList = false}) {
     requireResolved();
     Object? value = root;
     for (final segment in _segments) {
@@ -442,6 +443,17 @@ class JsonAttributePath {
         }
         value = value[index];
       }
+    }
+    if (allowStringList && value is List) {
+      for (final item in value) {
+        if ((item is! String && item is! num && item is! bool) ||
+            (item is num && !item.isFinite)) {
+          throw const FormatException(
+            'L’attribut lié doit être un tableau de valeurs simples ou une chaîne.',
+          );
+        }
+      }
+      return List<Object?>.unmodifiable(value);
     }
     if ((value != null &&
             value is! String &&
@@ -458,11 +470,15 @@ class JsonAttributePath {
   );
 
   /// Retourne un nouvel arbre JSON où ce chemin reçoit [text], converti selon
-  /// le type de [previous] (la valeur actuelle, lue avec [read]), ou en
-  /// booléen lorsque [asBool] vaut `true`.
+  /// le type de [previous] (la valeur actuelle, lue avec [read]), en
+  /// booléen lorsque [asBool] vaut `true`, ou en liste / CSV lorsque
+  /// [asStringList] vaut `true`.
   ///
   /// * [asBool] `true` : [previous] doit être `null` ou `bool`, et [text] doit
   ///   être `true` ou `false` en JSON (un attribut absent devient un `bool`) ;
+  /// * [asStringList] `true` : si [previous] est une `String`, écrit [text] en
+  ///   chaîne CSV ; si [previous] est `null` ou `List`, écrit une `List<String>`
+  ///   découpée sur les virgules ;
   /// * `previous` `null` ou `String` : [text] est écrit tel quel (un attribut
   ///   absent devient une chaîne) ;
   /// * `num` ou `bool` : [text] doit être un nombre fini ou `true` / `false`
@@ -475,16 +491,37 @@ class JsonAttributePath {
     String text,
     Object? previous, {
     bool asBool = false,
+    bool asStringList = false,
   }) {
     requireResolved();
-    if (previous != null &&
+    if (asStringList) {
+      if (previous != null && previous is! String && previous is! List) {
+        throw const FormatException(
+          'L’attribut lié doit être un tableau ou une chaîne.',
+        );
+      }
+    } else if (previous != null &&
         previous is! String &&
         previous is! num &&
         previous is! bool) {
       throw const FormatException('L’attribut doit être une valeur simple.');
     }
     final Object? replacement;
-    if (asBool) {
+    if (asStringList) {
+      if (previous is String) {
+        replacement = text;
+      } else {
+        final items = <String>[];
+        final seen = <String>{};
+        for (final part in text.split(',')) {
+          final trimmed = part.trim();
+          if (trimmed.isNotEmpty && seen.add(trimmed)) {
+            items.add(trimmed);
+          }
+        }
+        replacement = items;
+      }
+    } else if (asBool) {
       if (previous != null && previous is! bool) {
         throw const FormatException('Valeur incompatible avec le type JSON.');
       }

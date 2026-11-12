@@ -1,8 +1,9 @@
 /// Configuration persistée ([SuperValueConfig]) d'un composant d'affichage ou de saisie [SuperValue].
 ///
 /// Supporte les modes lecture/saisie ([SuperValueMode]), les types `text`,
-/// `checkbox` et `switchControl` ([SuperValueKind]), la typographie, les liaisons
-/// JSON (`binding`, `propertyBindings`) et les surcharges d'états ([ValueConfigStates]).
+/// `checkbox`, `switchControl` et `choice` ([SuperValueKind]), la typographie,
+/// les liaisons JSON (`binding`, `propertyBindings`) et les surcharges d'états
+/// ([ValueConfigStates]).
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -12,6 +13,7 @@ import 'component_config.dart';
 import 'json_syntax.dart';
 import 'json_text_binding.dart';
 import 'automatic_state.dart';
+import 'super_choice_config.dart';
 import 'super_text_field_config.dart';
 
 part 'super_value_states.dart';
@@ -19,13 +21,17 @@ part 'super_value_states.dart';
 /// Mode de fonctionnement d'un [SuperValue] (affichage seul `display` ou champ de saisie `input`).
 enum SuperValueMode { display, input }
 
-/// Nature du contrôle rendu par un [SuperValue] (`text`, `checkbox` ou `switchControl`).
+/// Nature du contrôle rendu par un [SuperValue] (`text`, `checkbox`, `switchControl` ou `choice`).
 enum SuperValueKind {
   text,
   checkbox,
-  switchControl;
+  switchControl,
+  choice;
 
-  bool get isBoolean => this != SuperValueKind.text;
+  bool get isText => this == SuperValueKind.text;
+  bool get isBoolean =>
+      this == SuperValueKind.checkbox || this == SuperValueKind.switchControl;
+  bool get isChoice => this == SuperValueKind.choice;
 }
 
 /// Propriétés d'un [SuperValue] pouvant être liées dynamiquement à un repository JSON.
@@ -66,6 +72,7 @@ class SuperValueConfig extends ComponentConfig {
     this.binding,
     this.propertyBindings = const {},
     this.field = const SuperTextFieldConfig(),
+    this.choice = const SuperChoiceConfig(),
     this.states,
   });
 
@@ -91,6 +98,7 @@ class SuperValueConfig extends ComponentConfig {
   final JsonTextBinding? binding;
   final Map<SuperValueProperty, JsonTextBinding> propertyBindings;
   final SuperTextFieldConfig field;
+  final SuperChoiceConfig choice;
   final ValueConfigStates? states;
 
   @override
@@ -108,10 +116,12 @@ class SuperValueConfig extends ComponentConfig {
       binding.validate();
     }
     field.validateFor(obscureText: obscureText, maxLines: maxLines);
+    choice.validate();
     if (minLines < 1 ||
         maxLines < minLines ||
         (obscureText &&
             (kind.isBoolean ||
+                kind.isChoice ||
                 initialText.isNotEmpty ||
                 minLines != 1 ||
                 maxLines != 1)) ||
@@ -156,6 +166,7 @@ class SuperValueConfig extends ComponentConfig {
     bool clearBinding = false,
     Map<SuperValueProperty, JsonTextBinding>? propertyBindings,
     SuperTextFieldConfig? field,
+    SuperChoiceConfig? choice,
     ValueConfigStates? states,
     bool clearStates = false,
   }) => SuperValueConfig(
@@ -183,6 +194,7 @@ class SuperValueConfig extends ComponentConfig {
     binding: clearBinding ? null : binding ?? this.binding,
     propertyBindings: propertyBindings ?? this.propertyBindings,
     field: field ?? this.field,
+    choice: choice ?? this.choice,
     states: clearStates ? null : states ?? this.states,
   );
 
@@ -213,6 +225,7 @@ class SuperValueConfig extends ComponentConfig {
       if (propertyBindings.isNotEmpty)
         'propertyBindings': JsonReader.encodePropertyBindings(propertyBindings),
       if (field != const SuperTextFieldConfig()) 'field': field.toJson(),
+      if (choice != const SuperChoiceConfig()) 'choice': choice.toJson(),
       if (states != null) 'states': states!.toJson(),
     };
   }
@@ -248,6 +261,7 @@ class SuperValueConfig extends ComponentConfig {
           compact: true,
         ),
       if (field != const SuperTextFieldConfig()) 'field': field.toCompactJson(),
+      if (choice != const SuperChoiceConfig()) 'choice': choice.toCompactJson(),
       if (states != null) 'states': states!.toCompactJson(),
     };
   }
@@ -290,6 +304,8 @@ class SuperValueConfig extends ComponentConfig {
       'binding',
       'propertyBindings',
       'field',
+      'choice',
+      'choise',
       'states',
     };
     if (value.keys.any((key) => !keys.contains(key))) {
@@ -307,7 +323,10 @@ class SuperValueConfig extends ComponentConfig {
     final kind = JsonReader.enumByName(
       SuperValueKind.values,
       field('kind', fallback.kind.name),
-      const {'switch': SuperValueKind.switchControl},
+      const {
+        'switch': SuperValueKind.switchControl,
+        'choise': SuperValueKind.choice,
+      },
     );
     final align = JsonReader.enumByName(
       TextAlign.values,
@@ -339,13 +358,30 @@ class SuperValueConfig extends ComponentConfig {
       context: 'Value',
     );
 
+    String encodeListValue(List<Object?> list) {
+      final items = <String>[];
+      for (final item in list) {
+        if (item is! String && item is! num && item is! bool) {
+          throw const FormatException('Invalid Value "value".');
+        }
+        items.add(item.toString());
+      }
+      return SuperChoiceConfig.encodeSelectedValues(items);
+    }
+
     var resolvedInitialText = fallback.initialText;
     if (value.containsKey('initialText')) {
-      resolvedInitialText = field('initialText', fallback.initialText);
+      if (value['initialText'] is List) {
+        resolvedInitialText = encodeListValue(value['initialText'] as List);
+      } else {
+        resolvedInitialText = field('initialText', fallback.initialText);
+      }
     } else if (value.containsKey('text')) {
       resolvedInitialText = field('text', fallback.initialText);
     } else if (value.containsKey('value') && value['value'] is String) {
       resolvedInitialText = value['value'] as String;
+    } else if (value.containsKey('value') && value['value'] is List) {
+      resolvedInitialText = encodeListValue(value['value'] as List);
     }
 
     var resolvedInitialBool = fallback.initialBool;
@@ -355,7 +391,8 @@ class SuperValueConfig extends ComponentConfig {
       resolvedInitialBool = value['value'] as bool;
     } else if (value.containsKey('value') &&
         value['value'] is! String &&
-        value['value'] is! bool) {
+        value['value'] is! bool &&
+        value['value'] is! List) {
       throw const FormatException('Invalid Value "value".');
     }
 
@@ -365,6 +402,12 @@ class SuperValueConfig extends ComponentConfig {
         !value.containsKey('text')) {
       resolvedInitialText = '';
     }
+
+    final hasChoice =
+        value.containsKey('choice') || value.containsKey('choise');
+    final rawChoice = value.containsKey('choice')
+        ? value['choice']
+        : value['choise'];
 
     final result = SuperValueConfig(
       mode: mode,
@@ -398,6 +441,12 @@ class SuperValueConfig extends ComponentConfig {
               fallback: fallback.field,
             )
           : fallback.field,
+      choice: hasChoice
+          ? SuperChoiceConfig.fromJson(
+              rawChoice,
+              fallback: fallback.choice,
+            )
+          : fallback.choice,
       states: !value.containsKey('states')
           ? fallback.states
           : value['states'] == null
@@ -437,6 +486,7 @@ class SuperValueConfig extends ComponentConfig {
       binding == other.binding &&
       mapEquals(propertyBindings, other.propertyBindings) &&
       field == other.field &&
+      choice == other.choice &&
       states == other.states;
 
   @override
@@ -463,6 +513,7 @@ class SuperValueConfig extends ComponentConfig {
     binding,
     JsonReader.hashPropertyBindings(propertyBindings),
     field,
+    choice,
     states,
   ]);
 }
@@ -479,6 +530,7 @@ String formatSuperValueTooltip({
     SuperValueKind.text => 'Texte',
     SuperValueKind.checkbox => 'Case à cocher',
     SuperValueKind.switchControl => 'Interrupteur',
+    SuperValueKind.choice => 'Choix (${config.choice.variant.shortLabel})',
   };
   final flags = <String>[
     if (!config.enabled) 'Désactivé',
@@ -490,10 +542,17 @@ String formatSuperValueTooltip({
       'Liaison : ${config.binding!.repositoryId ?? 'Hérité'} → ${config.binding!.path}'
     else if (config.kind.isBoolean)
       'Valeur : ${config.initialBool ? 'Vrai' : 'Faux'}'
+    else if (config.kind.isChoice)
+      'Sélection : ${config.initialText.isEmpty ? 'Aucune' : config.initialText}'
     else if (config.obscureText)
       'Valeur : ••••••'
     else
       'Texte : ${config.initialText.isEmpty ? 'Vide' : config.initialText}',
+    if (config.kind.isChoice)
+      if (config.choice.optionsBinding != null)
+        'Options : ${config.choice.optionsBinding!.repositoryId ?? 'Hérité'} → ${config.choice.optionsBinding!.path}'
+      else
+        'Options : ${config.choice.options.length}',
     if (config.label.isNotEmpty) 'Libellé : ${config.label}',
     if (config.placeholder.isNotEmpty) 'Placeholder : ${config.placeholder}',
   ];
@@ -501,7 +560,7 @@ String formatSuperValueTooltip({
     'Police : ${config.fontFamily ?? 'Auto'}',
     'Taille : ${config.fontSize != null ? '${JsonReader.formatNumber(config.fontSize!)} px' : 'Auto'}',
     'Alignement : ${config.textAlign.name}',
-    if (!config.kind.isBoolean && (config.minLines > 1 || config.maxLines > 1))
+    if (config.kind.isText && (config.minLines > 1 || config.maxLines > 1))
       'Lignes : ${config.minLines == config.maxLines ? '${config.maxLines}' : '${config.minLines}–${config.maxLines}'}',
     if (config.color != null) 'Couleur : ${JsonColor.toHex(config.color!)}',
   ];

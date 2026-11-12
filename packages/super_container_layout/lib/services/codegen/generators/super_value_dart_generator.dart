@@ -1,6 +1,7 @@
 /// Générateur de code Dart dédié au composant [SuperValue] (`SuperValueConfig`).
 library;
 
+import '../../../models/super_choice_config.dart';
 import '../../../models/super_text_field_config.dart';
 import '../../../models/super_value_config.dart';
 import '../dart_code_generator.dart';
@@ -107,6 +108,13 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
           indent: indent + 2,
           includeConst: !canBeConst,
         ),
+      if (config.choice != d.choice)
+        'choice': _formatChoiceConfig(
+          context,
+          config.choice,
+          indent: indent + 2,
+          includeConst: !canBeConst,
+        ),
       if (config.states != null)
         'states': _formatValueStates(
           context,
@@ -197,6 +205,96 @@ class SuperValueDartGenerator extends ComponentDartGenerator {
     final prefix = includeConst ? 'const ' : '';
     return context.formatCall(
       '${prefix}SuperTextFieldConfig',
+      const [],
+      args,
+      indent: indent,
+      forceMultiline: true,
+    );
+  }
+
+  static String _formatChoiceOption(
+    DartCodegenContext context,
+    SuperChoiceOption option, {
+    int indent = 0,
+    bool includeConst = false,
+  }) {
+    final args = <String, String>{
+      'value': context.formatString(option.value),
+      if (option.label.isNotEmpty) 'label': context.formatString(option.label),
+      if (option.icon != null) 'icon': context.formatString(option.icon!),
+    };
+    final prefix = includeConst ? 'const ' : '';
+    return context.formatCall(
+      '${prefix}SuperChoiceOption',
+      const [],
+      args,
+      indent: indent,
+    );
+  }
+
+  static String _formatChoiceConfig(
+    DartCodegenContext context,
+    SuperChoiceConfig choice, {
+    int indent = 0,
+    bool includeConst = false,
+  }) {
+    const d = SuperChoiceConfig();
+    final args = <String, String>{
+      if (choice.variant != d.variant)
+        'variant': 'ChoiceVariant.${choice.variant.name}',
+      if (choice.options.isNotEmpty)
+        'options': context.formatList(
+          [
+            for (final opt in choice.options)
+              _formatChoiceOption(
+                context,
+                opt,
+                indent: indent + 4,
+                includeConst: false,
+              ),
+          ],
+          indent: indent + 2,
+        ),
+      if (choice.optionsBinding != null)
+        'optionsBinding': context.formatBinding(
+          choice.optionsBinding!,
+          indent: indent + 2,
+          includeConst: false,
+        ),
+      if (choice.optionValueKey != d.optionValueKey)
+        'optionValueKey': context.formatString(choice.optionValueKey),
+      if (choice.optionLabelKey != d.optionLabelKey)
+        'optionLabelKey': context.formatString(choice.optionLabelKey),
+      if (choice.optionIconKey != d.optionIconKey)
+        'optionIconKey': context.formatString(choice.optionIconKey),
+      if (choice.allowEmpty != d.allowEmpty)
+        'allowEmpty': '${choice.allowEmpty}',
+      if (choice.dense != null) 'dense': '${choice.dense}',
+      if (choice.direction != d.direction)
+        'direction': 'Axis.${choice.direction.name}',
+      if (choice.spacing != d.spacing)
+        'spacing': context.formatNum(choice.spacing),
+      if (choice.showCheckmark != d.showCheckmark)
+        'showCheckmark': '${choice.showCheckmark}',
+      if (choice.searchHint != d.searchHint)
+        'searchHint': context.formatString(choice.searchHint),
+      if (choice.helperText != d.helperText)
+        'helperText': context.formatString(choice.helperText),
+      if (choice.errorText != d.errorText)
+        'errorText': context.formatString(choice.errorText),
+      if (choice.fillColor != null)
+        'fillColor': context.formatColor(choice.fillColor!),
+      if (choice.selectedColor != null)
+        'selectedColor': context.formatColor(choice.selectedColor!),
+      if (choice.borderColor != null)
+        'borderColor': context.formatColor(choice.borderColor!),
+      if (choice.radius != null) 'radius': context.formatNum(choice.radius!),
+      if (choice.borderWidth != null)
+        'borderWidth': context.formatNum(choice.borderWidth!),
+    };
+    final prefix = includeConst ? 'const ' : '';
+    return context.formatCall(
+      '${prefix}SuperChoiceConfig',
       const [],
       args,
       indent: indent,

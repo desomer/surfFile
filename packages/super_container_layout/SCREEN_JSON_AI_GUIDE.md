@@ -370,17 +370,22 @@ Propriétés communes dans `components[id]` pour `"native"` :
 - `slotPreferredSizes` (`Map<childSlotId, [width, height]>`), `slotSizeConstraints` (`Map<childSlotId, SlotSizeConstraints>` — toujours indexé par l'`id` du slot enfant placé, jamais un objet `SlotSizeConstraints` direct sans clé de slot), `slotLabels` (`Map<childSlotId, string>`).
 
 ### 4.3. `"value"` (`SuperValueConfig`)
-Affiche un texte, un champ de saisie, une case à cocher ou un interrupteur :
+Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un sélecteur de choix :
 - `mode` : `"display"` (défaut) ou `"input"`.
-- `kind` : `"text"` (défaut), `"checkbox"` ou `"switch"` (`"switchControl"`).
-- `text` (ou `initialText`) : texte initial (`string`).
+- `kind` : `"text"` (défaut), `"checkbox"`, `"switch"` (`"switchControl"`) ou `"choice"` (alias `"choise"`).
+- `text` (ou `initialText`) : texte initial (`string`, ou CSV `"opt1,opt2"` / tableau `["opt1", "opt2"]` pour un choix multiple).
 - `value` (ou `initialBool`) : valeur booléenne initiale (`bool`) pour `checkbox` / `switch`.
 - `label`, `placeholder` : `string`.
 - `enabled` (`true`), `readOnly` (`false`), `obscureText` (`false`) : `bool`.
 - `minLines` (`1`), `maxLines` (`1`) : `int` (`maxLines >= minLines >= 1`).
 - Typographie : `fontFamily` (`string`), `fontSize` (`number > 0`), `fontWeight` (`"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` ou `100`..`900`), `italic` (`bool`), `color` (`"#RRGGBB"`), `textAlign` (`"start"`, `"center"`, `"end"`, `"left"`, `"right"`, `"justify"`), `lineHeight` (`number > 0`), `letterSpacing` (`number`).
-- `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}`.
-- `field` (`SuperTextFieldConfig`, pour `mode: "input"`).
+- `binding` : `"clients[?].nom"` ou `{"repositoryId": "...", "path": "..."}` (supporte `string` ou `List<string>` pour les choix multiples).
+- `field` (`SuperTextFieldConfig`, pour `mode: "input"` et `kind: "text"`).
+- `choice` (`SuperChoiceConfig`, pour `kind: "choice"`) :
+  - `variant` : `"segmented"` (2 à 5 choix uniques `SegmentedButton`), `"dropdown"` (défaut, `DropdownButton`), `"radio"` (`RadioListTile`), `"filterChip"` (choix multiples `FilterChip`), `"checkboxList"` (choix multiples `CheckboxListTile`), `"searchAnchor"` (grande liste recherchable `SearchAnchor`).
+  - `options` : liste d'options statiques (`["opt1", "opt2"]` ou `[{"value": "fr", "label": "France", "icon": "flag"}]`).
+  - `optionsBinding` : liaison optionnelle vers un tableau JSON de repository fournissant les options dynamiquement (`optionValueKey`, `optionLabelKey`, `optionIconKey`).
+  - `allowEmpty` (`false`), `dense` (`bool?`), `direction` (`"vertical"` | `"horizontal"`), `spacing` (`8`), `showCheckmark` (`true`), `searchHint`, `helperText`, `errorText`, `fillColor`, `selectedColor`, `borderColor`, `radius`, `borderWidth`.
 - `propertyBindings` & `states` : liaisons repository et surcharges par état (voir § 4.8).
 
 ### 4.4. `"action"` (`SuperActionConfig`)

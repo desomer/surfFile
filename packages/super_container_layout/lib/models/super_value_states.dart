@@ -16,6 +16,7 @@ enum ValueStateProperty implements ComponentStateProperty<SuperValueProperty> {
     'minLines',
     'maxLines',
     'field',
+    'choice',
   ]),
   textLabel('Libellé', ['label'], SuperValueProperty.label),
   placeholder('Placeholder', ['placeholder'], SuperValueProperty.placeholder),
@@ -90,6 +91,7 @@ class ValueConfigOverride
       minLines: content.minLines,
       maxLines: content.maxLines,
       field: content.field,
+      choice: content.choice,
       label: has(ValueStateProperty.textLabel) ? config.label : base.label,
       placeholder: has(ValueStateProperty.placeholder)
           ? config.placeholder

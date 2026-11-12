@@ -723,19 +723,34 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
+  static String _formatAttributeText(Object? value) {
+    if (value is List) {
+      return value
+          .map((e) => e?.toString().trim() ?? '')
+          .where((s) => s.isNotEmpty)
+          .join(',');
+    }
+    return value?.toString() ?? '';
+  }
+
   /// Lit de manière synchrone la valeur de [binding] depuis le cache mémoire
   /// du repository lorsque le document JSON a déjà été chargé.
   ///
   /// Retourne `null` si le repository n'est pas encore en cache ou si le
   /// chemin ne peut pas être résolu sans erreur.
-  JsonAttributeValue? peekAttribute(JsonTextBinding binding) {
+  JsonAttributeValue? peekAttribute(
+    JsonTextBinding binding, {
+    bool allowStringList = false,
+  }) {
     final repoId = binding.repositoryId;
     if (repoId == null || !_documentCache.containsKey(repoId)) return null;
     try {
       binding.validateResolved();
       final root = _documentCache[repoId];
-      final value = JsonAttributePath(binding.path).read(root);
-      return (value: value, text: value?.toString() ?? '');
+      final value = JsonAttributePath(
+        binding.path,
+      ).read(root, allowStringList: allowStringList);
+      return (value: value, text: _formatAttributeText(value));
     } on FormatException {
       return null;
     }
@@ -796,12 +811,17 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
   }
 
-  Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) async {
+  Future<JsonAttributeValue> readAttribute(
+    JsonTextBinding binding, {
+    bool allowStringList = false,
+  }) async {
     binding.validateResolved();
     final repoId = binding.repositoryId!;
     final root = await _getDocument(repoId);
-    final value = JsonAttributePath(binding.path).read(root);
-    return (value: value, text: value?.toString() ?? '');
+    final value = JsonAttributePath(
+      binding.path,
+    ).read(root, allowStringList: allowStringList);
+    return (value: value, text: _formatAttributeText(value));
   }
 
   Future<JsonAttributeValue> writeAttribute(
@@ -809,6 +829,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     String text, {
     required Object? expectedValue,
     bool asBool = false,
+    bool asStringList = false,
     String? componentId,
   }) => _exclusive(() async {
     binding.validateResolved();
@@ -816,14 +837,21 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (_memoryRepositories.containsKey(repoId)) {
       final root = _memoryRepositories[repoId];
       final path = JsonAttributePath(binding.path);
-      if (path.read(root) != expectedValue) {
+      final current = path.read(root, allowStringList: asStringList);
+      if (!jsonEquals(current, expectedValue)) {
         throw const FormatException(
           'L’attribut lié a été modifié. Rechargez la liaison avant de réessayer.',
         );
       }
-      final updated = path.write(root, text, expectedValue, asBool: asBool);
+      final updated = path.write(
+        root,
+        text,
+        expectedValue,
+        asBool: asBool,
+        asStringList: asStringList,
+      );
       await _saveRegisteredAutomatically(repoId, updated);
-      final value = path.read(updated);
+      final value = path.read(updated, allowStringList: asStringList);
       _memoryRepositories[repoId] = updated;
       _documentCache[repoId] = updated;
       _changed();
@@ -834,22 +862,29 @@ class JsonRepositoryStore extends ChangeNotifier {
         newValue: value,
         componentId: componentId,
       );
-      return (value: value, text: value?.toString() ?? '');
+      return (value: value, text: _formatAttributeText(value));
     }
     final name = await _nameOf(repoId);
     final original = await read(name);
     final root = _decode(original);
     final path = JsonAttributePath(binding.path);
-    if (path.read(root) != expectedValue) {
+    final current = path.read(root, allowStringList: asStringList);
+    if (!jsonEquals(current, expectedValue)) {
       throw const FormatException(
         'L’attribut lié a été modifié. Rechargez la liaison avant de réessayer.',
       );
     }
-    final updated = path.write(root, text, expectedValue, asBool: asBool);
+    final updated = path.write(
+      root,
+      text,
+      expectedValue,
+      asBool: asBool,
+      asStringList: asStringList,
+    );
     await _save(name, _encode(updated), expectedText: original);
     _documentCache[repoId] = updated;
-    final value = path.read(updated);
-    return (value: value, text: value?.toString() ?? '');
+    final value = path.read(updated, allowStringList: asStringList);
+    return (value: value, text: _formatAttributeText(value));
   });
 
   /// Elements of the array at [path]; a missing attribute is an empty list.

@@ -13,11 +13,14 @@ class _DelayedStore extends JsonRepositoryStore {
   Completer<void>? nextRead;
 
   @override
-  Future<JsonAttributeValue> readAttribute(JsonTextBinding binding) async {
+  Future<JsonAttributeValue> readAttribute(
+    JsonTextBinding binding, {
+    bool allowStringList = false,
+  }) async {
     final pending = nextRead;
     nextRead = null;
     if (pending != null) await pending.future;
-    return super.readAttribute(binding);
+    return super.readAttribute(binding, allowStringList: allowStringList);
   }
 
   @override
@@ -26,6 +29,7 @@ class _DelayedStore extends JsonRepositoryStore {
     String text, {
     required Object? expectedValue,
     bool asBool = false,
+    bool asStringList = false,
     String? componentId,
   }) async {
     final pending = nextWrite;
@@ -36,6 +40,7 @@ class _DelayedStore extends JsonRepositoryStore {
       text,
       expectedValue: expectedValue,
       asBool: asBool,
+      asStringList: asStringList,
       componentId: componentId,
     );
   }

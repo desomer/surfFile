@@ -14,6 +14,7 @@ import '../../theme/theme_color.dart';
 
 import '../../models/automatic_state.dart';
 import '../../models/json_text_binding.dart';
+import '../../models/super_choice_config.dart';
 import '../../models/super_value_config.dart';
 import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_binding.dart';
@@ -28,6 +29,7 @@ import '../editing/slots/editor_slot.dart';
 import 'component_common.dart';
 import 'component_property_bindings.dart';
 import 'component_state_behavior.dart';
+import 'super_choice.dart';
 import 'super_component.dart';
 import 'super_layout/slot_implementation.dart';
 import 'super_text_field.dart';
@@ -111,6 +113,7 @@ class _SuperValueState extends State<SuperValue>
   JsonRepositoryStore? _requestedStore;
   bool? _requestedExternal;
   bool? _requestedAsBool;
+  bool? _requestedAsStringList;
   String? _requestedResolveError;
   bool _requestedPlaceholder = false;
   int _bindingGeneration = 0;
@@ -231,6 +234,7 @@ class _SuperValueState extends State<SuperValue>
       _resetGeneration++;
       _requestedExternal = null;
       _requestedAsBool = null;
+      _requestedAsStringList = null;
       _activeStates = null;
       _effectiveConfig = null;
     }
@@ -351,6 +355,8 @@ class _SuperValueState extends State<SuperValue>
   }) {
     final external = widget.controller != null || _controlledText != null;
     final asBool = config.kind.isBoolean;
+    final asStringList =
+        config.kind.isChoice && config.choice.variant.isMultiple;
     final resolved = _resolve(config, scope, store);
     _listenSelections(resolved.selections);
     if (!resetText &&
@@ -359,7 +365,8 @@ class _SuperValueState extends State<SuperValue>
         _requestedPlaceholder == resolved.placeholder &&
         _requestedStore == store &&
         _requestedExternal == external &&
-        _requestedAsBool == asBool) {
+        _requestedAsBool == asBool &&
+        _requestedAsStringList == asStringList) {
       return;
     }
     _requestedBinding = resolved.binding;
@@ -368,6 +375,7 @@ class _SuperValueState extends State<SuperValue>
     _requestedStore = store;
     _requestedExternal = external;
     _requestedAsBool = asBool;
+    _requestedAsStringList = asStringList;
     final generation = ++_bindingGeneration;
 
     if (!external &&
@@ -377,9 +385,16 @@ class _SuperValueState extends State<SuperValue>
         store != null &&
         _binding == null &&
         _pendingBindingFlush == null) {
-      final cached = store.peekAttribute(resolved.binding!);
+      final cached = store.peekAttribute(
+        resolved.binding!,
+        allowStringList: asStringList,
+      );
       if (cached != null &&
-          (!asBool || cached.value == null || cached.value is bool)) {
+          (!asBool || cached.value == null || cached.value is bool) &&
+          (!asStringList ||
+              cached.value == null ||
+              cached.value is String ||
+              cached.value is List)) {
         final resolvedText = asBool
             ? (cached.value == true ? 'true' : 'false')
             : cached.text;
@@ -399,6 +414,7 @@ class _SuperValueState extends State<SuperValue>
           oldBinding != null &&
           oldBinding.binding == resolved.binding &&
           oldBinding.asBool == asBool &&
+          oldBinding.asStringList == asStringList &&
           identical(oldBinding.store, store)) {
         await oldBinding.flush();
         if (!mounted || generation != _bindingGeneration) return;
@@ -440,6 +456,7 @@ class _SuperValueState extends State<SuperValue>
             controller: _internal,
             componentId: widget.id,
             asBool: asBool,
+            asStringList: asStringList,
             onChanged: stateful
                 ? null
                 : (text) {
@@ -607,10 +624,15 @@ class _SuperValueState extends State<SuperValue>
             exportConfig: () => configuration.value,
             eventComponentType: 'value',
             behaviors: widget.behaviours,
-            eventData: () => {
-              'value': _currentEffectiveConfig.kind.isBoolean
-                  ? _text.text.trim().toLowerCase() == 'true'
-                  : _text.text,
+            eventData: () {
+              final current = _currentEffectiveConfig;
+              return {
+                'value': current.kind.isBoolean
+                    ? _text.text.trim().toLowerCase() == 'true'
+                    : current.kind.isChoice && current.choice.variant.isMultiple
+                    ? SuperChoiceConfig.parseSelectedValues(_text.text)
+                    : _text.text,
+              };
             },
             label: 'Valeur',
             menuType: 'Value',
@@ -757,6 +779,43 @@ class _SuperValueState extends State<SuperValue>
                       ],
                     ),
                   );
+                } else if (config.kind.isChoice) {
+                  content = Listener(
+                    onPointerDown: (event) {
+                      if (canConfigure &&
+                          event.buttons == kSecondaryMouseButton) {
+                        _surface.currentState?.openMenu(event.position);
+                      }
+                    },
+                    child: SuperChoice(
+                      key: ValueKey('super-value-choice-${widget.id}'),
+                      inputKey: ValueKey('super-value-input-${widget.id}'),
+                      config: config,
+                      focusNode: _focusNode,
+                      controller: controller,
+                      style: style,
+                      enabled:
+                          config.enabled &&
+                          !(config.binding != null && _binding?.loading == true),
+                      readOnly: _unselected ? true : null,
+                      bindingError: _bindingError ?? _binding?.error,
+                      onChanged: (text) {
+                        if (_editorText != null) return;
+                        unawaited(_binding?.flush());
+                        widget.onChanged?.call(text);
+                        if (_controlledText != null) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted &&
+                                widget.controller == null &&
+                                _controlledText != null &&
+                                _internal.text != _controlledText) {
+                              _setText(_internal, _controlledText!);
+                            }
+                          });
+                        }
+                      },
+                    ),
+                  );
                 } else {
                   final display = Text(
                     text.isEmpty
@@ -859,7 +918,8 @@ class _SuperValueState extends State<SuperValue>
                           : CrossAxisAlignment.stretch,
                       children: [
                         Flexible(child: content),
-                        if ((config.mode == SuperValueMode.display ||
+                        if (!config.kind.isChoice &&
+                            (config.mode == SuperValueMode.display ||
                                 config.kind.isBoolean) &&
                             (_bindingError != null || _binding?.error != null))
                           Text(
@@ -966,6 +1026,9 @@ class _SuperValueState extends State<SuperValue>
     final text = _controlledText ?? _text.text;
     if (config.kind.isBoolean) {
       return text.trim().toLowerCase() == 'true';
+    }
+    if (config.kind.isChoice && config.choice.variant.isMultiple) {
+      return SuperChoiceConfig.parseSelectedValues(text);
     }
     return text;
   }
