@@ -16,6 +16,20 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import 'insertion_plan.dart';
 
+/// Famille affichée dans les filtres de l’assistant d’ajout de composants.
+enum ComponentAddFamily {
+  standard('Standard'),
+  extended('Étendu'),
+  container('Container'),
+  composed('Composé'),
+  user('Utilisateur');
+
+  const ComponentAddFamily(this.label);
+
+  /// Libellé français présenté dans le wizard.
+  final String label;
+}
+
 /// Component-specific settings edited by the add wizard before insertion.
 ///
 /// The draft [T] is created by [initial], edited by [builder], described in
@@ -82,6 +96,8 @@ class ComponentAddCandidate {
   const ComponentAddCandidate({
     required this.id,
     required this.label,
+    this.family = ComponentAddFamily.user,
+    this.addOrder = 0,
     this.tags = const {},
     this.placementTags = const {},
     this.configurator,
@@ -91,6 +107,12 @@ class ComponentAddCandidate {
   /// Value identifying the component for the caller (slot ID or type).
   final String id;
   final String label;
+
+  /// Famille utilisée pour filtrer et classer ce composant dans le wizard.
+  final ComponentAddFamily family;
+
+  /// Ordre croissant dans la famille ; à égalité, l'ordre initial est conservé.
+  final int addOrder;
   final Set<String> tags;
 
   /// Restricts the component to targets dedicated to one of these tags; see
@@ -314,8 +336,9 @@ Future<ComponentAddRequest?> showComponentAddWizard({
       target: target,
       preferredWidth: width,
       builder: (_) {
-        final initialTarget =
-            targets.where((t) => t.id == initialTargetId).firstOrNull;
+        final initialTarget = targets
+            .where((t) => t.id == initialTargetId)
+            .firstOrNull;
         Widget child = ComponentAddWizard(
           title: title,
           keyPrefix: keyPrefix,
@@ -388,6 +411,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   int _step = 0;
   String _query = '';
+  ComponentAddFamily? _selectedFamily;
   ComponentAddCandidate? _selected;
   String? _lastTap;
   DateTime? _lastTapTime;
@@ -483,6 +507,16 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
             !_targetsFor(candidate).any((target) => target.id == _targetId)) {
           _targetId = _defaultTargetFor(candidate);
         }
+        _beforeId = null;
+      }
+    });
+  }
+
+  void _selectFamily(ComponentAddFamily? family) {
+    setState(() {
+      _selectedFamily = family;
+      if (family != null && _selected?.family != family) {
+        _selected = null;
         _beforeId = null;
       }
     });
@@ -593,7 +627,9 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
     Navigator.of(context).pop(
       ComponentAddRequest(
         component: candidate,
-        targetId: relative ? widget.initialTargetId : (target?.id ?? widget.initialTargetId),
+        targetId: relative
+            ? widget.initialTargetId
+            : (target?.id ?? widget.initialTargetId),
         beforeId: relative || (target?.replaces ?? false) ? null : _beforeId,
         placementId: relative ? _placement!.id : null,
         label: _labelValue,
@@ -775,11 +811,30 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
 
   Widget _buildChoice(BuildContext context) {
     final query = _query.trim().toLowerCase();
-    final offered = _offered;
+    final candidates = _offered.indexed.toList()
+      ..sort((a, b) {
+        final familyOrder = a.$2.family.index.compareTo(b.$2.family.index);
+        if (familyOrder != 0) return familyOrder;
+        final order = a.$2.addOrder.compareTo(b.$2.addOrder);
+        if (order != 0) return order;
+        return a.$1.compareTo(b.$1);
+      });
+    final offered = [for (final (_, candidate) in candidates) candidate];
+    final families = [
+      for (final family in ComponentAddFamily.values)
+        if (offered.any((candidate) => candidate.family == family)) family,
+    ];
+    final familyFiltered = _selectedFamily == null
+        ? offered
+        : [
+            for (final candidate in offered)
+              if (candidate.family == _selectedFamily) candidate,
+          ];
     final visible = [
-      for (final candidate in offered)
+      for (final candidate in familyFiltered)
         if (query.isEmpty ||
             candidate.label.toLowerCase().contains(query) ||
+            candidate.family.label.toLowerCase().contains(query) ||
             candidate.tags.any((tag) => tag.toLowerCase().contains(query)))
           candidate,
     ];
@@ -800,6 +855,29 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
               hintText: 'Rechercher un composant ou un tag',
             ),
             onChanged: (value) => setState(() => _query = value),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              ChoiceChip(
+                key: ValueKey('${widget.keyPrefix}-add-family-all'),
+                label: const Text('Tous'),
+                selected: _selectedFamily == null,
+                onSelected: (_) => _selectFamily(null),
+              ),
+              for (final family in families)
+                ChoiceChip(
+                  key: ValueKey(
+                    '${widget.keyPrefix}-add-family-${family.name}',
+                  ),
+                  label: Text(family.label),
+                  selected: _selectedFamily == family,
+                  onSelected: (selected) =>
+                      _selectFamily(selected ? family : null),
+                ),
+            ],
           ),
           const SizedBox(height: 8),
           if (visible.isEmpty)
@@ -977,18 +1055,12 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
             key: ValueKey('${widget.keyPrefix}-add-target'),
             initialValue: target.id,
             isExpanded: true,
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Zone',
-            ),
+            decoration: const InputDecoration(isDense: true, labelText: 'Zone'),
             selectedItemBuilder: (_) => [
               for (final option in targets)
                 Align(
                   alignment: Alignment.centerLeft,
-                  child: Text(
-                    option.label,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  child: Text(option.label, overflow: TextOverflow.ellipsis),
                 ),
             ],
             items: [
@@ -1317,6 +1389,10 @@ class _ComponentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final details = [
+      candidate.family.label,
+      ...candidate.tags.map((tag) => '#$tag'),
+    ].join(' · ');
     return SizedBox(
       width: 240,
       child: Card(
@@ -1351,9 +1427,9 @@ class _ComponentCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
-                      if (candidate.tags.isNotEmpty)
+                      if (details.isNotEmpty)
                         Text(
-                          candidate.tags.map((tag) => '#$tag').join(' '),
+                          details,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(

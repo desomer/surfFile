@@ -275,6 +275,35 @@ void main() {
   EditorHistoryController historyOf(WidgetTester tester) =>
       EditorHistoryScope.controllerOf(tester.element(find.byKey(hostKey)))!;
 
+  testWidgets('contextual add forwards component sort order', (tester) async {
+    await mount(tester);
+    final registry = SuperApp.of(tester.element(find.byKey(hostKey))).registry!;
+    registry.registerComponent(
+      'OrderedContext',
+      RegisteredComponent(
+        label: 'Composant ordonné',
+        addOrder: -9,
+        builder: (_) => const SizedBox.shrink(),
+      ),
+    );
+    await openInsertWizard(tester);
+    final wizard = tester.widget<ComponentAddWizard>(
+      find.byType(ComponentAddWizard),
+    );
+    expect(
+      wizard.candidates
+          .singleWhere((candidate) => candidate.id == 'factory:Renderer')
+          .addOrder,
+      1000,
+    );
+    expect(
+      wizard.candidates
+          .singleWhere((candidate) => candidate.id == 'component:OrderedContext')
+          .addOrder,
+      -9,
+    );
+  });
+
   testWidgets('« Composant… » and « Comportement… » are in the first context menu entry', (tester) async {
     await mount(tester);
     await tester.tap(valueOf('source'), buttons: kSecondaryMouseButton);

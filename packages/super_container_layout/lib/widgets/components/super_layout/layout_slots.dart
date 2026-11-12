@@ -69,6 +69,42 @@ extension _SuperLayoutSlots on SuperLayoutState {
     return null;
   }
 
+  ComponentAddFamily _addFamilyOf(BuildContext context, String slotId) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry == null) return ComponentAddFamily.user;
+    final ids = {for (final slot in widget.slots) slot.id};
+    if (ids.contains(slotId)) return ComponentAddFamily.user;
+    for (final entry in registry.registry.entries) {
+      if (_registrySlotId(entry.key, ids) == slotId) {
+        return entry.value.addFamily;
+      }
+    }
+    for (final entry in registry.components.entries) {
+      if ((entry.value.slotId ?? _registrySlotId(entry.key, ids)) == slotId) {
+        return entry.value.addFamily;
+      }
+    }
+    return ComponentAddFamily.user;
+  }
+
+  int _addOrderOf(BuildContext context, String slotId) {
+    final registry = SuperApp.maybeOf(context)?.registry;
+    if (registry == null) return 0;
+    final ids = {for (final slot in widget.slots) slot.id};
+    if (ids.contains(slotId)) return 0;
+    for (final entry in registry.registry.entries) {
+      if (_registrySlotId(entry.key, ids) == slotId) {
+        return entry.value.addOrder;
+      }
+    }
+    for (final entry in registry.components.entries) {
+      if ((entry.value.slotId ?? _registrySlotId(entry.key, ids)) == slotId) {
+        return entry.value.addOrder;
+      }
+    }
+    return 0;
+  }
+
   /// Placement tags of a registry slot returned by [_availableSlots].
   Set<String> _placementTagsOf(BuildContext context, String slotId) {
     final registry = SuperApp.maybeOf(context)?.registry;

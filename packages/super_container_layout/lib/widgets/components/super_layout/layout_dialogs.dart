@@ -30,12 +30,7 @@ class _SuperLayoutZoneFlowDelegate extends EditorDimensionDelegate {
   List<Widget> buildExtraActions(
     BuildContext context, {
     required VoidCallback onResetAndClose,
-  }) => [
-    TextButton(
-      onPressed: onReset,
-      child: const Text('Réinitialiser'),
-    ),
-  ];
+  }) => [TextButton(onPressed: onReset, child: const Text('Réinitialiser'))];
 }
 
 extension _SuperLayoutDialogs on SuperLayoutState {
@@ -239,6 +234,8 @@ extension _SuperLayoutDialogs on SuperLayoutState {
             ComponentAddCandidate(
               id: slot.id,
               label: _addLabelOf(context, slot),
+              family: _addFamilyOf(context, slot.id),
+              addOrder: _addOrderOf(context, slot.id),
               tags: slot.tags,
               placementTags: _placementTagsOf(context, slot.id),
               configurator: _addConfiguratorOf(context, slot.id),

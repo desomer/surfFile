@@ -24,11 +24,17 @@ final _candidates = [
   ComponentAddCandidate(
     id: 'text',
     label: 'Texte',
+    family: ComponentAddFamily.standard,
     tags: const {'text'},
     configurator: _textConfigurator,
     previewBuilder: (_) => const Text('Aperçu du texte'),
   ),
-  const ComponentAddCandidate(id: 'block', label: 'Bloc', tags: {'container'}),
+  const ComponentAddCandidate(
+    id: 'block',
+    label: 'Bloc',
+    family: ComponentAddFamily.container,
+    tags: {'container'},
+  ),
 ];
 
 const _targets = [
@@ -40,6 +46,7 @@ void main() {
   Future<ValueNotifier<ComponentAddRequest?>> pumpLauncher(
     WidgetTester tester, {
     bool editableLabel = true,
+    List<ComponentAddCandidate>? candidates,
   }) async {
     final result = ValueNotifier<ComponentAddRequest?>(null);
     addTearDown(result.dispose);
@@ -53,7 +60,7 @@ void main() {
                   context: context,
                   title: 'Ajouter dans Zone A',
                   keyPrefix: 'test',
-                  candidates: _candidates,
+                  candidates: candidates ?? _candidates,
                   targets: _targets,
                   initialTargetId: 'a',
                   editableLabel: editableLabel,
@@ -80,6 +87,220 @@ void main() {
     await tester.tap(finder);
     await tester.pumpAndSettle();
   }
+
+  testWidgets('component choice can be filtered by family and search', (
+    tester,
+  ) async {
+    await pumpLauncher(tester);
+    expect(find.byKey(const ValueKey('test-add-card-text')), findsOneWidget);
+    expect(find.byKey(const ValueKey('test-add-card-block')), findsOneWidget);
+
+    await tapKey(tester, 'test-add-family-container');
+    expect(find.byKey(const ValueKey('test-add-card-text')), findsNothing);
+    expect(find.byKey(const ValueKey('test-add-card-block')), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('test-add-search')),
+      'text',
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('test-add-card-block')), findsNothing);
+    expect(
+      find.text('Aucun composant ne correspond à la recherche.'),
+      findsOneWidget,
+    );
+
+    await tapKey(tester, 'test-add-family-all');
+    expect(find.byKey(const ValueKey('test-add-card-text')), findsOneWidget);
+    expect(find.byKey(const ValueKey('test-add-card-block')), findsNothing);
+    expect(find.text('Standard · #text'), findsOneWidget);
+  });
+
+  testWidgets('all components are ordered by family with users last', (
+    tester,
+  ) async {
+    await pumpLauncher(
+      tester,
+      candidates: const [
+        ComponentAddCandidate(id: 'user', label: 'User'),
+        ComponentAddCandidate(
+          id: 'composed',
+          label: 'Composed',
+          family: ComponentAddFamily.composed,
+        ),
+        ComponentAddCandidate(
+          id: 'container',
+          label: 'Container',
+          family: ComponentAddFamily.container,
+        ),
+        ComponentAddCandidate(
+          id: 'extended',
+          label: 'Extended',
+          family: ComponentAddFamily.extended,
+        ),
+        ComponentAddCandidate(
+          id: 'standard',
+          label: 'Standard',
+          family: ComponentAddFamily.standard,
+        ),
+      ],
+    );
+    expect(
+      find.byKey(const ValueKey('test-add-family-container')),
+      findsOneWidget,
+    );
+
+    final positions = [
+      for (final id in [
+        'standard',
+        'extended',
+        'container',
+        'composed',
+        'user',
+      ])
+        tester.getTopLeft(find.byKey(ValueKey('test-add-card-$id'))),
+    ];
+    for (var index = 0; index < positions.length - 1; index++) {
+      final current = positions[index];
+      final next = positions[index + 1];
+      expect(
+        current.dy < next.dy || (current.dy == next.dy && current.dx < next.dx),
+        isTrue,
+      );
+    }
+  });
+
+  testWidgets('Layout and Card lead Standard before Text and Action', (
+    tester,
+  ) async {
+    final registry = Registry()..bootstrap();
+    addTearDown(registry.dispose);
+    const standardKeys = {'Layout', 'Card', 'Value', 'Action'};
+    final candidates = [
+      for (final entry in registry.registry.entries)
+        if (standardKeys.contains(entry.key))
+          ComponentAddCandidate(
+            id: entry.key,
+            label: entry.value.label ?? entry.key,
+            family: entry.value.addFamily,
+            tags: entry.value.tags,
+          ),
+    ];
+    await pumpLauncher(tester, candidates: candidates);
+
+    final ids = ['Layout', 'Card', 'Value', 'Action'];
+    final positions = [
+      for (final id in ids)
+        tester.getTopLeft(find.byKey(ValueKey('test-add-card-$id'))),
+    ];
+    for (var index = 0; index < positions.length - 1; index++) {
+      final current = positions[index];
+      final next = positions[index + 1];
+      expect(
+        current.dy < next.dy || (current.dy == next.dy && current.dx < next.dx),
+        isTrue,
+      );
+    }
+  });
+
+  testWidgets('SuperRenderer is last in the Extended family', (tester) async {
+    final registry = Registry()..bootstrap();
+    addTearDown(registry.dispose);
+    const extendedKeys = {'Renderer', 'ApplicationBar', 'BottomNavigationBar'};
+    final candidates = [
+      for (final entry in registry.registry.entries)
+        if (extendedKeys.contains(entry.key))
+          ComponentAddCandidate(
+            id: entry.key,
+            label: entry.value.label ?? entry.key,
+            family: entry.value.addFamily,
+            addOrder: entry.value.addOrder,
+            tags: entry.value.tags,
+          ),
+    ];
+    await pumpLauncher(tester, candidates: candidates);
+
+    final positions = [
+      for (final id in ['ApplicationBar', 'BottomNavigationBar', 'Renderer'])
+        tester.getTopLeft(find.byKey(ValueKey('test-add-card-$id'))),
+    ];
+    for (var index = 0; index < positions.length - 1; index++) {
+      final current = positions[index];
+      final next = positions[index + 1];
+      expect(
+        current.dy < next.dy || (current.dy == next.dy && current.dx < next.dx),
+        isTrue,
+      );
+    }
+  });
+
+  testWidgets('numeric order is stable within each family and filter', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpLauncher(
+      tester,
+      candidates: const [
+        ComponentAddCandidate(
+          id: 'later',
+          label: 'Later',
+          family: ComponentAddFamily.extended,
+          addOrder: 1001,
+        ),
+        ComponentAddCandidate(
+          id: 'first-tie',
+          label: 'First tie',
+          family: ComponentAddFamily.extended,
+        ),
+        ComponentAddCandidate(
+          id: 'early',
+          label: 'Early',
+          family: ComponentAddFamily.extended,
+          addOrder: -1,
+        ),
+        ComponentAddCandidate(
+          id: 'second-tie',
+          label: 'Second tie',
+          family: ComponentAddFamily.extended,
+        ),
+        ComponentAddCandidate(
+          id: 'late',
+          label: 'Late',
+          family: ComponentAddFamily.extended,
+          addOrder: 1000,
+        ),
+        ComponentAddCandidate(
+          id: 'standard',
+          label: 'Standard',
+          family: ComponentAddFamily.standard,
+          addOrder: 2000,
+        ),
+      ],
+    );
+
+    void expectOrder(List<String> ids) {
+      final positions = [
+        for (final id in ids)
+          tester.getTopLeft(find.byKey(ValueKey('test-add-card-$id'))),
+      ];
+      for (var index = 0; index < positions.length - 1; index++) {
+        final current = positions[index];
+        final next = positions[index + 1];
+        expect(
+          current.dy < next.dy ||
+              (current.dy == next.dy && current.dx < next.dx),
+          isTrue,
+        );
+      }
+    }
+
+    const extended = ['early', 'first-tie', 'second-tie', 'late', 'later'];
+    expectOrder(['standard', ...extended]);
+    await tapKey(tester, 'test-add-family-extended');
+    expect(find.byKey(const ValueKey('test-add-card-standard')), findsNothing);
+    expectOrder(extended);
+  });
 
   testWidgets('wizard separates settings, placement and editable summary', (
     tester,
@@ -392,12 +613,21 @@ void main() {
       final registry = Registry();
       registry.registry['CustomKey'] = ComponentBuilderDynamic(
         label: 'Mon Composant Perso',
+        addOrder: 12,
         tags: const {'custom'},
         previewBuilder: (_) => const Text('Widget de previsualisation'),
         dynamicBuilder: (ctx) => BuilderSlot(
           id: ctx.id,
           label: 'CustomKey',
           builder: (_) => Text('Instance ${ctx.id}'),
+        ),
+      );
+      registry.registerComponent(
+        'RegisteredLayout',
+        RegisteredComponent(
+          label: 'Composant enregistré',
+          addOrder: -4,
+          builder: (_) => const SizedBox.shrink(),
         ),
       );
 
@@ -438,6 +668,23 @@ void main() {
 
       // Custom label is shown in the popup instead of the registry key.
       expect(find.text('Mon Composant Perso'), findsOneWidget);
+      final layoutWizard = tester.widget<ComponentAddWizard>(
+        find.byType(ComponentAddWizard),
+      );
+      expect(
+        layoutWizard.candidates
+            .singleWhere((candidate) => candidate.id == 'registry:CustomKey')
+            .addOrder,
+        12,
+      );
+      expect(
+        layoutWizard.candidates
+            .singleWhere(
+              (candidate) => candidate.id == 'registry:RegisteredLayout',
+            )
+            .addOrder,
+        -4,
+      );
       expect(
         find.byKey(const ValueKey('super-layout-add-preview')),
         findsNothing,
@@ -485,9 +732,18 @@ void main() {
       final registry = Registry();
       registry.registry['CustomNativeKey'] = ComponentBuilderDynamic(
         label: 'Label Popup Natif',
+        addOrder: -12,
         tags: const {'custom'},
         previewBuilder: (_) => const Text('Aperçu Natif'),
         dynamicBuilder: (ctx) => Text('Contenu ${ctx.id}'),
+      );
+      registry.registerComponent(
+        'RegisteredNative',
+        RegisteredComponent(
+          label: 'Composant natif enregistré',
+          addOrder: 5,
+          builder: (_) => const SizedBox.shrink(),
+        ),
       );
 
       final config = ValueNotifier(NativeComponentConfig());
@@ -539,6 +795,25 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Label Popup Natif'), findsOneWidget);
+      final nativeWizard = tester.widget<ComponentAddWizard>(
+        find.byType(ComponentAddWizard),
+      );
+      expect(
+        nativeWizard.candidates
+            .singleWhere(
+              (candidate) => candidate.id == 'factory:CustomNativeKey',
+            )
+            .addOrder,
+        -12,
+      );
+      expect(
+        nativeWizard.candidates
+            .singleWhere(
+              (candidate) => candidate.id == 'component:RegisteredNative',
+            )
+            .addOrder,
+        5,
+      );
       expect(
         find.byKey(const ValueKey('test-native-add-preview')),
         findsNothing,

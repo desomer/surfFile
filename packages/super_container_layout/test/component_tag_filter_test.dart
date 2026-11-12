@@ -61,6 +61,74 @@ void main() {
     );
   });
 
+  test(
+    'component families classify built-ins and application registrations',
+    () {
+      final registry = Registry()..bootstrap();
+      expect(
+        registry.registry['Value']!.addFamily,
+        ComponentAddFamily.standard,
+      );
+      expect(
+        registry.registry['ApplicationBar']!.addFamily,
+        ComponentAddFamily.extended,
+      );
+      expect(registry.registry['Renderer']!.addOrder, 1000);
+      expect(registry.registry['ApplicationBar']!.addOrder, 0);
+      expect(
+        registry.registry['Layout']!.addFamily,
+        ComponentAddFamily.standard,
+      );
+      expect(registry.registry['Card']!.addFamily, ComponentAddFamily.standard);
+      expect(
+        registry.registry['Value']!.addFamily,
+        ComponentAddFamily.standard,
+      );
+      expect(
+        registry.registry['Action']!.addFamily,
+        ComponentAddFamily.standard,
+      );
+      expect(registry.registry['Tab']!.addFamily, ComponentAddFamily.container);
+
+      registry.registerFactory('custom', const SizedBox());
+      expect(registry.registry['custom']!.addFamily, ComponentAddFamily.user);
+      registry.registerFactory(
+        'custom-composed',
+        const SizedBox(),
+        addFamily: ComponentAddFamily.composed,
+        addOrder: -7,
+      );
+      expect(
+        registry.registry['custom-composed']!.addFamily,
+        ComponentAddFamily.composed,
+      );
+      expect(registry.registry['custom-composed']!.addOrder, -7);
+
+      registry.registerComponent(
+        'registered',
+        const RegisteredComponent(label: 'Registered', builder: _content),
+      );
+      expect(
+        registry.component('registered').addFamily,
+        ComponentAddFamily.user,
+      );
+      registry.registerComponent(
+        'registered-extended',
+        const RegisteredComponent(
+          label: 'Registered extended',
+          builder: _content,
+          addFamily: ComponentAddFamily.extended,
+          addOrder: 3,
+        ),
+      );
+      expect(
+        registry.component('registered-extended').addFamily,
+        ComponentAddFamily.extended,
+      );
+      expect(registry.component('registered-extended').addOrder, 3);
+    },
+  );
+
   Future<void> pumpNative(
     WidgetTester tester, {
     required Registry registry,

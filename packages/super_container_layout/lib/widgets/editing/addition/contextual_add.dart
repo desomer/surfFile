@@ -105,6 +105,8 @@ Future<void> showContextualAddWizard(
         ComponentAddCandidate(
           id: 'component:${entry.value.slotId ?? entry.key}',
           label: entry.value.label,
+          family: entry.value.addFamily,
+          addOrder: entry.value.addOrder,
           tags: entry.value.tags,
           placementTags: entry.value.placementTags,
           configurator: entry.value.addConfigurator,
@@ -114,6 +116,8 @@ Future<void> showContextualAddWizard(
       ComponentAddCandidate(
         id: 'factory:${entry.key}',
         label: entry.value.label ?? entry.key,
+        family: entry.value.addFamily,
+        addOrder: entry.value.addOrder,
         tags: entry.value.tags,
         placementTags: entry.value.placementTags,
         configurator: entry.value.addConfigurator,

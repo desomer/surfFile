@@ -41,6 +41,8 @@ extension NativeComponentEditorAddition on NativeComponentEditorState {
           ComponentAddCandidate(
             id: entry.key,
             label: _addLabelForType(entry.key, entry.value),
+            family: _familyForType(entry.key),
+            addOrder: _addOrderForType(entry.key),
             tags: _tagsForType(entry.key),
             placementTags: _placementTagsForType(entry.key),
             configurator: _addConfiguratorOf(entry.key),
@@ -418,6 +420,35 @@ extension NativeComponentEditorAddition on NativeComponentEditorState {
       }
     }
     return const {};
+  }
+
+  ComponentAddFamily _familyForType(String type) {
+    final registry = widget.registry;
+    if (registry == null) return ComponentAddFamily.user;
+    if (type.startsWith('factory:')) {
+      return registry.registry[type.substring('factory:'.length)]?.addFamily ??
+          ComponentAddFamily.user;
+    }
+    for (final entry in registry.components.entries) {
+      if (_componentType(entry.key, entry.value) == type) {
+        return entry.value.addFamily;
+      }
+    }
+    return ComponentAddFamily.user;
+  }
+
+  int _addOrderForType(String type) {
+    final registry = widget.registry;
+    if (registry == null) return 0;
+    if (type.startsWith('factory:')) {
+      return registry.registry[type.substring('factory:'.length)]?.addOrder ?? 0;
+    }
+    for (final entry in registry.components.entries) {
+      if (_componentType(entry.key, entry.value) == type) {
+        return entry.value.addOrder;
+      }
+    }
+    return 0;
   }
 
   ComponentAddConfigurator<Object>? _addConfiguratorOf(String type) {

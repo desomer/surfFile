@@ -258,6 +258,8 @@ class ComponentBuilder {
   ComponentBuilder({
     this.label,
     this.tags = const {},
+    this.addFamily = ComponentAddFamily.user,
+    this.addOrder = 0,
     this.placementTags = const {},
     this.menuIcon,
     this.duplication,
@@ -270,6 +272,12 @@ class ComponentBuilder {
   final String? label;
 
   final Set<String> tags;
+
+  /// Famille utilisée pour filtrer ce composant dans le wizard d’ajout.
+  final ComponentAddFamily addFamily;
+
+  /// Ordre croissant dans la famille du wizard, par défaut zéro.
+  final int addOrder;
 
   /// Non-empty for a component dedicated to some zones: the add wizards only
   /// offer zones whose tag filter explicitly includes one of these tags.
@@ -301,6 +309,8 @@ class RegisteredComponentImpl extends ComponentBuilder {
     required this.widget,
     super.label,
     super.tags,
+    super.addFamily,
+    super.addOrder,
     super.placementTags,
     super.menuIcon,
     super.duplication,
@@ -716,11 +726,14 @@ class Registry {
     }
   }
 
+  /// Enregistre une fabrique, classée dans [addFamily] selon [addOrder].
   void registerFactory(
     String key,
     Widget widget, {
     String? label,
     Set<String> tags = const {},
+    ComponentAddFamily addFamily = ComponentAddFamily.user,
+    int addOrder = 0,
     IconData? menuIcon,
     ComponentDuplicationContract? duplication,
     ComponentAddConfigurator<Object>? addConfigurator,
@@ -729,6 +742,8 @@ class Registry {
     registry[key] = ComponentBuilderDynamic(
       label: label,
       tags: tags,
+      addFamily: addFamily,
+      addOrder: addOrder,
       menuIcon: menuIcon,
       duplication: duplication,
       addConfigurator: addConfigurator,
@@ -937,7 +952,8 @@ class Registry {
     if (components.containsKey(key) || registry.containsKey(key)) {
       throw StateError('Composant déjà enregistré : $key');
     }
-    components[key] = component.registeredKey == null &&
+    components[key] =
+        component.registeredKey == null &&
             component.runtimeType == RegisteredComponent
         ? RegisteredComponent(
             label: component.label,
@@ -948,6 +964,8 @@ class Registry {
             preferredSize: component.preferredSize,
             isAvailable: component.isAvailable,
             tags: component.tags,
+            addFamily: component.addFamily,
+            addOrder: component.addOrder,
             placementTags: component.placementTags,
             menuIcon: component.menuIcon,
             duplication: component.duplication,
@@ -1008,6 +1026,8 @@ class Registry {
   }) {
     registry['Renderer'] = ComponentBuilderDynamic(
       label: 'SuperRenderer / Apparence JSON',
+      addFamily: ComponentAddFamily.extended,
+      addOrder: 1000,
       menuIcon: Icons.web,
       tags: const {'renderer', 'layout'},
       duplication: ComponentDuplicationContract.component,
@@ -1017,6 +1037,7 @@ class Registry {
       dynamicBuilder: (ctx) => SuperRenderer(id: ctx.id),
     );
     registry['Layout'] = ComponentBuilderDynamic(
+      addFamily: ComponentAddFamily.standard,
       menuIcon: Icons.dashboard_outlined,
       duplication: ComponentDuplicationContract.newLayout,
       tags: const {'layout'},
@@ -1050,6 +1071,7 @@ class Registry {
     registry['Card'] = ComponentBuilderDynamic(
       menuIcon: Icons.crop_square,
       label: 'Card / Container / Image',
+      addFamily: ComponentAddFamily.standard,
       duplication: ComponentDuplicationContract.newContainer,
       tags: const {'container'},
       addConfigurator: containerAddConfigurator,
@@ -1075,6 +1097,7 @@ class Registry {
     registry['Value'] = ComponentBuilderDynamic(
       menuIcon: Icons.text_fields,
       label: 'Text / Input',
+      addFamily: ComponentAddFamily.standard,
       duplication: ComponentDuplicationContract.superValue,
       tags: const {'text', 'input'},
       addConfigurator: superValueAddConfigurator(availableFontFamilies),
@@ -1087,6 +1110,7 @@ class Registry {
     registry['Action'] = ComponentBuilderDynamic(
       menuIcon: Icons.smart_button_outlined,
       label: 'Action / Button',
+      addFamily: ComponentAddFamily.standard,
       duplication: ComponentDuplicationContract.superAction,
       tags: const {'action', 'button', 'input'},
       addConfigurator: superActionAddConfigurator(availableFontFamilies),
@@ -1099,6 +1123,7 @@ class Registry {
     registry['Indicator'] = ComponentBuilderDynamic(
       menuIcon: Icons.adjust_outlined,
       label: 'Indicator / Icon',
+      addFamily: ComponentAddFamily.standard,
       duplication: ComponentDuplicationContract.superIndicator,
       tags: const {'indicator', 'icon', 'text'},
       addConfigurator: superIndicatorAddConfigurator(availableFontFamilies),
@@ -1113,6 +1138,7 @@ class Registry {
     registry['Separator'] = ComponentBuilderDynamic(
       menuIcon: Icons.horizontal_rule,
       label: 'Separator / Divider / Spacer',
+      addFamily: ComponentAddFamily.standard,
       duplication: ComponentDuplicationContract.superSeparator,
       tags: const {'separator', 'divider', 'spacer'},
       addConfigurator: superSeparatorAddConfigurator(availableFontFamilies),
@@ -1126,6 +1152,7 @@ class Registry {
 
     registry['ApplicationBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.web_asset,
+      addFamily: ComponentAddFamily.extended,
       duplication: ComponentDuplicationContract.superAppBar,
       tags: const {'appBar'},
       placementTags: const {'appBar'},
@@ -1139,6 +1166,7 @@ class Registry {
 
     registry['BottomNavigationBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.space_dashboard_outlined,
+      addFamily: ComponentAddFamily.extended,
       duplication: ComponentDuplicationContract.superBottomNavigationBar,
       tags: const {'bottomNavigationBar'},
       placementTags: const {'bottomNavigationBar'},
@@ -1152,6 +1180,7 @@ class Registry {
 
     registry['BottomAppBar'] = ComponentBuilderDynamic(
       menuIcon: Icons.call_to_action_outlined,
+      addFamily: ComponentAddFamily.extended,
       duplication: ComponentDuplicationContract.superBottomAppBar,
       tags: const {'bottomNavigationBar', 'bottomAppBar'},
       placementTags: const {'bottomNavigationBar'},
@@ -1165,6 +1194,7 @@ class Registry {
 
     registry['NavigationRail'] = ComponentBuilderDynamic(
       menuIcon: Icons.view_sidebar_outlined,
+      addFamily: ComponentAddFamily.extended,
       duplication: ComponentDuplicationContract.superNavigationRail,
       tags: const {'navigationRail'},
       previewBuilder: _buildNavigationRailPreview,
@@ -1177,6 +1207,7 @@ class Registry {
 
     registry['Expansible'] = ComponentBuilderDynamic(
       menuIcon: Icons.unfold_more_outlined,
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superExpansible,
       tags: const {'container', 'layout', 'expansible'},
       addConfigurator: expansibleAddConfigurator,
@@ -1190,6 +1221,7 @@ class Registry {
 
     registry['Menu'] = ComponentBuilderDynamic(
       menuIcon: Icons.menu_open_outlined,
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superMenuAnchor,
       tags: const {'container', 'layout', 'menu'},
       addConfigurator: menuAnchorAddConfigurator,
@@ -1203,6 +1235,7 @@ class Registry {
 
     registry['Tab'] = ComponentBuilderDynamic(
       menuIcon: Icons.tab_outlined,
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superTab,
       tags: const {'container', 'layout', 'tab'},
       addConfigurator: tabAddConfigurator,
@@ -1214,6 +1247,7 @@ class Registry {
     registry['Conditional'] = ComponentBuilderDynamic(
       label: 'Conditional / Switch',
       menuIcon: Icons.call_split_outlined,
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superConditional,
       tags: const {'container', 'layout', 'conditional', 'data'},
       addConfigurator: conditionalAddConfigurator,
@@ -1224,6 +1258,7 @@ class Registry {
 
     registry['IterableContent'] = ComponentBuilderDynamic(
       menuIcon: Icons.article_outlined,
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.iterableContent,
       tags: const {'container', 'layout'},
       placementTags: const {'list'},
@@ -1234,6 +1269,7 @@ class Registry {
     );
     registry['ListView'] = ComponentBuilderDynamic(
       menuIcon: Icons.view_list,
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superListView,
       tags: const {'list', 'layout'},
       addConfigurator: listViewAddConfigurator,
@@ -1249,6 +1285,7 @@ class Registry {
     registry['TreeView'] = ComponentBuilderDynamic(
       menuIcon: Icons.account_tree_outlined,
       label: 'TreeView',
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superTreeView,
       tags: const {'tree', 'list', 'layout', 'data'},
       addConfigurator: treeViewAddConfigurator,
@@ -1260,6 +1297,7 @@ class Registry {
     registry['Table'] = ComponentBuilderDynamic(
       menuIcon: Icons.table_chart_outlined,
       label: 'Table',
+      addFamily: ComponentAddFamily.container,
       duplication: ComponentDuplicationContract.superTable,
       tags: const {'table', 'list', 'layout', 'data'},
       addConfigurator: tableAddConfigurator,
@@ -1281,6 +1319,8 @@ class ComponentBuilderDynamic extends ComponentBuilder {
     required this.dynamicBuilder,
     super.label,
     super.tags,
+    super.addFamily,
+    super.addOrder,
     super.placementTags,
     super.menuIcon,
     super.duplication,
@@ -1416,6 +1456,8 @@ class RegisteredComponent {
     this.preferredSize,
     this.isAvailable,
     this.tags = const {},
+    this.addFamily = ComponentAddFamily.user,
+    this.addOrder = 0,
     this.placementTags = const {},
     this.menuIcon,
     this.duplication,
@@ -1440,6 +1482,8 @@ class RegisteredComponent {
     this.preferredSize,
     this.isAvailable,
     this.tags = const {},
+    this.addFamily = ComponentAddFamily.user,
+    this.addOrder = 0,
     this.placementTags = const {},
     this.menuIcon,
     this.duplication,
@@ -1499,6 +1543,12 @@ class RegisteredComponent {
   final Size? preferredSize;
   final bool Function(BuildContext)? isAvailable;
   final Set<String> tags;
+
+  /// Famille utilisée pour filtrer ce composant dans le wizard d’ajout.
+  final ComponentAddFamily addFamily;
+
+  /// Ordre croissant dans la famille du wizard, par défaut zéro.
+  final int addOrder;
 
   /// Non-empty for a component dedicated to some zones: the add wizards only
   /// offer zones whose tag filter explicitly includes one of these tags.

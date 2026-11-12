@@ -466,6 +466,7 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
                   child: ValueListenableBuilder<SuperLayoutConfig>(
                     valueListenable: superLayoutConfig,
                     builder: (context, config, _) => SuperLayout(
+                      id: 'mainLayout',
                       label: 'Main Layout',
                       config: config,
                       onChanged: (value) => superLayoutConfig.value = value,

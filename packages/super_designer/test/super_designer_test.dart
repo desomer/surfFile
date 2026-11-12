@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -149,6 +151,55 @@ void main() {
         300,
       );
       expect(tester.getSize(tree).width, closeTo(initialTreeWidth, 1));
+    },
+  );
+
+  testWidgets(
+    'main layout AI scope accepts and renders a patch targeting mainLayout',
+    (tester) async {
+      await tester.pumpWidget(const SuperDesignerApp());
+      await tester.pumpAndSettle();
+      final context = tester.element(find.byType(SuperPage));
+      StyleEditScope.controllerOf(context)!.value = true;
+      await tester.pumpAndSettle();
+
+      final center = tester
+          .stateList<EditorSlotState>(find.byType(EditorSlot))
+          .singleWhere(
+            (slot) =>
+                slot.widget.zoneId == 'center' &&
+                slot.widget.menuSubtitle?.call() == 'Main Layout',
+          );
+      final scope = center.aiScope;
+      expect(scope.canonicalComponentId, 'mainLayout');
+      expect(scope.zoneId, 'center');
+
+      final controller = AppearanceScope.controllerOf(context)!;
+      final patch = VibeChatDialog.filterPatchToScope(controller.value, {
+        'components': {
+          'mainLayout': {
+            'type': 'layout',
+            'placements': {
+              'center': [
+                {'id': 'scope-title', 'type': 'registry:Value'},
+              ],
+            },
+          },
+          'scope-title': {'type': 'value', 'text': 'Scoped form title'},
+        },
+      }, scope);
+      expect(
+        (patch['components'] as Map).keys,
+        containsAll(['mainLayout', 'scope-title']),
+      );
+      controller.value = AppearanceTransfer.applyVibe(
+        controller.value,
+        jsonEncode(patch),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Scoped form title'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 

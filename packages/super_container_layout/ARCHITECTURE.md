@@ -268,7 +268,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 ### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 59 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
-| `widgets/editing/addition/component_add_wizard.dart` | `ComponentAddWizard` : assistant guidé d'ajout d'un composant dans une zone ou une région native avec aperçu et configuration initiale. |
+| `widgets/editing/addition/component_add_wizard.dart` | `ComponentAddWizard` : assistant guidé d'ajout d'un composant; la liste est ordonnée par famille (`Standard`, `Étendu`, `Container`, `Composé`, `Utilisateur`), puis par `addOrder` croissant (défaut 0, ordre initial à égalité). SuperRenderer utilise `1000`. |
 | `widgets/editing/addition/component_add_configurators.dart` | Catalogue des `ComponentAddConfigurator` branchés sur chaque composant de `Registry.bootstrap()`. |
 | `widgets/editing/addition/contextual_add.dart` | Menu et logique d'ajout contextuel rapide (`+`) sur une zone, une région native ou un conteneur vide. |
 | `widgets/editing/addition/insertion_plan.dart` | `InsertionPlan` : planification atomique de l'insertion d'un composant et de ses sous-configurations initiales dans `Appearance`. |

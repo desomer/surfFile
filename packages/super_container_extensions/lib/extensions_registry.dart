@@ -35,6 +35,7 @@ class SuperCodeExtension extends SuperComponentExtension {
     registry.registry[registryType] = ComponentBuilderDynamic(
       menuIcon: Icons.code,
       label: 'Code / YAML / JavaScript',
+      addFamily: ComponentAddFamily.extended,
       duplication: ComponentDuplicationContract.component,
       tags: const {'code', 'data'},
       addConfigurator: codeAddConfigurator,
@@ -68,6 +69,7 @@ class SuperChartExtension extends SuperComponentExtension {
     registry.registry[registryType] = ComponentBuilderDynamic(
       menuIcon: Icons.insert_chart_outlined,
       label: 'Chart / Graphique',
+      addFamily: ComponentAddFamily.extended,
       duplication: ComponentDuplicationContract.component,
       tags: const {'chart', 'data'},
       addConfigurator: chartAddConfigurator,

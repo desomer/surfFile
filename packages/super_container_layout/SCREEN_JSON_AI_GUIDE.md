@@ -218,6 +218,65 @@ En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`)
 
 ---
 
+### 3.1. Cibler le composant réellement affiché, pas son slot hôte
+
+**Une entrée dans `components` ne crée pas à elle seule un widget visible.** Le composant doit être monté par l'application hôte ou référencé dans les `placements` d'un parent lui-même affiché.
+
+Dans la page principale standard de SuperDesigner, le chemin de rendu est :
+
+`root` → région `body` → slot hôte `scaffold:body` → layout `mainLayout`.
+
+- **`scaffold:body` est un emplacement fourni par l'hôte, pas l'ID du layout à configurer.** N'écris jamais `"components": {"scaffold:body": {"type": "layout", ...}}` pour modifier ce contenu : cela ne configure pas le `SuperLayout` monté par l'hôte.
+- Pour modifier ce layout, écris dans **`components["mainLayout"]`** et conserve le placement hôte `{"id":"scaffold:body","type":"scaffold:body"}` dans `root.placements.body`.
+- Pour une autre page ou une autre application hôte, utilise les IDs réels du contexte courant (`pageCatalog`, export, scope et informations de l'hôte). Ne suppose pas que tous les layouts s'appellent `mainLayout` et ne déduis pas leur ID du nom d'une région.
+- Un slot hôte peut exister sans configuration dans `components`. Ne le transforme pas en composant standard pour « compléter » le JSON.
+- Le scope doit identifier le composant configurable, distinct de son slot hôte : pour la zone Centre de ce layout, `componentId` vaut `mainLayout` et `zoneId` vaut `center`, pas `componentId: scaffold:body`. Si le scope et l'état courant sont contradictoires, signale l'incohérence dans `message` avec `vibe: null`, sans inventer de correspondance ni produire de patch hors scope. Cette incohérence doit être corrigée par l'application hôte, pas contournée par le JSON.
+
+**Exemple de patch pour ajouter un titre dans un `mainLayout` initialement vide :**
+
+```json
+{
+  "components": {
+    "mainLayout": {
+      "type": "layout",
+      "zoneFlows": {
+        "center": {
+          "expandSlots": false,
+          "scrollable": true,
+          "padding": 24,
+          "spacing": 16,
+          "crossAxisAlignment": "stretch"
+        }
+      },
+      "placements": {
+        "center": [{ "id": "form-title", "type": "registry:Value" }]
+      }
+    },
+    "form-title": {
+      "type": "value",
+      "text": "Profil socio-démographique",
+      "fontSize": 24,
+      "fontWeight": "bold"
+    }
+  }
+}
+```
+
+Si la zone contient déjà des composants à conserver, inclus aussi leurs placements dans la liste envoyée.
+
+### 3.2. Vérifications obligatoires avant d'émettre un patch
+
+1. **JSON strict** : aucune virgule finale, aucun commentaire, aucune clé dupliquée, aucun retour à la ligne brut à l'intérieur d'une chaîne. Écris `"Autre"` sur une seule ligne ; pour un saut de ligne intentionnel dans un texte, utilise l'échappement `\n`.
+2. **Cible et scope** : vérifie que l'ID modifié est celui du composant rendu et que le patch respecte le périmètre fourni par le chat. N'invente pas de conteneur parent si les informations manquent.
+3. **Références complètes** : chaque nouveau composant standard configurable placé (par exemple `registry:Value`, `registry:Action` ou `registry:Layout`) doit avoir sa configuration avec le bon `type` dans ce patch. Une configuration peut être omise uniquement si le composant existe déjà dans le contexte courant ou si son implémentation est explicitement fournie par l'hôte. Ne réutilise pas un ID opaque supposé existant sans cette preuve.
+4. **Rattachement au rendu** : vérifie le chemin de chaque nouveau composant jusqu'à une page ou un composant effectivement affiché. Déclarer un formulaire et ses enfants sans rattacher son layout ne suffit pas.
+5. **Schéma documenté** : utilise uniquement les propriétés et valeurs autorisées pour chaque type. Le `type` de configuration (`"value"`) et le `type` de placement (`"registry:Value"`) ne sont pas interchangeables.
+6. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
+
+Ces vérifications préviennent les erreurs de génération les plus courantes ; elles ne remplacent pas le décodage, la validation des modèles ni la vérification du rendu.
+
+---
+
 ## 4. Référence des composants du `ComponentConfigCatalog`
 
 ### 4.1. `"layout"` (`SuperLayoutConfig`)

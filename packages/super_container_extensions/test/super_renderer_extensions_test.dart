@@ -4,6 +4,14 @@ import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
+  test('component extensions use the extended add family', () {
+    final registry = Registry()
+      ..bootstrap()
+      ..registerAllExtensions();
+    expect(registry.registry['Chart']!.addFamily, ComponentAddFamily.extended);
+    expect(registry.registry['Code']!.addFamily, ComponentAddFamily.extended);
+  });
+
   for (final (type, config, widgetType) in <(String, ComponentConfig, Type)>[
     ('Code', const SuperCodeConfig(), SuperCode),
     ('Chart', SuperChartConfig(), SuperChart),
