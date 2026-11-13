@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
+import '../../../models/json_numbers.dart';
 
 import '../../../models/super_layout_config.dart';
 import '../../components/super_layout/slot_implementation.dart';
@@ -67,7 +68,7 @@ class SlotSizeDimensionDelegate extends EditorDimensionDelegate {
     controllers = {
       for (final entry in fields.entries)
         entry.key: TextEditingController(
-          text: entry.value.$1?.value.toString() ?? '',
+          text: entry.value.$1?.value.toStringAsFixed(2) ?? '',
         ),
     };
     units = {
@@ -149,7 +150,7 @@ class SlotSizeDimensionDelegate extends EditorDimensionDelegate {
       final text = controllers[key]!.text.trim();
       if (text.isEmpty) return null;
       return SlotDimension(
-        double.parse(text.replaceAll(',', '.')),
+        JsonNumbers.round(double.parse(text.replaceAll(',', '.'))),
         units[key]!.value,
       );
     }
@@ -472,6 +473,13 @@ class SlotSizeDimensionDelegate extends EditorDimensionDelegate {
                     ),
                     validator: validateField,
                     autovalidateMode: AutovalidateMode.onUserInteraction,
+                    onFieldSubmitted: (text) {
+                      if (text.trim().isNotEmpty && validateField(text) == null) {
+                        controllers[entry.key]!.text = JsonNumbers.round(
+                          double.parse(text.replaceAll(',', '.')),
+                        ).toStringAsFixed(2);
+                      }
+                    },
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -744,6 +752,7 @@ Widget _slotDimensionSlider(
     semanticFormatterCallback: (value) =>
         '${key.endsWith('width') ? 'Largeur' : 'Hauteur'} : '
         '${value.round()} ${percent ? '%' : 'px'}',
-    onChanged: (value) => controllers[key]!.text = value.round().toString(),
+    onChanged: (value) =>
+        controllers[key]!.text = JsonNumbers.round(value).toStringAsFixed(2),
   );
 }

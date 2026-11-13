@@ -11,6 +11,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../ai/call_gemini.dart';
 import '../../../models/component_config.dart';
+import '../../../models/json_numbers.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/scaffold_page_config.dart';
@@ -434,7 +435,7 @@ class VibeChatDialog extends StatefulWidget {
           entry.key: entry.value,
     };
 
-    return const JsonEncoder.withIndent('  ').convert({
+    return const JsonEncoder.withIndent('  ').convert(JsonNumbers.normalizeMap({
       'scope': {
         'componentId': targetId,
         if (rawTargetId != targetId) 'surfaceId': rawTargetId,
@@ -447,7 +448,7 @@ class VibeChatDialog extends StatefulWidget {
       },
       'components': scopedComponents,
       'styles': scopedStyles,
-    });
+    }));
   }
 
   @override

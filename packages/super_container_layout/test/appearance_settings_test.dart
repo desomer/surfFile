@@ -273,8 +273,9 @@ void main() {
     expect(editor.onRadiusChanged, isNull);
     expect(editor.extraSections.single.id, 'window');
     // Window content is a section of the shared editor, not app UI.
-    final controls = editor.extraSections.single.child as Column;
-    final slider = controls.children.whereType<Slider>().single;
+    final slider = tester.widget<Slider>(
+      find.byKey(const ValueKey('Opacité du fond')),
+    );
     slider.onChanged!(.4);
     await tester.pumpAndSettle();
     expect(controller.value.backgroundOpacity, .4);

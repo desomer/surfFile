@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../theme/appearance.dart';
+import '../../../models/json_numbers.dart';
+import '../components/shared/editor_number_field.dart';
 
 /// Contrôleur gérant la pile d'historique Undo/Redo des modifications d'[Appearance] et des repositories JSON.
 class EditorHistoryController extends ChangeNotifier {
@@ -210,14 +212,23 @@ class _EditorHistoryShortcutState extends State<EditorHistoryShortcut> {
   Widget build(BuildContext context) => widget.child;
 }
 
-/// Curseur visuel permettant de parcourir chronologiquement les états de l'[EditorHistoryController].
+/// Curseur numerique editable regroupant le glisser en une transaction Undo/Redo.
 class EditorHistorySlider extends StatelessWidget {
+  /// Cree un curseur avec saisie numerique et historique partage.
   const EditorHistorySlider({
     required this.value,
     required this.onChanged,
     this.min = 0,
     this.max = 1,
     this.label,
+    this.sliderKey,
+    this.divisions,
+    this.integer = false,
+    this.valueScale = 1,
+    this.unit = '',
+    this.showValue = true,
+    this.allowAboveMax = false,
+    this.allowBelowMin = false,
     super.key,
   });
 
@@ -225,20 +236,59 @@ class EditorHistorySlider extends StatelessWidget {
   final double min;
   final double max;
   final String? label;
-  final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChanged;
+  final Key? sliderKey;
+  final int? divisions;
+  final bool integer;
+  final double valueScale;
+  final String unit;
+  final bool showValue;
+  final bool allowAboveMax;
+  final bool allowBelowMin;
 
   @override
   Widget build(BuildContext context) {
     final history = EditorHistoryScope.controllerOf(context);
-    return Slider(
-      key: key,
-      value: value,
+    void change(double value) {
+      final next = JsonNumbers.round(
+        integer ? (value * valueScale).roundToDouble() / valueScale : value,
+      );
+      onChanged?.call(next);
+    }
+
+    final slider = Slider(
+      key: sliderKey ?? key,
+      value: value.clamp(min, max),
       min: min,
       max: max,
       label: label,
-      onChanged: onChanged,
+      divisions: divisions,
+      onChanged: onChanged == null ? null : change,
       onChangeStart: (_) => history?.beginTransaction(),
       onChangeEnd: (_) => history?.commitTransaction(),
+    );
+    if (!showValue) return slider;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Align(
+          alignment: Alignment.centerRight,
+          child: EditorNumberField(
+            value: value,
+            min: min,
+            max: max,
+            integer: integer,
+            scale: valueScale,
+            unit: unit,
+            label: label,
+            allowAboveMax: allowAboveMax,
+            allowBelowMin: allowBelowMin,
+            onChanged: onChanged == null ? null : change,
+          ),
+        ),
+        slider,
+      ],
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../models/native_component_config.dart';
 import '../../../../models/native_property_descriptor.dart';
+import '../../history/editor_history.dart';
 
 /// Formulaire de paramétrage initial d'un [SuperMenuAnchor] dans l'assistant d'ajout.
 class MenuAnchorAddForm extends StatelessWidget {
@@ -127,30 +128,34 @@ class MenuAnchorAddForm extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         Text(
-          'Décalage horizontal X (${offsetX.toStringAsFixed(0)} px)',
+          'Décalage horizontal X',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
-        Slider(
-          key: const ValueKey('add-menu-anchor-offset-x'),
-          value: offsetX.clamp(-200.0, 200.0),
+        EditorHistorySlider(
+          sliderKey: const ValueKey('add-menu-anchor-offset-x'),
+          value: offsetX,
+          allowAboveMax: true,
+          allowBelowMin: true,
           min: -200,
           max: 200,
           divisions: 80,
-          label: '${offsetX.toStringAsFixed(0)} px',
+          label: '${offsetX.toStringAsFixed(2)} px',
           onChanged: (value) =>
               onChanged(draft.withAlignmentOffsetX(value == 0 ? null : value)),
         ),
         Text(
-          'Décalage vertical Y (${offsetY.toStringAsFixed(0)} px)',
+          'Décalage vertical Y',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
-        Slider(
-          key: const ValueKey('add-menu-anchor-offset-y'),
-          value: offsetY.clamp(-200.0, 200.0),
+        EditorHistorySlider(
+          sliderKey: const ValueKey('add-menu-anchor-offset-y'),
+          value: offsetY,
+          allowAboveMax: true,
+          allowBelowMin: true,
           min: -200,
           max: 200,
           divisions: 80,
-          label: '${offsetY.toStringAsFixed(0)} px',
+          label: '${offsetY.toStringAsFixed(2)} px',
           onChanged: (value) =>
               onChanged(draft.withAlignmentOffsetY(value == 0 ? null : value)),
         ),

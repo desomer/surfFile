@@ -53,8 +53,8 @@ class NativeShapeConfig {
     this.right = false,
     this.bottom = true,
     this.left = false,
-  }) : assert(radius >= 0 && radius <= maxRadius),
-       assert(borderWidth >= 0 && borderWidth <= maxBorderWidth);
+  }) : assert(radius >= 0 && radius < double.infinity),
+       assert(borderWidth >= 0 && borderWidth < double.infinity);
 
   static const double maxRadius = 64;
   static const double maxBorderWidth = 16;
@@ -155,9 +155,9 @@ class NativeShapeConfig {
     bool? left,
   }) => NativeShapeConfig(
     kind: kind ?? this.kind,
-    radius: (radius ?? this.radius).clamp(0, maxRadius),
+    radius: (radius ?? this.radius).clamp(0, double.infinity),
     radii: clearRadii ? null : (radii ?? this.radii),
-    borderWidth: (borderWidth ?? this.borderWidth).clamp(0, maxBorderWidth),
+    borderWidth: (borderWidth ?? this.borderWidth).clamp(0, double.infinity),
     borderColor: clearBorderColor ? null : (borderColor ?? this.borderColor),
     top: top ?? this.top,
     right: right ?? this.right,
@@ -183,14 +183,14 @@ class NativeShapeConfig {
   factory NativeShapeConfig.fromJson(Object? raw) {
     if (raw is NativeShapeConfig) return raw;
     if (raw is num && raw.isFinite) {
-      return NativeShapeConfig(radius: raw.toDouble().clamp(0, maxRadius));
+      return NativeShapeConfig(radius: raw.toDouble().clamp(0, double.infinity));
     }
     if (raw is String && raw.trim().isNotEmpty) {
       return NativeShapeConfig(kind: NativeShapeKind.fromJson(raw.trim()));
     }
     if (raw is List) {
       return NativeShapeConfig(
-        radii: Quad.fromJson(raw, 0, maxRadius, 'shape.radii'),
+        radii: Quad.fromJson(raw, 0, double.infinity, 'shape.radii'),
       );
     }
     if (raw is! Map) {
@@ -205,7 +205,7 @@ class NativeShapeConfig {
     }
     final radii = raw['radii'] == null
         ? null
-        : Quad.fromJson(raw['radii'], 0, maxRadius, 'shape.radii');
+        : Quad.fromJson(raw['radii'], 0, double.infinity, 'shape.radii');
     final rawBorderWidth = raw['borderWidth'] ?? 0;
     if (rawBorderWidth is! num || !rawBorderWidth.isFinite) {
       throw const FormatException('Épaisseur de bordure de shape invalide.');
@@ -225,9 +225,9 @@ class NativeShapeConfig {
 
     return NativeShapeConfig(
       kind: kind,
-      radius: rawRadius.toDouble().clamp(0, maxRadius),
+      radius: rawRadius.toDouble().clamp(0, double.infinity),
       radii: radii,
-      borderWidth: rawBorderWidth.toDouble().clamp(0, maxBorderWidth),
+      borderWidth: rawBorderWidth.toDouble().clamp(0, double.infinity),
       borderColor: borderColor,
       top: side('top', false),
       right: side('right', false),

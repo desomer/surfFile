@@ -211,10 +211,10 @@ class ShadowSpec {
       enabled: enabled as bool? ?? true,
       color: parsedColor ?? d.color,
       opacity: number('opacity', 0, 1, d.opacity),
-      blur: number('blur', 0, maxBlur, d.blur),
-      spread: number('spread', -maxSpread, maxSpread, d.spread),
-      dx: number('dx', -maxOffset, maxOffset, d.dx),
-      dy: number('dy', -maxOffset, maxOffset, d.dy),
+      blur: number('blur', 0, double.infinity, d.blur),
+      spread: number('spread', double.negativeInfinity, double.infinity, d.spread),
+      dx: number('dx', double.negativeInfinity, double.infinity, d.dx),
+      dy: number('dy', double.negativeInfinity, double.infinity, d.dy),
     );
   }
 
@@ -297,10 +297,10 @@ class TransformSpec {
     }
 
     return TransformSpec(
-      dx: number('dx', -maxOffset, maxOffset, 0),
-      dy: number('dy', -maxOffset, maxOffset, 0),
-      rotation: number('rotation', -180, 180, 0),
-      scale: number('scale', minScale, maxScale, 1),
+      dx: number('dx', double.negativeInfinity, double.infinity, 0),
+      dy: number('dy', double.negativeInfinity, double.infinity, 0),
+      rotation: number('rotation', double.negativeInfinity, double.infinity, 0),
+      scale: number('scale', minScale, double.infinity, 1),
     );
   }
 

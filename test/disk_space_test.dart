@@ -5,6 +5,7 @@ import 'package:surf_file/services/disk_space.dart';
 import 'package:surf_file/theme/disk_gauge_style.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 import 'package:surf_file/widgets/disk_space/disk_gauge.dart';
+import 'package:surf_file/widgets/disk_space/disk_gauge_style_editor.dart';
 import 'package:surf_file/widgets/disk_space/disk_space_panel.dart';
 import 'package:surf_file/widgets/explorer/navigation/explorer_sidebar.dart';
 
@@ -27,6 +28,34 @@ void main() {
     }),
   );
   tearDown(() => messenger.setMockMethodCallHandler(DiskSpace.channel, null));
+
+  testWidgets('gauge sliders expose editable decimal values', (tester) async {
+    var style = const DiskGaugeStyle();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: SingleChildScrollView(child: StatefulBuilder(
+        builder: (context, setState) => DiskGaugeStyleEditor(
+          value: style,
+          accent: Colors.blue,
+          onChanged: (value) => setState(() => style = value),
+        ),
+      ))),
+    ));
+    final badge = find.descendant(
+      of: find.ancestor(
+        of: find.byKey(const ValueKey('gauge-Épaisseur de la piste')),
+        matching: find.byType(EditorHistorySlider),
+      ),
+      matching: find.byType(EditorNumberField),
+    );
+    await tester.ensureVisible(badge);
+    await tester.tap(badge);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '8,12');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    expect(style.thickness, 8.12);
+    expect(tester.takeException(), isNull);
+  });
 
   test('disk gauge preserves theme colors through its preferences codec', () {
     const primary = ThemeColor(ThemeColorRole.primary);

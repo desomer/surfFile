@@ -72,7 +72,7 @@ class DefaultAppearanceCodec extends AppearanceCodec {
       bool allowZero = false,
     }) {
       if (enforceBounds) {
-        return readBoundedDouble(map, key, fallback, min, max);
+        return readBoundedDouble(map, key, fallback, min, double.infinity);
       }
       final value = map[key] ?? fallback;
       if (value is! num ||

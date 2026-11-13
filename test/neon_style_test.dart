@@ -561,7 +561,7 @@ void main() {
     tester.widget<Slider>(intensity).onChanged!(3);
     await tester.pumpAndSettle();
     expect((controller.value.style('card').neon ?? const NeonStyle()).intensity, 3);
-    expect(find.text('Intensité : 300 %'), findsOneWidget);
+    expect(find.text('300 %'), findsOneWidget);
     tester.widget<Slider>(intensity).onChanged!(.8);
     await tester.pumpAndSettle();
     expect((controller.value.style('card').neon ?? const NeonStyle()).intensity, .8);

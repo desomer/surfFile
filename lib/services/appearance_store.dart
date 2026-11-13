@@ -183,7 +183,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
         'folderTransitionDuration',
         SurfFileAppearanceDefaults.folderTransitionDuration,
         SurfFileAppearanceDefaults.minTransitionDuration,
-        SurfFileAppearanceDefaults.maxTransitionDuration,
+        double.infinity,
       ),
       fileDragMode: fileDragMode,
     );

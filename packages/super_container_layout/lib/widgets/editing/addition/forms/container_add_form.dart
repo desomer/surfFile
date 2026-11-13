@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../../theme/container_style.dart';
 import '../../styles/container_style_editor.dart' show styleColorTile;
+import '../../history/editor_history.dart';
 
 /// Formulaire de paramétrage initial d'une `Card` ou d'un [IterableContent] dans l'assistant d'ajout.
 class ContainerAddForm extends StatelessWidget {
@@ -27,16 +28,16 @@ class ContainerAddForm extends StatelessWidget {
     children: [
       SizedBox(width: 130, child: Text(label)),
       Expanded(
-        child: Slider(
-          key: ValueKey('add-container-$key'),
-          value: value.clamp(0, max).toDouble(),
+        child: EditorHistorySlider(
+          sliderKey: ValueKey('add-container-$key'),
+          value: value,
+          allowAboveMax: true,
           max: max,
           divisions: max.round(),
-          label: value.toStringAsFixed(0),
+          label: value.toStringAsFixed(2),
           onChanged: onChanged,
         ),
       ),
-      SizedBox(width: 32, child: Text(value.toStringAsFixed(0))),
     ],
   );
 

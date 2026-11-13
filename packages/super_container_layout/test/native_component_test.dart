@@ -228,7 +228,7 @@ void main() {
               )
               .controller!
               .text,
-          '180.0',
+          '180.00',
         );
         tester
             .widget<Slider>(

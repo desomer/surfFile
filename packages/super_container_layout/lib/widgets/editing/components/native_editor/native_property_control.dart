@@ -10,6 +10,7 @@ import '../../../../models/native_component_config.dart';
 import '../../../../models/native_property_descriptor.dart';
 import '../../dialogs/editor_tabbed_wizard.dart';
 import '../../styles/container_style_editor.dart' show styleColorTile;
+import '../../history/editor_history.dart';
 import '../native_shape_editor.dart';
 
 /// Construit le contrôle d'édition adapté à un [NativePropertyDescriptor]
@@ -74,12 +75,7 @@ Widget buildNativePropertyControl({
       final max = descriptor.max ?? 100.0;
       final current = config.doubleProperty(descriptor.id);
       final fallback = (descriptor.defaultValue as num?)?.toDouble() ?? min;
-      final effective = (current ?? fallback).clamp(min, max);
-      final formatted = current == null
-          ? 'Auto'
-          : (current == current.roundToDouble()
-                ? current.toInt().toString()
-                : current.toStringAsFixed(2));
+      final effective = current ?? fallback;
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         child: Column(
@@ -89,7 +85,9 @@ Widget buildNativePropertyControl({
               children: [
                 Expanded(
                   child: Text(
-                    '${descriptor.label} ($formatted)',
+                    current == null
+                        ? '${descriptor.label} (Auto)'
+                        : descriptor.label,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
                 ),
@@ -101,12 +99,14 @@ Widget buildNativePropertyControl({
                 descriptor.subtitle!,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-            Slider(
-              key: propKey,
+            EditorHistorySlider(
+              sliderKey: propKey,
               value: effective,
               min: min,
               max: max,
               divisions: descriptor.divisions,
+              allowAboveMax: descriptor.allowsExtendedNumber,
+              allowBelowMin: descriptor.allowsExtendedNumber && min < 0,
               onChanged: (value) =>
                   onChanged(config.withProperty(descriptor.id, value)),
             ),

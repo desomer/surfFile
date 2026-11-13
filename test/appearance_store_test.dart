@@ -12,6 +12,7 @@ import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/folder_transition.dart';
 import 'package:surf_file/theme/disk_gauge_style.dart';
 import 'package:super_container_layout/theme/container_style.dart';
+import 'package:super_container_layout/services/appearance/appearance_transfer.dart';
 
 class _DelayedStore extends AppearanceStore {
   final gate = Completer<void>();
@@ -35,6 +36,31 @@ class _DelayedStore extends AppearanceStore {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUp(() => SharedPreferences.setMockInitialValues({}));
+
+  test('SurfFile rounds additional preferences in saved and exported JSON', () async {
+    final codec = SurfFileAppearanceCodec(
+      preferences: ValueNotifier(const SurfFilePreferences(
+        diskGaugeStyle: DiskGaugeStyle(thickness: 8.12345, alertThreshold: .87654),
+        folderTransitionDuration: 345.67891,
+      )),
+    );
+    addTearDown(codec.preferences.dispose);
+    final appearance = defaultSurfFileAppearance().copyWith(cardWidth: 234.56789);
+    final store = AppearanceStore(codec: codec);
+    await store.save(appearance);
+    final saved = (await SharedPreferences.getInstance()).getString(store.key)!;
+    final document = jsonDecode(saved) as Map<String, dynamic>;
+    final application = document['application'] as Map;
+    expect(application['cardWidth'], 234.57);
+    expect(application['folderTransitionDuration'], 345.68);
+    expect(application['diskGaugeStyle']['thickness'], 8.12);
+    expect(application['diskGaugeStyle']['alertThreshold'], .88);
+    final exported = jsonDecode(AppearanceTransfer.export(
+      appearance, {...TransferGroup.values}, codec: codec,
+    )) as Map<String, dynamic>;
+    expect(exported['data']['application'], application);
+    expect(codec.encode(codec.decode(saved)), saved);
+  });
 
   test('SurfFile codec forwards page catalog through prepare and persistence', () async {
     final catalog = EditorPageCatalog(
@@ -261,8 +287,12 @@ void main() {
       Appearance.minSpacing,
       48.0,
       Appearance.maxSpacing,
+      Appearance.maxSpacing * 11,
     ]) {
-      for (final height in [Appearance.minRowHeight, Appearance.maxRowHeight]) {
+      for (final height in [
+        Appearance.minRowHeight, Appearance.maxRowHeight,
+        Appearance.maxRowHeight * 11,
+      ]) {
         final appearance = custom.copyWith(spacing: spacing, rowHeight: height);
         await AppearanceStore().save(appearance);
         final restored = await AppearanceStore().load();
@@ -273,7 +303,7 @@ void main() {
     }
     for (final spacing in [
       Appearance.minSpacing - 1,
-      Appearance.maxSpacing + 1,
+      double.infinity,
     ]) {
       expect(
         () => AppearanceStore.decode(

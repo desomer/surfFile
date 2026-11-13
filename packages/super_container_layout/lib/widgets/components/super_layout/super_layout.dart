@@ -15,6 +15,7 @@ import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:material_ui/material_ui.dart';
 
 import '../../editing/history/editor_history.dart';
+import '../../editing/components/shared/editor_number_field.dart';
 import '../../editing/slots/editor_slot.dart';
 import '../../editing/slots/editor_selection_region.dart';
 import '../../editing/slots/slot_removal.dart';

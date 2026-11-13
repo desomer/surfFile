@@ -10,6 +10,22 @@ Ce document est la spécification technique destinée à une Intelligence Artifi
 
 ## 1. Primitives et raccourcis "AI-friendly"
 
+**Précision numérique** : les sauvegardes, exports et contextes Vibe de
+configuration UI utilisent au maximum **deux décimales**, y compris dans les
+objets/listes imbriqués et les préférences applicatives. Les valeurs restent
+des nombres JSON, pas des chaînes formatées ; les entiers sont conservés.
+Les dimensions compactes comme `"123.46px"` suivent la même précision.
+Les fichiers de données des repositories et les textes utilisateur ne sont
+pas arrondis.
+
+Les maxima des sliders de dimensions (tailles, marges, rayons, espacements,
+épaisseurs, ombres, tailles de police) sont des plages d'édition conseillées,
+pas des plafonds JSON : une valeur finie au-delà de 10 fois cette plage est
+acceptée. Les minima et contraintes structurelles restent valides, notamment
+les opacités/ratios bornés, les colonnes de grille (1–48), les choix discrets
+et le zoom. Les pourcentages représentant des ratios utilisent des pas de
+1 %, par exemple `12 %` est stocké comme `0.12`.
+
 Le moteur JSON accepte des types concis et lisibles partout dans le document :
 
 | Concept | Syntaxe recommandée pour l'IA | Syntaxes alternatives acceptées |
@@ -283,7 +299,7 @@ Ces vérifications préviennent les erreurs de génération les plus courantes ;
 Dispose ses enfants selon 2 modes (`"positioning"`) :
 - **`"zones"` (par défaut)** : Grille 3×3 (`nw`, `north`, `ne`, `west`, `center`, `east`, `sw`, `south`, `se`).
   - `north`, `south`, `west`, `east` (`bool`) : activation des côtés.
-  - `northSize`, `southSize`, `westSize`, `eastSize` (`number`, **bornes : `20` à `400`**) : épaisseur en pixels des côtés fixes.
+  - `northSize`, `southSize`, `westSize`, `eastSize` (`number`, **minimum : `20`**, plage du slider `20` à `400`) : épaisseur en pixels des côtés fixes, sans plafond JSON.
   - `autoSides` (`List<string>`) : côtés (`"north"`, `"south"`, `"west"`, `"east"`) dont l'épaisseur s'adapte automatiquement à leur contenu.
   - `nw`, `ne`, `sw`, `se` (`"row"` | `"column"` | `"none"`) : fusion des coins lorsqu'un bord horizontal (`north` / `south`) et un bord vertical (`west` / `east`) sont tous deux actifs :
     - **Bonne pratique (fortement recommandé)** : utilise **`"row"`** (le coin est absorbé par la bande `north` ou `south`, qui s'étend alors sur toute la largeur) ou **`"column"`** (le coin est absorbé par le panneau latéral `west` ou `east`, qui s'étend alors sur toute la hauteur).
@@ -299,21 +315,21 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
       - `thumbVisibility` (`bool`, défaut `true`) : maintient le curseur visible en permanence (`false` pour l'afficher uniquement pendant le défilement).
       - `trackVisibility` (`bool`, défaut `false`) : affiche la piste en arrière-plan du curseur.
       - `interactive` (`bool`, défaut `true`) : autorise le glisser du curseur.
-      - `thickness` (`number`, **bornes : `2` à `24`**, défaut `8`) : épaisseur en pixels.
-      - `radius` (`number`, **bornes : `0` à `24`**, défaut `4`) : rayon d'arrondi en pixels.
-      - `mainAxisMargin` (`number`, **bornes : `0` à `48`**, défaut `0`) : marge aux extrémités sur l'axe principal.
-      - `crossAxisMargin` (`number`, **bornes : `0` à `24`**, défaut `0`) : marge latérale par rapport au bord de la zone.
+      - `thickness` (`number`, **minimum : `2`**, plage du slider `2` à `24`, défaut `8`) : épaisseur en pixels, sans plafond JSON.
+      - `radius` (`number`, **minimum : `0`**, plage du slider `0` à `24`, défaut `4`) : rayon d'arrondi en pixels, sans plafond JSON.
+      - `mainAxisMargin` (`number`, **minimum : `0`**, plage du slider `0` à `48`, défaut `0`) : marge aux extrémités sur l'axe principal, sans plafond JSON.
+      - `crossAxisMargin` (`number`, **minimum : `0`**, plage du slider `0` à `24`, défaut `0`) : marge latérale par rapport au bord de la zone, sans plafond JSON.
       - `thumbColor`, `trackColor`, `trackBorderColor` (`string` hex `#AARRGGBB` / `#RRGGBB`) : couleurs personnalisées du curseur, de la piste et de sa bordure.
       - `side` (`"auto"` | `"start"` | `"end"`, défaut `"auto"`) : côté d'affichage (`"start"` = gauche/haut, `"end"` = droite/bas).
     - `mainAxisAlignment` : `"start"` (défaut), `"center"`, `"end"`, `"spaceBetween"`, `"spaceAround"`, `"spaceEvenly"`.
     - `crossAxisAlignment` : `"stretch"` (défaut, occupe toute la largeur en Column / toute la hauteur en Row), `"start"`, `"center"`, `"end"`.
-    - `spacing` (`number`, **bornes : `0` à `100`**, défaut `0`) : espacement en pixels entre les composants de la zone.
-    - `padding` (`number`, **bornes : `0` à `200`**, défaut `0`) ou `paddingInsets` (`[top, right, bottom, left]`) : marge intérieure de la zone.
+    - `spacing` (`number`, **minimum : `0`**, plage du slider `0` à `100`, défaut `0`) : espacement en pixels entre les composants de la zone, sans plafond JSON.
+    - `padding` (`number`, **minimum : `0`**, plage du slider `0` à `200`, défaut `0`) ou `paddingInsets` (`[top, right, bottom, left]`) : marge intérieure de la zone, sans plafond JSON.
   - `resizeSides` (`bool`) et `sideResizing` (`Map<Side, bool>`) : poignées de redimensionnement utilisateur.
   - `slotSizeConstraints` (`Map<slotId, SlotSizeConstraints>`) : contraintes de taille, marges et mode d'occupation par slot enfant :
     - `minWidth`, `minHeight`, `preferredWidth`, `preferredHeight`, `maxWidth`, `maxHeight` : dimensions en `"px"` ou `"%"` (ex: `"240px"`, `"50%"`).
     - `percentBasis` : `"zone"` (défaut) ou `"layout"`.
-    - `padding` (`0`..`200`) ou `paddingInsets` (`[top, right, bottom, left]`).
+    - `padding` (minimum `0`, sans plafond JSON) ou `paddingInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles).
     - `fitContent` (`bool?`, ou alias `"flex": 0 | 1`) : surcharge par slot l'occupation sur l'axe principal :
       - `true` (ou `"flex": 0`) : le slot prend uniquement la taille de son contenu (ne s'étire pas).
       - `false` (ou `"flex": 1`) : le slot s'étire pour remplir l'espace restant de la zone (même si la zone a `expandSlots: false`).
@@ -323,10 +339,20 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
     - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"mainLayout"` (ou le layout de la page).
   - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots.
   - `placements` (`Map<Zone, List<{"id": string, "type": string}>>`) : composants placés dans chaque zone.
-- **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` de `16` à `400`, `gap` de `0` à `64`).
+- **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` au minimum `16`, `gap` au minimum `0`). Les plafonds des sliders (`400` pour `rowHeight`, `64` pour `gap`) ne limitent pas les valeurs JSON.
 
 ### 4.2. `"native"` (`NativeComponentConfig`) & `"scaffold"` (`ScaffoldPageConfig`) — Lien avec les widgets Flutter Material
 Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les widgets structurels standards de la bibliothèque **Flutter Material** (`package:flutter/material.dart`). Leurs noms de régions dans `regions` et `placements` reprennent exactement les paramètres nommés des constructeurs Flutter correspondants :
+
+Pour les propriétés dimensionnelles éditées par slider (`elevation`,
+`scrolledUnderElevation`, `leadingWidth`, `titleSpacing`, `notchMargin`,
+`padding`, `iconSize`, `selectedFontSize`, `unselectedFontSize`,
+`alignmentOffsetX`, `alignmentOffsetY`, `stretchTriggerOffset`,
+`expandedHeight`, `collapsedHeight`, `actionsPadding`, `scrollPadding`),
+les maxima indiqués ci-dessous décrivent la plage du slider, sans plafond JSON.
+Les minima restent appliqués, sauf pour les décalages signés. Les rayons et
+épaisseurs de `shape` sont également positifs ou nuls, sans plafond JSON.
+Les opacités et alignements bornés conservent leurs limites structurelles.
 
 - **Page / Écran (`"root"` ou `<pageId>` du `pageCatalog`) $\rightarrow$ `Scaffold` de Flutter** (`type: "native"` ou `"scaffold"`) :
   - **Régions** :
@@ -361,7 +387,7 @@ Les composants `"native"` et `"scaffold"` sont des adaptateurs directs vers les 
   - **Propriétés de style Flutter `AppBar` (directement à la racine de `components[appBarId]`)** :
     - Couleurs (`"#RRGGBB"` ou `"#AARRGGBB"`) : `backgroundColor`, `foregroundColor`, `surfaceTintColor`, `shadowColor`.
     - Élévation & transparence : `elevation` (`0`..`24`), `scrolledUnderElevation` (`0`..`24`), `forceMaterialTransparency` (`bool`, défaut `false`).
-    - Forme et bordure (`shape`) : objet `{"kind": "rounded" | "continuous" | "beveled" | "stadium" | "linear", "radius": 0..64, "radii": [topLeft, topRight, bottomRight, bottomLeft], "borderWidth": 0..16, "borderColor": "#RRGGBB", "top": bool, "right": bool, "bottom": bool, "left": bool}` (ou raccourcis : nombre `16` pour un rayon uniforme, ou `[0, 0, 16, 16]` pour des coins indépendants).
+    - Forme et bordure (`shape`) : objet `{"kind": "rounded" | "continuous" | "beveled" | "stadium" | "linear", "radius": 16, "radii": [topLeft, topRight, bottomRight, bottomLeft], "borderWidth": 1, "borderColor": "#RRGGBB", "top": bool, "right": bool, "bottom": bool, "left": bool}` (ou raccourcis : nombre `16` pour un rayon uniforme, ou `[0, 0, 16, 16]` pour des coins indépendants). Plages des sliders : rayon `0`..`64`, bordure `0`..`16`.
     - Dimensions & espacements : `toolbarHeight` (`32`..`160`, défaut `56`), `leadingWidth` (`24`..`200`, défaut `56`), `titleSpacing` (`0`..`64`, défaut `0`).
     - Comportement & opacité : `centerTitle` (`bool`), `toolbarOpacity` (`0.0`..`1.0`, défaut `1.0`, mode `AppBar` standard uniquement), `bottomOpacity` (`0.0`..`1.0`, défaut `1.0`, mode `AppBar` standard uniquement), `primary` (`bool`, défaut `true`), `excludeHeaderSemantics` (`bool`, défaut `false`), `clipBehavior` (`"none"` | `"hardEdge"` | `"antiAlias"` | `"antiAliasWithSaveLayer"`), `systemOverlayStyle` (`"light"` | `"dark"`).
   - **Propriétés spécifiques `SliverAppBar` (prises en compte lorsque la page parente est en `bodyMode: "customScrollView"`)** :
@@ -848,17 +874,23 @@ L'habillage de l'arrière-plan combine les **propriétés racines** du document 
      - Dégradé `"linear"`, `"radial"` ou `"sweep"` entre `start` et `end` (modulé par `backgroundOpacity`). Lorsque `fill.type` n'est pas `"solid"` ou qu'une `imageUrl` est définie, le `Scaffold` devient automatiquement transparent pour laisser voir le dégradé et/ou l'image sur tout l'écran.
      - Image d'arrière-plan via `fill.imageUrl` (URL `https://...` dont `.webp` et `.svg`, Data URI `data:image/...;base64,...`, chaîne Base64 brute ou SVG inline `<svg...>`), `fill.imageFit` et `fill.imageOpacity`.
    - **Cadre et lueur périphériques de l'écran** :
-     - `borderWidth` (**`0` à `4`**) et `borderColor` (`"#RRGGBB"`) : dessine une bordure autour de toute la zone de l'application.
-     - `neon` (`true` ou `{"enabled": true, "color": "#00FFFF", "intensity": 0..3}`) : ajoute un halo néon autour de l'écran.
+     - `borderWidth` (minimum `0`, slider `0` à `4`) et `borderColor` (`"#RRGGBB"`) : dessine une bordure autour de toute la zone de l'application, sans plafond JSON.
+     - `neon` (`true` ou `{"enabled": true, "color": "#00FFFF", "intensity": 1.2}`) : ajoute un halo néon autour de l'écran (intensité positive ou nulle, sans plafond JSON).
    - **Marges globales de l'écran (`padding` / `paddingInsets`, `margin` / `marginInsets`)** :
-     - `padding` (**`0` à `48`**) ou `paddingInsets` (`[top, right, bottom, left]` de **`0` à `48`**) : espace intérieur global autour de la page principale.
-     - `margin` (**`0` à `48`**) ou `marginInsets` (`[top, right, bottom, left]` de **`0` à `48`**).
+     - `padding` ou `paddingInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles) : espace intérieur global autour de la page principale ; slider `0` à `48`, sans plafond JSON.
+     - `margin` ou `marginInsets` (`[top, right, bottom, left]`, valeurs positives ou nulles) : slider `0` à `48`, sans plafond JSON.
 
 ---
 
 #### 4.10.2. Toutes les capacités de style d'une Carte (`Card`, `IterableContent`, surfaces) dans `ContainerStyle`
 
 Chaque carte (`styles["<cardId>"]`) ou surface dispose des 8 familles de réglages suivantes :
+
+Pour les dimensions et intensités extensibles ci-dessous, les plages indiquées
+sont celles des sliders : les maxima ne sont pas des plafonds JSON. Les valeurs
+doivent rester finies et respecter leur minimum. Les décalages et la rotation
+acceptent aussi les valeurs négatives hors plage. Les opacités restent limitées
+à `0`..`1` et l'angle des dégradés à `0`..`360`.
 
 1. **Système de design (`designSystem`)** :
    - `"material"` (défaut) : surface plane Material avec ombre portée classique.
@@ -876,48 +908,48 @@ Chaque carte (`styles["<cardId>"]`) ou surface dispose des 8 familles de réglag
      - `start` : `"#RRGGBB"` ou `"#AARRGGBB"` (défaut `"#5268D9"`).
      - `end` : `"#RRGGBB"` ou `"#AARRGGBB"` (défaut `"#B794F4"`).
      - `angle` : nombre de **`0` à `360`** degrés (`45` par défaut ; utilisé par `"linear"` et `"sweep"`).
-     - `radius` : nombre de **`0.1` à `2.0`** (`0.8` par défaut ; utilisé par `"radial"`).
+     - `radius` : nombre de **`0.1` minimum**, sans plafond JSON (slider `0.1` à `2.0`, `0.8` par défaut ; utilisé par `"radial"`).
      - `imageUrl` : `string` (`"https://..."` incluant `.webp` et `.svg`, `"data:image/...;base64,..."`, `"data:image/svg+xml;utf8,<svg..."`, chaîne Base64 brute ou code SVG `<svg...>`) — affiche une image en fond de la carte (peut se superposer à `color` ou au dégradé ; sert aussi d'image de repli si `propertyBindings.imageUrl` est défini).
      - `imageFit` : `"cover"` (défaut), `"contain"`, `"fill"`, `"fitWidth"`, `"fitHeight"`, `"none"`, `"scaleDown"`.
      - `imageOpacity` : nombre de **`0.0` à `1.0`** (`1.0` par défaut).
    - `propertyBindings` (`Map<ContainerStyleProperty, JsonTextBinding>`, optionnel) : liaisons de propriétés du style à un repository JSON (comme sur `Value` et `Action`), notamment `"propertyBindings": { "imageUrl": "clients[?].avatar" }` (ou l'alias `fill.imageBinding`) pour lier dynamiquement l'image de fond d'une surface.
 
 3. **Coins et arrondis (`radius` & `radii`)** :
-   - `radius` : nombre de **`0` à `36`** (`0` par défaut) — rayon d'arrondi uniforme des 4 coins.
-   - `radii` : `[topLeft, topRight, bottomRight, bottomLeft]` où chaque valeur est entre **`0` à `36`** — rayons asymétriques coin par coin (prioritaire sur `radius`).
+   - `radius` : nombre positif ou nul (slider `0` à `36`, `0` par défaut) — rayon d'arrondi uniforme des 4 coins, sans plafond JSON.
+   - `radii` : `[topLeft, topRight, bottomRight, bottomLeft]` où chaque valeur est positive ou nulle — rayons asymétriques coin par coin, sans plafond JSON (prioritaire sur `radius`).
 
 4. **Bordures (`borderWidth`, `borderWidths`, `borderColor`, `borderLine`)** :
-   - `borderWidth` : nombre de **`0` à `4`** (`0` par défaut, aucune bordure) — épaisseur uniforme.
-   - `borderWidths` : `[top, right, bottom, left]` où chaque valeur est entre **`0` à `4`** — épaisseur indépendante par côté (ex: `[0, 0, 0, 4]` pour une barre d'accentuation uniquement à gauche).
+   - `borderWidth` : nombre positif ou nul (slider `0` à `4`, `0` par défaut, aucune bordure) — épaisseur uniforme, sans plafond JSON.
+   - `borderWidths` : `[top, right, bottom, left]` où chaque valeur est positive ou nulle — épaisseur indépendante par côté, sans plafond JSON (ex: `[0, 0, 0, 4]` pour une barre d'accentuation uniquement à gauche).
    - `borderColor` : `"#RRGGBB"` ou `"#AARRGGBB"`.
    - `borderLine` : style du trait : `"solid"` (plein, défaut), `"dashed"` (tireté), `"dotted"` (pointillé).
 
 5. **Ombres portées, Ombre intérieure en creux et Halo Néon (`elevation`, `shadowOpacity`, `shadow`, `innerShadow`, `neon`)** :
-   - `elevation` : nombre de **`0` à `16`** (`0` par défaut) — hauteur d'ombre portée standard (ou distance du relief en `"neumorphism"`).
+   - `elevation` : nombre positif ou nul (slider `0` à `16`, `0` par défaut) — hauteur d'ombre portée standard, sans plafond JSON (ou distance du relief en `"neumorphism"`).
    - `shadowOpacity` : nombre de **`0.0` à `1.0`** (`0.2` par défaut) — intensité de l'ombre liée à `elevation`.
    - `shadow` (`ShadowSpec`, optionnel) : ombre portée personnalisée (remplace l'ombre automatique d'`elevation`) :
      ```json
      { "enabled": true, "color": "#000000", "opacity": 0.15, "blur": 24, "spread": -4, "dx": 0, "dy": 10 }
      ```
-     Bornes : `enabled` (`bool`, défaut `true`), `color` (`"#RRGGBB"`, défaut `"#000000"`), `opacity` (**`0` à `1`**, défaut `0.1`), `blur` (**`0` à `48`**, défaut `16`), `spread` (**`-32` à `32`**, défaut `0`), `dx` (**`-32` à `32`**, défaut `0`), `dy` (**`-32` à `32`**, défaut `8`).
+     Champs : `enabled` (`bool`, défaut `true`), `color` (`"#RRGGBB"`, défaut `"#000000"`), `opacity` (**`0` à `1`**, défaut `0.1`), `blur` (minimum `0`, slider `0` à `48`, défaut `16`), `spread` (slider `-32` à `32`, défaut `0`), `dx` (slider `-32` à `32`, défaut `0`), `dy` (slider `-32` à `32`, défaut `8`). Les dimensions et décalages n'ont pas de plafond JSON.
    - `innerShadow` (`ShadowSpec`, optionnel) : ombre intérieure dessinée à l'intérieur des bords de la carte (effet enfoncé / creusé). Accepte exactement les mêmes champs et bornes que `shadow`.
    - `neon` (`NeonStyle`, optionnel) : halo lumineux diffus autour de la carte :
      - Booléen `true` (active avec intensité `0.6` et la couleur `accent`), ou objet `{"enabled": true, "color": "#00FFFF", "intensity": 1.2}`.
-     - Bornes de `intensity` : **`0.0` à `3.0`** (`0.6` par défaut).
+     - `intensity` : minimum `0`, sans plafond JSON (slider `0.0` à `3.0`, `0.6` par défaut).
 
 6. **Espacements intérieur et extérieur (`padding`, `paddingInsets`, `margin`, `marginInsets`)** :
-   - `padding` : **`0` à `48`** (`0` par défaut) — marge intérieure uniforme entre la bordure de la carte et son widget enfant.
-   - `paddingInsets` : `[top, right, bottom, left]` de **`0` à `48`** — marge intérieure par côté (prioritaire sur `padding`).
-   - `margin` : **`0` à `48`** (`0` par défaut) — marge extérieure uniforme autour de la carte.
-   - `marginInsets` : `[top, right, bottom, left]` de **`0` à `48`** — marge extérieure par côté (prioritaire sur `margin`).
+   - `padding` : nombre positif ou nul (slider `0` à `48`, `0` par défaut) — marge intérieure uniforme, sans plafond JSON, entre la bordure de la carte et son widget enfant.
+   - `paddingInsets` : `[top, right, bottom, left]`, valeurs positives ou nulles sans plafond JSON — marge intérieure par côté (prioritaire sur `padding`).
+   - `margin` : nombre positif ou nul (slider `0` à `48`, `0` par défaut) — marge extérieure uniforme autour de la carte, sans plafond JSON.
+   - `marginInsets` : `[top, right, bottom, left]`, valeurs positives ou nulles sans plafond JSON — marge extérieure par côté (prioritaire sur `margin`).
 
 7. **Texture, Flou d'arrière-plan, Opacité et Transformation 2D (`opacity`, `backdropBlur`, `pattern`, `patternOpacity`, `transform`)** :
    - `opacity` : **`0.0` à `1.0`** (`1.0` par défaut) — transparence globale de la carte et de ses enfants.
-   - `backdropBlur` : **`0` à `40`** — flou gaussien de ce qui se trouve derrière la carte (associe-le à une `color` ou un `fill` semi-transparent `#AARRGGBB` pour un effet verre dépoli).
+   - `backdropBlur` : minimum `0`, sans plafond JSON (slider `0` à `40`) — flou gaussien de ce qui se trouve derrière la carte (associe-le à une `color` ou un `fill` semi-transparent `#AARRGGBB` pour un effet verre dépoli).
    - `pattern` : motif décoratif superposé au fond de la carte : `"none"` (défaut), `"grain"` (texture bruitée), `"lines"` (hachures diagonales), `"dots"` (trame de points).
    - `patternOpacity` : **`0.0` à `1.0`** (`0.1` par défaut) — opacité du motif `pattern`.
    - `transform` : transformation géométrique 2D centrée sur la carte :
-     - `dx` (**`-48` à `48`**, défaut `0`), `dy` (**`-48` à `48`**, défaut `0`), `rotation` (**`-180` à `180`** degrés, défaut `0`), `scale` (**`0.5` à `1.5`**, défaut `1.0`).
+     - Plages des sliders : `dx` (`-48` à `48`, défaut `0`), `dy` (`-48` à `48`, défaut `0`), `rotation` (`-180` à `180` degrés, défaut `0`), `scale` (`0.5` à `1.5`, défaut `1.0`). Aucun plafond JSON ; `scale` conserve son minimum `0.5`.
 
 8. **Effets d'interaction au clic et au survol (`interactionEffect`, `hoverEffect`, `hoverTint`, `hoverColor`, `states`)** :
    - `interactionEffect` : animation de la carte lors d'un clic/appui :

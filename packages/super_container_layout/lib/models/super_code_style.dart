@@ -92,7 +92,7 @@ class SuperCodeStyle {
   /// Taille minimale autorisée pour la police.
   static const minFontSize = 8.0;
 
-  /// Taille maximale autorisée pour la police.
+  /// Maximum conseille pour la plage du slider de police.
   static const maxFontSize = 48.0;
 
   /// Hauteur de ligne minimale autorisée.
@@ -103,9 +103,9 @@ class SuperCodeStyle {
 
   /// Valide les invariants de style.
   void validate() {
-    if (fontSize < minFontSize || fontSize > maxFontSize) {
+    if (!fontSize.isFinite || fontSize < minFontSize) {
       throw const FormatException(
-        'La taille de police du code doit être comprise entre 8 et 48.',
+        'La taille de police du code doit etre finie et au moins egale a 8.',
       );
     }
     if (lineHeight < minLineHeight || lineHeight > maxLineHeight) {

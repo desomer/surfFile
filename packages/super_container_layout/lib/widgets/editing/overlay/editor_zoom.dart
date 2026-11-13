@@ -11,6 +11,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../addition/insertion_plan.dart';
 import '../slots/editor_slot.dart';
+import '../history/editor_history.dart';
+import '../components/shared/editor_number_field.dart';
 import 'editor_overlay.dart';
 
 /// Animates the page around the selected layout, zone or slot.
@@ -930,8 +932,12 @@ class EditorZoomToolbarContent extends StatelessWidget {
               overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
             ),
-            child: Slider(
-              key: const ValueKey('editor-zoom-slider'),
+            child: EditorHistorySlider(
+              sliderKey: const ValueKey('editor-zoom-slider'),
+              showValue: false,
+              integer: true,
+              valueScale: 100,
+              divisions: 300,
               min: EditorZoom.minScale,
               max: EditorZoom.maxScale,
               value: scale.clamp(EditorZoom.minScale, EditorZoom.maxScale),
@@ -941,14 +947,15 @@ class EditorZoomToolbarContent extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.only(right: 4),
-          child: SizedBox(
-            width: 38,
-            child: Text(
-              '${(scale * 100).round()}%',
-              key: const ValueKey('editor-zoom-percentage'),
-              textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
+          child: EditorNumberField(
+            key: const ValueKey('editor-zoom-percentage'),
+            value: scale,
+            min: EditorZoom.minScale,
+            max: EditorZoom.maxScale,
+            integer: true,
+            scale: 100,
+            unit: '%',
+            onChanged: onScaleChanged,
           ),
         ),
         Padding(padding: const EdgeInsets.only(right: 4), child: optionsButton),
@@ -1510,13 +1517,16 @@ class EditorZoomOptionsDialog extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              Slider(
-                                key: const ValueKey(
+                              EditorHistorySlider(
+                                sliderKey: const ValueKey(
                                   'zoom-option-large-threshold-slider',
                                 ),
+                                valueScale: 100,
+                                integer: true,
+                                unit: '%',
                                 min: 0.30,
                                 max: 1.00,
-                                divisions: 14,
+                                divisions: 70,
                                 value: options.largeElementViewportThreshold
                                     .clamp(0.30, 1.00),
                                 onChanged:
@@ -1647,13 +1657,16 @@ class EditorZoomOptionsDialog extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              Slider(
-                                key: const ValueKey(
+                              EditorHistorySlider(
+                                sliderKey: const ValueKey(
                                   'zoom-option-max-scale-slider',
                                 ),
+                                valueScale: 100,
+                                integer: true,
+                                unit: '%',
                                 min: 1.5,
                                 max: EditorZoom.maxScale,
-                                divisions: 25,
+                                divisions: 250,
                                 value: options.maxScale.clamp(
                                   1.5,
                                   EditorZoom.maxScale,
@@ -1682,13 +1695,16 @@ class EditorZoomOptionsDialog extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              Slider(
-                                key: const ValueKey(
+                              EditorHistorySlider(
+                                sliderKey: const ValueKey(
                                   'zoom-option-min-dialog-scale-slider',
                                 ),
+                                valueScale: 100,
+                                integer: true,
+                                unit: '%',
                                 min: 0.30,
                                 max: 1.00,
-                                divisions: 14,
+                                divisions: 70,
                                 value: options.minDialogScale.clamp(0.30, 1.00),
                                 onChanged: (value) => update(
                                   options.copyWith(minDialogScale: value),
@@ -1715,13 +1731,16 @@ class EditorZoomOptionsDialog extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              Slider(
-                                key: const ValueKey(
+                              EditorHistorySlider(
+                                sliderKey: const ValueKey(
                                   'zoom-option-target-area-slider',
                                 ),
+                                valueScale: 100,
+                                integer: true,
+                                unit: '%',
                                 min: 0.15,
                                 max: 0.75,
-                                divisions: 12,
+                                divisions: 60,
                                 value: options.targetScreenAreaFraction.clamp(
                                   0.15,
                                   0.75,
@@ -1754,10 +1773,12 @@ class EditorZoomOptionsDialog extends StatelessWidget {
                         if (options.animateTransitions)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-                            child: Slider(
-                              key: const ValueKey(
+                            child: EditorHistorySlider(
+                              sliderKey: const ValueKey(
                                 'zoom-option-animation-duration-slider',
                               ),
+                              integer: true,
+                              unit: 'ms',
                               min: 50,
                               max: 600,
                               divisions: 11,

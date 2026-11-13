@@ -15,6 +15,31 @@ import 'package:super_container_extensions/super_container_extensions.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
+  testWidgets('code font slider accepts an editable decimal size', (tester) async {
+    var draft = const SuperCodeConfig();
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: StatefulBuilder(
+        builder: (context, setState) => CodeAddForm(
+          draft: draft,
+          onChanged: (value) => setState(() => draft = value),
+        ),
+      )),
+    ));
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(find.byType(EditorNumberField));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '560,25');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(draft.style.fontSize, 560.25);
+    expect(tester.widget<Slider>(
+      find.byKey(const ValueKey('super-code-font-size')),
+    ).value, 28);
+    expect(SuperCodeStyle.fromJson(draft.style.toJson()).fontSize, 560.25);
+    expect(tester.takeException(), isNull);
+  });
+
   late Directory directory;
   late JsonRepositoryStore store;
   late String repository;
@@ -158,7 +183,7 @@ void main() {
       throwsFormatException,
     );
     expect(
-      () => const SuperCodeStyle(fontSize: 60.0).validate(),
+      () => const SuperCodeStyle(fontSize: double.infinity).validate(),
       throwsFormatException,
     );
     expect(

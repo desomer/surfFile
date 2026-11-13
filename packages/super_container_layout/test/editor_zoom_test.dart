@@ -583,7 +583,8 @@ void main() {
       expect(find.byKey(toolbarKey), findsOneWidget);
       expect(find.byKey(dragKey), findsOneWidget);
       expect(find.byKey(sliderKey), findsOneWidget);
-      expect(find.text('100%'), findsOneWidget);
+      final percentageBadge = find.byKey(percentageKey);
+      expect(find.text('100 %'), findsOneWidget);
 
       final initialToolbar = tester.getRect(find.byKey(toolbarKey));
       expect(initialToolbar.right, 800 - 16);
@@ -623,7 +624,7 @@ void main() {
       final slider = tester.widget<Slider>(find.byKey(sliderKey));
       slider.onChanged!(2.0);
       await tester.pumpAndSettle();
-      expect(tester.widget<Text>(find.byKey(percentageKey)).data, '200%');
+      expect(find.text('200 %'), findsOneWidget);
       expect(screenRect(tester, target).width, closeTo(320 * 2, .01));
       // The floating toolbar itself stays unscaled.
       expect(tester.getRect(find.byKey(toolbarKey)).size, initialToolbar.size);
@@ -631,8 +632,15 @@ void main() {
       // Reset to 100% via slider.
       tester.widget<Slider>(find.byKey(sliderKey)).onChanged!(1.0);
       await tester.pumpAndSettle();
-      expect(tester.widget<Text>(find.byKey(percentageKey)).data, '100%');
+      expect(find.text('100 %'), findsOneWidget);
       expect(screenRect(tester, target), const Rect.fromLTWH(0, 0, 320, 240));
+
+      await tester.tap(percentageBadge);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '175');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, target).width, closeTo(320 * 1.75, .01));
 
       // Exiting edit mode hides the floating zoom toolbar.
       mode.value = false;

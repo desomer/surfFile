@@ -23,6 +23,8 @@ import 'package:super_container_layout/models/super_tree_view_config.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 
+import '../../models/json_numbers.dart';
+
 /// Unified GenUI-style codec for flat, polymorphic `Appearance` persistence
 /// and incremental surface updates (`patchFromJson`).
 class AppearanceCodec {
@@ -36,7 +38,9 @@ class AppearanceCodec {
   void restoreAdditional(String document) {}
   void resetAdditional() {}
   bool needsMigration(String text) => false;
-  String encode(Appearance appearance) => jsonEncode(toJson(appearance));
+  /// Encode le document complet, y compris les champs hotes, a deux decimales.
+  String encode(Appearance appearance) =>
+      jsonEncode(JsonNumbers.normalizeMap(toJson(appearance)));
   Appearance decode(String text) {
     final json = jsonDecode(text);
     if (json is! Map<String, dynamic>) {

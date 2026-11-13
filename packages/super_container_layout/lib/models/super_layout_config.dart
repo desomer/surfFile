@@ -192,7 +192,7 @@ class SlotSizeConstraints {
     this.paddingInsets,
     this.percentBasis = SlotPercentBasis.zone,
     this.fitContent,
-  }) : assert(padding >= 0 && padding <= maxPadding);
+  }) : assert(padding >= 0 && padding < double.infinity);
 
   final SlotDimension? minWidth;
   final SlotDimension? minHeight;
@@ -255,8 +255,7 @@ class SlotSizeConstraints {
     final padding = value['padding'] ?? 0;
     if (padding is! num ||
         !padding.isFinite ||
-        padding < 0 ||
-        padding > maxPadding) {
+        padding < 0) {
       throw const FormatException('Marge de slot invalide.');
     }
     final rawPaddingInsets = value['paddingInsets'];
@@ -292,7 +291,7 @@ class SlotSizeConstraints {
     }
     final sides = <double>[];
     for (final side in value) {
-      if (side is! num || !side.isFinite || side < 0 || side > maxPadding) {
+      if (side is! num || !side.isFinite || side < 0) {
         throw const FormatException('Marge de slot invalide.');
       }
       sides.add(side.toDouble());
@@ -344,8 +343,8 @@ class ZoneFlowConfig {
     this.spacing = 0,
     this.padding = 0,
     this.paddingInsets,
-  }) : assert(spacing >= 0 && spacing <= maxSpacing),
-       assert(padding >= 0 && padding <= maxPadding);
+  }) : assert(spacing >= 0 && spacing < double.infinity),
+       assert(padding >= 0 && padding < double.infinity);
 
   final bool scrollable;
 
@@ -459,15 +458,13 @@ class ZoneFlowConfig {
     final spacing = value['spacing'] ?? 0;
     if (spacing is! num ||
         !spacing.isFinite ||
-        spacing < 0 ||
-        spacing > maxSpacing) {
+        spacing < 0) {
       throw const FormatException('Espacement de zone invalide.');
     }
     final padding = value['padding'] ?? 0;
     if (padding is! num ||
         !padding.isFinite ||
-        padding < 0 ||
-        padding > maxPadding) {
+        padding < 0) {
       throw const FormatException('Marge de zone invalide.');
     }
     final rawPaddingInsets = value['paddingInsets'];
@@ -1041,8 +1038,8 @@ class SuperLayoutConfig extends ComponentConfig {
   };
 
   SuperLayoutConfig withSize(SuperLayoutZone side, double value) {
-    if (!side.isSide || !value.isFinite || value < minSize || value > maxSize) {
-      throw ArgumentError('Cote et taille entre $minSize et $maxSize requis.');
+    if (!side.isSide || !value.isFinite || value < minSize) {
+      throw ArgumentError('Cote et taille finie superieure a $minSize requis.');
     }
     return _withSize(side, value);
   }
@@ -1384,8 +1381,7 @@ class SuperLayoutConfig extends ComponentConfig {
         if (side == null ||
             extent is! num ||
             !extent.isFinite ||
-            extent < minSize ||
-            extent > maxSize) {
+            extent < minSize) {
           throw const FormatException('Cote reduit invalide.');
         }
         result[side] = extent.toDouble();
@@ -1401,7 +1397,7 @@ class SuperLayoutConfig extends ComponentConfig {
 
     double size(String key, double fallback) {
       final v = value[key] ?? fallback;
-      if (v is! num || !v.isFinite || v < minSize || v > maxSize) {
+      if (v is! num || !v.isFinite || v < minSize) {
         throw FormatException('Valeur invalide pour "$key".');
       }
       return v.toDouble();

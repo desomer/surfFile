@@ -17,6 +17,8 @@ export 'widgets/components/component_tooltip.dart';
 export 'services/events/super_event_bus.dart';
 export 'widgets/editing/behaviors/component_behavior_editor.dart';
 export 'models/json_syntax.dart';
+export 'models/json_numbers.dart';
+export 'widgets/editing/components/shared/editor_number_field.dart';
 export 'models/material_icon_catalog.dart';
 export 'models/super_value_config.dart';
 export 'models/super_code_style.dart';

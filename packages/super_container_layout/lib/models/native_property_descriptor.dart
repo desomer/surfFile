@@ -155,6 +155,26 @@ class NativePropertyDescriptor {
   final List<NativePropertyOption> options;
   final bool nullable;
 
+  /// Dimensions dont le maximum est une plage de slider, pas un invariant.
+  bool get allowsExtendedNumber => const {
+    'elevation',
+    'scrolledUnderElevation',
+    'leadingWidth',
+    'titleSpacing',
+    'notchMargin',
+    'padding',
+    'iconSize',
+    'selectedFontSize',
+    'unselectedFontSize',
+    'alignmentOffsetX',
+    'alignmentOffsetY',
+    'stretchTriggerOffset',
+    'expandedHeight',
+    'collapsedHeight',
+    'actionsPadding',
+    'scrollPadding',
+  }.contains(id);
+
   /// Normalise et valide une valeur brute JSON pour ce descripteur.
   Object? normalizeValue(Object? raw) {
     if (raw == null) return null;
@@ -171,8 +191,14 @@ class NativePropertyDescriptor {
           throw FormatException('Nombre fini attendu pour "$id".');
         }
         var value = raw.toDouble();
-        if (min != null && value < min!) value = min!;
-        if (max != null && value > max!) value = max!;
+        if (min != null &&
+            value < min! &&
+            !(allowsExtendedNumber && min! < 0)) {
+          value = min!;
+        }
+        if (max != null && value > max! && !allowsExtendedNumber) {
+          value = max!;
+        }
         return value;
       }(),
       NativePropertyEditorType.select => () {

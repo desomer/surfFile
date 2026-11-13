@@ -7,6 +7,7 @@ import '../../../models/native_shape_config.dart';
 import '../../../theme/style_extras.dart' show Quad;
 import '../dialogs/editor_dialog.dart';
 import '../styles/container_style_editor.dart' show styleColorTile;
+import '../history/editor_history.dart';
 import 'shared/editor_segmented_field.dart';
 
 /// Ouvre l'éditeur dédié de [NativeShapeConfig] (`ShapeBorder` Flutter).
@@ -316,19 +317,18 @@ class _ShapeSlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final formatted = value == value.roundToDouble()
-        ? '${value.toInt()} px'
-        : '${value.toStringAsFixed(1)} px';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '$label ($formatted)',
+          label,
           style: Theme.of(context).textTheme.bodyMedium,
         ),
-        Slider(
-          key: sliderKey,
-          value: value.clamp(0, max),
+        EditorHistorySlider(
+          sliderKey: sliderKey,
+          unit: 'px',
+          value: value,
+          allowAboveMax: true,
           min: 0,
           max: max,
           divisions: divisions,

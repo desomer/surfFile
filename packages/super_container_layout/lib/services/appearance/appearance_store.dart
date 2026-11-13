@@ -4,11 +4,12 @@
 /// persistant ([PersistentAppearanceController]) et la portée [AppearanceServicesScope].
 library;
 
-
+import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../models/json_numbers.dart';
 import '../../theme/appearance.dart';
 import 'appearance_codec.dart';
 
@@ -54,8 +55,10 @@ class AppearanceStore {
 
   Future<void> saveEncoded(String encoded) async {
     codec.decode(encoded);
+    final normalized = jsonEncode(JsonNumbers.normalize(jsonDecode(encoded)));
+    codec.decode(normalized);
     final preferences = await SharedPreferences.getInstance();
-    if (!await preferences.setString(key, encoded)) {
+    if (!await preferences.setString(key, normalized)) {
       throw StateError('Appearance save failed.');
     }
   }

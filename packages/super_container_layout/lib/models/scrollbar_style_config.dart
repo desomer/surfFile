@@ -70,10 +70,10 @@ class ScrollbarStyleConfig {
     this.trackColor,
     this.trackBorderColor,
     this.side = ScrollbarSide.auto,
-  }) : assert(thickness >= minThickness && thickness <= maxThickness),
-       assert(radius >= 0 && radius <= maxRadius),
-       assert(mainAxisMargin >= 0 && mainAxisMargin <= maxMainAxisMargin),
-       assert(crossAxisMargin >= 0 && crossAxisMargin <= maxCrossAxisMargin);
+  }) : assert(thickness >= minThickness && thickness < double.infinity),
+       assert(radius >= 0 && radius < double.infinity),
+       assert(mainAxisMargin >= 0 && mainAxisMargin < double.infinity),
+       assert(crossAxisMargin >= 0 && crossAxisMargin < double.infinity);
 
   /// Si `true` (défaut), le curseur reste visible en permanence dès que le
   /// contenu déborde. Si `false`, il n'apparaît que pendant le défilement.
@@ -85,16 +85,16 @@ class ScrollbarStyleConfig {
   /// Autorise le glisser du curseur à la souris ou au doigt.
   final bool interactive;
 
-  /// Épaisseur de la barre de défilement en pixels (`2`..`24`).
+  /// Épaisseur en pixels (minimum `2`, slider `2`..`24`, sans plafond de saisie).
   final double thickness;
 
-  /// Rayon d'arrondi du curseur et de la piste en pixels (`0`..`24`).
+  /// Rayon en pixels (minimum `0`, slider `0`..`24`, sans plafond de saisie).
   final double radius;
 
-  /// Marge aux extrémités sur l'axe de défilement (`0`..`48`).
+  /// Marge aux extrémités (minimum `0`, slider `0`..`48`, sans plafond de saisie).
   final double mainAxisMargin;
 
-  /// Marge latérale par rapport au bord de la zone (`0`..`24`).
+  /// Marge latérale (minimum `0`, slider `0`..`24`, sans plafond de saisie).
   final double crossAxisMargin;
 
   /// Couleur personnalisée du curseur (`null` utilise la couleur du thème).
@@ -160,15 +160,15 @@ class ScrollbarStyleConfig {
     thumbVisibility: thumbVisibility ?? this.thumbVisibility,
     trackVisibility: trackVisibility ?? this.trackVisibility,
     interactive: interactive ?? this.interactive,
-    thickness: (thickness ?? this.thickness).clamp(minThickness, maxThickness),
-    radius: (radius ?? this.radius).clamp(0, maxRadius),
+    thickness: (thickness ?? this.thickness).clamp(minThickness, double.infinity),
+    radius: (radius ?? this.radius).clamp(0, double.infinity),
     mainAxisMargin: (mainAxisMargin ?? this.mainAxisMargin).clamp(
       0,
-      maxMainAxisMargin,
+      double.infinity,
     ),
     crossAxisMargin: (crossAxisMargin ?? this.crossAxisMargin).clamp(
       0,
-      maxCrossAxisMargin,
+      double.infinity,
     ),
     thumbColor: clearThumbColor ? null : (thumbColor ?? this.thumbColor),
     trackColor: clearTrackColor ? null : (trackColor ?? this.trackColor),
@@ -232,12 +232,12 @@ class ScrollbarStyleConfig {
       thickness: readNumber(
         'thickness',
         minThickness,
-        maxThickness,
+        double.infinity,
         defaultThickness,
       ),
-      radius: readNumber('radius', 0, maxRadius, defaultRadius),
-      mainAxisMargin: readNumber('mainAxisMargin', 0, maxMainAxisMargin, 0),
-      crossAxisMargin: readNumber('crossAxisMargin', 0, maxCrossAxisMargin, 0),
+      radius: readNumber('radius', 0, double.infinity, defaultRadius),
+      mainAxisMargin: readNumber('mainAxisMargin', 0, double.infinity, 0),
+      crossAxisMargin: readNumber('crossAxisMargin', 0, double.infinity, 0),
       thumbColor: JsonColor.parseNullable(
         value['thumbColor'],
         'scrollbarStyle.thumbColor',

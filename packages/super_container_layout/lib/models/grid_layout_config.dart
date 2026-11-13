@@ -91,7 +91,7 @@ class GridLayoutConfig {
 
   void validate() {
     if (columns < 1 || columns > 48 || !rowHeight.isFinite ||
-        rowHeight < 16 || rowHeight > 400 || !gap.isFinite || gap < 0 || gap > 64) {
+        rowHeight < 16 || !gap.isFinite || gap < 0) {
       throw ArgumentError('Parametres de grille invalides.');
     }
     for (final entry in items.entries) {

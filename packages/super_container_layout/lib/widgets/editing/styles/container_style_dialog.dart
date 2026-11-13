@@ -469,7 +469,8 @@ class ContainerStyleDialog {
                                   ),
                                 ),
                                 if (slot?.role ==
-                                    AppearanceSurfaceRole.applicationBackground)
+                                        AppearanceSurfaceRole.applicationBackground &&
+                                    appearance != null)
                                   StyleEditorSection(
                                     id: 'window',
                                     title: 'Fenêtre',
@@ -480,12 +481,9 @@ class ContainerStyleDialog {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.stretch,
                                       children: [
-                                        Text(
-                                          'Opacité du fond : '
-                                          '${appearance!.value.backgroundOpacity.toStringAsFixed(1)}',
-                                        ),
+                                        const Text('Opacité du fond'),
                                         EditorHistorySlider(
-                                          key: const ValueKey(
+                                          sliderKey: const ValueKey(
                                             'Opacité du fond',
                                           ),
                                           value: appearance

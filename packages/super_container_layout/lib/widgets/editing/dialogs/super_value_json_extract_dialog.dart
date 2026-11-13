@@ -2280,13 +2280,16 @@ class _SuperValueJsonExtractDialogState
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   Expanded(
-                    child: Slider(
-                      key: const ValueKey(
+                    child: EditorHistorySlider(
+                      sliderKey: const ValueKey(
                         'super-value-extract-similarity-threshold',
                       ),
+                      valueScale: 100,
+                      integer: true,
+                      unit: '%',
                       min: 0.50,
                       max: 1.0,
-                      divisions: 10,
+                      divisions: 50,
                       value: opts.similarityThreshold.clamp(0.50, 1.0),
                       onChanged: _busy
                           ? null

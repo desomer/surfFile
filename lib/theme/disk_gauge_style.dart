@@ -259,8 +259,8 @@ class DiskGaugeStyle {
     }
     return DiskGaugeStyle(
       shape: choice('shape', DiskGaugeShape.values, d.shape),
-      size: number('size', d.size, minSize, maxSize),
-      thickness: number('thickness', d.thickness, minThickness, maxThickness),
+      size: number('size', d.size, minSize, double.infinity),
+      thickness: number('thickness', d.thickness, minThickness, double.infinity),
       roundCaps: read('roundCaps', d.roundCaps),
       trackColor: color('trackColor'),
       fillColor: color('fillColor'),
@@ -273,11 +273,11 @@ class DiskGaugeStyle {
       alertPulse: read('alertPulse', d.alertPulse),
       labelNeon: read('labelNeon', d.labelNeon),
       animate: read('animate', d.animate),
-      animationMs: number('animationMs', d.animationMs, 0, maxAnimation),
-      percentSize: number('percentSize', d.percentSize, 8, 24),
+      animationMs: number('animationMs', d.animationMs, 0, double.infinity),
+      percentSize: number('percentSize', d.percentSize, 8, double.infinity),
       percentWeight: integer('percentWeight', d.percentWeight, 1, 9),
-      nameSize: number('nameSize', d.nameSize, 9, 20),
-      captionSize: number('captionSize', d.captionSize, 8, 16),
+      nameSize: number('nameSize', d.nameSize, 9, double.infinity),
+      captionSize: number('captionSize', d.captionSize, 8, double.infinity),
       columns: integer('columns', d.columns, 1, 3),
     );
   }

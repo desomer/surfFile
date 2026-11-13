@@ -85,7 +85,7 @@ void main() {
           'radii': [1, 2, 3],
         },
         {
-          'radii': [1, 2, 3, 99],
+          'radii': [1, 2, 3, double.infinity],
         },
         {
           'borderWidths': [1, 2, 3, -1],
@@ -93,15 +93,15 @@ void main() {
         {'borderLine': 'wavy'},
         {'pattern': 'stripes'},
         {'opacity': 2},
-        {'backdropBlur': 400},
+        {'backdropBlur': double.infinity},
         {
           'shadow': {'blur': -1},
         },
         {
-          'transform': {'scale': 9},
+          'transform': {'scale': double.nan},
         },
         {
-          'paddingInsets': [1, 2, 3, 400],
+          'paddingInsets': [1, 2, 3, -1],
         },
       ]) {
         expect(

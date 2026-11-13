@@ -126,6 +126,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageCatalog` : configuration d'une page routée (id, nom, chemin, `scaffoldId`, `layoutId`) et catalogue complet des pages. |
 | `models/grid_layout_config.dart` | `GridLayoutConfig`, `GridTrackSize`, `GridPlacement` : configuration du mode Grille CSS-like (pistes `fr`/`px`/`auto`, placement ligne/colonne/span). |
 | `models/json_syntax.dart` | `JsonColor`, `JsonComponentType`, `JsonDimension`, `JsonFontWeight`, `JsonSize`, `JsonPlacementEntry` : parseurs et formateurs compacts "AI-friendly". |
+| `models/json_numbers.dart` | `JsonNumbers` : arrondi à deux décimales et copie normalisée des documents JSON UI, sans mutation des sources. |
 | `models/json_text_binding.dart` | `JsonAttributePath`, `JsonPathSegment`, `JsonTextBinding` : analyse syntaxique des chemins JSON (`a.b[0].c`, jokers `[?]`) et liaisons aux repositories. |
 | `models/material_icon_catalog.dart` | `MaterialIconCatalog`, `MaterialIconEntry` : catalogue d'icônes Material 3 indexées par identifiant `snake_case` avec recherche floue. |
 | `models/native_component_config.dart` | `NativeComponentConfig` : configuration générique des composants natifs (`ApplicationBar`, `BottomAppBar`, `BottomNavigationBar`, `NavigationRail`, `Card`, `Expansible`, `Menu`). |
@@ -266,6 +267,11 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/zone_resize_handle.dart` | Poignée de redimensionnement interactif entre les zones cardinales (`north`, `south`, `west`, `east`) et `center`. |
 
 ### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 59 fichiers)
+
+Le contrôle partagé `widgets/editing/components/shared/editor_number_field.dart`
+expose `EditorNumberField` : badge cliquable et popup numérique ancré.
+`StyleSliderField` et `EditorHistorySlider` le réutilisent ; les bornes du
+slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `widgets/editing/addition/component_add_wizard.dart` | `ComponentAddWizard` : assistant guidé d'ajout d'un composant; la liste est ordonnée par famille (`Standard`, `Étendu`, `Container`, `Composé`, `Utilisateur`), puis par `addOrder` croissant (défaut 0, ordre initial à égalité). SuperRenderer utilise `1000`. |

@@ -252,9 +252,11 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
     ) => Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('$label : ${value.round()}'),
+        Text(label),
         EditorHistorySlider(
-          key: ValueKey('grid-setting-$name'),
+          sliderKey: ValueKey('grid-setting-$name'),
+          integer: name == 'columns',
+          allowAboveMax: name != 'columns',
           value: value,
           min: min,
           max: max,
@@ -281,7 +283,7 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
         16,
         400,
         (v) => onChanged(
-          config.copyWith(grid: grid.copyWith(rowHeight: v.roundToDouble())),
+          config.copyWith(grid: grid.copyWith(rowHeight: v)),
         ),
       ),
       slider(
@@ -291,7 +293,7 @@ class _SuperLayoutEditorState extends State<SuperLayoutEditor> {
         0,
         64,
         (v) => onChanged(
-          config.copyWith(grid: grid.copyWith(gap: v.roundToDouble())),
+          config.copyWith(grid: grid.copyWith(gap: v)),
         ),
       ),
       SwitchListTile(
@@ -418,34 +420,24 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                           color: colors.onSurfaceVariant,
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: colors.secondaryContainer,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${size.round()} px',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: colors.onSecondaryContainer,
-                          ),
-                        ),
+                      EditorNumberField(
+                        value: size,
+                        min: SuperLayoutConfig.minSize,
+                        max: SuperLayoutConfig.maxSize,
+                        unit: 'px',
+                        allowAboveMax: true,
+                        onChanged: changeSize,
                       ),
                     ],
                   ),
                   EditorHistorySlider(
-                    key: ValueKey('$keyPrefix-size'),
+                    sliderKey: ValueKey('$keyPrefix-size'),
+                    showValue: false,
+                    unit: 'px',
                     min: SuperLayoutConfig.minSize,
                     max: SuperLayoutConfig.maxSize,
-                    value: size.clamp(
-                      SuperLayoutConfig.minSize,
-                      SuperLayoutConfig.maxSize,
-                    ),
+                    value: size,
+                    allowAboveMax: true,
                     label: '${size.round()}',
                     onChanged: changeSize,
                   ),
@@ -685,34 +677,28 @@ class ZoneFlowSettingsEditor extends StatelessWidget {
                       color: colors.onSurfaceVariant,
                     ),
                   ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: colors.secondaryContainer,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${flow.spacing.round()} px',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: colors.onSecondaryContainer,
-                      ),
-                    ),
+                  EditorNumberField(
+                    value: flow.spacing,
+                    min: 0,
+                    max: ZoneFlowConfig.maxSpacing,
+                    unit: 'px',
+                    allowAboveMax: true,
+                    onChanged: (next) =>
+                        onFlowChanged(flow.copyWith(spacing: next)),
                   ),
                 ],
               ),
               EditorHistorySlider(
-                key: ValueKey('$keyPrefix-spacing'),
+                sliderKey: ValueKey('$keyPrefix-spacing'),
+                showValue: false,
+                unit: 'px',
                 min: 0,
                 max: ZoneFlowConfig.maxSpacing,
-                value: flow.spacing.clamp(0, ZoneFlowConfig.maxSpacing),
+                value: flow.spacing,
+                allowAboveMax: true,
                 label: '${flow.spacing.round()}',
                 onChanged: (next) =>
-                    onFlowChanged(flow.copyWith(spacing: next.roundToDouble())),
+                    onFlowChanged(flow.copyWith(spacing: next)),
               ),
               Divider(
                 height: 10,

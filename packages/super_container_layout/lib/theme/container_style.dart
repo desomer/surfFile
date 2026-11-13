@@ -540,16 +540,16 @@ class ContainerStyle {
       fill: value['fill'] == null
           ? fallback.fill
           : ContainerFill.fromJson(value['fill'], fallback: fallback.fill),
-      radius: number('radius', 0, 36, fallback.radius),
-      borderWidth: number('borderWidth', 0, 4, fallback.borderWidth),
+      radius: number('radius', 0, double.infinity, fallback.radius),
+      borderWidth: number('borderWidth', 0, double.infinity, fallback.borderWidth),
       borderColor: parsedBorderColor,
-      elevation: number('elevation', 0, 16, fallback.elevation),
+      elevation: number('elevation', 0, double.infinity, fallback.elevation),
       shadowOpacity: number('shadowOpacity', 0, 1, fallback.shadowOpacity),
       neon: value['neon'] == null
           ? fallback.neon
           : NeonStyle.fromJson(value['neon']),
-      padding: number('padding', 0, maxSpacing, fallback.padding),
-      margin: number('margin', 0, maxSpacing, fallback.margin),
+      padding: number('padding', 0, double.infinity, fallback.padding),
+      margin: number('margin', 0, double.infinity, fallback.margin),
       designSystem: designSystem == null
           ? fallback.designSystem
           : DesignSystem.values.byName(designSystem as String),
@@ -563,10 +563,10 @@ class ContainerStyle {
       hoverColor: parsedHoverColor,
       radii: value['radii'] == null
           ? fallback.radii
-          : Quad.fromJson(value['radii'], 0, 36, 'radii'),
+          : Quad.fromJson(value['radii'], 0, double.infinity, 'radii'),
       borderWidths: value['borderWidths'] == null
           ? fallback.borderWidths
-          : Quad.fromJson(value['borderWidths'], 0, 4, 'borderWidths'),
+          : Quad.fromJson(value['borderWidths'], 0, double.infinity, 'borderWidths'),
       borderLine: borderLine == null
           ? fallback.borderLine
           : BorderLine.values.byName(borderLine as String),
@@ -582,15 +582,15 @@ class ContainerStyle {
           : Quad.fromJson(
               value['paddingInsets'],
               0,
-              maxSpacing,
+              double.infinity,
               'paddingInsets',
             ),
       marginInsets: value['marginInsets'] == null
           ? fallback.marginInsets
-          : Quad.fromJson(value['marginInsets'], 0, maxSpacing, 'marginInsets'),
+          : Quad.fromJson(value['marginInsets'], 0, double.infinity, 'marginInsets'),
       backdropBlur: value['backdropBlur'] == null
           ? fallback.backdropBlur
-          : number('backdropBlur', 0, maxBlur),
+          : number('backdropBlur', 0, double.infinity),
       pattern: pattern == null
           ? fallback.pattern
           : SurfacePattern.values.byName(pattern as String),

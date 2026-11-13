@@ -51,6 +51,30 @@ La lecture, les migrations et les imports utilisent le même codec.
 Package Flutter autonome regroupant `SuperContainer`, `SuperLayout`, leurs
 éditeurs, leurs styles et le modèle de persistance associé.
 
+### Valeurs des sliders
+
+Les sliders d'édition affichent leur valeur dans un badge cliquable. Le clic ouvre
+une petite saisie contextuelle à l'emplacement du badge ; aucun champ de saisie
+n'est affiché en permanence. Entrée ou un clic hors du champ valide la saisie,
+Échap l'annule. Le point et la virgule sont acceptés ; une valeur invalide reste
+signalée dans le popup sans modifier la configuration.
+
+Les six champs avancés Min/Préférée/Max de l'éditeur de dimensions des slots
+conservent leur fonctionnement existant.
+
+Les paramètres entiers restent entiers ; les décimaux affichent deux décimales.
+Les tailles et réglages extensibles acceptent des valeurs finies supérieures à
+10 fois le maximum du slider, sans plafond artificiel. Le badge conserve la
+valeur complète et le curseur reste à l'extrémité de sa plage habituelle.
+Les limites structurelles (opacité, ratios bornés, colonnes, choix discrets et
+zoom) restent appliquées. Les pourcentages stockés en ratios progressent par
+pas de 1 % pour conserver au maximum deux décimales en JSON.
+
+Les sauvegardes, exports et contextes Vibe arrondissent tous les nombres de
+configuration UI à deux décimales maximum, y compris les préférences hôtes et
+les valeurs sans slider. Les entiers et chaînes sont préservés ; les fichiers
+de données des repositories ne sont pas modifiés.
+
 ### Couleurs personnalisées et rôles Material 3
 
 Le sélecteur partagé des éditeurs affiche un panneau repliable avec aperçu,

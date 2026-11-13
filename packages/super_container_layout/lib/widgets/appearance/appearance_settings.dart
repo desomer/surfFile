@@ -420,6 +420,7 @@ Widget _window(BuildContext context) {
       .2,
       1,
       (v) => c.value = c.value.copyWith(windowOpacity: v),
+      allowAboveMax: false,
     ),
   ]);
 }
@@ -432,6 +433,7 @@ class AppearanceSettingsSlider extends StatelessWidget {
     this.min,
     this.max,
     this.onChanged, {
+    this.allowAboveMax = true,
     super.key,
   });
   final String label;
@@ -439,16 +441,18 @@ class AppearanceSettingsSlider extends StatelessWidget {
   final double min;
   final double max;
   final ValueChanged<double> onChanged;
+  final bool allowAboveMax;
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text('$label : ${value.toStringAsFixed(1)}'),
+      Text(label),
       EditorHistorySlider(
-        key: ValueKey(label),
+        sliderKey: ValueKey(label),
         value: value,
         min: min,
         max: max,
+        allowAboveMax: allowAboveMax,
         onChanged: onChanged,
       ),
     ],

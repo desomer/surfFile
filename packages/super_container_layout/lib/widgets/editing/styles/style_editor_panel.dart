@@ -4,6 +4,8 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../history/editor_history.dart';
+import '../components/shared/editor_number_field.dart';
+import '../../../models/json_numbers.dart';
 import '../dialogs/editor_dialog_header.dart';
 
 /// Groupe de propriétés d'un éditeur de style : une carte au centre et une
@@ -537,7 +539,7 @@ class _Chips extends StatelessWidget {
   );
 }
 
-/// Curseur étiqueté dont la valeur s'affiche dans une pastille.
+/// Curseur etiquete dont le badge ouvre un popup de saisie numerique.
 class StyleSliderField extends StatelessWidget {
   const StyleSliderField({
     required this.label,
@@ -548,6 +550,9 @@ class StyleSliderField extends StatelessWidget {
     this.unit = ' dp',
     this.formatValue,
     this.sliderKey,
+    this.integer = false,
+    this.allowAboveMax = true,
+    this.allowBelowMin = false,
     super.key,
   });
 
@@ -557,13 +562,19 @@ class StyleSliderField extends StatelessWidget {
   final double max;
   final ValueChanged<double> onChanged;
   final String unit;
+  /// Conserve pour compatibilite ; le badge utilise le format numerique commun.
   final String Function(double value)? formatValue;
   final Key? sliderKey;
+  final bool integer;
+  final bool allowAboveMax;
+  final bool allowBelowMin;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final text = formatValue?.call(value) ?? '${value.toStringAsFixed(1)}$unit';
+    final whole = integer || unit.trim() == '%';
+    void change(double next) =>
+        onChanged(JsonNumbers.round(whole ? next.roundToDouble() : next));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -577,25 +588,28 @@ class StyleSliderField extends StatelessWidget {
                 style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: .5),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                text,
-                style: const TextStyle(fontFamily: 'Consolas', fontSize: 11),
-              ),
+            EditorNumberField(
+              value: value,
+              min: min,
+              max: max,
+              integer: whole,
+              unit: unit,
+              label: label,
+              allowAboveMax: allowAboveMax && unit.trim() != '%',
+              allowBelowMin: allowBelowMin || min < 0,
+              onChanged: change,
             ),
           ],
         ),
         EditorHistorySlider(
-          key: sliderKey,
+          sliderKey: sliderKey,
+          showValue: false,
+          integer: whole,
+          divisions: unit.trim() == '%' ? (max - min).round() : null,
           value: value.clamp(min, max),
           min: min,
           max: max,
-          onChanged: onChanged,
+          onChanged: change,
         ),
       ],
     );

@@ -14,6 +14,14 @@ format de sauvegarde actuel et ses migrations historiques.
 
 Un explorateur de fichiers de bureau Flutter.
 
+Les valeurs des sliders d'édition se modifient en cliquant sur leur badge :
+un petit popup de saisie apparaît à sa place (Entrée/clic extérieur pour valider,
+Échap pour annuler). Les tailles extensibles acceptent aussi des valeurs
+supérieures à 10 fois la plage du slider, sans changer cette plage.
+Les limites structurelles restent imposées. Les nombres de configuration UI,
+y compris les préférences SurfFile, sont sauvegardés/exportés avec au maximum
+deux décimales ; les fichiers de données liés ne sont pas arrondis.
+
 ## Catalogue des styles
 
 `lib/theme/surffile_appearance_slots.dart` definit les slots de style de SurfFile

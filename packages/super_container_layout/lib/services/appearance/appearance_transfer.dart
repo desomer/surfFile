@@ -6,6 +6,8 @@ library;
 
 import 'dart:convert';
 
+import '../../models/json_numbers.dart';
+
 import 'appearance_codec.dart';
 import '../../theme/appearance.dart';
 
@@ -36,7 +38,7 @@ class AppearanceTransfer {
       throw ArgumentError.value(groups, 'groups', 'No groups selected.');
     }
     final rawCodecData = codec.toJson(appearance)..remove('version');
-    return const JsonEncoder.withIndent('  ').convert({
+    return const JsonEncoder.withIndent('  ').convert(JsonNumbers.normalizeMap({
       'format': codec.format,
       'version': codec.schemaVersion,
       'groups': [
@@ -47,7 +49,7 @@ class AppearanceTransfer {
         for (final entry in rawCodecData.entries)
           if (groups.contains(_groupOf(entry.key))) entry.key: entry.value,
       },
-    });
+    }));
   }
 
   static ({Map<String, Object?> data, int version}) _document(
@@ -173,7 +175,7 @@ class AppearanceTransfer {
         merged[key] = dataMap[key];
       }
     }
-    final documentText = jsonEncode(merged);
+    final documentText = jsonEncode(JsonNumbers.normalizeMap(merged));
     final result = codec.decode(documentText);
     codec.restoreAdditional(documentText);
     return result;

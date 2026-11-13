@@ -909,9 +909,11 @@ class ContainerStyleEditor extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('$label : ${value.toStringAsFixed(1)}'),
+          Text(label),
           EditorHistorySlider(
-            key: key,
+            sliderKey: key,
+            unit: unit,
+            allowAboveMax: max != 1 && unit != '°',
             value: value,
             min: min,
             max: max,
@@ -926,6 +928,7 @@ class ContainerStyleEditor extends StatelessWidget {
       min: min,
       max: max,
       unit: unit,
+      allowAboveMax: max != 1 && unit != '°',
       sliderKey: key,
       onChanged: onChanged,
     );
@@ -970,9 +973,13 @@ class NeonStyleEditor extends StatelessWidget {
           onPressed: () => onChanged(value.copyWith(resetColor: true)),
           child: const Text('Utiliser la couleur d’accent'),
         ),
-        Text('Intensité : ${(value.intensity * 100).round()} %'),
+        const Text('Intensité'),
         EditorHistorySlider(
-          key: ValueKey('neon-intensity-$label'),
+          sliderKey: ValueKey('neon-intensity-$label'),
+          valueScale: 100,
+          integer: true,
+          unit: '%',
+          allowAboveMax: true,
           value: value.intensity,
           max: NeonStyle.maxIntensity,
           onChanged: (intensity) =>

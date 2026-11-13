@@ -198,7 +198,7 @@ class ContainerFill {
       start: color('start', fallback.start),
       end: color('end', fallback.end),
       angle: number('angle', 0, 360, fallback.angle),
-      radius: number('radius', .1, 2, fallback.radius),
+      radius: number('radius', .1, double.infinity, fallback.radius),
       imageUrl: rawImageUrl,
       imageBinding: imageBinding,
       imageFit: imageFit,

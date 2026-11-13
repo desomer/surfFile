@@ -798,7 +798,7 @@ void main() {
       throwsFormatException,
     );
     expect(
-      () => SlotSizeConstraints.fromJson({'padding': 201}),
+      () => SlotSizeConstraints.fromJson({'padding': -1}),
       throwsFormatException,
     );
   });

@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
 import 'package:surf_file/theme/disk_gauge_style.dart';
 import 'package:super_container_layout/widgets/editing/styles/container_style_editor.dart';
+import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 
 import 'disk_gauge.dart';
 
@@ -75,14 +76,21 @@ class DiskGaugeStyleEditor extends StatelessWidget {
     double max,
     ValueChanged<double> changed, {
     int? divisions,
-    String Function(double)? format,
+    bool integer = false,
+    double valueScale = 1,
+    String unit = '',
+    bool allowAboveMax = true,
   }) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text('$label : ${format?.call(v) ?? v.toStringAsFixed(0)}'),
-      Slider(
-        key: ValueKey('gauge-$label'),
-        value: v.clamp(min, max),
+      Text(label),
+      EditorHistorySlider(
+        sliderKey: ValueKey('gauge-$label'),
+        integer: integer,
+        valueScale: valueScale,
+        unit: unit,
+        value: v,
+        allowAboveMax: allowAboveMax,
         min: min,
         max: max,
         divisions: divisions,
@@ -168,7 +176,7 @@ class DiskGaugeStyleEditor extends StatelessWidget {
           DiskGaugeStyle.minThickness,
           DiskGaugeStyle.maxThickness,
           (v) => onChanged(value.copyWith(thickness: v)),
-          format: (v) => v.toStringAsFixed(1),
+          unit: 'px',
         ),
         SwitchListTile(
           title: const Text('Extrémités arrondies'),
@@ -269,7 +277,10 @@ class DiskGaugeStyleEditor extends StatelessWidget {
           1,
           (v) => onChanged(value.copyWith(alertThreshold: v)),
           divisions: 50,
-          format: (v) => '${(v * 100).round()} %',
+          integer: true,
+          valueScale: 100,
+          unit: '%',
+          allowAboveMax: false,
         ),
         Wrap(
           children: [
@@ -336,7 +347,9 @@ class DiskGaugeStyleEditor extends StatelessWidget {
           9,
           (v) => onChanged(value.copyWith(percentWeight: v.round())),
           divisions: 8,
-          format: (v) => '${v.round() * 100}',
+          integer: true,
+          allowAboveMax: false,
+          unit: 'x100',
         ),
         _slider(
           'Taille du nom',

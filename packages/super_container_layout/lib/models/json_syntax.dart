@@ -15,6 +15,7 @@ import '../theme/theme_color.dart';
 import 'automatic_state.dart';
 import 'component_config.dart';
 import 'json_text_binding.dart';
+import 'json_numbers.dart';
 import 'super_layout_config.dart'
     show
         SlotDimension,
@@ -238,9 +239,10 @@ abstract final class JsonDimension {
   }
 
   static String format(SlotDimension dimension) {
-    final numText = dimension.value == dimension.value.roundToDouble()
-        ? dimension.value.toInt().toString()
-        : dimension.value.toString();
+    final value = JsonNumbers.round(dimension.value);
+    final numText = value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
     return '$numText${dimension.unit == SlotSizeUnit.pixels ? 'px' : '%'}';
   }
 

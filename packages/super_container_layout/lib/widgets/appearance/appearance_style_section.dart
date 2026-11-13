@@ -114,11 +114,9 @@ class AppearanceStyleSection extends StatelessWidget {
                 count: 2,
                 child: Column(
                   children: [
-                    Text(
-                      'Opacité du fond : ${a.backgroundOpacity.toStringAsFixed(1)}',
-                    ),
+                    const Text('Opacité du fond'),
                     EditorHistorySlider(
-                      key: const ValueKey('Opacité du fond'),
+                      sliderKey: const ValueKey('Opacité du fond'),
                       value: a.backgroundOpacity,
                       onChanged: (value) => controller.value = controller.value
                           .copyWith(backgroundOpacity: value),

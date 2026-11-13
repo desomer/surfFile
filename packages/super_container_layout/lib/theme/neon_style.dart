@@ -54,8 +54,7 @@ class NeonStyle {
     if (enabled is! bool ||
         intensity is! num ||
         !intensity.isFinite ||
-        intensity < 0 ||
-        intensity > maxIntensity) {
+        intensity < 0) {
       throw const FormatException('Paramètres néon invalides.');
     }
     final Color? parsedColor;

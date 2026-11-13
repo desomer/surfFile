@@ -2,6 +2,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:super_container_layout/widgets/editing/history/editor_history.dart';
 
 import '../../../../models/super_code_config.dart';
 
@@ -73,14 +74,16 @@ class CodeAddForm extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                'Taille de police : ${style.fontSize.toInt()} px',
+                'Taille de police',
                 style: const TextStyle(fontSize: 13),
               ),
             ),
             SizedBox(
               width: 180,
-              child: Slider(
-                key: const ValueKey('super-code-font-size'),
+              child: EditorHistorySlider(
+                sliderKey: const ValueKey('super-code-font-size'),
+                unit: 'px',
+                allowAboveMax: true,
                 value: style.fontSize,
                 min: 10.0,
                 max: 28.0,
