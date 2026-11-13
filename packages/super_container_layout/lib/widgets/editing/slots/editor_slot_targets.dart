@@ -92,53 +92,50 @@ Future<void> _openEditorMenuFromContext(
 extension _EditorSlotTargetsExtension on EditorSlotState {
   Future<void> _promptRename() async {
     final currentLabel = titleLabel;
-    final text = TextEditingController(text: currentLabel);
+    var label = currentLabel;
     final form = GlobalKey<FormState>();
-    try {
-      final value = await showEditorDialog<String>(
-        context: context,
-        target: context,
-        builder: (dialogContext) {
-          void save() {
-            if (form.currentState!.validate()) {
-              Navigator.of(dialogContext).pop(text.text.trim());
-            }
+    final value = await showEditorDialog<String>(
+      context: context,
+      target: context,
+      builder: (dialogContext) {
+        void save() {
+          if (form.currentState!.validate()) {
+            Navigator.of(dialogContext).pop(label.trim());
           }
+        }
 
-          return AlertDialog(
-            title: const Text('Renommer le composant'),
-            content: Form(
-              key: form,
-              child: TextFormField(
-                key: const ValueKey('style-menu-rename-input'),
-                controller: text,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: 'Nom'),
-                validator: (value) => (value ?? '').trim().isEmpty
-                    ? 'Le nom ne peut pas être vide.'
-                    : null,
-                onFieldSubmitted: (_) => save(),
-              ),
+        return AlertDialog(
+          title: const Text('Renommer le composant'),
+          content: Form(
+            key: form,
+            child: TextFormField(
+              key: const ValueKey('style-menu-rename-input'),
+              initialValue: currentLabel,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Nom'),
+              validator: (value) => (value ?? '').trim().isEmpty
+                  ? 'Le nom ne peut pas être vide.'
+                  : null,
+              onChanged: (value) => label = value,
+              onFieldSubmitted: (_) => save(),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('Annuler'),
-              ),
-              FilledButton(
-                key: const ValueKey('style-menu-rename-save'),
-                onPressed: save,
-                child: const Text('Renommer'),
-              ),
-            ],
-          );
-        },
-      );
-      if (value != null && value != currentLabel && mounted) {
-        _renameLabel(value);
-      }
-    } finally {
-      WidgetsBinding.instance.addPostFrameCallback((_) => text.dispose());
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              key: const ValueKey('style-menu-rename-save'),
+              onPressed: save,
+              child: const Text('Renommer'),
+            ),
+          ],
+        );
+      },
+    );
+    if (value != null && value != currentLabel && mounted) {
+      _renameLabel(value);
     }
   }
 

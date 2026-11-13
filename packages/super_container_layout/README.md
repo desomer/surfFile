@@ -124,6 +124,8 @@ badge du composant et les actions existantes. Les entrées désactivées
 n'affichent pas cet indicateur. `EditorMenuDestination` permet de déclarer
 la destination d'un éditeur personnalisé via `menuDestination` sur
 `EditorSlot`/`EditableSurface`, ou `destination` sur une action/entrée de menu.
+Le renommage depuis ce menu conserve le champ actif jusqu'à la fin de
+l'animation de fermeture, que le nom soit validé ou la saisie annulée.
 Sur Windows natif, où Flutter ne gère pas ces deux curseurs, une main de
 pointage apparaît au survol et le curseur de déplacement pendant le glisser.
 En mode édition, un clic sur le contenu sélectionne sa zone englobante.

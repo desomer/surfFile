@@ -71,6 +71,57 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
 3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
 
+### Noms des composants en mode édition
+
+Le nom affiché par **Renommer** dans le menu contextuel est le nom du slot,
+pas l'ID technique du composant. Donne à chaque instance un nom court,
+lisible et distinctif, notamment aux composants `"value"` (`"Nom"`,
+`"E-mail"`, `"Téléphone"` plutôt que le libellé générique `"Valeur"`).
+
+Enregistre ce nom dans `slotLabels` de la configuration du parent qui contient
+le slot, avec l'ID de l'enfant comme clé. Dans le JSON plat, cela donne
+`components[<parentId>].slotLabels[<childId>]` — **pas** un champ à la racine
+de `components`, ni un champ de la configuration de l'enfant. Exemple :
+
+```json
+{
+  "components": {
+    "form": {
+      "type": "layout",
+      "slotLabels": {
+        "client-name": "Nom",
+        "client-email": "E-mail"
+      },
+      "placements": {
+        "center": [
+          { "id": "client-name", "type": "registry:Value" },
+          { "id": "client-email", "type": "registry:Value" }
+        ]
+      }
+    },
+    "client-name": {
+      "type": "value",
+      "label": "Saisir le nom",
+      "binding": "clients[?].nom"
+    },
+    "client-email": {
+      "type": "value",
+      "binding": "clients[?].email"
+    }
+  }
+}
+```
+
+Les configurations `"layout"`, `"native"`, `"tab"`, `"conditional"`,
+`"treeView"` et `"table"` exposent `slotLabels` directement. Pour une cellule
+du gabarit d'une liste, le layout est embarqué dans la configuration de la
+liste : utilise
+`components[<listId>].template.slotLabels[<childId>]`. `SuperValueConfig.label`
+est distinct : il définit le libellé du champ rendu à l'écran (`"Saisir le
+nom"` dans l'exemple) et ne renomme pas l'instance dans l'éditeur. Sans entrée
+dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
+`"Valeur"`.
+
 ### Exemple complet d'écran
 
 ```json
@@ -337,7 +388,9 @@ Dispose ses enfants selon 2 modes (`"positioning"`) :
   - **Bonne pratique (empilement de `Card`, boutons ou champs sans occuper toute la hauteur)** :
     - Par défaut dans `center`, les composants sans `preferredHeight` se partagent toute la hauteur (`expandSlots: true`). Pour empiler des cartes (`Card`) ou contrôles qui s'adaptent à la hauteur de leur contenu, configure `zoneFlows.center` avec `"expandSlots": false` (et `"scrollable": true` si la liste de composants peut dépasser l'écran), ou mets `"fitContent": true` sur les slots concernés dans `slotSizeConstraints`.
     - **À éviter** : ne mets pas `"fitContent": true` sur `"scaffold:body"` dans `"root"`, car `"scaffold:body"` est le conteneur de la page entière ; configure `zoneFlows` ou `slotSizeConstraints` dans `"mainLayout"` (ou le layout de la page).
-  - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots.
+  - `slotLabels` (`Map<slotId, string>`) : libellés personnalisés des slots
+    enfants, indexés par leur `id` de placement (voir l'exemple de nommage
+    ci-dessus).
   - `placements` (`Map<Zone, List<{"id": string, "type": string}>>`) : composants placés dans chaque zone.
 - **`"grid"`** : Grille libre 2D (`columns` de `1` à `48`, `rowHeight` au minimum `16`, `gap` au minimum `0`). Les plafonds des sliders (`400` pour `rowHeight`, `64` pour `gap`) ne limitent pas les valeurs JSON.
 
@@ -452,7 +505,7 @@ Propriétés communes dans `components[id]` pour `"native"` :
   - `regionAxes` (`Map<regionId, "horizontal" | "vertical">`) : direction du flux de la région.
   - `regionFlows` (`Map<regionId, ZoneFlowConfig>`) : `scrollable` (`bool`), `expandSlots` (`bool`), `mainAxisAlignment` (`"start" | "center" | "end" | "spaceBetween" | "spaceAround" | "spaceEvenly"`), `crossAxisAlignment` (`"start" | "center" | "end" | "stretch"`), `spacing` (`0`..`64`), `padding` (`0`..`64` ou `[top, right, bottom, left]`).
   - `regionSizes` (`Map<regionId, number>`) : hauteur/taille fixe en pixels de la région (omettre pour la taille automatique).
-- `slotPreferredSizes` (`Map<childSlotId, [width, height]>`), `slotSizeConstraints` (`Map<childSlotId, SlotSizeConstraints>` — toujours indexé par l'`id` du slot enfant placé, jamais un objet `SlotSizeConstraints` direct sans clé de slot), `slotLabels` (`Map<childSlotId, string>`).
+- `slotPreferredSizes` (`Map<childSlotId, [width, height]>`), `slotSizeConstraints` (`Map<childSlotId, SlotSizeConstraints>` — toujours indexé par l'`id` du slot enfant placé, jamais un objet `SlotSizeConstraints` direct sans clé de slot), `slotLabels` (`Map<childSlotId, string>`, au même niveau que `placements` dans la configuration native).
 
 ### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un sélecteur de choix :
@@ -531,7 +584,7 @@ Répète un gabarit de ligne pour chaque élément d'un tableau JSON.
   - `spacing` (`0`) : `number` entre **`0` et `200`**.
   - `allowAdd` (`false`), `allowRemove` (`false`) : `bool` (génère automatiquement le bouton `+` d'ajout et l'icône de suppression sur chaque ligne : inutile de créer des boutons `Action` manuels pour ajouter/supprimer une ligne).
   - `emptyText` : `string` (`"Aucun élément"`).
-  - `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes.
+  - `template` (alias `"row"`) : `SuperLayoutConfig` embarqué décrivant la disposition des lignes, y compris ses propres `placements` et `slotLabels` pour nommer les composants de chaque ligne (chemin JSON : `components[<listId>].template.slotLabels[<childId>]`).
   - `itemId` : identifiant personnalisé optionnel pour l'élément de ligne (si non renseigné, vaut par défaut `"<listId>:item"`).
 
 ### 4.6. `"tab"` (`SuperTabConfig`) — Barre d'onglets (`TabBar`) + vues par onglet (`TabBarView`)

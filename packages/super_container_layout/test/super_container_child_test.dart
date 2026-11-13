@@ -230,6 +230,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final dismissal in ['save', 'submit', 'cancel', 'barrier']) {
+    testWidgets('rename controller survives the $dismissal exit animation', (
+      tester,
+    ) async {
+      final components = registry();
+      await mount(tester, components);
+      await open(tester);
+      await choose(tester, 'factory:Card');
+      final original = components.nativeComponentController('box').value;
+      final id = original.slotsOf('child').single;
+      await tester.tap(target(), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-rename-Card')));
+      await tester.pumpAndSettle();
+      final input = find.byKey(const ValueKey('style-menu-rename-input'));
+      await tester.enterText(input, '  Carte  ');
+      switch (dismissal) {
+        case 'save':
+          await tester.tap(
+            find.byKey(const ValueKey('style-menu-rename-save')),
+          );
+        case 'submit':
+          await tester.testTextInput.receiveAction(TextInputAction.done);
+        case 'cancel':
+          await tester.tap(find.text('Annuler'));
+        case 'barrier':
+          await tester.tapAt(Offset.zero);
+      }
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(input, findsOneWidget);
+      final controller = tester
+          .widget<EditableText>(
+            find.descendant(of: input, matching: find.byType(EditableText)),
+          )
+          .controller;
+      void listener() {}
+      controller.addListener(listener);
+      controller.removeListener(listener);
+      await tester.pumpAndSettle();
+      expect(input, findsNothing);
+      expect(
+        components.nativeComponentController('box').value.slotLabels,
+        dismissal == 'save' || dismissal == 'submit'
+            ? {id: 'Carte'}
+            : original.slotLabels,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('child is renamed from its menu row and the wizard', (
     tester,
   ) async {
