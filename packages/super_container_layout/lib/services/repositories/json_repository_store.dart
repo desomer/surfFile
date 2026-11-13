@@ -335,6 +335,11 @@ class JsonRepositoryStore extends ChangeNotifier {
   bool isPersistentRepository(String repositoryId) =>
       _persistentRepositoryState?.containsKey(repositoryId) ?? false;
 
+  /// Indique si le repository applicatif existe uniquement en mémoire.
+  bool isMemoryOnlyRepository(String repositoryId) =>
+      _memoryRepositories.containsKey(repositoryId) &&
+      !isPersistentRepository(repositoryId);
+
   Future<String?> _readRegisteredText(File file) async {
     final parentType = await FileSystemEntity.type(
       file.parent.path,
@@ -1333,14 +1338,12 @@ class JsonRepositoryStore extends ChangeNotifier {
         _invalidateCalculated(name, changedPath);
       }
       _changed();
-      if (persistence != null) {
-        _notifyMemoryRepositoryChanged(
-          repositoryId: name,
-          path: '',
-          oldValue: previous,
-          newValue: decoded,
-        );
-      }
+      _notifyMemoryRepositoryChanged(
+        repositoryId: name,
+        path: '',
+        oldValue: previous,
+        newValue: decoded,
+      );
       return;
     }
     if (await read(name) != expectedText) {

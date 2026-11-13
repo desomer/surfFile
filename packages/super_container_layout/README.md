@@ -1591,6 +1591,15 @@ de l'apparence. **Enregistrer** valide le JSON avant toute ecriture ;
 **Formater** l'indente. Un JSON invalide sur disque reste ouvrable pour le
 corriger. Les erreurs de fichier et les conflits avec des modifications
 externes sont affiches, et l'abandon des modifications demande confirmation.
+Le bouton **Éditeur flottant** ouvre le repository sélectionné dans un panneau
+non modal, déplaçable et redimensionnable, qui reste ouvert après fermeture du
+gestionnaire. Plusieurs repositories peuvent être ouverts simultanément.
+Chaque JSON valide est appliqué automatiquement ; un brouillon invalide reste
+visible sans modifier la dernière version valide. En cas de conflit, la
+sauvegarde est suspendue : copiez le brouillon ou rechargez le repository.
+Une modification directe du fichier est détectée lors de la prochaine
+sauvegarde ; les changements publiés par le store sont suivis immédiatement.
+Un repository uniquement en mémoire est mis à jour sans fichier sur disque.
 `JsonRepositoryManager(store: JsonRepositoryStore(Directory(...)))` permet
 d'ouvrir le gestionnaire avec un dossier explicite dans une integration.
 Chaque repository possede aussi un ID technique genere automatiquement,

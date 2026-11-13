@@ -13,6 +13,7 @@ import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
+import 'floating_repository_editor.dart';
 
 /// Boîte de dialogue de gestion et d'édition des documents du [JsonRepositoryStore].
 class JsonRepositoryManager extends StatefulWidget {
@@ -57,7 +58,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
   final _folder = TextEditingController();
   final _text = TextEditingController();
   JsonRepositoryStore? _store;
-  JsonRepositoryStore? _ownedStore;
+  _OwnedStore? _ownedStore;
   List<String> _names = [];
   String? _selected;
   String? _selectedId;
@@ -74,7 +75,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     _text.addListener(_edited);
     _run(() async {
       final store = widget.store ?? JsonRepositoryStore.defaultStore();
-      if (widget.store == null) _ownedStore = store;
+      if (widget.store == null) _ownedStore = _OwnedStore(store);
       _folder.text = store.directory.path;
       await _loadDirectory(store, initialId: widget.initialRepositoryId);
     });
@@ -85,7 +86,7 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
   @override
   void dispose() {
     _store?.removeListener(_repositoryChanged);
-    _ownedStore?.dispose();
+    _ownedStore?.release();
     _folder.dispose();
     _text.removeListener(_edited);
     _text.dispose();
@@ -204,14 +205,14 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
       if (shared != null &&
           Directory(path).absolute.path == shared.directory.absolute.path) {
         await _loadDirectory(shared);
-        _ownedStore?.dispose();
+        _ownedStore?.release();
         _ownedStore = null;
       } else {
         final store = JsonRepositoryStore(Directory(path));
         try {
           await _loadDirectory(store);
-          _ownedStore?.dispose();
-          _ownedStore = store;
+          _ownedStore?.release();
+          _ownedStore = _OwnedStore(store);
         } on FileSystemException {
           store.dispose();
           rethrow;
@@ -347,6 +348,57 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
   });
 
+  Future<void> _openFloatingEditor() async {
+    if (_selected == null || _selectedId == null || _store == null || _busy) {
+      return;
+    }
+    if (_dirty) {
+      final choice = await showEditorDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Modifications non enregistrées'),
+          content: const Text(
+            'Enregistrer ou abandonner la saisie avant d’ouvrir l’éditeur ?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'cancel'),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'discard'),
+              child: const Text('Abandonner'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, 'save'),
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        ),
+      );
+      if (!mounted || choice == null || choice == 'cancel') return;
+      if (choice == 'save') {
+        await _save();
+        if (!mounted || _dirty || _error != null) return;
+      } else {
+        _text.text = _savedText;
+        await _select(_selected!, reloadPersistent: false);
+        if (!mounted || _error != null) return;
+      }
+    }
+    final owned = _ownedStore;
+    owned?.retain();
+    final opened = openFloatingRepositoryEditor(
+      context,
+      store: _store!,
+      repositoryId: _selectedId!,
+      name: _selected!,
+      text: _savedText,
+      onClosed: owned?.release,
+    );
+    if (!opened) owned?.release();
+  }
+
   void _format() {
     try {
       final value = jsonDecode(_text.text);
@@ -413,6 +465,12 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
           spacing: 8,
           children: [
             Text('$_selected${_dirty ? ' *' : ''}'),
+            TextButton.icon(
+              key: const ValueKey('repository-open-floating'),
+              onPressed: _busy ? null : _openFloatingEditor,
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Éditeur flottant'),
+            ),
             TextButton(
               onPressed: _busy ? null : _rename,
               child: const Text('Renommer'),
@@ -543,6 +601,19 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
       ],
     ),
   );
+}
+
+class _OwnedStore {
+  _OwnedStore(this.store);
+
+  final JsonRepositoryStore store;
+  int _references = 1;
+
+  void retain() => _references++;
+
+  void release() {
+    if (--_references == 0) store.dispose();
+  }
 }
 
 class _RepositoryNameDialog extends StatefulWidget {
