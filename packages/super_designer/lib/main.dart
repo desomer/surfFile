@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show AppExitResponse;
 
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
@@ -91,6 +92,9 @@ Future<void> main() async {
         ? const {}
         : {'GEMINI_API_KEY': environmentKey},
   );
+  if ((dotenv.env['GEMINI_API_KEY'] ?? '').trim().isNotEmpty) {
+    unawaited(VibeChatDialog.warmUp(rootBundle));
+  }
   // Le point d'entrée de démonstration active la persistance par défaut.
   runApp(const SuperDesignerApp(persistRepository: true));
 }

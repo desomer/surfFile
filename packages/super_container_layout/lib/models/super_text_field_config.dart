@@ -445,8 +445,81 @@ class SuperTextFieldConfig {
 
     TextFieldIcon? icon(String key, TextFieldIcon? defaultIcon) {
       if (!json.containsKey(key)) return defaultIcon;
-      if (json[key] == null) return null;
-      return choice(key, TextFieldIcon.values, TextFieldIcon.person);
+      final raw = json[key];
+      if (raw == null) return null;
+      if (raw is! String) {
+        throw FormatException('Option de champ invalide : $key.');
+      }
+      var normalized = raw.trim().toLowerCase();
+      for (final suffix in const [
+        '_outlined',
+        '_outline',
+        '_rounded',
+        '_sharp',
+        '_filled',
+        '_border',
+      ]) {
+        if (normalized.endsWith(suffix) && normalized.length > suffix.length) {
+          normalized = normalized.substring(
+            0,
+            normalized.length - suffix.length,
+          );
+          break;
+        }
+      }
+      const aliases = <String, TextFieldIcon>{
+        'calendar_today': TextFieldIcon.calendar,
+        'calendar_month': TextFieldIcon.calendar,
+        'event': TextFieldIcon.calendar,
+        'event_note': TextFieldIcon.calendar,
+        'today': TextFieldIcon.calendar,
+        'date_range': TextFieldIcon.calendar,
+        'business': TextFieldIcon.work,
+        'business_center': TextFieldIcon.work,
+        'apartment': TextFieldIcon.work,
+        'domain': TextFieldIcon.work,
+        'corporate_fare': TextFieldIcon.work,
+        'store': TextFieldIcon.work,
+        'storefront': TextFieldIcon.work,
+        'mail': TextFieldIcon.email,
+        'contact_mail': TextFieldIcon.email,
+        'call': TextFieldIcon.phone,
+        'contact_phone': TextFieldIcon.phone,
+        'phone_in_talk': TextFieldIcon.phone,
+        'smartphone': TextFieldIcon.phone,
+        'place': TextFieldIcon.location_on,
+        'pin_drop': TextFieldIcon.location_on,
+        'location_city': TextFieldIcon.location_on,
+        'map': TextFieldIcon.location_on,
+        'euro': TextFieldIcon.payments,
+        'attach_money': TextFieldIcon.payments,
+        'monetization_on': TextFieldIcon.payments,
+        'paid': TextFieldIcon.payments,
+        'account_balance': TextFieldIcon.payments,
+        'savings': TextFieldIcon.payments,
+        'receipt': TextFieldIcon.description,
+        'receipt_long': TextFieldIcon.description,
+        'request_quote': TextFieldIcon.description,
+        'article': TextFieldIcon.description,
+        'notes': TextFieldIcon.description,
+        'assignment': TextFieldIcon.description,
+        'account_circle': TextFieldIcon.person,
+        'contacts': TextFieldIcon.person,
+        'contact_page': TextFieldIcon.person,
+        'people': TextFieldIcon.group,
+        'groups': TextFieldIcon.group,
+        'public': TextFieldIcon.language,
+      };
+      final resolved =
+          TextFieldIcon.values.where((v) => v.name == normalized).firstOrNull ??
+          aliases[normalized];
+      if (resolved == null) {
+        final allowed = TextFieldIcon.values.map((v) => v.name).join(', ');
+        throw FormatException(
+          'Option de champ invalide : $key ("$raw"). Icônes de champ autorisées : $allowed.',
+        );
+      }
+      return resolved;
     }
 
     final result = SuperTextFieldConfig(

@@ -6,7 +6,10 @@
 /// ([SuperContainer], [StyledSurface]), composants et éditeurs visuels/IA.
 library;
 
+export 'ai/call_gemini.dart';
+export 'ai/vibe_ask_user.dart';
 export 'ai/vibe_chat_attachment.dart';
+export 'ai/vibe_stream_parser.dart';
 export 'widgets/editing/ai/vibe_chat_dialog.dart';
 export 'models/registry.dart';
 export 'models/component_config.dart';

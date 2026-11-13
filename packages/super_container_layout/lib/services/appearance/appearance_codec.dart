@@ -72,6 +72,37 @@ class AppearanceCodec {
     'pageCatalog': a.pageCatalog.toJson(),
   };
 
+  /// Sérialise une représentation compacte de [a] en omettant les valeurs par défaut.
+  Map<String, Object?> toCompactJson(Appearance a) {
+    final compactStyles = <String, Object?>{
+      for (final entry in a.styles.entries)
+        if (entry.value != const ContainerStyle())
+          entry.key: entry.value.toCompactJson(),
+    };
+    return {
+      'version': schemaVersion,
+      'mode': a.mode.name,
+      'accent': JsonColor.toHex(a.accent),
+      if (a.backgroundOpacity != 1.0) 'backgroundOpacity': a.backgroundOpacity,
+      if (a.windowOpacity != 1.0) 'windowOpacity': a.windowOpacity,
+      if (a.windowEffect != WindowEffect.transparent)
+        'windowEffect': a.windowEffect.name,
+      if (compactStyles.isNotEmpty) 'styles': compactStyles,
+      if (a.components.isNotEmpty)
+        'components': {
+          for (final entry in a.components.entries)
+            entry.key: entry.value.toTypedCompactJson(),
+        },
+      if (a.behaviors.values.any((list) => list.isNotEmpty))
+        'behaviors': {
+          for (final entry in a.behaviors.entries)
+            if (entry.value.isNotEmpty)
+              entry.key: [for (final b in entry.value) b.toCompactJson()],
+        },
+      if (a.pageCatalog.pages.isNotEmpty) 'pageCatalog': a.pageCatalog.toJson(),
+    };
+  }
+
   /// Sérialise un instantané de transfert sans modifier la sauvegarde complète.
   ///
   /// Les clés racines restent présentes pour préserver le remplacement des

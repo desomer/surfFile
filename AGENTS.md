@@ -7,7 +7,7 @@ Ce dépôt est un monorepo Flutter comprenant l'application de bureau **SurfFile
 ## 1. Documentation de référence à consulter en priorité
 
 Avant toute modification, consultez les guides spécialisés du dépôt :
-- [`packages/super_container_layout/ARCHITECTURE.md`](packages/super_container_layout/ARCHITECTURE.md) : Cartographie des couches, flux de données (`Appearance` ↔ `Registry`, `JsonListScope`, `EditorPageGraph`, `applyVibe`) et **index complet des 167 fichiers Dart** de `super_container_layout`.
+- [`packages/super_container_layout/ARCHITECTURE.md`](packages/super_container_layout/ARCHITECTURE.md) : Cartographie des couches, flux de données (`Appearance` ↔ `Registry`, `JsonListScope`, `EditorPageGraph`, `applyVibe`) et **index complet des 260 fichiers Dart** de `super_container_layout`.
 - [`packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md`](packages/super_container_layout/SCREEN_JSON_AI_GUIDE.md) : Spécification complète du format JSON plat GenUI (`components`, `styles`, `behaviors`, `pageCatalog`) utilisé pour la persistance et l'assistant IA intégré (Vibe Chat).
 - [`packages/super_container_layout/README.md`](packages/super_container_layout/README.md) : Documentation fonctionnelle et exemples d'utilisation des widgets, éditeurs et services de `super_container_layout`.
 - [`README.md`](README.md) : Intégration de `super_container_layout` dans l'application hôte `SurfFile`.
@@ -29,7 +29,7 @@ Avant toute modification, consultez les guides spécialisés du dépôt :
   - `widgets/surfaces/` : Rendu visuel des conteneurs (`SuperContainer`, `StyledSurface`, `NeonSurface`, `InteractionEffectBox`, `SurfacePainters`).
   - `widgets/components/` : Widgets d'exécution (`SuperLayout`, `SuperValue`, `SuperAction`, `SuperListView`, `SuperTab`, `SuperTable`, `SuperTreeView`, et composants Material natifs sous `native/`).
   - `widgets/editing/` : Mode édition visuelle (assistants d'ajout `addition/`, chat IA `ai/vibe_chat_dialog.dart`, éditeurs de composants `components/`, éditeurs de styles `styles/`, slots éditables `slots/`, overlay de sélection/redimensionnement `overlay/`, historique undo/redo `history/`).
-  - `ai/` : Client Gemini (`call_gemini.dart`) et pièces jointes (`vibe_chat_attachment.dart`).
+  - `ai/` : Client REST Gemini `v1beta` avec cache explicite et streaming SSE (`gemini_rest_client.dart`, `call_gemini.dart`), questionnaires de clarification interactifs (`vibe_ask_user.dart`), analyseur incrémental de flux JSON (`vibe_stream_parser.dart`) et pièces jointes (`vibe_chat_attachment.dart`).
 
 ---
 

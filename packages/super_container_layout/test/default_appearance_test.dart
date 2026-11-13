@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/super_container_layout.dart';
@@ -7,7 +9,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   test('map updates retain reusable preferences and immutable collections', () {
-      final appearance = DefaultAppearance(
+    final appearance = DefaultAppearance(
       cardHeight: 200,
       spacing: 18,
       fontSize: 14,
@@ -94,5 +96,86 @@ void main() {
       throwsFormatException,
     );
     expect(() => codec.toJson(Appearance()), throwsArgumentError);
+    expect(() => codec.toCompactJson(Appearance()), throwsArgumentError);
+  });
+
+  test('toCompactJson and exportCompactAi omit defaults, keep all component IDs, and minify output', () {
+    const codec = DefaultAppearanceCodec();
+    final defaultsOnly = DefaultAppearance(
+      styles: {'empty': const ContainerStyle()},
+      components: {
+        'root': const SuperLayoutConfig(),
+        'label': const SuperValueConfig(),
+      },
+      behaviors: {'root': const []},
+    );
+    final compactMap = codec.toCompactJson(defaultsOnly);
+    expect(compactMap, {
+      'version': codec.schemaVersion,
+      'mode': 'light',
+      'accent': '#5268D9',
+      'components': {
+        'root': const SuperLayoutConfig().toTypedCompactJson(),
+        'label': {'type': 'value'},
+      },
+    });
+
+    final customized = DefaultAppearance(
+      backgroundOpacity: 0.856,
+      cardHeight: 210.346,
+      scrollFadeEnabled: false,
+      styles: {
+        'empty': const ContainerStyle(),
+        'card': const ContainerStyle(radius: 18.789),
+      },
+      components: {'val': const SuperValueConfig()},
+      behaviors: {
+        'val': [
+          const ComponentBehavior(
+            id: 'nav',
+            action: GoToPageAction(pagePath: '/', pageId: 'home'),
+          ),
+        ],
+      },
+      pageCatalog: EditorPageCatalog(
+        pages: [EditorPageConfig(id: 'home', name: 'Accueil', path: '/')],
+        homePageId: 'home',
+      ),
+    );
+
+    final exported = AppearanceTransfer.exportCompactAi(
+      customized,
+      codec: codec,
+    );
+    expect(exported.contains('\n'), isFalse);
+    expect(
+      exported,
+      '{"mode":"light","accent":"#5268D9","backgroundOpacity":0.86,'
+      '"styles":{"card":{"radius":18.79}},'
+      '"components":{"val":{"type":"value"}},'
+      '"behaviors":{"val":[{"id":"nav","trigger":"click","enabled":true,"action":{"type":"goToPage","pagePath":"/","pageId":"home"}}]},'
+      '"pageCatalog":{"pages":[{"id":"home","name":"Accueil","path":"/","defaultParameters":{}}],"homePageId":"home"},'
+      '"cardHeight":210.35,"scrollFadeEnabled":false}',
+    );
+
+    final layoutsOnly = AppearanceTransfer.exportCompactAi(
+      defaultsOnly,
+      groups: const {TransferGroup.layouts},
+      codec: codec,
+    );
+    expect(jsonDecode(layoutsOnly), {
+      'components': {
+        'root': const SuperLayoutConfig().toTypedCompactJson(),
+        'label': {'type': 'value'},
+      },
+    });
+    expect(
+      () => AppearanceTransfer.exportCompactAi(
+        defaultsOnly,
+        groups: const {},
+        codec: codec,
+      ),
+      throwsArgumentError,
+    );
   });
 }

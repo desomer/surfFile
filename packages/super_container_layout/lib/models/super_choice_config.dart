@@ -170,10 +170,13 @@ class SuperChoiceOption {
     if (rawIcon != null && rawIcon is! String) {
       throw const FormatException('Icône d’option de choix invalide.');
     }
+    final normalizedIcon = rawIcon == null || rawIcon.trim().isEmpty
+        ? null
+        : (MaterialIconCatalog.resolveCanonicalId(rawIcon) ?? rawIcon);
     final option = SuperChoiceOption(
       value: value,
       label: rawLabel ?? '',
-      icon: rawIcon?.trim().isEmpty == true ? null : rawIcon,
+      icon: normalizedIcon,
     );
     option.validate();
     return option;

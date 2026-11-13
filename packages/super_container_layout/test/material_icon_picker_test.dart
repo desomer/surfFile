@@ -226,4 +226,68 @@ void main() {
       expect(config.prefixIcon, TextFieldIcon.calendar);
     },
   );
+
+  test('MaterialIconCatalog and component codecs accept AI Material icon variants (calendar_today, _outlined, aliases) and report offending icon name when unknown', () {
+    // Exact payload from AI Vibe generation ("tab-rdv").
+    final patched = AppearanceTransfer.applyVibe(
+      Appearance(),
+      '{"components":{"tab-rdv":{"type":"action","kind":"textAndIcon","label":"Agenda & Relances","icon":"calendar_today"}}}',
+    );
+    final action = patched.actionComponent('tab-rdv');
+    expect(action.kind, SuperActionKind.textAndIcon);
+    expect(action.label, 'Agenda & Relances');
+    expect(action.icon, 'calendar_today');
+
+    // Suffixes, Icons. prefix, camelCase, and synonyms normalize to canonical catalog IDs.
+    expect(
+      SuperActionConfig.fromJson(const {'icon': 'Icons.calendarTodayOutlined'})
+          .icon,
+      'calendar_today',
+    );
+    expect(
+      SuperIndicatorConfig.fromJson(const {'icon': 'support'}).icon,
+      'Support',
+    );
+    expect(
+      SuperIndicatorConfig.fromJson(const {
+        'icon': 'support_agent_outlined',
+      }).icon,
+      'support_agent',
+    );
+    expect(
+      SuperChoiceOption.fromJson(const {
+        'value': 'inv',
+        'icon': 'invoice_outlined',
+      }).icon,
+      'receipt_long',
+    );
+    expect(
+      SuperTextFieldConfig.fromJson(const {
+        'prefixIcon': 'calendar_today',
+        'suffixIcon': 'business_outlined',
+      }).prefixIcon,
+      TextFieldIcon.calendar,
+    );
+    expect(
+      SuperTextFieldConfig.fromJson(const {
+        'prefixIcon': 'calendar_today',
+        'suffixIcon': 'business_outlined',
+      }).suffixIcon,
+      TextFieldIcon.work,
+    );
+
+    // Unknown icon reports the exact offending icon name so AI retry can fix it.
+    expect(
+      () => SuperActionConfig.fromJson(const {
+        'icon': 'totally_unknown_icon_xyz',
+      }),
+      throwsA(
+        isA<FormatException>().having(
+          (e) => e.message,
+          'message',
+          contains('totally_unknown_icon_xyz'),
+        ),
+      ),
+    );
+  });
 }

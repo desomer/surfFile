@@ -1,9 +1,11 @@
 /// Bannière du mode édition ([StyleEditBanner]) et panneau latéral Vibe IA.
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/ai/call_gemini.dart';
 import 'package:super_container_layout/services/appearance/appearance_store.dart';
@@ -115,6 +117,13 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
     VibeChatScope.onOpenRequested = _openScopedChat;
     LayoutSelection.editorViewport.addListener(_reposition);
     LayoutSelection.path.addListener(_onPathChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.aiResponseGenerator != null) return;
+      if (dotenv.isInitialized &&
+          (dotenv.env['GEMINI_API_KEY'] ?? '').trim().isNotEmpty) {
+        unawaited(VibeChatDialog.warmUp(DefaultAssetBundle.of(context)));
+      }
+    });
   }
 
   @override

@@ -161,6 +161,32 @@ class DefaultAppearanceCodec extends AppearanceCodec {
     };
   }
 
+  /// Sérialise une représentation compacte de [a] en omettant les dimensions par défaut.
+  @override
+  Map<String, Object?> toCompactJson(Appearance a) {
+    if (a is! DefaultAppearance) {
+      throw ArgumentError.value(
+        a,
+        'appearance',
+        'DefaultAppearanceCodec requires DefaultAppearance.',
+      );
+    }
+    final initial = defaults;
+    return {
+      ...super.toCompactJson(a),
+      if (a.cardHeight != initial.cardHeight) 'cardHeight': a.cardHeight,
+      if (a.cardWidth != initial.cardWidth) 'cardWidth': a.cardWidth,
+      if (a.rowHeight != initial.rowHeight) 'rowHeight': a.rowHeight,
+      if (a.spacing != initial.spacing) 'spacing': a.spacing,
+      if (a.fontSize != initial.fontSize) 'fontSize': a.fontSize,
+      if (a.iconSize != initial.iconSize) 'iconSize': a.iconSize,
+      if (a.scrollFadeEnabled != initial.scrollFadeEnabled)
+        'scrollFadeEnabled': a.scrollFadeEnabled,
+      if (a.scrollFadeExtent != initial.scrollFadeExtent)
+        'scrollFadeExtent': a.scrollFadeExtent,
+    };
+  }
+
   @override
   DefaultAppearance fromJson(Map<String, dynamic> json) =>
       decodeDimensions(json, base: super.fromJson(json), defaults: defaults);

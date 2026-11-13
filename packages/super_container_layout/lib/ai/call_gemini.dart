@@ -1,42 +1,91 @@
-/// Client d'appel au modèle génératif Gemini (`google_generative_ai`) pour l'assistant Vibe IA.
+/// Points d'entrée d'appel au modèle génératif Gemini pour l'assistant Vibe IA.
 ///
-/// Construit la requête multimodale (prompt texte + pièces jointes [VibeChatAttachment])
-/// à partir de la clé `GEMINI_API_KEY` et journalise les métriques de génération.
+/// Expose la résolution mise en cache de `GEMINI_API_KEY` ([resolveGeminiApiKey]),
+/// le préchauffage réseau/cache ([warmUpGemini]), le flux SSE incrémental
+/// ([streamGemini]) et l'appel complet rétrocompatible ([callGemini]) appuyés sur
+/// [GeminiRestClient].
 library;
 
+import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 
+import 'gemini_rest_client.dart';
 import 'vibe_chat_attachment.dart';
 
+export 'gemini_rest_client.dart';
 export 'vibe_chat_attachment.dart';
 
-const _geminiModel = 'gemini-flash-latest';
+String? _cachedGeminiApiKey;
+Future<String>? _inFlightApiKeyResolution;
+
+/// Réinitialise la clé `GEMINI_API_KEY` mémorisée en mémoire par [resolveGeminiApiKey].
+void resetGeminiApiKeyCache() {
+  _cachedGeminiApiKey = null;
+  _inFlightApiKeyResolution = null;
+}
 
 /// Résout la clé d'API Gemini en interrogeant dans l'ordre :
-/// 1. Les variables déjà chargées dans [dotenv] (`GEMINI_API_KEY`).
-/// 2. Les variables d'environnement système (`Platform.environment['GEMINI_API_KEY']`).
-/// 3. Les fichiers `env` ou `.env` découverts dans le répertoire courant ou ses parents.
+/// 1. Les variables déjà chargées dans [dotenv] (`GEMINI_API_KEY`), prioritaires en test/hot-reload.
+/// 2. La clé précédemment résolue et mise en cache en mémoire.
+/// 3. Les variables d'environnement système (`Platform.environment['GEMINI_API_KEY']`).
+/// 4. Les fichiers `env` ou `.env` découverts dans le répertoire courant ou ses parents.
 Future<String> resolveGeminiApiKey() async {
   if (dotenv.isInitialized) {
     final key = dotenv.env['GEMINI_API_KEY'];
     if (key != null && key.trim().isNotEmpty) {
-      return key.trim();
+      final trimmed = key.trim();
+      _cachedGeminiApiKey = trimmed;
+      return trimmed;
     }
   }
 
+  final cached = _cachedGeminiApiKey;
+  if (cached != null && cached.isNotEmpty) {
+    _populateDotenvKey(cached);
+    return cached;
+  }
+
+  final inFlight = _inFlightApiKeyResolution;
+  if (inFlight != null) {
+    return inFlight;
+  }
+
+  final future = _discoverGeminiApiKey();
+  _inFlightApiKeyResolution = future;
+  try {
+    final resolved = await future;
+    if (resolved.isNotEmpty) {
+      _cachedGeminiApiKey = resolved;
+    }
+    return resolved;
+  } finally {
+    if (identical(_inFlightApiKeyResolution, future)) {
+      _inFlightApiKeyResolution = null;
+    }
+  }
+}
+
+void _populateDotenvKey(String key) {
+  if (!dotenv.isInitialized) {
+    dotenv.loadFromString(
+      envString: '',
+      isOptional: true,
+      mergeWith: {'GEMINI_API_KEY': key},
+    );
+  } else if ((dotenv.env['GEMINI_API_KEY'] ?? '').trim().isEmpty) {
+    dotenv.env['GEMINI_API_KEY'] = key;
+  }
+}
+
+Future<String> _discoverGeminiApiKey() async {
   if (!kIsWeb) {
     final envKey = Platform.environment['GEMINI_API_KEY'];
     if (envKey != null && envKey.trim().isNotEmpty) {
       final key = envKey.trim();
-      dotenv.loadFromString(
-        envString: '',
-        isOptional: true,
-        mergeWith: {'GEMINI_API_KEY': key},
-      );
+      _populateDotenvKey(key);
       return key;
     }
 
@@ -60,10 +109,7 @@ Future<String> resolveGeminiApiKey() async {
       final file = File(path);
       if (await file.exists()) {
         final content = await file.readAsString();
-        dotenv.loadFromString(
-          envString: content,
-          isOptional: true,
-        );
+        dotenv.loadFromString(envString: content, isOptional: true);
         final key = dotenv.env['GEMINI_API_KEY'];
         if (key != null && key.trim().isNotEmpty) {
           return key.trim();
@@ -83,10 +129,7 @@ Future<String> resolveGeminiApiKey() async {
           final file = File('${dir.path}$sep$candidate');
           if (await file.exists()) {
             final content = await file.readAsString();
-            dotenv.loadFromString(
-              envString: content,
-              isOptional: true,
-            );
+            dotenv.loadFromString(envString: content, isOptional: true);
             final key = dotenv.env['GEMINI_API_KEY'];
             if (key != null && key.trim().isNotEmpty) {
               return key.trim();
@@ -102,100 +145,43 @@ Future<String> resolveGeminiApiKey() async {
   return '';
 }
 
+/// Préchauffe silencieusement la connexion Keep-Alive TLS et le cache de contexte Gemini.
+Future<void> warmUpGemini({
+  String? systemInstruction,
+  String? staticGuide,
+  VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+}) => GeminiRestClient.instance.warmUp(
+  systemInstruction: systemInstruction,
+  staticGuide: staticGuide,
+  speedMode: speedMode,
+);
+
+/// Diffuse en flux SSE ([GeminiStreamEvent]) la génération JSON Gemini pour [prompt].
+Stream<GeminiStreamEvent> streamGemini(
+  String prompt, {
+  String? systemInstruction,
+  String? staticGuide,
+  List<VibeChatAttachment> attachments = const [],
+  VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+}) => GeminiRestClient.instance.streamGenerate(
+  prompt,
+  systemInstruction: systemInstruction,
+  staticGuide: staticGuide,
+  attachments: attachments,
+  speedMode: speedMode,
+);
+
+/// Génère une réponse Gemini complète pour [prompt] tout en restant compatible avec les callbacks existants.
 Future<String> callGemini(
   String prompt, {
   List<VibeChatAttachment> attachments = const [],
-}) async {
-  final apiKey = await resolveGeminiApiKey();
-  if (apiKey.isEmpty) {
-    debugPrint(
-      '[Vibe IA][Gemini] Clé GEMINI_API_KEY absente '
-      '(dotenv.isInitialized=${dotenv.isInitialized}).',
-    );
-    throw Exception('GEMINI_API_KEY dotenv is not defined');
-  }
-
-  final stopwatch = Stopwatch()..start();
-  debugPrint(
-    '[Vibe IA][Gemini] Appel de $_geminiModel '
-    '(prompt: ${prompt.length} caractères, '
-    'fichiers joints: ${attachments.length})...',
-  );
-
-  final model = GenerativeModel(model: _geminiModel, apiKey: apiKey);
-  final parts = <Part>[TextPart(prompt)];
-  for (final attachment in attachments) {
-    if (attachment.isImage) {
-      parts.add(
-        TextPart(
-          'Fichier image joint : "${attachment.name}" (${attachment.mimeType})',
-        ),
-      );
-      parts.add(DataPart(attachment.mimeType, attachment.bytes));
-    } else if (attachment.isText && !prompt.contains(attachment.textContent!)) {
-      parts.add(
-        TextPart(
-          'Fichier texte joint "${attachment.name}" (${attachment.mimeType}) :\n'
-          '${attachment.textContent}',
-        ),
-      );
-    }
-  }
-  final content = [
-    parts.length == 1 ? Content.text(prompt) : Content.multi(parts),
-  ];
-
-  final GenerateContentResponse response;
-  try {
-    response = await model.generateContent(content);
-  } catch (error, stackTrace) {
-    stopwatch.stop();
-    debugPrint(
-      '[Vibe IA][Gemini] Échec de generateContent après '
-      '${stopwatch.elapsedMilliseconds} ms (${error.runtimeType}) : $error\n'
-      '$stackTrace',
-    );
-    rethrow;
-  }
-
-  stopwatch.stop();
-  final usage = response.usageMetadata;
-  final feedback = response.promptFeedback;
-  final candidatesSummary = response.candidates
-      .map(
-        (c) =>
-            'finishReason=${c.finishReason?.name ?? "null"}'
-            '${c.finishMessage != null ? " (${c.finishMessage})" : ""}',
-      )
-      .join(', ');
-  debugPrint(
-    '[Vibe IA][Gemini] Réponse reçue en ${stopwatch.elapsedMilliseconds} ms '
-    '(candidats: ${response.candidates.length}'
-    '${candidatesSummary.isEmpty ? "" : " [$candidatesSummary]"}'
-    '${feedback?.blockReason != null ? ", blockReason=${feedback!.blockReason!.name} (${feedback.blockReasonMessage ?? ""})" : ""}'
-    '${usage != null ? ", tokens: prompt=${usage.promptTokenCount}, réponse=${usage.candidatesTokenCount}, total=${usage.totalTokenCount}" : ""}'
-    ').',
-  );
-
-  try {
-    final text = response.text ?? '';
-    if (text.isEmpty) {
-      debugPrint(
-        '[Vibe IA][Gemini] Attention : response.text est vide. '
-        'Candidats: $candidatesSummary, '
-        'promptFeedback: ${feedback?.blockReason?.name ?? "aucun"}.',
-      );
-    }
-    return text;
-  } catch (error, stackTrace) {
-    debugPrint(
-      '[Vibe IA][Gemini] Impossible de lire response.text '
-      '(${error.runtimeType}) : $error\n'
-      'Candidats: $candidatesSummary\n'
-      'PromptFeedback: blockReason=${feedback?.blockReason?.name}, '
-      'message=${feedback?.blockReasonMessage}\n'
-      '$stackTrace',
-    );
-    rethrow;
-  }
-}
+  String? systemInstruction,
+  String? staticGuide,
+  VibeAiSpeedMode speedMode = VibeAiSpeedMode.fast,
+}) => GeminiRestClient.instance.generate(
+  prompt,
+  attachments: attachments,
+  systemInstruction: systemInstruction,
+  staticGuide: staticGuide,
+  speedMode: speedMode,
+);

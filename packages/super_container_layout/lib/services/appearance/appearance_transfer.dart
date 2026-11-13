@@ -217,4 +217,25 @@ class AppearanceTransfer {
     },
     AppearanceCodec codec = const AppearanceCodec(),
   }) => export(appearance, groups, codec: codec);
+
+  /// Exporte une représentation JSON GenUI plate, compacte et minifiée pour l'IA.
+  static String exportCompactAi(
+    Appearance appearance, {
+    Set<TransferGroup> groups = const {
+      TransferGroup.styles,
+      TransferGroup.layouts,
+    },
+    AppearanceCodec codec = const AppearanceCodec(),
+  }) {
+    if (groups.isEmpty) {
+      throw ArgumentError.value(groups, 'groups', 'No groups selected.');
+    }
+    final rawCompact = codec.toCompactJson(appearance)..remove('version');
+    return jsonEncode(
+      JsonNumbers.normalizeMap({
+        for (final entry in rawCompact.entries)
+          if (groups.contains(_groupOf(entry.key))) entry.key: entry.value,
+      }),
+    );
+  }
 }

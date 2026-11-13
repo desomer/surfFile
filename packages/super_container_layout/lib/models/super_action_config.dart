@@ -153,21 +153,33 @@ class SuperActionConfig extends ComponentConfig {
     for (final binding in propertyBindings.values) {
       binding.validate();
     }
-    if ((icon.trim().isNotEmpty && !SuperActionIcons.isKnown(icon)) ||
-        JsonReader.hasInvalidTypographyOrBox(
-          fontFamily: fontFamily,
-          fontSize: fontSize,
-          letterSpacing: letterSpacing,
-          iconSize: iconSize,
-          iconSpacing: iconSpacing,
-          radius: radius,
-          borderWidth: borderWidth,
-          elevation: elevation,
-          horizontalPadding: horizontalPadding,
-          verticalPadding: verticalPadding,
-        ) ||
-        style.states != null) {
-      throw ArgumentError('Invalid Action configuration.');
+    if (icon.trim().isNotEmpty && !SuperActionIcons.isKnown(icon)) {
+      throw ArgumentError(
+        'Unknown Action icon "$icon". Use a valid Material snake_case icon '
+        '(e.g. "touch_app", "calendar_today", "business", "person", "email", '
+        '"phone", "save", "edit", "delete", "check", "info").',
+      );
+    }
+    if (style.states != null) {
+      throw ArgumentError(
+        'Invalid Action configuration: "style.states" is not supported; use top-level "states".',
+      );
+    }
+    if (JsonReader.hasInvalidTypographyOrBox(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      letterSpacing: letterSpacing,
+      iconSize: iconSize,
+      iconSpacing: iconSpacing,
+      radius: radius,
+      borderWidth: borderWidth,
+      elevation: elevation,
+      horizontalPadding: horizontalPadding,
+      verticalPadding: verticalPadding,
+    )) {
+      throw ArgumentError(
+        'Invalid Action configuration: invalid typography or box dimensions.',
+      );
     }
   }
 
@@ -453,13 +465,16 @@ class SuperActionConfig extends ComponentConfig {
     if (rawIcon is! String) {
       throw const FormatException('Invalid Action "icon".');
     }
+    final normalizedIcon = rawIcon.trim().isEmpty
+        ? rawIcon
+        : (MaterialIconCatalog.resolveCanonicalId(rawIcon) ?? rawIcon);
 
     final result = SuperActionConfig(
       kind: kind,
       variant: variant,
       label: resolvedLabel,
       tooltip: field('tooltip', fallback.tooltip),
-      icon: rawIcon,
+      icon: normalizedIcon,
       iconPosition: iconPosition,
       iconSize: number('iconSize', fallback.iconSize),
       iconSpacing: resolvedIconSpacing,
@@ -492,8 +507,10 @@ class SuperActionConfig extends ComponentConfig {
     );
     try {
       result.validate();
-    } on ArgumentError {
-      throw const FormatException('Invalid Action configuration.');
+    } on ArgumentError catch (error) {
+      throw FormatException(
+        error.message?.toString() ?? 'Invalid Action configuration.',
+      );
     }
     return result;
   }

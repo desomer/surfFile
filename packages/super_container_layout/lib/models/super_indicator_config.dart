@@ -131,21 +131,32 @@ class SuperIndicatorConfig extends ComponentConfig {
     for (final binding in propertyBindings.values) {
       binding.validate();
     }
-    if ((icon.trim().isNotEmpty && !SuperIndicatorIcons.isKnown(icon)) ||
-        JsonReader.hasInvalidTypographyOrBox(
-          fontFamily: fontFamily,
-          fontSize: fontSize,
-          letterSpacing: letterSpacing,
-          iconSize: iconSize,
-          iconSpacing: iconSpacing,
-          radius: radius,
-          borderWidth: borderWidth,
-          elevation: elevation,
-          horizontalPadding: horizontalPadding,
-          verticalPadding: verticalPadding,
-        ) ||
-        style.states != null) {
-      throw ArgumentError('Invalid Indicator configuration.');
+    if (icon.trim().isNotEmpty && !SuperIndicatorIcons.isKnown(icon)) {
+      throw ArgumentError(
+        'Unknown Indicator icon "$icon". Use a valid Material snake_case icon '
+        '(e.g. "info", "calendar_today", "business", "person", "check_circle", "warning").',
+      );
+    }
+    if (style.states != null) {
+      throw ArgumentError(
+        'Invalid Indicator configuration: "style.states" is not supported; use top-level "states".',
+      );
+    }
+    if (JsonReader.hasInvalidTypographyOrBox(
+      fontFamily: fontFamily,
+      fontSize: fontSize,
+      letterSpacing: letterSpacing,
+      iconSize: iconSize,
+      iconSpacing: iconSpacing,
+      radius: radius,
+      borderWidth: borderWidth,
+      elevation: elevation,
+      horizontalPadding: horizontalPadding,
+      verticalPadding: verticalPadding,
+    )) {
+      throw ArgumentError(
+        'Invalid Indicator configuration: invalid typography or box dimensions.',
+      );
     }
   }
 
@@ -408,9 +419,12 @@ class SuperIndicatorConfig extends ComponentConfig {
     if (rawIcon is! String) {
       throw const FormatException('Invalid Indicator "icon".');
     }
+    final normalizedIcon = rawIcon.trim().isEmpty
+        ? rawIcon
+        : (MaterialIconCatalog.resolveCanonicalId(rawIcon) ?? rawIcon);
 
     final result = SuperIndicatorConfig(
-      icon: rawIcon,
+      icon: normalizedIcon,
       iconPosition: iconPosition,
       iconSize: number('iconSize', fallback.iconSize),
       iconSpacing: resolvedIconSpacing,
@@ -445,8 +459,10 @@ class SuperIndicatorConfig extends ComponentConfig {
     );
     try {
       result.validate();
-    } on ArgumentError {
-      throw const FormatException('Invalid Indicator configuration.');
+    } on ArgumentError catch (error) {
+      throw FormatException(
+        error.message?.toString() ?? 'Invalid Indicator configuration.',
+      );
     }
     return result;
   }

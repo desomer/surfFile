@@ -3161,23 +3161,266 @@ abstract final class MaterialIconCatalog {
       category: MaterialIconCategory.commerce,
       keywords: ['lit', 'nuit', 'sejour'],
     ),
+    MaterialIconEntry(
+      id: 'calendar_today',
+      icon: Icons.calendar_today_outlined,
+      label: 'Calendrier (aujourd’hui)',
+      category: MaterialIconCategory.content,
+      keywords: ['date', 'agenda', 'rdv', 'planning', 'jour'],
+    ),
+    MaterialIconEntry(
+      id: 'calendar_month',
+      icon: Icons.calendar_month_outlined,
+      label: 'Calendrier mensuel',
+      category: MaterialIconCategory.content,
+      keywords: ['mois', 'date', 'agenda', 'planning'],
+    ),
+    MaterialIconEntry(
+      id: 'event_note',
+      icon: Icons.event_note_outlined,
+      label: 'Agenda & Notes',
+      category: MaterialIconCategory.content,
+      keywords: ['calendrier', 'rdv', 'relance', 'planning', 'memo'],
+    ),
+    MaterialIconEntry(
+      id: 'edit_calendar',
+      icon: Icons.edit_calendar_outlined,
+      label: 'Planifier une date',
+      category: MaterialIconCategory.content,
+      keywords: ['calendrier', 'modifier', 'rdv', 'agenda'],
+    ),
+    MaterialIconEntry(
+      id: 'fact_check',
+      icon: Icons.fact_check_outlined,
+      label: 'Audit / Conformité',
+      category: MaterialIconCategory.status,
+      keywords: ['verification', 'controle', 'liste', 'validation'],
+    ),
+    MaterialIconEntry(
+      id: 'quiz',
+      icon: Icons.quiz_outlined,
+      label: 'Questionnaire / FAQ',
+      category: MaterialIconCategory.communication,
+      keywords: ['questions', 'aide', 'formulaire'],
+    ),
+    MaterialIconEntry(
+      id: 'receipt_long',
+      icon: Icons.receipt_long_outlined,
+      label: 'Facture détaillée',
+      category: MaterialIconCategory.commerce,
+      keywords: ['facturation', 'devis', 'bon', 'comptabilite'],
+    ),
+    MaterialIconEntry(
+      id: 'support_agent',
+      icon: Icons.support_agent,
+      label: 'Agent de support',
+      category: MaterialIconCategory.communication,
+      keywords: ['assistance', 'service client', 'sav', 'casque'],
+    ),
+    MaterialIconEntry(
+      id: 'business_center',
+      icon: Icons.business_center_outlined,
+      label: 'Affaires / B2B',
+      category: MaterialIconCategory.commerce,
+      keywords: ['mallette', 'entreprise', 'client', 'commercial'],
+    ),
+    MaterialIconEntry(
+      id: 'contact_mail',
+      icon: Icons.contact_mail_outlined,
+      label: 'Coordonnées e-mail',
+      category: MaterialIconCategory.communication,
+      keywords: ['contact', 'carte', 'courriel', 'client'],
+    ),
+    MaterialIconEntry(
+      id: 'contact_phone',
+      icon: Icons.contact_phone_outlined,
+      label: 'Coordonnées téléphoniques',
+      category: MaterialIconCategory.communication,
+      keywords: ['contact', 'telephone', 'annuaire', 'client'],
+    ),
+    MaterialIconEntry(
+      id: 'phone_in_talk',
+      icon: Icons.phone_in_talk_outlined,
+      label: 'Appel en cours / Relance',
+      category: MaterialIconCategory.communication,
+      keywords: ['telephone', 'appel', 'relance', 'contact'],
+    ),
+    MaterialIconEntry(
+      id: 'location_city',
+      icon: Icons.location_city,
+      label: 'Ville / Siège social',
+      category: MaterialIconCategory.navigation,
+      keywords: ['immeubles', 'adresse', 'ville', 'entreprise'],
+    ),
+    MaterialIconEntry(
+      id: 'monetization_on',
+      icon: Icons.monetization_on_outlined,
+      label: 'Chiffre d’affaires / Tarif',
+      category: MaterialIconCategory.commerce,
+      keywords: ['argent', 'revenus', 'finance', 'budget'],
+    ),
+    MaterialIconEntry(
+      id: 'paid',
+      icon: Icons.paid_outlined,
+      label: 'Payé / Règlement',
+      category: MaterialIconCategory.commerce,
+      keywords: ['paiement', 'encaissement', 'finance', 'facture'],
+    ),
+    MaterialIconEntry(
+      id: 'content_copy',
+      icon: Icons.content_copy_outlined,
+      label: 'Copier le contenu',
+      category: MaterialIconCategory.actions,
+      keywords: ['copier', 'dupliquer', 'presse-papier'],
+    ),
+    MaterialIconEntry(
+      id: 'content_paste',
+      icon: Icons.content_paste_outlined,
+      label: 'Coller le contenu',
+      category: MaterialIconCategory.actions,
+      keywords: ['coller', 'presse-papier'],
+    ),
+    MaterialIconEntry(
+      id: 'content_cut',
+      icon: Icons.content_cut_outlined,
+      label: 'Couper le contenu',
+      category: MaterialIconCategory.actions,
+      keywords: ['couper', 'ciseaux'],
+    ),
+    MaterialIconEntry(
+      id: 'mail',
+      icon: Icons.mail_outline,
+      label: 'Messagerie / E-mail',
+      category: MaterialIconCategory.communication,
+      keywords: ['email', 'courriel', 'enveloppe'],
+    ),
   ];
 
   static final Map<String, MaterialIconEntry> byId = {
     for (final entry in entries) entry.id: entry,
   };
 
-  static bool isKnown(String id) => byId.containsKey(id.trim());
+  static final Map<String, String> _lowercaseToId = {
+    for (final entry in entries) entry.id.toLowerCase(): entry.id,
+  };
 
-  static MaterialIconEntry? tryGet(String? id) =>
-      id == null ? null : byId[id.trim()];
+  static const List<String> _styleSuffixes = <String>[
+    '_outlined',
+    '_outline',
+    '_rounded',
+    '_sharp',
+    '_filled',
+    '_border',
+  ];
+
+  static const Map<String, String> _aliases = <String, String>{
+    'support': 'support_agent',
+    'work_history': 'badge_work',
+    'user': 'person',
+    'users': 'people',
+    'team': 'groups',
+    'company': 'business',
+    'building': 'apartment',
+    'office': 'apartment',
+    'agenda': 'calendar_today',
+    'clock': 'schedule',
+    'time': 'access_time',
+    'money': 'payments',
+    'invoice': 'receipt_long',
+    'quote': 'request_quote',
+    'wallet': 'account_balance_wallet',
+    'bank': 'account_balance',
+    'trash': 'delete',
+    'plus': 'add',
+    'minus': 'remove',
+    'gear': 'settings',
+    'cog': 'settings',
+    'document': 'description',
+    'file': 'insert_drive_file',
+    'paperclip': 'attach_file',
+    'pin': 'push_pin',
+    'map_pin': 'location_on',
+    'globe': 'public',
+    'chart': 'bar_chart',
+    'graph': 'show_chart',
+    'stats': 'analytics',
+    'notifications_none': 'notifications',
+    'mic_none': 'mic',
+    'done': 'check',
+    'clear': 'close',
+    'create': 'edit',
+    'mode_edit': 'edit',
+    'person_pin': 'contact_page',
+    'assignment_ind': 'badge',
+    'history_edu': 'description',
+    'local_offer': 'sell',
+    'price_check': 'paid',
+  };
+
+  static final RegExp _camelCaseBoundary = RegExp(r'(?<=[a-z0-9])([A-Z])');
+
+  /// Résout un identifiant d'icône (y compris les variantes `_outlined`, `_rounded`,
+  /// `Icons.xxx`, `camelCase` et synonymes Material courants) vers l'identifiant
+  /// canonique de [entries], ou retourne `null` s'il est inconnu.
+  static String? resolveCanonicalId(String? rawId) {
+    if (rawId == null) return null;
+    var candidate = rawId.trim();
+    if (candidate.isEmpty) return null;
+    if (byId.containsKey(candidate)) return candidate;
+
+    if (candidate.startsWith('Icons.') || candidate.startsWith('icons.')) {
+      candidate = candidate.substring(6).trim();
+      if (candidate.isEmpty) return null;
+      if (byId.containsKey(candidate)) return candidate;
+    }
+
+    final snake = candidate
+        .replaceAllMapped(
+          _camelCaseBoundary,
+          (m) => '_${m.group(1)!.toLowerCase()}',
+        )
+        .replaceAll('-', '_')
+        .toLowerCase();
+
+    final directLower = _lowercaseToId[snake];
+    if (directLower != null) return directLower;
+
+    final directAlias = _aliases[snake];
+    if (directAlias != null && byId.containsKey(directAlias)) {
+      return directAlias;
+    }
+
+    for (final suffix in _styleSuffixes) {
+      if (snake.endsWith(suffix) && snake.length > suffix.length) {
+        final stripped = snake.substring(0, snake.length - suffix.length);
+        final strippedId = _lowercaseToId[stripped] ?? _aliases[stripped];
+        if (strippedId != null && byId.containsKey(strippedId)) {
+          return strippedId;
+        }
+      }
+    }
+    return null;
+  }
+
+  static bool isKnown(String id) => resolveCanonicalId(id) != null;
+
+  static MaterialIconEntry? tryGet(String? id) {
+    final canonical = resolveCanonicalId(id);
+    return canonical == null ? null : byId[canonical];
+  }
 
   static IconData resolve(
     String id, {
     IconData fallback = Icons.touch_app_outlined,
-  }) => byId[id.trim()]?.icon ?? fallback;
+  }) {
+    final canonical = resolveCanonicalId(id);
+    return (canonical == null ? null : byId[canonical]?.icon) ?? fallback;
+  }
 
-  static String labelOf(String id) => byId[id.trim()]?.label ?? id.trim();
+  static String labelOf(String id) {
+    final canonical = resolveCanonicalId(id);
+    return (canonical == null ? null : byId[canonical]?.label) ?? id.trim();
+  }
 
   /// Normalise une chaîne pour la recherche (minuscules, sans accents, espaces unifiés).
   static String normalizeQuery(String input) {
