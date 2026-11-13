@@ -792,4 +792,35 @@ void main() {
     await coldStore.preload();
     expect(coldStore.peekArray(clientsId, 'items'), hasLength(2));
   });
+
+  test(
+    'readDocument returns a deep copy and peekDocument reads the cache',
+    () async {
+      await store.create('Filtre');
+      final id = await store.idOf('Filtre');
+      await store.save(
+        'Filtre',
+        '{"q": "a", "tags": ["x"]}',
+        expectedText: await store.read('Filtre'),
+      );
+
+      final cold = JsonRepositoryStore(Directory(directory.path));
+      addTearDown(cold.dispose);
+      expect(cold.peekDocument(id), isNull);
+
+      final copy = await cold.readDocument(id) as Map<String, dynamic>;
+      expect(copy, {
+        'q': 'a',
+        'tags': ['x'],
+      });
+      (copy['tags'] as List).add('y');
+      expect(cold.peekDocument(id)?.document, {
+        'q': 'a',
+        'tags': ['x'],
+      });
+
+      await expectLater(cold.readDocument('INVALIDE'), throwsFormatException);
+      await expectLater(cold.readDocument('0' * 32), throwsFormatException);
+    },
+  );
 }

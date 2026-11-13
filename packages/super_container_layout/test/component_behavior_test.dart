@@ -118,6 +118,115 @@ void main() {
       );
     });
 
+    test('SearchProviderAction serialization and validation', () {
+      const behavior = ComponentBehavior(
+        id: 'b-search',
+        trigger: BehaviorTrigger.doubleClick,
+        action: SearchProviderAction(providerId: 'clients'),
+      );
+      expect(behavior.toJson()['action'], {
+        'type': 'searchProvider',
+        'providerId': 'clients',
+      });
+      expect(ComponentBehavior.fromJson(behavior.toJson()), behavior);
+      expect(
+        ComponentBehavior.fromJson(
+          Map<String, dynamic>.from(behavior.toCompactJson()),
+        ),
+        behavior,
+      );
+      expect(BehaviorCatalog.items, contains(BehaviorCatalog.searchProvider));
+
+      for (final action in [
+        {'type': 'searchProvider', 'providerId': 'Clients'},
+        {'type': 'searchProvider'},
+        {'type': 'searchProvider', 'providerId': 'clients', 'url': 'x'},
+      ]) {
+        expect(
+          () => BehaviorActionCatalog.decode(action),
+          throwsFormatException,
+          reason: '$action',
+        );
+      }
+      expect(
+        () => const ComponentBehavior(
+          id: 'b-hover',
+          trigger: BehaviorTrigger.hover,
+          action: SearchProviderAction(providerId: 'clients'),
+        ).validate(),
+        throwsFormatException,
+      );
+
+      final appearance = Appearance(
+        behaviors: {
+          'button': [behavior],
+        },
+      );
+      expect(appearance.usesProvider('clients'), isTrue);
+      expect(appearance.usesProvider('autre'), isFalse);
+    });
+
+    testWidgets('SearchProviderAction runs the provider search', (
+      tester,
+    ) async {
+      final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('search-provider-action-'),
+      );
+      final store = JsonRepositoryStore(directory!);
+      addTearDown(() async {
+        store.dispose();
+        await tester.runAsync(() => directory.delete(recursive: true));
+      });
+      store.registerRepository(
+        RepositoryImpl(id: 'resultats', json: {'rows': <Object?>[]}),
+      );
+      final calls = <Map<String, Object?>>[];
+      store.providers.register(
+        CallbackDataProvider(
+          id: 'clients',
+          target: const JsonTextBinding(
+            repositoryId: 'resultats',
+            path: 'rows',
+          ),
+          callback: (parameters) async {
+            calls.add(parameters);
+            return ['Dupont'];
+          },
+        ),
+      );
+      late BuildContext context;
+      await tester.pumpWidget(
+        JsonRepositoryScope(
+          store: store,
+          child: Builder(
+            builder: (inner) {
+              context = inner;
+              return const SizedBox();
+            },
+          ),
+        ),
+      );
+
+      await tester.runAsync(
+        () =>
+            const SearchProviderAction(providerId: 'clients').execute(context),
+      );
+      final status = store.providers.statusOf('clients');
+      for (var i = 0; i < 20 && status.value.isLoading; i++) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+
+      expect(calls, [<String, Object?>{}]);
+      expect(status.value.phase, DataProviderPhase.success);
+      expect(
+        await tester.runAsync(() => store.readArray('resultats', 'rows')),
+        ['Dupont'],
+      );
+    });
+
     test(
       'Appearance with behaviors survives AppearanceCodec encode and decode',
       () {
@@ -293,6 +402,127 @@ void main() {
       // Now click on the component in run mode -> should trigger navigation to '/home'
       await tester.tap(find.text('Target Text'));
       await tester.pumpAndSettle();
+    });
+
+    testWidgets('Wizard adds a searchProvider behavior that runs on click', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('search-provider-wizard-'),
+      );
+      final store = JsonRepositoryStore(directory!);
+      addTearDown(() async {
+        store.dispose();
+        await tester.runAsync(() => directory.delete(recursive: true));
+      });
+      store.registerRepository(
+        RepositoryImpl(id: 'resultats', json: {'rows': <Object?>[]}),
+      );
+      var searches = 0;
+      store.providers.register(
+        CallbackDataProvider(
+          id: 'clients',
+          label: 'Clients',
+          target: const JsonTextBinding(
+            repositoryId: 'resultats',
+            path: 'rows',
+          ),
+          callback: (_) async {
+            searches++;
+            return ['Dupont'];
+          },
+        ),
+      );
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(appearance.dispose);
+
+      Future<void> settle() async {
+        for (var i = 0; i < 5; i++) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+        }
+        await tester.pumpAndSettle();
+      }
+
+      await tester.pumpWidget(
+        JsonRepositoryScope(
+          store: store,
+          child: AppearanceScope(
+            controller: appearance,
+            child: StyleEditScope(
+              controller: editing,
+              child: MaterialApp(
+                home: Scaffold(
+                  body: Center(
+                    child: EditorSlotAction(
+                      label: 'Rechercher',
+                      enabled: true,
+                      onEdit: () async {},
+                      child: const EditorSlot(
+                        id: 'btn-search',
+                        label: 'Rechercher',
+                        child: Text('Rechercher'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Rechercher'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-behavior')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await tester.pumpAndSettle();
+      final card = find.byKey(
+        const ValueKey('behavior-catalog-search_provider'),
+      );
+      await tester.ensureVisible(card);
+      await tester.pumpAndSettle();
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await settle();
+
+      final next = find.byKey(const ValueKey('behavior-add-next'));
+      expect(tester.widget<FilledButton>(next).onPressed, isNull);
+      expect(find.text('clients · code'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('behavior-provider-clients')));
+      await tester.pumpAndSettle();
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Clients (clients)'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('behavior-add-submit')));
+      await tester.pumpAndSettle();
+
+      final behavior = appearance.value.behaviorsFor('btn-search').single;
+      expect(behavior.trigger, BehaviorTrigger.click);
+      expect(
+        behavior.action,
+        const SearchProviderAction(providerId: 'clients'),
+      );
+      expect(appearance.value.usesProvider('clients'), isTrue);
+
+      editing.value = false;
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Rechercher'));
+      await settle();
+      expect(searches, 1);
+      expect(store.peekDocument('resultats')?.document, {
+        'rows': ['Dupont'],
+      });
     });
 
     testWidgets('Click behavior triggers navigation to selected page', (

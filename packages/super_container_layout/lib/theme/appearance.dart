@@ -416,6 +416,14 @@ class Appearance {
   bool usesRepository(String repositoryId) =>
       countRepositoryBindings(repositoryId) > 0;
 
+  /// Indique si un comportement de l'apparence lance le provider [providerId].
+  bool usesProvider(String providerId) => behaviors.values.any(
+    (list) => list.any((behavior) {
+      final action = behavior.action;
+      return action is SearchProviderAction && action.providerId == providerId;
+    }),
+  );
+
   ThemeData theme(Brightness brightness) {
     final seedScheme = ColorScheme.fromSeed(
       seedColor: accent,

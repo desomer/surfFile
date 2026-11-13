@@ -13,6 +13,7 @@ import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
+import '../providers/data_provider_manager.dart';
 import 'floating_repository_editor.dart';
 
 /// Boîte de dialogue de gestion et d'édition des documents du [JsonRepositoryStore].
@@ -289,9 +290,17 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     await _run(() async {
       inUse = await _store!.isRepositoryInUse(name, appearance: appearance);
       if (inUse) {
+        final provider = _store!.providers.providerUsing(
+          await _store!.idOf(name),
+        );
         throw FormatException(
-          'Impossible de supprimer « $name » : '
-          'ce repository est encore utilisé par un bind de l’application.',
+          provider == null
+              ? 'Impossible de supprimer « $name » : '
+                    'ce repository est encore utilisé par un bind de '
+                    'l’application.'
+              : 'Impossible de supprimer « $name » : '
+                    'ce repository est utilisé par le provider '
+                    '« ${provider.label} ».',
         );
       }
     });
@@ -420,6 +429,9 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     });
   }
 
+  Future<void> _openProviders() =>
+      DataProviderManager.show(context, store: _store);
+
   Widget _repositories() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -530,7 +542,24 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
     },
     child: AlertDialog(
       insetPadding: const EdgeInsets.all(24),
-      title: const EditorDialogHeader(label: 'Repository'),
+      title: EditorDialogHeader(
+        label: 'Repository',
+        actions: [
+          IconButton(
+            key: const ValueKey('repository-providers'),
+            tooltip: 'Providers (appels d’API alimentant les repositories)',
+            // Hauteur du titre : n'agrandit pas l'en-tête des petites fenêtres.
+            constraints: const BoxConstraints.tightFor(width: 32, height: 28),
+            padding: EdgeInsets.zero,
+            iconSize: 20,
+            style: IconButton.styleFrom(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: _busy || _store == null ? null : _openProviders,
+            icon: const Icon(Icons.cloud_sync_outlined),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 900,
         height: 560,

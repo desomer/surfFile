@@ -994,6 +994,50 @@ Si aucun identifiant ne peut être résolu, le gestionnaire s'ouvre sans
 présélection. Une erreur de lecture ou un repository absent est signalé.
 L'action **Gestionnaire de repositories…** reste disponible séparément.
 
+## Providers de données et recherche
+
+Un provider lit les paramètres d'un repository de filtre, interroge une source
+(API HTTP ou callback Dart), puis remplace un tableau dans un repository cible.
+Dans l'éditeur, le gestionnaire de providers permet de configurer, tester et
+sauvegarder les appels HTTP ; leurs fichiers sont rangés dans
+`<dossier du store>/providers/`. Pour utiliser les providers dans l'application,
+transmettre ce même store à `SuperApp(repositoryStore: store)`. Une
+configuration HTTP peut ensuite être enregistrée ainsi :
+
+```dart
+final store = JsonRepositoryStore.defaultStore();
+final filtersId = await store.idOf('filters');
+final productsId = await store.idOf('products');
+
+await store.providers.save(
+  HttpProviderConfig(
+    id: 'search_products',
+    label: 'Rechercher des produits',
+    filterRepositoryId: filtersId,
+    target: JsonTextBinding(repositoryId: productsId, path: 'items'),
+    request: HttpRequestTemplate(
+      url: 'https://api.example.test/products',
+      query: {'q': '{{query}}'},
+    ),
+    responsePath: 'items',
+    autoSearch: const ProviderAutoSearch(debounceMs: 500),
+  ),
+);
+```
+
+Le filtre doit contenir l'objet JSON des paramètres (ici `query`) et la
+réponse HTTP un tableau à `items`. `{{env.PROVIDER_TOKEN}}` peut être utilisé
+dans un en-tête pour lire un secret depuis `.env` ou l'environnement système.
+Les providers Dart de l'application s'enregistrent avec
+`store.providers.register(CallbackDataProvider(...))`.
+
+Dans le wizard **Comportements**, choisir **Lancer la recherche** puis le
+provider : seule son identité (`providerId`) est persistée dans l'`Appearance`.
+Une recherche automatique peut aussi être lancée au démarrage ou après une
+modification du filtre. Les indicateurs optionnels `loading` et `error` sont
+écrits dans les repositories du store ; les erreurs de requête restent
+consultables dans l'état du provider et les erreurs du store.
+
 ## Export contextuel et SuperRenderer
 
 En mode edition, l'entree **Exporter le contenu...** du menu (trois points)

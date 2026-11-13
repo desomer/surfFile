@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:highlight/languages/json.dart' as highlight;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
+import 'package:super_container_layout/models/providers/data_provider.dart';
 import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/services/repositories/json_repository_scope.dart';
 import 'package:super_container_layout/services/repositories/json_repository_store.dart';
@@ -13,6 +14,7 @@ import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/code_editor.dart';
 import 'package:super_container_layout/widgets/editing/overlay/editor_zoom.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
+import 'package:super_container_layout/widgets/editing/providers/data_provider_manager.dart';
 import 'package:super_container_layout/widgets/editing/repositories/floating_repository_editor.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
@@ -812,6 +814,57 @@ void main() {
       expect(find.byKey(const ValueKey('repository-json')), findsNothing);
       expect(find.text('Repository supprimé.'), findsOneWidget);
       expect(await tester.runAsync(() => store.list()), ['Articles']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'providers open from the manager and block deleting their repository',
+    (tester) async {
+      late String clientsId;
+      await tester.runAsync(() async {
+        await store.create('Clients');
+        clientsId = await store.idOf('Clients');
+      });
+      store.providers.register(
+        CallbackDataProvider(
+          id: 'clients',
+          label: 'Clients API',
+          target: JsonTextBinding(repositoryId: clientsId, path: 'rows'),
+          callback: (_) async => const [],
+        ),
+      );
+
+      await open(tester);
+      await tap(tester, find.byKey(const ValueKey('repository-entry-Clients')));
+      await settle(tester);
+      await tap(tester, find.byKey(const ValueKey('repository-delete')));
+      await settle(tester);
+      expect(find.text('Supprimer le repository ?'), findsNothing);
+      expect(
+        find.textContaining('utilisé par le provider « Clients API »'),
+        findsOneWidget,
+      );
+
+      await tap(tester, find.byKey(const ValueKey('repository-providers')));
+      for (var i = 0; i < 50; i++) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        if (find.byType(ProgressIndicator).evaluate().isEmpty) break;
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(DataProviderManager), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('provider-entry-clients')),
+        findsOneWidget,
+      );
+      await tap(tester, find.byKey(const ValueKey('provider-close')));
+      await settle(tester);
+      expect(find.byType(DataProviderManager), findsNothing);
+      expect(find.byType(JsonRepositoryManager), findsOneWidget);
+      expect(await tester.runAsync(() => store.list()), ['Clients']);
       expect(tester.takeException(), isNull);
     },
   );

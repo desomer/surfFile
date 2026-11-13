@@ -6,6 +6,7 @@
 /// l'adaptation de thème Material 3 / transparence de fenêtre.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -14,7 +15,9 @@ import 'package:flutter_localizations/flutter_localizations.dart'
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:go_router/go_router.dart';
 import 'package:material_ui/material_ui.dart';
+
 import 'theme/theme_color.dart';
+
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/material_compatibility_bridge.dart';
 
@@ -127,6 +130,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
     _repositories =
         widget.repositoryStore ?? JsonRepositoryStore.defaultStore();
     _repositories.errors.addListener(_repositoryFailed);
+    unawaited(_repositories.providers.ensureLoaded());
     _appearance = _createAppearanceController();
     _editorHistory = _createEditorHistory();
     widget.registry?.bindAppearance(_appearance);
@@ -186,6 +190,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       _repositories =
           widget.repositoryStore ?? JsonRepositoryStore.defaultStore();
       _repositories.errors.addListener(_repositoryFailed);
+      unawaited(_repositories.providers.ensureLoaded());
     }
     if (oldWidget.appearanceStore != widget.appearanceStore) {
       oldWidget.registry?.unbindAppearance();

@@ -7,6 +7,7 @@
 /// Les actions concrètes vivent dans `models/behaviours/` et sont réexportées ici :
 /// - [EmitEventAction] (`behaviours/emit_event_action.dart`)
 /// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
+/// - [SearchProviderAction] (`behaviours/search_provider_action.dart`)
 /// - [StateBindingAction] (`behaviours/state_binding_action.dart`)
 /// - [TooltipAction] (`behaviours/tooltip_action.dart`)
 /// - [ZoneSizeBindingAction] (`behaviours/zone_size_binding_action.dart`)
@@ -17,12 +18,14 @@ import 'package:material_ui/material_ui.dart';
 import '../services/events/super_event_bus.dart';
 import 'behaviours/emit_event_action.dart';
 import 'behaviours/go_to_page_action.dart';
+import 'behaviours/search_provider_action.dart';
 import 'behaviours/state_binding_action.dart';
 import 'behaviours/tooltip_action.dart';
 import 'behaviours/zone_size_binding_action.dart';
 
 export 'behaviours/emit_event_action.dart';
 export 'behaviours/go_to_page_action.dart';
+export 'behaviours/search_provider_action.dart';
 export 'behaviours/state_binding_action.dart';
 export 'behaviours/tooltip_action.dart';
 export 'behaviours/zone_size_binding_action.dart';
@@ -93,6 +96,7 @@ abstract final class BehaviorActionCatalog {
     'bindZoneSize': ZoneSizeBindingAction.fromJson,
     'bindState': StateBindingAction.fromJson,
     'onTooltip': TooltipAction.fromJson,
+    'searchProvider': SearchProviderAction.fromJson,
   };
 
   static void register(
@@ -141,7 +145,7 @@ class ComponentBehavior {
     }
   }
 
-  /// Valide les invariants des comportements déclaratifs d'info-bulle et d'état lié.
+  /// Valide les invariants des comportements déclaratifs d'info-bulle, d'état lié et de recherche.
   void validate() {
     if (action case final TooltipAction tooltip) {
       tooltip.validate();
@@ -155,6 +159,14 @@ class ComponentBehavior {
       stateBinding.validate();
       if (trigger != BehaviorTrigger.binding) {
         throw const FormatException('bindState exige le déclencheur binding.');
+      }
+    }
+    if (action case final SearchProviderAction search) {
+      search.validate();
+      if (!BehaviorTrigger.gestures.contains(trigger)) {
+        throw const FormatException(
+          'searchProvider exige le déclencheur click ou doubleClick.',
+        );
       }
     }
   }
@@ -295,11 +307,24 @@ abstract final class BehaviorCatalog {
     actionType: 'onTooltip',
   );
 
+  /// Lance un provider de données (appel d'API, etc.) qui alimente un repository.
+  static const searchProvider = BehaviorCatalogItem(
+    id: 'search_provider',
+    title: 'Lancer une recherche (provider)',
+    description:
+        'Lancer un provider de données, par exemple un appel d’API, qui '
+        'alimente un repository à partir d’un repository de filtre',
+    icon: Icons.manage_search_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'searchProvider',
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
     emitEvent,
     zoneSize,
     bindState,
     onTooltip,
+    searchProvider,
   ];
 }

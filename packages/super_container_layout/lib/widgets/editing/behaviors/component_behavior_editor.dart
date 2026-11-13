@@ -22,6 +22,7 @@ import '../dialogs/editor_target_selector.dart';
 import '../history/editor_history.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../slots/editor_slot.dart';
+import 'search_provider_settings.dart';
 
 /// Element cible pouvant recevoir un comportement.
 @immutable
@@ -156,6 +157,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   JsonTextBinding? _stateBinding;
   bool _stateWhenValue = true;
   bool _stateMaintainSize = false;
+  String? _selectedProviderId;
 
   @override
   void initState() {
@@ -206,6 +208,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   bool get _isZoneSize => _selectedCatalogItem.actionType == 'bindZoneSize';
   bool get _isBindState => _selectedCatalogItem.actionType == 'bindState';
+  bool get _isSearchProvider =>
+      _selectedCatalogItem.actionType == 'searchProvider';
 
   EditorSlotState? get _targetSlot {
     final slot = _selectedTarget.slot;
@@ -276,6 +280,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     BehaviorWizardStage.settings =>
       _isTooltip
           ? _tooltipError == null
+          : _isSearchProvider
+          ? _selectedProviderId != null
           : _isBindState
           ? _stateBinding != null
           : _isZoneSize
@@ -312,6 +318,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
     final BehaviorAction action = _isTooltip
         ? TooltipAction(message: _tooltipMessage.text, binding: _tooltipBinding)
+        : _isSearchProvider
+        ? SearchProviderAction(providerId: _selectedProviderId!)
         : _isBindState
         ? StateBindingAction(
             state: _boundState,
@@ -690,6 +698,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
 
   Widget _buildSettingsStep(BuildContext context) {
     if (_isTooltip) return _buildTooltipSettings(context);
+    if (_isSearchProvider) return _buildSearchProviderSettings();
     if (_isBindState) return _buildBindStateSettings(context);
     if (_isEvent) return _buildEventSettings(context);
     if (_isZoneSize) return _buildZoneSizeSettings(context);
@@ -900,6 +909,13 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                           : '${_tooltipBinding!.repositoryId ?? 'liste'} : '
                                 '${_tooltipBinding!.path}',
                     )
+                  else if (_isSearchProvider)
+                    _summaryRow(
+                      context,
+                      icon: Icons.cloud_sync_outlined,
+                      label: 'Provider',
+                      value: _providerSummary,
+                    )
                   else if (_isBindState) ...[
                     _summaryRow(
                       context,
@@ -996,6 +1012,25 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           ),
         ],
       ),
+    );
+  }
+
+  String get _providerSummary {
+    final id = _selectedProviderId;
+    if (id == null) return '-';
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    final provider = JsonRepositoryScope.maybeOf(targetContext)?.providers
+        .provider(id);
+    return provider == null ? id : '${provider.label} ($id)';
+  }
+
+  Widget _buildSearchProviderSettings() {
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    return SearchProviderSettings(
+      store: JsonRepositoryScope.maybeOf(targetContext),
+      selectedId: _selectedProviderId,
+      managerContext: targetContext,
+      onSelected: (id) => setState(() => _selectedProviderId = id),
     );
   }
 
@@ -1112,8 +1147,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
             store: JsonRepositoryScope.maybeOf(targetContext),
             listScope: JsonListScope.maybeOf(targetContext),
             pathHint: 'clients[?].estVerrouille',
-            helper:
-                'Booléen du repository (true/false) ; [?] suit la ligne courante ou sélectionnée.',
+            helper: 'Booléen du repository (true/false) ; [?] suit la ligne courante ou sélectionnée.',
             onChanged: (binding) => setState(() => _stateBinding = binding),
           ),
         ],

@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/json_text_binding.dart';
 import '../../theme/appearance.dart';
+import '../providers/data_provider_registry.dart';
 import 'calculated_attribute.dart';
 import 'json_repository_binding.dart';
 
@@ -158,6 +159,13 @@ class JsonRepositoryStore extends ChangeNotifier {
 
   final Directory directory;
   final errors = ValueNotifier<String?>(null);
+
+  DataProviderRegistry? _providers;
+
+  /// Registre des providers de données qui alimentent les repositories de ce
+  /// store (appel d'API, etc.), créé à la première utilisation.
+  DataProviderRegistry get providers =>
+      _providers ??= DataProviderRegistry(this);
 
   final _bindings = <String, JsonRepositoryBinding>{};
   final _activeBindings = <Object, Set<String>>{};
@@ -476,8 +484,8 @@ class JsonRepositoryStore extends ChangeNotifier {
       (_bindings[repositoryId]?.isBound ?? false) ||
       _activeBindings.values.any((ids) => ids.contains(repositoryId));
 
-  /// Indique si le repository [name] est utilisé par un bind actif du store
-  /// ou par une liaison configurée dans [appearance].
+  /// Indique si le repository [name] est utilisé par un bind actif du store,
+  /// par une liaison configurée dans [appearance] ou par un provider.
   Future<bool> isRepositoryInUse(String name, {Appearance? appearance}) =>
       _exclusive(() => _isRepositoryInUse(name, appearance: appearance));
 
@@ -489,7 +497,9 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
     final id = (await idFile.readAsString()).trim();
     if (id.isEmpty) return false;
-    return isRepositoryBound(id) || (appearance?.usesRepository(id) ?? false);
+    return isRepositoryBound(id) ||
+        (appearance?.usesRepository(id) ?? false) ||
+        (_providers?.usesRepository(id) ?? false);
   }
 
   Future<void> _pending = Future.value();
@@ -593,6 +603,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _providers?.dispose();
     _calculatedEngine.dispose();
     errors.dispose();
     for (final binding in _bindings.values) {
@@ -944,6 +955,26 @@ class JsonRepositoryStore extends ChangeNotifier {
     } on FormatException {
       return null;
     }
+  }
+
+  /// Document JSON complet de [repositoryId] lu de manière synchrone depuis le
+  /// cache, ou `null` si le repository n'est pas encore chargé.
+  ///
+  /// L'arbre appartient au cache (aucune copie) : il ne doit jamais être
+  /// modifié. Utilisez [readDocument] pour obtenir une copie.
+  ({Object? document})? peekDocument(String repositoryId) =>
+      _documentCache.containsKey(repositoryId)
+      ? (document: _documentCache[repositoryId])
+      : null;
+
+  /// Copie profonde du document JSON complet de [repositoryId], par exemple
+  /// pour lire les paramètres d'un provider.
+  ///
+  /// Attend les écritures en cours. Lève une [FormatException] si l'ID est
+  /// invalide ou si le repository est introuvable.
+  Future<Object?> readDocument(String repositoryId) async {
+    JsonTextBinding(repositoryId: repositoryId, path: '_').validate();
+    return jsonDecode(jsonEncode(await _getDocument(repositoryId)));
   }
 
   Future<JsonAttributeValue> readAttribute(
@@ -1383,6 +1414,18 @@ class JsonRepositoryStore extends ChangeNotifier {
     _changed();
   });
 
+  /// Refuse la suppression du repository [name] (ID [repositoryId]) tant
+  /// qu'un provider déjà chargé le lit ou l'alimente.
+  void _checkUnusedByProviders(String name, String repositoryId) {
+    final provider = _providers?.providerUsing(repositoryId);
+    if (provider != null) {
+      throw FormatException(
+        'Impossible de supprimer « $name » : '
+        'ce repository est encore utilisé par le provider « ${provider.label} ».',
+      );
+    }
+  }
+
   Future<void> delete(
     String name, {
     Appearance? appearance,
@@ -1396,6 +1439,7 @@ class JsonRepositoryStore extends ChangeNotifier {
           'ce repository est encore utilisé par un bind de l’application.',
         );
       }
+      _checkUnusedByProviders(validated, validated);
       final persistence = _persistentRepositories[validated];
       if (persistence != null) {
         final text = await _readRegisteredText(persistence.file);
@@ -1449,6 +1493,7 @@ class JsonRepositoryStore extends ChangeNotifier {
         'ce repository est encore utilisé par un bind de l’application.',
       );
     }
+    if (id != null && id.isNotEmpty) _checkUnusedByProviders(validated, id);
     await file.delete();
     if (idType == FileSystemEntityType.file) {
       await idFile.delete();

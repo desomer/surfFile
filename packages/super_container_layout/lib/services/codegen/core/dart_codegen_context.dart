@@ -383,6 +383,10 @@ class DartCodegenContext {
           if (go.pageId != null) 'pageId': formatString(go.pageId!),
           if (go.pageName != null) 'pageName': formatString(go.pageName!),
         }, indent: indent);
+      case final SearchProviderAction search:
+        return formatCall('const SearchProviderAction', const [], {
+          'providerId': formatString(search.providerId),
+        }, indent: indent);
       case final TooltipAction tooltip:
         return formatCall('const TooltipAction', const [], {
           if (tooltip.message.isNotEmpty)
