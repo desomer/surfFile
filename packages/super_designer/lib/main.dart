@@ -328,6 +328,14 @@ class _SuperDesignerAppState extends State<SuperDesignerApp> {
       },
     );
 
+    repository.addCalculatedAttribute('total', (ctx) {
+      final articles = ctx.sync.getValue('articles')! as List;
+      return articles.fold<num>(
+        0,
+        (sum, article) => sum + ((article as Map)['prix'] as num),
+      );
+    });
+
     if (widget.persistRepository) {
       _repositoryInitialization = _initializePersistentRepository(repository);
     } else {

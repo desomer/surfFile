@@ -48,6 +48,7 @@ export 'widgets/editing/components/super_conditional_editor.dart';
 export 'widgets/editing/components/super_tab_editor.dart';
 export 'widgets/editing/components/super_table_editor.dart';
 export 'widgets/editing/components/super_tree_view_editor.dart';
+export 'services/repositories/calculated_attribute.dart';
 export 'services/repositories/json_list_scope.dart';
 export 'services/repositories/json_repository_binding.dart';
 export 'models/editor_page_config.dart';

@@ -35,10 +35,34 @@ Le moteur JSON accepte des types concis et lisibles partout dans le document :
 | **Dimensions de slot** | `"64px"`, `"50%"`, ou nombre `64` (pixels) | `{"value": 64, "unit": "px" \| "percent"}` |
 | **Tailles préférées** | `[240, 64]` ou `{"width": 240, "height": 64}` | `[null, 56]` (largeur infinie dans un composant natif) |
 | **Graisse (`fontWeight`)** | `"light"`, `"normal"`, `"medium"`, `"semibold"`, `"bold"` | `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900` |
-| **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` |
+| **Liaison JSON (`binding`)** | `"clients[?].nom"` (repository hérité) ou `"<repoId32Hex>:clients[?].nom"` | `{"repositoryId": "...", "path": "clients[?].nom"}` ; `"@nom"`, `"@stats.total"`, `"@actifs[?].nom"` ou `"articles[?].@montant"` pour des calculs déclarés par code, en lecture seule |
 | **Types de placements** | `"registry:Layout"`, `"registry:Card"`, `"registry:Expansible"`, `"registry:Menu"`, `"registry:Value"`, `"registry:Action"`, `"registry:Indicator"`, `"registry:Separator"`, `"registry:ListView"`, `"registry:Tab"`, `"registry:Chart"`, `"registry:TreeView"`, `"registry:Table"`, `"registry:IterableContent"`, `"registry:ApplicationBar"`, `"registry:BottomNavigationBar"`, `"registry:BottomAppBar"`, `"registry:NavigationRail"` | `"Layout"`, `"Card"`, `"Expansible"`, `"Menu"`, `"MenuAnchor"`, `"Value"`, `"Action"`, `"Button"`, `"Indicator"`, `"SuperIndicator"`, `"Icon"`, `"Separator"`, `"SuperSeparator"`, `"Divider"`, `"Spacer"`, `"ListView"`, `"List"`, `"Tab"`, `"Tabs"`, `"Chart"`, `"Graph"`, `"SuperChart"`, `"AppBar"`, `"BottomBar"`, `"NavigationRail"`, `"Rail"` |
 
 ---
+
+### Liaisons sur des attributs calculés
+
+Les calculs sont déclarés par l'application avec
+`RepositoryImpl.addCalculatedAttribute` avant l'enregistrement du repository.
+Le JSON contient uniquement leurs chemins, jamais du code, des fonctions ou
+les résultats du cache. Ne pas inventer un calcul non déclaré.
+
+- `@nom` lit un calcul racine ; `@stats.total` lit une propriété de son résultat.
+- `@actifs[?].nom` lit une ligne d'un tableau calculé, avec les mêmes jokers et
+  sélection maître/détail que les tableaux sources.
+- `articles[?].@montant` lit un calcul par ligne enregistré avec
+  `scope: 'articles[?]'` ; `articles[?].@stats.total` lit une propriété de ce calcul.
+- Un chemin comporte au plus un segment `@nom`. Son nom contient 1 à 64 lettres
+  ASCII, chiffres ou `_`. Les clés JSON commençant par `@` sont réservées aux
+  calculs ; une collision est une erreur.
+- Tout chemin contenant un segment calculé est **en lecture seule**, y compris
+  ses sous-chemins. Pas d'édition bidirectionnelle ni d'ajout/suppression sur une
+  collection calculée ; sélection, copie et navigation sans écriture restent possibles.
+- Les scopes par ligne portent exclusivement sur des tableaux JSON sources,
+  éventuellement imbriqués ; pas de calcul par ligne déclaré sur un tableau calculé.
+- Le cache et les dépendances, y compris entre repositories du même store,
+  sont gérés par le runtime. Les erreurs ne sont pas remplacées par une valeur
+  par défaut. Les fonctions ne sont pas sérialisables ni définissables par l'IA.
 
 Les références `theme:rôle` sont sensibles à la casse et suivent le thème actif
 au rendu : elles ne sont pas converties en hexadécimal lors de la sauvegarde ou
@@ -509,8 +533,9 @@ Propriétés communes dans `components[id]` pour `"native"` :
 
 ### 4.3. `"value"` (`SuperValueConfig`)
 Affiche un texte, un champ de saisie, une case à cocher, un interrupteur ou un sélecteur de choix :
-- `mode` : `"display"` (défaut) ou `"input"`.
+- `mode` : `"display"` par défaut (sauf pour `kind: "choice"`, qui utilise `"input"`) ou `"input"`.
 - `kind` : `"text"` (défaut), `"checkbox"`, `"switch"` (`"switchControl"`) ou `"choice"` (alias `"choise"`).
+- Pour `kind: "choice"`, l'IA doit toujours fournir explicitement `"mode": "input"` (Saisie) : le mode Affichage n'expose pas le sélecteur d'options et une valeur initiale vide paraît donc vide. À la création, si `mode` est omis, la configuration choisit `"input"` pour `kind: "choice"` et `"display"` pour les autres types.
 - `text` (ou `initialText`) : texte initial (`string`, ou CSV `"opt1,opt2"` / tableau `["opt1", "opt2"]` pour un choix multiple).
 - `value` (ou `initialBool`) : valeur booléenne initiale (`bool`) pour `checkbox` / `switch`.
 - `label`, `placeholder` : `string`.

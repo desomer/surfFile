@@ -561,6 +561,9 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
         final effectiveAlignmentOffset =
             config.alignmentOffset ?? widget.alignmentOffset;
         final activeError = _bindingError ?? _binding?.error;
+        final bindingReadOnly =
+            JsonTextBinding.isCalculatedPath(config.binding?.path ?? '') ||
+            (_binding?.isReadOnly ?? false);
 
         return NativeComponentEditor(
           id: widget.id,
@@ -588,9 +591,14 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
                   expanded ? Icons.unfold_less : Icons.unfold_more,
                   size: 16,
                 ),
-                tooltip: expanded ? 'Replier le contenu' : 'Déplier le contenu',
+                tooltip: bindingReadOnly
+                    ? '${expanded ? "Replier" : "Déplier"} le contenu — '
+                          'Calculé — lecture seule'
+                    : expanded
+                    ? 'Replier le contenu'
+                    : 'Déplier le contenu',
                 visualDensity: VisualDensity.compact,
-                onPressed: _toggleMenu,
+                onPressed: bindingReadOnly ? null : _toggleMenu,
               ),
             ];
           },
@@ -621,7 +629,10 @@ class _SuperMenuAnchorState extends State<SuperMenuAnchor> {
           builder: (context, editor) {
             _isEditing = editor.editing;
             final canToggleOnHeaderTap =
-                !editor.editing && effectiveHeaderToggle && !_unselected;
+                !editor.editing &&
+                effectiveHeaderToggle &&
+                !_unselected &&
+                !bindingReadOnly;
             final fixedHeaderSize = editor.sizeOf('header');
             final headerFlow = editor.flowOf('header');
             final toggleIconData = resolveNativeToggleIcon(

@@ -326,7 +326,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   }
 
   void _writeStaticBoundIndex(int index) {
-    if (_syncingFromStaticBinding) return;
+    if (_syncingFromStaticBinding || (_staticBinding?.isReadOnly ?? false)) {
+      return;
+    }
     final text = '$index';
     if (_staticBindingText.text != text) {
       _staticBindingText.value = TextEditingValue(
@@ -583,7 +585,12 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
   ) async {
     final binding = _dynamicSource?.binding;
     final store = _dynamicStore;
-    if (binding == null || store == null || _dynamicBusy) return;
+    if (binding == null ||
+        store == null ||
+        _dynamicBusy ||
+        JsonTextBinding.isCalculatedPath(binding.path)) {
+      return;
+    }
     setState(() => _dynamicBusy = true);
     try {
       await store.flushBindings();
@@ -979,6 +986,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
     Registry? registry,
     BoxConstraints constraints,
   ) {
+    final staticBindingReadOnly =
+        JsonTextBinding.isCalculatedPath(config.binding?.path ?? '') ||
+        (_staticBinding?.isReadOnly ?? false);
     final fitScope = SlotContentFitScope.maybeOf(context);
     final hasBoundedWidth = constraints.hasBoundedWidth;
     final shrinkWidth =
@@ -1060,6 +1070,16 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
               tabs: tabs,
               hasBoundedWidth: hasBoundedWidth,
               onTap: (index) {
+                if (staticBindingReadOnly) {
+                  final boundIndex =
+                      int.tryParse(_staticBindingText.text.trim()) ??
+                      _lastValidIndex;
+                  final restore = boundIndex.clamp(0, tabSlots.length - 1);
+                  if (tabController.index != restore) {
+                    tabController.index = restore;
+                  }
+                  return;
+                }
                 final slot = tabSlots[index];
                 final action = supplied[slot.id];
                 final fallback = action?.config ?? const SuperActionConfig();
@@ -1093,6 +1113,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
             ),
           ),
         );
+        final effectiveTabBar = staticBindingReadOnly
+            ? IgnorePointer(child: tabBar)
+            : tabBar;
 
         final activeSlot = tabSlots[effectiveIndex];
         final tabBarView = shrinkHeight
@@ -1112,6 +1135,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                 child: TabBarView(
                   key: ValueKey('super-tab-view-${widget.id}'),
                   controller: tabController,
+                  physics: staticBindingReadOnly
+                      ? const NeverScrollableScrollPhysics()
+                      : null,
                   children: [
                     for (final slot in tabSlots)
                       KeyedSubtree(
@@ -1143,9 +1169,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
               ),
             if (config.tabBarPosition == SuperTabBarPosition.bottom) ...[
               tabBarView,
-              tabBar,
+              effectiveTabBar,
             ] else ...[
-              tabBar,
+              effectiveTabBar,
               tabBarView,
             ],
           ],
@@ -1183,6 +1209,9 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         !placeholder &&
         config.allowAdd &&
         _dynamicSource?.binding != null &&
+        !JsonTextBinding.isCalculatedPath(
+          _dynamicSource?.binding?.path ?? config.binding?.path ?? '',
+        ) &&
         _dynamicError == null;
 
     final message = placeholder
@@ -1303,7 +1332,13 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
                         : templateSlot,
                   ),
                 ),
-                if (!templateMode && config.allowRemove)
+                if (!templateMode &&
+                    config.allowRemove &&
+                    !JsonTextBinding.isCalculatedPath(
+                      _dynamicSource?.binding?.path ??
+                          config.binding?.path ??
+                          '',
+                    ))
                   IconButton(
                     key: ValueKey('super-tab-remove-${widget.id}-$i'),
                     tooltip: 'Supprimer l’onglet',

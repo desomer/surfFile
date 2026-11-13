@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/json_text_binding.dart';
 import '../../theme/appearance.dart';
+import 'calculated_attribute.dart';
 import 'json_repository_binding.dart';
 
 /// Entrée immuable décrivant un repository JSON enregistré (identifiant, nom et contenu JSON).
@@ -79,11 +80,51 @@ class RepositoryImpl {
     );
   }
 
-  const RepositoryImpl._(this.id, this.json, this.onChanged);
+  RepositoryImpl._(this.id, this.json, this.onChanged);
 
   final String id;
   final Map<String, Object?> json;
   final ValueChanged<ChangeContext>? onChanged;
+
+  final _calculatedAttributes = <String, CalculatedAttributeFunction>{};
+  bool _registered = false;
+
+  /// Fonctions de calcul déclarées, indexées par nom (copie en lecture seule).
+  Map<String, CalculatedAttributeFunction> get calculatedAttributes =>
+      Map.unmodifiable(_calculatedAttributes);
+
+  /// Déclare l'attribut calculé [name], lu par les composants via le chemin
+  /// de liaison `@name` (lecture seule).
+  ///
+  /// [function] reçoit un [CalculatedAttributeContext] : chaque
+  /// `ctx.getValue(...)` enregistre une dépendance et le résultat est mis en
+  /// cache jusqu'à la modification d'une dépendance. À appeler avant
+  /// l'enregistrement du repository dans le store.
+  ///
+  /// [scope] déclare un calcul par ligne (par exemple `articles[?]`),
+  /// accessible avec le chemin `articles[?].@name`.
+  ///
+  /// Lève une [FormatException] si le nom est invalide, une [ArgumentError]
+  /// s'il est déjà déclaré et une [StateError] après enregistrement.
+  void addCalculatedAttribute(
+    String name,
+    CalculatedAttributeFunction function, {
+    String? scope,
+  }) {
+    if (_registered) {
+      throw StateError(
+        'Attributs calculés figés : déclarez-les avant registerRepository.',
+      );
+    }
+    CalculatedAttributeEngine.validateName(name);
+    final key = scope == null
+        ? name
+        : '${CalculatedAttributeEngine.validateScope(scope)}.@$name';
+    if (_calculatedAttributes.containsKey(key)) {
+      throw ArgumentError.value(name, 'name', 'Attribut calculé déjà déclaré.');
+    }
+    _calculatedAttributes[key] = function;
+  }
 }
 
 class _RegisteredRepositoryPersistence {
@@ -123,6 +164,10 @@ class JsonRepositoryStore extends ChangeNotifier {
   final _documentCache = <String, Object?>{};
   final _memoryRepositories = <String, Object?>{};
   final _memoryRepositoryCallbacks = <String, ValueChanged<ChangeContext>?>{};
+  late final _calculatedEngine = CalculatedAttributeEngine.forStore(
+    document: _calculatedDocument,
+    onAsyncValue: _changed,
+  );
   Map<String, _RegisteredRepositoryPersistence>? _persistentRepositoryState;
   Map<String, _RegisteredRepositoryPersistence> get _persistentRepositories =>
       _persistentRepositoryState ??= {};
@@ -143,6 +188,12 @@ class JsonRepositoryStore extends ChangeNotifier {
     final document = jsonDecode(jsonEncode(repository.json));
     _memoryRepositories[repository.id] = document;
     _memoryRepositoryCallbacks[repository.id] = repository.onChanged;
+    _loadingDocuments.remove(repository.id);
+    _calculatedEngine.registerRepository(
+      repository.id,
+      repository._calculatedAttributes,
+    );
+    repository._registered = true;
     _documentCache[repository.id] = document;
     _idToNameCache?[repository.id] = repository.id;
     _changed();
@@ -203,8 +254,9 @@ class JsonRepositoryStore extends ChangeNotifier {
         id: repository.id,
         json: document,
         onChanged: repository.onChanged,
-      ),
+      ).._calculatedAttributes.addAll(repository._calculatedAttributes),
     );
+    repository._registered = true;
     return text != null;
   });
 
@@ -254,6 +306,7 @@ class JsonRepositoryStore extends ChangeNotifier {
       }
       _memoryRepositories[repositoryId] = document;
       _documentCache[repositoryId] = document;
+      _invalidateCalculated(repositoryId, '');
       persistence.savedText = text;
       _changed();
       _notifyMemoryRepositoryChanged(
@@ -377,10 +430,18 @@ class JsonRepositoryStore extends ChangeNotifier {
   void invalidateCache([String? repositoryId]) {
     if (repositoryId == null) {
       _documentCache.clear();
+      _loadingDocuments.clear();
       _idToNameCache = null;
+      _calculatedEngine.invalidateAll();
     } else {
       _documentCache.remove(repositoryId);
+      _invalidateCalculated(repositoryId, '');
     }
+  }
+
+  void _invalidateCalculated(String repositoryId, String path) {
+    _loadingDocuments.remove(repositoryId);
+    _calculatedEngine.invalidateForChange(path, repositoryId: repositoryId);
   }
 
   /// Runtime selections and bound components of [repositoryId]'s arrays.
@@ -527,6 +588,7 @@ class JsonRepositoryStore extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _calculatedEngine.dispose();
     errors.dispose();
     for (final binding in _bindings.values) {
       binding.dispose();
@@ -687,18 +749,27 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (_documentCache.containsKey(repoId)) {
       return _documentCache[repoId];
     }
+    if (_memoryRepositories.containsKey(repoId)) {
+      return _documentCache[repoId] = _memoryRepositories[repoId];
+    }
     final inFlight = _loadingDocuments[repoId];
     if (inFlight != null) {
       return inFlight;
     }
-    final future = () async {
+    late final Future<Object?> future;
+    future = () async {
       try {
         final name = await _resolveNameOf(repoId);
         final root = _decode(await read(name));
+        if (!identical(_loadingDocuments[repoId], future)) {
+          return await _getDocument(repoId);
+        }
         _documentCache[repoId] = root;
         return root;
       } finally {
-        _loadingDocuments.remove(repoId);
+        if (identical(_loadingDocuments[repoId], future)) {
+          _loadingDocuments.remove(repoId);
+        }
       }
     }();
     _loadingDocuments[repoId] = future;
@@ -733,6 +804,39 @@ class JsonRepositoryStore extends ChangeNotifier {
     return value?.toString() ?? '';
   }
 
+  FutureOr<Object?> _calculatedDocument(String repositoryId) {
+    if (_memoryRepositories.containsKey(repositoryId)) {
+      return _memoryRepositories[repositoryId];
+    }
+    if (_documentCache.containsKey(repositoryId)) {
+      return _documentCache[repositoryId];
+    }
+    return _getDocument(repositoryId);
+  }
+
+  /// Définitions disponibles pour les suggestions, sans exécuter les calculs.
+  List<CalculatedAttributeDescriptor> calculatedAttributeCatalog(
+    String repositoryId,
+  ) => _calculatedEngine.catalog(repositoryId);
+
+  /// Vérifie une définition, y compris les modèles de ligne et sous-chemins.
+  bool hasCalculatedAttribute(String repositoryId, String path) =>
+      JsonTextBinding.isCalculatedPath(path) &&
+      _calculatedEngine.contains(path, repositoryId: repositoryId);
+
+  /// Relance volontairement un calcul et ses lecteurs après une erreur.
+  Future<JsonAttributeValue> refreshCalculatedAttribute(
+    JsonTextBinding binding,
+  ) async {
+    binding.validateResolved();
+    _calculatedEngine.invalidateCalculation(
+      binding.repositoryId!,
+      binding.path,
+    );
+    _changed();
+    return readAttribute(binding);
+  }
+
   /// Lit de manière synchrone la valeur de [binding] depuis le cache mémoire
   /// du repository lorsque le document JSON a déjà été chargé.
   ///
@@ -743,13 +847,21 @@ class JsonRepositoryStore extends ChangeNotifier {
     bool allowStringList = false,
   }) {
     final repoId = binding.repositoryId;
-    if (repoId == null || !_documentCache.containsKey(repoId)) return null;
+    if (repoId == null) return null;
     try {
       binding.validateResolved();
+      if (JsonTextBinding.isCalculatedPath(binding.path)) {
+        final result = _calculatedEngine.peek(
+          binding.path,
+          repositoryId: repoId,
+        );
+        if (result == null) return null;
+        return (value: result.value, text: _formatAttributeText(result.value));
+      }
+      if (!_documentCache.containsKey(repoId)) return null;
       final root = _documentCache[repoId];
-      final value = JsonAttributePath(
-        binding.path,
-      ).read(root, allowStringList: allowStringList);
+      final value = JsonAttributePath(binding.path)
+          .read(root, allowStringList: allowStringList);
       return (value: value, text: _formatAttributeText(value));
     } on FormatException {
       return null;
@@ -762,10 +874,18 @@ class JsonRepositoryStore extends ChangeNotifier {
   /// Retourne `null` si le repository n'est pas encore en cache ou si le
   /// chemin ne peut pas être résolu sans erreur.
   List<Object?>? peekArray(String repositoryId, String path) {
-    if (!_documentCache.containsKey(repositoryId)) return null;
     try {
       final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
         ..validateResolved();
+      if (JsonTextBinding.isCalculatedPath(binding.path)) {
+        final result = _calculatedEngine.peek(
+          binding.path,
+          repositoryId: repositoryId,
+        );
+        if (result == null) return null;
+        return List<Object?>.unmodifiable(_array(result.value));
+      }
+      if (!_documentCache.containsKey(repositoryId)) return null;
       final root = _documentCache[repositoryId];
       return List<Object?>.unmodifiable(
         _array(JsonAttributePath(binding.path).readNode(root)),
@@ -784,12 +904,22 @@ class JsonRepositoryStore extends ChangeNotifier {
     String repositoryId,
     String path,
   ) {
-    if (!_documentCache.containsKey(repositoryId)) return null;
     try {
       final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
         ..validateResolved();
-      final root = _documentCache[repositoryId];
-      final node = JsonAttributePath(binding.path).readNode(root);
+      Object? node;
+      if (JsonTextBinding.isCalculatedPath(binding.path)) {
+        final result = _calculatedEngine.peek(
+          binding.path,
+          repositoryId: repositoryId,
+        );
+        if (result == null) return null;
+        node = result.value;
+      } else {
+        if (!_documentCache.containsKey(repositoryId)) return null;
+        node = JsonAttributePath(binding.path)
+            .readNode(_documentCache[repositoryId]);
+      }
       if (node == null) {
         return (nodes: const <Object?>[], singleRootObject: false);
       }
@@ -817,10 +947,16 @@ class JsonRepositoryStore extends ChangeNotifier {
   }) async {
     binding.validateResolved();
     final repoId = binding.repositoryId!;
+    if (JsonTextBinding.isCalculatedPath(binding.path)) {
+      final value = await _calculatedEngine.read(
+        binding.path,
+        repositoryId: repoId,
+      );
+      return (value: value, text: _formatAttributeText(value));
+    }
     final root = await _getDocument(repoId);
-    final value = JsonAttributePath(
-      binding.path,
-    ).read(root, allowStringList: allowStringList);
+    final value = JsonAttributePath(binding.path)
+        .read(root, allowStringList: allowStringList);
     return (value: value, text: _formatAttributeText(value));
   }
 
@@ -834,6 +970,11 @@ class JsonRepositoryStore extends ChangeNotifier {
   }) => _exclusive(() async {
     binding.validateResolved();
     final repoId = binding.repositoryId!;
+    if (JsonTextBinding.isCalculatedPath(binding.path)) {
+      throw FormatException(
+        'L’attribut calculé « ${binding.path} » est en lecture seule.',
+      );
+    }
     if (_memoryRepositories.containsKey(repoId)) {
       final root = _memoryRepositories[repoId];
       final path = JsonAttributePath(binding.path);
@@ -854,6 +995,9 @@ class JsonRepositoryStore extends ChangeNotifier {
       final value = path.read(updated, allowStringList: asStringList);
       _memoryRepositories[repoId] = updated;
       _documentCache[repoId] = updated;
+      if (!jsonEquals(current, value)) {
+        _invalidateCalculated(repoId, binding.path);
+      }
       _changed();
       _notifyMemoryRepositoryChanged(
         repositoryId: repoId,
@@ -881,7 +1025,12 @@ class JsonRepositoryStore extends ChangeNotifier {
       asBool: asBool,
       asStringList: asStringList,
     );
-    await _save(name, _encode(updated), expectedText: original);
+    await _save(
+      name,
+      _encode(updated),
+      expectedText: original,
+      changedPath: binding.path,
+    );
     _documentCache[repoId] = updated;
     final value = path.read(updated, allowStringList: asStringList);
     return (value: value, text: _formatAttributeText(value));
@@ -891,6 +1040,13 @@ class JsonRepositoryStore extends ChangeNotifier {
   Future<List<Object?>> readArray(String repositoryId, String path) async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
+    if (JsonTextBinding.isCalculatedPath(binding.path)) {
+      final value = await _calculatedEngine.read(
+        binding.path,
+        repositoryId: repositoryId,
+      );
+      return List<Object?>.unmodifiable(_array(value));
+    }
     final root = await _getDocument(repositoryId);
     return List<Object?>.unmodifiable(
       _array(JsonAttributePath(binding.path).readNode(root)),
@@ -915,8 +1071,10 @@ class JsonRepositoryStore extends ChangeNotifier {
   ) async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
-    final root = await _getDocument(repositoryId);
-    final node = JsonAttributePath(binding.path).readNode(root);
+    final node = JsonTextBinding.isCalculatedPath(binding.path)
+        ? await _calculatedEngine.read(binding.path, repositoryId: repositoryId)
+        : JsonAttributePath(binding.path)
+              .readNode(await _getDocument(repositoryId));
     if (node == null) {
       return (nodes: const <Object?>[], singleRootObject: false);
     }
@@ -1015,6 +1173,11 @@ class JsonRepositoryStore extends ChangeNotifier {
   }) => _exclusive(() async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
+    if (JsonTextBinding.isCalculatedPath(binding.path)) {
+      throw FormatException(
+        'L’attribut calculé « ${binding.path} » est en lecture seule.',
+      );
+    }
     if (_memoryRepositories.containsKey(repositoryId)) {
       final root = _memoryRepositories[repositoryId];
       _checkExpectedValues(root, expectedValues);
@@ -1025,6 +1188,9 @@ class JsonRepositoryStore extends ChangeNotifier {
       await _saveRegisteredAutomatically(repositoryId, updated);
       _memoryRepositories[repositoryId] = updated;
       _documentCache[repositoryId] = updated;
+      if (!jsonEquals(previous, items)) {
+        _invalidateCalculated(repositoryId, binding.path);
+      }
       _changed();
       _notifyMemoryRepositoryChanged(
         repositoryId: repositoryId,
@@ -1042,7 +1208,12 @@ class JsonRepositoryStore extends ChangeNotifier {
     final attribute = JsonAttributePath(binding.path);
     final items = change(_array(attribute.readNode(root)));
     final updated = attribute.replaceNode(root, items);
-    await _save(name, _encode(updated), expectedText: original);
+    await _save(
+      name,
+      _encode(updated),
+      expectedText: original,
+      changedPath: binding.path,
+    );
     return items.length;
   });
 
@@ -1108,9 +1279,10 @@ class JsonRepositoryStore extends ChangeNotifier {
     await _checkAvailable(name);
     await _file(name).create(exclusive: true);
     await _file(name).writeAsString('{}\n', flush: true);
-    await _idOf(name);
+    final id = await _idOf(name);
     _idToNameCache = null;
     _documentCache.clear();
+    _invalidateCalculated(id, '');
     _changed();
   });
 
@@ -1133,6 +1305,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     String name,
     String text, {
     required String expectedText,
+    String changedPath = '',
   }) async {
     final decoded = jsonDecode(text);
     if (_memoryRepositories.containsKey(name)) {
@@ -1156,6 +1329,9 @@ class JsonRepositoryStore extends ChangeNotifier {
       }
       _memoryRepositories[name] = decoded;
       _documentCache[name] = decoded;
+      if (!jsonEquals(previous, decoded)) {
+        _invalidateCalculated(name, changedPath);
+      }
       _changed();
       if (persistence != null) {
         _notifyMemoryRepositoryChanged(
@@ -1177,6 +1353,9 @@ class JsonRepositoryStore extends ChangeNotifier {
     await _file(name).writeAsString(text, flush: true);
     _documentCache[id] = decoded;
     _idToNameCache?[id] = validateName(name);
+    if (changedPath.isEmpty || !jsonEquals(_decode(expectedText), decoded)) {
+      _invalidateCalculated(id, changedPath);
+    }
     _changed();
   }
 
@@ -1236,6 +1415,8 @@ class JsonRepositoryStore extends ChangeNotifier {
       _memoryRepositoryCallbacks.remove(validated);
       _documentCache.remove(validated);
       _idToNameCache?.remove(validated);
+      _loadingDocuments.remove(validated);
+      _calculatedEngine.unregisterRepository(validated);
       _changed();
       return;
     }
@@ -1271,6 +1452,7 @@ class JsonRepositoryStore extends ChangeNotifier {
     }
     if (id != null) {
       _documentCache.remove(id);
+      _invalidateCalculated(id, '');
     }
     _idToNameCache = null;
     final binding = id == null ? null : _bindings[id];

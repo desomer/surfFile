@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../models/json_text_binding.dart';
+import '../../../services/repositories/calculated_attribute.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
@@ -147,6 +148,7 @@ class RepositoryBindingFields extends StatefulWidget {
 
 class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
   late final _path = TextEditingController(text: widget.binding?.path ?? '');
+  late final _pathFocus = FocusNode();
   late String _repository = widget.binding == null
       ? ''
       : widget.binding!.repositoryId ?? inheritedRepositoryValue;
@@ -185,6 +187,7 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
   @override
   void dispose() {
     _path.dispose();
+    _pathFocus.dispose();
     super.dispose();
   }
 
@@ -226,11 +229,81 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
     if (_repository.isEmpty) return null;
     if (_path.text.trim().isEmpty) return 'Chemin requis.';
     try {
-      JsonAttributePath(_path.text.trim());
+      JsonTextBinding(
+        repositoryId: _repository == inheritedRepositoryValue
+            ? null
+            : _repository,
+        path: _path.text.trim(),
+      ).validate();
       return null;
     } on FormatException catch (error) {
       return error.message;
     }
+  }
+
+  List<CalculatedAttributeDescriptor> _calculatedSuggestions(
+    String? repositoryId,
+  ) {
+    final store = _store;
+    if (repositoryId == null ||
+        store == null ||
+        !_repositories.any((entry) => entry.id == repositoryId)) {
+      return const [];
+    }
+    final query = _path.text.trim().toLowerCase();
+    return store
+        .calculatedAttributeCatalog(repositoryId)
+        .where(
+          (descriptor) =>
+              query.isEmpty || descriptor.path.toLowerCase().contains(query),
+        )
+        .toList(growable: false);
+  }
+
+  void _selectCalculatedPath(CalculatedAttributeDescriptor descriptor) {
+    final path = descriptor.path;
+    _path.value = TextEditingValue(
+      text: path,
+      selection: TextSelection.collapsed(offset: path.length),
+    );
+    widget.onChanged(
+      JsonTextBinding(
+        repositoryId: _repository == inheritedRepositoryValue
+            ? null
+            : _repository,
+        path: path,
+      ),
+    );
+    setState(() {});
+    _pathFocus.requestFocus();
+  }
+
+  String? _calculatedStatus(String? repositoryId) {
+    final path = _path.text.trim();
+    if (!JsonTextBinding.isCalculatedPath(path)) return null;
+    try {
+      JsonTextBinding(
+        repositoryId: _repository == inheritedRepositoryValue
+            ? null
+            : _repository,
+        path: path,
+      ).validate();
+    } on FormatException {
+      return null;
+    }
+    if (repositoryId == null) {
+      return 'Repository hérité indisponible : attribut calculé non vérifiable.';
+    }
+    if (!_repositories.any((entry) => entry.id == repositoryId)) {
+      return 'Repository indisponible : attribut calculé non vérifiable.';
+    }
+    final store = _store;
+    if (store == null) {
+      return 'Service de repositories indisponible.';
+    }
+    return store.hasCalculatedAttribute(repositoryId, path)
+        ? 'Calculé — lecture seule'
+        : 'Attribut calculé inconnu dans ce repository.';
   }
 
   @override
@@ -244,6 +317,14 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
         _repository.isEmpty ||
         _repository == inheritedRepositoryValue ||
         _repositories.any((entry) => entry.id == _repository);
+    final effectiveRepositoryId = _repository == inheritedRepositoryValue
+        ? listScope?.repositoryId
+        : _repository.isEmpty
+        ? null
+        : _repository;
+    final calculated = JsonTextBinding.isCalculatedPath(_path.text.trim());
+    final calculatedStatus = _calculatedStatus(effectiveRepositoryId);
+    final calculatedSuggestions = _calculatedSuggestions(effectiveRepositoryId);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -309,7 +390,9 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
             controller: _path,
             decoration: InputDecoration(
               isDense: true,
-              labelText: 'Chemin',
+              labelText: calculated
+                  ? 'Chemin — Calculé — lecture seule'
+                  : 'Chemin',
               hintText: widget.pathHint,
               errorText: _pathError,
               helperText:
@@ -319,11 +402,44 @@ class _RepositoryBindingFieldsState extends State<RepositoryBindingFields> {
                       : 'Chaque [?] reçoit l’indice d’une liste englobante '
                             '($depth disponible(s)).'),
             ),
+            focusNode: _pathFocus,
             validator: (_) => _pathError,
             onChanged: (_) {
               setState(() {});
               _emit();
             },
+          ),
+        if (calculatedStatus != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              calculatedStatus,
+              key: ValueKey('${widget.keyPrefix}-calculated-status'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: calculatedStatus == 'Calculé — lecture seule'
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ),
+        if (calculatedSuggestions.isNotEmpty)
+          Wrap(
+            key: ValueKey('${widget.keyPrefix}-calculated-suggestions'),
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final (index, descriptor) in calculatedSuggestions.indexed)
+                ActionChip(
+                  key: ValueKey(
+                    '${widget.keyPrefix}-calculated-suggestion-$index',
+                  ),
+                  label: Text(descriptor.path),
+                  tooltip: descriptor.scope == null
+                      ? 'Attribut calculé'
+                      : 'Attribut calculé — portée ${descriptor.scope}',
+                  onPressed: () => _selectCalculatedPath(descriptor),
+                ),
+            ],
           ),
         if (!available)
           Text(
@@ -374,8 +490,9 @@ class RepositoryBindingIconButton extends StatelessWidget {
     final keyVal = buttonKey is ValueKey<String>
         ? (buttonKey! as ValueKey<String>).value
         : null;
+    final computed = isBound && JsonTextBinding.isCalculatedPath(binding!.path);
     final effectiveTooltip = isBound
-        ? '$tooltip (${binding!.path})'
+        ? '$tooltip (${binding!.path}${computed ? ' — Calculé — lecture seule' : ''})'
         : tooltip;
     return IconButton(
       key: buttonKey,
@@ -407,6 +524,7 @@ class RepositoryBindingIconButton extends StatelessWidget {
     );
   }
 }
+
 
 /// Bandeau compact affichant le chemin de liaison actif (`Lié à : ...`)
 /// avec possibilité de modifier ou supprimer rapidement la liaison.
@@ -445,7 +563,8 @@ class RepositoryBindingBanner extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  'Lié à : ${binding.path}',
+                  'Lié à : ${binding.path}'
+                  '${JsonTextBinding.isCalculatedPath(binding.path) ? ' — Calculé — lecture seule' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -563,4 +682,3 @@ class RepositoryBoundPropertyTile extends StatelessWidget {
     );
   }
 }
-

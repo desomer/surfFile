@@ -1,7 +1,7 @@
 /// Synchronisation bidirectionnelle ([JsonTextControllerBinding]) entre un `TextEditingController` et un repository JSON.
 ///
 /// Écoute un [JsonTextBinding] (résolu via [JsonListScope]) pour mettre à jour
-/// le champ texte et répercute les saisies utilisateur dans le document JSON.
+/// le champ texte et répercute les saisies modifiables dans le document JSON.
 library;
 
 import 'dart:async';
@@ -27,15 +27,17 @@ class JsonTextControllerBinding extends ChangeNotifier {
     store.registerBindings(this, [binding.repositoryId]);
     controller.addListener(_edited);
     store.addListener(_repositoryChanged);
-    store.addFlusher(
-      flush,
-      pendingError: () {
-        if (!dirty && (_ready || controller.text.isEmpty)) {
-          return null;
-        }
-        return error ?? 'Une saisie liée n’a pas pu être enregistrée.';
-      },
-    );
+    if (!isReadOnly) {
+      store.addFlusher(
+        flush,
+        pendingError: () {
+          if (!dirty && (_ready || controller.text.isEmpty)) {
+            return null;
+          }
+          return error ?? 'Une saisie liée n’a pas pu être enregistrée.';
+        },
+      );
+    }
     _seedFromCache();
     reload();
   }
@@ -50,6 +52,10 @@ class JsonTextControllerBinding extends ChangeNotifier {
 
   /// Rejects non-text attributes for code editors; null remains an empty field.
   final bool requireString;
+
+  /// Vrai lorsque le chemin contient un segment calculé et ne peut pas être écrit.
+  bool get isReadOnly => JsonTextBinding.isCalculatedPath(binding.path);
+
   String? error;
   bool loading = true;
   bool saving = false;
@@ -66,7 +72,8 @@ class JsonTextControllerBinding extends ChangeNotifier {
   Timer? _timer;
   int _generation = 0;
   Future<void> _writes = Future.value();
-  bool get dirty => _ready && (controller.text != _saved || _queuedWrites > 0);
+  bool get dirty =>
+      !isReadOnly && _ready && (controller.text != _saved || _queuedWrites > 0);
 
   void _notify() {
     if (!_disposed) notifyListeners();
@@ -187,8 +194,25 @@ class JsonTextControllerBinding extends ChangeNotifier {
     if (!_writing) reload();
   }
 
+  void _restoreReadOnlyValue() {
+    _timer?.cancel();
+    if (_ready && controller.text != _saved) {
+      _applying = true;
+      controller.value = TextEditingValue(
+        text: _saved,
+        selection: TextSelection.collapsed(offset: _saved.length),
+      );
+      _applying = false;
+    }
+    _observed = controller.text;
+  }
+
   void _edited() {
     if (_applying || _disposed) return;
+    if (isReadOnly) {
+      _restoreReadOnlyValue();
+      return;
+    }
     final composing = !controller.value.composing.isCollapsed;
     final committed = _wasComposing && !composing;
     _wasComposing = composing;
@@ -210,6 +234,10 @@ class JsonTextControllerBinding extends ChangeNotifier {
   /// Captures this binding's target/text, including when the widget is removed.
   Future<void> flush() {
     _timer?.cancel();
+    if (isReadOnly) {
+      _restoreReadOnlyValue();
+      return _writes;
+    }
     if (!_ready || (controller.text == _queuedText && error == null)) {
       return _writes;
     }
@@ -259,8 +287,12 @@ class JsonTextControllerBinding extends ChangeNotifier {
   @override
   void dispose() {
     store.unregisterBindings(this);
-    store.removeFlusher(flush);
-    flush();
+    if (!isReadOnly) {
+      store.removeFlusher(flush);
+      flush();
+    } else {
+      _restoreReadOnlyValue();
+    }
     _disposed = true;
     _generation++;
     _timer?.cancel();

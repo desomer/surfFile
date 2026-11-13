@@ -984,6 +984,13 @@ donnees sensibles dans les listeners.
 `node.click` dans son widget racine ; il suffit d'utiliser cet ID dans
 le wizard.
 
+## Données et liaisons JSON
+
+Dans le wizard **Données & Liaisons JSON**, cliquer sur le badge des liaisons
+actives ouvre directement le gestionnaire sur le premier repository lié à la
+cible. Si aucun repository ne peut être résolu, le gestionnaire reste accessible
+sans présélection.
+
 ## Export contextuel et SuperRenderer
 
 En mode edition, l'entree **Exporter le contenu...** du menu (trois points)
@@ -1643,6 +1650,148 @@ Lors d'un remplacement complet ou d'un rechargement, `ChangeContext.path` est
 vide et `ChangeContext.isReload` distingue le rechargement explicite. Avant
 une fermeture normale, attendre les traitements applicatifs asynchrones puis
 `saveRepository` ; `dispose` ne peut pas attendre ces operations.
+
+### Attributs calcules (`@nom`)
+
+Un `RepositoryImpl` peut declarer par code des **attributs calcules** avant
+son enregistrement. Les composants les lisent avec le chemin de liaison
+`@nom` (lecture seule) :
+
+```dart
+final repository = RepositoryImpl(id: 'panier', json: {'articles': []});
+repository.addCalculatedAttribute('total', (ctx) {
+  final articles = ctx.sync.getList('articles', defaultValue: const [])!;
+  return articles.fold<num>(
+    0,
+    (sum, article) => sum + (article['prix'] as num),
+  );
+});
+repository.addCalculatedAttribute('total_ttc', (ctx) async {
+  // Chainage : lit un autre attribut calcule (cycle detecte et signale).
+  final total = (await ctx.getNum('@total'))!;
+  return total * 1.2;
+});
+store.registerRepository(repository);
+// Un SuperValue lie a path: "@total_ttc" affiche la valeur calculee.
+```
+
+La fonction peut etre synchrone ou asynchrone (`FutureOr`). Chaque
+`ctx.getValue(chemin)` enregistre une **dependance**, y compris si la valeur
+est absente. Le resultat est mis en cache jusqu'a une mutation touchant cette
+dependance : modifier `articles[0].prix` ou remplacer `articles` invalide
+`@total`, puis `@total_ttc` par transitivite. Les dependances conditionnelles
+sont recollectees a chaque execution. Les objets/tableaux lus par le contexte
+et les resultats calcules sont proteges recursivement contre les mutations.
+
+Les lecteurs simultanes partagent la meme execution. Si une dependance change
+pendant une attente, leurs lectures rejoignent la **nouvelle generation** sans
+attendre l'ancien Future. Celui-ci n'est pas annule, mais son resultat et sa
+notification sont ignores. Les lectures tardives apres `await` sont protegees
+par une invalidation conservative du repository consulte. Les cycles, meme
+asynchrones ou entre repositories, produisent une erreur explicite.
+
+Le contexte propose aussi `getString`, `getNum`, `getInt`, `getDouble`,
+`getBool`, `getList` et `getObject`, avec le meme suivi des dependances.
+Ils retournent `FutureOr<T?>` :
+une valeur immediate pour une source synchrone, sinon un `Future` a attendre
+avec `await`. Une valeur nulle ou absente reste `null`, ou utilise le parametre
+type `defaultValue` fourni. Ce defaut ne masque jamais une erreur de calcul,
+un repository inconnu, un chemin invalide ou un mauvais type. `getNum` accepte
+`int` et `double`, `getDouble` convertit aussi les entiers en `double`, tandis
+que `getInt` exige un entier sans tronquer les decimales ; les chaines ne sont
+jamais parsees implicitement.
+`getList` retourne une `List<Map<String, Object?>>` et `getObject` une
+`Map<String, Object?>` (cles JSON chaines, valeurs nulles autorisees).
+`getList` valide chaque element et leve une `FormatException` pour un
+tableau contenant autre chose que des objets, sans filtrage ni valeur de
+substitution. Pour un tableau de scalaires ou mixte, utiliser `getValue`.
+Les collections du repository restent protegees recursivement contre les mutations.
+
+La facade `ctx.sync` expose `getValue` et les memes getters types avec un retour
+immediat. Une dependance asynchrone encore indisponible leve une
+`FormatException` : utiliser alors `await ctx.getNum(...)`, par exemple.
+Une valeur asynchrone deja en cache est accessible via `ctx.sync`.
+
+#### Calculs par ligne et chemins structures
+
+```dart
+repository.addCalculatedAttribute('montant', (ctx) {
+  final prix = ctx.sync.getNum('prix', defaultValue: 0) ?? 0;
+  final quantite = ctx.sync.getInt('quantite', defaultValue: 1) ?? 1;
+  return prix * quantite;
+}, scope: 'articles[?]');
+// Declarer ce calcul avant store.registerRepository(repository).
+// Binding d'une ligne : articles[?].@montant
+```
+
+Le scope doit finir par `[?]` et designer une ligne objet d'un tableau JSON
+source, pas d'une collection calculee. Les scopes imbriques sont acceptes.
+Chaque chemin concret (`articles[0].@montant`, etc.) possede son cache.
+Une modification de ligne n'invalide pas les lignes independantes ; remplacer
+le tableau ou supprimer/reindexer ses elements invalide les scopes concernes.
+`ctx.repositoryId` et `ctx.scopePath` identifient le repository et la ligne
+concrete. Sans parametre `repositoryId`, les lectures sont relatives au scope ;
+les jokers des getters sont resolus avec les indices de ce scope.
+
+| Chemin de liaison | Valeur |
+|---|---|
+| `@total` | Calcul racine |
+| `@stats.total` | Propriete d'un objet calcule |
+| `@actifs[?].nom` | Champ d'une collection calculee |
+| `articles[?].@montant` | Calcul par ligne source |
+| `articles[?].@stats.total` | Propriete d'un calcul par ligne |
+
+Un chemin comporte au plus un segment `@nom`. Les lecteurs d'attributs,
+tableaux et arbres et leurs variantes `peek` utilisent ces memes chemins.
+Les `[?]` sont resolus par le contexte de ligne ou la selection maitre/detail,
+y compris pour les collections calculees. Les segments `@nom` sont reserves :
+une collision avec une cle JSON du meme nom est signalee.
+
+#### Dependances entre repositories et relance
+
+Tous les getters acceptent `repositoryId` pour lire depuis la **racine** d'un
+autre repository du meme store (memoire, persistant ou fichier) :
+
+```dart
+repository.addCalculatedAttribute('total_taxe', (ctx) async {
+  final total = await ctx.getNum('@total') ?? 0;
+  final taux = await ctx.getDouble(
+    'taux',
+    repositoryId: 'taxes',
+    defaultValue: 0.2,
+  );
+  return total * (1 + (taux ?? 0));
+});
+// Le repository 'taxes' doit etre enregistre dans le meme store.
+// Depuis un calcul par ligne, repositoryId: ctx.repositoryId lit la racine locale.
+```
+
+Le graphe propage les modifications, sauvegardes, rechargements, suppressions
+et invalidations de cache entre repositories, mais jamais entre stores.
+Les fichiers externes ne sont pas surveilles : apres une modification externe,
+appeler `store.invalidateCache(repositoryId)` puis relire.
+Les erreurs sont memorisees pour eviter les boucles de recalcul/notification.
+Une mutation de dependance, l'enregistrement d'une source manquante ou une
+relance explicite permet de reessayer :
+
+```dart
+await store.refreshCalculatedAttribute(
+  const JsonTextBinding(repositoryId: 'panier', path: '@total_ttc'),
+);
+```
+
+Cette methode exige un binding concret et invalide aussi les lecteurs du
+calcul. `store.calculatedAttributeCatalog(id)` expose noms, scopes et chemins
+modeles sans executer de fonction ; `store.hasCalculatedAttribute(id, path)`
+verifie leur declaration.
+
+Les formulaires de liaison suggerent ces chemins et affichent **Calcule -
+lecture seule**. Toute liaison contenant un segment calcule, y compris un
+sous-chemin ou une collection, reste non modifiable : pas de write-back ni de
+commandes d'ajout/suppression sur les donnees calculees. Selection, consultation,
+copie et navigation restent possibles lorsqu'elles n'ecrivent pas dans la
+liaison. Seuls les bindings sont serialises : ni fonctions Dart ni caches ne
+sont persistes, et les declarations sont figees apres enregistrement.
 
 En mode edition dans une `SuperPage`, les dialogues de style, de taille,
 de configuration du layout, d'ajout de slot et d'apparence utilisent un panneau

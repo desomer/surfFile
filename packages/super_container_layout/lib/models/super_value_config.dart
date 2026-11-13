@@ -49,8 +49,10 @@ enum SuperValueProperty {
 /// Modèle immuable de configuration persistée d'un composant [SuperValue].
 @immutable
 class SuperValueConfig extends ComponentConfig {
+  /// Crée une configuration ; un sélecteur [SuperValueKind.choice] utilise la
+  /// saisie par défaut.
   const SuperValueConfig({
-    this.mode = SuperValueMode.display,
+    SuperValueMode? mode,
     this.kind = SuperValueKind.text,
     this.initialText = '',
     this.initialBool = false,
@@ -74,7 +76,11 @@ class SuperValueConfig extends ComponentConfig {
     this.field = const SuperTextFieldConfig(),
     this.choice = const SuperChoiceConfig(),
     this.states,
-  });
+  }) : mode =
+           mode ??
+           (kind == SuperValueKind.choice
+               ? SuperValueMode.input
+               : SuperValueMode.display);
 
   final SuperValueMode mode;
   final SuperValueKind kind;
@@ -135,6 +141,7 @@ class SuperValueConfig extends ComponentConfig {
     }
   }
 
+  /// Copie cette configuration en déduisant la saisie pour un nouveau choix.
   SuperValueConfig copyWith({
     SuperValueMode? mode,
     SuperValueKind? kind,
@@ -170,7 +177,11 @@ class SuperValueConfig extends ComponentConfig {
     ValueConfigStates? states,
     bool clearStates = false,
   }) => SuperValueConfig(
-    mode: mode ?? this.mode,
+    mode:
+        mode ??
+        (kind != null && kind != this.kind && kind.isChoice
+            ? SuperValueMode.input
+            : this.mode),
     kind: kind ?? this.kind,
     initialText: initialText ?? this.initialText,
     initialBool: initialBool ?? this.initialBool,
@@ -316,10 +327,6 @@ class SuperValueConfig extends ComponentConfig {
     double? number(String key, double? fallbackVal) =>
         JsonReader.nullableDouble(value, key, fallbackVal, context: 'Value');
 
-    final mode = JsonReader.enumByName(
-      SuperValueMode.values,
-      field('mode', fallback.mode.name),
-    );
     final kind = JsonReader.enumByName(
       SuperValueKind.values,
       field('kind', fallback.kind.name),
@@ -327,6 +334,17 @@ class SuperValueConfig extends ComponentConfig {
         'switch': SuperValueKind.switchControl,
         'choise': SuperValueKind.choice,
       },
+    );
+    final defaultMode =
+        !value.containsKey('mode') &&
+            value.containsKey('kind') &&
+            kind == SuperValueKind.choice &&
+            fallback.kind != kind
+        ? SuperValueMode.input
+        : fallback.mode;
+    final mode = JsonReader.enumByName(
+      SuperValueMode.values,
+      field('mode', defaultMode.name),
     );
     final align = JsonReader.enumByName(
       TextAlign.values,
@@ -442,10 +460,7 @@ class SuperValueConfig extends ComponentConfig {
             )
           : fallback.field,
       choice: hasChoice
-          ? SuperChoiceConfig.fromJson(
-              rawChoice,
-              fallback: fallback.choice,
-            )
+          ? SuperChoiceConfig.fromJson(rawChoice, fallback: fallback.choice)
           : fallback.choice,
       states: !value.containsKey('states')
           ? fallback.states

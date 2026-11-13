@@ -142,6 +142,9 @@ class JsonListScope extends InheritedWidget {
       }
     }
 
+    // Un calcul racine hors du modèle d'arbre reste absolu.
+    if (binding.path.startsWith('@')) return binding;
+
     // Relative path inside a tree node (e.g. `key`, `data`, `info.title`) when
     // the repository is inherited from the enclosing tree scope.
     if (binding.repositoryId == null &&
@@ -257,11 +260,7 @@ class JsonListScope extends InheritedWidget {
         );
       }
     }
-    return (
-      binding: resolvedBinding,
-      indices: indices,
-      arrays: arrays,
-    );
+    return (binding: resolvedBinding, indices: indices, arrays: arrays);
   }
 
   @override

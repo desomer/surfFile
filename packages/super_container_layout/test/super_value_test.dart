@@ -1406,6 +1406,59 @@ void main() {
     );
   });
 
+  test('choice defaults to input mode unless display is explicit', () {
+    const choice = SuperValueConfig(kind: SuperValueKind.choice);
+    expect(choice.mode, SuperValueMode.input);
+    expect(
+      const SuperValueConfig().copyWith(kind: SuperValueKind.choice).mode,
+      SuperValueMode.input,
+    );
+    expect(
+      SuperValueConfig.fromJson({'kind': 'choice'}).mode,
+      SuperValueMode.input,
+    );
+    expect(
+      SuperValueConfig.fromJson({'kind': 'choice', 'mode': 'display'}).mode,
+      SuperValueMode.display,
+    );
+    expect(
+      SuperValueConfig.fromJson(
+        {'label': 'Choix'},
+        fallback: const SuperValueConfig(
+          kind: SuperValueKind.choice,
+          mode: SuperValueMode.display,
+        ),
+      ).mode,
+      SuperValueMode.display,
+    );
+  });
+
+  testWidgets('choice defaults to a visible interactive selector', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        SuperValue(
+          id: 'choice',
+          config: const SuperValueConfig(
+            kind: SuperValueKind.choice,
+            choice: SuperChoiceConfig(
+              options: [
+                SuperChoiceOption(value: 'A'),
+                SuperChoiceOption(value: 'B'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final dropdown = tester.widget<DropdownButton<String>>(
+      find.byType(DropdownButton<String>),
+    );
+    expect(dropdown.onChanged, isNotNull);
+  });
+
   testWidgets('checkbox and switch render and toggle in input mode only', (
     tester,
   ) async {

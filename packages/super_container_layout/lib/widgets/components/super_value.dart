@@ -698,6 +698,11 @@ class _SuperValueState extends State<SuperValue>
                 final text = _editorText == null
                     ? _controlledText ?? value.text
                     : value.text;
+                final bindingReadOnly =
+                    JsonTextBinding.isCalculatedPath(
+                      config.binding?.path ?? '',
+                    ) ||
+                    (_binding?.isReadOnly ?? false);
                 final Widget content;
                 if (config.kind.isBoolean) {
                   final boolCurrent = text.trim().toLowerCase() == 'true';
@@ -705,6 +710,7 @@ class _SuperValueState extends State<SuperValue>
                       config.mode == SuperValueMode.input &&
                       config.enabled &&
                       !config.readOnly &&
+                      !bindingReadOnly &&
                       !_unselected &&
                       !(config.binding != null && _binding?.loading == true);
                   void toggleBool(bool next) {
@@ -797,7 +803,7 @@ class _SuperValueState extends State<SuperValue>
                       enabled:
                           config.enabled &&
                           !(config.binding != null && _binding?.loading == true),
-                      readOnly: _unselected ? true : null,
+                      readOnly: _unselected || bindingReadOnly ? true : null,
                       bindingError: _bindingError ?? _binding?.error,
                       onChanged: (text) {
                         if (_editorText != null) return;
@@ -851,7 +857,9 @@ class _SuperValueState extends State<SuperValue>
                                 config.enabled &&
                                 !(config.binding != null &&
                                     _binding?.loading == true),
-                            readOnly: _unselected ? true : null,
+                            readOnly: _unselected || bindingReadOnly
+                                ? true
+                                : null,
                             enableContextMenu: !canConfigure,
                             bindingError: _bindingError ?? _binding?.error,
                             onChanged: (text) {

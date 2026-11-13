@@ -475,6 +475,9 @@ class _SuperExpansibleState extends State<SuperExpansible> {
         final effectiveToggleIconPosition =
             config.toggleIconPosition ?? widget.toggleIconPosition;
         final activeError = _bindingError ?? _binding?.error;
+        final bindingReadOnly =
+            JsonTextBinding.isCalculatedPath(config.binding?.path ?? '') ||
+            (_binding?.isReadOnly ?? false);
 
         return NativeComponentEditor(
           id: widget.id,
@@ -502,9 +505,14 @@ class _SuperExpansibleState extends State<SuperExpansible> {
                   expanded ? Icons.unfold_less : Icons.unfold_more,
                   size: 16,
                 ),
-                tooltip: expanded ? 'Replier le contenu' : 'Déplier le contenu',
+                tooltip: bindingReadOnly
+                    ? '${expanded ? "Replier" : "Déplier"} le contenu — '
+                          'Calculé — lecture seule'
+                    : expanded
+                    ? 'Replier le contenu'
+                    : 'Déplier le contenu',
                 visualDensity: VisualDensity.compact,
-                onPressed: _effectiveController.toggle,
+                onPressed: bindingReadOnly ? null : _effectiveController.toggle,
               ),
             ];
           },
@@ -534,7 +542,10 @@ class _SuperExpansibleState extends State<SuperExpansible> {
           ],
           builder: (context, editor) {
             final canToggleOnHeaderTap =
-                !editor.editing && effectiveHeaderToggle && !_unselected;
+                !editor.editing &&
+                effectiveHeaderToggle &&
+                !_unselected &&
+                !bindingReadOnly;
             Widget exp = PageStorage(
               bucket: _isolatedPageStorage,
               child: Expansible(

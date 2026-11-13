@@ -1692,6 +1692,33 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('style-menu-data')));
       await tester.pumpAndSettle();
 
+      // The parent badge opens its repository without selecting the parent first.
+      final parentBadge = find.descendant(
+        of: find.byKey(const ValueKey('data-target-FormulaireDonnees')),
+        matching: find.textContaining('1 liaison active (Ville)'),
+      );
+      expect(parentBadge, findsOneWidget);
+      await tester.ensureVisible(parentBadge);
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(parentBadge);
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('data-wizard-dialog')), findsNothing);
+      expect(find.byType(JsonRepositoryManager), findsOneWidget);
+      expect(find.textContaining('"Lyon"'), findsWidgets);
+      await tester.tap(find.text('Fermer'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('France'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-data')));
+      await tester.pumpAndSettle();
+
       await tester.tap(
         find.byKey(const ValueKey('data-target-FormulaireDonnees')),
       );

@@ -207,6 +207,10 @@ class _SuperTableState extends State<SuperTable> {
     return path == null ? null : JsonAttributePath(path).toString();
   }
 
+  bool get _collectionReadOnly => JsonTextBinding.isCalculatedPath(
+    _source?.binding?.path ?? _configPath ?? '',
+  );
+
   void _listen(List<JsonArrayBinding> arrays) {
     _listened = updateWatchedArrayBindings(_listened, arrays, _selectionChanged);
   }
@@ -321,7 +325,9 @@ class _SuperTableState extends State<SuperTable> {
   ) async {
     final binding = _source?.binding;
     final store = _store;
-    if (binding == null || store == null || _busy) return;
+    if (binding == null || store == null || _busy || _collectionReadOnly) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       await store.flushBindings();
@@ -601,7 +607,11 @@ class _SuperTableState extends State<SuperTable> {
     final col = config.columns[colIndex];
     final zoneId = SuperTableConfig.cellZoneFor(col.id);
     final isLastCol = colIndex == config.columns.length - 1;
-    final showRemove = !templateMode && config.allowRemove && isLastCol;
+    final showRemove =
+        !templateMode &&
+        config.allowRemove &&
+        isLastCol &&
+        !_collectionReadOnly;
     final content = _buildZoneContent(
       context,
       editor,
@@ -922,6 +932,7 @@ class _SuperTableState extends State<SuperTable> {
                   !placeholder &&
                   config.allowAdd &&
                   _source?.binding != null &&
+                  !_collectionReadOnly &&
                   _error == null;
 
               return LayoutBuilder(

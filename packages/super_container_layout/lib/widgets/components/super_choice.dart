@@ -359,7 +359,9 @@ class _SuperChoiceState extends State<SuperChoice> {
     );
     final borderColor = resolveOptionalThemeColor(source.borderColor, scheme);
     final enabled = widget.enabled ?? config.enabled;
-    final readOnly = widget.readOnly ?? config.readOnly;
+    final readOnly =
+        JsonTextBinding.isCalculatedPath(config.binding?.path ?? '') ||
+        (widget.readOnly ?? config.readOnly);
     final interactive =
         config.mode == SuperValueMode.input && enabled && !readOnly;
     final errorText =
@@ -755,7 +757,7 @@ class _SuperChoiceState extends State<SuperChoice> {
             runSpacing: choice.spacing,
             children: [
               for (final tile in tiles)
-                 IntrinsicWidth(child: tile),
+                IntrinsicWidth(child: tile),
             ],
           )
         : Column(

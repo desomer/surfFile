@@ -210,6 +210,10 @@ class _SuperListViewState extends State<SuperListView> {
 
   String? _configPath;
 
+  bool get _collectionReadOnly => JsonTextBinding.isCalculatedPath(
+    _source?.binding?.path ?? _configPath ?? '',
+  );
+
   void _listen(List<JsonArrayBinding> arrays) {
     _listened = updateWatchedArrayBindings(_listened, arrays, _selectionChanged);
   }
@@ -474,7 +478,9 @@ class _SuperListViewState extends State<SuperListView> {
   ) async {
     final binding = _source?.binding;
     final store = _store;
-    if (binding == null || store == null || _busy) return;
+    if (binding == null || store == null || _busy || _collectionReadOnly) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       // Les saisies en attente visent les indices actuels : les enregistrer
@@ -795,7 +801,7 @@ class _SuperListViewState extends State<SuperListView> {
                   ),
                 ),
               ),
-            if (index != null && config.allowRemove)
+            if (index != null && config.allowRemove && !_collectionReadOnly)
               Positioned(
                 top: 0,
                 right: 0,
@@ -931,6 +937,7 @@ class _SuperListViewState extends State<SuperListView> {
             !placeholder &&
             config.allowAdd &&
             _source?.binding != null &&
+            !_collectionReadOnly &&
             _error == null;
         final vertical = config.wrap || config.axis == Axis.vertical;
         final isSliver = SliverSlotScope.isSliver(context);

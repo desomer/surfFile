@@ -23,6 +23,14 @@
 /// crochets sont acceptés (pas de filtre, de `*`, de `..` ni de guillemets).
 /// Les clés ne peuvent contenir ni `.`, ni `[`, `]`, `?`, ni espace.
 ///
+/// ## Attributs calculés (`@nom`)
+///
+/// Un chemin de liaison de la forme `@nom` (préfixe `@`, puis lettres,
+/// chiffres et `_`) ne désigne pas une clé du document JSON mais un
+/// **attribut calculé** déclaré par code sur un `RepositoryImpl`
+/// (`addCalculatedAttribute`). Ces liaisons sont toujours résolues (aucun
+/// `[?]`) et en lecture seule ; voir `CalculatedAttributeEngine`.
+///
 /// ## Le joker `[?]`
 ///
 /// Un `[?]` est un indice fourni à l'exécution. Les `[?]` sont remplis dans
@@ -113,8 +121,13 @@ class JsonTextBinding {
   /// ou `null` pour hériter celui de la liste englobante.
   final String? repositoryId;
 
-  /// Chemin de l'attribut, par exemple `clients[?].nom`.
+  /// Chemin de l'attribut, par exemple `clients[?].nom`, ou `@nom` pour un
+  /// attribut calculé.
   final String path;
+
+  /// Vrai si [path] contient un segment calculé, même pendant sa saisie.
+  static bool isCalculatedPath(String path) =>
+      RegExp(r'(^|\.)@').hasMatch(path);
 
   /// Vérifie le format de l'ID et la syntaxe du chemin ; les `[?]` et le
   /// repository hérité sont autorisés.
@@ -122,9 +135,11 @@ class JsonTextBinding {
   /// Lève une [FormatException] avec un message affichable sinon.
   void validate() {
     if (repositoryId != null && !_repositoryIdPattern.hasMatch(repositoryId!)) {
-      throw FormatException('ID de repository invalide. <$repositoryId> path <$path>');
+      throw FormatException(
+        'ID de repository invalide. <$repositoryId> path <$path>',
+      );
     }
-    JsonAttributePath(path);
+    JsonAttributePath(path).calculated;
   }
 
   /// Vrai pour une liaison concrète : repository explicite et aucun `[?]`.
@@ -264,6 +279,49 @@ class JsonAttributePath {
 
   /// Clés (`String`), indices (`int`) et jokers `[?]`.
   final List<Object> _segments;
+
+  /// Segment calculé et chemins qui l'entourent, ou `null` pour un chemin JSON.
+  ///
+  /// Un seul segment `@nom` est autorisé. `scope` est vide à la racine ;
+  /// `suffix` permet de lire un champ ou un élément du résultat calculé.
+  ({String name, String scope, String path, JsonAttributePath? suffix})?
+  get calculated {
+    final positions = [
+      for (var i = 0; i < _segments.length; i++)
+        if (_segments[i] case String key when key.startsWith('@')) i,
+    ];
+    if (positions.isEmpty) return null;
+    final index = positions.singleOrNull;
+    if (index == null ||
+        !RegExp(r'^@[a-zA-Z0-9_]{1,64}$')
+            .hasMatch(_segments[index] as String)) {
+      throw const FormatException(
+        'Chemin d’attribut calculé invalide : un seul segment @nom est autorisé.',
+      );
+    }
+    return (
+      name: (_segments[index] as String).substring(1),
+      scope: JsonAttributePath._(_segments.take(index).toList()).toString(),
+      path: JsonAttributePath._(_segments.take(index + 1).toList()).toString(),
+      suffix: index == _segments.length - 1
+          ? null
+          : JsonAttributePath._(_segments.sublist(index + 1)),
+    );
+  }
+
+  /// Indices concrets du chemin, dans l'ordre des tableaux englobants.
+  List<int> get indices => _segments.whereType<int>().toList();
+
+  /// Vrai si ce modèle correspond à [other], chaque `[?]` acceptant un indice.
+  bool matches(JsonAttributePath other) =>
+      _segments.length == other._segments.length &&
+      Iterable<int>.generate(_segments.length).every(
+        (i) =>
+            _segments[i] == other._segments[i] ||
+            (identical(_segments[i], _wildcard) &&
+                (other._segments[i] is int ||
+                    identical(other._segments[i], _wildcard))),
+      );
 
   /// Nombre de `[?]` du chemin.
   int get wildcardCount =>

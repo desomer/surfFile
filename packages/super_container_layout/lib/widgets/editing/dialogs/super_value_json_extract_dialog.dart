@@ -3321,6 +3321,10 @@ class _ComponentDataWizardDialogState
                                   '$bindingCount liaison${bindingCount > 1 ? 's' : ''} active${bindingCount > 1 ? 's' : ''} (${target.existingBindings.first.path})',
                               background: colors.secondaryContainer,
                               foreground: colors.onSecondaryContainer,
+                              onTap: () => Navigator.of(context).pop((
+                                target,
+                                _DataWizardAction.openRepositoryManager,
+                              )),
                             ),
                           if (extractCount == 0 &&
                               recurringCount == 0 &&
@@ -3426,16 +3430,18 @@ class _DataBadge extends StatelessWidget {
     required this.label,
     required this.background,
     required this.foreground,
+    this.onTap,
   });
 
   final IconData icon;
   final String label;
   final Color background;
   final Color foreground;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: background,
@@ -3458,6 +3464,18 @@ class _DataBadge extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+    if (onTap == null) return badge;
+    return Tooltip(
+      message: 'Ouvrir le gestionnaire de repositories',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: badge,
+        ),
       ),
     );
   }
