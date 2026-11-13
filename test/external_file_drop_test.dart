@@ -99,13 +99,19 @@ void main() {
       await tester.pumpAndSettle();
 
       // Point de la ligne hors de l'icône et du nom.
-      Offset beside(String name) =>
-          tester.getRect(find.text(name)).centerRight + const Offset(60, 0);
+      Offset beside(String name) {
+        final row = tester.getRect(
+          find.byKey(ValueKey('C:\\drag\\$name')).first,
+        );
+        final point = Offset(row.right - 24, row.center.dy);
+        return point;
+      }
 
       Future<void> drag(Offset from, Offset to) async {
         final gesture = await tester.startGesture(
           from,
           kind: PointerDeviceKind.mouse,
+          buttons: kPrimaryButton,
         );
         for (var step = 1; step <= 5; step++) {
           await gesture.moveTo(Offset.lerp(from, to, step / 5)!);
@@ -121,6 +127,14 @@ void main() {
       expect(calls, isEmpty);
 
       // Élément sélectionné, hors du nom : glisse seulement en mode selected.
+      expect(
+        tester
+            .widgetList<ExternalFileDragSource>(
+              find.byType(ExternalFileDragSource),
+            )
+            .every((source) => source.selected),
+        isTrue,
+      );
       await drag(beside('b.txt'), beside('a.txt'));
       if (mode == FileDragMode.selected) {
         expect(calls, [all.toList()]);

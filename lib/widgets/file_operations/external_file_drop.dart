@@ -58,6 +58,7 @@ class _ExternalFileDragSourceState extends State<ExternalFileDragSource> {
   Widget _draggable({required bool enabled, required Widget child}) {
     final paths = widget.paths;
     return Listener(
+      behavior: HitTestBehavior.opaque,
       onPointerDown: (event) {
         _origin = event.position;
         if (enabled &&
@@ -80,7 +81,7 @@ class _ExternalFileDragSourceState extends State<ExternalFileDragSource> {
           ),
         ),
         onDragStarted: _startDrag,
-        child: child,
+        child: Listener(behavior: HitTestBehavior.opaque, child: child),
       ),
     );
   }

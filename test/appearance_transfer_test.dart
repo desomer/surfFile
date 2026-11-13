@@ -7,6 +7,7 @@ import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:surf_file/services/appearance_store.dart';
 import 'package:surf_file/services/appearance_transfer.dart';
 import 'package:surf_file/theme/surffile_appearance.dart';
+import 'package:surf_file/theme/disk_gauge_style.dart';
 
 void main() {
   final custom = Appearance(
@@ -27,6 +28,53 @@ void main() {
       (jsonDecode(text) as Map)['data'] as Map<String, Object?>;
 
   group('export', () {
+    test('compact disk preferences restore defaults on a modified target', () {
+      final sourceCodec = SurfFileAppearanceCodec();
+      final targetCodec = SurfFileAppearanceCodec();
+      targetCodec.preferences.value = const SurfFilePreferences(
+        diskGaugeStyle: DiskGaugeStyle(size: 80, roundCaps: true),
+      );
+      final text = AppearanceTransfer.export(custom, both, codec: sourceCodec);
+      final application = dataOf(text)['application'] as Map;
+      expect(application.containsKey('diskGaugeStyle'), isFalse);
+      expect(application['fontSize'], 15);
+      AppearanceTransfer.import(custom, text, both, codec: targetCodec);
+      expect(
+        targetCodec.preferences.value.diskGaugeStyle,
+        const DiskGaugeStyle(),
+      );
+      expect(
+        DiskGaugeStyle.fromJson(
+          const DiskGaugeStyle(size: 80, roundCaps: true).toCompactJson(),
+        ),
+        const DiskGaugeStyle(size: 80, roundCaps: true),
+      );
+    });
+
+    test('compact default application preferences replace modified values', () {
+      final sourceCodec = SurfFileAppearanceCodec();
+      final targetCodec = SurfFileAppearanceCodec();
+      targetCodec.preferences.value = const SurfFilePreferences(
+        diskGaugeStyle: DiskGaugeStyle(size: 80, roundCaps: true),
+        folderTransitionDuration: 400,
+      );
+      final source = Appearance();
+      final text = AppearanceTransfer.export(source, both, codec: sourceCodec);
+      expect(dataOf(text)['application'], isEmpty);
+      final restored = AppearanceTransfer.import(
+        Appearance(fontSize: 22),
+        text,
+        both,
+        codec: targetCodec,
+      );
+      expect(restored.fontSize, source.fontSize);
+      expect(targetCodec.preferences.value.diskGaugeStyle, const DiskGaugeStyle());
+      expect(
+        targetCodec.preferences.value.folderTransitionDuration,
+        const SurfFilePreferences().folderTransitionDuration,
+      );
+    });
+
     test('both groups carry every setting', () {
       final text = AppearanceTransfer.export(custom, both);
       final json = jsonDecode(text) as Map;

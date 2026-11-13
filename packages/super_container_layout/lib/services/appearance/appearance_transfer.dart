@@ -37,19 +37,21 @@ class AppearanceTransfer {
     if (groups.isEmpty) {
       throw ArgumentError.value(groups, 'groups', 'No groups selected.');
     }
-    final rawCodecData = codec.toJson(appearance)..remove('version');
-    return const JsonEncoder.withIndent('  ').convert(JsonNumbers.normalizeMap({
-      'format': codec.format,
-      'version': codec.schemaVersion,
-      'groups': [
-        for (final group in TransferGroup.values)
-          if (groups.contains(group)) group.name,
-      ],
-      'data': {
-        for (final entry in rawCodecData.entries)
-          if (groups.contains(_groupOf(entry.key))) entry.key: entry.value,
-      },
-    }));
+    final rawCodecData = codec.toTransferJson(appearance)..remove('version');
+    return const JsonEncoder.withIndent('  ').convert(
+      JsonNumbers.normalizeMap({
+        'format': codec.format,
+        'version': codec.schemaVersion,
+        'groups': [
+          for (final group in TransferGroup.values)
+            if (groups.contains(group)) group.name,
+        ],
+        'data': {
+          for (final entry in rawCodecData.entries)
+            if (groups.contains(_groupOf(entry.key))) entry.key: entry.value,
+        },
+      }),
+    );
   }
 
   static ({Map<String, Object?> data, int version}) _document(
@@ -66,9 +68,7 @@ class AppearanceTransfer {
       throw const FormatException('Invalid appearance export.');
     }
     final isPatch =
-        json['vibe'] == true ||
-        json['merge'] == true ||
-        json['mode'] == 'vibe';
+        json['vibe'] == true || json['merge'] == true || json['mode'] == 'vibe';
     final version = json.containsKey('version')
         ? json['version']
         : (isPatch ? codec.schemaVersion : null);
@@ -202,12 +202,10 @@ class AppearanceTransfer {
             'merge': true,
           }
         : <String, dynamic>{...raw, 'merge': true};
-    return import(
-      current,
-      jsonEncode(payload),
-      const {TransferGroup.styles, TransferGroup.layouts},
-      codec: codec,
-    );
+    return import(current, jsonEncode(payload), const {
+      TransferGroup.styles,
+      TransferGroup.layouts,
+    }, codec: codec);
   }
 
   /// Exports the flat GenUI JSON representation for AI or transfer.

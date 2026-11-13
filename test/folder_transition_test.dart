@@ -349,13 +349,20 @@ void main() {
                       .copyWith(textScaler: const TextScaler.linear(.8)),
                   child: child!),
               home: const ExplorerPage())));
-      Future<void> finishLoad() async {
+      Future<void> finishLoad({String? expectedPath}) async {
         for (var i = 0; i < 100; i++) {
           await tester.runAsync(
               () => Future<void>.delayed(const Duration(milliseconds: 20)));
           await tester.pump();
           final panes = tester.widgetList<ExplorerPaneScope>(find.byType(ExplorerPaneScope));
-          if (panes.isNotEmpty && panes.every((pane) => !pane.data.loading)) return;
+          if (panes.isNotEmpty &&
+              panes.every((pane) =>
+                  pane.data.hasLoaded &&
+                  !pane.data.loading &&
+                  !pane.data.pending &&
+                  (expectedPath == null || pane.data.path == expectedPath))) {
+            return;
+          }
         }
         fail('Directory loading did not finish.');
       }
@@ -373,7 +380,7 @@ void main() {
       await finishLoad();
       expect(transition().revision, 0);
       await navigate('Documents');
-      await finishLoad();
+      await finishLoad(expectedPath: first.path);
       await tester.pumpAndSettle();
       expect(path(), first.path);
       final data = tester.widget<ExplorerPaneScope>(find.byType(ExplorerPaneScope)).data;
@@ -389,29 +396,31 @@ void main() {
             const Rect.fromLTWH(320, 250, 180, 80),
             const Rect.fromLTWH(330, 270, 24, 24));
         await tester.pump();
-        await finishLoad();
+        await finishLoad(expectedPath: child.entity.path);
         final flight =
             tester.widget<FolderHeroFlight>(find.byType(FolderHeroFlight));
         expect(flight.expand, navigationType == FolderTransition.heroExpand);
         expect(flight.duration.inMilliseconds, 400);
         await tester.pumpAndSettle();
         expect(find.byType(FolderHeroFlight), findsNothing);
-        await tester.tap(find.byTooltip('Retour'));
-        await finishLoad();
+        await tester.tap(find.byWidgetPredicate(
+            (widget) => widget is IconButton && widget.tooltip == 'Retour'));
+        await finishLoad(expectedPath: first.path);
         await tester.pumpAndSettle();
       }
       final revision = transition().revision;
       await navigate('Images');
       expect(find.text('first.txt'), findsOneWidget);
-      await finishLoad();
+      await finishLoad(expectedPath: second.path);
       expect(path(), second.path);
       expect(transition().revision, revision + 1);
       expect(transition().reverse, isFalse);
       expect(find.text('second.txt'), findsOneWidget);
       await tester.pumpAndSettle();
       final stableRevision = transition().revision;
-      await tester.tap(find.byTooltip('Actualiser'));
-      await finishLoad();
+      await tester.tap(find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == 'Actualiser'));
+      await finishLoad(expectedPath: second.path);
       expect(transition().revision, stableRevision);
       await tester.enterText(find.byType(TextField), 'second');
       await tester.pump();
@@ -429,18 +438,20 @@ void main() {
               .gridView,
           isTrue);
       await navigate('Musique');
-      await finishLoad();
+      await finishLoad(expectedPath: second.path);
       expect(path(), second.path);
       expect(transition().revision, stableRevision);
       await tester.enterText(find.byType(TextField), '');
-      await tester.tap(find.byTooltip('Retour'));
-      await finishLoad();
+      await tester.tap(find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == 'Retour'));
+      await finishLoad(expectedPath: first.path);
       expect(path(), first.path);
       expect(transition().reverse, isTrue);
       expect(transition().revision, stableRevision + 1);
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Suivant'));
-      await finishLoad();
+      await tester.tap(find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == 'Suivant'));
+      await finishLoad(expectedPath: second.path);
       expect(path(), second.path);
       expect(transition().reverse, isFalse);
       await tester.pumpAndSettle();

@@ -67,7 +67,10 @@ void main() {
       await tester.pump();
       expect(tester.takeException(), isNull);
 
-      await tester.tap(find.byTooltip('Paramètres d’apparence'));
+      await tester.tap(find.byWidgetPredicate(
+        (widget) =>
+            widget is IconButton && widget.tooltip == 'Paramètres d’apparence',
+      ));
       await tester.pumpAndSettle();
       expect(find.byType(AppearanceSettings), findsOneWidget);
       await tester.tap(find.text('Sombre'));
@@ -116,7 +119,10 @@ void main() {
       expect(find.text('document'), findsOneWidget);
       expect(folderRequests, 1);
       expect(tester.takeException(), isNull);
-      await tester.tap(find.byTooltip('Paramètres d’apparence'));
+      await tester.tap(find.byWidgetPredicate(
+        (widget) =>
+            widget is IconButton && widget.tooltip == 'Paramètres d’apparence',
+      ));
       await tester.pumpAndSettle();
       expect(
         AppearanceScope.of(tester.element(find.byType(AppearanceSettings)))

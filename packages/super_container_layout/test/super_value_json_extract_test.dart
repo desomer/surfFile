@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -1601,13 +1602,17 @@ void main() {
                     key: hostKey,
                     width: 800,
                     height: 600,
-                    child: ValueListenableBuilder<SuperLayoutConfig>(
-                      valueListenable: layoutController,
-                      builder: (_, config, _) => SuperLayout(
-                        id: 'root',
-                        label: 'FormulaireDonnees',
-                        config: config,
-                        onChanged: (value) => layoutController.value = value,
+                    child: JsonListScope(
+                      repositoryId: existingRepoId,
+                      indices: const [],
+                      child: ValueListenableBuilder<SuperLayoutConfig>(
+                        valueListenable: layoutController,
+                        builder: (_, config, _) => SuperLayout(
+                          id: 'root',
+                          label: 'FormulaireDonnees',
+                          config: config,
+                          onChanged: (value) => layoutController.value = value,
+                        ),
                       ),
                     ),
                   ),
@@ -1692,7 +1697,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('style-menu-data')));
       await tester.pumpAndSettle();
 
-      // The parent badge opens its repository without selecting the parent first.
+      // The parent badge opens the floating editor without selecting the parent.
       final parentBadge = find.descendant(
         of: find.byKey(const ValueKey('data-target-FormulaireDonnees')),
         matching: find.textContaining('1 liaison active (Ville)'),
@@ -1709,9 +1714,100 @@ void main() {
       });
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('data-wizard-dialog')), findsNothing);
-      expect(find.byType(JsonRepositoryManager), findsOneWidget);
-      expect(find.textContaining('"Lyon"'), findsWidgets);
-      await tester.tap(find.text('Fermer'));
+      expect(find.byType(JsonRepositoryManager), findsNothing);
+      final floating = find.byKey(
+        ValueKey('floating-repository-$existingRepoId'),
+      );
+      expect(floating, findsOneWidget);
+      final field = find.descendant(
+        of: floating,
+        matching: find.byType(EditableText),
+      );
+      final textController = tester.widget<EditableText>(field).controller;
+      expect(jsonDecode(textController.text), {'Ville': 'Lyon'});
+      await tester.drag(
+        find.byKey(const ValueKey('floating-repository-resize')),
+        const Offset(-250, -250),
+      );
+      await tester.pumpAndSettle();
+      final boundSlot = tester
+          .stateList<EditorSlotState>(find.byType(EditorSlot))
+          .firstWhere((slot) => slot.effectiveComponentId == 'v_bound');
+      unawaited(
+        showComponentDataWizard(
+          context: boundSlot.context,
+          targets: [
+            DataTargetElement(
+              id: 'v_bound',
+              label: 'VilleLiee',
+              slot: boundSlot,
+              existingBindings: [
+                JsonTextBinding(repositoryId: existingRepoId, path: 'Ville'),
+              ],
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        await tester.tap(find.textContaining('1 liaison active (Ville)'));
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('data-wizard-dialog')), findsNothing);
+      expect(floating, findsOneWidget);
+      await tester.runAsync(() async {
+        await tester.showKeyboard(field);
+        textController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: textController.text.length,
+        );
+        await tester.enterText(field, '{"Ville":"Grenoble"}');
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      expect(
+        jsonDecode(
+          (await tester.runAsync(() => repoStore.read('existing_repo')))!,
+        ),
+        {'Ville': 'Grenoble'},
+      );
+      await tester.tap(find.byKey(const ValueKey('floating-repository-close')));
+      await tester.pumpAndSettle();
+
+      final bound = appearance.value.components['v_bound'] as SuperValueConfig;
+      appearance.value = appearance.value.withValueComponent(
+        'v_bound',
+        bound.copyWith(binding: const JsonTextBinding(path: 'Ville')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('France'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-data')));
+      await tester.pumpAndSettle();
+      final inheritedBadge = find.descendant(
+        of: find.byKey(const ValueKey('data-target-FormulaireDonnees')),
+        matching: find.textContaining('1 liaison active (Ville)'),
+      );
+      await tester.ensureVisible(inheritedBadge);
+      await tester.runAsync(() async {
+        await tester.tap(inheritedBadge);
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(ValueKey('floating-repository-$existingRepoId')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('floating-repository-close')));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('France'), buttons: kSecondaryMouseButton);
@@ -1735,10 +1831,36 @@ void main() {
       );
       expect(jsonDecode(jsonField.controller!.text), {
         'Pays': 'France',
-        'VilleLiee': 'Lyon',
+        'VilleLiee': 'Grenoble',
       });
 
       await tester.tap(find.byKey(const ValueKey('super-value-extract-close')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('France'), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-data')));
+      await tester.pumpAndSettle();
+      final missingBadge = find.descendant(
+        of: find.byKey(const ValueKey('data-target-FormulaireDonnees')),
+        matching: find.textContaining('1 liaison active (Ville)'),
+      );
+      await tester.ensureVisible(missingBadge);
+      await tester.runAsync(() async {
+        await File('${tempDir.path}\\existing_repo.json').delete();
+        await tester.tap(missingBadge);
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+          await tester.pump();
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('Repository lié introuvable.'), findsOneWidget);
+      expect(
+        find.byKey(ValueKey('floating-repository-$existingRepoId')),
+        findsNothing,
+      );
+      await tester.tap(find.text('Fermer'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     },

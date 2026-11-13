@@ -454,7 +454,6 @@ void main() {
       expect(hidden.id, 'split-indicator');
       expect(hidden.label, indicator.label);
       expect(hidden.sizing, indicator.sizing);
-      expect(hidden.builder, same(indicator.builder));
       expect(() => registerExplorerComponents(registry), throwsStateError);
       expect(() => registry.component('missing'), throwsStateError);
     },

@@ -60,7 +60,7 @@ void main() {
   ) async {
     await pump(tester, height: 700);
     final layout = rect(tester, 'sidebar-layout');
-    final places = rect(tester, 'slot-fill-sidebar-places');
+    final places = rect(tester, 'slot-item-sidebar-places');
     final disks = rect(tester, 'slot-item-sidebar-disks');
     expect(places.top, layout.top);
     expect(disks.bottom, layout.bottom);
@@ -78,7 +78,7 @@ void main() {
       rect(tester, 'slot-item-sidebar-disks').height,
       lessThanOrEqualTo(layout.height / 2),
     );
-    expect(rect(tester, 'slot-fill-sidebar-places').height, greaterThan(40));
+    expect(rect(tester, 'slot-item-sidebar-places').height, greaterThan(40));
     expect(tester.takeException(), isNull);
   });
 
@@ -96,6 +96,6 @@ void main() {
     );
     final layout = rect(tester, 'sidebar-layout');
     expect(rect(tester, 'slot-item-sidebar-disks').top, layout.top);
-    expect(rect(tester, 'slot-fill-sidebar-places').bottom, layout.bottom);
+    expect(rect(tester, 'slot-item-sidebar-places').bottom, layout.bottom);
   });
 }

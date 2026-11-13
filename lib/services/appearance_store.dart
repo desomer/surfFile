@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/services/appearance/appearance_codec.dart'
     as shell;
@@ -6,6 +7,7 @@ import 'package:super_container_layout/services/appearance/appearance_store.dart
     as shell;
 import 'package:super_container_layout/services/appearance/default_appearance_codec.dart';
 import 'package:super_container_layout/theme/appearance.dart' as base;
+
 import '../theme/surffile_appearance.dart';
 import '../theme/disk_gauge_style.dart';
 import '../theme/folder_transition.dart';
@@ -21,9 +23,9 @@ class SurfFileAppearanceStore extends shell.AppearanceStore {
   static String encode(
     Appearance value, {
     SurfFilePreferences preferences = const SurfFilePreferences(),
-  }) => SurfFileAppearanceCodec(
-    preferences: ValueNotifier(preferences),
-  ).encode(value);
+  }) =>
+      SurfFileAppearanceCodec(preferences: ValueNotifier(preferences))
+          .encode(value);
   static Appearance decode(String text) =>
       SurfFileAppearanceCodec().decode(text);
   @override
@@ -141,6 +143,31 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
   }
 
   @override
+  Map<String, Object?> toTransferJson(base.Appearance appearance) {
+    final document = super.toTransferJson(appearance);
+    final application = Map<String, Object?>.from(
+      document['application'] as Map,
+    );
+    final gauge = preferences.value.diskGaugeStyle.toCompactJson();
+    if (gauge.isEmpty) {
+      application.remove('diskGaugeStyle');
+    } else {
+      application['diskGaugeStyle'] = gauge;
+    }
+    final defaultValues = {
+      ...DefaultAppearanceCodec.encodeDimensions(defaults),
+      'folderTransition': SurfFileAppearanceDefaults.folderTransition.name,
+      'folderTransitionDuration': SurfFileAppearanceDefaults.folderTransitionDuration,
+      'fileDragMode': SurfFileAppearanceDefaults.fileDragMode.name,
+    };
+    for (final entry in defaultValues.entries) {
+      if (application[entry.key] == entry.value) application.remove(entry.key);
+    }
+    document['application'] = application;
+    return document;
+  }
+
+  @override
   DefaultAppearance fromJson(Map<String, dynamic> json) =>
       decodeDocument(json).appearance;
 
@@ -183,7 +210,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
         'folderTransitionDuration',
         SurfFileAppearanceDefaults.folderTransitionDuration,
         SurfFileAppearanceDefaults.minTransitionDuration,
-        double.infinity,
+        SurfFileAppearanceDefaults.maxTransitionDuration,
       ),
       fileDragMode: fileDragMode,
     );
@@ -193,10 +220,7 @@ class SurfFileAppearanceCodec extends shell.AppearanceCodec {
       defaults: defaults,
       enforceBounds: true,
     );
-    return (
-      preferences: parsedPreferences,
-      appearance: prepare(appearance),
-    );
+    return (preferences: parsedPreferences, appearance: prepare(appearance));
   }
 
   @override

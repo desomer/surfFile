@@ -4,7 +4,6 @@ import 'package:flutter/gestures.dart' show kSecondaryMouseButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/widgets/components/super_text_field.dart';
 import 'package:super_container_layout/widgets/editing/components/super_value_editor.dart';
 
 void main() {

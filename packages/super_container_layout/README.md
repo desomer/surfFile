@@ -435,6 +435,8 @@ gestionnaire actualise les SuperValue, et inversement. Les ecritures sont
 serialisees ; un changement d'un autre attribut est preserve, tandis qu'un
 conflit sur l'attribut lie conserve la saisie locale et affiche une erreur.
 **Recharger la liaison** demande confirmation avant d'abandonner cette saisie.
+Dans un emplacement de faible hauteur, les messages d'erreur et l'action de
+rechargement défilent sans déborder du composant.
 Il n'y a pas de surveillance des fichiers externes : ils sont relus lors de
 la prochaine connexion/reouverture, ainsi qu'avant une ecriture pour controler
 les conflits.
@@ -987,9 +989,10 @@ le wizard.
 ## Données et liaisons JSON
 
 Dans le wizard **Données & Liaisons JSON**, cliquer sur le badge des liaisons
-actives ouvre directement le gestionnaire sur le premier repository lié à la
-cible. Si aucun repository ne peut être résolu, le gestionnaire reste accessible
-sans présélection.
+actives ouvre l'éditeur flottant sur le premier repository lié à la cible.
+Si aucun identifiant ne peut être résolu, le gestionnaire s'ouvre sans
+présélection. Une erreur de lecture ou un repository absent est signalé.
+L'action **Gestionnaire de repositories…** reste disponible séparément.
 
 ## Export contextuel et SuperRenderer
 
@@ -2163,6 +2166,11 @@ contrôleurs avant l'ouverture puis retourner le scope autour de `child`.
 appelé une seule fois avant l'application des defaults d'apparence.
 `AppearanceTransfer` accepte un codec optionnel pour l'export et l'import
 des groupes Styles et Dispositions.
+Les exports JSON et le contexte Vibe sont indentés et omettent les champs
+de configuration dont le décodage restitue la valeur. Les clés racines
+restent présentes pour restaurer les valeurs par défaut lors d'un import
+complet ; les imports historiques partiels restent acceptés. La sauvegarde
+complète et les données JSON des repositories ne sont pas filtrées.
 
 `Registry.layoutController(id)` et `styleController(id)` sont lies au
 controleur d'apparence par `SuperApp`, suivent restauration/reinitialisation

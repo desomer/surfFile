@@ -253,9 +253,7 @@ class SlotSizeConstraints {
       _ => throw const FormatException('Base de pourcentage invalide.'),
     };
     final padding = value['padding'] ?? 0;
-    if (padding is! num ||
-        !padding.isFinite ||
-        padding < 0) {
+    if (padding is! num || !padding.isFinite || padding < 0) {
       throw const FormatException('Marge de slot invalide.');
     }
     final rawPaddingInsets = value['paddingInsets'];
@@ -456,15 +454,11 @@ class ZoneFlowConfig {
           'Alignement transversal de zone invalide.',
         ));
     final spacing = value['spacing'] ?? 0;
-    if (spacing is! num ||
-        !spacing.isFinite ||
-        spacing < 0) {
+    if (spacing is! num || !spacing.isFinite || spacing < 0) {
       throw const FormatException('Espacement de zone invalide.');
     }
     final padding = value['padding'] ?? 0;
-    if (padding is! num ||
-        !padding.isFinite ||
-        padding < 0) {
+    if (padding is! num || !padding.isFinite || padding < 0) {
       throw const FormatException('Marge de zone invalide.');
     }
     final rawPaddingInsets = value['paddingInsets'];
@@ -1307,6 +1301,34 @@ class SuperLayoutConfig extends ComponentConfig {
         ],
     },
   };
+
+  @override
+  Map<String, Object?> toCompactJson() {
+    const defaults = SuperLayoutConfig();
+    final json = toJson();
+    if (north == defaults.north) json.remove('north');
+    if (south == defaults.south) json.remove('south');
+    if (west == defaults.west) json.remove('west');
+    if (east == defaults.east) json.remove('east');
+    if (nw == defaults.nw) json.remove('nw');
+    if (ne == defaults.ne) json.remove('ne');
+    if (sw == defaults.sw) json.remove('sw');
+    if (se == defaults.se) json.remove('se');
+    if (northSize == defaults.northSize) json.remove('northSize');
+    if (southSize == defaults.southSize) json.remove('southSize');
+    if (westSize == defaults.westSize) json.remove('westSize');
+    if (eastSize == defaults.eastSize) json.remove('eastSize');
+    if (resizeSides == defaults.resizeSides) json.remove('resizeSides');
+    if (sideResizing.isEmpty) json.remove('sideResizing');
+    if (collapsedSides.isEmpty) json.remove('collapsedSides');
+    if (swaps.isEmpty) json.remove('swaps');
+    if (zoneAxes.isEmpty) json.remove('zoneAxes');
+    if (slotPreferredSizes.isEmpty) json.remove('slotPreferredSizes');
+    if (slotSizeConstraints.isEmpty) json.remove('slotSizeConstraints');
+    if (positioning == defaults.positioning) json.remove('positioning');
+    if (placements.isEmpty) json.remove('placements');
+    return json;
+  }
 
   /// [fallback] fournit les valeurs des clés absentes. Les anciens documents
   /// sans autoSides conservent leurs tailles fixes par defaut.

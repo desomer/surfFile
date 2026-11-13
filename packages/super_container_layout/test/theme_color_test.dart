@@ -4,9 +4,7 @@ import 'package:flex_color_picker/flex_color_picker.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
-import 'package:super_container_layout/services/codegen/core/dart_codegen_context.dart';
 import 'package:super_container_layout/widgets/editing/components/shared/editor_color_fields.dart';
-import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
 
 void main() {
   const primary = ThemeColor(ThemeColorRole.primary);

@@ -644,15 +644,37 @@ void main() {
       matching: find.byKey(const ValueKey('floating-repository-resize')),
     );
     final before = tester.getRect(first);
-    await tester.drag(title, const Offset(80, 60));
+    final move = await tester.startGesture(tester.getCenter(title));
+    await move.moveBy(const Offset(25, 15));
+    for (var i = 0; i < 4; i++) {
+      await move.moveBy(const Offset(10, 5));
+    }
+    await move.up();
     await tester.pumpAndSettle();
     final moved = tester.getRect(first);
-    expect(moved.left, greaterThan(before.left));
-    expect(moved.top, greaterThan(before.top));
-    await tester.drag(resize, const Offset(-100, -80));
+    expect(moved.left, closeTo(before.left + 65, .01));
+    expect(moved.top, closeTo(before.top + 35, .01));
+    final resizing = await tester.startGesture(tester.getCenter(resize));
+    await resizing.moveBy(const Offset(-30, -30));
+    for (var i = 0; i < 4; i++) {
+      await resizing.moveBy(const Offset(-10, -5));
+    }
+    await resizing.up();
     await tester.pumpAndSettle();
-    expect(tester.getSize(first).width, lessThan(moved.width));
-    expect(tester.getSize(first).height, lessThan(moved.height));
+    expect(tester.getSize(first).width, closeTo(moved.width - 70, .01));
+    expect(tester.getSize(first).height, closeTo(moved.height - 50, .01));
+    final boundedResize = await tester.startGesture(tester.getCenter(resize));
+    await boundedResize.moveBy(const Offset(-500, 0));
+    await boundedResize.moveBy(const Offset(40, 0));
+    await boundedResize.up();
+    await tester.pumpAndSettle();
+    expect(tester.getSize(first).width, closeTo(360, .01));
+    final boundedMove = await tester.startGesture(tester.getCenter(title));
+    await boundedMove.moveBy(const Offset(-400, 0));
+    await boundedMove.moveBy(const Offset(30, 0));
+    await boundedMove.up();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(first).left, closeTo(30, .01));
     await tester.tap(find.text('Second window'));
     await tester.pumpAndSettle();
     expect(find.byType(CodeEditor), findsNWidgets(2));
@@ -661,6 +683,65 @@ void main() {
     expect(find.byType(CodeEditor), findsNWidgets(2));
     await tester.tap(find.text('Outside'));
     expect(clicks, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('floating panel tracks pointer under a scaled overlay', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    late String id;
+    await tester.runAsync(() async {
+      await store.create('Clients');
+      id = await store.idOf('Clients');
+    });
+    await tester.pumpWidget(
+      Transform.scale(
+        scale: .5,
+        alignment: Alignment.topLeft,
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () => openFloatingRepositoryEditor(
+                  context,
+                  store: store,
+                  repositoryId: id,
+                  name: 'Clients',
+                  text: '{}\n',
+                ),
+                child: const Text('Open panel'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open panel'));
+    await tester.pumpAndSettle();
+    final panel = find.byKey(ValueKey('floating-repository-$id'));
+    final title = find.byKey(const ValueKey('floating-repository-title'));
+    final resize = find.byKey(const ValueKey('floating-repository-resize'));
+    Rect screenBounds() {
+      final box = tester.renderObject<RenderBox>(panel);
+      return Rect.fromPoints(
+        box.localToGlobal(Offset.zero),
+        box.localToGlobal(box.size.bottomRight(Offset.zero)),
+      );
+    }
+
+    final before = screenBounds();
+    await tester.drag(title, const Offset(60, 30));
+    await tester.pumpAndSettle();
+    final moved = screenBounds();
+    expect(moved.left, closeTo(before.left + 60, .01));
+    expect(moved.top, closeTo(before.top + 30, .01));
+    await tester.drag(resize, const Offset(40, 30));
+    await tester.pumpAndSettle();
+    final resized = screenBounds();
+    expect(resized.width, closeTo(moved.width + 40, .01));
+    expect(resized.height, closeTo(moved.height + 30, .01));
     expect(tester.takeException(), isNull);
   });
 

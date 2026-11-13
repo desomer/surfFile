@@ -25,6 +25,7 @@ import '../../../theme/appearance.dart';
 import '../../../theme/container_style.dart';
 import '../../components/super_layout/super_layout.dart';
 import '../history/editor_history.dart';
+import '../repositories/floating_repository_editor.dart';
 import '../repositories/json_repository_manager.dart';
 import '../slots/editable_surface.dart';
 import '../slots/editor_slot.dart';
@@ -1914,9 +1915,7 @@ class _SuperValueJsonExtractDialogState
               SuperLayoutZone.center: [singleChildId],
             },
             slotTypes: {singleChildId: cardNative.slotTypeOf(singleChildId)},
-            slotLabels: {
-              singleChildId: ?cardNative.slotLabels[singleChildId],
-            },
+            slotLabels: {singleChildId: ?cardNative.slotLabels[singleChildId]},
           );
           unwrappedOuterId = firstNode.slotId;
         } else {
@@ -2152,6 +2151,7 @@ class _SuperValueJsonExtractDialogState
             if (arrayPath == null || arrayPath.isEmpty) continue;
 
             if (cfg.convertToListView) {
+              if (!ownerCtx.mounted) return;
               final converted = _convertGroupToListView(
                 ownerContext: ownerCtx,
                 group: group,
@@ -3172,11 +3172,97 @@ List<JsonTextBinding> collectExistingBindingsFromSlot(EditorSlotState slot) {
   return bindings;
 }
 
-enum _DataWizardAction { extractAndBind, openRepositoryManager }
+enum _DataWizardAction {
+  extractAndBind,
+  openRepositoryManager,
+  openFloatingRepository,
+}
+
+final _defaultFloatingStores = Expando<_DefaultFloatingStore>();
+
+class _DefaultFloatingStore {
+  _DefaultFloatingStore(this.overlay);
+
+  final OverlayState overlay;
+  final JsonRepositoryStore store = JsonRepositoryStore.defaultStore();
+  int references = 0;
+
+  void release() {
+    if (--references != 0) return;
+    _defaultFloatingStores[overlay] = null;
+    store.dispose();
+  }
+}
+
+Future<void> _openBoundRepository(
+  BuildContext context,
+  DataTargetElement target,
+) async {
+  final id = target.firstBoundRepositoryId;
+  if (id == null) {
+    await JsonRepositoryManager.show(context);
+    return;
+  }
+  if (!target.slot.mounted) return;
+  var store =
+      JsonRepositoryScope.maybeOf(target.slot.context) ??
+      JsonRepositoryScope.maybeOf(context);
+  _DefaultFloatingStore? owned;
+  if (store == null) {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    owned = _defaultFloatingStores[overlay] ??= _DefaultFloatingStore(overlay);
+    owned.references++;
+    store = owned.store;
+  }
+  var opened = false;
+  try {
+    final catalog = await store.catalog();
+    final entry = catalog.where((entry) => entry.id == id).firstOrNull;
+    if (entry == null) {
+      throw const FormatException('Repository lié introuvable.');
+    }
+    final text = await store.read(entry.name);
+    if (!context.mounted || !target.slot.mounted) return;
+    opened = openFloatingRepositoryEditor(
+      context,
+      store: store,
+      repositoryId: id,
+      name: entry.name,
+      text: text,
+      onClosed: owned?.release,
+    );
+  } on FormatException catch (error) {
+    if (context.mounted) await _showRepositoryOpenError(context, error.message);
+  } on FileSystemException catch (error) {
+    if (context.mounted) {
+      await _showRepositoryOpenError(
+        context,
+        'Erreur de fichier : ${error.message}',
+      );
+    }
+  } finally {
+    if (!opened) owned?.release();
+  }
+}
+
+Future<void> _showRepositoryOpenError(BuildContext context, String message) =>
+    showEditorDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Impossible d’ouvrir le repository'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
 
 /// Ouvre le sélecteur d'élément cible « Donnée… » permettant de choisir sur
-/// quel composant (ou parent) extraire & lier en JSON, ou d'ouvrir le
-/// gestionnaire de repositories JSON (notamment lorsqu'un binding existe déjà).
+/// quel composant (ou parent) extraire et lier en JSON, ouvrir le gestionnaire
+/// ou éditer directement un repository lié.
 Future<void> showComponentDataWizard({
   required BuildContext context,
   required List<DataTargetElement> targets,
@@ -3201,6 +3287,10 @@ Future<void> showComponentDataWizard({
       context,
       initialRepositoryId: selectedTarget.firstBoundRepositoryId,
     );
+    return;
+  }
+  if (action == _DataWizardAction.openFloatingRepository) {
+    await _openBoundRepository(context, selectedTarget);
     return;
   }
 
@@ -3323,7 +3413,7 @@ class _ComponentDataWizardDialogState
                               foreground: colors.onSecondaryContainer,
                               onTap: () => Navigator.of(context).pop((
                                 target,
-                                _DataWizardAction.openRepositoryManager,
+                                _DataWizardAction.openFloatingRepository,
                               )),
                             ),
                           if (extractCount == 0 &&

@@ -903,6 +903,11 @@ class _SuperValueState extends State<SuperValue>
                     !config.kind.isBoolean &&
                     (config.mode == SuperValueMode.input ||
                         config.label.isNotEmpty);
+                final showBindingError =
+                    !config.kind.isChoice &&
+                    (config.mode == SuperValueMode.display ||
+                        config.kind.isBoolean) &&
+                    (_bindingError != null || _binding?.error != null);
                 return LayoutBuilder(
                   builder: (context, constraints) => SizedBox(
                     width: !constraints.hasBoundedWidth
@@ -926,78 +931,90 @@ class _SuperValueState extends State<SuperValue>
                           : CrossAxisAlignment.stretch,
                       children: [
                         Flexible(child: content),
-                        if (!config.kind.isChoice &&
-                            (config.mode == SuperValueMode.display ||
-                                config.kind.isBoolean) &&
-                            (_bindingError != null || _binding?.error != null))
-                          Text(
-                            _bindingError ?? _binding!.error!,
-                            key: ValueKey(
-                              'super-value-binding-error-${widget.id}',
-                            ),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                        for (final entry in propertyBindingErrors.entries)
-                          Text(
-                            'Liaison ${entry.key.name} : ${entry.value}',
-                            key: ValueKey(
-                              'super-value-property-binding-error-'
-                              '${entry.key.name}-${widget.id}',
-                            ),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                        if (_binding?.error != null)
-                          TextButton(
-                            onPressed: () async {
-                              final confirmed = await showDialog<bool>(
-                                context: context,
-                                builder: (context) => AlertDialog(
-                                  title: const Text('Recharger la liaison ?'),
-                                  content: const Text(
-                                    'La saisie non enregistrée sera abandonnée.',
-                                  ),
-                                  actions: [
+                        if (showBindingError ||
+                            _binding?.error != null ||
+                            propertyBindingErrors.isNotEmpty ||
+                            stateError != null ||
+                            (missingFont && editing))
+                          Flexible(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (showBindingError)
+                                    Text(
+                                      _bindingError ?? _binding!.error!,
+                                      key: ValueKey(
+                                        'super-value-binding-error-${widget.id}',
+                                      ),
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
+                                    ),
+                                  for (final entry in propertyBindingErrors.entries)
+                                    Text(
+                                      'Liaison ${entry.key.name} : ${entry.value}',
+                                      key: ValueKey(
+                                        'super-value-property-binding-error-'
+                                        '${entry.key.name}-${widget.id}',
+                                      ),
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
+                                    ),
+                                  if (_binding?.error != null)
                                     TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(context, false),
-                                      child: const Text('Annuler'),
+                                      onPressed: () async {
+                                        final confirmed = await showDialog<bool>(
+                                          context: context,
+                                          builder: (context) => AlertDialog(
+                                            title: const Text('Recharger la liaison ?'),
+                                            content: const Text(
+                                              'La saisie non enregistrée sera abandonnée.',
+                                            ),
+                                            actions: [
+                                              TextButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context, false),
+                                                child: const Text('Annuler'),
+                                              ),
+                                              FilledButton(
+                                                onPressed: () =>
+                                                    Navigator.pop(context, true),
+                                                child: const Text('Recharger'),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                        if (confirmed == true && mounted) {
+                                          await _binding?.discardAndReload();
+                                        }
+                                      },
+                                      child: const Text('Recharger la liaison'),
                                     ),
-                                    FilledButton(
-                                      onPressed: () =>
-                                          Navigator.pop(context, true),
-                                      child: const Text('Recharger'),
+                                  if (stateError != null)
+                                    Text(
+                                      stateError!,
+                                      key: ValueKey(
+                                        'super-value-state-error-${widget.id}',
+                                      ),
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
                                     ),
-                                  ],
-                                ),
-                              );
-                              if (confirmed == true && mounted) {
-                                await _binding?.discardAndReload();
-                              }
-                            },
-                            child: const Text('Recharger la liaison'),
-                          ),
-                        if (stateError != null)
-                          Text(
-                            stateError!,
-                            key: ValueKey(
-                              'super-value-state-error-${widget.id}',
-                            ),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
-                          ),
-                        if (missingFont && editing)
-                          Text(
-                            'Police indisponible : ${config.fontFamily}. Choisissez une police disponible.',
-                            key: ValueKey(
-                              'super-value-font-warning-${widget.id}',
-                            ),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
+                                  if (missingFont && editing)
+                                    Text(
+                                      'Police indisponible : ${config.fontFamily}. Choisissez une police disponible.',
+                                      key: ValueKey(
+                                        'super-value-font-warning-${widget.id}',
+                                      ),
+                                      style: TextStyle(
+                                        color: Theme.of(context).colorScheme.error,
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                       ],

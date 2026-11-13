@@ -501,6 +501,16 @@ void main() {
             'Alice': const ContainerStyle(color: Colors.blue, padding: 2),
             'Bob': const ContainerStyle(color: Colors.green, padding: 4),
           },
+          namedProperties: const {
+            'Alice': {
+              SurfaceStyleProperty.background,
+              SurfaceStyleProperty.padding,
+            },
+            'Bob': {
+              SurfaceStyleProperty.background,
+              SurfaceStyleProperty.padding,
+            },
+          },
           selected: SelectedSurfaceStyle(
             style: const ContainerStyle(borderWidth: 2),
             properties: {SurfaceStyleProperty.border},
@@ -530,8 +540,8 @@ void main() {
                 .first,
           )
           .style;
-      expect(surface(0).color, Colors.blue);
-      expect(surface(1).color, Colors.green);
+      expect(surface(0).color, const Color(0xFF2196F3));
+      expect(surface(1).color, const Color(0xFF4CAF50));
       await tester.tap(find.text('Bob'));
       await tester.pumpAndSettle();
       expect(surface(1).borderWidth, 2);
@@ -632,6 +642,9 @@ void main() {
             states: SurfaceStyleStates(
               binding: const JsonTextBinding(path: 'clients[?].name'),
               named: {'Alice': const ContainerStyle(padding: 8)},
+              namedProperties: const {
+                'Alice': {SurfaceStyleProperty.padding},
+              },
             ),
           ),
           template: center(['name']),
@@ -646,6 +659,10 @@ void main() {
           .first;
       final state = tester.state<EditableSurfaceState>(surface);
       final dialog = state.openEditor();
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('surface-state-binding')),
+      );
       await tester.pumpAndSettle();
       await real(
         tester,
@@ -953,7 +970,11 @@ void main() {
     Future<void> openSize() async {
       await real(
         tester,
-        () => tester.tap(row('clients', 0), buttons: kSecondaryMouseButton),
+        // Le centre de la ligne est recouvert par une poignée de sélection.
+        () => tester.tapAt(
+          tester.getTopLeft(row('clients', 0)) + const Offset(50, 20),
+          buttons: kSecondaryMouseButton,
+        ),
       );
       final size = find.byKey(
         const ValueKey(

@@ -700,8 +700,8 @@ class ScrollViewportHost extends SingleChildRenderObjectWidget {
   @override
   void updateRenderObject(
     BuildContext context,
-    _RenderScrollViewportHost renderObject,
-  ) => renderObject.padding = padding;
+    RenderObject renderObject,
+  ) => (renderObject as _RenderScrollViewportHost).padding = padding;
 }
 
 class _RenderScrollViewportHost extends RenderProxyBox {

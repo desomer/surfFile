@@ -195,7 +195,13 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('transfer-apply')));
     await tester.pumpAndSettle();
-    expect(find.text('Invalid theme or window preferences.'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('transfer-import-text')))
+          .decoration
+          ?.errorText,
+      isNotNull,
+    );
     expect(controller.value.mode, Appearance().mode);
     expect(find.byKey(const ValueKey('appearance-transfer')), findsOneWidget);
   });

@@ -10,6 +10,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
 import 'package:super_container_layout/models/component_config.dart';
+import 'package:super_container_layout/models/automatic_state.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
 import 'package:super_container_layout/models/json_syntax.dart';
 import 'package:super_container_layout/models/native_component_config.dart';
@@ -38,6 +39,7 @@ class AppearanceCodec {
   void restoreAdditional(String document) {}
   void resetAdditional() {}
   bool needsMigration(String text) => false;
+
   /// Encode le document complet, y compris les champs hotes, a deux decimales.
   String encode(Appearance appearance) =>
       jsonEncode(JsonNumbers.normalizeMap(toJson(appearance)));
@@ -69,6 +71,82 @@ class AppearanceCodec {
     },
     'pageCatalog': a.pageCatalog.toJson(),
   };
+
+  /// Sérialise un instantané de transfert sans modifier la sauvegarde complète.
+  ///
+  /// Les clés racines restent présentes pour préserver le remplacement des
+  /// groupes lors de l'import, même lorsque leur valeur est celle par défaut.
+  Map<String, Object?> toTransferJson(Appearance appearance) {
+    final document = toJson(appearance);
+
+    Map<String, Object?> compactOrFull(
+      Map<String, Object?> full,
+      Map<String, Object?> Function(Map<String, Object?>) compact,
+      Object? Function(Map<String, Object?>) decode,
+      String description,
+    ) {
+      try {
+        final candidate = compact(full);
+        if (ComponentStateHelpers.sameJsonValue(
+          decode(full),
+          decode(candidate),
+        )) {
+          return candidate;
+        }
+        debugPrint(
+          '[AppearanceCodec] Transfert complet conservé pour $description : '
+          'la sérialisation compacte modifierait sa configuration.',
+        );
+      } on FormatException catch (error) {
+        debugPrint(
+          '[AppearanceCodec] Transfert complet conservé pour $description : '
+          '${error.message}',
+        );
+      }
+      return full;
+    }
+
+    final styles = document['styles'];
+    if (styles is Map) {
+      document['styles'] = {
+        for (final entry in styles.entries)
+          entry.key: compactOrFull(
+            Map<String, Object?>.from(entry.value as Map),
+            (json) => ContainerStyle.fromJson(json).toCompactJson(),
+            (json) => ContainerStyle.fromJson(json).toJson(),
+            'le style "${entry.key}"',
+          ),
+      };
+    }
+    final components = document['components'];
+    if (components is Map) {
+      document['components'] = {
+        for (final entry in components.entries)
+          entry.key: compactOrFull(
+            Map<String, Object?>.from(entry.value as Map),
+            (json) => ComponentConfig.fromJson(json).toTypedCompactJson(),
+            (json) => ComponentConfig.fromJson(json).toTypedJson(),
+            'le composant "${entry.key}"',
+          ),
+      };
+    }
+    final behaviors = document['behaviors'];
+    if (behaviors is Map) {
+      document['behaviors'] = {
+        for (final entry in behaviors.entries)
+          entry.key: [
+            for (final value in entry.value as List)
+              compactOrFull(
+                Map<String, Object?>.from(value as Map),
+                (json) => ComponentBehavior.fromJson(json).toCompactJson(),
+                (json) => ComponentBehavior.fromJson(json).toJson(),
+                'un comportement de "${entry.key}"',
+              ),
+          ],
+      };
+    }
+    return document;
+  }
 
   Appearance fromJson(Map<String, dynamic> json) {
     if (json['version'] != schemaVersion) {

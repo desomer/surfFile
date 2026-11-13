@@ -38,6 +38,45 @@ void main() {
     initialText: 'Initial',
   );
 
+  testWidgets('binding errors remain scrollable in a short value', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 120,
+              height: 32,
+              child: SuperValue(
+                id: 'short',
+                config: SuperValueConfig(
+                  binding: JsonTextBinding(
+                    repositoryId: '0123456789abcdef0123456789abcdef',
+                    path: 'name',
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final error = find.byKey(const ValueKey('super-value-binding-error-short'));
+    expect(error, findsOneWidget);
+    expect(
+      find.ancestor(of: error, matching: find.byType(SingleChildScrollView)),
+      findsOneWidget,
+    );
+    final scroll = find.ancestor(
+      of: error,
+      matching: find.byType(Scrollable),
+    );
+    await tester.drag(scroll, const Offset(0, -80));
+    await tester.pumpAndSettle();
+    expect(tester.state<ScrollableState>(scroll).position.pixels, greaterThan(0));
+    expect(tester.takeException(), isNull);
+  });
+
   Widget host(Widget child) => MaterialApp(
     home: Scaffold(
       body: Center(child: SizedBox(width: 320, child: child)),

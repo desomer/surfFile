@@ -429,7 +429,6 @@ class EditorComposedComponentBadgePainter extends CustomPainter {
     final rect = (Offset.zero & size).deflate(1.0);
     if (!rect.isEmpty && rect.width > 4 && rect.height > 4) {
       final primary = composable ? composedPrimary : forcedPrimary;
-      final secondary = composable ? composedSecondary : forcedSecondary;
       final maxCorner = math.max(0.0, math.min(16.0, rect.shortestSide / 2));
       final cornerRadius = (radius - 1.0).clamp(0.0, maxCorner).toDouble();
       final rrect = RRect.fromRectAndRadius(

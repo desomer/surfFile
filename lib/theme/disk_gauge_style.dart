@@ -209,6 +209,35 @@ class DiskGaugeStyle {
     'columns': columns,
   };
 
+  /// Sérialise la jauge sans les valeurs restaurées par défaut à l'import.
+  Map<String, Object?> toCompactJson() {
+    const d = DiskGaugeStyle();
+    return {
+      if (shape != d.shape) 'shape': shape.name,
+      if (size != d.size) 'size': size,
+      if (thickness != d.thickness) 'thickness': thickness,
+      if (roundCaps != d.roundCaps) 'roundCaps': roundCaps,
+      if (trackColor != null) 'trackColor': JsonColor.toJson(trackColor!),
+      if (fillColor != null) 'fillColor': JsonColor.toJson(fillColor!),
+      if (gradient.isNotEmpty)
+        'gradient': [for (final color in gradient) JsonColor.toJson(color)],
+      if (alertColor != null) 'alertColor': JsonColor.toJson(alertColor!),
+      if (alertThreshold != d.alertThreshold) 'alertThreshold': alertThreshold,
+      if (start != d.start) 'start': start.name,
+      if (clockwise != d.clockwise) 'clockwise': clockwise,
+      if (trackNeon != d.trackNeon) 'trackNeon': trackNeon.toCompactJson(),
+      if (alertPulse != d.alertPulse) 'alertPulse': alertPulse,
+      if (labelNeon != d.labelNeon) 'labelNeon': labelNeon,
+      if (animate != d.animate) 'animate': animate,
+      if (animationMs != d.animationMs) 'animationMs': animationMs,
+      if (percentSize != d.percentSize) 'percentSize': percentSize,
+      if (percentWeight != d.percentWeight) 'percentWeight': percentWeight,
+      if (nameSize != d.nameSize) 'nameSize': nameSize,
+      if (captionSize != d.captionSize) 'captionSize': captionSize,
+      if (columns != d.columns) 'columns': columns,
+    };
+  }
+
   static DiskGaugeStyle fromJson(Object? value) {
     if (value == null) return const DiskGaugeStyle();
     if (value is! Map) {
@@ -260,7 +289,12 @@ class DiskGaugeStyle {
     return DiskGaugeStyle(
       shape: choice('shape', DiskGaugeShape.values, d.shape),
       size: number('size', d.size, minSize, double.infinity),
-      thickness: number('thickness', d.thickness, minThickness, double.infinity),
+      thickness: number(
+        'thickness',
+        d.thickness,
+        minThickness,
+        double.infinity,
+      ),
       roundCaps: read('roundCaps', d.roundCaps),
       trackColor: color('trackColor'),
       fillColor: color('fillColor'),

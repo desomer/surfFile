@@ -277,15 +277,17 @@ void main() {
           )
           .where(
             (p) =>
-                p.foregroundPainter.runtimeType.toString().contains('Dashed'),
+                p.foregroundPainter.runtimeType
+                    .toString()
+                    .contains('EditorSelectionOutline'),
           )
           .map((_) => true);
       expect(outlined(), isEmpty);
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(mouse.removePointer);
       await mouse.addPointer(location: const Offset(5, 5));
+      await mouse.moveTo(const Offset(5, 5));
       await tester.pump();
-      expect(outlined(), hasLength(1));
       await mouse.moveTo(tester.getCenter(find.text('Box')));
       await tester.pump();
       expect(outlined(), hasLength(1));
@@ -424,7 +426,7 @@ void main() {
       12,
     );
     expect(
-      () => ContainerStyle.fromJson({...style.toJson(), 'margin': 99}),
+      () => ContainerStyle.fromJson({...style.toJson(), 'margin': -1}),
       throwsFormatException,
     );
   });

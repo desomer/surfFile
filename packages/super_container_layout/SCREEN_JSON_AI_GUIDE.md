@@ -18,6 +18,16 @@ Les dimensions compactes comme `"123.46px"` suivent la même précision.
 Les fichiers de données des repositories et les textes utilisateur ne sont
 pas arrondis.
 
+**Exports compacts** : les exports d'apparence et le contexte Vibe restent
+indentés, mais omettent les champs de configuration que leurs décodeurs
+reconstituent sans perte. Les groupes et clés racines restent explicites pour
+restaurer aussi les valeurs par défaut sur une cible modifiée. Les anciennes
+sauvegardes et les imports partiels restent acceptés. Une configuration dont
+la forme compacte ne restitue pas toutes les valeurs conserve sa forme
+complète. Les données JSON arbitraires des repositories ne sont pas filtrées.
+Dans un patch Vibe, une propriété absente continue à signifier « conserver »,
+et non « réinitialiser ».
+
 Les maxima des sliders de dimensions (tailles, marges, rayons, espacements,
 épaisseurs, ombres, tailles de police) sont des plages d'édition conseillées,
 pas des plafonds JSON : une valeur finie au-delà de 10 fois cette plage est

@@ -130,9 +130,7 @@ class ContainerStyle {
       end: resolveThemeColor(fill.end, scheme),
     ),
     neon: neon?.copyWith(color: resolveOptionalThemeColor(neon?.color, scheme)),
-    shadow: shadow?.copyWith(
-      color: resolveThemeColor(shadow!.color, scheme),
-    ),
+    shadow: shadow?.copyWith(color: resolveThemeColor(shadow!.color, scheme)),
     innerShadow: innerShadow?.copyWith(
       color: resolveThemeColor(innerShadow!.color, scheme),
     ),
@@ -350,8 +348,7 @@ class ContainerStyle {
       if (borderColor != null) 'borderColor': JsonColor.toHex(borderColor!),
       if (elevation != d.elevation) 'elevation': elevation,
       if (shadowOpacity != d.shadowOpacity) 'shadowOpacity': shadowOpacity,
-      if (neon != null && neon != const NeonStyle())
-        'neon': neon!.toCompactJson(),
+      if (neon != null) 'neon': neon!.toCompactJson(),
       if (padding != d.padding) 'padding': padding,
       if (margin != d.margin) 'margin': margin,
       if (designSystem != d.designSystem) 'designSystem': designSystem.name,
@@ -541,7 +538,12 @@ class ContainerStyle {
           ? fallback.fill
           : ContainerFill.fromJson(value['fill'], fallback: fallback.fill),
       radius: number('radius', 0, double.infinity, fallback.radius),
-      borderWidth: number('borderWidth', 0, double.infinity, fallback.borderWidth),
+      borderWidth: number(
+        'borderWidth',
+        0,
+        double.infinity,
+        fallback.borderWidth,
+      ),
       borderColor: parsedBorderColor,
       elevation: number('elevation', 0, double.infinity, fallback.elevation),
       shadowOpacity: number('shadowOpacity', 0, 1, fallback.shadowOpacity),
@@ -566,7 +568,12 @@ class ContainerStyle {
           : Quad.fromJson(value['radii'], 0, double.infinity, 'radii'),
       borderWidths: value['borderWidths'] == null
           ? fallback.borderWidths
-          : Quad.fromJson(value['borderWidths'], 0, double.infinity, 'borderWidths'),
+          : Quad.fromJson(
+              value['borderWidths'],
+              0,
+              double.infinity,
+              'borderWidths',
+            ),
       borderLine: borderLine == null
           ? fallback.borderLine
           : BorderLine.values.byName(borderLine as String),
@@ -587,7 +594,12 @@ class ContainerStyle {
             ),
       marginInsets: value['marginInsets'] == null
           ? fallback.marginInsets
-          : Quad.fromJson(value['marginInsets'], 0, double.infinity, 'marginInsets'),
+          : Quad.fromJson(
+              value['marginInsets'],
+              0,
+              double.infinity,
+              'marginInsets',
+            ),
       backdropBlur: value['backdropBlur'] == null
           ? fallback.backdropBlur
           : number('backdropBlur', 0, double.infinity),
@@ -605,11 +617,13 @@ class ContainerStyle {
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ContainerStyle &&
-          JsonColor.toJsonNullable(color) == JsonColor.toJsonNullable(other.color) &&
+          JsonColor.toJsonNullable(color) ==
+              JsonColor.toJsonNullable(other.color) &&
           fill == other.fill &&
           radius == other.radius &&
           borderWidth == other.borderWidth &&
-          JsonColor.toJsonNullable(borderColor) == JsonColor.toJsonNullable(other.borderColor) &&
+          JsonColor.toJsonNullable(borderColor) ==
+              JsonColor.toJsonNullable(other.borderColor) &&
           elevation == other.elevation &&
           shadowOpacity == other.shadowOpacity &&
           neon == other.neon &&
@@ -619,7 +633,8 @@ class ContainerStyle {
           interactionEffect == other.interactionEffect &&
           hoverEffect == other.hoverEffect &&
           hoverTint == other.hoverTint &&
-          JsonColor.toJsonNullable(hoverColor) == JsonColor.toJsonNullable(other.hoverColor) &&
+          JsonColor.toJsonNullable(hoverColor) ==
+              JsonColor.toJsonNullable(other.hoverColor) &&
           radii == other.radii &&
           borderWidths == other.borderWidths &&
           borderLine == other.borderLine &&

@@ -59,12 +59,16 @@ enum TextFieldIcon {
   info(Icons.info_outline),
   check(Icons.check),
   edit(Icons.edit_outlined),
+  // Ces noms sont des identifiants JSON publics et doivent rester inchangés.
+  // ignore: constant_identifier_names
   location_on(Icons.location_on_outlined),
+  // ignore: constant_identifier_names
   credit_card(Icons.credit_card_outlined),
   payments(Icons.payments_outlined),
   work(Icons.work_outline),
   folder(Icons.folder_outlined),
   description(Icons.description_outlined),
+  // ignore: constant_identifier_names
   attach_file(Icons.attach_file),
   schedule(Icons.schedule),
   label(Icons.label_outline),
@@ -78,13 +82,18 @@ enum TextFieldIcon {
   badge(Icons.badge_outlined),
   group(Icons.group_outlined),
   language(Icons.language),
+  // ignore: constant_identifier_names
   alternate_email(Icons.alternate_email),
+  // ignore: constant_identifier_names
   qr_code(Icons.qr_code_2),
   code(Icons.code),
+  // ignore: constant_identifier_names
   filter_list(Icons.filter_list),
   tune(Icons.tune),
+  // ignore: constant_identifier_names
   shopping_cart(Icons.shopping_cart_outlined),
   inventory(Icons.inventory_2_outlined),
+  // ignore: constant_identifier_names
   local_shipping(Icons.local_shipping_outlined);
 
   const TextFieldIcon(this.data);

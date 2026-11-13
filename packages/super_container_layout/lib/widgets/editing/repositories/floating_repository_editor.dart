@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/services.dart';
 import 'package:highlight/languages/json.dart' as highlight;
 import 'package:material_ui/material_ui.dart';
@@ -451,8 +452,22 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
                       GestureDetector(
                         key: const ValueKey('floating-repository-title'),
                         behavior: HitTestBehavior.opaque,
+                        dragStartBehavior: DragStartBehavior.down,
                         onPanUpdate: (details) => setState(() {
-                          _position = Offset(left, top) + details.delta;
+                          _position = Offset(
+                            (_position.dx.clamp(
+                                      0.0,
+                                      constraints.maxWidth - width,
+                                    ) +
+                                    details.delta.dx)
+                                .clamp(0.0, constraints.maxWidth - width),
+                            (_position.dy.clamp(
+                                      0.0,
+                                      constraints.maxHeight - height,
+                                    ) +
+                                    details.delta.dy)
+                                .clamp(0.0, constraints.maxHeight - height),
+                          );
                         }),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -520,16 +535,19 @@ class _FloatingRepositoryEditorState extends State<_FloatingRepositoryEditor> {
                         child: GestureDetector(
                           key: const ValueKey('floating-repository-resize'),
                           behavior: HitTestBehavior.opaque,
+                          dragStartBehavior: DragStartBehavior.down,
                           onPanUpdate: (details) => setState(() {
+                            final maxWidth = constraints.maxWidth - left;
+                            final maxHeight = constraints.maxHeight - top;
+                            final minWidth = math.min(320.0, maxWidth);
+                            final minHeight = math.min(240.0, maxHeight);
                             _size = Size(
-                              (width + details.delta.dx).clamp(
-                                math.min(320.0, constraints.maxWidth - left),
-                                constraints.maxWidth - left,
-                              ),
-                              (height + details.delta.dy).clamp(
-                                math.min(240.0, constraints.maxHeight - top),
-                                constraints.maxHeight - top,
-                              ),
+                              (_size.width.clamp(minWidth, maxWidth) +
+                                      details.delta.dx)
+                                  .clamp(minWidth, maxWidth),
+                              (_size.height.clamp(minHeight, maxHeight) +
+                                      details.delta.dy)
+                                  .clamp(minHeight, maxHeight),
                             );
                             _position = Offset(left, top);
                           }),

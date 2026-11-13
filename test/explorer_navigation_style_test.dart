@@ -40,15 +40,23 @@ void main() {
           'Dossier parent',
           'Actualiser',
         ]) {
-          await tester.tap(find.byTooltip(tooltip));
+          await tester.tap(find.byWidgetPredicate(
+            (widget) => widget is IconButton && widget.tooltip == tooltip,
+          ));
         }
         await tester.tap(width < 660
-            ? find.byTooltip('Nouveau dossier')
+            ? find.byWidgetPredicate((widget) =>
+                widget is IconButton && widget.tooltip == 'Nouveau dossier')
             : find.text('Nouveau dossier'));
         await tester.enterText(find.byType(TextField), 'documents');
         expect(query, 'documents');
         expect(actions, ['back', 'forward', 'up', 'refresh', 'create']);
-        expect(find.byTooltip('Paramètres d’apparence'), findsOneWidget);
+        expect(
+          find.byWidgetPredicate((widget) =>
+              widget is IconButton &&
+              widget.tooltip == 'Paramètres d’apparence'),
+          findsOneWidget,
+        );
         expect(tester.takeException(), isNull);
       });
     }

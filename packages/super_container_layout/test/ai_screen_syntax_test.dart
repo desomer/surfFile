@@ -45,7 +45,7 @@ void main() {
     });
 
     test('JsonTextBinding accepts compact path strings and repoId:path', () {
-      const repoId = 'pan_model_repository';
+      const repoId = '0123456789abcdef0123456789abcdef';
       final inherited = JsonTextBinding.fromJson('clients[?].nom');
       expect(inherited.repositoryId, isNull);
       expect(inherited.path, 'clients[?].nom');

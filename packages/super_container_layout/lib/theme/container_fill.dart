@@ -10,7 +10,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
-import 'package:collection/collection.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:material_ui/material_ui.dart';
@@ -100,8 +99,12 @@ class ContainerFill {
   }
 
   Gradient? gradient({double opacity = 1, ColorScheme? colorScheme}) {
-    final start = colorScheme == null ? this.start : resolveThemeColor(this.start, colorScheme);
-    final end = colorScheme == null ? this.end : resolveThemeColor(this.end, colorScheme);
+    final start = colorScheme == null
+        ? this.start
+        : resolveThemeColor(this.start, colorScheme);
+    final end = colorScheme == null
+        ? this.end
+        : resolveThemeColor(this.end, colorScheme);
     final colors = [
       start.withValues(alpha: start.a * opacity),
       end.withValues(alpha: end.a * opacity),
@@ -138,8 +141,8 @@ class ContainerFill {
     'type': type.name,
     'start': JsonColor.toHex(start),
     'end': JsonColor.toHex(end),
-    if (type != FillType.solid && angle != 45) 'angle': angle,
-    if (type == FillType.radial && radius != .8) 'radius': radius,
+    if (angle != 45) 'angle': angle,
+    if (radius != .8) 'radius': radius,
     if (imageUrl.isNotEmpty) 'imageUrl': imageUrl,
     if (imageBinding != null) 'imageBinding': imageBinding!.toCompactJson(),
     if (imageFit != BoxFit.cover) 'imageFit': imageFit.name,
@@ -272,16 +275,6 @@ class SvgMemoryImage extends MemoryImage {
       SynchronousFuture<SvgMemoryImage>(this);
 
   @override
-  ImageStreamCompleter loadBuffer(
-    MemoryImage key,
-    DecoderBufferCallback decode,
-  ) => MultiFrameImageStreamCompleter(
-    codec: _decodeSvgCodec(key.bytes),
-    scale: key.scale,
-    debugLabel: 'SvgMemoryImage(${describeIdentity(key.bytes)})',
-  );
-
-  @override
   ImageStreamCompleter loadImage(
     MemoryImage key,
     ImageDecoderCallback decode,
@@ -334,28 +327,6 @@ class SurfaceNetworkImage extends ImageProvider<NetworkImage>
   @override
   Future<SurfaceNetworkImage> obtainKey(ImageConfiguration configuration) =>
       SynchronousFuture<SurfaceNetworkImage>(this);
-
-  @override
-  ImageStreamCompleter loadBuffer(
-    NetworkImage key,
-    DecoderBufferCallback decode,
-  ) {
-    final chunkEvents = StreamController<ImageChunkEvent>();
-    return MultiFrameImageStreamCompleter(
-      codec: _loadAsync(
-        key as SurfaceNetworkImage,
-        chunkEvents,
-        decode: decode,
-      ),
-      chunkEvents: chunkEvents.stream,
-      scale: key.scale,
-      debugLabel: key.url,
-      informationCollector: () => <DiagnosticsNode>[
-        DiagnosticsProperty<ImageProvider>('Image provider', this),
-        DiagnosticsProperty<NetworkImage>('Image key', key),
-      ],
-    );
-  }
 
   @override
   ImageStreamCompleter loadImage(
@@ -476,7 +447,10 @@ class SurfaceNetworkImage extends ImageProvider<NetworkImage>
   int get hashCode => Object.hash(
     url,
     scale,
-    const MapEquality<String, String>().hash(headers),
+    Object.hashAllUnordered(
+      headers?.entries.map((entry) => Object.hash(entry.key, entry.value)) ??
+          const <int>[],
+    ),
     _version,
   );
 

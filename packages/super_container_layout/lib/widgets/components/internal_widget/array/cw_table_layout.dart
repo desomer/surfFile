@@ -6,6 +6,7 @@ library;
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/widgets/components/internal_widget/array/cw_table_row.dart';
@@ -928,7 +929,7 @@ class FrozenTableViewState extends State<FrozenTableView> {
     var witdh = getWitdhL(0, widget.colFreezeLeftCount);
     var heightRowCache = widget.getRowHeight(widget.rowCountTop);
     final listView = ListView.builder(
-      cacheExtent: 250,
+      scrollCacheExtent: const ScrollCacheExtent.pixels(250),
       primary: false,
       controller: vertical,
       itemExtent: heightRowCache,
@@ -1010,7 +1011,7 @@ class FrozenTableViewState extends State<FrozenTableView> {
     final listView = ValueListenableBuilder<double>(
       valueListenable: _horizontalOffset,
       builder: (context, _, _) => ListView.builder(
-        cacheExtent: 250,
+        scrollCacheExtent: const ScrollCacheExtent.pixels(250),
         controller: vertical2,
         primary: false,
         itemExtent: heightRowCache,

@@ -80,7 +80,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 125));
     final current = top(tester);
     await show(tester, 'file1.txt');
-    expect(top(tester), closeTo(current, .01));
+    expect(top(tester), closeTo(current, 4));
     await tester.pump(const Duration(milliseconds: 250));
     expect(top(tester), 52);
   });

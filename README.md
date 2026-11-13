@@ -74,6 +74,8 @@ Styles (y compris les preferences metier) et Dispositions restent independants.
 Un import historique partiel ne modifie que les valeurs fournies. Les
 identifiants de styles/dispositions generiques supplementaires sont conserves
 au prochain enregistrement.
+Les exports JSON restent lisibles et omettent les propriétés de configuration
+restaurées par défaut, sans filtrer les données des repositories.
 
 ## Registre des composants
 

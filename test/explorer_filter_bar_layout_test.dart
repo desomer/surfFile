@@ -35,6 +35,7 @@ void main() {
         home: Scaffold(
           body: SuperLayout(
             config: const SuperLayoutConfig(
+              north: true,
               south: false,
               west: false,
               east: false,
