@@ -10,7 +10,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/services.dart' show AssetBundle, rootBundle;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:material_ui/material_ui.dart';
@@ -18,8 +17,6 @@ import 'package:material_ui/material_ui.dart';
 import '../../../ai/call_gemini.dart';
 import '../../../ai/vibe_ask_user.dart';
 import '../../../ai/vibe_stream_parser.dart';
-import '../../../models/component_config.dart';
-import '../../../models/json_numbers.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/scaffold_page_config.dart';
@@ -27,8 +24,6 @@ import '../../../models/super_layout_config.dart';
 import '../../../models/super_list_view_config.dart';
 import '../../../models/super_conditional_config.dart';
 import '../../../models/super_tab_config.dart';
-import '../../../models/super_table_config.dart';
-import '../../../models/super_tree_view_config.dart';
 import '../../../services/appearance/appearance_codec.dart';
 import '../../../services/appearance/appearance_store.dart';
 import '../../../services/appearance/appearance_transfer.dart';
@@ -36,6 +31,10 @@ import '../../../super_app.dart';
 import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
 import '../slots/editor_context_menu.dart';
+import 'vibe_chat_message.dart';
+import 'vibe_chat_widgets.dart';
+import 'vibe_prompt_builder.dart';
+import 'vibe_scope_helpers.dart';
 
 export '../../../ai/call_gemini.dart' show GeminiStreamEvent, VibeAiSpeedMode;
 export '../../../ai/vibe_ask_user.dart'
@@ -46,6 +45,8 @@ export '../../../ai/vibe_ask_user.dart'
         VibeQuestioningLevel;
 export '../../../ai/vibe_chat_attachment.dart';
 export '../../../ai/vibe_stream_parser.dart' show VibeStreamSnapshot;
+export 'vibe_ask_user_card.dart' show VibeAskUserCard;
+export 'vibe_chat_message.dart' show VibeChatMessage;
 export '../slots/editor_context_menu.dart' show VibeChatScope;
 
 /// Panneau et boîte de dialogue de chat avec l'IA Vibe pour créer ou modifier l'interface en langage naturel.
@@ -269,180 +270,16 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
 
   /// Returns the direct child slot IDs placed inside [component], optionally
   /// restricted to [onlyZoneId].
-  static Iterable<String> _childrenOfComponent(
-    ComponentConfig? component, {
-    String? onlyZoneId,
-  }) {
-    if (component == null) return const [];
-    if (onlyZoneId != null && onlyZoneId.isNotEmpty) {
-      return switch (component) {
-        final SuperLayoutConfig layout => () {
-          final zone = SuperLayoutZone.values
-              .where((z) => z.name == onlyZoneId)
-              .firstOrNull;
-          return zone == null
-              ? const <String>[]
-              : layout.placementsOf(layout.contentZone(zone));
-        }(),
-        final SuperListViewConfig list => () {
-          final zone = SuperLayoutZone.values
-              .where((z) => z.name == onlyZoneId)
-              .firstOrNull;
-          return zone == null
-              ? const <String>[]
-              : list.template.placementsOf(list.template.contentZone(zone));
-        }(),
-        final SuperTabConfig tab => tab.slotsOf(onlyZoneId),
-        final SuperConditionalConfig cond => cond.slotsOf(onlyZoneId),
-        final SuperTreeViewConfig tree => tree.slotsOf(onlyZoneId),
-        final SuperTableConfig table => table.slotsOf(onlyZoneId),
-        final NativeComponentConfig native => native.slotsOf(onlyZoneId),
-        final ScaffoldPageConfig scaffold => scaffold.native.slotsOf(
-          onlyZoneId,
-        ),
-        _ => const <String>[],
-      };
-    }
-    return switch (component) {
-      final SuperLayoutConfig layout => layout.placedSlotIds,
-      final SuperListViewConfig list => list.template.placedSlotIds,
-      final SuperTabConfig tab => tab.placedSlotIds,
-      final SuperConditionalConfig cond => cond.placedSlotIds,
-      final SuperTreeViewConfig tree => tree.placedSlotIds,
-      final SuperTableConfig table => table.placedSlotIds,
-      final NativeComponentConfig native => native.placements.values.expand(
-        (ids) => ids,
-      ),
-      final ScaffoldPageConfig scaffold =>
-        scaffold.native.placements.values.expand((ids) => ids),
-      _ => const <String>[],
-    };
-  }
-
-  static Iterable<String> _placedIdsInPatchMap(
-    Map<Object?, Object?> map, {
-    String? onlyZoneId,
-  }) sync* {
-    Iterable<String> fromPlacementsMap(Object? placements) sync* {
-      if (placements is! Map) return;
-      for (final entry in placements.entries) {
-        if (onlyZoneId != null && entry.key != onlyZoneId) continue;
-        final list = entry.value;
-        if (list is List) {
-          for (final item in list) {
-            if (item is String && item.trim().isNotEmpty) {
-              yield item.trim();
-            } else if (item is Map && item['id'] is String) {
-              final id = (item['id'] as String).trim();
-              if (id.isNotEmpty) yield id;
-            }
-          }
-        }
-      }
-    }
-
-    yield* fromPlacementsMap(
-      map.containsKey('placements') ? map['placements'] : map['zones'],
-    );
-    if (map['template'] is Map) {
-      final t = map['template'] as Map;
-      yield* fromPlacementsMap(
-        t.containsKey('placements') ? t['placements'] : t['zones'],
-      );
-    }
-    if (map['row'] is Map) {
-      final r = map['row'] as Map;
-      yield* fromPlacementsMap(
-        r.containsKey('placements') ? r['placements'] : r['zones'],
-      );
-    }
-    if (onlyZoneId == null || onlyZoneId == 'tabs') {
-      if (map['tabs'] is List) {
-        for (final item in map['tabs'] as List) {
-          if (item is String && item.trim().isNotEmpty) yield item.trim();
-          if (item is Map && item['id'] is String) {
-            final id = (item['id'] as String).trim();
-            if (id.isNotEmpty) yield id;
-          }
-        }
-      }
-    }
-    if (onlyZoneId == null || onlyZoneId == 'content') {
-      if (map['content'] is List) {
-        for (final item in map['content'] as List) {
-          if (item is String && item.trim().isNotEmpty) yield item.trim();
-          if (item is Map && item['id'] is String) {
-            final id = (item['id'] as String).trim();
-            if (id.isNotEmpty) yield id;
-          }
-        }
-      }
-    }
-    if (map['contents'] is Map) {
-      for (final entry in (map['contents'] as Map).entries) {
-        final regionKey = 'content:${entry.key}';
-        if (onlyZoneId != null &&
-            onlyZoneId != regionKey &&
-            onlyZoneId != entry.key) {
-          continue;
-        }
-        if (entry.value is List) {
-          for (final item in entry.value as List) {
-            if (item is String && item.trim().isNotEmpty) yield item.trim();
-            if (item is Map && item['id'] is String) {
-              final id = (item['id'] as String).trim();
-              if (id.isNotEmpty) yield id;
-            }
-          }
-        }
-      }
-    }
-  }
-
   /// Returns the direct parent component IDs in [current] that place
   /// [scope.canonicalComponentId], plus [scope.canonicalParentComponentId] if
   /// specified.
   static Set<String> parentIdsOfScope(Appearance current, VibeChatScope scope) {
-    final targetId = scope.canonicalComponentId;
-    final parents = <String>{};
-    for (final entry in current.components.entries) {
-      if (entry.key == targetId) continue;
-      if (_childrenOfComponent(entry.value).contains(targetId)) {
-        parents.add(entry.key);
-      }
-    }
-    if (scope.canonicalParentComponentId case final explicitParent?) {
-      parents.add(explicitParent);
-    }
-    return parents;
+    return VibeScopeHelpers.parentIdsOfScope(current, scope);
   }
 
   /// Root component IDs of the effective modifiable scope: the parent
   /// container(s) of [scope.canonicalComponentId] when present, together with
   /// [scope.canonicalComponentId] itself.
-  static Set<String> _scopeRootIds(Appearance current, VibeChatScope scope) {
-    final targetId = scope.canonicalComponentId;
-    final parents = parentIdsOfScope(current, scope);
-    return <String>{...parents, targetId};
-  }
-
-  /// Collects all existing component IDs in [current] belonging to [scope]'s
-  /// modifiable subtree, extended to the parent container of the selection and
-  /// its full subtree.
-  static Set<String> _existingSubtreeIds(
-    Appearance current,
-    VibeChatScope scope,
-  ) {
-    final visited = <String>{};
-    final pending = <String>[..._scopeRootIds(current, scope)];
-    while (pending.isNotEmpty) {
-      final id = pending.removeLast();
-      if (!visited.add(id)) continue;
-      pending.addAll(_childrenOfComponent(current.components[id]));
-    }
-    return visited;
-  }
-
   /// Filters an incoming GenUI [patch] so that only changes belonging to
   /// [scope] and its parent container's subtree are kept.
   ///
@@ -452,116 +289,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
     Appearance current,
     Map<String, dynamic> patch,
     VibeChatScope scope,
-  ) {
-    final payload = patch['data'] is Map<String, dynamic>
-        ? patch['data'] as Map<String, dynamic>
-        : patch;
-    final targetId = scope.canonicalComponentId;
-    final rawTargetId = scope.componentId;
-    final parents = parentIdsOfScope(current, scope);
-    final topRootIds = parents.isNotEmpty ? parents : <String>{targetId};
-
-    final existingSubtree = _existingSubtreeIds(current, scope);
-    final outsideExistingIds = <String>{
-      for (final id in current.components.keys)
-        if (!existingSubtree.contains(id) && id != targetId) id,
-    };
-
-    final allowedSubtreeIds = <String>{...existingSubtree};
-    final rawComponents = payload['components'];
-    final placedByOutsideIds = <String>{};
-
-    if (rawComponents is Map) {
-      for (final entry in rawComponents.entries) {
-        final cid = entry.key;
-        final cval = entry.value;
-        if (cid is! String || cval is! Map) continue;
-        if (outsideExistingIds.contains(cid)) {
-          placedByOutsideIds.addAll(_placedIdsInPatchMap(cval));
-        }
-      }
-
-      final queue = <String>[...allowedSubtreeIds];
-
-      while (queue.isNotEmpty) {
-        final id = queue.removeLast();
-        for (final childId in _childrenOfComponent(current.components[id])) {
-          if (!outsideExistingIds.contains(childId) &&
-              allowedSubtreeIds.add(childId)) {
-            queue.add(childId);
-          }
-        }
-        if (rawComponents[id] is Map) {
-          for (final childId in _placedIdsInPatchMap(
-            rawComponents[id] as Map,
-          )) {
-            if (!outsideExistingIds.contains(childId) &&
-                allowedSubtreeIds.add(childId)) {
-              queue.add(childId);
-            }
-          }
-        }
-      }
-    }
-
-    final filteredComponents = <String, Object?>{};
-    if (rawComponents is Map) {
-      for (final entry in rawComponents.entries) {
-        final cid = entry.key;
-        final cval = entry.value;
-        if (cid is! String) continue;
-        if (allowedSubtreeIds.contains(cid)) {
-          if (topRootIds.contains(cid) && cval == null) continue;
-          filteredComponents[cid] = cval;
-        } else if (!current.components.containsKey(cid) &&
-            !outsideExistingIds.contains(cid) &&
-            !placedByOutsideIds.contains(cid)) {
-          // Detached newly created component: keep so validation can report it.
-          filteredComponents[cid] = cval;
-        }
-      }
-    }
-
-    bool isStyleAllowed(String styleId) {
-      if (allowedSubtreeIds.contains(styleId)) return true;
-      if (styleId.endsWith(':item')) {
-        final base = styleId.substring(0, styleId.length - 5);
-        if (allowedSubtreeIds.contains(base)) return true;
-      }
-      if (styleId == rawTargetId ||
-          styleId == targetId ||
-          styleId == '$targetId:item') {
-        return true;
-      }
-      return false;
-    }
-
-    final filteredStyles = <String, Object?>{};
-    if (payload['styles'] case final Map rawStyles) {
-      for (final entry in rawStyles.entries) {
-        if (entry.key is String && isStyleAllowed(entry.key as String)) {
-          filteredStyles[entry.key as String] = entry.value;
-        }
-      }
-    }
-
-    final filteredBehaviors = <String, Object?>{};
-    if (payload['behaviors'] case final Map rawBehaviors) {
-      for (final entry in rawBehaviors.entries) {
-        final bid = entry.key;
-        if (bid is String &&
-            (allowedSubtreeIds.contains(bid) || bid == rawTargetId)) {
-          filteredBehaviors[bid] = entry.value;
-        }
-      }
-    }
-
-    return <String, dynamic>{
-      if (filteredComponents.isNotEmpty) 'components': filteredComponents,
-      if (filteredStyles.isNotEmpty) 'styles': filteredStyles,
-      if (filteredBehaviors.isNotEmpty) 'behaviors': filteredBehaviors,
-    };
-  }
+  ) => VibeScopeHelpers.filterPatchToScope(current, patch, scope);
 
   /// Exporte un instantané JSON compact et minifié du sous-arbre de [scope]
   /// (incluant son conteneur parent et ses enfants) depuis [appearance] pour le prompt IA.
@@ -569,63 +297,7 @@ Ne renvoie aucun Markdown ni texte hors du JSON. Si une information mineure manq
     Appearance appearance,
     VibeChatScope scope, {
     AppearanceCodec codec = const AppearanceCodec(),
-  }) {
-    final targetId = scope.canonicalComponentId;
-    final rawTargetId = scope.componentId;
-    final parentIds = parentIdsOfScope(appearance, scope);
-    final subtreeIds = <String>{
-      targetId,
-      ...parentIds,
-      ..._existingSubtreeIds(appearance, scope),
-    };
-    final compactJson = codec.toCompactJson(appearance);
-    final allComponents =
-        compactJson['components'] as Map<String, Object?>? ?? const {};
-    final allStyles =
-        compactJson['styles'] as Map<String, Object?>? ?? const {};
-    final allBehaviors =
-        compactJson['behaviors'] as Map<String, Object?>? ?? const {};
-
-    final scopedComponents = <String, Object?>{
-      for (final id in subtreeIds)
-        if (allComponents.containsKey(id)) id: allComponents[id],
-    };
-    final scopedStyles = <String, Object?>{
-      for (final entry in allStyles.entries)
-        if (subtreeIds.contains(entry.key) ||
-            entry.key == rawTargetId ||
-            entry.key == targetId ||
-            entry.key == '$targetId:item' ||
-            (entry.key.endsWith(':item') &&
-                subtreeIds.contains(
-                  entry.key.substring(0, entry.key.length - 5),
-                )))
-          entry.key: entry.value,
-    };
-    final scopedBehaviors = <String, Object?>{
-      for (final entry in allBehaviors.entries)
-        if (subtreeIds.contains(entry.key) || entry.key == rawTargetId)
-          entry.key: entry.value,
-    };
-
-    return jsonEncode(
-      JsonNumbers.normalizeMap({
-        'scope': {
-          'componentId': targetId,
-          if (rawTargetId != targetId) 'surfaceId': rawTargetId,
-          'zoneId': ?scope.zoneId,
-          if (parentIds.isNotEmpty)
-            'parentComponentId': parentIds.length == 1
-                ? parentIds.first
-                : parentIds.toList(),
-          'label': scope.displayLabel,
-        },
-        'components': scopedComponents,
-        'styles': scopedStyles,
-        if (scopedBehaviors.isNotEmpty) 'behaviors': scopedBehaviors,
-      }),
-    );
-  }
+  }) => VibeScopeHelpers.exportScopedAi(appearance, scope, codec: codec);
 
   @override
   State<VibeChatDialog> createState() => _VibeChatDialogState();
@@ -638,8 +310,8 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
 
   final _input = TextEditingController();
   final _pendingAttachments = <VibeChatAttachment>[];
-  final _messages = <_ChatMessage>[
-    const _ChatMessage(text: _initialGreetingText, isUser: false),
+  final _messages = <VibeChatMessage>[
+    const VibeChatMessage(text: _initialGreetingText, isUser: false),
   ];
   final ValueNotifier<VibeStreamSnapshot?> _streamingSnapshot =
       ValueNotifier<VibeStreamSnapshot?>(null);
@@ -926,7 +598,7 @@ class _VibeChatDialogState extends State<VibeChatDialog> {
     setState(() {
       _sending = true;
       _messages.add(
-        _ChatMessage(
+        VibeChatMessage(
           text: displayUserText,
           promptText: promptOverride,
           isUser: true,
@@ -1338,13 +1010,13 @@ $response
     final reachable = <String>{};
     if (activeScope != null) {
       final pending = <String>[
-        ...VibeChatDialog._scopeRootIds(current, activeScope),
+        ...VibeScopeHelpers.scopeRootIds(current, activeScope),
       ];
       while (pending.isNotEmpty) {
         final id = pending.removeLast();
         if (!reachable.add(id)) continue;
         pending.addAll(
-          VibeChatDialog._childrenOfComponent(next.components[id]),
+          VibeScopeHelpers.childrenOfComponent(next.components[id]),
         );
       }
     } else {
@@ -1400,80 +1072,24 @@ $response
       VibeChatDialog._loadGuideFromBundle(DefaultAssetBundle.of(context));
 
   String _buildConversationHistory() {
-    final relevant = <_ChatMessage>[];
-    var seenUser = false;
-    for (final message in _messages) {
-      if (message.isUser) {
-        seenUser = true;
-        relevant.add(message);
-      } else if (seenUser || message.text != _initialGreetingText) {
-        relevant.add(message);
-      }
-    }
-    if (relevant.length <= _maxConversationEntries) {
-      return relevant.map((m) => m.toConversationEntry()).join('\n');
-    }
-    final windowed = relevant.sublist(
-      relevant.length - _maxConversationEntries,
+    return VibePromptBuilder.buildConversationHistory(
+      _messages,
+      initialGreetingText: _initialGreetingText,
+      maxEntries: _maxConversationEntries,
     );
-    if (relevant.length >= 2) {
-      final preceding = relevant[relevant.length - 2];
-      if (!preceding.isUser &&
-          preceding.failedResponse != null &&
-          !windowed.contains(preceding)) {
-        windowed.insert(0, preceding);
-      }
-    }
-    return windowed.map((m) => m.toConversationEntry()).join('\n');
   }
 
   String _buildTurnPrompt() {
-    final conversation = _buildConversationHistory();
-    final questioningDirective = _questioningLevel.promptDirective(
-      afterAskUserReply: _isAfterAskUserReply,
-    );
-    final appearance = _currentAppearance;
-    final activeScope = _scope;
-    if (activeScope != null) {
-      final parentIds = VibeChatDialog.parentIdsOfScope(
-        appearance,
-        activeScope,
-      );
-      final parentList = parentIds.map((id) => '"$id"').join(', ');
-      final effectiveParent = parentIds.isNotEmpty
-          ? parentList
-          : '"${activeScope.canonicalComponentId}"';
-      return '''
-$questioningDirective
-
-RESTRICTION STRICTE DE SCOPE :
-L'utilisateur a ouvert l'assistant IA sur un scope restreint : "${activeScope.displayLabel}" (composant id: "${activeScope.canonicalComponentId}"${activeScope.zoneId != null ? ', zone/région: "${activeScope.zoneId}"' : ''}${parentIds.isNotEmpty ? ', conteneur parent: $parentList' : ''}).
-- Le périmètre modifiable autorisé couvre l'élément sélectionné ("${activeScope.canonicalComponentId}") ainsi que son conteneur parent ($effectiveParent) et tout le sous-arbre de ce parent.
-- Ne modifie AUCUN composant situé au-dessus ou en dehors du conteneur parent ($effectiveParent).
-- Ne modifie PAS les paramètres globaux de thème (mode, accent, background) ni pageCatalog.
-- Tout nouveau composant créé doit être rattaché dans les placements de $effectiveParent ou de l’un de ses sous-composants.
-
-ÉTAT DU SCOPE CIBLÉ (JSON) :
-${VibeChatDialog.exportScopedAi(appearance, activeScope, codec: widget.codec)}
-
-CONVERSATION :
-$conversation''';
-    }
-
-    final current = AppearanceTransfer.exportCompactAi(
-      appearance,
+    return VibePromptBuilder.buildTurnPrompt(
+      questioningDirective: _questioningLevel.promptDirective(
+        afterAskUserReply: _isAfterAskUserReply,
+      ),
+      conversation: _buildConversationHistory(),
+      appearance: _currentAppearance,
       codec: widget.codec,
+      scope: _scope,
+      instantiatedComponentIds: widget.registry?.instantiatedComponentIds,
     );
-    final instantiated = widget.registry?.instantiatedComponentIds;
-    return [
-      questioningDirective,
-      if (instantiated != null)
-        'Les composants instanciés sont : ${jsonEncode(instantiated.toList())}. '
-            'Rattache les modifications à ces composants ou aux pages déclarées ; '
-            'une configuration sauvegardée mais isolée ne suffit pas.',
-      'ÉTAT ACTUEL (JSON) :\n$current',
-      'CONVERSATION :\n$conversation',
-    ].join('\n\n');
   }
 
   static IconData _iconForSpeedMode(VibeAiSpeedMode mode) => switch (mode) {
@@ -1513,7 +1129,7 @@ $conversation''';
     if (!mounted) return;
     setState(
       () => _messages.add(
-        _ChatMessage(
+        VibeChatMessage(
           text: text,
           isUser: false,
           failedResponse: failedResponse,
@@ -1590,7 +1206,7 @@ $conversation''';
                     for (final (index, mode)
                         in VibeAiSpeedMode.values.indexed) ...[
                       if (index > 0) const SizedBox(width: 6),
-                      _SpeedModeChip(
+                      VibeSpeedModeChip(
                         mode: mode,
                         icon: _iconForSpeedMode(mode),
                         selected: _speedMode == mode,
@@ -1731,9 +1347,9 @@ $conversation''';
               padding: const EdgeInsets.all(12),
               children: [
                 if (_sending)
-                  _StreamingAssistantBubble(snapshot: _streamingSnapshot),
+                  VibeStreamingAssistantBubble(snapshot: _streamingSnapshot),
                 for (var i = _messages.length - 1; i >= 0; i--)
-                  _MessageBubble(
+                  VibeMessageBubble(
                     message: _messages[i],
                     sending: _sending,
                     onSubmitAskUser: (answers) =>
@@ -1803,7 +1419,7 @@ $conversation''';
                         in _pendingAttachments.indexed)
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
-                        child: _PendingAttachmentChip(
+                        child: VibePendingAttachmentChip(
                           index: index,
                           attachment: attachment,
                           onRemove: _sending
@@ -1866,974 +1482,6 @@ $conversation''';
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ChatMessage {
-  const _ChatMessage({
-    required this.text,
-    required this.isUser,
-    this.promptText,
-    this.failedResponse,
-    this.attachments = const [],
-    this.askUser,
-    this.askUserAnswers,
-    this.askUserUsedDefaults = false,
-    this.askUserDismissed = false,
-  });
-
-  final String text;
-  final bool isUser;
-  final String? promptText;
-  final String? failedResponse;
-  final List<VibeChatAttachment> attachments;
-  final VibeAskUserRequest? askUser;
-  final Map<String, Object?>? askUserAnswers;
-  final bool askUserUsedDefaults;
-  final bool askUserDismissed;
-
-  _ChatMessage copyWith({
-    String? text,
-    bool? isUser,
-    String? promptText,
-    String? failedResponse,
-    List<VibeChatAttachment>? attachments,
-    VibeAskUserRequest? askUser,
-    Map<String, Object?>? askUserAnswers,
-    bool? askUserUsedDefaults,
-    bool? askUserDismissed,
-  }) => _ChatMessage(
-    text: text ?? this.text,
-    isUser: isUser ?? this.isUser,
-    promptText: promptText ?? this.promptText,
-    failedResponse: failedResponse ?? this.failedResponse,
-    attachments: attachments ?? this.attachments,
-    askUser: askUser ?? this.askUser,
-    askUserAnswers: askUserAnswers ?? this.askUserAnswers,
-    askUserUsedDefaults: askUserUsedDefaults ?? this.askUserUsedDefaults,
-    askUserDismissed: askUserDismissed ?? this.askUserDismissed,
-  );
-
-  String toConversationEntry() {
-    if (isUser) {
-      final effectiveText = text.isEmpty && attachments.isNotEmpty
-          ? 'Analyse les fichiers joints et applique les modifications correspondantes.'
-          : text;
-      final promptBody = promptText ?? effectiveText;
-      if (attachments.isEmpty) {
-        return 'Utilisateur : $promptBody';
-      }
-      final buffer = StringBuffer('Utilisateur : $promptBody');
-      for (final attachment in attachments) {
-        if (attachment.isImage) {
-          buffer.write(
-            '\n[Fichier image joint : "${attachment.name}" (${attachment.mimeType})]',
-          );
-        } else if (attachment.isText) {
-          buffer.write(
-            '\n[Fichier texte joint : "${attachment.name}" (${attachment.mimeType})]\n'
-            '${attachment.textContent}',
-          );
-        }
-      }
-      return buffer.toString();
-    }
-    final rejected = failedResponse?.trim();
-    if (rejected == null || rejected.isEmpty) {
-      if (askUser != null) {
-        return 'Assistant : $text\n'
-            'Questions posées : ${jsonEncode(askUser!.toJson())}';
-      }
-      return 'Assistant : $text';
-    }
-    return 'Assistant (ERREUR À CORRIGER) : $text\n'
-        'Réponse précédente invalide :\n$rejected';
-  }
-}
-
-class _PendingAttachmentChip extends StatelessWidget {
-  const _PendingAttachmentChip({
-    required this.index,
-    required this.attachment,
-    required this.onRemove,
-  });
-
-  final int index;
-  final VibeChatAttachment attachment;
-  final VoidCallback? onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      key: ValueKey('vibe-chat-pending-attachment-$index'),
-      color: scheme.secondaryContainer,
-      borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 4, 2, 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (attachment.isImage)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(6),
-                child: Image.memory(
-                  attachment.bytes,
-                  width: 28,
-                  height: 28,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Icon(
-                    Icons.image_outlined,
-                    size: 20,
-                    color: scheme.onSecondaryContainer,
-                  ),
-                ),
-              )
-            else
-              Icon(
-                Icons.description_outlined,
-                size: 18,
-                color: scheme.onSecondaryContainer,
-              ),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 140),
-              child: Text(
-                attachment.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: scheme.onSecondaryContainer,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-            IconButton(
-              key: ValueKey('vibe-chat-remove-attachment-$index'),
-              tooltip: 'Retirer ${attachment.name}',
-              visualDensity: VisualDensity.compact,
-              iconSize: 16,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
-              onPressed: onRemove,
-              icon: Icon(
-                Icons.close,
-                size: 15,
-                color: scheme.onSecondaryContainer,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MessageBubble extends StatelessWidget {
-  const _MessageBubble({
-    required this.message,
-    this.sending = false,
-    this.onSubmitAskUser,
-    this.onSkipAskUser,
-  });
-
-  final _ChatMessage message;
-  final bool sending;
-  final ValueChanged<Map<String, Object?>>? onSubmitAskUser;
-  final VoidCallback? onSkipAskUser;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final foreground = message.isUser
-        ? scheme.onPrimaryContainer
-        : scheme.onSurface;
-    final askUser = message.askUser;
-    final isResolvedAskUser =
-        message.askUserAnswers != null || message.askUserDismissed;
-
-    return Align(
-      alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 340),
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: message.isUser
-              ? scheme.primaryContainer
-              : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (message.attachments.isNotEmpty) ...[
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final attachment in message.attachments)
-                    if (attachment.isImage)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(
-                                maxWidth: 220,
-                                maxHeight: 120,
-                              ),
-                              child: Image.memory(
-                                attachment.bytes,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  padding: const EdgeInsets.all(8),
-                                  color: scheme.surface.withValues(alpha: 0.4),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.image_outlined,
-                                        size: 16,
-                                        color: foreground,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Flexible(
-                                        child: Text(
-                                          attachment.name,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: foreground,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            attachment.name,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: foreground.withValues(alpha: 0.8),
-                            ),
-                          ),
-                        ],
-                      )
-                    else
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: scheme.surface.withValues(alpha: 0.45),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.description_outlined,
-                              size: 15,
-                              color: foreground,
-                            ),
-                            const SizedBox(width: 5),
-                            Flexible(
-                              child: Text(
-                                attachment.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: foreground,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                ],
-              ),
-              if (message.text.isNotEmpty) const SizedBox(height: 6),
-            ],
-            if (message.text.isNotEmpty) SelectableText(message.text),
-            if (askUser != null) ...[
-              if (message.text.isNotEmpty) const SizedBox(height: 8),
-              if (isResolvedAskUser)
-                _ResolvedAskUserBadge(
-                  dismissed: message.askUserDismissed,
-                  usedDefaults: message.askUserUsedDefaults,
-                )
-              else
-                _AskUserCard(
-                  key: const ValueKey('vibe-ask-user-card'),
-                  request: askUser,
-                  sending: sending,
-                  onSubmit: onSubmitAskUser ?? (_) {},
-                  onSkip: onSkipAskUser ?? () {},
-                ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ResolvedAskUserBadge extends StatelessWidget {
-  const _ResolvedAskUserBadge({
-    required this.dismissed,
-    required this.usedDefaults,
-  });
-
-  final bool dismissed;
-  final bool usedDefaults;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final (IconData icon, String label) = dismissed
-        ? (Icons.remove_circle_outline, 'Questionnaire ignoré')
-        : usedDefaults
-        ? (Icons.fast_forward_outlined, 'Valeurs par défaut appliquées')
-        : (Icons.check_circle_outline, 'Réponses envoyées');
-
-    return Container(
-      key: const ValueKey('vibe-ask-user-resolved'),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: scheme.surface.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: scheme.primary),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AskUserCard extends StatefulWidget {
-  const _AskUserCard({
-    required this.request,
-    required this.sending,
-    required this.onSubmit,
-    required this.onSkip,
-    super.key,
-  });
-
-  final VibeAskUserRequest request;
-  final bool sending;
-  final ValueChanged<Map<String, Object?>> onSubmit;
-  final VoidCallback onSkip;
-
-  @override
-  State<_AskUserCard> createState() => _AskUserCardState();
-}
-
-class _AskUserCardState extends State<_AskUserCard> {
-  final Map<String, String> _singleSelected = <String, String>{};
-  final Map<String, Set<String>> _multiSelected = <String, Set<String>>{};
-  final Map<String, bool> _boolValues = <String, bool>{};
-  final Map<String, bool> _otherSelected = <String, bool>{};
-  final Map<String, TextEditingController> _otherControllers =
-      <String, TextEditingController>{};
-  final Map<String, TextEditingController> _textControllers =
-      <String, TextEditingController>{};
-
-  @override
-  void initState() {
-    super.initState();
-    _initFields();
-  }
-
-  @override
-  void didUpdateWidget(_AskUserCard oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.request != widget.request) {
-      _disposeControllers();
-      _singleSelected.clear();
-      _multiSelected.clear();
-      _boolValues.clear();
-      _otherSelected.clear();
-      _initFields();
-    }
-  }
-
-  void _initFields() {
-    for (final q in widget.request.questions) {
-      switch (q.type) {
-        case VibeAskUserFieldType.single:
-          final initial = q.effectiveInitialAnswer() as String;
-          if (q.options.contains(initial)) {
-            _singleSelected[q.id] = initial;
-            _otherSelected[q.id] = false;
-            if (q.allowOther) {
-              _otherControllers[q.id] = TextEditingController();
-            }
-          } else if (initial.isNotEmpty && q.allowOther) {
-            _singleSelected[q.id] = q.options.isNotEmpty ? q.options.first : '';
-            _otherSelected[q.id] = true;
-            _otherControllers[q.id] = TextEditingController(text: initial);
-          } else {
-            _singleSelected[q.id] = q.options.isNotEmpty ? q.options.first : '';
-            _otherSelected[q.id] = false;
-            if (q.allowOther) {
-              _otherControllers[q.id] = TextEditingController();
-            }
-          }
-        case VibeAskUserFieldType.multi:
-          final initialList = q.effectiveInitialAnswer() as List<String>;
-          final selectedSet = <String>{
-            for (final item in initialList)
-              if (q.options.contains(item)) item,
-          };
-          final customItems = <String>[
-            for (final item in initialList)
-              if (!q.options.contains(item)) item,
-          ];
-          _multiSelected[q.id] = selectedSet;
-          if (q.allowOther) {
-            final hasCustom = customItems.isNotEmpty;
-            _otherSelected[q.id] = hasCustom;
-            _otherControllers[q.id] = TextEditingController(
-              text: hasCustom ? customItems.join(', ') : '',
-            );
-          } else {
-            _otherSelected[q.id] = false;
-          }
-        case VibeAskUserFieldType.boolean:
-          _boolValues[q.id] = q.effectiveInitialAnswer() as bool;
-        case VibeAskUserFieldType.text:
-          _textControllers[q.id] = TextEditingController(
-            text: q.effectiveInitialAnswer() as String,
-          );
-      }
-    }
-  }
-
-  void _disposeControllers() {
-    for (final controller in _otherControllers.values) {
-      controller.dispose();
-    }
-    _otherControllers.clear();
-    for (final controller in _textControllers.values) {
-      controller.dispose();
-    }
-    _textControllers.clear();
-  }
-
-  @override
-  void dispose() {
-    _disposeControllers();
-    super.dispose();
-  }
-
-  Map<String, Object?> _collectAnswers() {
-    final answers = <String, Object?>{};
-    for (final q in widget.request.questions) {
-      switch (q.type) {
-        case VibeAskUserFieldType.single:
-          if (_otherSelected[q.id] ?? false) {
-            final custom = _otherControllers[q.id]?.text.trim() ?? '';
-            answers[q.id] = custom.isNotEmpty
-                ? custom
-                : q.effectiveInitialAnswer();
-          } else {
-            final chosen = _singleSelected[q.id] ?? '';
-            answers[q.id] = chosen.isNotEmpty
-                ? chosen
-                : q.effectiveInitialAnswer();
-          }
-        case VibeAskUserFieldType.multi:
-          final selectedSet = _multiSelected[q.id] ?? const <String>{};
-          final items = <String>[
-            for (final opt in q.options)
-              if (selectedSet.contains(opt)) opt,
-          ];
-          if (_otherSelected[q.id] ?? false) {
-            final custom = _otherControllers[q.id]?.text.trim() ?? '';
-            if (custom.isNotEmpty && !items.contains(custom)) {
-              items.add(custom);
-            }
-          }
-          answers[q.id] = List<String>.unmodifiable(items);
-        case VibeAskUserFieldType.boolean:
-          answers[q.id] =
-              _boolValues[q.id] ?? (q.effectiveInitialAnswer() as bool);
-        case VibeAskUserFieldType.text:
-          answers[q.id] = (_textControllers[q.id]?.text ?? '').trim();
-      }
-    }
-    return answers;
-  }
-
-  void _handleSubmit() {
-    if (widget.sending) return;
-    widget.onSubmit(_collectAnswers());
-  }
-
-  Widget _buildQuestionControl(BuildContext context, VibeAskUserQuestion q) {
-    final scheme = Theme.of(context).colorScheme;
-    switch (q.type) {
-      case VibeAskUserFieldType.single:
-        final isOther = _otherSelected[q.id] ?? false;
-        final currentOpt = _singleSelected[q.id];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final (optIndex, opt) in q.options.indexed)
-                  ChoiceChip(
-                    key: ValueKey('vibe-ask-option-${q.id}-$optIndex'),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    label: Text(
-                      opt,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    selected: !isOther && currentOpt == opt,
-                    onSelected: widget.sending
-                        ? null
-                        : (_) => setState(() {
-                            _otherSelected[q.id] = false;
-                            _singleSelected[q.id] = opt;
-                          }),
-                  ),
-                if (q.allowOther)
-                  ChoiceChip(
-                    key: ValueKey('vibe-ask-other-chip-${q.id}'),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    label: const Text('Autre…', style: TextStyle(fontSize: 12)),
-                    selected: isOther,
-                    onSelected: widget.sending
-                        ? null
-                        : (selected) => setState(() {
-                            _otherSelected[q.id] = selected;
-                          }),
-                  ),
-              ],
-            ),
-            if (q.allowOther && isOther) ...[
-              const SizedBox(height: 6),
-              TextField(
-                key: ValueKey('vibe-ask-other-input-${q.id}'),
-                controller: _otherControllers[q.id],
-                enabled: !widget.sending,
-                style: const TextStyle(fontSize: 12.5),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  hintText: 'Préciser…',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        );
-
-      case VibeAskUserFieldType.multi:
-        final selectedSet = _multiSelected.putIfAbsent(q.id, () => <String>{});
-        final isOther = _otherSelected[q.id] ?? false;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final (optIndex, opt) in q.options.indexed)
-                  FilterChip(
-                    key: ValueKey('vibe-ask-option-${q.id}-$optIndex'),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    label: Text(
-                      opt,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    selected: selectedSet.contains(opt),
-                    onSelected: widget.sending
-                        ? null
-                        : (selected) => setState(() {
-                            if (selected) {
-                              selectedSet.add(opt);
-                            } else {
-                              selectedSet.remove(opt);
-                            }
-                          }),
-                  ),
-                if (q.allowOther)
-                  FilterChip(
-                    key: ValueKey('vibe-ask-other-chip-${q.id}'),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    label: const Text('Autre…', style: TextStyle(fontSize: 12)),
-                    selected: isOther,
-                    onSelected: widget.sending
-                        ? null
-                        : (selected) => setState(() {
-                            _otherSelected[q.id] = selected;
-                          }),
-                  ),
-              ],
-            ),
-            if (q.allowOther && isOther) ...[
-              const SizedBox(height: 6),
-              TextField(
-                key: ValueKey('vibe-ask-other-input-${q.id}'),
-                controller: _otherControllers[q.id],
-                enabled: !widget.sending,
-                style: const TextStyle(fontSize: 12.5),
-                decoration: const InputDecoration(
-                  isDense: true,
-                  hintText: 'Autre choix…',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        );
-
-      case VibeAskUserFieldType.boolean:
-        final value = _boolValues[q.id] ?? (q.effectiveInitialAnswer() as bool);
-        return Row(
-          children: [
-            Expanded(
-              child: Text(
-                value ? 'Oui' : 'Non',
-                style: TextStyle(fontSize: 12.5, color: scheme.onSurface),
-              ),
-            ),
-            Switch(
-              key: ValueKey('vibe-ask-switch-${q.id}'),
-              value: value,
-              onChanged: widget.sending
-                  ? null
-                  : (next) => setState(() => _boolValues[q.id] = next),
-            ),
-          ],
-        );
-
-      case VibeAskUserFieldType.text:
-        return TextField(
-          key: ValueKey('vibe-ask-text-${q.id}'),
-          controller: _textControllers[q.id],
-          enabled: !widget.sending,
-          style: const TextStyle(fontSize: 12.5),
-          decoration: const InputDecoration(
-            isDense: true,
-            border: OutlineInputBorder(),
-            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          ),
-        );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: scheme.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final (qIndex, q) in widget.request.questions.indexed) ...[
-            if (qIndex > 0) const SizedBox(height: 10),
-            Text(
-              q.title,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                color: scheme.onSurface,
-              ),
-            ),
-            if (q.description != null && q.description!.isNotEmpty) ...[
-              const SizedBox(height: 2),
-              Text(
-                q.description!,
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-            const SizedBox(height: 6),
-            _buildQuestionControl(context, q),
-          ],
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                Tooltip(
-                  message: 'Générer avec les valeurs par défaut',
-                  child: TextButton(
-                    key: const ValueKey('vibe-ask-user-skip'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    onPressed: widget.sending ? null : widget.onSkip,
-                    child: const Text('Passer'),
-                  ),
-                ),
-                FilledButton.icon(
-                  key: const ValueKey('vibe-ask-user-submit'),
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  onPressed: widget.sending ? null : _handleSubmit,
-                  icon: const Icon(Icons.auto_awesome, size: 16),
-                  label: const Text('Générer'),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SpeedModeChip extends StatelessWidget {
-  const _SpeedModeChip({
-    required this.mode,
-    required this.icon,
-    required this.selected,
-    required this.enabled,
-    required this.onSelected,
-  });
-
-  final VibeAiSpeedMode mode;
-  final IconData icon;
-  final bool selected;
-  final bool enabled;
-  final VoidCallback onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final background = selected
-        ? scheme.primaryContainer
-        : scheme.surfaceContainerLow;
-    final foreground = selected
-        ? scheme.onPrimaryContainer
-        : scheme.onSurfaceVariant;
-    final borderColor = selected ? scheme.primary : scheme.outlineVariant;
-    return Tooltip(
-      message: mode.tooltip,
-      child: Semantics(
-        button: true,
-        selected: selected,
-        enabled: enabled,
-        label: mode.label,
-        child: Material(
-          color: background,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: borderColor),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            key: ValueKey('vibe-chat-speed-${mode.name}'),
-            onTap: enabled ? onSelected : null,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    icon,
-                    size: 14,
-                    color: enabled
-                        ? foreground
-                        : foreground.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    mode.label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                      color: enabled
-                          ? foreground
-                          : foreground.withValues(alpha: 0.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StreamingAssistantBubble extends StatelessWidget {
-  const _StreamingAssistantBubble({required this.snapshot});
-
-  final ValueListenable<VibeStreamSnapshot?> snapshot;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Align(
-      key: const ValueKey('vibe-chat-streaming-bubble'),
-      alignment: Alignment.centerLeft,
-      child: ValueListenableBuilder<VibeStreamSnapshot?>(
-        valueListenable: snapshot,
-        builder: (context, current, _) {
-          final streamedMessage = current?.message;
-          if (current == null || streamedMessage == null) {
-            return Container(
-              constraints: const BoxConstraints(maxWidth: 340),
-              margin: const EdgeInsets.symmetric(vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox.square(
-                    dimension: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'Génération en cours…',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final count = current.estimatedComponentCount;
-          final patchLabel = count > 0
-              ? 'Construction du patch UI ($count composant${count > 1 ? 's' : ''})…'
-              : 'Construction du patch UI…';
-
-          return Container(
-            constraints: const BoxConstraints(maxWidth: 340),
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SelectableText(streamedMessage),
-                if (current.hasVibeObject) ...[
-                  if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox.square(
-                        dimension: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          patchLabel,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ] else if (current.isMessageComplete &&
-                    current.hasAskUserObject) ...[
-                  if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const SizedBox.square(
-                        dimension: 12,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          'Préparation des questions…',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          );
-        },
       ),
     );
   }

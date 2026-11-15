@@ -1,5 +1,7 @@
-// Aperçus visuels des composants du [Registry] affichés dans l'assistant d'ajout.
-part of 'registry.dart';
+/// Aperçus visuels des composants standards consommés par le catalogue du registre.
+library;
+
+import 'package:material_ui/material_ui.dart';
 
 BoxDecoration _previewBoxDecoration(
   ColorScheme colors, {
@@ -42,7 +44,8 @@ Widget _previewZoneBox(
   );
 }
 
-Widget _buildLayoutPreview(BuildContext context) => IgnorePointer(
+/// Construit l’aperçu visuel du composant standard Layout.
+Widget buildLayoutPreview(BuildContext context) => IgnorePointer(
   child: SizedBox(
     height: 92,
     child: Column(
@@ -72,7 +75,8 @@ Widget _buildLayoutPreview(BuildContext context) => IgnorePointer(
   ),
 );
 
-Widget _buildValuePreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Value.
+Widget buildValuePreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
   return IgnorePointer(
@@ -110,7 +114,8 @@ Widget _buildValuePreview(BuildContext context) {
   );
 }
 
-Widget _buildActionPreview(BuildContext context) => IgnorePointer(
+/// Construit l’aperçu visuel du composant standard Action.
+Widget buildActionPreview(BuildContext context) => IgnorePointer(
   child: Wrap(
     spacing: 8,
     runSpacing: 8,
@@ -130,7 +135,8 @@ Widget _buildActionPreview(BuildContext context) => IgnorePointer(
   ),
 );
 
-Widget _buildIndicatorPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Indicator.
+Widget buildIndicatorPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   return IgnorePointer(
     child: Wrap(
@@ -179,7 +185,8 @@ Widget _buildIndicatorPreview(BuildContext context) {
   );
 }
 
-Widget _buildSeparatorPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Separator.
+Widget buildSeparatorPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   return IgnorePointer(
     child: Column(
@@ -210,7 +217,8 @@ Widget _buildSeparatorPreview(BuildContext context) {
   );
 }
 
-Widget _buildCardPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Card.
+Widget buildCardPreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
   return IgnorePointer(
@@ -253,7 +261,8 @@ Widget _buildCardPreview(BuildContext context) {
   );
 }
 
-Widget _buildApplicationBarPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard ApplicationBar.
+Widget buildApplicationBarPreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
   return IgnorePointer(
@@ -283,7 +292,8 @@ Widget _buildApplicationBarPreview(BuildContext context) {
   );
 }
 
-Widget _buildBottomNavigationBarPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard BottomNavigationBar.
+Widget buildBottomNavigationBarPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   Widget item(IconData icon, String label, {bool selected = false}) => Expanded(
     child: Column(
@@ -330,7 +340,8 @@ Widget _buildBottomNavigationBarPreview(BuildContext context) {
   );
 }
 
-Widget _buildBottomAppBarPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard BottomAppBar.
+Widget buildBottomAppBarPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   return IgnorePointer(
     child: Container(
@@ -360,7 +371,8 @@ Widget _buildBottomAppBarPreview(BuildContext context) {
   );
 }
 
-Widget _buildNavigationRailPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard NavigationRail.
+Widget buildNavigationRailPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   return IgnorePointer(
     child: SizedBox(
@@ -416,7 +428,8 @@ Widget _buildNavigationRailPreview(BuildContext context) {
   );
 }
 
-Widget _buildExpansiblePreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Expansible.
+Widget buildExpansiblePreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
   return IgnorePointer(
@@ -455,7 +468,8 @@ Widget _buildExpansiblePreview(BuildContext context) {
   );
 }
 
-Widget _buildMenuPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Menu.
+Widget buildMenuPreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
   return IgnorePointer(
@@ -489,7 +503,8 @@ Widget _buildMenuPreview(BuildContext context) {
   );
 }
 
-Widget _buildTabPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Tab.
+Widget buildTabPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   Widget tab(String title, {bool selected = false}) => Expanded(
     child: Container(
@@ -536,7 +551,8 @@ Widget _buildTabPreview(BuildContext context) {
   );
 }
 
-Widget _buildConditionalPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Conditional.
+Widget buildConditionalPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   Widget chip(String title, {bool selected = false}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -583,7 +599,8 @@ Widget _buildConditionalPreview(BuildContext context) {
   );
 }
 
-Widget _buildIterableContentPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard IterableContent.
+Widget buildIterableContentPreview(BuildContext context) {
   final theme = Theme.of(context);
   final colors = theme.colorScheme;
   return IgnorePointer(
@@ -610,7 +627,8 @@ Widget _buildIterableContentPreview(BuildContext context) {
   );
 }
 
-Widget _buildListViewPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard ListView.
+Widget buildListViewPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   Widget row(String label) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -638,7 +656,8 @@ Widget _buildListViewPreview(BuildContext context) {
   );
 }
 
-Widget _buildTreeViewPreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard TreeView.
+Widget buildTreeViewPreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   Widget nodeRow(String header, String data, {int depth = 0}) => Padding(
     padding: EdgeInsets.only(left: depth * 16.0),
@@ -683,7 +702,8 @@ Widget _buildTreeViewPreview(BuildContext context) {
   );
 }
 
-Widget _buildTablePreview(BuildContext context) {
+/// Construit l’aperçu visuel du composant standard Table.
+Widget buildTablePreview(BuildContext context) {
   final colors = Theme.of(context).colorScheme;
   Widget tableRow(List<String> cells, {bool header = false}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

@@ -1,6 +1,6 @@
 /// Catalogue des configurateurs d'ajout ([ComponentAddConfigurator]) des composants standards.
 ///
-/// Raccorde chaque composant de `Registry.bootstrap()` à son formulaire dans [ComponentAddWizard].
+/// Raccorde les composants standards à leurs formulaires d'ajout.
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -21,7 +21,7 @@ import '../../../models/super_indicator_config.dart';
 import '../../../models/super_separator_config.dart';
 import '../../../theme/container_style.dart';
 import '../../components/super_layout/super_layout.dart';
-import 'component_add_wizard.dart';
+import 'component_add_contracts.dart';
 import 'forms/container_add_form.dart';
 import 'forms/expansible_add_form.dart';
 import 'forms/list_view_add_form.dart';

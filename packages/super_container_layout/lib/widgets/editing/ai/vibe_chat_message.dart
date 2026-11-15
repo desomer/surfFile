@@ -1,0 +1,113 @@
+/// Représentation d'un message Vibe et de son entrée dans le prompt.
+library;
+
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart' show immutable;
+
+import '../../../ai/vibe_ask_user.dart';
+import '../../../ai/vibe_chat_attachment.dart';
+
+/// Message de conversation temporaire affiché par le dialogue Vibe.
+@immutable
+class VibeChatMessage {
+  /// Crée un message utilisateur ou assistant du chat Vibe.
+  const VibeChatMessage({
+    required this.text,
+    required this.isUser,
+    this.promptText,
+    this.failedResponse,
+    this.attachments = const [],
+    this.askUser,
+    this.askUserAnswers,
+    this.askUserUsedDefaults = false,
+    this.askUserDismissed = false,
+  });
+
+  /// Texte affiché dans la bulle.
+  final String text;
+
+  /// Indique si le message a été écrit par l'utilisateur.
+  final bool isUser;
+
+  /// Texte effectivement envoyé, différent du texte affiché après clarification.
+  final String? promptText;
+
+  /// Réponse IA rejetée, conservée pour permettre sa correction au tour suivant.
+  final String? failedResponse;
+
+  /// Pièces jointes associées à ce tour utilisateur.
+  final List<VibeChatAttachment> attachments;
+
+  /// Questionnaire interactif associé à la réponse.
+  final VibeAskUserRequest? askUser;
+
+  /// Réponses saisies dans le questionnaire.
+  final Map<String, Object?>? askUserAnswers;
+
+  /// Indique si les valeurs proposées ont été utilisées sans modification.
+  final bool askUserUsedDefaults;
+
+  /// Indique si le questionnaire a été ignoré.
+  final bool askUserDismissed;
+
+  /// Copie ce message en conservant les valeurs non spécifiées.
+  VibeChatMessage copyWith({
+    String? text,
+    bool? isUser,
+    String? promptText,
+    String? failedResponse,
+    List<VibeChatAttachment>? attachments,
+    VibeAskUserRequest? askUser,
+    Map<String, Object?>? askUserAnswers,
+    bool? askUserUsedDefaults,
+    bool? askUserDismissed,
+  }) => VibeChatMessage(
+    text: text ?? this.text,
+    isUser: isUser ?? this.isUser,
+    promptText: promptText ?? this.promptText,
+    failedResponse: failedResponse ?? this.failedResponse,
+    attachments: attachments ?? this.attachments,
+    askUser: askUser ?? this.askUser,
+    askUserAnswers: askUserAnswers ?? this.askUserAnswers,
+    askUserUsedDefaults: askUserUsedDefaults ?? this.askUserUsedDefaults,
+    askUserDismissed: askUserDismissed ?? this.askUserDismissed,
+  );
+
+  /// Formate le message à inclure dans l'historique transmis à l'IA.
+  String toConversationEntry() {
+    if (isUser) {
+      final effectiveText = text.isEmpty && attachments.isNotEmpty
+          ? 'Analyse les fichiers joints et applique les modifications correspondantes.'
+          : text;
+      final promptBody = promptText ?? effectiveText;
+      if (attachments.isEmpty) {
+        return 'Utilisateur : $promptBody';
+      }
+      final buffer = StringBuffer('Utilisateur : $promptBody');
+      for (final attachment in attachments) {
+        if (attachment.isImage) {
+          buffer.write(
+            '\n[Fichier image joint : "${attachment.name}" (${attachment.mimeType})]',
+          );
+        } else if (attachment.isText) {
+          buffer.write(
+            '\n[Fichier texte joint : "${attachment.name}" (${attachment.mimeType})]\n'
+            '${attachment.textContent}',
+          );
+        }
+      }
+      return buffer.toString();
+    }
+    final rejected = failedResponse?.trim();
+    if (rejected == null || rejected.isEmpty) {
+      if (askUser != null) {
+        return 'Assistant : $text\n'
+            'Questions posées : ${jsonEncode(askUser!.toJson())}';
+      }
+      return 'Assistant : $text';
+    }
+    return 'Assistant (ERREUR À CORRIGER) : $text\n'
+        'Réponse précédente invalide :\n$rejected';
+  }
+}

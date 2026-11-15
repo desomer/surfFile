@@ -27,8 +27,32 @@ void main() {
     expect(combined.accepts({'appBar', 'internal'}), isFalse);
   });
 
-  test('bootstrap and registration retain component tags', () {
+  test('bootstrap retains component order, overwrite behavior, and tags', () {
     final registry = Registry()..bootstrap();
+    expect(registry.registry.keys.toList(), [
+      'Renderer',
+      'Layout',
+      'Card',
+      'Value',
+      'Action',
+      'Indicator',
+      'Separator',
+      'ApplicationBar',
+      'BottomNavigationBar',
+      'BottomAppBar',
+      'NavigationRail',
+      'Expansible',
+      'Menu',
+      'Tab',
+      'Conditional',
+      'IterableContent',
+      'ListView',
+      'TreeView',
+      'Table',
+    ]);
+    registry.registerFactory('Layout', const SizedBox(), label: 'Override');
+    registry.bootstrap();
+    expect(registry.registry['Layout']!.label, isNull);
     expect(registry.registry['ApplicationBar']!.tags, {'appBar'});
     expect(registry.registry['BottomNavigationBar']!.tags, {
       'bottomNavigationBar',

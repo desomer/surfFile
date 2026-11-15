@@ -1,0 +1,526 @@
+/// Bulles de conversation, indicateurs de génération et pièces jointes du chat Vibe.
+library;
+
+import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:material_ui/material_ui.dart';
+
+import '../../../ai/call_gemini.dart';
+import '../../../ai/vibe_stream_parser.dart';
+import 'vibe_ask_user_card.dart';
+import 'vibe_chat_message.dart';
+
+/// Puce représentant une pièce jointe en attente d'envoi.
+class VibePendingAttachmentChip extends StatelessWidget {
+  /// Crée une puce avec une action de retrait optionnelle.
+  const VibePendingAttachmentChip({
+    required this.index,
+    required this.attachment,
+    required this.onRemove,
+    super.key,
+  });
+
+  /// Position de la pièce jointe dans la liste du chat.
+  final int index;
+
+  /// Fichier ou texte représenté par cette puce.
+  final VibeChatAttachment attachment;
+
+  /// Action de retrait, absente pendant la génération.
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      key: ValueKey('vibe-chat-pending-attachment-$index'),
+      color: scheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(6, 4, 2, 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (attachment.isImage)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: Image.memory(
+                  attachment.bytes,
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Icon(
+                    Icons.image_outlined,
+                    size: 20,
+                    color: scheme.onSecondaryContainer,
+                  ),
+                ),
+              )
+            else
+              Icon(
+                Icons.description_outlined,
+                size: 18,
+                color: scheme.onSecondaryContainer,
+              ),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: Text(
+                attachment.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: scheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            IconButton(
+              key: ValueKey('vibe-chat-remove-attachment-$index'),
+              tooltip: 'Retirer ${attachment.name}',
+              visualDensity: VisualDensity.compact,
+              iconSize: 16,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 24, height: 24),
+              onPressed: onRemove,
+              icon: Icon(
+                Icons.close,
+                size: 15,
+                color: scheme.onSecondaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Bulle de message utilisateur ou assistant, avec questionnaire éventuel.
+class VibeMessageBubble extends StatelessWidget {
+  /// Crée une bulle associée à [message].
+  const VibeMessageBubble({
+    required this.message,
+    this.sending = false,
+    this.onSubmitAskUser,
+    this.onSkipAskUser,
+    super.key,
+  });
+
+  /// Message à afficher.
+  final VibeChatMessage message;
+
+  /// Désactive les questions pendant la génération.
+  final bool sending;
+
+  /// Reçoit les réponses à un questionnaire.
+  final ValueChanged<Map<String, Object?>>? onSubmitAskUser;
+
+  /// Demande de répondre avec les valeurs par défaut.
+  final VoidCallback? onSkipAskUser;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final foreground = message.isUser
+        ? scheme.onPrimaryContainer
+        : scheme.onSurface;
+    final askUser = message.askUser;
+    final isResolvedAskUser =
+        message.askUserAnswers != null || message.askUserDismissed;
+
+    return Align(
+      alignment: message.isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 340),
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+        decoration: BoxDecoration(
+          color: message.isUser
+              ? scheme.primaryContainer
+              : scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (message.attachments.isNotEmpty) ...[
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final attachment in message.attachments)
+                    if (attachment.isImage)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(
+                                maxWidth: 220,
+                                maxHeight: 120,
+                              ),
+                              child: Image.memory(
+                                attachment.bytes,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Container(
+                                  padding: const EdgeInsets.all(8),
+                                  color: scheme.surface.withValues(alpha: 0.4),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.image_outlined,
+                                        size: 16,
+                                        color: foreground,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          attachment.name,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: foreground,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            attachment.name,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: foreground.withValues(alpha: 0.8),
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: scheme.surface.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.description_outlined,
+                              size: 15,
+                              color: foreground,
+                            ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                attachment.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: foreground,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                ],
+              ),
+              if (message.text.isNotEmpty) const SizedBox(height: 6),
+            ],
+            if (message.text.isNotEmpty) SelectableText(message.text),
+            if (askUser != null) ...[
+              if (message.text.isNotEmpty) const SizedBox(height: 8),
+              if (isResolvedAskUser)
+                VibeResolvedAskUserBadge(
+                  dismissed: message.askUserDismissed,
+                  usedDefaults: message.askUserUsedDefaults,
+                )
+              else
+                VibeAskUserCard(
+                  key: const ValueKey('vibe-ask-user-card'),
+                  request: askUser,
+                  sending: sending,
+                  onSubmit: onSubmitAskUser ?? (_) {},
+                  onSkip: onSkipAskUser ?? () {},
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Indicate le résultat d'un questionnaire déjà traité.
+class VibeResolvedAskUserBadge extends StatelessWidget {
+  /// Crée une indication de questionnaire terminé ou ignoré.
+  const VibeResolvedAskUserBadge({
+    required this.dismissed,
+    required this.usedDefaults,
+    super.key,
+  });
+
+  /// Indique si l'utilisateur a ignoré les questions.
+  final bool dismissed;
+
+  /// Indique si les valeurs proposées ont été utilisées.
+  final bool usedDefaults;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (IconData icon, String label) = dismissed
+        ? (Icons.remove_circle_outline, 'Questionnaire ignoré')
+        : usedDefaults
+        ? (Icons.fast_forward_outlined, 'Valeurs par défaut appliquées')
+        : (Icons.check_circle_outline, 'Réponses envoyées');
+
+    return Container(
+      key: const ValueKey('vibe-ask-user-resolved'),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: scheme.primary),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Sélecteur de mode de vitesse du chat Vibe.
+class VibeSpeedModeChip extends StatelessWidget {
+  /// Crée une option de vitesse sélectionnable.
+  const VibeSpeedModeChip({
+    required this.mode,
+    required this.icon,
+    required this.selected,
+    required this.enabled,
+    required this.onSelected,
+    super.key,
+  });
+
+  /// Mode de génération associé.
+  final VibeAiSpeedMode mode;
+
+  /// Icône affichée devant le nom du mode.
+  final IconData icon;
+
+  /// Indique si le mode est actif.
+  final bool selected;
+
+  /// Indique si la sélection est permise.
+  final bool enabled;
+
+  /// Callback déclenché à la sélection.
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final background = selected
+        ? scheme.primaryContainer
+        : scheme.surfaceContainerLow;
+    final foreground = selected
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
+    final borderColor = selected ? scheme.primary : scheme.outlineVariant;
+    return Tooltip(
+      message: mode.tooltip,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        enabled: enabled,
+        label: mode.label,
+        child: Material(
+          color: background,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: borderColor),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            key: ValueKey('vibe-chat-speed-${mode.name}'),
+            onTap: enabled ? onSelected : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    icon,
+                    size: 14,
+                    color: enabled
+                        ? foreground
+                        : foreground.withValues(alpha: 0.5),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    mode.label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      color: enabled
+                          ? foreground
+                          : foreground.withValues(alpha: 0.5),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bulle présentant progressivement le texte et l'état du patch généré.
+class VibeStreamingAssistantBubble extends StatelessWidget {
+  /// Crée la bulle liée aux snapshots de [snapshot].
+  const VibeStreamingAssistantBubble({required this.snapshot, super.key});
+
+  /// Snapshot réactif du parseur de réponse incrémental.
+  final ValueListenable<VibeStreamSnapshot?> snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      key: const ValueKey('vibe-chat-streaming-bubble'),
+      alignment: Alignment.centerLeft,
+      child: ValueListenableBuilder<VibeStreamSnapshot?>(
+        valueListenable: snapshot,
+        builder: (context, current, _) {
+          final streamedMessage = current?.message;
+          if (current == null || streamedMessage == null) {
+            return Container(
+              constraints: const BoxConstraints(maxWidth: 340),
+              margin: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox.square(
+                    dimension: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      'Génération en cours…',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final count = current.estimatedComponentCount;
+          final patchLabel = count > 0
+              ? 'Construction du patch UI ($count composant${count > 1 ? 's' : ''})…'
+              : 'Construction du patch UI…';
+
+          return Container(
+            constraints: const BoxConstraints(maxWidth: 340),
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SelectableText(streamedMessage),
+                if (current.hasVibeObject) ...[
+                  if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox.square(
+                        dimension: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          patchLabel,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else if (current.isMessageComplete &&
+                    current.hasAskUserObject) ...[
+                  if (streamedMessage.isNotEmpty) const SizedBox(height: 6),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const SizedBox.square(
+                        dimension: 12,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Préparation des questions…',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+}

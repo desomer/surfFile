@@ -1,303 +1,30 @@
 /// Assistant guidé d'ajout d'un composant ([ComponentAddWizard]) dans une zone ou région.
 ///
-/// Permet de choisir le type de composant filtré par [ComponentTagFilter], le mode ([InsertMode]) et ses réglages.
+/// Permet de choisir un composant selon les tags, son mode d’insertion et ses réglages.
 library;
+
+export 'component_add_contracts.dart'
+    show
+        ComponentAddFamily,
+        ComponentAddConfigurator,
+        ComponentAddCandidate,
+        ComponentAddTarget,
+        ComponentAddPlacement,
+        ComponentAddTargetScope,
+        ComponentAddRequest;
 
 import 'package:material_ui/material_ui.dart';
 
-import '../../../models/component_tag_filter.dart';
-import '../../../models/json_text_binding.dart';
-import '../../../models/registry.dart';
-import '../../../models/super_layout_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
+import 'component_add_choice.dart';
+import 'component_add_contracts.dart';
+import 'component_add_placement.dart';
+import 'component_add_size_fields.dart';
 import 'insertion_plan.dart';
-
-/// Famille affichée dans les filtres de l’assistant d’ajout de composants.
-enum ComponentAddFamily {
-  standard('Standard'),
-  extended('Étendu'),
-  container('Container'),
-  composed('Composé'),
-  user('Utilisateur');
-
-  const ComponentAddFamily(this.label);
-
-  /// Libellé français présenté dans le wizard.
-  final String label;
-}
-
-/// Component-specific settings edited by the add wizard before insertion.
-///
-/// The draft [T] is created by [initial], edited by [builder], described in
-/// the summary by [summary] and written under the new instance ID by [apply]
-/// once the wizard is confirmed. [validate] returns a blocking message.
-///
-/// With [readBinding] and [writeBinding], the wizard adds a dedicated
-/// « Liaison » step editing the repository binding of the draft; the
-/// settings step is then validated without that binding.
-class ComponentAddConfigurator<T extends Object> {
-  const ComponentAddConfigurator({
-    required this._initial,
-    required this._builder,
-    required this._summary,
-    required this._apply,
-    this._validate,
-    this._readBinding,
-    this._writeBinding,
-    this.bindingKeyPrefix = 'add-binding',
-    this.bindingPathHint = '',
-    this.bindingHelp,
-  }) : assert((_readBinding == null) == (_writeBinding == null));
-
-  final T Function(BuildContext context) _initial;
-  final Widget Function(BuildContext, T, ValueChanged<T>) _builder;
-  final List<(String, String)> Function(T) _summary;
-  final void Function(Registry, String, T) _apply;
-  final String? Function(T)? _validate;
-  final JsonTextBinding? Function(T)? _readBinding;
-  final T Function(T, JsonTextBinding?)? _writeBinding;
-
-  /// Key prefix of the repository fields of the « Liaison » step.
-  final String bindingKeyPrefix;
-  final String bindingPathHint;
-
-  /// Explanation shown under the binding fields when a binding is set.
-  final String? bindingHelp;
-
-  bool get supportsBinding => _readBinding != null;
-
-  JsonTextBinding? bindingOf(Object draft) => _readBinding?.call(draft as T);
-
-  Object withBinding(Object draft, JsonTextBinding? binding) =>
-      _writeBinding == null ? draft : _writeBinding(draft as T, binding);
-
-  Object initialDraft(BuildContext context) => _initial(context);
-
-  Widget buildDraft(
-    BuildContext context,
-    Object draft,
-    ValueChanged<Object> onChanged,
-  ) => _builder(context, draft as T, onChanged);
-
-  List<(String, String)> summarize(Object draft) => _summary(draft as T);
-
-  String? validateDraft(Object draft) => _validate?.call(draft as T);
-
-  void applyDraft(Registry registry, String id, Object draft) =>
-      _apply(registry, id, draft as T);
-}
-
-/// A component proposed by the add wizard.
-class ComponentAddCandidate {
-  const ComponentAddCandidate({
-    required this.id,
-    required this.label,
-    this.family = ComponentAddFamily.user,
-    this.addOrder = 0,
-    this.tags = const {},
-    this.placementTags = const {},
-    this.configurator,
-    this.previewBuilder,
-  });
-
-  /// Value identifying the component for the caller (slot ID or type).
-  final String id;
-  final String label;
-
-  /// Famille utilisée pour filtrer et classer ce composant dans le wizard.
-  final ComponentAddFamily family;
-
-  /// Ordre croissant dans la famille ; à égalité, l'ordre initial est conservé.
-  final int addOrder;
-  final Set<String> tags;
-
-  /// Restricts the component to targets dedicated to one of these tags; see
-  /// [ComponentTagFilter.fits].
-  final Set<String> placementTags;
-  final ComponentAddConfigurator<Object>? configurator;
-
-  /// Optional preview widget builder shown when this candidate is selected.
-  final WidgetBuilder? previewBuilder;
-
-  /// Whether the component fits a target dedicated to [zoneTags] whose filter
-  /// is [accepts].
-  bool fitsIn(Set<String> zoneTags, bool Function(Set<String>) accepts) =>
-      accepts(tags) && ComponentTagFilter.fits(placementTags, zoneTags);
-}
-
-/// A zone or region able to receive the new component.
-class ComponentAddTarget {
-  const ComponentAddTarget({
-    required this.id,
-    required this.label,
-    this.siblings = const [],
-    this.accepts,
-    this.zoneTags = const {},
-    this.replaces = false,
-    this.preview,
-    this.previewFor,
-  });
-
-  final String id;
-  final String label;
-
-  /// Components already placed, in order, as `(id, label)`.
-  final List<(String, String)> siblings;
-  final bool Function(Set<String> tags)? accepts;
-
-  /// Tags the zone is dedicated to (its filter's `include`).
-  final Set<String> zoneTags;
-
-  /// The target holds a single component, replaced by the addition.
-  final bool replaces;
-
-  /// Visual preview of the target zone when appending to it.
-  final ComponentAddPlacementPreview? preview;
-
-  /// Visual preview for a specific sibling position (`beforeId`, or null for
-  /// the end of the zone).
-  final ComponentAddPlacementPreview? Function(String? beforeId)? previewFor;
-
-  ComponentAddPlacementPreview? resolvePreview([String? beforeId]) =>
-      previewFor?.call(beforeId) ?? preview;
-
-  bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
-
-  bool admits(ComponentAddCandidate candidate) =>
-      candidate.fitsIn(zoneTags, accept);
-}
-
-/// A position relative to the edited element, offered instead of zones.
-class ComponentAddPlacement {
-  const ComponentAddPlacement({
-    required this.id,
-    required this.group,
-    required this.label,
-    required this.icon,
-    this.hint,
-    this.accepts,
-    this.zoneTags = const {},
-    this.preview,
-  });
-
-  final String id;
-
-  /// Title of the element the position refers to.
-  final String group;
-  final String label;
-  final IconData icon;
-
-  /// Structural consequence, such as an added wrapper.
-  final String? hint;
-  final bool Function(Set<String> tags)? accepts;
-
-  /// Tags the receiving zone is dedicated to (its filter's `include`).
-  final Set<String> zoneTags;
-
-  /// Visual preview of the placement on the page.
-  final ComponentAddPlacementPreview? preview;
-
-  bool accept(Set<String> tags) => accepts?.call(tags) ?? true;
-
-  bool admits(ComponentAddCandidate candidate) =>
-      candidate.fitsIn(zoneTags, accept);
-}
-
-/// Scope informant les configurateurs d'ajout ([ComponentAddConfigurator]) de la zone ou région ciblée.
-class ComponentAddTargetScope extends InheritedWidget {
-  const ComponentAddTargetScope({
-    required this.targetId,
-    required this.targetLabel,
-    this.initialTargetId = '',
-    this.wizardTitle = '',
-    this.zoneTags = const {},
-    required super.child,
-    super.key,
-  });
-
-  /// Identifiant de la zone ciblée (ex: `'tabs'`, `'center'`, `'content'`).
-  final String targetId;
-
-  /// Libellé de la zone ciblée (ex: `'Onglets'`, `'Onglet gabarit'`).
-  final String targetLabel;
-
-  /// Cible initiale demandée à l'ouverture du wizard.
-  final String initialTargetId;
-
-  /// Titre du wizard (ex: `'Ajouter dans Onglets'`).
-  final String wizardTitle;
-
-  /// Tags associés à la zone.
-  final Set<String> zoneTags;
-
-  static ComponentAddTargetScope? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<ComponentAddTargetScope>();
-
-  /// Indique si la zone cible correspond à la zone des onglets d'une [SuperTab].
-  bool get isTabZone {
-    final lowerId = targetId.toLowerCase();
-    final lowerInit = initialTargetId.toLowerCase();
-    final lowerLabel = targetLabel.toLowerCase();
-    final lowerTitle = wizardTitle.toLowerCase();
-    return lowerId == 'tabs' ||
-        lowerInit == 'tabs' ||
-        lowerId.contains('tab') ||
-        lowerInit.contains('tab') ||
-        lowerLabel.contains('onglet') ||
-        lowerTitle.contains('onglet');
-  }
-
-  @override
-  bool updateShouldNotify(ComponentAddTargetScope oldWidget) =>
-      targetId != oldWidget.targetId ||
-      targetLabel != oldWidget.targetLabel ||
-      initialTargetId != oldWidget.initialTargetId ||
-      wizardTitle != oldWidget.wizardTitle ||
-      zoneTags != oldWidget.zoneTags;
-}
-
-/// Result of the add wizard.
-class ComponentAddRequest {
-  const ComponentAddRequest({
-    required this.component,
-    required this.targetId,
-    this.beforeId,
-    this.label,
-    this.size,
-    this.draft,
-    this.placementId,
-  });
-
-  final ComponentAddCandidate component;
-  final String targetId;
-
-  /// Chosen [ComponentAddPlacement.id], when the wizard offers placements.
-  final String? placementId;
-
-  /// Sibling placed after the new component; null appends it.
-  final String? beforeId;
-
-  /// Instance label; null keeps the component label.
-  final String? label;
-
-  /// Explicit size; null keeps the caller's default sizing.
-  final SlotSizeConstraints? size;
-
-  /// Component-specific draft, applied by [applyConfiguration].
-  final Object? draft;
-
-  void applyConfiguration(Registry? registry, String instanceId) {
-    final configurator = component.configurator;
-    final value = draft;
-    if (registry != null && configurator != null && value != null) {
-      configurator.applyDraft(registry, instanceId, value);
-    }
-  }
-}
 
 /// Opens the add wizard: component, settings, placement, repository binding
 /// (only for components whose configurator supports it) and summary, where the
@@ -421,7 +148,7 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   String? _placementId;
   final _label = TextEditingController();
   bool _customSize = false;
-  final _size = _SizeDraft();
+  final _size = ComponentAddSizeDraft();
   final _drafts = <String, Object>{};
 
   @override
@@ -727,7 +454,10 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
                     _selected?.previewBuilder != null)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: _buildPreview(context, _selected!),
+                    child: ComponentAddPreview(
+                      keyPrefix: widget.keyPrefix,
+                      candidate: _selected!,
+                    ),
                   ),
               ],
             );
@@ -809,135 +539,18 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
       ),
   ];
 
-  Widget _buildChoice(BuildContext context) {
-    final query = _query.trim().toLowerCase();
-    final candidates = _offered.indexed.toList()
-      ..sort((a, b) {
-        final familyOrder = a.$2.family.index.compareTo(b.$2.family.index);
-        if (familyOrder != 0) return familyOrder;
-        final order = a.$2.addOrder.compareTo(b.$2.addOrder);
-        if (order != 0) return order;
-        return a.$1.compareTo(b.$1);
-      });
-    final offered = [for (final (_, candidate) in candidates) candidate];
-    final families = [
-      for (final family in ComponentAddFamily.values)
-        if (offered.any((candidate) => candidate.family == family)) family,
-    ];
-    final familyFiltered = _selectedFamily == null
-        ? offered
-        : [
-            for (final candidate in offered)
-              if (candidate.family == _selectedFamily) candidate,
-          ];
-    final visible = [
-      for (final candidate in familyFiltered)
-        if (query.isEmpty ||
-            candidate.label.toLowerCase().contains(query) ||
-            candidate.family.label.toLowerCase().contains(query) ||
-            candidate.tags.any((tag) => tag.toLowerCase().contains(query)))
-          candidate,
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (offered.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text(widget.emptyMessage),
-          )
-        else ...[
-          TextField(
-            key: ValueKey('${widget.keyPrefix}-add-search'),
-            decoration: const InputDecoration(
-              isDense: true,
-              prefixIcon: Icon(Icons.search),
-              hintText: 'Rechercher un composant ou un tag',
-            ),
-            onChanged: (value) => setState(() => _query = value),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              ChoiceChip(
-                key: ValueKey('${widget.keyPrefix}-add-family-all'),
-                label: const Text('Tous'),
-                selected: _selectedFamily == null,
-                onSelected: (_) => _selectFamily(null),
-              ),
-              for (final family in families)
-                ChoiceChip(
-                  key: ValueKey(
-                    '${widget.keyPrefix}-add-family-${family.name}',
-                  ),
-                  label: Text(family.label),
-                  selected: _selectedFamily == family,
-                  onSelected: (selected) =>
-                      _selectFamily(selected ? family : null),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (visible.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('Aucun composant ne correspond à la recherche.'),
-            ),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final candidate in visible)
-                _ComponentCard(
-                  keyPrefix: widget.keyPrefix,
-                  candidate: candidate,
-                  selected: _selected?.id == candidate.id,
-                  onTap: () => _select(candidate),
-                  onAdd: () => _addDirectly(candidate),
-                ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildPreview(BuildContext context, ComponentAddCandidate candidate) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Container(
-      key: ValueKey('${widget.keyPrefix}-add-preview'),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: colors.outlineVariant),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Aperçu : ${candidate.label}',
-            style: theme.textTheme.labelMedium?.copyWith(
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 96,
-            child: Center(
-              child: SingleChildScrollView(
-                child: Builder(builder: candidate.previewBuilder!),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildChoice(BuildContext context) => ComponentAddChoicePanel(
+    keyPrefix: widget.keyPrefix,
+    candidates: _offered,
+    selected: _selected,
+    selectedFamily: _selectedFamily,
+    query: _query,
+    emptyMessage: widget.emptyMessage,
+    onQueryChanged: (value) => setState(() => _query = value),
+    onFamilySelected: _selectFamily,
+    onSelect: _select,
+    onAddDirectly: _addDirectly,
+  );
 
   Widget _buildSettings(BuildContext context, ComponentAddCandidate candidate) {
     final theme = Theme.of(context);
@@ -972,265 +585,33 @@ class _ComponentAddWizardState extends State<ComponentAddWizard> {
   Widget _buildPlacement(
     BuildContext context,
     ComponentAddCandidate candidate,
-  ) {
-    final theme = Theme.of(context);
-    final error = _customSize ? _size.error : null;
-    Widget section(String title, List<Widget> children) => Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: theme.textTheme.titleSmall),
-          const SizedBox(height: 6),
-          ...children,
-        ],
-      ),
-    );
-    return Column(
-      key: ValueKey('${widget.keyPrefix}-add-placement'),
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.placements != null)
-          section('Emplacement', [
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 280),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: _relativePlacements(context, candidate),
-                ),
-              ),
-            ),
-          ])
-        else
-          section('Emplacement', [_zonePlacement(context, candidate)]),
-        section('Taille', [
-          SwitchListTile(
-            key: ValueKey('${widget.keyPrefix}-add-custom-size'),
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            title: const Text('Définir une taille'),
-            subtitle: const Text('Sinon, taille par défaut de la zone'),
-            value: _customSize,
-            onChanged: (value) => setState(() => _customSize = value),
-          ),
-          if (_customSize)
-            _SizeFields(
-              keyPrefix: widget.keyPrefix,
-              draft: _size,
-              onChanged: () => setState(() {}),
-            ),
-        ]),
-        if (error != null)
-          Text(
-            error,
-            key: ValueKey('${widget.keyPrefix}-add-error'),
-            style: TextStyle(color: theme.colorScheme.error),
-          ),
-      ],
-    );
-  }
-
-  Widget _zonePlacement(BuildContext context, ComponentAddCandidate candidate) {
-    final theme = Theme.of(context);
-    final targets = _targetsFor(candidate);
-    final target = _target;
-    if (target == null) {
-      return Text('Aucune zone disponible.', style: theme.textTheme.bodySmall);
-    }
-    final endPreview = target.resolvePreview(null);
-    final siblingPreviews = {
-      for (final (id, _) in target.siblings) id: target.resolvePreview(id),
-    };
-    final targetPreviews = {
-      for (final option in targets)
-        option.id: option.resolvePreview(
-          option.id == target.id && !option.replaces ? _beforeId : null,
-        ),
-    };
-    return Row(
-      children: [
-        Expanded(
-          child: DropdownButtonFormField<String>(
-            key: ValueKey('${widget.keyPrefix}-add-target'),
-            initialValue: target.id,
-            isExpanded: true,
-            decoration: const InputDecoration(isDense: true, labelText: 'Zone'),
-            selectedItemBuilder: (_) => [
-              for (final option in targets)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(option.label, overflow: TextOverflow.ellipsis),
-                ),
-            ],
-            items: [
-              for (final option in targets)
-                DropdownMenuItem(
-                  value: option.id,
-                  onTap: _clearHoveredPreview,
-                  child: MouseRegion(
-                    hitTestBehavior: HitTestBehavior.opaque,
-                    onEnter: (_) =>
-                        _setHoveredPreview(targetPreviews[option.id]),
-                    onExit: (_) =>
-                        _clearHoveredPreview(targetPreviews[option.id]),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(option.label),
-                    ),
-                  ),
-                ),
-            ],
-            onChanged: (value) {
-              _clearHoveredPreview();
-              setState(() {
-                _targetId = value ?? widget.initialTargetId;
-                _beforeId = null;
-              });
-            },
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: target.replaces
-              ? MouseRegion(
-                  onEnter: (_) => _setHoveredPreview(endPreview),
-                  onExit: (_) => _clearHoveredPreview(endPreview),
-                  child: Text(
-                    target.siblings.isEmpty
-                        ? 'Composant unique'
-                        : 'Remplace le contenu actuel',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                )
-              : DropdownButtonFormField<String?>(
-                  key: ValueKey(
-                    '${widget.keyPrefix}-add-position-${target.id}',
-                  ),
-                  initialValue: _beforeId,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    labelText: 'Position',
-                  ),
-                  selectedItemBuilder: (_) => [
-                    for (final (_, label) in target.siblings)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Avant $label',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('À la fin'),
-                    ),
-                  ],
-                  items: [
-                    for (final (id, label) in target.siblings)
-                      DropdownMenuItem(
-                        value: id,
-                        onTap: _clearHoveredPreview,
-                        child: MouseRegion(
-                          hitTestBehavior: HitTestBehavior.opaque,
-                          onEnter: (_) =>
-                              _setHoveredPreview(siblingPreviews[id]),
-                          onExit: (_) =>
-                              _clearHoveredPreview(siblingPreviews[id]),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Avant $label',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ),
-                      ),
-                    DropdownMenuItem<String?>(
-                      value: null,
-                      onTap: _clearHoveredPreview,
-                      child: MouseRegion(
-                        hitTestBehavior: HitTestBehavior.opaque,
-                        onEnter: (_) => _setHoveredPreview(endPreview),
-                        onExit: (_) => _clearHoveredPreview(endPreview),
-                        child: const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('À la fin'),
-                        ),
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    _clearHoveredPreview();
-                    setState(() => _beforeId = value);
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  /// Relative positions grouped by the element they refer to.
-  List<Widget> _relativePlacements(
-    BuildContext context,
-    ComponentAddCandidate candidate,
-  ) {
-    final theme = Theme.of(context);
-    final selected = _placement;
-    // Consecutive runs: two levels sharing a title stay separate.
-    final groups = <(String, List<ComponentAddPlacement>)>[];
-    for (final option in _placementsFor(candidate)) {
-      if (groups.lastOrNull case (final group, final options)
-          when group == option.group) {
-        options.add(option);
-      } else {
-        groups.add((option.group, [option]));
-      }
-    }
-    return [
-      for (final (group, options) in groups) ...[
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 4),
-          child: Text(group, style: theme.textTheme.labelLarge),
-        ),
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            for (final option in options)
-              MouseRegion(
-                onEnter: (_) => _setHoveredPreview(option.preview),
-                onExit: (_) => _clearHoveredPreview(option.preview),
-                child: Tooltip(
-                  message: option.hint ?? option.label,
-                  child: ChoiceChip(
-                    key: ValueKey(
-                      '${widget.keyPrefix}-add-placement-${option.id}',
-                    ),
-                    avatar: Icon(option.icon, size: 16),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    label: Text(option.label),
-                    selected: selected?.id == option.id,
-                    onSelected: (_) => setState(() => _placementId = option.id),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ],
-      if (selected?.hint case final hint?)
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            hint,
-            key: ValueKey('${widget.keyPrefix}-add-placement-hint'),
-            style: theme.textTheme.bodySmall,
-          ),
-        ),
-    ];
-  }
+  ) => ComponentAddPlacementPanel(
+    keyPrefix: widget.keyPrefix,
+    usesRelativePlacements: widget.placements != null,
+    placements: _placementsFor(candidate),
+    selectedPlacement: _placement,
+    targets: _targetsFor(candidate),
+    target: _target,
+    beforeId: _beforeId,
+    customSize: _customSize,
+    size: _size,
+    onCustomSizeChanged: (value) => setState(() => _customSize = value),
+    onTargetChanged: (value) {
+      _clearHoveredPreview();
+      setState(() {
+        _targetId = value ?? widget.initialTargetId;
+        _beforeId = null;
+      });
+    },
+    onBeforeChanged: (value) {
+      _clearHoveredPreview();
+      setState(() => _beforeId = value);
+    },
+    onPlacementSelected: (value) => setState(() => _placementId = value),
+    onSetHoveredPreview: _setHoveredPreview,
+    onClearHoveredPreview: _clearHoveredPreview,
+    onSizeChanged: () => setState(() {}),
+  );
 
   Widget _buildBinding(BuildContext context, ComponentAddCandidate candidate) {
     final theme = Theme.of(context);
@@ -1356,296 +737,4 @@ enum _WizardStage {
   const _WizardStage(this.title);
 
   final String title;
-}
-
-class _ComponentCard extends StatelessWidget {
-  const _ComponentCard({
-    required this.keyPrefix,
-    required this.candidate,
-    required this.selected,
-    required this.onTap,
-    required this.onAdd,
-  });
-
-  final String keyPrefix;
-  final ComponentAddCandidate candidate;
-  final bool selected;
-  final VoidCallback onTap;
-  final VoidCallback onAdd;
-
-  IconData get _icon {
-    final tags = candidate.tags;
-    if (tags.contains('text') || tags.contains('input')) {
-      return Icons.text_fields;
-    }
-    if (tags.contains('list')) return Icons.view_list_outlined;
-    if (tags.contains('layout')) return Icons.dashboard_outlined;
-    if (tags.contains('container')) return Icons.crop_square;
-    if (tags.contains('appBar')) return Icons.web_asset;
-    if (tags.contains('bottomNavigationBar')) return Icons.view_week_outlined;
-    return Icons.widgets_outlined;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final details = [
-      candidate.family.label,
-      ...candidate.tags.map((tag) => '#$tag'),
-    ].join(' · ');
-    return SizedBox(
-      width: 240,
-      child: Card(
-        key: ValueKey('$keyPrefix-add-card-${candidate.id}'),
-        margin: EdgeInsets.zero,
-        elevation: 0,
-        color: selected ? colors.primaryContainer : null,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(
-            color: selected ? colors.primary : colors.outlineVariant,
-            width: selected ? 2 : 1,
-          ),
-        ),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(8, 4, 0, 4),
-            child: Row(
-              children: [
-                Icon(_icon, size: 18, color: colors.primary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        candidate.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      if (details.isNotEmpty)
-                        Text(
-                          details,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  key: ValueKey('$keyPrefix-add-slot-${candidate.id}'),
-                  tooltip: 'Ajouter directement',
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  icon: const Icon(Icons.bolt),
-                  onPressed: onAdd,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Text fields of the optional size step, with their units.
-class _SizeDraft {
-  static const fields = [
-    ('preferredWidth', 'Largeur préférée'),
-    ('preferredHeight', 'Hauteur préférée'),
-    ('minWidth', 'Largeur min'),
-    ('minHeight', 'Hauteur min'),
-    ('maxWidth', 'Largeur max'),
-    ('maxHeight', 'Hauteur max'),
-  ];
-
-  final controllers = {
-    for (final (key, _) in fields) key: TextEditingController(),
-  };
-  final units = {for (final (key, _) in fields) key: SlotSizeUnit.pixels};
-  SlotPercentBasis basis = SlotPercentBasis.zone;
-
-  void dispose() {
-    for (final controller in controllers.values) {
-      controller.dispose();
-    }
-  }
-
-  /// Parsed dimension; throws [FormatException] for an invalid value.
-  SlotDimension? dimension(String key) {
-    final text = controllers[key]!.text.trim().replaceAll(',', '.');
-    if (text.isEmpty) return null;
-    final value = double.tryParse(text);
-    if (value == null || !value.isFinite || value < 0) {
-      throw const FormatException('Nombre positif attendu.');
-    }
-    if (units[key] == SlotSizeUnit.percent && value > 100) {
-      throw const FormatException('Pourcentage entre 0 et 100 attendu.');
-    }
-    return SlotDimension(value, units[key]!);
-  }
-
-  String? get error {
-    try {
-      final value = this.value;
-      for (final (min, max, name) in [
-        (value.minWidth, value.maxWidth, 'largeur'),
-        (value.minHeight, value.maxHeight, 'hauteur'),
-      ]) {
-        if (min != null &&
-            max != null &&
-            min.unit == max.unit &&
-            min.value > max.value) {
-          return 'La $name minimale dépasse la maximale.';
-        }
-      }
-      return null;
-    } on FormatException catch (error) {
-      return 'Taille invalide : ${error.message}';
-    }
-  }
-
-  SlotSizeConstraints get value => SlotSizeConstraints(
-    preferredWidth: dimension('preferredWidth'),
-    preferredHeight: dimension('preferredHeight'),
-    minWidth: dimension('minWidth'),
-    minHeight: dimension('minHeight'),
-    maxWidth: dimension('maxWidth'),
-    maxHeight: dimension('maxHeight'),
-    percentBasis: basis,
-  );
-
-  String describe() {
-    final parts = [
-      for (final (key, label) in fields)
-        if (controllers[key]!.text.trim().isNotEmpty)
-          '$label ${controllers[key]!.text.trim()}'
-              '${units[key] == SlotSizeUnit.percent ? ' %' : ' px'}',
-    ];
-    if (parts.isEmpty) return 'Aucune contrainte';
-    final percent = units.values.contains(SlotSizeUnit.percent);
-    return [
-      ...parts,
-      if (percent)
-        basis == SlotPercentBasis.zone ? '% de la zone' : '% du layout',
-    ].join(', ');
-  }
-}
-
-class _SizeFields extends StatelessWidget {
-  const _SizeFields({
-    required this.keyPrefix,
-    required this.draft,
-    required this.onChanged,
-  });
-
-  final String keyPrefix;
-  final _SizeDraft draft;
-  final VoidCallback onChanged;
-
-  Widget _field(String key, String label) => Row(
-    children: [
-      Expanded(
-        child: TextField(
-          key: ValueKey('$keyPrefix-add-size-$key'),
-          controller: draft.controllers[key],
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(isDense: true, labelText: label),
-          onChanged: (_) => onChanged(),
-        ),
-      ),
-      const SizedBox(width: 6),
-      SegmentedButton<SlotSizeUnit>(
-        key: ValueKey('$keyPrefix-add-size-unit-$key'),
-        showSelectedIcon: false,
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 6)),
-        ),
-        segments: const [
-          ButtonSegment(
-            value: SlotSizeUnit.pixels,
-            tooltip: 'Pixels (px)',
-            icon: Icon(Icons.straighten, size: 14),
-            label: Text('px'),
-          ),
-          ButtonSegment(
-            value: SlotSizeUnit.percent,
-            tooltip: 'Pourcentage (%)',
-            icon: Icon(Icons.percent, size: 14),
-            label: Text('%'),
-          ),
-        ],
-        selected: {draft.units[key]!},
-        onSelectionChanged: (selected) {
-          if (selected.isEmpty) return;
-          draft.units[key] = selected.first;
-          onChanged();
-        },
-      ),
-    ],
-  );
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      for (var i = 0; i < _SizeDraft.fields.length; i += 2)
-        Row(
-          children: [
-            Expanded(
-              child: _field(_SizeDraft.fields[i].$1, _SizeDraft.fields[i].$2),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _field(
-                _SizeDraft.fields[i + 1].$1,
-                _SizeDraft.fields[i + 1].$2,
-              ),
-            ),
-          ],
-        ),
-      if (draft.units.values.contains(SlotSizeUnit.percent))
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: SegmentedButton<SlotPercentBasis>(
-            key: ValueKey('$keyPrefix-add-size-basis'),
-            showSelectedIcon: false,
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(
-                value: SlotPercentBasis.zone,
-                tooltip: '% de la zone',
-                icon: Icon(Icons.crop_free, size: 16),
-                label: Text('% de la zone'),
-              ),
-              ButtonSegment(
-                value: SlotPercentBasis.layout,
-                tooltip: '% du layout',
-                icon: Icon(Icons.aspect_ratio, size: 16),
-                label: Text('% du layout'),
-              ),
-            ],
-            selected: {draft.basis},
-            onSelectionChanged: (value) {
-              draft.basis = value.single;
-              onChanged();
-            },
-          ),
-        ),
-    ],
-  );
 }

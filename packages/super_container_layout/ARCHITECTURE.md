@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **270 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **300 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -111,7 +111,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 ---
 
-## 3. Index complet des 270 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 300 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -130,7 +130,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `ai/vibe_chat_attachment.dart` | `VibeChatAttachment` : représentation immuable d'une pièce jointe (image binaire ou fichier texte/JSON) envoyée dans le chat Vibe IA. |
 | `ai/vibe_stream_parser.dart` | `VibeIncrementalStreamParser`, `VibeStreamSnapshot` : automate d'analyse JSON incrémentale caractère par caractère extrayant en temps réel le champ `"message"`, `hasVibeObject`, `hasAskUserObject` et le nombre de composants du patch `"vibe"`. |
 
-### 3.3. Modèles de données (`lib/models/` — 45 fichiers)
+### 3.3. Modèles de données (`lib/models/` — 52 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState`, `ComponentStateProperty`, `ComponentConfigOverrideBase`, `ComponentConfigStatesBase`, `ComponentStateHelpers` : états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et classes de base génériques des surcharges d'états de composants. |
@@ -159,8 +159,12 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/native_component_config.dart` | `NativeComponentConfig` : configuration générique des composants natifs (`ApplicationBar`, `BottomAppBar`, `BottomNavigationBar`, `NavigationRail`, `Card`, `Expansible`, `Menu`). |
 | `models/native_property_descriptor.dart` | `NativePropertyDescriptor`, `NativeComponentSchema` : descripteurs déclaratifs des propriétés et régions des composants Material natifs. |
 | `models/native_shape_config.dart` | `NativeShapeConfig`, `NativeShapeKind` : configuration sérialisable des formes Material (`RoundedRectangleBorder`, `StadiumBorder`, `BeveledRectangleBorder`, `CircleBorder`). |
-| `models/registry.dart` | `Registry`, `RegisteredComponent`, `ComponentBuilder`, `ComponentDuplicationContract`, `EditorConfigKind`, `EditorConfigRef` : registre central des composants et synchronisation des `ValueNotifier` avec `Appearance`. |
-| `models/registry_previews.dart` | Aperçus visuels (`_build*Preview`, `_previewZoneBox`) des composants du `Registry` affichés dans l'assistant d'ajout. |
+| `models/registry.dart` | `Registry` : registre central des composants, synchronisation des `ValueNotifier` avec `Appearance` et point d'entrée historique `bootstrap()`. |
+| `models/component_duplication_contract.dart` | `ComponentDuplicationContract`, `EditorConfigKind`, `EditorConfigRef`, `EditorConfigCopier` : contrats de duplication des configurations persistées. |
+| `models/component_registration.dart` | `XuiBuildCtx`, `ComponentBuilder`, `RegisteredComponent`, leurs variantes et le scope de composition. |
+| `models/component_export_options.dart` | `ComponentExportOptions` : options d'export Dart par instance. |
+| `models/registry_builtins.dart` | Catalogue ordonné des constructeurs standards appliqué par `Registry.bootstrap()`. |
+| `models/registry_previews.dart` | Aperçus visuels (`build*Preview`, `_previewZoneBox`) consommés par le catalogue standard. |
 | `models/scaffold_page_config.dart` | `ScaffoldPageConfig`, `ScaffoldBodyMode` : configuration de la structure `Scaffold` d'une page (`appBar`, `body`, `bottomNavigationBar`, `drawer`, `endDrawer`, `bottomSheet`, mode `standard` ou `customScrollView`). |
 | `models/scrollbar_style_config.dart` | `ScrollbarStyleConfig` : personnalisation visuelle des barres de défilement (épaisseur, rayon, visibilité, couleurs). |
 | `models/super_action_config.dart` | `SuperActionConfig`, `SuperActionKind`, `SuperActionVariant`, `SuperActionIconPosition`, `SuperActionProperty` : configuration des boutons et actions Material 3 ou surfaciques. |
@@ -169,7 +173,10 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/super_indicator_states.dart` | `IndicatorConfigStates`, `IndicatorConfigOverride`, `IndicatorStateProperty` : surcharges conditionnelles de `SuperIndicatorConfig` par état (`hover`, `selected`, `automatic`, `named`). |
 | `models/super_separator_config.dart` | `SuperSeparatorConfig`, `SuperSeparatorKind`, `SuperSeparatorLabelPosition`, `SuperSeparatorProperty` : configuration d'un séparateur (`divider`) ou espaceur (`spacer`) horizontal/vertical avec libellé optionnel. |
 | `models/super_separator_states.dart` | `SeparatorConfigStates`, `SeparatorConfigOverride`, `SeparatorStateProperty` : surcharges conditionnelles de `SuperSeparatorConfig` par état (`hover`, `selected`, `automatic`, `named`). |
-| `models/super_layout_config.dart` | `SuperLayoutConfig`, `SuperLayoutMode`, `ZoneFlowConfig`, `SlotSizeConstraints`, `SlotDimension` : configuration d'un `SuperLayout` (zones N/S/E/W/Center ou Grille, flux flex, contraintes par slot). |
+| `models/super_layout_config.dart` | `SuperLayoutConfig`, `SuperLayoutZone`, `CornerMerge` : modèle principal des zones et de la grille, codecs, validation et façade historique des contrats extraits. |
+| `models/slot_size_constraints.dart` | `SlotSizeUnit`, `SlotPercentBasis`, `SlotDimension`, `SlotSizeConstraints` et détection des tailles fixes des slots. |
+| `models/zone_flow_config.dart` | `ZoneFlowConfig` : défilement, barre de défilement, alignements, espacement et marges des zones. |
+| `models/layout_config_tooltips.dart` | Formatage des info-bulles du layout, des dimensions de slot et du flux de zone. |
 | `models/super_list_view_config.dart` | `SuperListViewConfig` : configuration d'une liste répétée liée à un tableau JSON avec son `SuperLayoutConfig` de gabarit (`template`). |
 | `models/super_conditional_config.dart` | `SuperConditionalConfig` : configuration d'un conteneur conditionnel sélectionnant la zone d'enfants (`'case:<valeur>'` ou `'default'`) selon un `JsonTextBinding`. |
 | `models/super_tab_config.dart` | `SuperTabConfig`, `SuperTabMode`, `SuperTabIndicatorType` : configuration d'une barre d'onglets `TabBar` + `TabBarView` en mode statique ou dynamique lié au JSON. |
@@ -239,7 +246,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/surfaces/super_container.dart` | `SuperContainer` : conteneur de haut niveau résolvant son `ContainerStyle` depuis `AppearanceScope`, ses états (`SurfaceStyleStates`) et ses liaisons JSON. |
 | `widgets/surfaces/surface_painters.dart` | `DashedBorderPainter`, `InnerShadowPainter`, `SurfacePatternPainter` : `CustomPainter` pour bordures tiretées/pointillées, ombres intérieures et motifs (`grain`, `lines`, `dots`). |
 
-### 3.7. Widgets de composants (`lib/widgets/components/` — 62 fichiers)
+### 3.7. Widgets de composants (`lib/widgets/components/` — 68 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `widgets/components/component_common.dart` | Utilitaires et mixins partagés entre composants (résolution de styles de ligne, `ComponentStateResolutionMixin`, `runComponentEditorTransaction`, `buildComponentTextStyle`, erreurs de diagnostic et helpers `JsonExtractableState`). |
@@ -291,13 +298,19 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/layout_slots.dart` | Modèles internes et helpers de résolution des slots placés dans un `SuperLayout`. |
 | `widgets/components/super_layout/layout_reset_shortcut.dart` | Raccourci clavier et action de réinitialisation d'une disposition à ses valeurs par défaut. |
 | `widgets/components/super_layout/label_scope.dart` | `LabelScope` : visibilité et survol des badges/labels de zones et de composants en mode édition. |
-| `widgets/components/super_layout/slot_implementation.dart` | `SlotImplementation`, `BuilderSlot`, `SlotFactory`, `ZoneScrollableViewport` : abstraction d'un slot plaçable et instanciation depuis le `Registry`. |
+| `widgets/components/super_layout/slot_implementation.dart` | Façade historique réexportant les contrats de slots, leur assemblage, le viewport et les interactions d'édition. |
+| `widgets/components/super_layout/slot_core.dart` | Contrats de slot (`SlotImplementation`, `BuilderSlot`, `InstanceSlot`), politique de dimensionnement et détection des slivers. |
+| `widgets/components/super_layout/slot_stack.dart` | Assemblage des slots visibles, de leurs actions et des wrappers de contenu ajusté. |
+| `widgets/components/super_layout/slot_render_layout.dart` | Layout flex des slots, calcul de leurs contraintes et mesures internes de redimensionnement. |
+| `widgets/components/super_layout/zone_scrollable_viewport.dart` | Défilement des zones, barre de défilement et mesure du viewport associée au layout. |
+| `widgets/components/super_layout/slot_drag.dart` | Étiquettes, curseurs, indications de position et cibles de glisser-déposer des slots. |
+| `widgets/components/super_layout/labeled_slot.dart` | Sélection, survol, overlay, glissement et redimensionnement d'un slot en mode édition. |
 | `widgets/components/super_layout/slot_size_editor.dart` | Éditeur de taille préférée et de contraintes (`SlotSizeConstraints`) d'un slot dans un `SuperLayout`. |
 | `widgets/components/super_layout/zone_axis_button.dart` | Bouton rapide de bascule d'axe (`horizontal` / `vertical`) et de paramètres de flux sur une zone en mode édition. |
 | `widgets/components/super_layout/zone_interactions.dart` | Cibles de glisser-déposer (`DragTarget`) et retour visuel lors du déplacement de slots ou de zones. |
 | `widgets/components/super_layout/zone_resize_handle.dart` | Poignée de redimensionnement interactif entre les zones cardinales (`north`, `south`, `west`, `east`) et `center`. |
 
-### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 93 fichiers)
+### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 110 fichiers)
 
 Le contrôle partagé `widgets/editing/components/shared/editor_number_field.dart`
 expose `EditorNumberField` : badge cliquable et popup numérique ancré.
@@ -305,7 +318,11 @@ expose `EditorNumberField` : badge cliquable et popup numérique ancré.
 slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
-| `widgets/editing/addition/component_add_wizard.dart` | `ComponentAddWizard` : assistant guidé d'ajout d'un composant; la liste est ordonnée par famille (`Standard`, `Étendu`, `Container`, `Composé`, `Utilisateur`), puis par `addOrder` croissant (défaut 0, ordre initial à égalité). SuperRenderer utilise `1000`. |
+| `widgets/editing/addition/component_add_wizard.dart` | `ComponentAddWizard` et `showComponentAddWizard` : façade historique et orchestration des étapes, validations, brouillons et requête finale. Les contrats déplacés restent réexportés depuis ce chemin. |
+| `widgets/editing/addition/component_add_contracts.dart` | Contrats des familles, configurateurs, candidats, cibles, placements, scope et requête d'ajout partagés par le wizard et le registre. |
+| `widgets/editing/addition/component_add_choice.dart` | Recherche, filtres de famille, cartes d'ajout direct et aperçu du composant sélectionné. Les clés et l'ordre historique des candidats sont conservés. |
+| `widgets/editing/addition/component_add_placement.dart` | Panneau de sélection de zone ou de placement relatif, aperçus au survol et choix de taille. |
+| `widgets/editing/addition/component_add_size_fields.dart` | Brouillon de taille et champs de dimensions; les contrôleurs restent détenus et libérés par le wizard. |
 | `widgets/editing/addition/component_add_configurators.dart` | Catalogue des `ComponentAddConfigurator` branchés sur chaque composant de `Registry.bootstrap()`. |
 | `widgets/editing/addition/contextual_add.dart` | Menu et logique d'ajout contextuel rapide (`+`) sur une zone, une région native ou un conteneur vide. |
 | `widgets/editing/addition/insertion_plan.dart` | `InsertionPlan` : planification atomique de l'insertion d'un composant et de ses sous-configurations initiales dans `Appearance`. |
@@ -355,13 +372,21 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/dialogs/editor_dialog_header.dart` | `EditorDialogHeader` : barre de titre standard des dialogues d'édition avec glisser-déposer et bouton de fermeture. |
 | `widgets/editing/dialogs/editor_tabbed_wizard.dart` | `EditorTabbedWizard` : structure à onglets réutilisable pour les fenêtres d'édition complexes. |
 | `widgets/editing/dialogs/editor_target_selector.dart` | Sélecteur permettant de basculer entre les cibles parentes/enfants lors de l'ouverture d'un éditeur. |
-| `widgets/editing/dialogs/super_value_json_extract_dialog.dart` | Assistant d'extraction d'une valeur statique vers un attribut de repository JSON. |
+| `widgets/editing/dialogs/super_value_json_extract_dialog.dart` | Façade historique et dialogue d'extraction, propriétaire des contrôleurs, de la sauvegarde et des notifications. |
+| `widgets/editing/dialogs/json_extract/extract_contracts.dart` | Contrats des cibles extractibles, des blocs détectés et des options de récurrence. |
+| `widgets/editing/dialogs/json_extract/extract_detection.dart` | Parcours des slots, alignement des champs et détection de groupes récurrents. |
+| `widgets/editing/dialogs/json_extract/extract_payload.dart` | Construction pure du document JSON et des chemins de liaison correspondants. |
+| `widgets/editing/dialogs/json_extract/extract_list_conversion.dart` | Conversion des occurrences d'un groupe en `SuperListView` avec bindings, gabarit et nettoyage. |
+| `widgets/editing/dialogs/json_extract/extract_sections.dart` | Contrôles de récurrence et cartes de configuration transmises par callbacks. |
+| `widgets/editing/dialogs/json_extract/component_data_wizard.dart` | Sélecteur de cible, inventaire des liaisons et ouverture des repositories liés. |
 | `widgets/editing/history/editor_history.dart` | `EditorHistoryController`, `EditorHistoryScope` : pile Undo / Redo capturant les instantanés d'`Appearance` et des repositories JSON. |
 | `widgets/editing/icons/material_icon_picker.dart` | `MaterialIconPicker` : sélecteur visuel d'icônes Material avec recherche instantanée dans `MaterialIconCatalog`. |
 | `widgets/editing/overlay/editor_overlay.dart` | Superposition globale du mode édition coordonnant les cadres de sélection, les badges et les poignées. |
 | `widgets/editing/overlay/editor_resize_handle.dart` | Poignées carrées de 8 px (zone de saisie de 32 px) aux coins et côtés pour redimensionner un slot à la souris. |
 | `widgets/editing/overlay/editor_zone_badge.dart` | `EditorZoneBadge`, `EditorZoneHighlight`, `EditorSelectionBorder` : badges déplaçables et contours de survol/sélection des zones et composants. |
-| `widgets/editing/overlay/editor_zoom.dart` | Contrôleur et raccourcis de zoom/panoramique du canevas en mode édition. |
+| `widgets/editing/overlay/editor_zoom.dart` | Moteur animé, contrôleur, portée et raccourcis de zoom/panoramique du canevas en mode édition ; façade historique. |
+| `widgets/editing/overlay/editor_zoom_options.dart` | Options immuables du zoom, seuil de grande cible et constantes par défaut partagées. |
+| `widgets/editing/overlay/editor_zoom_controls.dart` | Barre flottante, délégué de placement et dialogue de réglage des options du zoom. |
 | `widgets/editing/overlay/style_edit_banner.dart` | `StyleEditBanner` : bannière déplaçable du mode édition hébergeant les contrôles rapides et le panneau latéral Vibe IA. |
 | `widgets/editing/pages/editor_page_manager.dart` | Gestionnaire des pages de l'application (`EditorPageCatalog` : création, renommage, duplication, suppression, page d'accueil). |
 | `widgets/editing/repositories/json_repository_manager.dart` | Éditeur et gestionnaire des documents `JsonRepositoryDocument` (import/export JSON, édition de schéma/données). |

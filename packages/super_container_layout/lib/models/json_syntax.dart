@@ -16,13 +16,9 @@ import 'automatic_state.dart';
 import 'component_config.dart';
 import 'json_text_binding.dart';
 import 'json_numbers.dart';
-import 'super_layout_config.dart'
-    show
-        SlotDimension,
-        SlotPercentBasis,
-        SlotSizeConstraints,
-        SlotSizeUnit,
-        ZoneFlowConfig;
+import 'slot_size_constraints.dart'
+    show SlotDimension, SlotPercentBasis, SlotSizeConstraints, SlotSizeUnit;
+import 'zone_flow_config.dart' show ZoneFlowConfig;
 
 /// Primitives de sérialisation et désérialisation JSON adaptées aux humains et aux IA.
 abstract final class JsonColor {
