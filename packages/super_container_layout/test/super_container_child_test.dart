@@ -97,9 +97,13 @@ void main() {
   }
 
   Future<void> choose(WidgetTester tester, String type) async {
-    await tester.tap(
-      find.byKey(ValueKey('super-container-box-add-slot-$type')),
-    );
+    final card = find.byKey(ValueKey('super-container-box-add-card-$type'));
+    await tester.ensureVisible(card);
+    await tester.tapAt(tester.getTopLeft(card) + const Offset(8, 8));
+    await tester.pumpAndSettle();
+    final add = find.byKey(ValueKey('super-container-box-add-slot-$type'));
+    await tester.ensureVisible(add);
+    await tester.tap(add);
     await tester.pumpAndSettle();
   }
 
@@ -216,10 +220,18 @@ void main() {
     final parent = components.nativeComponentController('box').value;
     final nestedId = parent.slotsOf('child').single;
     await open(tester, 'Card');
+    final messageCard = find.byKey(
+      ValueKey('super-container-$nestedId-add-card-component:message'),
+    );
+    await tester.ensureVisible(messageCard);
+    await tester.tapAt(tester.getTopLeft(messageCard) + const Offset(8, 8));
+    await tester.pumpAndSettle();
+    final addMessage = find.byKey(
+      ValueKey('super-container-$nestedId-add-slot-component:message'),
+    );
+    await tester.ensureVisible(addMessage);
     await tester.tap(
-      find.byKey(
-        ValueKey('super-container-$nestedId-add-slot-component:message'),
-      ),
+      addMessage,
     );
     await tester.pumpAndSettle();
     expect(find.text('Catalog child'), findsOneWidget);

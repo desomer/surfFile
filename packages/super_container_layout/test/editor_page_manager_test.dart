@@ -259,7 +259,9 @@ void main() {
 
   testWidgets('manager remains usable on a narrow viewport', (tester) async {
     await mount(tester, screen: const Size(400, 700));
+    expect(tester.takeException(), isNull, reason: 'after mounting the page');
     await open(tester);
+    expect(tester.takeException(), isNull, reason: 'after opening the manager');
     await add(tester, 'Help', '/help');
     expect(find.text('Help'), findsOneWidget);
     expect(tester.takeException(), isNull);

@@ -659,7 +659,8 @@ void main() {
 
       // 1. Right click drag pans the view.
       final panGesture = await tester.startGesture(
-        const Offset(400, 300),
+        const Offset(160, 120),
+        kind: PointerDeviceKind.mouse,
         buttons: kSecondaryMouseButton,
       );
       await panGesture.moveBy(const Offset(50, 40));
@@ -683,6 +684,7 @@ void main() {
       // Hold right click down.
       final holdRightClick = await tester.startGesture(
         mousePos,
+        kind: PointerDeviceKind.mouse,
         buttons: kSecondaryMouseButton,
       );
       await tester.pump();
@@ -981,7 +983,7 @@ void main() {
 
       // Right-click on the full-screen element: context menu opens, view stays at (0, 0, 800, 600).
       await tester.tapAt(
-        const Offset(400, 300),
+        const Offset(100, 300),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
@@ -1006,7 +1008,7 @@ void main() {
       expect(customZoomedRect.width, closeTo(800 * 1.5, 0.5));
 
       await tester.tapAt(
-        const Offset(400, 300),
+        const Offset(600, 300),
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();

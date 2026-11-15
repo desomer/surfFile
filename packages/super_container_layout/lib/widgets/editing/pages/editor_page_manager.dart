@@ -14,6 +14,9 @@ import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../history/editor_history.dart';
 
+double _dialogContentWidth(BuildContext context, double preferred) =>
+    math.min(preferred, math.max(0.0, MediaQuery.sizeOf(context).width - 80));
+
 Future<void> showEditorPageManager({
   required BuildContext context,
   required ValueNotifier<Appearance> appearance,
@@ -335,7 +338,7 @@ class _PageManagerState extends State<_PageManager> {
       key: const ValueKey('editor-pages-manager'),
       constraints: const BoxConstraints(maxWidth: 850),
       content: SizedBox(
-        width: 760,
+        width: _dialogContentWidth(context, 760),
         height: math.min(
           560,
           math.max(160, MediaQuery.sizeOf(context).height - 220),
@@ -574,7 +577,7 @@ class _PageDetailsState extends State<_PageDetails> {
         widget.originalId == null ? 'Nouvelle page' : 'Modifier la page',
       ),
       content: SizedBox(
-        width: 440,
+        width: _dialogContentWidth(context, 440),
         child: SingleChildScrollView(
           child: Form(
             key: _form,
@@ -703,7 +706,7 @@ class _RouteParametersState extends State<_RouteParameters> {
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('Paramètres de la page'),
     content: SizedBox(
-      width: 400,
+      width: _dialogContentWidth(context, 400),
       child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,

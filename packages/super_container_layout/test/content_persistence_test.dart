@@ -151,7 +151,10 @@ void main() {
         const ContainerStyle(color: Colors.green, padding: 8),
       );
       await tester.pumpAndSettle();
-      expect(appearance.value.styles['content']!.color, Colors.green);
+      expect(
+        appearance.value.styles['content']!.color!.toARGB32(),
+        Colors.green.toARGB32(),
+      );
       expect(
         tester
             .widget<SuperContainer>(find.byType(SuperContainer))
@@ -183,8 +186,12 @@ void main() {
       appearance.value = codec.fromJson(saved);
       await tester.pumpAndSettle();
       expect(
-        tester.widget<SuperContainer>(find.byType(SuperContainer)).style.color,
-        const Color(0xFF4CAF50),
+        tester
+            .widget<SuperContainer>(find.byType(SuperContainer))
+            .style
+            .color!
+            .toARGB32(),
+        const Color(0xFF4CAF50).toARGB32(),
       );
       expect(tester.takeException(), isNull);
     },

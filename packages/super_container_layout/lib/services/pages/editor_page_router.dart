@@ -98,6 +98,7 @@ class EditorPageRouter {
           'Chemin absolu requis, différent de /, sans espace ni fragment.',
         );
       }
+      _validatePathConstraints(page.path);
       final route = GoRoute(
         path: page.path,
         name: _routeName(page.id),
@@ -123,6 +124,26 @@ class EditorPageRouter {
       );
     } on AssertionError {
       throw FormatException('Chemin GoRouter invalide : ${page.path}');
+    }
+  }
+
+  void _validatePathConstraints(String path) {
+    var offset = 0;
+    for (final parameter in RegExp(r':\w+').allMatches(path)) {
+      if (parameter.start < offset) continue;
+      final start = parameter.end;
+      if (start >= path.length || path[start] != '(') continue;
+      final end = _constraintEnd(path, start);
+      if (end == null) {
+        throw FormatException('Expression régulière invalide : $path');
+      }
+      final expression = path.substring(start + 1, end - 1);
+      try {
+        RegExp(expression);
+      } on FormatException {
+        throw FormatException('Expression régulière invalide : $path');
+      }
+      offset = end;
     }
   }
 

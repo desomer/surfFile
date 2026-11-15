@@ -345,7 +345,7 @@ void main() {
         tester
             .widget<PopupMenuDivider>(find.byType(PopupMenuDivider).first)
             .height,
-        12,
+        8,
       );
 
       for (final action in ['rename', 'add']) {

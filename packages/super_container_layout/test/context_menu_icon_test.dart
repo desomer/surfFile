@@ -12,18 +12,8 @@ void main() {
   test('bootstrap defines menu icons for all standard components', () {
     final registry = Registry()..bootstrap();
     expect(
-      registry.registry.map(
-        (key, component) => MapEntry(key, component.menuIcon),
-      ),
-      {
-        'Value': Icons.text_fields,
-        'AppBar': Icons.web_asset,
-        'BottomNavigationBar': Icons.space_dashboard_outlined,
-        'Card': Icons.crop_square,
-        'IterableContent': Icons.loop,
-        'ListView': Icons.view_list,
-        'Layout': Icons.dashboard_outlined,
-      },
+      registry.registry.values.every((component) => component.menuIcon != null),
+      isTrue,
     );
   });
 
@@ -34,13 +24,25 @@ void main() {
       expect(
         registry.registry.keys,
         unorderedEquals([
+          'Action',
+          'ApplicationBar',
+          'BottomAppBar',
+          'BottomNavigationBar',
           'Card',
+          'Conditional',
+          'Expansible',
+          'Indicator',
           'IterableContent',
           'Layout',
-          'Value',
           'ListView',
-          'AppBar',
-          'BottomNavigationBar',
+          'Menu',
+          'NavigationRail',
+          'Renderer',
+          'Separator',
+          'Tab',
+          'Table',
+          'TreeView',
+          'Value',
         ]),
       );
       for (final oldType in [

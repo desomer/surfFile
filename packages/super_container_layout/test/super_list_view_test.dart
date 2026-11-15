@@ -229,7 +229,7 @@ void main() {
         const ContainerStyle(color: Colors.orange, radius: 10),
       );
       await tester.pumpAndSettle();
-      expect(appearance.value.styles['clients']!.radius, 10);
+      expect(appearance.value.styles['clients:item']!.radius, 10);
       expect(find.byType(IterableContent), findsNWidgets(2));
       for (final content in tester.widgetList<IterableContent>(
         find.byType(IterableContent),

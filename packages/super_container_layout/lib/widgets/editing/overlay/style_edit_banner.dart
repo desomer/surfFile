@@ -261,217 +261,243 @@ class _StyleEditBannerState extends State<StyleEditBanner> {
           shape: const StadiumBorder(),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 2, 4, 2),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  key: const ValueKey('style-edit-banner-close'),
-                  tooltip: 'Quitter le mode édition',
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: scheme.onPrimary,
-                  icon: const Icon(Icons.close),
-                  onPressed: () => editMode.value = false,
-                ),
-                MouseRegion(
-                  cursor: SystemMouseCursors.move,
-                  child: Row(
-                    key: const ValueKey('style-edit-banner-drag'),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.drag_indicator,
-                        size: 16,
-                        color: scheme.onPrimary,
-                      ),
-                      // const SizedBox(width: 8),
-                      Text(
-                        'Mode édition',
-                        style: TextStyle(
-                          color: scheme.onPrimary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (EditorHistoryScope.controllerOf(context)
-                    case final history?)
-                  ListenableBuilder(
-                    listenable: history,
-                    builder: (context, _) => Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          key: const ValueKey('style-edit-banner-undo'),
-                          tooltip: 'Annuler (Ctrl+Z)',
-                          visualDensity: VisualDensity.compact,
-                          iconSize: 18,
-                          color: scheme.onPrimary,
-                          onPressed: history.canUndo ? history.undo : null,
-                          icon: const Icon(Icons.undo),
-                        ),
-                        IconButton(
-                          key: const ValueKey('style-edit-banner-redo'),
-                          tooltip: 'Rétablir (Ctrl+Y)',
-                          visualDensity: VisualDensity.compact,
-                          iconSize: 18,
-                          color: scheme.onPrimary,
-                          onPressed: history.canRedo ? history.redo : null,
-                          icon: const Icon(Icons.redo),
-                        ),
-                      ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 520;
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      key: const ValueKey('style-edit-banner-close'),
+                      tooltip: 'Quitter le mode édition',
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 18,
+                      color: scheme.onPrimary,
+                      icon: const Icon(Icons.close),
+                      onPressed: () => editMode.value = false,
                     ),
-                  ),
-                if (widget.onManagePages != null)
-                  IconButton(
-                    key: const ValueKey('style-edit-banner-pages'),
-                    tooltip: 'Gérer les pages',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: scheme.onPrimary,
-                    icon: const Icon(Icons.web_stories_outlined),
-                    onPressed: widget.onManagePages,
-                  ),
-                IconButton(
-                  key: const ValueKey('style-edit-banner-repository'),
-                  tooltip: 'Repository',
-                  visualDensity: VisualDensity.compact,
-                  iconSize: 18,
-                  color: scheme.onPrimary,
-                  icon: const Icon(Icons.storage_outlined),
-                  onPressed: () {
-                    final target =
-                        widget.navigatorKey?.currentContext ?? context;
-                    JsonRepositoryManager.show(target);
-                  },
-                ),
-                if (appearance != null)
-                  IconButton(
-                    key: const ValueKey('style-edit-banner-ai'),
-                    tooltip: 'Générer un écran avec l’IA',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: scheme.onPrimary,
-                    isSelected: _chatOpen,
-                    icon: const Icon(Icons.auto_awesome_outlined),
-                    onPressed: () => setState(() {
-                      _chatOpen = !_chatOpen;
-                      _chatScope = null;
-                      if (_chatOpen) {
-                        _chatLayout = _newChatLayout(null, available);
-                      }
-                    }),
-                  ),
-                if (AppearanceScope.controllerOf(context)
-                    case final appearance?)
-                  IconButton(
-                    key: const ValueKey('style-edit-banner-transfer'),
-                    tooltip: 'Importer / exporter le style et la disposition',
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 18,
-                    color: scheme.onPrimary,
-                    icon: const Icon(Icons.import_export),
-                    onPressed: () {
-                      final target =
-                          widget.navigatorKey?.currentContext ?? context;
-                      if (Navigator.maybeOf(target) == null) return;
-                      AppearanceTransferDialog.show(target, appearance);
-                    },
-                  ),
-
-                // Dispositions et zones sélectionnées : parent > ... > enfant.
-                Flexible(
-                  child: ValueListenableBuilder<List<String>>(
-                    valueListenable: LayoutSelection.path,
-                    builder: (context, path, _) => path.isEmpty
-                        ? const SizedBox.shrink()
-                        : Padding(
-                            padding: const EdgeInsets.only(left: 8),
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 520),
-                              // Le plus profond reste visible quand le chemin
-                              // dépasse la largeur.
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                reverse: true,
-                                child: Row(
-                                  key: const ValueKey('style-edit-banner-path'),
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    for (final (index, label)
-                                        in path.indexed) ...[
-                                      if (index > 0)
-                                        _PathChevron(
-                                          key: _chevronKeys.putIfAbsent(
-                                            index - 1,
-                                            GlobalKey.new,
-                                          ),
-                                          valueKey: ValueKey(
-                                            'style-edit-banner-chevron-${index - 1}',
-                                          ),
-                                          active:
-                                              _treePopup?.chevronIndex ==
-                                              index - 1,
-                                          onTap: () => _toggleTreePopup(
-                                            index - 1,
-                                            path.sublist(0, index),
-                                          ),
-                                        ),
-                                      _PathSegment(
-                                        key: ValueKey(
-                                          'style-edit-banner-path-$index',
-                                        ),
-                                        label: label,
-                                        current: index == path.length - 1,
-                                        onHover: (hovered) =>
-                                            LayoutSelection.highlightPath(
-                                              hovered
-                                                  ? path.sublist(0, index + 1)
-                                                  : null,
-                                            ),
-                                        onTap: () {
-                                          LayoutSelection.highlightPath(null);
-                                          EditorSlotState.closeActiveMenu();
-                                          if (_treePopup != null) {
-                                            setState(() => _treePopup = null);
-                                          }
-                                          LayoutSelection.toggle(
-                                            path.sublist(0, index + 1),
-                                          );
-                                        },
-                                        onSecondaryTap: (position) {
-                                          LayoutSelection.highlightPath(null);
-                                          EditorSlotState.closeActiveMenu();
-                                          if (_treePopup != null) {
-                                            setState(() => _treePopup = null);
-                                          }
-                                          LayoutSelection.openContextMenu(
-                                            path.sublist(0, index + 1),
-                                            _menuPositionForBanner(position),
-                                          );
-                                        },
-                                      ),
-                                    ],
-                                  ],
+                    MouseRegion(
+                      cursor: SystemMouseCursors.move,
+                      child: Tooltip(
+                        message: 'Mode édition',
+                        child: Row(
+                          key: const ValueKey('style-edit-banner-drag'),
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.drag_indicator,
+                              size: 16,
+                              color: scheme.onPrimary,
+                            ),
+                            if (!compact)
+                              Text(
+                                'Mode édition',
+                                style: TextStyle(
+                                  color: scheme.onPrimary,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (EditorHistoryScope.controllerOf(context)
+                        case final history?)
+                      ListenableBuilder(
+                        listenable: history,
+                        builder: (context, _) => Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              key: const ValueKey('style-edit-banner-undo'),
+                              tooltip: 'Annuler (Ctrl+Z)',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 18,
+                              color: scheme.onPrimary,
+                              onPressed: history.canUndo ? history.undo : null,
+                              icon: const Icon(Icons.undo),
                             ),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                // ValueListenableBuilder<LayoutAxisAction?>(
-                //   valueListenable: LayoutSelection.axisAction,
-                //   builder: (context, action, _) => action == null
-                //       ? const SizedBox.shrink()
-                //       : ZoneAxisButton(
-                //           key: const ValueKey('style-edit-banner-axis'),
-                //           action: action,
-                //           color: scheme.onPrimary,
-                //         ),
-                // ),
-              ],
+                            IconButton(
+                              key: const ValueKey('style-edit-banner-redo'),
+                              tooltip: 'Rétablir (Ctrl+Y)',
+                              visualDensity: VisualDensity.compact,
+                              iconSize: 18,
+                              color: scheme.onPrimary,
+                              onPressed: history.canRedo ? history.redo : null,
+                              icon: const Icon(Icons.redo),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (widget.onManagePages != null)
+                      IconButton(
+                        key: const ValueKey('style-edit-banner-pages'),
+                        tooltip: 'Gérer les pages',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        color: scheme.onPrimary,
+                        icon: const Icon(Icons.web_stories_outlined),
+                        onPressed: widget.onManagePages,
+                      ),
+                    IconButton(
+                      key: const ValueKey('style-edit-banner-repository'),
+                      tooltip: 'Repository',
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 18,
+                      color: scheme.onPrimary,
+                      icon: const Icon(Icons.storage_outlined),
+                      onPressed: () {
+                        final target =
+                            widget.navigatorKey?.currentContext ?? context;
+                        JsonRepositoryManager.show(target);
+                      },
+                    ),
+                    if (appearance != null)
+                      IconButton(
+                        key: const ValueKey('style-edit-banner-ai'),
+                        tooltip: 'Générer un écran avec l’IA',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        color: scheme.onPrimary,
+                        isSelected: _chatOpen,
+                        icon: const Icon(Icons.auto_awesome_outlined),
+                        onPressed: () => setState(() {
+                          _chatOpen = !_chatOpen;
+                          _chatScope = null;
+                          if (_chatOpen) {
+                            _chatLayout = _newChatLayout(null, available);
+                          }
+                        }),
+                      ),
+                    if (AppearanceScope.controllerOf(context)
+                        case final appearance?)
+                      IconButton(
+                        key: const ValueKey('style-edit-banner-transfer'),
+                        tooltip:
+                            'Importer / exporter le style et la disposition',
+                        visualDensity: VisualDensity.compact,
+                        iconSize: 18,
+                        color: scheme.onPrimary,
+                        icon: const Icon(Icons.import_export),
+                        onPressed: () {
+                          final target =
+                              widget.navigatorKey?.currentContext ?? context;
+                          if (Navigator.maybeOf(target) == null) return;
+                          AppearanceTransferDialog.show(target, appearance);
+                        },
+                      ),
+
+                    // Dispositions et zones sélectionnées : parent > ... > enfant.
+                    Flexible(
+                      child: ValueListenableBuilder<List<String>>(
+                        valueListenable: LayoutSelection.path,
+                        builder: (context, path, _) => path.isEmpty
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(left: 8),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 520,
+                                  ),
+                                  // Le plus profond reste visible quand le chemin
+                                  // dépasse la largeur.
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    reverse: true,
+                                    child: Row(
+                                      key: const ValueKey(
+                                        'style-edit-banner-path',
+                                      ),
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        for (final (index, label)
+                                            in path.indexed) ...[
+                                          if (index > 0)
+                                            _PathChevron(
+                                              key: _chevronKeys.putIfAbsent(
+                                                index - 1,
+                                                GlobalKey.new,
+                                              ),
+                                              valueKey: ValueKey(
+                                                'style-edit-banner-chevron-${index - 1}',
+                                              ),
+                                              active:
+                                                  _treePopup?.chevronIndex ==
+                                                  index - 1,
+                                              onTap: () => _toggleTreePopup(
+                                                index - 1,
+                                                path.sublist(0, index),
+                                              ),
+                                            ),
+                                          _PathSegment(
+                                            key: ValueKey(
+                                              'style-edit-banner-path-$index',
+                                            ),
+                                            label: label,
+                                            current: index == path.length - 1,
+                                            onHover: (hovered) =>
+                                                LayoutSelection.highlightPath(
+                                                  hovered
+                                                      ? path.sublist(
+                                                          0,
+                                                          index + 1,
+                                                        )
+                                                      : null,
+                                                ),
+                                            onTap: () {
+                                              LayoutSelection.highlightPath(
+                                                null,
+                                              );
+                                              EditorSlotState.closeActiveMenu();
+                                              if (_treePopup != null) {
+                                                setState(
+                                                  () => _treePopup = null,
+                                                );
+                                              }
+                                              LayoutSelection.toggle(
+                                                path.sublist(0, index + 1),
+                                              );
+                                            },
+                                            onSecondaryTap: (position) {
+                                              LayoutSelection.highlightPath(
+                                                null,
+                                              );
+                                              EditorSlotState.closeActiveMenu();
+                                              if (_treePopup != null) {
+                                                setState(
+                                                  () => _treePopup = null,
+                                                );
+                                              }
+                                              LayoutSelection.openContextMenu(
+                                                path.sublist(0, index + 1),
+                                                _menuPositionForBanner(
+                                                  position,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    // ValueListenableBuilder<LayoutAxisAction?>(
+                    //   valueListenable: LayoutSelection.axisAction,
+                    //   builder: (context, action, _) => action == null
+                    //       ? const SizedBox.shrink()
+                    //       : ZoneAxisButton(
+                    //           key: const ValueKey('style-edit-banner-axis'),
+                    //           action: action,
+                    //           color: scheme.onPrimary,
+                    //         ),
+                    // ),
+                  ],
+                );
+              },
             ),
           ),
         ),

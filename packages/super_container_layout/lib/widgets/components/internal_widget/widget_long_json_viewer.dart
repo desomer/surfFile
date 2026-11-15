@@ -3,7 +3,6 @@ library;
 
 import 'dart:math';
 
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 

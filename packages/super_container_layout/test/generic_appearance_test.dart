@@ -140,21 +140,21 @@ void main() {
         }),
       },
     );
-    final export = AppearanceTransfer.export(appearance, {TransferGroup.layouts});
+    final export = AppearanceTransfer.export(appearance, {
+      TransferGroup.layouts,
+    });
     final data = (jsonDecode(export) as Map)['data'] as Map;
     expect((data['components'] as Map)['extension']['payload'], {
       'nullValue': null,
       'nested': [null, 0, false],
     });
-    final restored = AppearanceTransfer.import(
-      Appearance(),
-      export,
-      {TransferGroup.layouts},
-    );
-    expect(
-      (restored.components['extension'] as _PayloadConfig).payload,
-      {'nullValue': null, 'nested': [null, 0, false]},
-    );
+    final restored = AppearanceTransfer.import(Appearance(), export, {
+      TransferGroup.layouts,
+    });
+    expect((restored.components['extension'] as _PayloadConfig).payload, {
+      'nullValue': null,
+      'nested': [null, 0, false],
+    });
   });
 
   test(
@@ -273,7 +273,7 @@ void main() {
         transform: const TransformSpec(dx: 4000.12, scale: 40.12),
       );
       final layout = const SuperLayoutConfig()
-          .withSize(SuperLayoutZone.west, 5000.12)
+          .withSize(SuperLayoutZone.west, SuperLayoutConfig.maxSize)
           .copyWith(
             zoneFlows: {
               SuperLayoutZone.center: const ZoneFlowConfig(

@@ -481,14 +481,20 @@ void main() {
           );
           await tester.tap(find.text('Open wizard'));
           await tester.pumpAndSettle();
-          await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+          final next = find.byKey(const ValueKey('behavior-add-next'));
+          await tester.ensureVisible(next);
+          await tester.pumpAndSettle();
+          await tester.tap(next);
           await tester.pumpAndSettle();
           final catalogItem = find.byKey(
             const ValueKey('behavior-catalog-onTooltip'),
           );
           await tester.ensureVisible(catalogItem);
+          await tester.pumpAndSettle();
           await tester.tap(catalogItem);
-          await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+          await tester.ensureVisible(next);
+          await tester.pumpAndSettle();
+          await tester.tap(next);
           await settleRead(tester);
           expect(
             tester

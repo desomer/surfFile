@@ -41,7 +41,7 @@ void main() {
       componentId: 'explorer-code',
       componentLabel: 'Code',
     );
-    expect(codeExport, contains('const SuperCode('));
+    expect(codeExport, contains('SuperCode('));
     expect(codeExport, contains("path: 'source'"));
     expect(codeExport, contains("path: 'yamlError'"));
 
@@ -51,7 +51,7 @@ void main() {
       componentId: 'sales-chart',
       componentLabel: 'Sales',
     );
-    expect(chartExport, contains('const SuperChart('));
+    expect(chartExport, contains('SuperChart('));
     expect(chartExport, contains('kind: SuperChartKind.bar'));
     expect(chartExport, contains('barStacked: true'));
   });

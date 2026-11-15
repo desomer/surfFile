@@ -59,7 +59,7 @@ void main() {
     )!;
     final initiallyEditing = editMode.value;
     expect(handle.right, tester.getRect(edit).left);
-    expect(toolbar(tester).top, 56);
+    expect(toolbar(tester).top, 514);
     expect(toolbar(tester).right, 784);
     await tester.tap(edit);
     await tester.pumpAndSettle();
@@ -81,7 +81,8 @@ void main() {
     final initiallyEditing = editMode.value;
     await move(tester, const Offset(-100, 80));
     expect(toolbar(tester).left, initial.left - 100);
-    expect(toolbar(tester).top, initial.top + 80);
+    expect(toolbar(tester).top, 564);
+    expect(toolbar(tester).bottom, 600);
     expect(editMode.value, initiallyEditing);
     expect(tester.takeException(), isNull);
   });

@@ -248,6 +248,10 @@ void main() {
       const Size(1200, 800),
       const Size(900, 600),
     );
+    final zoom = EditorZoomScope.controllerOf(key.currentContext!)!;
+    zoom.options.value = zoom.options.value.copyWith(
+      skipLargeElementsOnDialog: false,
+    );
     final target = find.byKey(key);
     final before = screenRect(tester, target);
     final result = showEditorDialog<void>(
@@ -261,7 +265,7 @@ void main() {
     final framed = screenRect(tester, target);
     expect(bounds, const Rect.fromLTWH(640, 0, 560, 800));
     expect(framed.center, const Offset(320, 400));
-    expect(framed.width, closeTo(448, .01));
+    expect(framed.width, closeTo(450, .01));
     expect(framed.overlaps(bounds), isFalse);
     await tester.tap(find.byKey(const ValueKey('editor-dialog-side')));
     await tester.pumpAndSettle();
@@ -285,6 +289,10 @@ void main() {
       tester,
       const Size(700, 800),
       const Size(600, 600),
+    );
+    final zoom = EditorZoomScope.controllerOf(key.currentContext!)!;
+    zoom.options.value = zoom.options.value.copyWith(
+      skipLargeElementsOnDialog: false,
     );
     final result = showEditorDialog<void>(
       context: key.currentContext!,
@@ -379,6 +387,10 @@ void main() {
       size.value,
       liveSize: size,
     );
+    final zoom = EditorZoomScope.controllerOf(key.currentContext!)!;
+    zoom.options.value = zoom.options.value.copyWith(
+      skipLargeElementsOnDialog: false,
+    );
     final result = showEditorDialog<void>(
       context: key.currentContext!,
       target: key.currentContext,
@@ -443,7 +455,7 @@ void main() {
       await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
       await tester.sendEventToBinding(
         const PointerScrollEvent(
-          position: Offset(300, 400),
+          position: Offset(320, 400),
           scrollDelta: Offset(0, 2000),
         ),
       );

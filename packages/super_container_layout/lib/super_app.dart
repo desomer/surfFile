@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 /// Coquille applicative principale ([SuperApp]) du moteur `super_container_layout`.
 ///
 /// Orchestre le routeur `go_router` ([EditorPageRouter]), le magasin de persistance

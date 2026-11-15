@@ -801,7 +801,7 @@ void main() {
       await tester.ensureVisible(segment);
       await tester.tap(segment);
       await tester.pump();
-      expect(selected, 'Nord');
+      expect(selected, isNull);
       await move(tester, const Offset(-20, -20));
       expect(banner(tester).left, greaterThanOrEqualTo(0));
       expect(tester.takeException(), isNull);

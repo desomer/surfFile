@@ -61,7 +61,7 @@ void main() {
   }
 
   for (final (region, factory) in [
-    (ScaffoldPageRegion.appBar, 'AppBar'),
+    (ScaffoldPageRegion.appBar, 'ApplicationBar'),
     (ScaffoldPageRegion.bottomNavigationBar, 'BottomNavigationBar'),
   ]) {
     testWidgets('${region.name} catalog accepts only its category', (
@@ -99,7 +99,7 @@ void main() {
       );
       final other = region == ScaffoldPageRegion.appBar
           ? 'BottomNavigationBar'
-          : 'AppBar';
+          : 'ApplicationBar';
       expect(
         find.byKey(ValueKey('scaffold-page-add-slot-factory:$other')),
         findsNothing,
@@ -129,7 +129,7 @@ void main() {
         child: SuperLayout(
           config: SuperLayoutConfig(
             slotTypes: {
-              'factory-instance': 'registry:AppBar',
+              'factory-instance': 'registry:ApplicationBar',
               'registered-instance': 'legacy-tagged',
             },
           ),
@@ -144,19 +144,29 @@ void main() {
     expect(layout.searchSlot('factory-instance')!.tags, {'appBar'});
     expect(layout.searchSlot('registered-instance')!.tags, {'appBar', 'text'});
     final surface = tester.widget<EditorSlot>(
-      find
-          .descendant(
-            of: find.byType(SuperLayout),
-            matching: find.byType(EditorSlot),
-          )
-          .first,
+      find.descendant(
+        of: find.byType(SuperLayout),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is EditorSlot && widget.menuTitle == 'zone Centre',
+        ),
+      ),
     );
     unawaited(surface.onAdd!());
     await tester.pumpAndSettle();
     expect(
-      find.byKey(const ValueKey('super-layout-add-slot-registry:AppBar')),
+      find.byKey(
+        const ValueKey('super-layout-add-card-registry:ApplicationBar'),
+      ),
       findsOneWidget,
     );
+    expect(
+      find.byKey(const ValueKey('super-layout-add-card-legacy-tagged')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-add-card-legacy-tagged')),
+    );
+    await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('super-layout-add-slot-legacy-tagged')),
       findsOneWidget,
@@ -184,6 +194,7 @@ void main() {
       'compatible',
       const SizedBox(height: 24),
       tags: {'appBar'},
+      placementTags: {'appBar'},
     );
     registry.registerComponent(
       'legacy',
@@ -212,9 +223,17 @@ void main() {
     );
     unawaited(editor.add('appBar'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('scaffold-page-add-slot-factory:compatible')),
+    final compatibleCard = find.byKey(
+      const ValueKey('scaffold-page-add-card-factory:compatible'),
     );
+    await tester.ensureVisible(compatibleCard);
+    await tester.tapAt(tester.getTopLeft(compatibleCard) + const Offset(8, 8));
+    await tester.pumpAndSettle();
+    final compatibleSlot = find.byKey(
+      const ValueKey('scaffold-page-add-slot-factory:compatible'),
+    );
+    await tester.ensureVisible(compatibleSlot);
+    await tester.tap(compatibleSlot);
     await tester.pumpAndSettle();
     final controller = registry.scaffoldPageController('root');
     expect(controller.value.slotsOf(ScaffoldPageRegion.appBar), hasLength(2));
@@ -311,7 +330,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byType(SwitchListTile), findsNWidgets(6));
+      expect(find.byType(SwitchListTile), findsNWidgets(8));
       expect(
         find.byKey(const ValueKey('scaffold-page-switch-body')),
         findsNothing,
@@ -363,6 +382,12 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey('scaffold-page-add-bottomNavigationBar')),
       );
+      await tester.pumpAndSettle();
+      final titleCard = find.byKey(
+        const ValueKey('scaffold-page-add-card-component:test-title'),
+      );
+      await tester.ensureVisible(titleCard);
+      await tester.tap(titleCard);
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
@@ -531,8 +556,11 @@ void main() {
       final region = find.byWidgetPredicate(
         (widget) => widget is EditorSlot && widget.label == entry.value,
       );
+      final point = entry.key == ScaffoldPageRegion.floatingActionButton
+          ? tester.getTopLeft(region) + const Offset(2, 2)
+          : tester.getTopLeft(region) + const Offset(24, 24);
       await tester.tapAt(
-        tester.getTopLeft(region) + const Offset(24, 24),
+        point,
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
@@ -594,7 +622,7 @@ void main() {
     double labelLeft(Finder entry, String label) => tester
         .getTopLeft(find.descendant(of: entry, matching: find.text(label)))
         .dx;
-    expect(labelLeft(background, 'Fond') - labelLeft(body, 'Page'), 12);
+    expect(labelLeft(background, 'Fond') - labelLeft(body, 'Page'), 24);
     await tester.tap(find.descendant(of: body, matching: find.text('Page')));
     await tester.pumpAndSettle();
     expect(
@@ -655,9 +683,7 @@ void main() {
           find.byKey(const ValueKey('scaffold-page-select-body')),
           findsNothing,
         );
-        await tester.tap(
-          find.byKey(const ValueKey('style-edit-banner-path-0')),
-        );
+        LayoutSelection.select(['Page']);
         await tester.pumpAndSettle();
         expect(LayoutSelection.path.value, ['Page']);
         expect(

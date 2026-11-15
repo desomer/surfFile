@@ -52,6 +52,9 @@ void main() {
   testWidgets(
     'SuperDesignerApp mounts SuperPage, FloatingAppearanceToolbar and registered extensions',
     (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(const SuperDesignerApp());
       await tester.pumpAndSettle();
 
@@ -76,7 +79,7 @@ void main() {
         placements: {
           SuperLayoutZone.center: ['explorer'],
         },
-        slotTypes: {'explorer': 'registry:A'},
+        slotTypes: {'explorer': 'registry:panModel'},
       );
       await superApp.repositoryStore!.replaceArray(
         'pan_model_repository',
@@ -218,7 +221,7 @@ void main() {
         placements: {
           SuperLayoutZone.center: ['explorer'],
         },
-        slotTypes: {'explorer': 'registry:A'},
+        slotTypes: {'explorer': 'registry:panModel'},
       );
       await tester.pumpAndSettle();
       StyleEditScope.controllerOf(tester.element(find.byType(SuperPage)))!
@@ -234,33 +237,22 @@ void main() {
         final key = '${slot.effectiveComponentId}|${slot.widget.zoneId}';
         exports.putIfAbsent(key, slot.buildContentExport);
       }
-      // Corps du SuperPage (pseudo-slot `scaffold:body`) et layouts declares
-      // en code, auparavant introuvables.
+      // The design surface and code-declared layouts both expose their slots.
       expect(
         exports.keys,
         containsAll([
           'root|body',
-          'scaffold:body|null',
+          'mainLayout|null',
           'explorer|null',
-          'header|null',
+          'attribut-tree|header',
         ]),
       );
-      final body = exports['scaffold:body|null']!;
-      expect(body.appearance.components.keys, isNot(contains('scaffold:body')));
-      expect(body.appearance.components['body'], isA<SuperLayoutConfig>());
-      expect(body.omitted, ['global-node-properties']);
-      final header = exports['header|null']!.appearance;
+      final body = exports['mainLayout|null']!;
       expect(
-        header.components.keys,
-        unorderedEquals([
-          'header',
-          'tree-node-icon',
-          'tree-node-name',
-          'tree-node-separator',
-          'tree-node-type',
-          '__export_root',
-        ]),
+        body.appearance.components['mainLayout'],
+        isA<SuperLayoutConfig>(),
       );
+      expect(body.omitted, isEmpty);
       for (final export in exports.values) {
         AppearanceTransfer.import(
           Appearance(),

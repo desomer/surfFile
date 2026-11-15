@@ -45,7 +45,9 @@ void main() {
         final paints = tester.widgetList<CustomPaint>(
           find.descendant(of: container, matching: find.byType(CustomPaint)),
         );
-        return paints.first.foregroundPainter != null;
+        return paints.any(
+          (paint) => paint.foregroundPainter is EditorSelectionOutline,
+        );
       }
 
       await tester.tap(find.text('Target'), buttons: kSecondaryMouseButton);
@@ -56,18 +58,19 @@ void main() {
       await mouse.moveTo(
         tester.getCenter(find.byKey(const ValueKey('style-menu-Child style'))),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(highlighted('Child style'), isTrue);
       await mouse.moveTo(
         tester.getCenter(find.byKey(const ValueKey('style-menu-Parent style'))),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(EditorSlotState.highlightedTarget.value?.label, 'Parent style');
       expect(highlighted('Child style'), isFalse);
       expect(highlighted('Parent style'), isTrue);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       await mouse.moveTo(const Offset(1, 1));
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(highlighted('Child style'), isFalse);
       expect(highlighted('Parent style'), isFalse);
     },

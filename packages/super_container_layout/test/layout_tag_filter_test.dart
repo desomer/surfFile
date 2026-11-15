@@ -93,22 +93,32 @@ void main() {
     );
   }
 
+  Future<void> openNorthAddWizard(WidgetTester tester) async {
+    LayoutSelection.select(['Test layout', SuperLayoutZone.north.label]);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(700, 60), buttons: kSecondaryMouseButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('style-menu-add-Nord')));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('layout catalog filters by receiving zone', (tester) async {
     final changes = await pumpLayout(tester);
-    await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
-    await tester.pumpAndSettle();
+    await openNorthAddWizard(tester);
     expect(
-      find.byKey(const ValueKey('super-layout-add-slot-new')),
+      find.byKey(const ValueKey('super-layout-add-card-new')),
       findsOneWidget,
     );
     expect(
-      find.byKey(const ValueKey('super-layout-add-slot-bad')),
+      find.byKey(const ValueKey('super-layout-add-card-bad')),
       findsNothing,
     );
     expect(
-      find.byKey(const ValueKey('super-layout-add-slot-blocked')),
+      find.byKey(const ValueKey('super-layout-add-card-blocked')),
       findsNothing,
     );
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-card-new')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-slot-new')));
     await tester.pumpAndSettle();
     expect(changes.single.placementsOf(SuperLayoutZone.north), [
@@ -245,6 +255,8 @@ void main() {
   ) async {
     final swapped = _config.withSwap(SuperLayoutZone.north);
     final changes = await pumpLayout(tester, config: swapped);
+    LayoutSelection.select(['Test layout', SuperLayoutZone.north.label]);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
     await tester.pumpAndSettle();
     expect(
@@ -267,7 +279,8 @@ void main() {
         type: 'bad',
       ),
     );
-    await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
+    await openNorthAddWizard(tester);
+    await tester.tap(find.byKey(const ValueKey('super-layout-add-card-new')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-slot-new')));
     await tester.pumpAndSettle();

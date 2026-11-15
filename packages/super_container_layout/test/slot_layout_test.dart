@@ -2548,6 +2548,11 @@ void main() {
         );
         await tester.pumpAndSettle();
 
+        await tester.tap(
+          find.byKey(const ValueKey('editor-wizard-tab-properties')),
+        );
+        await tester.pumpAndSettle();
+
         // Enable showScrollbar switch.
         final showScrollbarSwitch = find.byKey(
           const ValueKey('zone-flow-dialog-center-show-scrollbar'),

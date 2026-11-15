@@ -29,7 +29,7 @@ void main() {
 
   test('bootstrap and registration retain component tags', () {
     final registry = Registry()..bootstrap();
-    expect(registry.registry['AppBar']!.tags, {'appBar'});
+    expect(registry.registry['ApplicationBar']!.tags, {'appBar'});
     expect(registry.registry['BottomNavigationBar']!.tags, {
       'bottomNavigationBar',
     });

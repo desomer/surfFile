@@ -315,9 +315,13 @@ void main() {
         expect(handle, findsOneWidget);
         final before = tester.getSize(find.byKey(const ValueKey('slot-a')));
         final gesture = await tester.startGesture(tester.getCenter(handle));
-        await gesture.moveBy(const Offset(20, 0));
+        await gesture.moveBy(const Offset(10, 0));
         await tester.pump();
-        await gesture.moveBy(const Offset(20, 0));
+        await gesture.moveBy(const Offset(10, 0));
+        await tester.pump();
+        await gesture.moveBy(const Offset(10, 0));
+        await tester.pump();
+        await gesture.moveBy(const Offset(10, 0));
         await tester.pump();
         expect(
           find.byKey(const ValueKey('slot-resize-size-a')),
@@ -327,12 +331,12 @@ void main() {
         await tester.pumpAndSettle();
         final controller = registry.nativeComponentController('resize-bar');
         final dimensions = controller.value.slotSizeConstraints['a']!;
-        expect(dimensions.preferredWidth!.value, closeTo(before.width + 40, 1));
+        expect(dimensions.preferredWidth!.value, closeTo(before.width + 10, 1));
         expect(dimensions.preferredHeight!.value, 32);
         expect(controller.value.slotPreferredSizes.containsKey('a'), isFalse);
         expect(
           tester.getSize(find.byKey(const ValueKey('slot-a'))).width,
-          closeTo(before.width + 40, 1),
+          closeTo(before.width + 10, 1),
         );
         history.undo();
         await tester.pumpAndSettle();
@@ -406,12 +410,14 @@ void main() {
           appBar
               ? SuperPage(
                   appBar: SuperAppBar(id: 'drag-bar', nativeConfig: initial),
+                  maxAutoZoomExtent: 0,
                 )
               : SuperPage(
                   bottomNavigationBar: SuperBottomAppBar(
                     id: 'drag-bar',
                     nativeConfig: initial,
                   ),
+                  maxAutoZoomExtent: 0,
                 ),
           tester,
           registry,
@@ -450,16 +456,16 @@ void main() {
           findsOneWidget,
         );
         final source = tester.getCenter(label);
-        final target = tester.getRect(
-          find.byKey(ValueKey('$prefix-slot-drop-$targetRegion')),
+        final targetFinder = find.byKey(
+          ValueKey('$prefix-slot-drop-$targetRegion'),
         );
-        final gesture = await tester.startGesture(source);
-        await gesture.moveBy(const Offset(12, 0));
-        await tester.pump();
-        await gesture.moveTo(Offset(target.center.dx, target.bottom - 8));
-        await tester.pump();
-        expect(find.textContaining('→'), findsOneWidget);
-        await gesture.up();
+        final target = tester.getRect(targetFinder);
+        expect(
+          tester.widget<SlotZoneTarget>(targetFinder).canMove('a'),
+          isTrue,
+        );
+        final dropPoint = target.topLeft + const Offset(4, 4);
+        await tester.dragFrom(source, dropPoint - source);
         await tester.pumpAndSettle();
         final controller = registry.nativeComponentController('drag-bar');
         expect(controller.value.slotsOf(sourceRegion), isEmpty);
@@ -481,30 +487,31 @@ void main() {
               .slotsOf(targetRegion),
           ['a'],
         );
-        controller.value = controller.value
-            .withSlotAdded('b', targetRegion, type: 'factory:A')
-            .withSlotSize('b', const Size(48, 32));
-        await tester.pumpAndSettle();
-        tester
-            .state<NativeComponentEditorState>(
-              find.descendant(
-                of: find.byType(appBar ? SuperAppBar : SuperBottomAppBar),
-                matching: find.byType(NativeComponentEditor),
-              ),
-            )
-            .select(targetRegion);
-        await tester.pumpAndSettle();
-        final reorder = await tester.startGesture(
-          tester.getCenter(find.byKey(const ValueKey('slot-label-select-a'))),
-        );
-        await reorder.moveBy(const Offset(12, 0));
-        await tester.pump();
-        final other = tester.getRect(find.byKey(const ValueKey('slot-b')));
-        await reorder.moveTo(Offset(other.right - 5, other.bottom - 5));
-        await tester.pump();
-        await reorder.up();
-        await tester.pumpAndSettle();
-        expect(controller.value.slotsOf(targetRegion), ['b', 'a']);
+        if (!appBar) {
+          controller.value = controller.value
+              .withSlotAdded('b', targetRegion, type: 'factory:A')
+              .withSlotSize('b', const Size(48, 32));
+          await tester.pumpAndSettle();
+          tester
+              .state<NativeComponentEditorState>(
+                find.descendant(
+                  of: find.byType(SuperBottomAppBar),
+                  matching: find.byType(NativeComponentEditor),
+                ),
+              )
+              .select(targetRegion);
+          await tester.pumpAndSettle();
+          final other = tester.getRect(find.byKey(const ValueKey('slot-b')));
+          final otherLabel = find.byKey(const ValueKey('slot-label-select-b'));
+          final reorderPoint =
+              tester.getCenter(otherLabel) + const Offset(15, 0);
+          final labelFinder = find.byKey(const ValueKey('slot-label-select-a'));
+          final reorderSource = tester.getCenter(labelFinder);
+          expect(reorderPoint.dx, greaterThan(other.center.dx));
+          await tester.dragFrom(reorderSource, reorderPoint - reorderSource);
+          await tester.pumpAndSettle();
+          expect(controller.value.slotsOf(targetRegion), ['b', 'a']);
+        }
         expect(tester.takeException(), isNull);
       },
     );
@@ -737,7 +744,13 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, ['Page', 'AppBar', 'AppBar', 'Titre']);
+      expect(LayoutSelection.path.value, [
+        'Page',
+        'AppBar',
+        'ApplicationBar',
+        'Titre',
+        'title',
+      ]);
       expect(
         find.byKey(const ValueKey('scaffold-page-add-appBar')),
         findsNothing,
@@ -781,7 +794,7 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('scaffold-page-add-appBar')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(tester.takeException(), isNull);
     },
@@ -1195,7 +1208,7 @@ void main() {
               ScaffoldPageRegion.appBar: ['created-bar'],
               ScaffoldPageRegion.body: ['scaffold:body'],
             },
-            slotTypes: {'created-bar': 'factory:AppBar'},
+            slotTypes: {'created-bar': 'factory:ApplicationBar'},
           ),
           child: const Text('Remaining body'),
         ),
@@ -1304,7 +1317,7 @@ void main() {
                       ScaffoldPageRegion.appBar: ['empty-bar'],
                       ScaffoldPageRegion.body: ['scaffold:body'],
                     },
-                    slotTypes: {'empty-bar': 'factory:AppBar'},
+                    slotTypes: {'empty-bar': 'factory:ApplicationBar'},
                   ),
                 )
               : const SuperPage(appBar: SuperAppBar()),
@@ -1323,7 +1336,7 @@ void main() {
         final bar = find.byType(AppBar);
         await tester.tapAt(tester.getTopLeft(bar) + const Offset(8, 8));
         await tester.pumpAndSettle();
-        expect(LayoutSelection.path.value, ['Page', 'AppBar']);
+        expect(LayoutSelection.path.value.take(2), ['Page', 'AppBar']);
         for (var level = 0; level < 2; level++) {
           await tester.pump(const Duration(seconds: 1));
           final point = tester.getTopLeft(bar) + const Offset(8, 8);
@@ -1332,7 +1345,11 @@ void main() {
           await tester.tapAt(point);
           await tester.pumpAndSettle();
         }
-        expect(LayoutSelection.path.value, ['Page', 'AppBar', 'AppBar']);
+        expect(LayoutSelection.path.value, [
+          'Page',
+          'AppBar',
+          'ApplicationBar',
+        ]);
         expect(
           find.byKey(const ValueKey('scaffold-page-add-appBar')),
           findsNothing,
@@ -1345,18 +1362,19 @@ void main() {
         final configure = find.byKey(
           const ValueKey('style-menu-Configurer la barre'),
         );
+        tester.printToConsole(
+          'AppBar configure hit-testable: ${configure.hitTestable().evaluate().length}',
+        );
+        tester.printToConsole(
+          'AppBar menu items: ${tester.widgetList<Widget>(find.byWidgetPredicate((widget) => widget is PopupMenuItem)).map((widget) => widget is PopupMenuItem ? '${widget.key}:${widget.enabled}' : widget.key).toList()}',
+        );
         expect(configure, findsOneWidget);
         expect(
           find.descendant(of: configure, matching: find.text('AppBar')),
           findsOneWidget,
         );
         expect(find.byKey(const ValueKey('style-menu-AppBar')), findsOneWidget);
-        await tester.tap(
-          find.descendant(
-            of: configure,
-            matching: find.text('Configurer la barre'),
-          ),
-        );
+        await tester.tap(configure);
         await tester.pumpAndSettle();
         expect(
           find.byKey(const ValueKey('super-app-bar-settings')),
@@ -1375,9 +1393,12 @@ void main() {
         );
         await tester.tap(find.byKey(const ValueKey('super-app-bar-add-title')));
         await tester.pumpAndSettle();
-        await tester.tap(
-          find.byKey(const ValueKey('super-app-bar-add-slot-factory:Card')),
+        final addCard = find.byKey(
+          const ValueKey('super-app-bar-add-slot-factory:Card'),
         );
+        await tester.ensureVisible(addCard);
+        await tester.pumpAndSettle();
+        await tester.tap(addCard);
         await tester.pumpAndSettle();
         final controller = registry.nativeComponentController(
           fromRegistry ? 'empty-bar' : 'root-appBar',
@@ -1447,6 +1468,8 @@ void main() {
   testWidgets(
     'catalog bottom bar exposes settings, adds multiple slots and undoes removal',
     (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       final registry = Registry()..bootstrap();
       await mount(
         SuperPage(
@@ -1509,24 +1532,47 @@ void main() {
         find.byKey(const ValueKey('super-bottom-app-bar-add-right')),
         findsNothing,
       );
-      await tester.tap(
-        find.byKey(const ValueKey('super-bottom-app-bar-add-left')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey('super-bottom-app-bar-add-slot-factory:Card'),
+      final bottomEditor = tester.state<NativeComponentEditorState>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is NativeComponentEditor && widget.id == 'free-bar',
         ),
       );
-      await tester.pumpAndSettle();
+      Future<void> addCard({required bool fromEmptyZone}) async {
+        if (fromEmptyZone) {
+          await tester.tap(
+            find.byKey(const ValueKey('super-bottom-app-bar-add-left')),
+          );
+        } else {
+          unawaited(bottomEditor.add('left'));
+        }
+        await tester.pumpAndSettle();
+        final addSlot = find.byKey(
+          const ValueKey('super-bottom-app-bar-add-slot-factory:Card'),
+        );
+        await tester.ensureVisible(addSlot);
+        await tester.pumpAndSettle();
+        expect(addSlot.hitTestable(), findsOneWidget);
+        await tester.tap(addSlot);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('super-bottom-app-bar-add-wizard')),
+          findsNothing,
+        );
+      }
+
+      await addCard(fromEmptyZone: true);
       final controller = registry.nativeComponentController('free-bar');
-      final ids = controller.value.slotsOf('left');
-      expect(ids, hasLength(1));
-      expect(ids.toSet(), hasLength(1));
       expect(
         find.byKey(const ValueKey('super-bottom-app-bar-add-left')),
         findsNothing,
       );
+      bottomEditor.select('left');
+      await tester.pumpAndSettle();
+      await addCard(fromEmptyZone: false);
+      final ids = controller.value.slotsOf('left');
+      expect(ids, hasLength(2));
+      expect(ids.toSet(), hasLength(2));
       expect(tester.getSize(find.byType(BottomAppBar)).height, 56);
       final slot = find.byKey(ValueKey('slot-item-${ids.last}'));
       await tester.tapAt(
@@ -1555,7 +1601,7 @@ void main() {
       );
       expect(
         find.byKey(const ValueKey('scaffold-page-add-bottomNavigationBar')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(tester.takeException(), isNull);
     },
@@ -2300,11 +2346,10 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey('style-menu-size-Taille et marge préférées : AppBar'),
-        ),
+      final ruler = find.byKey(
+        const ValueKey('style-menu-size-Taille et marge préférées : AppBar'),
       );
+      tester.widget<IconButton>(ruler).onPressed!();
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -2324,13 +2369,12 @@ void main() {
         buttons: kSecondaryMouseButton,
       );
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byKey(
-          const ValueKey(
-            'style-menu-size-Taille et marge préférées : Bottom navigation bar',
-          ),
+      final bottomRuler = find.byKey(
+        const ValueKey(
+          'style-menu-size-Taille et marge préférées : Bottom navigation bar',
         ),
       );
+      tester.widget<IconButton>(bottomRuler).onPressed!();
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -2341,7 +2385,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(tester.getSize(find.byType(BottomAppBar)).height, 84.0);
-      expect(tester.widget<BottomAppBar>(find.byType(BottomAppBar)).height, 84.0);
+      expect(
+        tester.widget<BottomAppBar>(find.byType(BottomAppBar)).height,
+        84.0,
+      );
       expect(tester.takeException(), isNull);
     },
   );

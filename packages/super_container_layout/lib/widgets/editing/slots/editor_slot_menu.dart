@@ -880,7 +880,9 @@ extension _EditorSlotMenuExtension on EditorSlotState {
               PopupMenuItem<EditorSlotState>(
                 height: 40,
                 key: ValueKey('style-menu-${state.label}'),
-                enabled: state.widget.onEdit != null,
+                enabled:
+                    state.widget.onEdit != null ||
+                    (inlineActions[state]?.isNotEmpty ?? false),
                 value: state,
                 padding: EdgeInsets.zero,
                 child: _menuHover(
@@ -1055,6 +1057,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
                                   .pop<Future<void> Function()>(() async {
                                     if (state.mounted &&
                                         state.widget.onEdit != null &&
+                                        action.dimensionDelegateBuilder !=
+                                            null &&
                                         EditorWizardNavigation.findDirectSlotSizeAction(
                                               state.context,
                                             )?.label ==

@@ -426,11 +426,14 @@ void main() {
                 south: false,
                 east: false,
                 west: false,
+                northSize: 80,
+                autoSides: {},
                 placements: {
                   SuperLayoutZone.center: ['a', 'b'],
                   SuperLayoutZone.north: ['n'],
                 },
               ),
+              name: 'Axis layout',
               onChanged: changes.add,
               slots: [
                 for (final id in ['a', 'b', 'n'])
@@ -451,20 +454,17 @@ void main() {
     );
     final banner = find.byKey(const ValueKey('style-edit-banner-axis'));
     expect(banner, findsNothing);
-    await tester.tap(find.byKey(const ValueKey('axis-content-a')));
+    LayoutSelection.select(['Axis layout', 'Centre']);
     await tester.pumpAndSettle();
-    expect(banner, findsOneWidget);
-    await tester.drag(
-      find.byKey(const ValueKey('style-edit-banner-drag')),
-      const Offset(0, 450),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byTooltip('Centre : Column - Passer en Row'), findsNWidgets(2));
+    expect(banner, findsNothing);
+    expect(find.byTooltip('Centre : Column - Passer en Row'), findsOneWidget);
     final a = find.byKey(const ValueKey('axis-content-a'));
     final b = find.byKey(const ValueKey('axis-content-b'));
     expect(tester.getTopLeft(a).dx, tester.getTopLeft(b).dx);
     expect(tester.getTopLeft(b).dy, greaterThan(tester.getTopLeft(a).dy));
-    await tester.tap(banner);
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-toggle-axis-center')),
+    );
     await tester.pumpAndSettle();
     expect(
       key.currentState!.config.axisOf(SuperLayoutZone.center),
@@ -472,7 +472,7 @@ void main() {
     );
     expect(tester.getTopLeft(a).dy, tester.getTopLeft(b).dy);
     expect(tester.getTopLeft(b).dx, greaterThan(tester.getTopLeft(a).dx));
-    expect(find.byTooltip('Centre : Row - Passer en Column'), findsNWidgets(2));
+    expect(find.byTooltip('Centre : Row - Passer en Column'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey('super-layout-toggle-axis-center')),
@@ -482,18 +482,13 @@ void main() {
       key.currentState!.config.axisOf(SuperLayoutZone.center),
       Axis.vertical,
     );
-    await tester.tap(
-      find.descendant(
-        of: find.byKey(const ValueKey('super-layout-name-north')),
-        matching: find.text('Nord'),
-      ),
-    );
+    LayoutSelection.select(['Axis layout', 'Nord']);
     await tester.pumpAndSettle();
-    expect(find.byTooltip('Nord : Column - Passer en Row'), findsNWidgets(2));
-    await tester.tap(
-      find.byKey(const ValueKey('axis-content-n')),
-      buttons: kSecondaryMouseButton,
-    );
+    expect(find.byTooltip('Nord : Column - Passer en Row'), findsOneWidget);
+    LayoutSelection.openContextMenu([
+      'Axis layout',
+      'Nord',
+    ], const Offset(400, 60));
     await tester.pumpAndSettle();
     final menuZone = find.byKey(const ValueKey('style-menu-Nord'));
     expect(menuZone, findsOneWidget);
@@ -523,13 +518,7 @@ void main() {
       key.currentState!.config.axisOf(SuperLayoutZone.center),
       Axis.vertical,
     );
-    expect(find.byTooltip('Nord : Row - Passer en Column'), findsNWidgets(2));
-    await tester.tap(banner);
-    await tester.pumpAndSettle();
-    expect(
-      key.currentState!.config.axisOf(SuperLayoutZone.north),
-      Axis.vertical,
-    );
+    expect(find.byTooltip('Nord : Row - Passer en Column'), findsOneWidget);
 
     expect(
       find.byKey(const ValueKey('super-layout-toggle-axis-north')),
@@ -547,7 +536,7 @@ void main() {
       key.currentState!.config.axisOf(SuperLayoutZone.center),
       Axis.horizontal,
     );
-    expect(changes.length, 5);
+    expect(changes.length, 4);
     final restored = SuperLayoutConfig.fromJson(changes.last.toJson());
     expect(restored.axisOf(SuperLayoutZone.center), Axis.horizontal);
     mode.value = false;
@@ -559,7 +548,7 @@ void main() {
     );
     mode.value = true;
     await tester.pumpAndSettle();
-    expect(banner, findsOneWidget);
+    expect(banner, findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
     expect(LayoutSelection.axisAction.value, isNull);
@@ -567,7 +556,7 @@ void main() {
   });
 
   testWidgets(
-    'banner axis follows nested selection and hides for read-only layouts',
+    'axis action follows nested selection and is absent on read-only layouts',
     (tester) async {
       final mode = ValueNotifier(true);
       addTearDown(mode.dispose);
@@ -581,9 +570,7 @@ void main() {
           ],
         ),
       );
-      await tester.tapAt(const Offset(600, 350));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-edit-banner-axis')));
+      LayoutSelection.select(['parent', 'Centre', 'child', 'Centre']);
       await tester.pumpAndSettle();
       final child = tester.state<SuperLayoutState>(
         find.byKey(const ValueKey('child')),
@@ -591,11 +578,16 @@ void main() {
       final parent = tester.state<SuperLayoutState>(
         find.byKey(const ValueKey('parent')),
       );
-      expect(child.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      expect(child.config.axisOf(SuperLayoutZone.center), Axis.vertical);
       expect(parent.config.axisOf(SuperLayoutZone.center), Axis.vertical);
-      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-0')));
+      expect(LayoutSelection.axisAction.value?.zoneLabel, 'Centre');
+      LayoutSelection.axisAction.value!.onToggle();
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('style-edit-banner-axis')));
+      expect(child.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
+      LayoutSelection.select(['parent']);
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.axisAction.value?.zoneLabel, 'Centre');
+      LayoutSelection.axisAction.value!.onToggle();
       await tester.pumpAndSettle();
       expect(parent.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
       expect(child.config.axisOf(SuperLayoutZone.center), Axis.horizontal);
@@ -736,7 +728,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await openMenu();
-    await tester.tap(find.text('Menu layout'));
+    await tester.tap(find.text('Menu layout').last);
     await tester.pumpAndSettle();
     expect(find.byType(SuperLayoutEditor), findsOneWidget);
     await tester.tap(find.text('Appliquer'));
@@ -771,13 +763,13 @@ void main() {
       BoxBorder? placeholderBorder() =>
           (tester.widget<DecoratedBox>(placeholder).decoration as BoxDecoration)
               .border;
-      expect(placeholderBorder(), isNull);
+      expect(placeholder, findsNothing);
       expect(find.text('Nord'), findsNothing);
       mode.value = true;
       await tester.pumpAndSettle();
       final border = placeholderBorder();
       expect(border, isNotNull);
-      expect(find.text('Nord'), findsNWidgets(2));
+      expect(find.text('Nord'), findsNothing);
 
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
@@ -789,30 +781,25 @@ void main() {
         findsNothing,
       );
       expect(inside('left', 'super-layout-add-north'), findsOneWidget);
-      expect(inside('left', 'super-layout-toggle-axis-north'), findsNothing);
+      expect(inside('left', 'super-layout-toggle-axis-north'), findsOneWidget);
       expect(placeholderBorder(), border);
       expect(find.text('Nord'), findsOneWidget);
 
       await tester.tapAt(const Offset(420, 20));
       await tester.pumpAndSettle();
       expect(placeholderBorder(), border);
-      expect(
-        find.descendant(
-          of: inside('left', 'super-layout-north'),
-          matching: find.text('Nord'),
-        ),
-        findsOneWidget,
-      );
+      expect(inside('left', 'super-layout-add-overlay-north'), findsNothing);
+      expect(inside('right', 'super-layout-add-overlay-north'), findsOneWidget);
       mode.value = false;
       await tester.pumpAndSettle();
-      expect(placeholderBorder(), isNull);
+      expect(placeholder, findsNothing);
       expect(find.text('Nord'), findsNothing);
 
       mode.value = true;
       await pump(tester, mode, layout('no-badges', showZoneNames: false));
       await tester.tapAt(const Offset(20, 20));
       await tester.pumpAndSettle();
-      expect(find.text('Nord'), findsOneWidget);
+      expect(find.text('Nord'), findsNothing);
       expect(inside('no-badges', 'super-layout-name-north'), findsNothing);
       await pump(tester, mode, layout('read-only', editable: false));
       await tester.tapAt(const Offset(20, 20));
@@ -1465,9 +1452,11 @@ void main() {
       );
       expect(dialog, findsOneWidget);
       final dialogRect = tester.getRect(dialog);
-      // Positioned right below and aligned with the clicked chevron.
+      // The popup is anchored to the chevron and clamped to the available viewport.
       expect(dialogRect.top, closeTo(chevronRect.bottom + 6, 2));
-      expect(dialogRect.left, closeTo(chevronRect.left, 2));
+      final viewport = LayoutSelection.editorViewport.value;
+      expect(dialogRect.left, greaterThanOrEqualTo(viewport?.left ?? 0));
+      expect(dialogRect.right, lessThanOrEqualTo(viewport?.right ?? 800));
 
       // Complete tree of 'Main' is displayed: zones, Card slot, and inner button.
       final nordNode = find.byKey(
@@ -1577,14 +1566,26 @@ void main() {
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Page']);
 
+      Future<void> tapNorthZone() async {
+        final rect = tester.getRect(
+          find.byKey(const ValueKey('super-layout-north')),
+        );
+        await tester.tapAt(rect.center);
+        await tester.pumpAndSettle();
+      }
+
       // Single click in Centre zone inside Corps selects 'Main > Centre'.
       await tester.tapAt(const Offset(400, 350));
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Centre']);
+      await tester.drag(
+        find.byKey(const ValueKey('style-edit-banner-drag')),
+        const Offset(0, 450),
+      );
+      await tester.pumpAndSettle();
 
       // Single click in Nord zone inside Corps switches to 'Main > Nord'.
-      await tester.tapAt(const Offset(50, 10));
-      await tester.pumpAndSettle();
+      await tapNorthZone();
       expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Nord']);
 
       // Double click in Centre zone selects the slot 'Ma Carte'.
@@ -1600,8 +1601,11 @@ void main() {
         'Ma Carte',
       ]);
 
-      // Single click in Nord zone switches cleanly from slot 'Ma Carte' to 'Main > Nord'.
-      await tester.tapAt(const Offset(50, 10));
+      // Return to the layout before selecting a sibling zone from the banner path.
+      await tester.tap(find.byKey(const ValueKey('style-edit-banner-path-2')));
+      await tester.pumpAndSettle();
+      expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main']);
+      LayoutSelection.select(['Page', 'Corps', 'Main', 'Nord']);
       await tester.pumpAndSettle();
       expect(LayoutSelection.path.value, ['Page', 'Corps', 'Main', 'Nord']);
 
@@ -2234,12 +2238,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tapAt(const Offset(5, 590));
       await tester.pumpAndSettle();
-      expect(LayoutSelection.path.value, [
-        'Main',
-        'Centre',
-        'Carte',
-        'Action',
-      ]);
+      expect(LayoutSelection.path.value, ['Main', 'Centre', 'Carte', 'Action']);
 
       final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(gesture.removePointer);

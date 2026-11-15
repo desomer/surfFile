@@ -29,6 +29,8 @@ void main() {
       'type': 'String',
       'typeIcon': 'value',
       'description': 'demo',
+      'isRequired': true,
+      'isSearchable': true,
       'propertiesText': '',
     });
     expect(items.toJson()['typeIcon'], 'container');

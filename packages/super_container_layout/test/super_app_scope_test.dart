@@ -88,6 +88,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    LayoutSelection.select(['Layout', SuperLayoutZone.center.label]);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-center')));
     await tester.pumpAndSettle();
     expect(find.text('Scoped component'), findsOneWidget);
@@ -265,7 +267,8 @@ void main() {
     await tester.pumpAndSettle();
     final state = tester.state<SuperLayoutState>(find.byType(SuperLayout));
     expect(state.searchSlot('duplicate')?.label, 'Last');
-    expect(state.searchSlot('hidden'), same(hidden));
+    final hiddenInstance = state.searchSlot('hidden')! as InstanceSlot;
+    expect(hiddenInstance.component, same(hidden));
     expect(find.text('Hidden content'), findsNothing);
     expect(
       tester.widget<SlotStack>(find.byType(SlotStack)).slots.single.id,
@@ -315,6 +318,15 @@ void main() {
           controller: editMode,
           child: SuperLayout(
             onChanged: changes.add,
+            config: const SuperLayoutConfig(
+              north: true,
+              east: true,
+              south: true,
+              northSize: 80,
+              eastSize: 120,
+              southSize: 80,
+              autoSides: {},
+            ),
             slots: [
               BuilderSlot(
                 id: 'regular',
@@ -327,11 +339,19 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    LayoutSelection.select(['Layout', SuperLayoutZone.ne.label]);
+    await tester.pumpAndSettle();
+    expect(LayoutSelection.path.value, ['Layout', SuperLayoutZone.ne.label]);
     await tester.tap(find.byKey(const ValueKey('super-layout-add-ne')));
     await tester.pumpAndSettle();
     expect(find.text('Regular slot'), findsOneWidget);
-    expect(find.text('Registre : clock'), findsOneWidget);
+    final clockCard = find.byKey(
+      const ValueKey('super-layout-add-card-registry:clock'),
+    );
+    expect(clockCard, findsOneWidget);
     expect(find.text('Aucun slot visible disponible.'), findsNothing);
+    await tester.tap(clockCard);
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('super-layout-add-slot-registry:clock')),
     );
@@ -342,6 +362,10 @@ void main() {
     expect(find.byKey(const ValueKey('super-layout-name-ne')), findsOneWidget);
 
     await tester.tap(find.byKey(const ValueKey('super-layout-add-south')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('super-layout-add-card-registry:clock')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(const ValueKey('super-layout-add-slot-registry:clock')),
@@ -374,17 +398,18 @@ void main() {
     tester,
   ) async {
     final registry = Registry()..bootstrap();
-    final config = const SuperLayoutConfig()
-        .withSlotMoved(
-          'container-first',
-          SuperLayoutZone.center,
-          type: 'registry:Card',
-        )
-        .withSlotMoved(
-          'container-second',
-          SuperLayoutZone.center,
-          type: 'registry:Card',
-        );
+    final config =
+        const SuperLayoutConfig(north: true, northSize: 80, autoSides: {})
+            .withSlotMoved(
+              'container-first',
+              SuperLayoutZone.center,
+              type: 'registry:Card',
+            )
+            .withSlotMoved(
+              'container-second',
+              SuperLayoutZone.center,
+              type: 'registry:Card',
+            );
     final editMode = ValueNotifier(true);
     addTearDown(editMode.dispose);
     await tester.pumpWidget(
@@ -411,9 +436,14 @@ void main() {
     );
     expect(tester.widgetList<EditableSurface>(containers).first.style, style);
 
+    LayoutSelection.select(['Layout', SuperLayoutZone.north.label]);
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
     await tester.pumpAndSettle();
-    expect(find.text('Registre : Card'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('super-layout-add-card-registry:Card')),
+      findsOneWidget,
+    );
     await tester.tap(find.text('Annuler'));
     await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
@@ -544,6 +574,9 @@ void main() {
           child: SuperLayout(
             onChanged: changes.add,
             config: const SuperLayoutConfig(
+              north: true,
+              northSize: 80,
+              autoSides: {},
               swaps: {SuperLayoutZone.north},
               placements: {
                 SuperLayoutZone.center: ['registry:clock'],
@@ -560,6 +593,8 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+    LayoutSelection.select(['Layout', SuperLayoutZone.north.label]);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('super-layout-add-north')));
     await tester.pumpAndSettle();
@@ -589,18 +624,14 @@ void main() {
 
 GoRouter _rootRouter(Widget page) {
   final router = GoRouter(
-    routes: [
-      GoRoute(path: '/', builder: (context, state) => page),
-    ],
+    routes: [GoRoute(path: '/', builder: (context, state) => page)],
   );
   addTearDown(router.dispose);
   return router;
 }
 
-SuperApp _routedApp({required Widget page, Registry? registry}) => SuperApp(
-  router: _rootRouter(page),
-  registry: registry,
-);
+SuperApp _routedApp({required Widget page, Registry? registry}) =>
+    SuperApp(router: _rootRouter(page), registry: registry);
 
 class _TestComponentScope extends InheritedWidget {
   const _TestComponentScope({required super.child});

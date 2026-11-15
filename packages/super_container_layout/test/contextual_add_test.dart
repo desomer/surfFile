@@ -869,7 +869,9 @@ void main() {
       final zoomPercentage = find.byKey(
         const ValueKey('editor-zoom-percentage'),
       );
-      final scaleBeforeZoneHover = tester.widget<Text>(zoomPercentage).data;
+      final scaleBeforeZoneHover = tester
+          .widget<EditorNumberField>(zoomPercentage)
+          .value;
       final northChip = find.byKey(
         const ValueKey('contextual-add-placement-z0-north'),
       );
@@ -884,8 +886,8 @@ void main() {
       expect(northInsert.top, closeTo(northRef.top, 1.0));
       expect(northInsert.height, lessThan(northRef.height * 0.5));
       expect(
-        tester.widget<Text>(zoomPercentage).data,
-        isNot(equals(scaleBeforeZoneHover)),
+        tester.widget<EditorNumberField>(zoomPercentage).value,
+        isNot(scaleBeforeZoneHover),
       );
 
       // Leaving the chip hides the preview overlay.

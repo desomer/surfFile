@@ -727,11 +727,14 @@ class Registry {
   }
 
   /// Enregistre une fabrique, classée dans [addFamily] selon [addOrder].
+  ///
+  /// [placementTags] limite les zones de destination proposées par l'éditeur.
   void registerFactory(
     String key,
     Widget widget, {
     String? label,
     Set<String> tags = const {},
+    Set<String> placementTags = const {},
     ComponentAddFamily addFamily = ComponentAddFamily.user,
     int addOrder = 0,
     IconData? menuIcon,
@@ -742,6 +745,7 @@ class Registry {
     registry[key] = ComponentBuilderDynamic(
       label: label,
       tags: tags,
+      placementTags: placementTags,
       addFamily: addFamily,
       addOrder: addOrder,
       menuIcon: menuIcon,

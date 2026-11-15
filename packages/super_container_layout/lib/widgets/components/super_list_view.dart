@@ -142,7 +142,7 @@ class SuperListView extends SuperStatefulComponent<SuperListViewConfig>
 
 class _SuperListViewState extends State<SuperListView> {
   String get effectiveItemId =>
-      widget.itemId ?? widget.config.itemId ?? widget.id;
+      widget.itemId ?? widget.config.itemId ?? '${widget.id}:item';
 
   late final ValueNotifier<SuperListViewConfig> _localConfig;
   late final ValueNotifier<SuperLayoutConfig> _localLayout;
@@ -215,7 +215,11 @@ class _SuperListViewState extends State<SuperListView> {
   );
 
   void _listen(List<JsonArrayBinding> arrays) {
-    _listened = updateWatchedArrayBindings(_listened, arrays, _selectionChanged);
+    _listened = updateWatchedArrayBindings(
+      _listened,
+      arrays,
+      _selectionChanged,
+    );
   }
 
   void _observe(ResolvedJsonArraySource source, JsonRepositoryStore? store) {
@@ -974,7 +978,8 @@ class _SuperListViewState extends State<SuperListView> {
 
         return EditorSlot(
           id: widget.id,
-          exportConfig: () => configuration.value.copyWith(template: layout.value),
+          exportConfig: () =>
+              configuration.value.copyWith(template: layout.value),
           behaviors: widget.behaviours,
           label: 'Liste',
           menuType: 'ListView',

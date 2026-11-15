@@ -285,7 +285,7 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
 En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`), tu n'as **pas besoin de renvoyer tout l'écran**. Tu envoies uniquement les clés modifiées dans `components`, `styles` ou `pageCatalog` :
 
 1. **Modifier partiellement un composant ou un style existant** : fournis son `id` dans `components` ou `styles` avec uniquement les propriétés à changer (le champ `"type"` peut être omis si le composant existe déjà).
-2. **Ajouter un composant** : déclare son entrée avec son `"type"` dans `components` et ajoute sa référence `{"id": "...", "type": "registry:..."}` dans les `placements` de son conteneur parent.
+2. **Ajouter un composant** : déclare son entrée avec son `"type"` dans `components` et ajoute sa référence `{"id": "...", "type": "registry:..."}` dans les `placements` de son conteneur parent, en réémettant tous les placements existants de ce parent (voir la règle d'or ci-dessous).
 3. **Supprimer un composant** : passe son entrée à `null` dans `components` (`"components": { "old-id": null }`). Il est automatiquement supprimé de `components`, de `styles`, et retiré des `placements` de ses parents.
 
 ```json
@@ -316,6 +316,37 @@ En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`)
   }
 }
 ```
+
+#### Règle d'or sur les `placements` : préservation des listes et régions sœurs
+
+La fusion Vibe est incrémentale **au niveau des propriétés d'un composant**, mais **pas à l'intérieur de `placements`** : dès qu'un patch contient la clé `placements` d'un conteneur (`root`, page du `pageCatalog`, `mainLayout`, `SuperTab`, `template` d'une liste, etc.), cette map **remplace intégralement** l'ancienne. Chaque zone ou région absente du patch est vidée, et chaque liste fournie remplace la liste existante (aucun ajout en fin de liste). Pour les composants `"native"` / `"scaffold"` (dont `root`), la clé `regions` est elle aussi remplacée en bloc.
+
+- **Pas de mise à jour partielle des régions parentes** : lorsqu'un patch modifie les `placements` d'un conteneur, il **doit obligatoirement renvoyer l'intégralité des régions et des slots existants à conserver** dans ce conteneur, dans leur ordre actuel, en plus des ajouts. S'il envoie `regions`, il doit aussi y réémettre toutes les régions actives.
+- **Si les placements ne changent pas, n'envoie pas la clé `placements`** : pour modifier uniquement des propriétés (titre, `zoneFlows`, `bodyMode`, etc.), omets `placements` et `regions` ; les placements existants sont alors conservés.
+- **Exemple critique avec `root`** : pour ajouter ou modifier une `bottomNavigationBar`, le patch sur `root` doit impérativement réémettre ses placements existants. Le patch suivant est **incorrect**, car il vide les régions `appBar` et `body` et détache tout l'écran principal (`mainLayout` et ses enfants restent dans `components` mais ne sont plus affichés) :
+
+  ```json
+  "root": {
+    "placements": {
+      "bottomNavigationBar": [{ "id": "crm-bottombar", "type": "registry:BottomAppBar" }]
+    }
+  }
+  ```
+
+  Version **correcte** :
+
+  ```json
+  "root": {
+    "regions": { "appBar": true, "body": true, "bottomNavigationBar": true },
+    "placements": {
+      "appBar": [{ "id": "crm-appbar", "type": "registry:ApplicationBar" }],
+      "body": [{ "id": "scaffold:body", "type": "scaffold:body" }],
+      "bottomNavigationBar": [{ "id": "crm-bottombar", "type": "registry:BottomAppBar" }]
+    }
+  }
+  ```
+
+- **Règle d'invariance de `scaffold:body`** : le placement `{"id": "scaffold:body", "type": "scaffold:body"}` dans `root.placements.body` ne doit **jamais** être omis ou remplacé lors d'une mise à jour de `root`, sous peine de détacher tout l'écran principal.
 
 ---
 
@@ -363,7 +394,7 @@ Dans la page principale standard de SuperDesigner, le chemin de rendu est :
 }
 ```
 
-Si la zone contient déjà des composants à conserver, inclus aussi leurs placements dans la liste envoyée.
+Si la zone contient déjà des composants à conserver, inclus aussi leurs placements dans la liste envoyée, ainsi que les placements des autres zones du layout (`north`, `west`, etc.) à conserver.
 
 ### 3.2. Vérifications obligatoires avant d'émettre un patch
 
@@ -371,8 +402,9 @@ Si la zone contient déjà des composants à conserver, inclus aussi leurs place
 2. **Cible et scope** : vérifie que l'ID modifié est celui du composant rendu et que le patch respecte le périmètre fourni par le chat. N'invente pas de conteneur parent si les informations manquent.
 3. **Références complètes** : chaque nouveau composant standard configurable placé (par exemple `registry:Value`, `registry:Action` ou `registry:Layout`) doit avoir sa configuration avec le bon `type` dans ce patch. Une configuration peut être omise uniquement si le composant existe déjà dans le contexte courant ou si son implémentation est explicitement fournie par l'hôte. Ne réutilise pas un ID opaque supposé existant sans cette preuve.
 4. **Rattachement au rendu** : vérifie le chemin de chaque nouveau composant jusqu'à une page ou un composant effectivement affiché. Déclarer un formulaire et ses enfants sans rattacher son layout ne suffit pas.
-5. **Schéma documenté** : utilise uniquement les propriétés et valeurs autorisées pour chaque type. Le `type` de configuration (`"value"`) et le `type` de placement (`"registry:Value"`) ne sont pas interchangeables.
-6. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
+5. **Préservation des placements existants** : pour chaque conteneur dont le patch contient `placements` (ou `regions`), vérifie que toutes les zones, régions et slots existants à conserver sont réémis (voir la règle d'or de la section 3). Pour `root`, `root.placements.body` doit toujours contenir `{"id": "scaffold:body", "type": "scaffold:body"}`.
+6. **Schéma documenté** : utilise uniquement les propriétés et valeurs autorisées pour chaque type. Le `type` de configuration (`"value"`) et le `type` de placement (`"registry:Value"`) ne sont pas interchangeables.
+7. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
 
 Ces vérifications préviennent les erreurs de génération les plus courantes ; elles ne remplacent pas le décodage, la validation des modèles ni la vérification du rendu.
 

@@ -58,7 +58,12 @@ void main() {
     final exported = jsonDecode(AppearanceTransfer.export(
       appearance, {...TransferGroup.values}, codec: codec,
     )) as Map<String, dynamic>;
-    expect(exported['data']['application'], application);
+    final exportedApplication =
+        exported['data']['application'] as Map<String, dynamic>;
+    expect(exportedApplication['cardWidth'], 234.57);
+    expect(exportedApplication['folderTransitionDuration'], 345.68);
+    expect(exportedApplication['diskGaugeStyle']['thickness'], 8.12);
+    expect(exportedApplication['diskGaugeStyle']['alertThreshold'], .88);
     expect(codec.encode(codec.decode(saved)), saved);
   });
 

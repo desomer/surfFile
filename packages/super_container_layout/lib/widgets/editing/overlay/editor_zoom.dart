@@ -409,21 +409,10 @@ class _EditorZoomState extends State<EditorZoom>
           if (!autoZoomDisabled) {
             final double rawScale;
             if (hasEditorDialog) {
-              final zoomInFit = math.min(
+              rawScale = math.min(
                 available.width * .7 / rect.width,
                 available.height * .7 / rect.height,
               );
-              if (zoomInFit >= EditorZoom.minScale) {
-                rawScale = zoomInFit;
-              } else {
-                final padX = math.min(24.0, available.width * .06);
-                final padY = math.min(24.0, available.height * .06);
-                final tightFit = math.min(
-                  math.max(1.0, available.width - padX) / rect.width,
-                  math.max(1.0, available.height - padY) / rect.height,
-                );
-                rawScale = math.min(EditorZoom.minScale, tightFit);
-              }
             } else {
               final targetArea =
                   available.width *

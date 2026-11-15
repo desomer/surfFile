@@ -1032,7 +1032,7 @@ class SuperLayoutConfig extends ComponentConfig {
   };
 
   SuperLayoutConfig withSize(SuperLayoutZone side, double value) {
-    if (!side.isSide || !value.isFinite || value < minSize) {
+    if (!side.isSide || !value.isFinite || value < minSize || value > maxSize) {
       throw ArgumentError('Cote et taille finie superieure a $minSize requis.');
     }
     return _withSize(side, value);
@@ -1403,7 +1403,8 @@ class SuperLayoutConfig extends ComponentConfig {
         if (side == null ||
             extent is! num ||
             !extent.isFinite ||
-            extent < minSize) {
+            extent < minSize ||
+            extent > maxSize) {
           throw const FormatException('Cote reduit invalide.');
         }
         result[side] = extent.toDouble();
@@ -1419,7 +1420,7 @@ class SuperLayoutConfig extends ComponentConfig {
 
     double size(String key, double fallback) {
       final v = value[key] ?? fallback;
-      if (v is! num || !v.isFinite || v < minSize) {
+      if (v is! num || !v.isFinite || v < minSize || v > maxSize) {
         throw FormatException('Valeur invalide pour "$key".');
       }
       return v.toDouble();

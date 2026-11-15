@@ -549,10 +549,7 @@ void main() {
     );
     expect(
       registry.registry['ApplicationBar']!.duplication!.ownedConfigs('x'),
-      [
-        const EditorConfigRef.nativeComponent('x'),
-        const EditorConfigRef.layout('x'),
-      ],
+      [const EditorConfigRef.nativeComponent('x')],
     );
     expect(registry.registry['A']!.duplication, isNull);
   });

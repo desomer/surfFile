@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 /// Éditeur de code avec coloration syntaxique (`flutter_code_editor`) et numéros de ligne ([CodeEditor]).
 library;
 

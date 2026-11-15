@@ -18,6 +18,7 @@ import 'package:flutter/gestures.dart'
         kPrimaryButton,
         kTouchSlop;
 import 'package:material_ui/material_ui.dart';
+
 import '../../../theme/theme_color.dart';
 
 import '../../../models/super_layout_config.dart';
@@ -660,7 +661,8 @@ class _ZoneScrollableViewportState extends State<ZoneScrollableViewport> {
         mainAxisMargin: style.mainAxisMargin,
         crossAxisMargin: style.crossAxisMargin,
         thumbColor:
-            style.thumbColor.resolveTheme(context) ?? colors.onSurfaceVariant.withValues(alpha: 0.45),
+            style.thumbColor.resolveTheme(context) ??
+            colors.onSurfaceVariant.withValues(alpha: 0.45),
         trackColor:
             style.trackColor.resolveTheme(context) ??
             colors.surfaceContainerHighest.withValues(alpha: 0.35),
@@ -698,10 +700,8 @@ class ScrollViewportHost extends SingleChildRenderObjectWidget {
       _RenderScrollViewportHost(padding);
 
   @override
-  void updateRenderObject(
-    BuildContext context,
-    RenderObject renderObject,
-  ) => (renderObject as _RenderScrollViewportHost).padding = padding;
+  void updateRenderObject(BuildContext context, RenderObject renderObject) =>
+      (renderObject as _RenderScrollViewportHost).padding = padding;
 }
 
 class _RenderScrollViewportHost extends RenderProxyBox {
@@ -1414,8 +1414,14 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   /// Vrai quand le glisser survole la seconde moitie sur l'axe du slot.
   bool _after = false;
 
-  /// L'étiquette est survolée ou glissée : le slot qu'elle désigne est surligné.
+  /// L'étiquette ou une poignée du slot est survolée, ou l'étiquette est
+  /// glissée : le slot qu'elle désigne est surligné.
   bool _hover = false;
+  bool _labelHover = false;
+
+  /// Les poignées recouvrent l'étiquette dans les coins : leur survol prolonge
+  /// celui de l'étiquette, sinon poignées et surlignage clignotent.
+  final _hoveredHandles = <String>{};
   bool _dragging = false;
 
   /// Cible annoncée par l'étiquette pendant qu'elle est glissée.
@@ -1512,7 +1518,9 @@ class _LabeledSlotState extends State<_LabeledSlot> {
   bool get _showResizeHandles =>
       _active &&
       widget.onResize != null &&
-      ((_isActivelySelected && !_hasExternalHighlight) || _isHoveredForResize);
+      (_resizeStart != null ||
+          (_isActivelySelected && !_hasExternalHighlight) ||
+          _isHoveredForResize);
 
   (bool, bool, bool, bool, bool) get _selectionVisualState => (
     _hasExternalHighlight,
@@ -1563,6 +1571,10 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         final wasShowing = _resizeOverlay.isShowing;
         if (wasShowing) _resizeOverlay.hide();
         _finishResize();
+        if (_hoveredHandles.isNotEmpty) {
+          _hoveredHandles.clear();
+          _updateHover();
+        }
         if (wasShowing && mounted) setState(() {});
       }
     });
@@ -1692,7 +1704,11 @@ class _LabeledSlotState extends State<_LabeledSlot> {
     _resizeStart = null;
     _resizeHistory?.commitTransaction();
     _resizeHistory = null;
-    if (wasResizing && mounted) setState(() {});
+    if (wasResizing && mounted) {
+      setState(() {});
+      // Les poignées maintenues pendant le redimensionnement peuvent se masquer.
+      _syncResizeOverlay();
+    }
   }
 
   Widget _resizeHandle(String name, Alignment corner, ColorScheme colors) =>
@@ -1703,9 +1719,19 @@ class _LabeledSlotState extends State<_LabeledSlot> {
         onStart: _beginResize,
         onUpdate: (details) => _resize(details, corner),
         onEnd: _finishResize,
+        onHoverChanged: (hovered) {
+          hovered ? _hoveredHandles.add(name) : _hoveredHandles.remove(name);
+          _updateHover();
+        },
       );
 
-  void _setHover(bool value) {
+  void _setLabelHover(bool value) {
+    _labelHover = value;
+    _updateHover();
+  }
+
+  void _updateHover() {
+    final value = _labelHover || _hoveredHandles.isNotEmpty;
     if (mounted && value != _hover) {
       setState(() => _hover = value);
       _syncResizeOverlay();
@@ -2068,8 +2094,8 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                             ? SystemMouseCursors.click
                             : editorDragCursor(dragging: _dragging),
                         hitTestBehavior: HitTestBehavior.translucent,
-                        onEnter: (_) => _setHover(true),
-                        onExit: (_) => _setHover(false),
+                        onEnter: (_) => _setLabelHover(true),
+                        onExit: (_) => _setLabelHover(false),
                         child: Listener(
                           behavior: HitTestBehavior.translucent,
                           onPointerDown: widget.onSelect == null
@@ -2081,30 +2107,70 @@ class _LabeledSlotState extends State<_LabeledSlot> {
                             behavior: HitTestBehavior.translucent,
                             child: mover == null
                                 ? IgnorePointer(child: _chip(colors))
-                                : Draggable<SlotDragData>(
-                                    data: SlotDragData(
-                                      id: slot.id,
-                                      owner: mover.owner,
-                                      hint: _hint,
-                                    ),
-                                    dragAnchorStrategy:
-                                        pointerDragAnchorStrategy,
-                                    hitTestBehavior:
-                                        HitTestBehavior.translucent,
-                                    onDragStarted: () => _setDragging(true),
-                                    onDragEnd: (_) => _setDragging(false),
-                                    feedback: _chip(
-                                      colors,
-                                      opacity: 1,
-                                      dragged: true,
-                                    ),
-                                    childWhenDragging: Opacity(
-                                      opacity: .35,
-                                      child: _chip(colors),
-                                    ),
-                                    // Le contenu sous l'étiquette reste atteignable (clic
-                                    // droit du style) : seul le Draggable écoute le glisser.
-                                    child: IgnorePointer(child: _chip(colors)),
+                                : DragTarget<SlotDragData>(
+                                    onWillAcceptWithDetails: (details) {
+                                      final accepts =
+                                          details.data.id != slot.id &&
+                                          _accepts(details.data);
+                                      if (accepts) {
+                                        _track(details.offset);
+                                        details.data.hint.value = _hintFor(
+                                          details.data,
+                                        );
+                                      }
+                                      return accepts;
+                                    },
+                                    onMove: (details) {
+                                      if (!_accepts(details.data) ||
+                                          details.data.id == slot.id) {
+                                        return;
+                                      }
+                                      _track(details.offset);
+                                      details.data.hint.value = _hintFor(
+                                        details.data,
+                                      );
+                                    },
+                                    onLeave: (data) => data?.hint.value = null,
+                                    onAcceptWithDetails: (details) {
+                                      if (details.data.id == slot.id ||
+                                          !_accepts(details.data)) {
+                                        return;
+                                      }
+                                      mover.onMove(
+                                        details.data.id,
+                                        beforeId: _after ? null : slot.id,
+                                        afterId: _after ? slot.id : null,
+                                      );
+                                    },
+                                    builder: (context, candidates, _) =>
+                                        Draggable<SlotDragData>(
+                                          data: SlotDragData(
+                                            id: slot.id,
+                                            owner: mover.owner,
+                                            hint: _hint,
+                                          ),
+                                          dragAnchorStrategy:
+                                              pointerDragAnchorStrategy,
+                                          hitTestBehavior:
+                                              HitTestBehavior.translucent,
+                                          onDragStarted: () =>
+                                              _setDragging(true),
+                                          onDragEnd: (_) => _setDragging(false),
+                                          feedback: _chip(
+                                            colors,
+                                            opacity: 1,
+                                            dragged: true,
+                                          ),
+                                          childWhenDragging: Opacity(
+                                            opacity: .35,
+                                            child: _chip(colors),
+                                          ),
+                                          // Le contenu sous l'étiquette reste atteignable (clic
+                                          // droit du style) : seul le Draggable écoute le glisser.
+                                          child: IgnorePointer(
+                                            child: _chip(colors),
+                                          ),
+                                        ),
                                   ),
                           ),
                         ),

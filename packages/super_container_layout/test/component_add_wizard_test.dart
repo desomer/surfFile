@@ -522,9 +522,16 @@ void main() {
         ),
       ),
     );
-    await tester.tapAt(const Offset(20, 20));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('super-layout-add-center')));
+    final center = tester.widget<EditorSlot>(
+      find.descendant(
+        of: find.byType(SuperLayout),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is EditorSlot && widget.menuTitle == 'zone Centre',
+        ),
+      ),
+    );
+    center.onAdd!();
     await tester.pumpAndSettle();
     expect(
       find.byKey(const ValueKey('super-layout-add-stepper')),

@@ -203,13 +203,19 @@ void main() {
             body: SuperLayout(
               onChanged: onChanged,
               onSlotAdded: onSlotAdded,
+              config: const SuperLayoutConfig(
+                east: true,
+                eastSize: 200,
+                autoSides: {},
+              ),
               slots: const [_first, _second],
             ),
           ),
         ),
       ),
     );
-    await tester.tapAt(const Offset(400, 300));
+    LayoutSelection.select(['Layout', SuperLayoutZone.east.label]);
+    await tester.pumpAndSettle();
     await tester.pumpAndSettle();
   }
 
@@ -289,7 +295,7 @@ void main() {
         },
       );
       await add(tester, 'first');
-      LayoutSelection.select(['Super layout', SuperLayoutZone.east.label]);
+      LayoutSelection.select(['Layout', SuperLayoutZone.east.label]);
       await tester.pumpAndSettle();
       // The occupied zone exposes its add action in the context menu.
       await tester.tapAt(const Offset(790, 500), buttons: 2);

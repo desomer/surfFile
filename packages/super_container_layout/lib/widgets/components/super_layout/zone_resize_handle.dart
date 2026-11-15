@@ -168,122 +168,123 @@ class _ZoneResizeHandleState extends State<_ZoneResizeHandle> {
   );
 
   @override
-  Widget build(BuildContext context) => EditorOverlay(child: Stack(
-    children: [
-      Align(
-        alignment: switch (widget.restoreSize != null
-            ? widget.zone.opposite
-            : widget.zone) {
-          SuperLayoutZone.north => Alignment.bottomCenter,
-          SuperLayoutZone.south => Alignment.topCenter,
-          SuperLayoutZone.west => Alignment.centerRight,
-          _ => Alignment.centerLeft,
-        },
-        child: MouseRegion(
-          onEnter: (_) => setState(() => _borderHovered = true),
-          onExit: (_) => setState(() => _borderHovered = false),
-          cursor: _vertical
-              ? SystemMouseCursors.resizeUpDown
-              : SystemMouseCursors.resizeLeftRight,
-          child: _draggable(
-            SizedBox(
-              width: _vertical ? double.infinity : 5,
-              height: _vertical ? 5 : double.infinity,
-              key: ValueKey('super-layout-resize-${widget.zone.name}'),
-              child: ColoredBox(
-                color: _hovered
-                    ? Theme.of(context).colorScheme.primary
-                    : Theme.of(context).colorScheme.outlineVariant
-                          .withAlpha(128),
+  Widget build(BuildContext context) => EditorOverlay(
+    child: Stack(
+      children: [
+        Align(
+          alignment: switch (widget.restoreSize != null
+              ? widget.zone.opposite
+              : widget.zone) {
+            SuperLayoutZone.north => Alignment.bottomCenter,
+            SuperLayoutZone.south => Alignment.topCenter,
+            SuperLayoutZone.west => Alignment.centerRight,
+            _ => Alignment.centerLeft,
+          },
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _borderHovered = true),
+            onExit: (_) => setState(() => _borderHovered = false),
+            cursor: _vertical
+                ? SystemMouseCursors.resizeUpDown
+                : SystemMouseCursors.resizeLeftRight,
+            child: _draggable(
+              SizedBox(
+                width: _vertical ? double.infinity : 5,
+                height: _vertical ? 5 : double.infinity,
+                key: ValueKey('super-layout-resize-${widget.zone.name}'),
+                child: ColoredBox(
+                  color: _hovered
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.outlineVariant
+                            .withAlpha(128),
+                ),
               ),
             ),
           ),
         ),
-      ),
-      Center(
-        child: Transform.translate(
-          offset: getOffsetZoneAction(
-            widget.zone == SuperLayoutZone.north ||
-                widget.zone == SuperLayoutZone.west,
-          ),
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: MouseRegion(
-              onEnter: (_) => setState(() => _controlsHovered = true),
-              onExit: (_) => setState(() => _controlsHovered = false),
-              cursor: _vertical
-                  ? SystemMouseCursors.resizeUpDown
-                  : SystemMouseCursors.resizeLeftRight,
-              child: _draggable(
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: _hovered
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainerHighest
-                              .withAlpha(128),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Flex(
-                    direction: _vertical ? Axis.horizontal : Axis.vertical,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _button('collapse', switch (widget.zone) {
-                        SuperLayoutZone.north => Icons.arrow_drop_up,
-                        SuperLayoutZone.south => Icons.arrow_drop_down,
-                        SuperLayoutZone.west => Icons.arrow_left,
-                        _ => Icons.arrow_right,
-                      }, widget.restoreSize == null ? _collapse : null),
-                      SizedBox(
-                        width: _vertical ? 8 : 0,
-                        height: _vertical ? 0 : 8,
-                      ),
-                      for (var index = 0; index < 3; index++)
-                        Padding(
-                          padding: _vertical
-                              ? const EdgeInsets.symmetric(horizontal: 2)
-                              : const EdgeInsets.symmetric(vertical: 2),
-                          child: SizedBox(
-                            width: 3,
-                            height: 3,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+        Center(
+          child: Transform.translate(
+            offset: getOffsetZoneAction(
+              widget.zone == SuperLayoutZone.north ||
+                  widget.zone == SuperLayoutZone.west,
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: MouseRegion(
+                onEnter: (_) => setState(() => _controlsHovered = true),
+                onExit: (_) => setState(() => _controlsHovered = false),
+                cursor: _vertical
+                    ? SystemMouseCursors.resizeUpDown
+                    : SystemMouseCursors.resizeLeftRight,
+                child: _draggable(
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: _hovered
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                                .withAlpha(128),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Flex(
+                      direction: _vertical ? Axis.horizontal : Axis.vertical,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _button('collapse', switch (widget.zone) {
+                          SuperLayoutZone.north => Icons.arrow_drop_up,
+                          SuperLayoutZone.south => Icons.arrow_drop_down,
+                          SuperLayoutZone.west => Icons.arrow_left,
+                          _ => Icons.arrow_right,
+                        }, widget.restoreSize == null ? _collapse : null),
+                        SizedBox(
+                          width: _vertical ? 8 : 0,
+                          height: _vertical ? 0 : 8,
+                        ),
+                        for (var index = 0; index < 3; index++)
+                          Padding(
+                            padding: _vertical
+                                ? const EdgeInsets.symmetric(horizontal: 2)
+                                : const EdgeInsets.symmetric(vertical: 2),
+                            child: SizedBox(
+                              width: 3,
+                              height: 3,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                               ),
                             ),
                           ),
+                        SizedBox(
+                          width: _vertical ? 8 : 0,
+                          height: _vertical ? 0 : 8,
                         ),
-                      SizedBox(
-                        width: _vertical ? 8 : 0,
-                        height: _vertical ? 0 : 8,
-                      ),
-                      _button('expand', switch (widget.zone) {
-                        SuperLayoutZone.north => Icons.arrow_drop_down,
-                        SuperLayoutZone.south => Icons.arrow_drop_up,
-                        SuperLayoutZone.west => Icons.arrow_right,
-                        _ => Icons.arrow_left,
-                      }, _expand),
-                    ],
+                        _button('expand', switch (widget.zone) {
+                          SuperLayoutZone.north => Icons.arrow_drop_down,
+                          SuperLayoutZone.south => Icons.arrow_drop_up,
+                          SuperLayoutZone.west => Icons.arrow_right,
+                          _ => Icons.arrow_left,
+                        }, _expand),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
         ),
-      ),
-    ],
-  ));
+      ],
+    ),
+  );
   Offset getOffsetZoneAction(bool isNorW) {
+    if (widget.restoreSize != null) return Offset.zero;
     if (isNorW) {
-      return widget.restoreSize != null
-          ? Offset(_vertical ? 0 : -10, _vertical ? -10 : 0)
-          : Offset(_vertical ? 0 : 10, _vertical ? 10 : 0);
+      return Offset(_vertical ? 0 : 10, _vertical ? 10 : 0);
     } else {
-      return widget.restoreSize != null
-          ? Offset(_vertical ? 0 : 10, _vertical ? 10 : 0)
-          : Offset(_vertical ? 0 : -10, _vertical ? -10 : 0);
+      return Offset(_vertical ? 0 : -10, _vertical ? -10 : 0);
     }
   }
 }

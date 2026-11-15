@@ -4,7 +4,18 @@ import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/super_container_layout.dart';
 
 void main() {
-  const enabled = SuperLayoutConfig(resizeSides: true);
+  const enabled = SuperLayoutConfig(
+    north: true,
+    south: true,
+    west: true,
+    east: true,
+    northSize: 80,
+    southSize: 80,
+    westSize: 120,
+    eastSize: 120,
+    resizeSides: true,
+    autoSides: {},
+  );
   final layoutKey = GlobalKey<SuperLayoutState>();
 
   Finder handle(SuperLayoutZone side) =>
@@ -475,10 +486,9 @@ void main() {
   ) async {
     await pump(
       tester,
-      config: const SuperLayoutConfig().withSideResizing(
-        SuperLayoutZone.south,
-        true,
-      ),
+      config: const SuperLayoutConfig(autoSides: {})
+          .withSide(SuperLayoutZone.south, true)
+          .withSideResizing(SuperLayoutZone.south, true),
     );
     expect(handle(SuperLayoutZone.south), findsOneWidget);
     for (final side in [

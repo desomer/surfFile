@@ -149,7 +149,7 @@ void main() {
     await settle(tester);
     expect(
       tester
-          .widget<TextField>(
+          .widget<TextFormField>(
             find.byKey(const ValueKey('add-value-repository-path')),
           )
           .controller!

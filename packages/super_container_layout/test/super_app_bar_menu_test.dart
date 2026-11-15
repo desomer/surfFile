@@ -134,16 +134,22 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('scaffold-page-add-appBar')));
       await tester.pumpAndSettle();
+      final appBarCard = find.byKey(
+        const ValueKey('scaffold-page-add-card-factory:ApplicationBar'),
+      );
+      await tester.ensureVisible(appBarCard);
+      await tester.tapAt(tester.getTopLeft(appBarCard) + const Offset(8, 8));
+      await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(
-          const ValueKey('scaffold-page-add-slot-factory:Card'),
+          const ValueKey('scaffold-page-add-slot-factory:ApplicationBar'),
         ),
       );
       await tester.pumpAndSettle();
       final controller = registry.scaffoldPageController('root');
       final id = controller.value.slotsOf(ScaffoldPageRegion.appBar).single;
-      expect(id, isNot('factory:Card'));
-      expect(controller.value.slotTypeOf(id), 'factory:Card');
+      expect(id, isNot('factory:ApplicationBar'));
+      expect(controller.value.slotTypeOf(id), 'factory:ApplicationBar');
       final history = EditorHistoryScope.controllerOf(context)!;
       history.undo();
       await tester.pumpAndSettle();

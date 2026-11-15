@@ -26,6 +26,7 @@ class EditorResizeHandle extends StatefulWidget {
     required this.onStart,
     required this.onUpdate,
     required this.onEnd,
+    this.onHoverChanged,
     super.key,
   });
   final Alignment direction;
@@ -34,12 +35,21 @@ class EditorResizeHandle extends StatefulWidget {
   final GestureDragUpdateCallback onUpdate;
   final VoidCallback onEnd;
 
+  /// Signale l'entrée/sortie du pointeur. Non rappelé si la poignée est
+  /// démontée pendant le survol (comportement de [MouseRegion.onExit]).
+  final ValueChanged<bool>? onHoverChanged;
+
   @override
   State<EditorResizeHandle> createState() => _EditorResizeHandleState();
 }
 
 class _EditorResizeHandleState extends State<EditorResizeHandle> {
   bool _hover = false;
+
+  void _setHover(bool value) {
+    setState(() => _hover = value);
+    widget.onHoverChanged?.call(value);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,8 +59,8 @@ class _EditorResizeHandleState extends State<EditorResizeHandle> {
       width: 32,
       height: 32,
       child: MouseRegion(
-        onEnter: (_) => setState(() => _hover = true),
-        onExit: (_) => setState(() => _hover = false),
+        onEnter: (_) => _setHover(true),
+        onExit: (_) => _setHover(false),
         cursor: d.x == 0
             ? SystemMouseCursors.resizeUpDown
             : d.y == 0

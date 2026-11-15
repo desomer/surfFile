@@ -165,7 +165,8 @@ void main() {
         expect(tester.getRect(label(id)), bounds[id]);
       }
     }
-    await mouse.moveTo(const Offset(790, 590));
+    // Hors des poignées de « c », dont le survol prolonge celui de son badge.
+    await mouse.moveTo(const Offset(600, 450));
     await tester.pumpAndSettle();
     for (final id in ['a', 'b', 'c']) {
       expect(background(id), colors[id]);

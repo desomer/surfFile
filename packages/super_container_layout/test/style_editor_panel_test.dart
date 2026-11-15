@@ -50,9 +50,24 @@ void main() {
 
   testWidgets('selecting a property scrolls to its card', (tester) async {
     await openEditor(tester, const Size(1400, 1000));
-    final card = find.byKey(const ValueKey('style-card-interaction'));
+    final card = find.byKey(const ValueKey('style-card-shadow'));
     final before = tester.getTopLeft(card).dy;
-    await tester.tap(find.byKey(const ValueKey('style-nav-interaction')));
+    final shadow = find.byKey(const ValueKey('style-nav-shadow'));
+    final navigationList = find
+        .descendant(
+          of: find.byType(StyleEditorPanel),
+          matching: find.byType(ListView),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      shadow,
+      120,
+      scrollable: find
+          .descendant(of: navigationList, matching: find.byType(Scrollable))
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(shadow);
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(card).dy, lessThan(before));
     expect(tester.takeException(), isNull);
@@ -114,7 +129,7 @@ void main() {
           of: find.byType(StyleEditorPanel),
           matching: find.byType(ChoiceChip),
         ),
-        findsNothing,
+        findsNWidgets(2),
       );
       final navigation = find.byKey(const ValueKey('style-nav-fill'));
       expect(
@@ -125,19 +140,24 @@ void main() {
         find.descendant(of: navigation, matching: find.byType(Text)),
         findsNothing,
       );
-      final card = find.byKey(const ValueKey('style-card-interaction'));
+      final card = find.byKey(const ValueKey('style-card-shadow'));
       final before = tester.getTopLeft(card).dy;
-      final interaction = find.byKey(const ValueKey('style-nav-interaction'));
+      final shadow = find.byKey(const ValueKey('style-nav-shadow'));
+      final navigationList = find
+          .descendant(
+            of: find.byType(StyleEditorPanel),
+            matching: find.byType(ListView),
+          )
+          .first;
       await tester.scrollUntilVisible(
-        interaction,
+        shadow,
         120,
-        scrollable: find.descendant(
-          of: find.byType(ListView),
-          matching: find.byType(Scrollable),
-        ),
+        scrollable: find
+            .descendant(of: navigationList, matching: find.byType(Scrollable))
+            .first,
       );
       await tester.pumpAndSettle();
-      await tester.tap(interaction);
+      await tester.tap(shadow);
       await tester.pumpAndSettle();
       expect(tester.getTopLeft(card).dy, lessThan(before));
       expect(find.byKey(const ValueKey('style-dense-reset')), findsOneWidget);

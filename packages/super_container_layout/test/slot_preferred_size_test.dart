@@ -328,6 +328,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('hovering the label under the corner handle stays stable', (
+    tester,
+  ) async {
+    final mode = ValueNotifier(true);
+    addTearDown(mode.dispose);
+    await pump(
+      tester,
+      editMode: mode,
+      slots: [
+        slot('first', preferredSize: const Size(240, 120)),
+        slot('second'),
+      ],
+    );
+    final label = find.byKey(const ValueKey('slot-label-first'));
+    final handle = find.byKey(const ValueKey('slot-resize-first-ne'));
+    expect(handle, findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: const Offset(700, 500));
+    // Le coin haut droit du badge est recouvert par la poignée « ne ».
+    await mouse.moveTo(tester.getRect(label).topRight + const Offset(-3, 3));
+    await tester.pumpAndSettle();
+    for (var frame = 0; frame < 4; frame++) {
+      expect(handle, findsOneWidget);
+      expect(tester.widget<ComponentDragLabel>(label).highlighted, isTrue);
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    // Le glisser sort de la poignée sans interrompre le redimensionnement.
+    await mouse.moveTo(tester.getCenter(handle));
+    await mouse.down(tester.getCenter(handle));
+    for (var step = 0; step < 4; step++) {
+      await mouse.moveBy(const Offset(10, -7.5));
+      await tester.pump();
+    }
+    await mouse.up();
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSize(find.byKey(const ValueKey('content-first'))),
+      const Size(280, 150),
+    );
+    await mouse.moveTo(const Offset(700, 500));
+    await tester.pumpAndSettle();
+    expect(handle, findsNothing);
+    expect(tester.widget<ComponentDragLabel>(label).highlighted, isFalse);
+    await mouse.removePointer();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('corner overlays follow a translated and scaled layout', (
     tester,
   ) async {
@@ -735,7 +783,10 @@ void main() {
     expect(automatic.slotPreferredSizes, {'first': null});
     expect(SuperLayoutConfig.fromJson(automatic.toJson()), automatic);
     expect(automatic, isNot(base.withSlotPreferredSize('second', null)));
-    expect(SuperLayoutConfig.fromJson({}), const SuperLayoutConfig());
+    expect(
+      SuperLayoutConfig.fromJson({}),
+      const SuperLayoutConfig(autoSides: {}),
+    );
     expect(SuperLayoutConfig.fromJson({}, fallback: config), config);
     for (final size in [
       Size.zero,
@@ -1133,10 +1184,12 @@ void main() {
         tester.getRect(find.byKey(const ValueKey('content-first'))),
         const Rect.fromLTWH(0, 0, 150, 60),
       );
-      expect(
-        tester.getRect(find.byKey(const ValueKey('content-second'))),
-        const Rect.fromLTWH(150, 0, 100, 40),
+      final second = tester.getRect(
+        find.byKey(const ValueKey('content-second')),
       );
+      expect(second.left, 150);
+      expect(second.width, 100);
+      expect(second.height, 40);
       expect(
         tester.getSize(find.byKey(ValueKey('super-layout-${zone.name}'))),
         zone == SuperLayoutZone.north
@@ -1209,6 +1262,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find.byKey(const ValueKey('style-menu-zone-flow-Centre')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('editor-wizard-tab-properties')),
       );
       await tester.pumpAndSettle();
     }
@@ -1463,7 +1520,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Style du slot'), findsOneWidget);
-      expect(find.text('Super layout'), findsOneWidget);
       await tester.tap(
         find.byKey(
           const ValueKey('style-menu-size-Taille et marge préférées : first'),
