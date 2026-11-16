@@ -344,4 +344,62 @@ void main() {
       expect(events.single.componentId, 'extension');
     });
   }
+
+  testWidgets(
+    'non-coded pages display FloatingAppearanceToolbar, keep its position, and include background EditableSurface',
+    (tester) async {
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(const SuperDesignerApp());
+      await tester.pumpAndSettle();
+
+      final toolbarFinder = find.byKey(const ValueKey('appearance-toolbar'));
+      expect(toolbarFinder, findsOneWidget);
+
+      final initialToolbarTopLeft = tester.getTopLeft(toolbarFinder);
+      await tester.drag(
+        find.byKey(const ValueKey('appearance-toolbar-drag')),
+        const Offset(-120, -80),
+      );
+      await tester.pumpAndSettle();
+      final movedToolbarTopLeft = tester.getTopLeft(toolbarFinder);
+      expect(movedToolbarTopLeft.dx, lessThan(initialToolbarTopLeft.dx));
+      expect(movedToolbarTopLeft.dy, lessThan(initialToolbarTopLeft.dy));
+
+      final pageContext = tester.element(find.byType(SuperPage));
+      final appearance = AppearanceScope.controllerOf(pageContext)!;
+      appearance.value = appearance.value.copyWith(
+        pageCatalog: EditorPageCatalog(
+          pages: [
+            EditorPageConfig(
+              id: 'extra-page',
+              name: 'Extra Page',
+              path: '/extra',
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final superApp = tester.widget<SuperApp>(find.byType(SuperApp));
+      superApp.router.go('/extra');
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('editor-page-extra-page')),
+        findsOneWidget,
+      );
+      expect(find.byType(FloatingAppearanceToolbar), findsOneWidget);
+      expect(tester.getTopLeft(toolbarFinder), movedToolbarTopLeft);
+      expect(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is EditableSurface &&
+              widget.slot?.name == 'demo-background',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 }

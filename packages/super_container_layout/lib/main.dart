@@ -95,6 +95,7 @@ class _TestAppState extends State<TestApp> {
   void initState() {
     super.initState();
     _pageRouting = EditorPageRouter(
+      pageWrapper: (context, state, child) => wrapPageWithAppearanceShell(child),
       baseConfig: RoutingConfig(
         routes: [
           GoRoute(
@@ -120,47 +121,52 @@ class _TestAppState extends State<TestApp> {
     registry: _registry,
   );
 
+  /// Enveloppe une page dans la surface de fond éditable et la barre d'outils flottante.
+  Widget wrapPageWithAppearanceShell(Widget page) {
+    return EditableSurface(
+      slot: AppearanceSlot(
+        'Fond',
+        name: 'demo-background',
+        role: AppearanceSurfaceRole.applicationBackground,
+        editShape: false,
+        extendedLook: false,
+        read: (a) => a.backgroundStyle,
+        write: (a, style) => a.withStyle('background', style),
+        reset: (a) => a.withStyle('background', null),
+      ),
+      menuIcon: Icons.wallpaper_outlined,
+      decorate: false,
+      applyPadding: true,
+      child: Stack(
+        children: [
+          Positioned.fill(child: page),
+          const Positioned.fill(
+            child: FloatingAppearanceToolbar(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget getRootWidget(Registry registry) {
     return Builder(
       builder: (context) {
         final superapp = SuperApp.of(context);
         var superLayoutConfig = superapp.getLayoutConfigById('mainLayout');
 
-        return EditableSurface(
-          slot: AppearanceSlot(
-            'Fond',
-            name: 'demo-background',
-            role: AppearanceSurfaceRole.applicationBackground,
-            editShape: false,
-            extendedLook: false,
-            read: (a) => a.backgroundStyle,
-            write: (a, style) => a.withStyle('background', style),
-            reset: (a) => a.withStyle('background', null),
-          ),
-          menuIcon: Icons.wallpaper_outlined,
-          decorate: false,
-          applyPadding: true,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: SuperPage(
-                  menuIcon: Icons.article_outlined,
-                  child: ValueListenableBuilder<SuperLayoutConfig>(
-                    valueListenable: superLayoutConfig,
-                    builder: (context, config, _) => SuperLayout(
-                      label: 'Main Layout',
-                      config: config,
-                      onChanged: (value) => superLayoutConfig.value = value,
-                      menuIcon: Icons.dashboard_outlined,
-                      slots: const [],
-                    ),
-                  ),
-                ),
+        return wrapPageWithAppearanceShell(
+          SuperPage(
+            menuIcon: Icons.article_outlined,
+            child: ValueListenableBuilder<SuperLayoutConfig>(
+              valueListenable: superLayoutConfig,
+              builder: (context, config, _) => SuperLayout(
+                label: 'Main Layout',
+                config: config,
+                onChanged: (value) => superLayoutConfig.value = value,
+                menuIcon: Icons.dashboard_outlined,
+                slots: const [],
               ),
-              const Positioned.fill(
-                child: FloatingAppearanceToolbar(),
-              ),
-            ],
+            ),
           ),
         );
       },
