@@ -14,7 +14,6 @@ import '../../../models/super_layout_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../super_app.dart';
-import '../../../theme/appearance.dart';
 import '../../components/super_layout/super_layout.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
@@ -23,6 +22,7 @@ import '../history/editor_history.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../slots/editor_slot.dart';
 import 'search_provider_settings.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Element cible pouvant recevoir un comportement.
 @immutable

@@ -25,6 +25,7 @@ import '../editing/history/editor_history.dart';
 import '../editing/slots/editor_slot.dart';
 import '../surfaces/styled_surface.dart';
 import 'super_component.dart';
+import '../appearance/appearance_scope.dart';
 
 /// Importe une apparence et rend son contenu dans un contexte runtime isole.
 ///

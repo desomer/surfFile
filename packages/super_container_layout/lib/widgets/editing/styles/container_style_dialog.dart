@@ -20,6 +20,7 @@ import '../history/editor_history.dart';
 import 'style_editor_panel.dart';
 import 'surface_state_controls.dart';
 import '../../../models/automatic_state.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// The shared style editor dialog used by [EditableSurface].
 class ContainerStyleDialog {

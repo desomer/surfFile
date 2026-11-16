@@ -14,6 +14,7 @@ import 'package:super_container_layout/services/window/window_transparency.dart'
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import '../editing/history/editor_history.dart';
 import '../../theme/appearance.dart';
+import 'appearance_scope.dart';
 
 /// Edits an injected slot without owning an application catalog.
 class AppearanceStyleSection extends StatelessWidget {

@@ -15,6 +15,7 @@ import 'appearance_style_section.dart';
 import '../editing/history/editor_history.dart';
 import '../editing/dialogs/editor_dialog.dart';
 import '../editing/dialogs/editor_dialog_header.dart';
+import 'appearance_scope.dart';
 
 /// Captured by the caller before opening a route, then applied to every dialog.
 typedef AppearanceDialogWrapper = Widget Function(Widget child);

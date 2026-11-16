@@ -12,9 +12,9 @@ import '../../services/repositories/json_list_scope.dart';
 import '../../services/repositories/json_repository_scope.dart';
 import '../../services/repositories/json_repository_store.dart';
 import '../../services/repositories/json_string_binding.dart';
-import '../../theme/appearance.dart';
 import '../editing/slots/editor_selection_region.dart';
 import '../editing/slots/editor_slot.dart' show StyleEditScope;
+import '../appearance/appearance_scope.dart';
 
 /// Enveloppe publique pour tout composant identifié, y compris les extensions.
 ///

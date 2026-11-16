@@ -23,6 +23,7 @@ import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
 import 'http_provider_form.dart';
+import '../../appearance/appearance_scope.dart';
 
 const _prettyJson = JsonEncoder.withIndent('  ');
 const _maxPreviewLength = 600;

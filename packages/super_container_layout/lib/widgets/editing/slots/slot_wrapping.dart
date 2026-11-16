@@ -9,9 +9,9 @@ import '../../../models/scaffold_page_config.dart';
 import '../../../models/registry.dart';
 import '../../../models/super_conditional_config.dart';
 import '../../../models/super_layout_config.dart';
-import '../../../theme/appearance.dart';
 import '../history/editor_history.dart';
 import 'editor_context_menu.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Type de conteneur (`Card`, `SuperLayout`, `SuperConditional`, etc.) dans lequel envelopper un slot existant.
 enum EditorSlotWrapper {

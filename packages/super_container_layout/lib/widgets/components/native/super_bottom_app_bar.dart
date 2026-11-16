@@ -14,10 +14,10 @@ import '../super_component.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../super_app.dart';
-import '../../../theme/appearance.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_layout/slot_implementation.dart';
 import 'native_component_common.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// A native BottomAppBar with three editable, free-widget regions.
 ///

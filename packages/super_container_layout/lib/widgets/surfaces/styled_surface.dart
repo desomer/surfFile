@@ -18,10 +18,11 @@ import '../../theme/theme_color.dart';
 import '../../theme/design_system.dart';
 import '../../theme/interaction_effect.dart';
 import '../../theme/style_extras.dart';
-import '../../theme/appearance.dart';
 import 'interaction_effect_box.dart';
 import 'neon_surface.dart';
 import 'surface_painters.dart';
+import '../appearance/appearance_scope.dart';
+import 'surface_image_providers.dart';
 
 /// Resolves a surface image binding ([ContainerStyleProperty.imageUrl] or
 /// [ContainerFill.imageBinding]) against the surrounding

@@ -15,7 +15,6 @@ import '../../../../models/super_value_config.dart';
 import '../../../../services/repositories/json_list_scope.dart';
 import '../../../../services/repositories/json_repository_scope.dart';
 import '../../../../services/repositories/json_repository_store.dart';
-import '../../../../theme/appearance.dart';
 import '../../repositories/floating_repository_editor.dart';
 import '../../repositories/json_repository_manager.dart';
 import '../editor_dialog.dart';
@@ -24,6 +23,7 @@ import '../editor_target_selector.dart';
 import '../../slots/editor_slot.dart';
 import 'extract_contracts.dart';
 import 'extract_detection.dart';
+import '../../../appearance/appearance_scope.dart';
 
 /// Élément cible affiché dans le sélecteur « Donnée… » de la barre du menu contextuel.
 @immutable

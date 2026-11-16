@@ -1,4 +1,4 @@
-/// Contrat de base [Appearance] et portées réactives [AppearanceScope] de l'application.
+/// Contrat de base [Appearance] de l'application (modèle immuable, sans widget).
 ///
 /// Regroupe l'état global du thème (mode clair/sombre, couleur d'accent, opacités,
 /// effet de fenêtre) et les dictionnaires plats par ID (`styles`, `components`,
@@ -477,17 +477,4 @@ class Appearance {
 
   static Color foreground(Color background) =>
       ContainerStyle.foregroundFor(background);
-}
-
-/// Portée `InheritedNotifier` exposant le `ValueNotifier<Appearance>` courant aux widgets enfants.
-class AppearanceScope extends InheritedNotifier<ValueNotifier<Appearance>> {
-  const AppearanceScope({
-    required ValueNotifier<Appearance> controller,
-    required super.child,
-    super.key,
-  }) : super(notifier: controller);
-  static ValueNotifier<Appearance>? controllerOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AppearanceScope>()?.notifier;
-  static Appearance of(BuildContext context) =>
-      controllerOf(context)?.value ?? Appearance();
 }

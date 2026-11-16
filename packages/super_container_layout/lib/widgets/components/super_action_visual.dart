@@ -12,10 +12,10 @@ import '../../theme/theme_color.dart';
 
 import '../../models/component_behavior.dart';
 import '../../models/super_action_config.dart';
-import '../../theme/appearance.dart';
 import '../../theme/container_fill.dart';
 import '../../theme/style_extras.dart';
 import '../surfaces/styled_surface.dart';
+import '../appearance/appearance_scope.dart';
 
 /// Construit le rendu visuel d'un [SuperAction] (partagé entre le widget
 /// runtime et l'aperçu de l'éditeur).

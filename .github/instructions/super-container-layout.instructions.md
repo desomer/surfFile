@@ -11,6 +11,10 @@ Consultez [`packages/super_container_layout/ARCHITECTURE.md`](../../packages/sup
 - Chaque fichier sous `packages/super_container_layout/lib/` doit débuter par un commentaire `///` en français expliquant le rôle du fichier et ses interactions avec les classes voisines, suivi de la directive `library;`.
 - Documentez avec `///` toute classe, énumération, typedef ou méthode publique ajoutée ou modifiée.
 
+## 1 bis. Séparation modèles / widgets (`lib/theme/`)
+- `lib/theme/` ne contient que des modèles purs (immuables, sérialisables) : aucune classe de widget (`StatelessWidget`, `StatefulWidget`, `InheritedWidget`, `State`…), aucun `ImageProvider`, aucun I/O (`dart:io`, réseau) et aucun import de `services/` ou `widgets/`.
+- Les portées réactives (`AppearanceScope`, `TypedAppearanceScope`) vivent dans `lib/widgets/appearance/` ; le rendu et le chargement d'images (`ContainerFillImage`, `SurfaceNetworkImage`…) dans `lib/widgets/surfaces/`. Pour un comportement de rendu sur un modèle, préférer une extension déclarée côté `widgets/`.
+
 ## 2. Checklist complète pour ajouter ou modifier un composant
 Lors de l'ajout d'un nouveau type de composant ou d'une nouvelle propriété persistée :
 1. **Modèle (`lib/models/<composant>_config.dart`)** :

@@ -22,6 +22,7 @@ import '../styles/container_style_dialog.dart';
 import '../history/editor_history.dart';
 import 'editor_slot.dart';
 import 'editable_single_child.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Combines an [EditorSlot] with the style-rendering [SuperContainer].
 ///

@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_container_layout/models/super_layout_config.dart';
 import 'package:super_container_layout/theme/appearance.dart' as shell;
+import 'package:super_container_layout/widgets/appearance/appearance_scope.dart' as shell;
 import 'package:super_container_layout/theme/container_fill.dart';
 import 'package:super_container_layout/theme/container_style.dart';
 import 'package:super_container_layout/theme/neon_style.dart';

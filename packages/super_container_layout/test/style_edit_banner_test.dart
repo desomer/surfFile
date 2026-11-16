@@ -11,6 +11,7 @@ import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
 import 'package:super_container_layout/widgets/editing/overlay/style_edit_banner.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 
 void main() {
   Future<void> pump(

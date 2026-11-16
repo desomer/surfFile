@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **300 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **302 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -187,12 +187,15 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `models/super_code_style.dart` | `SuperCodeStyle`, `SuperCodeTheme` : options visuelles, typographiques et thèmes de coloration syntaxique pour `CodeEditor` / `SuperCode`. |
 | `models/super_value_states.dart` | `SuperValueStates`, `SuperValueStateOverride` : surcharges conditionnelles de `SuperValueConfig` selon les états interactifs ou métier. |
 
-### 3.4. Thème et Styles (`lib/theme/` — 12 fichiers)
+### 3.4. Thème et Styles (`lib/theme/` — 11 fichiers)
+
+`lib/theme/` ne contient que des **modèles purs** de l'apparence : classes immuables, sérialisables et validables (`toJson` / `toCompactJson` / `fromJson` / `validate`), sans aucun widget (`StatelessWidget`, `StatefulWidget`, `InheritedWidget`…), ni I/O (`dart:io`, réseau), ni dépendance vers `services/` ou `widgets/`. Les portées réactives sont dans `widgets/appearance/` et le rendu (dont le chargement d'images) dans `widgets/surfaces/`.
+
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
-| `theme/appearance.dart` | `Appearance`, `AppearanceScope`, `AppearanceServicesScope` : contrat de base de l'apparence globale et `InheritedNotifier` exposant l'apparence et ses services. |
+| `theme/appearance.dart` | `Appearance` : contrat de base immuable de l'apparence globale (thème, couleurs, opacités, dictionnaires plats `styles` / `components` / `behaviors` / `pageCatalog` / `repositories`). |
 | `theme/appearance_slot.dart` | `AppearanceSlot`, `AppearanceSurfaceRole` : descripteur d'un slot de style nommé dans le catalogue d'une application. |
-| `theme/container_fill.dart` | `ContainerFill`, `ContainerFillType` : remplissage d'une surface (couleur unie, dégradé `linear`/`radial`/`sweep`, image/SVG de fond). |
+| `theme/container_fill.dart` | `ContainerFill`, `ContainerFillType` : remplissage d'une surface (couleur unie, dégradé `linear`/`radial`/`sweep`, URL/SVG de l'image de fond). Le rendu de l'image est fourni par l'extension `ContainerFillImage` (`widgets/surfaces/surface_image_providers.dart`). |
 | `theme/container_style.dart` | `ContainerStyle`, `ContainerStyleProperty` : modèle complet de style d'une surface (fond, coins, bordures, ombres, néon, flou, motifs, marges, états, liaisons JSON). |
 | `theme/default_appearance.dart` | `DefaultAppearance` : implémentation standard d'`Appearance` ajoutant typographie, dimensions d'éléments et fondu de défilement. |
 | `theme/design_system.dart` | `DesignSystem` : énumération des systèmes visuels (`material`, `neumorphism`, `liquidGlass`). |
@@ -201,13 +204,12 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `theme/theme_color.dart` | `ThemeColor`, `ThemeColorRole` : références persistées aux rôles Material 3 et résolution locale au rendu. |
 | `theme/style_extras.dart` | `BorderLineStyle`, `ShadowSpec`, `SurfacePattern`, `SurfaceTransform` : primitives avancées d'ombres, traits de bordure, motifs et transformations 2D. |
 | `theme/surface_style_states.dart` | `SurfaceStyleStates`, `SurfaceStyleOverride`, `SurfaceStylePropertyGroup` : surcharges conditionnelles d'un `ContainerStyle` par état. |
-| `theme/typed_appearance_scope.dart` | `TypedAppearanceScope<T extends Appearance>` : pont typé raccordant un `ValueNotifier<T>` applicatif au `AppearanceScope` générique avec validation par codec. |
 
 ### 3.5. Services (`lib/services/` — 39 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `services/appearance/appearance_codec.dart` | `AppearanceCodec` : contrat de sérialisation complète, compacte (`toCompactJson`), de transfert, validation, migration et gestion de préférences additionnelles pour un modèle `Appearance`. |
-| `services/appearance/appearance_store.dart` | `AppearanceStore` : persistance asynchrone sérialisée dans `SharedPreferences` (clé `appearance.v1`) et création de contrôleurs persistants. |
+| `services/appearance/appearance_store.dart` | `AppearanceStore`, `AppearanceServicesScope` : persistance asynchrone sérialisée dans `SharedPreferences` (clé `appearance.v1`) et création de contrôleurs persistants. |
 | `services/appearance/appearance_transfer.dart` | `AppearanceTransfer`, `TransferGroup` : import/export JSON par groupes (Styles, Dispositions), export compact minifié pour l'IA (`exportCompactAi`) et application incrémentale des patches (`applyVibe`). |
 | `services/appearance/default_appearance_codec.dart` | `DefaultAppearanceCodec` : codec JSON standard (versions 1 à 3) pour `DefaultAppearance`. |
 | `services/codegen/dart_code_generator.dart` | Fichier baril réexportant le socle (`core/` : `ComponentDartGenerator`, `DartCodegenContext`, `DartCodeExporter`). |
@@ -232,9 +234,11 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `services/repositories/json_string_binding.dart` | `JsonStringBinding` : lecture seule réactive d'une chaîne JSON, contexte de ligne/arbre et sélection maître/détail, diagnostics et gestion du cycle de vie. |
 | `services/window/window_transparency.dart` | `WindowTransparency`, `WindowEffectType` : pilotage multi-plateforme des effets de transparence et d'opacité de fenêtre via `flutter_acrylic`. |
 
-### 3.6. Widgets d'apparence et de surfaces (`lib/widgets/appearance/` & `lib/widgets/surfaces/` — 10 fichiers)
+### 3.6. Widgets d'apparence et de surfaces (`lib/widgets/appearance/` & `lib/widgets/surfaces/` — 13 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
+| `widgets/appearance/appearance_scope.dart` | `AppearanceScope` : `InheritedNotifier` exposant le `ValueNotifier<Appearance>` courant aux widgets du package. |
+| `widgets/appearance/typed_appearance_scope.dart` | `TypedAppearanceScope<T extends Appearance>` : pont typé raccordant un `ValueNotifier<T>` applicatif au `AppearanceScope` générique avec validation par codec. |
 | `widgets/appearance/appearance_settings.dart` | `AppearanceSettings`, `showAppearanceSettingsDialog` : boîte de dialogue complète de configuration du thème, des polices, de la transparence et des slots de style. |
 | `widgets/appearance/appearance_style_section.dart` | `AppearanceStyleSection` : section réutilisable d'édition des slots de style avec aperçu en direct. |
 | `widgets/appearance/appearance_toolbar.dart` | `AppearanceToolbar` : barre d'outils flottante et déplaçable donnant accès au thème, au mode édition, à l'historique undo/redo, aux pages, aux repositories et au chat Vibe IA. |
@@ -244,6 +248,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/surfaces/scroll_edge_fade.dart` | `ScrollEdgeFade` : masque de fondu progressif en haut et en bas d'une zone défilante. |
 | `widgets/surfaces/styled_surface.dart` | `StyledSurface` : application complète d'un `ContainerStyle` (dégradés, images, flou `liquidGlass`, ombres neumorphiques, bordures, motifs, transformations). |
 | `widgets/surfaces/super_container.dart` | `SuperContainer` : conteneur de haut niveau résolvant son `ContainerStyle` depuis `AppearanceScope`, ses états (`SurfaceStyleStates`) et ses liaisons JSON. |
+| `widgets/surfaces/surface_image_providers.dart` | `ContainerFillImage` (extension `imageProvider()` / `decorationImage()` sur `ContainerFill`), `SurfaceNetworkImage`, `SurfaceMemoryImage`, `SvgMemoryImage` : résolution et chargement des images de fond (URL réseau, Data URI, Base64, SVG inline). |
 | `widgets/surfaces/surface_painters.dart` | `DashedBorderPainter`, `InnerShadowPainter`, `SurfacePatternPainter` : `CustomPainter` pour bordures tiretées/pointillées, ombres intérieures et motifs (`grain`, `lines`, `dots`). |
 
 ### 3.7. Widgets de composants (`lib/widgets/components/` — 68 fichiers)

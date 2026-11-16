@@ -17,11 +17,11 @@ import '../../../models/native_component_config.dart';
 import '../../../models/native_property_descriptor.dart';
 import '../../../models/super_action_config.dart';
 import '../../../super_app.dart';
-import '../../../theme/appearance.dart';
 import '../../editing/components/native_component_editor.dart';
 import '../super_action.dart';
 import '../super_layout/slot_implementation.dart';
 import 'native_component_common.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// A native [BottomNavigationBar] whose items are exclusively [SuperAction]
 /// components converted into [BottomNavigationBarItem] entries.

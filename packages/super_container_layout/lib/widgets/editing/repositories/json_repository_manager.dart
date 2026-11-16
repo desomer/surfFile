@@ -15,6 +15,7 @@ import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
 import '../providers/data_provider_manager.dart';
 import 'floating_repository_editor.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Boîte de dialogue de gestion et d'édition des documents du [JsonRepositoryStore].
 class JsonRepositoryManager extends StatefulWidget {

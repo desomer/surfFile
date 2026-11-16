@@ -8,7 +8,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../../theme/default_appearance.dart';
-import '../../theme/typed_appearance_scope.dart';
+import '../appearance/typed_appearance_scope.dart';
 
 /// Widget appliquant un dégradé d'opacité aux bords d'un contenu défilant.
 class ScrollEdgeFade extends StatefulWidget {

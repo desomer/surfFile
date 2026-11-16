@@ -16,10 +16,10 @@ import 'package:flutter/services.dart'
         PointerHoverEventListener;
 import 'package:material_ui/material_ui.dart';
 
-import '../../../theme/appearance.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../overlay/editor_overlay.dart';
 import 'editor_slot.dart';
+import '../../appearance/appearance_scope.dart';
 
 part 'sliver_pointer_region.dart';
 part 'editor_selection_outline.dart';

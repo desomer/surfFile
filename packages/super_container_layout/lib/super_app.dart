@@ -41,6 +41,8 @@ import 'widgets/surfaces/neon_surface.dart';
 import 'widgets/surfaces/styled_surface.dart';
 import 'widgets/editing/overlay/style_edit_banner.dart';
 import 'widgets/editing/slots/editor_slot.dart';
+import 'widgets/appearance/appearance_scope.dart';
+import 'widgets/surfaces/surface_image_providers.dart';
 
 /// Application shell managing appearance persistence, layout reset, window
 /// transparency and GoRouter navigation.

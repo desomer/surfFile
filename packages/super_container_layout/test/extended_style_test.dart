@@ -19,6 +19,7 @@ import 'package:super_container_layout/widgets/surfaces/styled_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editable_surface.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/surfaces/surface_painters.dart';
+import 'package:super_container_layout/widgets/surfaces/surface_image_providers.dart';
 
 void main() {
   group('model', () {

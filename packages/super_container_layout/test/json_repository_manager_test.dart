@@ -18,6 +18,7 @@ import 'package:super_container_layout/widgets/editing/providers/data_provider_m
 import 'package:super_container_layout/widgets/editing/repositories/floating_repository_editor.dart';
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
+import 'package:super_container_layout/widgets/appearance/appearance_scope.dart';
 
 class _DelayedRepositoryStore extends JsonRepositoryStore {
   _DelayedRepositoryStore(super.directory);

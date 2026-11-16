@@ -21,6 +21,7 @@ import '../../services/repositories/json_repository_store.dart';
 import '../../theme/appearance.dart';
 import '../editing/slots/editor_selection_region.dart';
 import '../editing/slots/editor_slot.dart' show StyleEditScope;
+import '../appearance/appearance_scope.dart';
 
 /// Portée héritée exposant les états forcés par les [StateBindingAction] actives.
 class ComponentBehaviorStateScope extends InheritedWidget {

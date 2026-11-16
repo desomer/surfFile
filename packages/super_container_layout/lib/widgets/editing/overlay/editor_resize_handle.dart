@@ -4,8 +4,8 @@ library;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../../../theme/appearance.dart';
 import 'editor_zoom.dart';
+import '../../appearance/appearance_scope.dart';
 
 const editorResizeDirections = [
   ('nw', Alignment.topLeft),

@@ -35,6 +35,7 @@ import 'vibe_chat_message.dart';
 import 'vibe_chat_widgets.dart';
 import 'vibe_prompt_builder.dart';
 import 'vibe_scope_helpers.dart';
+import '../../appearance/appearance_scope.dart';
 
 export '../../../ai/call_gemini.dart' show GeminiStreamEvent, VibeAiSpeedMode;
 export '../../../ai/vibe_ask_user.dart'

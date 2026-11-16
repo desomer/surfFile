@@ -23,6 +23,7 @@ import '../../interaction/press_feedback.dart';
 import '../../interaction/sliding_selection_list.dart';
 import '../../interaction/scroll_edge_fade.dart';
 import '../../file_operations/external_file_drop.dart';
+import 'package:super_container_layout/widgets/surfaces/surface_image_providers.dart';
 
 class ExplorerEntriesView extends StatefulWidget {
   const ExplorerEntriesView({

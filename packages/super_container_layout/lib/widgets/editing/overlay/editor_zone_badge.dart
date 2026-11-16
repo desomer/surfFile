@@ -6,9 +6,9 @@ import 'dart:math' as math;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:material_ui/material_ui.dart';
 
-import '../../../theme/appearance.dart';
 import '../../components/super_layout/layout_selection.dart';
 import '../slots/editor_slot.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Badge affiché sur une zone ou un composant en mode édition (libellé, icône de déplacement et actions).
 class EditorZoneBadge extends StatelessWidget {

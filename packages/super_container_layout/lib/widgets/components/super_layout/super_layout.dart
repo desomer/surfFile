@@ -46,7 +46,7 @@ import '../../../services/repositories/json_repository_binding.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
 import '../../../super_app.dart';
-import '../../../theme/appearance.dart';
+import '../../appearance/appearance_scope.dart';
 import 'layout_selection.dart';
 import 'slot_implementation.dart';
 import 'zone_axis_button.dart';

@@ -17,6 +17,7 @@ import 'package:super_container_layout/widgets/editing/history/editor_history.da
 import 'package:super_container_layout/widgets/editing/repositories/json_repository_manager.dart';
 import 'package:super_container_layout/widgets/editing/slots/editor_slot.dart';
 import 'package:super_container_layout/widgets/components/super_layout/layout_selection.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Pastille déplaçable, initialement en haut au centre par défaut.
 ///

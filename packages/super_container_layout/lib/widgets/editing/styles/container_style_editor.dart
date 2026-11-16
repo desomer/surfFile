@@ -21,6 +21,7 @@ import 'style_editor_panel.dart';
 import 'editor_color_tile.dart';
 import 'style_extras_controls.dart';
 import '../../surfaces/styled_surface.dart';
+import '../../surfaces/surface_image_providers.dart';
 
 /// Panneau d'édition complet de toutes les propriétés visuelles et d'états d'un [ContainerStyle].
 class ContainerStyleEditor extends StatelessWidget {

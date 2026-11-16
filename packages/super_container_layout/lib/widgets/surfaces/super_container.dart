@@ -10,6 +10,7 @@ import '../../theme/appearance.dart';
 import '../../theme/appearance_slot.dart';
 import '../../theme/container_style.dart';
 import 'styled_surface.dart';
+import '../appearance/appearance_scope.dart';
 
 /// A styled surface renderer.
 ///

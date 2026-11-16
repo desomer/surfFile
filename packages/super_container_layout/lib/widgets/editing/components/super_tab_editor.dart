@@ -9,7 +9,6 @@ import '../../../models/super_tab_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
 import '../../../services/repositories/json_repository_scope.dart';
 import '../../../services/repositories/json_repository_store.dart';
-import '../../../theme/appearance.dart';
 import '../../../theme/container_style.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_tabbed_wizard.dart';
@@ -19,6 +18,7 @@ import '../styles/style_editor_panel.dart';
 import 'shared/collection_editor_controls.dart';
 import 'shared/editor_color_fields.dart';
 import 'shared/editor_segmented_field.dart';
+import '../../appearance/appearance_scope.dart';
 
 /// Ouvre la fenêtre simple des propriétés générales d'un composant [SuperTab]
 /// (utilisée sur le menu contextuel du composant `Tab` et de ses zones de contenu).

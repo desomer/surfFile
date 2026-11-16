@@ -57,6 +57,7 @@ import '../dialogs/super_value_json_extract_dialog.dart';
 import '../overlay/editor_overlay.dart';
 import '../overlay/editor_zone_badge.dart';
 import '../overlay/editor_zoom.dart';
+import '../../appearance/appearance_scope.dart';
 
 export 'editor_context_menu.dart'
     show
