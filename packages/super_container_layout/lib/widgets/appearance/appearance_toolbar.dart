@@ -6,6 +6,7 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../super_app.dart';
 import '../editing/slots/editor_slot.dart';
 import 'appearance_settings.dart';
 
@@ -90,6 +91,28 @@ class FloatingAppearanceToolbar extends StatefulWidget {
 class _FloatingAppearanceToolbarState extends State<FloatingAppearanceToolbar> {
   late _FloatingToolbarLayoutDelegate _layout =
       _FloatingToolbarLayoutDelegate(widget.initialPosition);
+  bool _positionInitialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_positionInitialized) {
+      _positionInitialized = true;
+      final sharedPosition = SuperAppScope.toolbarPositionOf(context)?.value;
+      if (widget.initialPosition == null && sharedPosition != null) {
+        _layout = _FloatingToolbarLayoutDelegate(sharedPosition);
+      }
+    }
+  }
+
+  @override
+  void didUpdateWidget(FloatingAppearanceToolbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialPosition != widget.initialPosition &&
+        widget.initialPosition != null) {
+      _layout = _FloatingToolbarLayoutDelegate(widget.initialPosition);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -114,11 +137,17 @@ class _FloatingAppearanceToolbarState extends State<FloatingAppearanceToolbar> {
                         child: GestureDetector(
                           key: const ValueKey('appearance-toolbar-drag'),
                           behavior: HitTestBehavior.opaque,
-                          onPanUpdate: (details) => setState(() {
-                            _layout = _FloatingToolbarLayoutDelegate(
-                              _layout.resolvedPosition + details.delta,
-                            );
-                          }),
+                          onPanUpdate: (details) {
+                            final nextPosition =
+                                _layout.resolvedPosition + details.delta;
+                            SuperAppScope.toolbarPositionOf(context)?.value =
+                                nextPosition;
+                            setState(() {
+                              _layout = _FloatingToolbarLayoutDelegate(
+                                nextPosition,
+                              );
+                            });
+                          },
                           child: const SizedBox(
                             width: 36,
                             height: 36,

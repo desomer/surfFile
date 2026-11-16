@@ -33,10 +33,15 @@ class EditorCodedRoute {
   String get label => name ?? path;
 }
 
+/// Fonction enveloppant une page construite par [EditorPageRouter] (ex. surface de fond et barre d'outils flottante).
+typedef EditorPageWrapper =
+    Widget Function(BuildContext context, GoRouterState state, Widget child);
+
 /// Opt-in routing for editor-created pages. The application owns this object.
 class EditorPageRouter {
   EditorPageRouter({
     required this.baseConfig,
+    this.pageWrapper,
     String? initialLocation,
     GlobalKey<NavigatorState>? navigatorKey,
     List<NavigatorObserver>? observers,
@@ -78,6 +83,10 @@ class EditorPageRouter {
   }
 
   final RoutingConfig baseConfig;
+
+  /// Wrapper optionnel appliqué autour de chaque [SuperPage] générée hors code.
+  final EditorPageWrapper? pageWrapper;
+
   late final ValueNotifier<RoutingConfig> _routing;
   late final GoRouter router;
   late final Uri _initialUri;
@@ -102,12 +111,15 @@ class EditorPageRouter {
       final route = GoRoute(
         path: page.path,
         name: _routeName(page.id),
-        builder: (_, _) => SuperPage(
-          key: ValueKey('editor-page-${page.id}'),
-          id: page.id,
-          label: page.name,
-          pageConfig: ScaffoldPageConfig(),
-        ),
+        builder: (context, state) {
+          final Widget child = SuperPage(
+            key: ValueKey('editor-page-${page.id}'),
+            id: page.id,
+            label: page.name,
+            pageConfig: ScaffoldPageConfig(),
+          );
+          return pageWrapper?.call(context, state, child) ?? child;
+        },
       );
       final parameters = _parameters(route);
       if (parameters.toSet().length != parameters.length) {

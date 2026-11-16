@@ -119,6 +119,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   late EditorHistoryController _editorHistory;
   late JsonRepositoryStore _repositories;
   final _styleEditMode = ValueNotifier(false);
+  final _appearanceToolbarPosition = ValueNotifier<Offset?>(null);
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   bool _loading = true;
   bool _pagesScheduled = false;
@@ -333,6 +334,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
       ..removeListener(_pagesChanged)
       ..dispose();
     _styleEditMode.dispose();
+    _appearanceToolbarPosition.dispose();
     _repositories.errors.removeListener(_repositoryFailed);
     if (widget.repositoryStore == null) _repositories.dispose();
     super.dispose();
@@ -341,6 +343,7 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) => SuperAppScope(
     app: widget,
+    appearanceToolbarPosition: _appearanceToolbarPosition,
     child: JsonRepositoryScope(
       store: _repositories,
       child: AppearanceServicesScope(
@@ -518,12 +521,28 @@ class _SuperAppState extends State<SuperApp> with WidgetsBindingObserver {
 ///
 /// Permet notamment au renderer de fournir ses propres registre et routeur.
 class SuperAppScope extends InheritedWidget {
-  const SuperAppScope({required this.app, required super.child, super.key});
+  const SuperAppScope({
+    required this.app,
+    this.appearanceToolbarPosition,
+    required super.child,
+    super.key,
+  });
 
   final SuperApp app;
 
+  /// Position partagée de la barre d'outils flottante entre les routes de l'application.
+  final ValueNotifier<Offset?>? appearanceToolbarPosition;
+
+  /// Retourne le [ValueNotifier] stockant la position courante de la barre d'outils flottante.
+  static ValueNotifier<Offset?>? toolbarPositionOf(BuildContext context) =>
+      context
+          .getInheritedWidgetOfExactType<SuperAppScope>()
+          ?.appearanceToolbarPosition;
+
   @override
-  bool updateShouldNotify(SuperAppScope oldWidget) => app != oldWidget.app;
+  bool updateShouldNotify(SuperAppScope oldWidget) =>
+      app != oldWidget.app ||
+      appearanceToolbarPosition != oldWidget.appearanceToolbarPosition;
 }
 
 /// Makes every page opaque to hit testing. Otherwise a click on an empty area
