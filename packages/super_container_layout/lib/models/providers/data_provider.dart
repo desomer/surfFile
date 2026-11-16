@@ -12,11 +12,19 @@
 /// le code hôte ([CallbackDataProvider]) ou chargés depuis des fichiers
 /// (`HttpProviderConfig`). Seul `searchProvider { providerId }` est persisté
 /// dans les comportements.
+///
+/// Une datasource (`DatasourceConfig`) regroupe les providers Search / Create /
+/// Read / Update / Delete d'une même notion et les appelle par
+/// [DataProvider.execute] : la cible devient alors facultative (un Delete
+/// n'écrit rien) et la donnée retournée peut être un objet.
 library;
 
 import 'package:flutter/foundation.dart';
 
 import '../json_text_binding.dart';
+import 'data_provider_request.dart';
+
+export 'data_provider_request.dart';
 
 final _providerIdPattern = RegExp(r'^[a-z0-9_]{1,32}$');
 final _segmentPattern = RegExp(r'([^.\[\]]+)|\[(\d+)\]');
@@ -238,16 +246,17 @@ void _validateWritable(String name, JsonTextBinding binding) {
 /// * [id] : minuscules, chiffres et `_`, 1 à 32 caractères ;
 /// * [label] : non vide, [dataProviderLabelMaxLength] caractères au plus ;
 /// * [filterRepositoryId] : ID de repository valide, ou `null` ;
-/// * [target], [loading] et [error] : liaisons concrètes (repository
-///   explicite, sans `[?]` ni attribut calculé), qui ne se chevauchent pas ;
-/// * [autoSearch] : exige un repository de filtre.
+/// * [target] (facultative), [loading] et [error] : liaisons concrètes
+///   (repository explicite, sans `[?]` ni attribut calculé), qui ne se
+///   chevauchent pas ;
+/// * [autoSearch] : exige un repository de filtre et une cible.
 ///
 /// Lève une [FormatException] avec un message affichable sinon.
 void validateProviderDefinition({
   required String id,
   required String label,
   required String? filterRepositoryId,
-  required JsonTextBinding target,
+  required JsonTextBinding? target,
   required JsonTextBinding? loading,
   required JsonTextBinding? error,
   required ProviderAutoSearch? autoSearch,
@@ -268,7 +277,7 @@ void validateProviderDefinition({
     JsonTextBinding(repositoryId: filterRepositoryId, path: '_').validate();
   }
   final written = <(String, JsonTextBinding)>[
-    ('Résultats', target),
+    if (target != null) ('Résultats', target),
     if (loading != null) ('Indicateur de chargement', loading),
     if (error != null) ('Indicateur d’erreur', error),
   ];
@@ -297,6 +306,11 @@ void validateProviderDefinition({
         'La recherche automatique exige un repository de filtre.',
       );
     }
+    if (target == null) {
+      throw const FormatException(
+        'La recherche automatique exige un tableau de résultats.',
+      );
+    }
     autoSearch.validate();
   }
 }
@@ -304,8 +318,9 @@ void validateProviderDefinition({
 /// Source de données qui alimente un repository JSON.
 ///
 /// Une implémentation décrit *où* écrire ([target], [loading], [error]) et
-/// *comment* obtenir les lignes ([fetch]). L'orchestration (écriture des
-/// indicateurs, ordre des recherches, recherche automatique) est assurée par
+/// *comment* obtenir les lignes ([fetch]) ou la donnée d'une opération de
+/// datasource ([execute]). L'orchestration (écriture des indicateurs, ordre
+/// des recherches, recherche automatique) est assurée par
 /// `DataProviderRegistry`.
 @immutable
 abstract class DataProvider {
@@ -313,7 +328,7 @@ abstract class DataProvider {
   const DataProvider({
     required this.id,
     required this.label,
-    required this.target,
+    this.target,
     this.filterRepositoryId,
     this.loading,
     this.error,
@@ -329,8 +344,11 @@ abstract class DataProvider {
   /// Repository qui porte les paramètres de recherche, ou `null`.
   final String? filterRepositoryId;
 
-  /// Tableau du repository qui reçoit les lignes retournées.
-  final JsonTextBinding target;
+  /// Attribut du repository qui reçoit la donnée retournée (tableau de lignes
+  /// pour une recherche, objet pour une entité), ou `null` si le provider
+  /// n'écrit rien (Delete d'une datasource). L'action `searchProvider` exige
+  /// une cible.
+  final JsonTextBinding? target;
 
   /// Booléen mis à `true` pendant la recherche, ou `null`.
   final JsonTextBinding? loading;
@@ -349,6 +367,15 @@ abstract class DataProvider {
   /// affichable) en cas d'échec.
   Future<List<Object?>> fetch(Map<String, Object?> parameters);
 
+  /// Exécute [request] pour une datasource : retourne la donnée utile (liste,
+  /// objet ou `null`) et la réponse brute.
+  ///
+  /// Par défaut, appelle [fetch] avec `request.allParameters` ; le contexte
+  /// `ds` n'est alors pas transmis. Lève une [DataProviderException] en cas
+  /// d'échec.
+  Future<DataProviderResult> execute(DataProviderRequest request) async =>
+      DataProviderResult.rows(await fetch(request.allParameters));
+
   /// Vérifie la définition (voir [validateProviderDefinition]).
   void validate() => validateProviderDefinition(
     id: id,
@@ -363,17 +390,21 @@ abstract class DataProvider {
   /// Vrai si le provider lit ou écrit le repository [repositoryId].
   bool usesRepository(String repositoryId) =>
       filterRepositoryId == repositoryId ||
-      target.repositoryId == repositoryId ||
+      target?.repositoryId == repositoryId ||
       loading?.repositoryId == repositoryId ||
       error?.repositoryId == repositoryId;
 
   /// Paramètres de recherche extraits du document [filter] du repository de
   /// filtre : la cible et les indicateurs écrits par le provider dans ce
-  /// même repository en sont retirés.
+  /// même repository en sont retirés, ainsi que les liaisons [exclude]
+  /// (état d'une datasource par exemple).
   ///
   /// [filter] n'est pas modifié. Lève une [DataProviderException] si ce
   /// n'est pas un objet JSON ; `null` donne des paramètres vides.
-  Map<String, Object?> parametersOf(Object? filter) {
+  Map<String, Object?> parametersOf(
+    Object? filter, {
+    Iterable<JsonTextBinding> exclude = const [],
+  }) {
     if (filterRepositoryId == null || filter == null) return const {};
     if (filter is! Map) {
       throw const DataProviderException(
@@ -381,7 +412,7 @@ abstract class DataProvider {
       );
     }
     Object? result = filter;
-    for (final binding in [target, loading, error]) {
+    for (final binding in [target, loading, error, ...exclude]) {
       if (binding == null || binding.repositoryId != filterRepositoryId) {
         continue;
       }
@@ -398,7 +429,14 @@ typedef DataProviderCallback = Future<List<Object?>> Function(
   Map<String, Object?> parameters,
 );
 
-/// Provider du code hôte : [callback] fournit les lignes.
+/// Fonction qui exécute la requête complète d'un [CallbackDataProvider]
+/// (opération de datasource).
+typedef DataProviderExecuteCallback = Future<DataProviderResult> Function(
+  DataProviderRequest request,
+);
+
+/// Provider du code hôte : [callback] fournit les lignes, [onExecute] la
+/// donnée d'une opération de datasource (au moins l'un des deux).
 ///
 /// Enregistré avec `store.providers.register(...)`, il n'est pas modifiable
 /// dans l'éditeur.
@@ -406,19 +444,48 @@ class CallbackDataProvider extends DataProvider {
   /// Crée un provider de code ; [label] vaut [id] par défaut.
   const CallbackDataProvider({
     required super.id,
-    required super.target,
-    required this.callback,
+    super.target,
+    this.callback,
+    this.onExecute,
     String? label,
     super.filterRepositoryId,
     super.loading,
     super.error,
     super.autoSearch,
-  }) : super(label: label ?? id);
+  }) : assert(
+         callback != null || onExecute != null,
+         'callback ou onExecute est obligatoire.',
+       ),
+       super(label: label ?? id);
 
-  /// Fonction appelée à chaque recherche.
-  final DataProviderCallback callback;
+  /// Fonction appelée à chaque recherche (`searchProvider`), ou `null`.
+  final DataProviderCallback? callback;
+
+  /// Fonction appelée par [execute] (datasource), ou `null` pour utiliser
+  /// [callback].
+  final DataProviderExecuteCallback? onExecute;
 
   @override
-  Future<List<Object?>> fetch(Map<String, Object?> parameters) =>
-      callback(parameters);
+  Future<List<Object?>> fetch(Map<String, Object?> parameters) async {
+    final fetchRows = callback;
+    if (fetchRows != null) return fetchRows(parameters);
+    final handler = onExecute;
+    if (handler == null) {
+      throw const DataProviderException('Provider sans fonction de données.');
+    }
+    final rows = (await handler(DataProviderRequest(parameters: parameters)))
+        .rows;
+    if (rows == null) {
+      throw const DataProviderException(
+        'Le provider n’a pas retourné de liste de lignes.',
+      );
+    }
+    return rows;
+  }
+
+  @override
+  Future<DataProviderResult> execute(DataProviderRequest request) {
+    final handler = onExecute;
+    return handler != null ? handler(request) : super.execute(request);
+  }
 }

@@ -1,11 +1,13 @@
 /// Provider HTTP : exécute l'appel d'API décrit par une [HttpProviderConfig].
 ///
-/// [HttpDataProvider] transforme les paramètres du repository de filtre en
-/// requête (`{{...}}` de l'URL, des en-têtes, des paramètres et du corps,
-/// paramètres automatiques), l'envoie par un [DataProviderHttpTransport] puis
-/// extrait les lignes de la réponse JSON (`responsePath`). Les erreurs sont
-/// des [DataProviderException] au message affichable, sans URL ni en-tête
-/// (ils peuvent contenir un secret issu de `{{env.NOM}}`).
+/// [HttpDataProvider] transforme les paramètres du repository de filtre (et,
+/// pour une datasource, le contexte `{{ds.*}}` et les paramètres de tri et de
+/// pagination) en requête (`{{...}}` de l'URL, des en-têtes, des paramètres et
+/// du corps, paramètres automatiques), l'envoie par un
+/// [DataProviderHttpTransport] puis extrait la donnée de la réponse JSON
+/// (`responsePath`). Les erreurs sont des [DataProviderException] au message
+/// affichable, sans URL ni en-tête (ils peuvent contenir un secret issu de
+/// `{{env.NOM}}`).
 ///
 /// Les variables d'environnement lisibles par `{{env.NOM}}` doivent toutes
 /// commencer par [providerEnvPrefix] : une configuration importée ne peut
@@ -57,7 +59,8 @@ String? defaultProviderEnv(String name) {
   return system == null || system.isEmpty ? null : system;
 }
 
-/// Provider qui récupère ses lignes par un appel HTTP `GET` ou `POST`.
+/// Provider qui récupère ses données par un appel HTTP (`GET`, `POST`, `PUT`,
+/// `PATCH` ou `DELETE`).
 class HttpDataProvider extends DataProvider {
   /// Crée le provider de [config].
   ///
@@ -91,22 +94,54 @@ class HttpDataProvider extends DataProvider {
 
   @override
   Future<List<Object?>> fetch(Map<String, Object?> parameters) async {
-    final DataProviderHttpRequest request;
+    final response = await _send(DataProviderRequest(parameters: parameters));
+    if (response.statusCode == 204) return <Object?>[];
+    final (:data, raw: _) = _parseResponse(response);
+    if (data == null) {
+      throw DataProviderException(
+        'Réponse vide (HTTP ${response.statusCode}).',
+      );
+    }
+    if (data is List) return List<Object?>.of(data);
+    if (data is Map) return <Object?>[data];
+    throw const DataProviderException(
+      'La réponse doit être un tableau ou un objet JSON.',
+    );
+  }
+
+  /// Exécute [request] : une réponse 204 ou vide donne une donnée `null`, et
+  /// `responsePath` peut désigner un tableau comme un objet.
+  @override
+  Future<DataProviderResult> execute(DataProviderRequest request) async {
+    final (:data, :raw) = _parseResponse(await _send(request));
+    return DataProviderResult(
+      data: data is List ? List<Object?>.of(data) : data,
+      raw: raw,
+    );
+  }
+
+  Future<DataProviderHttpResponse> _send(DataProviderRequest request) {
+    final DataProviderHttpRequest httpRequest;
     try {
-      request = _buildRequest(parameters);
+      httpRequest = _buildRequest(request);
     } on FormatException catch (error) {
       throw DataProviderException('Requête invalide : ${error.message}');
     }
-    return _parseResponse(await _transport.send(request));
+    return _transport.send(httpRequest);
   }
 
-  DataProviderHttpRequest _buildRequest(Map<String, Object?> parameters) {
+  DataProviderHttpRequest _buildRequest(DataProviderRequest request) {
     final template = config.request;
-    final context = ProviderTemplateContext(filter: parameters, env: _env);
+    final parameters = request.parameters;
+    final context = ProviderTemplateContext(
+      filter: parameters,
+      env: _env,
+      datasource: request.context,
+    );
     final uri = _withQuery(
       _renderUrl(template.url, context),
       template,
-      parameters,
+      request,
       context,
     );
     if (uri.toString().length > _maxRequestUrlLength) {
@@ -114,13 +149,14 @@ class HttpDataProvider extends DataProvider {
     }
     final headers = _renderHeaders(template, context);
     String? body;
-    if (template.method == 'POST') {
+    if (template.acceptsBody) {
       final payload = template.body != null
           ? renderProviderBody(template.body, context)
           : template.autoParams
           ? {
               for (final entry in parameters.entries)
                 if (!_consumedKeys.contains(entry.key)) entry.key: entry.value,
+              ...request.extraParameters,
             }
           : null;
       if (payload != null) {
@@ -158,20 +194,25 @@ class HttpDataProvider extends DataProvider {
   }
 
   /// Fusionne, par ordre croissant de priorité, les paramètres déjà présents
-  /// dans l'URL, les paramètres automatiques du filtre (`GET` seulement) puis
-  /// les paramètres explicites `query`.
+  /// dans l'URL, les paramètres automatiques du filtre puis de tri et de
+  /// pagination (`GET` et `DELETE` seulement) et enfin les paramètres
+  /// explicites `query`.
   Uri _withQuery(
     Uri uri,
     HttpRequestTemplate template,
-    Map<String, Object?> parameters,
+    DataProviderRequest request,
     ProviderTemplateContext context,
   ) {
     final params = <String, List<String>>{...uri.queryParametersAll};
     var changed = false;
-    if (template.autoParams && template.method == 'GET') {
-      for (final entry in parameters.entries) {
-        if (_consumedKeys.contains(entry.key) ||
-            template.query.containsKey(entry.key) ||
+    if (template.autoParams && !template.acceptsBody) {
+      final automatic = <String, Object?>{
+        for (final entry in request.parameters.entries)
+          if (!_consumedKeys.contains(entry.key)) entry.key: entry.value,
+        ...request.extraParameters,
+      };
+      for (final entry in automatic.entries) {
+        if (template.query.containsKey(entry.key) ||
             params.containsKey(entry.key)) {
           continue;
         }
@@ -234,17 +275,19 @@ class HttpDataProvider extends DataProvider {
     return headers;
   }
 
-  List<Object?> _parseResponse(DataProviderHttpResponse response) {
+  /// Donnée extraite (`responsePath`) et réponse entière ; `null` pour une
+  /// réponse 204 ou vide.
+  ({Object? data, Object? raw}) _parseResponse(
+    DataProviderHttpResponse response,
+  ) {
     final status = response.statusCode;
     if (status < 200 || status >= 300) {
       throw DataProviderException(_failureMessage(response));
     }
-    if (status == 204) return <Object?>[];
+    if (status == 204) return (data: null, raw: null);
     var text = response.body;
     if (text.startsWith('\uFEFF')) text = text.substring(1);
-    if (text.trim().isEmpty) {
-      throw DataProviderException('Réponse vide (HTTP $status).');
-    }
+    if (text.trim().isEmpty) return (data: null, raw: null);
     final Object? json;
     try {
       json = jsonDecode(text);
@@ -263,11 +306,7 @@ class HttpDataProvider extends DataProvider {
         throw DataProviderException('Chemin « $path » absent de la réponse.');
       }
     }
-    if (node is List) return List<Object?>.of(node);
-    if (node is Map) return <Object?>[node];
-    throw const DataProviderException(
-      'La réponse doit être un tableau ou un objet JSON.',
-    );
+    return (data: node, raw: json);
   }
 
   static String _failureMessage(DataProviderHttpResponse response) {

@@ -185,12 +185,11 @@ class _EditorContextMenuDialogState<T>
     if (zoom == null ||
         zoom.disposed ||
         !zoom.enabled ||
-        zoom.dialog.value != null ||
-        widget.avoidRectResolver == null) {
+        zoom.dialog.value != null) {
       return;
     }
     final options = zoom.options.value;
-    if (!options.zoomOnRightClick) {
+    if (!options.zoomOnRightClick && !options.zoomOnHover) {
       if (zoom.contextMenuAvailable.value != null) {
         zoom.contextMenuAvailable.value = null;
       }
@@ -463,6 +462,71 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
     );
   }
 
+  void _updateAvailableViewport(Size size, Size childSize) {
+    const gap = 12.0;
+    final dialogRect = resolvedPosition & childSize;
+    final candidateViewports = <Rect>[
+      Rect.fromLTWH(0, 0, math.max(0.0, dialogRect.left - gap), size.height),
+      Rect.fromLTWH(
+        math.min(size.width, dialogRect.right + gap),
+        0,
+        math.max(0.0, size.width - dialogRect.right - gap),
+        size.height,
+      ),
+      Rect.fromLTWH(0, 0, size.width, math.max(0.0, dialogRect.top - gap)),
+      Rect.fromLTWH(
+        0,
+        math.min(size.height, dialogRect.bottom + gap),
+        size.width,
+        math.max(0.0, size.height - dialogRect.bottom - gap),
+      ),
+    ];
+    var maxTotalArea = 0.0;
+    for (final viewport in candidateViewports) {
+      if (viewport.width < 80 || viewport.height < 80) continue;
+      final area = viewport.width * viewport.height;
+      if (area > maxTotalArea) maxTotalArea = area;
+    }
+    if (maxTotalArea <= 0) {
+      availableViewport = null;
+      return;
+    }
+    final target = avoidRect;
+    final minUsableWidth = math.min(220.0, size.width * 0.25);
+    final minUsableHeight = math.min(180.0, size.height * 0.25);
+    Rect? bestOverlapViewport;
+    var bestOverlapArea = 0.0;
+    var bestOverlapTotalArea = -1.0;
+    Rect? largestViewport;
+    var largestArea = -1.0;
+    for (final viewport in candidateViewports) {
+      if (viewport.width < 80 || viewport.height < 80) continue;
+      final totalArea = viewport.width * viewport.height;
+      if (totalArea > largestArea) {
+        largestArea = totalArea;
+        largestViewport = viewport;
+      }
+      if (target != null &&
+          viewport.width >= minUsableWidth &&
+          viewport.height >= minUsableHeight &&
+          totalArea >= maxTotalArea * 0.45) {
+        final overlap = viewport.intersect(target);
+        final overlapArea = overlap.isEmpty
+            ? 0.0
+            : overlap.width * overlap.height;
+        if (overlapArea > bestOverlapArea ||
+            (overlapArea > 0 &&
+                overlapArea == bestOverlapArea &&
+                totalArea > bestOverlapTotalArea)) {
+          bestOverlapArea = overlapArea;
+          bestOverlapTotalArea = totalArea;
+          bestOverlapViewport = viewport;
+        }
+      }
+    }
+    availableViewport = bestOverlapViewport ?? largestViewport;
+  }
+
   @override
   Offset getPositionForChild(Size size, Size childSize) {
     if (dragged) {
@@ -472,6 +536,7 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
         position.dx.clamp(0.0, maxX),
         position.dy.clamp(0.0, maxY),
       );
+      _updateAvailableViewport(size, childSize);
       return resolvedPosition;
     }
     const margin = 8.0;
@@ -544,43 +609,7 @@ class _ContextMenuDialogLayout extends SingleChildLayoutDelegate {
     final dx = desiredX.clamp(margin, maxX);
     final dy = desiredY.clamp(minY, maxY);
     resolvedPosition = Offset(dx, dy);
-    if (avoidRect case final target?) {
-      final dialogRect = resolvedPosition & childSize;
-      final candidateViewports = <Rect>[
-        Rect.fromLTWH(0, 0, math.max(0.0, dialogRect.left - gap), size.height),
-        Rect.fromLTWH(
-          math.min(size.width, dialogRect.right + gap),
-          0,
-          math.max(0.0, size.width - dialogRect.right - gap),
-          size.height,
-        ),
-        Rect.fromLTWH(0, 0, size.width, math.max(0.0, dialogRect.top - gap)),
-        Rect.fromLTWH(
-          0,
-          math.min(size.height, dialogRect.bottom + gap),
-          size.width,
-          math.max(0.0, size.height - dialogRect.bottom - gap),
-        ),
-      ];
-      Rect? bestViewport;
-      var bestOverlapArea = -1.0;
-      var bestTotalArea = -1.0;
-      for (final viewport in candidateViewports) {
-        if (viewport.width < 80 || viewport.height < 80) continue;
-        final overlap = viewport.intersect(target);
-        final overlapArea = overlap.isEmpty
-            ? 0.0
-            : overlap.width * overlap.height;
-        final totalArea = viewport.width * viewport.height;
-        if (overlapArea > bestOverlapArea ||
-            (overlapArea == bestOverlapArea && totalArea > bestTotalArea)) {
-          bestOverlapArea = overlapArea;
-          bestTotalArea = totalArea;
-          bestViewport = viewport;
-        }
-      }
-      availableViewport = bestViewport;
-    }
+    _updateAvailableViewport(size, childSize);
     return resolvedPosition;
   }
 

@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shortid/shortid.dart';
 
 import '../../../models/component_behavior.dart';
+import '../../../models/datasources/datasource_config.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/super_layout_config.dart';
 import '../../../services/repositories/json_list_scope.dart';
@@ -21,6 +22,7 @@ import '../dialogs/editor_target_selector.dart';
 import '../history/editor_history.dart';
 import '../repositories/repository_binding_fields.dart';
 import '../slots/editor_slot.dart';
+import 'datasource_action_settings.dart';
 import 'search_provider_settings.dart';
 import '../../appearance/appearance_scope.dart';
 
@@ -158,6 +160,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   bool _stateWhenValue = true;
   bool _stateMaintainSize = false;
   String? _selectedProviderId;
+  DatasourceActionDraft _datasourceDraft = DatasourceActionSettings.empty;
 
   @override
   void initState() {
@@ -210,6 +213,20 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   bool get _isBindState => _selectedCatalogItem.actionType == 'bindState';
   bool get _isSearchProvider =>
       _selectedCatalogItem.actionType == 'searchProvider';
+  bool get _isDatasource => _selectedCatalogItem.actionType == 'datasource';
+
+  DatasourceConfig? get _selectedDatasource {
+    final id = _datasourceDraft.datasourceId;
+    if (id == null) return null;
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    return JsonRepositoryScope.maybeOf(targetContext)?.datasources
+        .datasource(id);
+  }
+
+  DatasourceAction? get _datasourceAction => DatasourceActionSettings.actionOf(
+    _datasourceDraft,
+    _selectedDatasource,
+  ).action;
 
   EditorSlotState? get _targetSlot {
     final slot = _selectedTarget.slot;
@@ -282,6 +299,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
           ? _tooltipError == null
           : _isSearchProvider
           ? _selectedProviderId != null
+          : _isDatasource
+          ? _datasourceAction != null
           : _isBindState
           ? _stateBinding != null
           : _isZoneSize
@@ -320,6 +339,8 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
         ? TooltipAction(message: _tooltipMessage.text, binding: _tooltipBinding)
         : _isSearchProvider
         ? SearchProviderAction(providerId: _selectedProviderId!)
+        : _isDatasource
+        ? _datasourceAction!
         : _isBindState
         ? StateBindingAction(
             state: _boundState,
@@ -699,6 +720,7 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
   Widget _buildSettingsStep(BuildContext context) {
     if (_isTooltip) return _buildTooltipSettings(context);
     if (_isSearchProvider) return _buildSearchProviderSettings();
+    if (_isDatasource) return _buildDatasourceSettings();
     if (_isBindState) return _buildBindStateSettings(context);
     if (_isEvent) return _buildEventSettings(context);
     if (_isZoneSize) return _buildZoneSizeSettings(context);
@@ -916,7 +938,21 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
                       label: 'Provider',
                       value: _providerSummary,
                     )
-                  else if (_isBindState) ...[
+                  else if (_isDatasource) ...[
+                    _summaryRow(
+                      context,
+                      icon: Icons.dataset_outlined,
+                      label: 'Datasource',
+                      value: _datasourceSummary,
+                    ),
+                    const Divider(height: 16),
+                    _summaryRow(
+                      context,
+                      icon: Icons.play_circle_outline,
+                      label: 'Commande',
+                      value: _datasourceCommandSummary,
+                    ),
+                  ] else if (_isBindState) ...[
                     _summaryRow(
                       context,
                       icon: _boundState.icon,
@@ -1022,6 +1058,35 @@ class _ComponentBehaviorWizardState extends State<ComponentBehaviorWizard> {
     final provider = JsonRepositoryScope.maybeOf(targetContext)?.providers
         .provider(id);
     return provider == null ? id : '${provider.label} ($id)';
+  }
+
+  String get _datasourceSummary {
+    final id = _datasourceDraft.datasourceId;
+    if (id == null) return '-';
+    final config = _selectedDatasource;
+    return config == null ? id : '${config.label} ($id)';
+  }
+
+  String get _datasourceCommandSummary {
+    final action = _datasourceAction;
+    if (action == null) return '-';
+    if (action.command != DatasourceCommand.sort) return action.command.label;
+    final direction = switch (action.direction) {
+      null => 'sens alterné',
+      DatasourceSortDirection.asc => 'croissant',
+      DatasourceSortDirection.desc => 'décroissant',
+    };
+    return '${action.command.label} sur ${action.field} ($direction)';
+  }
+
+  Widget _buildDatasourceSettings() {
+    final targetContext = _targetSlot?.context ?? widget.ownerContext;
+    return DatasourceActionSettings(
+      store: JsonRepositoryScope.maybeOf(targetContext),
+      value: _datasourceDraft,
+      managerContext: targetContext,
+      onChanged: (value) => setState(() => _datasourceDraft = value),
+    );
   }
 
   Widget _buildSearchProviderSettings() {

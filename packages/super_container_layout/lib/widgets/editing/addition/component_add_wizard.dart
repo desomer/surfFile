@@ -88,6 +88,7 @@ Future<ComponentAddRequest?> showComponentAddWizard({
           child = JsonListScope(
             repositoryId: listScope.repositoryId,
             indices: listScope.indices,
+            arrayTemplate: listScope.arrayTemplate,
             placeholder: listScope.placeholder,
             child: child,
           );

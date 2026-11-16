@@ -1,0 +1,9 @@
+.dart_tool/
+.pub/
+.pub-cache/
+build/
+coverage/
+doc/api/
+*.db
+*.db-wal
+*.db-shm

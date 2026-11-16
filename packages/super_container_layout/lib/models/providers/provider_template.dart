@@ -12,14 +12,18 @@
 /// * `{{chemin}}` : chemin `JsonAttributePath` sans `[?]` dans le document de
 ///   filtre ;
 /// * `{{env.NOM}}` : variable d'environnement (`env.` est un préfixe réservé) ;
+/// * `{{ds.nom}}` : valeur fournie par une datasource (`ds.` est un préfixe
+///   réservé) : `ds.key`, `ds.entity` ou `ds.entity.<chemin>`, `ds.page`,
+///   `ds.pageSize`, `ds.offset`, `ds.limit`, `ds.cursor`, `ds.sort`,
+///   `ds.direction` ; absente hors datasource ;
 /// * dans un corps JSON, une chaîne qui est *exactement* `{{x}}` garde le type
 ///   de la valeur lue (nombre, booléen, tableau, objet).
 ///
-/// Une valeur de filtre absente ou vide fait omettre l'entrée qui la contient
-/// (paramètre de requête, champ du corps, en-tête) mais produit une erreur
-/// dans l'URL. Une variable d'environnement introuvable est toujours une
-/// erreur : un secret manquant ne doit pas partir silencieusement sans
-/// authentification.
+/// Une valeur de filtre (ou de datasource) absente ou vide fait omettre
+/// l'entrée qui la contient (paramètre de requête, champ du corps, en-tête)
+/// mais produit une erreur dans l'URL. Une variable d'environnement
+/// introuvable est toujours une erreur : un secret manquant ne doit pas partir
+/// silencieusement sans authentification.
 library;
 
 import 'dart:convert';
@@ -42,15 +46,42 @@ const providerBodyMaxDepth = 16;
 /// Taille maximale (JSON encodé) d'un gabarit de corps.
 const providerBodyMaxBytes = 64 * 1024;
 
-/// Référence `{{...}}` : attribut du filtre ou variable d'environnement.
+/// Valeurs de premier niveau du contexte `{{ds.*}}` d'une datasource.
+const providerDatasourceKeys = <String>{
+  'key',
+  'entity',
+  'page',
+  'pageSize',
+  'offset',
+  'limit',
+  'cursor',
+  'sort',
+  'direction',
+};
+
+/// Origine de la valeur d'une [ProviderTemplateReference].
+enum ProviderTemplateSource {
+  /// Attribut du repository de filtre (`{{chemin}}`).
+  filter,
+
+  /// Variable d'environnement (`{{env.NOM}}`).
+  env,
+
+  /// Contexte d'une datasource (`{{ds.nom}}`).
+  datasource,
+}
+
+/// Référence `{{...}}` : attribut du filtre, variable d'environnement ou
+/// valeur de datasource.
 @immutable
 class ProviderTemplateReference {
-  const ProviderTemplateReference._({required this.isEnv, required this.key});
+  const ProviderTemplateReference._({required this.source, required this.key});
 
   /// Décode le contenu d'un `{{...}}`.
   ///
   /// Lève une [FormatException] si ce n'est ni un chemin de filtre résolu
-  /// (sans `[?]` ni `@calculé`) ni un nom de variable d'environnement valide.
+  /// (sans `[?]` ni `@calculé`), ni un nom de variable d'environnement
+  /// valide, ni une valeur de datasource connue.
   factory ProviderTemplateReference.parse(String expression) {
     final trimmed = expression.trim();
     if (trimmed.startsWith('env.')) {
@@ -60,54 +91,113 @@ class ProviderTemplateReference {
           'Variable d’environnement invalide : {{$trimmed}}.',
         );
       }
-      return ProviderTemplateReference._(isEnv: true, key: name);
+      return ProviderTemplateReference._(
+        source: ProviderTemplateSource.env,
+        key: name,
+      );
     }
+    if (trimmed == 'ds' ||
+        trimmed.startsWith('ds.') ||
+        trimmed.startsWith('ds[')) {
+      return ProviderTemplateReference._(
+        source: ProviderTemplateSource.datasource,
+        key: _datasourceKey(trimmed),
+      );
+    }
+    return ProviderTemplateReference._(
+      source: ProviderTemplateSource.filter,
+      key: _filterKey(trimmed),
+    );
+  }
+
+  static String _filterKey(String trimmed) {
     try {
       final path = JsonAttributePath(trimmed)..requireResolved();
       final canonical = path.toString();
       if (path.calculated != null || canonical.startsWith('[')) {
         throw const FormatException('chemin non lisible dans un filtre');
       }
-      return ProviderTemplateReference._(isEnv: false, key: canonical);
+      return canonical;
     } on FormatException {
       throw FormatException(
         'Gabarit invalide : {{$trimmed}} doit être un chemin du filtre '
-        '(sans [?]) ou {{env.NOM}}.',
+        '(sans [?]), {{env.NOM}} ou {{ds.nom}}.',
       );
     }
   }
 
-  /// Vrai pour `{{env.NOM}}`.
-  final bool isEnv;
+  static String _datasourceKey(String trimmed) {
+    final invalid = FormatException(
+      'Gabarit invalide : {{$trimmed}}. Valeurs de datasource : '
+      '${providerDatasourceKeys.map((key) => 'ds.$key').join(', ')} '
+      'et ds.entity.<chemin>.',
+    );
+    if (!trimmed.startsWith('ds.')) throw invalid;
+    final String canonical;
+    try {
+      final path = JsonAttributePath(trimmed.substring(3))..requireResolved();
+      canonical = path.toString();
+      if (path.calculated != null || canonical.startsWith('[')) throw invalid;
+    } on FormatException {
+      throw invalid;
+    }
+    final first = _firstSegmentPattern.firstMatch(canonical)?.group(0);
+    if (!providerDatasourceKeys.contains(first) ||
+        (first != 'entity' && canonical != first)) {
+      throw invalid;
+    }
+    return canonical;
+  }
 
-  /// Nom de la variable d'environnement, ou chemin canonique de l'attribut du
-  /// filtre.
+  /// Origine de la valeur.
+  final ProviderTemplateSource source;
+
+  /// Vrai pour `{{env.NOM}}`.
+  bool get isEnv => source == ProviderTemplateSource.env;
+
+  /// Vrai pour `{{ds.nom}}`.
+  bool get isDatasource => source == ProviderTemplateSource.datasource;
+
+  /// Vrai pour un attribut du repository de filtre.
+  bool get isFilter => source == ProviderTemplateSource.filter;
+
+  /// Nom de la variable d'environnement, chemin canonique de l'attribut du
+  /// filtre, ou chemin dans le contexte de datasource (sans `ds.`).
   final String key;
 
   /// Clé de premier niveau du filtre lue par cette référence (vide pour une
-  /// variable d'environnement).
+  /// variable d'environnement ou une valeur de datasource).
   String get filterKey =>
-      isEnv ? '' : _firstSegmentPattern.firstMatch(key)?.group(0) ?? key;
+      isFilter ? _firstSegmentPattern.firstMatch(key)?.group(0) ?? key : '';
 
-  /// Forme affichable (`env.NOM` ou le chemin).
-  String get label => isEnv ? 'env.$key' : key;
+  /// Forme affichable (`env.NOM`, `ds.nom` ou le chemin).
+  String get label => switch (source) {
+    ProviderTemplateSource.env => 'env.$key',
+    ProviderTemplateSource.datasource => 'ds.$key',
+    ProviderTemplateSource.filter => key,
+  };
 
   @override
   bool operator ==(Object other) =>
       other is ProviderTemplateReference &&
-      other.isEnv == isEnv &&
+      other.source == source &&
       other.key == key;
 
   @override
-  int get hashCode => Object.hash(isEnv, key);
+  int get hashCode => Object.hash(source, key);
 }
 
 /// Valeurs disponibles pendant le rendu d'un gabarit.
 @immutable
 class ProviderTemplateContext {
   /// [filter] est le document de paramètres (objet JSON, éventuellement vide) ;
-  /// [env] résout les variables `{{env.NOM}}`.
-  const ProviderTemplateContext({required this.filter, this.env});
+  /// [env] résout les variables `{{env.NOM}}` ; [datasource] porte les
+  /// valeurs `{{ds.*}}` (vide hors datasource).
+  const ProviderTemplateContext({
+    required this.filter,
+    this.env,
+    this.datasource = const {},
+  });
 
   /// Document de filtre lu par les références `{{chemin}}`.
   final Object? filter;
@@ -116,12 +206,16 @@ class ProviderTemplateContext {
   /// introuvables.
   final ProviderEnvResolver? env;
 
+  /// Contexte de datasource lu par les références `{{ds.*}}`.
+  final Map<String, Object?> datasource;
+
   /// Valeur brute de [reference] ; `null` si elle est absente ou si la
-  /// structure du filtre ne correspond pas au chemin.
+  /// structure du document ne correspond pas au chemin.
   Object? resolve(ProviderTemplateReference reference) {
     if (reference.isEnv) return env?.call(reference.key);
     try {
-      return JsonAttributePath(reference.key).readNode(filter);
+      return JsonAttributePath(reference.key)
+          .readNode(reference.isDatasource ? datasource : filter);
     } on FormatException {
       return null;
     }
@@ -200,7 +294,7 @@ class ProviderTemplate {
         }
         if (strict) {
           throw FormatException(
-            'Le paramètre « ${reference.key} » est vide ou absent.',
+            'Le paramètre « ${reference.label} » est vide ou absent.',
           );
         }
         return null;
@@ -210,9 +304,9 @@ class ProviderTemplate {
     return buffer.toString();
   }
 
-  /// Rendu typé : un gabarit réduit à une seule référence du filtre retourne
-  /// la valeur brute (nombre, booléen, tableau, objet) ; sinon le texte de
-  /// [render].
+  /// Rendu typé : un gabarit réduit à une seule référence du filtre ou de la
+  /// datasource retourne la valeur brute (nombre, booléen, tableau, objet) ;
+  /// sinon le texte de [render].
   ///
   /// Retourne [providerTemplateOmitted] lorsque la valeur est absente ou vide.
   Object? renderValue(ProviderTemplateContext context) {

@@ -686,6 +686,7 @@ class _SuperTreeViewState extends State<SuperTreeView> {
       indices: [...?(_source?.rowBase ?? parentScope?.indices), item.rootIndex],
       nodePath: item.isTemplate ? null : item.nodePath,
       treeTemplatePath: _templatePath,
+      arrayTemplate: _templatePath,
       placeholder: placeholder,
       child: interactive,
     );

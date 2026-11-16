@@ -257,15 +257,39 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     builder: (menuContext) {
       EditorSlotState._activeMenuRoute ??= ModalRoute.of(menuContext);
       return MouseRegion(
-        onEnter: (_) {
+        onEnter: (event) {
           if (!target.mounted ||
               !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
             return;
           }
+          final initialPos = EditorSlotState._menuInitialPointerPosition;
+          if (initialPos != null &&
+              (event.position - initialPos).distance <= 1.0) {
+            return;
+          }
+          EditorSlotState._menuInitialPointerPosition = null;
           EditorSlotState._menuHoveredTarget = target;
           EditorSlotState._refreshHoveredTarget();
         },
+        onHover: (event) {
+          if (!target.mounted ||
+              !(StyleEditScope.controllerOf(target.context)?.value ?? false)) {
+            return;
+          }
+          final initialPos = EditorSlotState._menuInitialPointerPosition;
+          if (initialPos != null) {
+            if ((event.position - initialPos).distance <= 1.0) {
+              return;
+            }
+            EditorSlotState._menuInitialPointerPosition = null;
+          }
+          if (!identical(EditorSlotState._menuHoveredTarget, target)) {
+            EditorSlotState._menuHoveredTarget = target;
+            EditorSlotState._refreshHoveredTarget();
+          }
+        },
         onExit: (_) {
+          EditorSlotState._menuInitialPointerPosition = null;
           if (!EditorSlotState._menuOpen &&
               identical(EditorSlotState._menuHoveredTarget, target)) {
             EditorSlotState._menuHoveredTarget = null;
@@ -485,10 +509,11 @@ extension _EditorSlotMenuExtension on EditorSlotState {
             box.attached &&
             box.hasSize &&
             !box.size.isEmpty) {
+          Rect? contentBounds;
           if (zoomOptions != null &&
               zoomOptions.skipLargeElementsOnRightClick &&
               zoomController != null) {
-            final contentBounds = zoomController.targetBounds(candidate);
+            contentBounds = zoomController.targetBounds(candidate);
             if (contentBounds != null &&
                 zoomOptions.isElementTooLarge(contentBounds, overlay.size)) {
               return null;
@@ -501,7 +526,8 @@ extension _EditorSlotMenuExtension on EditorSlotState {
             ),
           ).intersect(overlayRect);
           if (!rect.isEmpty && rect.isFinite) {
-            if (zoomOptions != null &&
+            if (contentBounds == null &&
+                zoomOptions != null &&
                 zoomOptions.skipLargeElementsOnRightClick &&
                 zoomOptions.isElementTooLarge(rect, overlay.size)) {
               return null;
@@ -551,6 +577,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
     final generation = ++EditorSlotState._menuGeneration;
     EditorSlotState._menuOpen = true;
     EditorSlotState._openingMenuThisTurn = true;
+    EditorSlotState._menuInitialPointerPosition = globalPosition;
     EditorSlotState._activeMenuRoute = null;
     _ownsOpenMenu = true;
     scheduleMicrotask(() {
@@ -564,6 +591,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
       _ownsOpenMenu = false;
       EditorSlotState._menuOpen = false;
       EditorSlotState._openingMenuThisTurn = false;
+      EditorSlotState._menuInitialPointerPosition = null;
       final route = EditorSlotState._activeMenuRoute;
       EditorSlotState._activeMenuRoute = null;
       EditorSlotState._dismissActiveMenu = null;
@@ -1279,6 +1307,7 @@ extension _EditorSlotMenuExtension on EditorSlotState {
         _ownsOpenMenu = false;
         EditorSlotState._menuOpen = false;
         EditorSlotState._openingMenuThisTurn = false;
+        EditorSlotState._menuInitialPointerPosition = null;
         EditorSlotState._activeMenuRoute = null;
         EditorSlotState._dismissActiveMenu = null;
         EditorSlotState._menuHoveredTarget = null;

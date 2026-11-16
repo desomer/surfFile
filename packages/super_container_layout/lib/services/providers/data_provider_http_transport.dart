@@ -34,7 +34,7 @@ class DataProviderHttpRequest {
     this.maxResponseBytes = defaultDataProviderMaxResponseBytes,
   });
 
-  /// Méthode HTTP (`GET` ou `POST`).
+  /// Méthode HTTP (`GET`, `POST`, `PUT`, `PATCH` ou `DELETE`).
   final String method;
 
   /// Adresse complète, paramètres de requête compris.
@@ -158,7 +158,7 @@ class DartIoDataProviderHttpTransport extends DataProviderHttpTransport {
       final bytes = utf8.encode(payload);
       httpRequest.contentLength = bytes.length;
       httpRequest.add(bytes);
-    } else if (request.method == 'POST') {
+    } else if (const {'POST', 'PUT', 'PATCH'}.contains(request.method)) {
       httpRequest.contentLength = 0;
     }
     final response = await httpRequest.close();

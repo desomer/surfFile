@@ -1199,6 +1199,209 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'hovering large component rows in context menu dezooms completely instead of keeping previous zoom',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final registry = Registry()..bootstrap();
+      registry.registerComponent(
+        'panModel',
+        RegisteredComponent(
+          label: 'panModel',
+          instanceBuilder: (_, id) => SuperLayout(
+            id: id,
+            label: 'panModel',
+            config: const SuperLayoutConfig(
+              west: true,
+              westSize: 220,
+              zoneFlows: {
+                SuperLayoutZone.west: ZoneFlowConfig(
+                  expandSlots: false,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                ),
+              },
+              placements: {
+                SuperLayoutZone.west: ['small-action'],
+                SuperLayoutZone.center: ['center-card'],
+              },
+              slotPreferredSizes: {'small-action': Size(80, 36)},
+            ),
+            slots: [
+              BuilderSlot(
+                id: 'small-action',
+                label: 'small-action',
+                builder: (_) => const SuperAction(
+                  id: 'small-action',
+                  config: SuperActionConfig(label: 'Go'),
+                ),
+              ),
+              BuilderSlot(
+                id: 'center-card',
+                label: 'center-card',
+                builder: (_) => const EditableSurface(
+                  id: 'center-card',
+                  label: 'center-card',
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (context, state) => EditableSurface(
+              label: 'Fond',
+              decorate: false,
+              child: SuperPage(
+                child: SuperLayout(
+                  id: 'mainLayout',
+                  label: 'Main Layout',
+                  config: const SuperLayoutConfig(
+                    placements: {
+                      SuperLayoutZone.center: ['pan-model-instance'],
+                    },
+                  ),
+                  slots: [
+                    BuilderSlot(
+                      id: 'pan-model-instance',
+                      label: 'panModel',
+                      builder: (ctx) =>
+                          SuperApp.of(ctx).registry!
+                              .component('panModel')
+                              .builder(ctx),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+      addTearDown(router.dispose);
+
+      await tester.pumpWidget(SuperApp(router: router, registry: registry));
+      await tester.pumpAndSettle();
+
+      final mode = StyleEditScope.controllerOf(
+        tester.element(find.byType(SuperPage)),
+      )!;
+      mode.value = true;
+      await tester.pumpAndSettle();
+
+      final panModelFinder = find.byWidgetPredicate(
+        (w) => w is SuperLayout && w.label == 'panModel',
+      );
+      final actionFinder = find.byType(SuperAction);
+      expect(
+        screenRect(tester, panModelFinder),
+        const Rect.fromLTWH(0, 0, 1280, 800),
+      );
+
+      // Right-click on the small action button inside panModel -> zooms in heavily.
+      await tester.tap(actionFinder, buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+
+      final menuDialog = find.byKey(
+        const ValueKey('editor-context-menu-dialog'),
+      );
+      expect(menuDialog, findsOneWidget);
+      final zoomedInPanModel = screenRect(tester, panModelFinder);
+      expect(zoomedInPanModel.width, greaterThan(1280 * 2.0));
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(1, 1));
+      addTearDown(mouse.removePointer);
+
+      // Hover the full-screen component row `panModel` in the context menu:
+      // must dezoom so the ENTIRE 1280x800 component fits inside the viewport
+      // beside the context menu without staying stuck on the previous zoom.
+      final panModelMenuRow = find.byKey(const ValueKey('style-menu-panModel'));
+      await tester.ensureVisible(panModelMenuRow);
+      await tester.pumpAndSettle();
+      await mouse.moveTo(tester.getCenter(panModelMenuRow));
+      await tester.pumpAndSettle();
+
+      final menuRect = screenRect(tester, menuDialog);
+      final framedPanModel = screenRect(tester, panModelFinder);
+      expect(framedPanModel.width, lessThan(1280));
+      expect(framedPanModel.left, greaterThanOrEqualTo(0));
+      expect(framedPanModel.top, greaterThanOrEqualTo(0));
+      expect(framedPanModel.right, lessThanOrEqualTo(1280));
+      expect(framedPanModel.bottom, lessThanOrEqualTo(800));
+      expect(framedPanModel.overlaps(menuRect), isFalse);
+
+      // Hover the outer `Fond` row wrapping SuperPage: also frames full page beside menu.
+      final fondMenuRow = find.byKey(const ValueKey('style-menu-Fond'));
+      await tester.ensureVisible(fondMenuRow);
+      await tester.pumpAndSettle();
+      await mouse.moveTo(tester.getCenter(fondMenuRow));
+      await tester.pumpAndSettle();
+
+      final framedFondPage = screenRect(tester, panModelFinder);
+      expect(framedFondPage.left, greaterThanOrEqualTo(0));
+      expect(framedFondPage.right, lessThanOrEqualTo(1280));
+      expect(framedFondPage.overlaps(screenRect(tester, menuDialog)), isFalse);
+
+      // Hover back on the small action row -> zooms back in on the small action.
+      final actionMenuRow = find.byKey(const ValueKey('style-menu-Action'));
+      await tester.ensureVisible(actionMenuRow);
+      await tester.pumpAndSettle();
+      await mouse.moveTo(tester.getCenter(actionMenuRow));
+      await tester.pumpAndSettle();
+      expect(screenRect(tester, panModelFinder).width, greaterThan(1280 * 2.0));
+
+      await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
+      await tester.pumpAndSettle();
+
+      // Also verify right-clicking directly on a large area while zoomed in:
+      // menu open keeps the custom 1.5x zoom, hovering `panModel` dezooms to fit
+      // the full component beside the menu, and closing restores the 1.5x zoom.
+      EditorZoomScope.controllerOf(
+        tester.element(find.byType(SuperPage)),
+      )!.resetZoom();
+      await tester.pumpAndSettle();
+      final slider = tester.widget<Slider>(
+        find.byKey(const ValueKey('editor-zoom-slider')),
+      );
+      slider.onChanged!(1.5);
+      await tester.pumpAndSettle();
+      final customZoomedRect = screenRect(tester, panModelFinder);
+      expect(customZoomedRect.width, closeTo(1280 * 1.5, 1.0));
+
+      await tester.tapAt(
+        const Offset(900, 400),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      expect(menuDialog, findsOneWidget);
+      expect(screenRect(tester, panModelFinder), customZoomedRect);
+
+      await tester.ensureVisible(panModelMenuRow);
+      await tester.pumpAndSettle();
+      await mouse.moveTo(tester.getCenter(panModelMenuRow));
+      await tester.pumpAndSettle();
+      final hoveredLargeRect = screenRect(tester, panModelFinder);
+      expect(hoveredLargeRect.width, lessThan(1280));
+      expect(hoveredLargeRect.left, greaterThanOrEqualTo(0));
+      expect(hoveredLargeRect.right, lessThanOrEqualTo(1280));
+      expect(
+        hoveredLargeRect.overlaps(screenRect(tester, menuDialog)),
+        isFalse,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('editor-context-menu-close')));
+      await tester.pumpAndSettle();
+      expect(
+        screenRect(tester, panModelFinder),
+        within(distance: 0.5, from: customZoomedRect),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
 
 Widget _target(BuildContext context) =>

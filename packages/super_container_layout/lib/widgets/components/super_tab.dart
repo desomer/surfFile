@@ -1308,6 +1308,7 @@ class _SuperTabState extends State<SuperTab> with TickerProviderStateMixin {
         ...?(_dynamicSource?.rowBase ?? scope?.indices),
         templateMode ? 0 : index,
       ],
+      arrayTemplate: _dynamicTemplatePath,
       placeholder: templateMode || placeholder,
       child: child,
     );

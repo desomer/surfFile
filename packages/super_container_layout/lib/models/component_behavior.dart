@@ -5,6 +5,7 @@
 /// `Appearance.behaviors`.
 ///
 /// Les actions concrètes vivent dans `models/behaviours/` et sont réexportées ici :
+/// - [DatasourceAction] (`behaviours/datasource_action.dart`)
 /// - [EmitEventAction] (`behaviours/emit_event_action.dart`)
 /// - [GoToPageAction] (`behaviours/go_to_page_action.dart`)
 /// - [SearchProviderAction] (`behaviours/search_provider_action.dart`)
@@ -16,6 +17,7 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import '../services/events/super_event_bus.dart';
+import 'behaviours/datasource_action.dart';
 import 'behaviours/emit_event_action.dart';
 import 'behaviours/go_to_page_action.dart';
 import 'behaviours/search_provider_action.dart';
@@ -23,6 +25,7 @@ import 'behaviours/state_binding_action.dart';
 import 'behaviours/tooltip_action.dart';
 import 'behaviours/zone_size_binding_action.dart';
 
+export 'behaviours/datasource_action.dart';
 export 'behaviours/emit_event_action.dart';
 export 'behaviours/go_to_page_action.dart';
 export 'behaviours/search_provider_action.dart';
@@ -97,6 +100,7 @@ abstract final class BehaviorActionCatalog {
     'bindState': StateBindingAction.fromJson,
     'onTooltip': TooltipAction.fromJson,
     'searchProvider': SearchProviderAction.fromJson,
+    'datasource': DatasourceAction.fromJson,
   };
 
   static void register(
@@ -166,6 +170,14 @@ class ComponentBehavior {
       if (!BehaviorTrigger.gestures.contains(trigger)) {
         throw const FormatException(
           'searchProvider exige le déclencheur click ou doubleClick.',
+        );
+      }
+    }
+    if (action case final DatasourceAction datasource) {
+      datasource.validate();
+      if (!BehaviorTrigger.gestures.contains(trigger)) {
+        throw const FormatException(
+          'datasource exige le déclencheur click ou doubleClick.',
         );
       }
     }
@@ -319,6 +331,18 @@ abstract final class BehaviorCatalog {
     actionType: 'searchProvider',
   );
 
+  /// Lance une commande de datasource (recherche, page, tri, CRUD).
+  static const datasource = BehaviorCatalogItem(
+    id: 'datasource',
+    title: 'Commande de datasource',
+    description:
+        'Rechercher, paginer, trier, ou créer, lire, mettre à jour et '
+        'supprimer l’entité courante d’une datasource',
+    icon: Icons.dataset_outlined,
+    trigger: BehaviorTrigger.click,
+    actionType: 'datasource',
+  );
+
   static final List<BehaviorCatalogItem> items = [
     goToPage,
     emitEvent,
@@ -326,5 +350,6 @@ abstract final class BehaviorCatalog {
     bindState,
     onTooltip,
     searchProvider,
+    datasource,
   ];
 }

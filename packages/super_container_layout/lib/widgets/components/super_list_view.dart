@@ -756,6 +756,7 @@ class _SuperListViewState extends State<SuperListView> {
         selected: index != null && _isSelected(index),
         repositoryId: _source?.binding?.repositoryId ?? scope?.repositoryId,
         indices: [...?(_source?.rowBase ?? scope?.indices), index ?? 0],
+        arrayTemplate: _template,
         placeholder: index == null || (scope?.placeholder ?? false),
         child: Stack(
           fit: StackFit.passthrough,

@@ -158,12 +158,8 @@ void main() {
       find.byKey(const ValueKey('provider-filter')),
       'filtre',
     );
-    expect(
-      tester
-          .widget<Text>(find.byKey(const ValueKey('provider-form-error')))
-          .data,
-      contains('Résultats'),
-    );
+    // Le repository de résultats est facultatif (providers Create, Update…).
+    expect(find.byKey(const ValueKey('provider-form-error')), findsNothing);
     await choose(
       tester,
       find.byKey(const ValueKey('provider-binding-target-repository')),

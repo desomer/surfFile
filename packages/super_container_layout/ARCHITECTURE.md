@@ -1,6 +1,6 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **304 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **314 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
@@ -63,12 +63,39 @@ Ce document cartographie l'architecture interne du package `super_container_layo
   peut aussi être configurée au démarrage ou avec debounce quand le filtre
   change ; les écritures de résultats et d'indicateurs ne relancent pas la
   recherche.
-- `HttpProviderConfig` décrit les appels GET/POST, le chemin du tableau dans
-  la réponse JSON et les gabarits `{{chemin}}` / `{{env.PROVIDER_NOM}}`.
+- `HttpProviderConfig` décrit les appels GET/POST/PUT/PATCH/DELETE, le
+  chemin du tableau dans la réponse JSON et les gabarits `{{chemin}}` /
+  `{{env.PROVIDER_NOM}}` / `{{ds.*}}`. Le repository cible est facultatif :
+  un provider sans cible n'est lancé que par une datasource.
   L'éditeur permet de créer, tester et gérer ces providers ainsi que de les
   sélectionner dans le wizard de comportements.
 
-### 2.4. Surfaces, systèmes de design et états (`ContainerStyle` & `SurfaceStyleStates`)
+### 2.4. Datasources Search / CRUD (`DatasourceRegistry`)
+
+- `store.datasources` regroupe sous un identifiant de notion les providers
+  Search, Create, Read, Update et Delete (`DatasourceConfig`, un provider
+  existant par opération, au moins un). Les datasources du code sont
+  enregistrées avec `register` ; celles de l'éditeur sont persistées sous
+  `<dossier du store>/datasources/<id>.json` via `JsonDefinitionFolder`,
+  partagé avec les providers.
+- `run(id, command)` exécute le provider de l'opération par
+  `DataProviderRegistry.execute` avec un `DataProviderRequest` (contexte
+  `ds` : pagination, tri, clé et entité courante) et reçoit le
+  `DataProviderResult` brut. La datasource écrit ensuite la page dans la
+  cible Search et `DatasourcePageState` dans `search.state`, ou synchronise
+  localement la liste, la sélection et le détail après Create/Read/Update/
+  Delete (`JsonRepositoryStore.replaceValue` / `updateValue` /
+  `updateArray`).
+- L'entité courante est la ligne du `JsonListScope` (si `arrayTemplate` est le
+  tableau de la recherche), sinon la ligne sélectionnée, sinon le détail
+  Read. Les réponses périmées sont ignorées ; l'état observable est
+  `stateOf(id)` (`DatasourceStatus`).
+- Le comportement `datasource` (`DatasourceAction`) persiste seulement
+  `datasourceId`, `command` et, pour le tri, `field`/`direction`. Une
+  datasource utilisée par l'`Appearance` et un provider utilisé par une
+  datasource ne peuvent pas être supprimés.
+
+### 2.5. Surfaces, systèmes de design et états (`ContainerStyle` & `SurfaceStyleStates`)
 
 Les comportements `onTooltip` (`trigger: "hover"`) sont rendus par
 `ComponentTooltip`, enveloppe publique commune à tous les types de composants.
@@ -86,13 +113,13 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
   - états d'interaction (`hover`, `selected`) ;
   - états automatiques (`contentHover` via `ContentHoverScope`, `focused`, `disabled`, `readOnly`).
 
-### 2.5. Graphe de pages et opérations d'édition (`EditorPageGraph`)
+### 2.6. Graphe de pages et opérations d'édition (`EditorPageGraph`)
 - `EditorPageGraph` analyse les références entre composants (`placements` de `SuperLayoutConfig`, `NativeComponentConfig`, `ScaffoldPageConfig`, `SuperListViewConfig.template`, `SuperTabConfig`, `SuperTreeViewConfig`, `SuperTableConfig`).
 - Il garantit :
   - la **duplication profonde** d'un sous-graphe de composants avec réécriture des IDs selon leur `ComponentDuplicationContract` ;
   - la **suppression propre** d'un slot ou d'une page en nettoyant toutes les configurations et styles orphelins qui ne sont plus référencés ailleurs.
 
-### 2.6. Bus d'evenements de composants
+### 2.7. Bus d'evenements de composants
 
 - `SuperEventBus` est injecte dans `SuperApp` et reste possede par l'hote :
   abonnements par ID exact, broadcast asynchrone, sans replay ni singleton.
@@ -112,7 +139,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 ---
 
-## 3. Index complet des 304 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 314 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -131,21 +158,26 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `ai/vibe_chat_attachment.dart` | `VibeChatAttachment` : représentation immuable d'une pièce jointe (image binaire ou fichier texte/JSON) envoyée dans le chat Vibe IA. |
 | `ai/vibe_stream_parser.dart` | `VibeIncrementalStreamParser`, `VibeStreamSnapshot` : automate d'analyse JSON incrémentale caractère par caractère extrayant en temps réel le champ `"message"`, `hasVibeObject`, `hasAskUserObject` et le nombre de composants du patch `"vibe"`. |
 
-### 3.3. Modèles de données (`lib/models/` — 53 fichiers)
+### 3.3. Modèles de données (`lib/models/` — 58 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState`, `ComponentStateProperty`, `ComponentConfigOverrideBase`, `ComponentConfigStatesBase`, `ComponentStateHelpers` : états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et classes de base génériques des surcharges d'états de composants. |
 | `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `BehaviorActionCatalog`, `BehaviorCatalogItem`, `BehaviorCatalog` : socle des comportements, catalogue polymorphe et réexport des actions (`models/behaviours/`). |
 | `models/component_usage.dart` | `ComponentUsageKind`, `ComponentUsage` : usage déclaré d'une instance (8 types, saisi dans Renommer ou proposé par l'IA pour les composants sans liaison) avec clé de traduction ARB obligatoire pour `explanation`, validation stricte et suggestion lowerCamelCase depuis le nom. |
+| `models/behaviours/datasource_action.dart` | `DatasourceAction` : lance une commande de datasource (recherche, pagination, tri, CRUD) au clic ou double-clic (`datasource`). |
 | `models/behaviours/emit_event_action.dart` | `EmitEventAction` : publication d'un événement interne sur `SuperEventBus` (`click`, `doubleClick`). |
 | `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée (`click`, `doubleClick`). |
 | `models/behaviours/search_provider_action.dart` | `SearchProviderAction` : lance la recherche d'un provider depuis un comportement (`searchProvider`). |
 | `models/behaviours/state_binding_action.dart` | `StateBindingAction`, `BehaviorBoundState` : changement réactif d'état (`invisible`, `readOnly`, `disabled`) en fonction d'un booléen lié à un repository JSON (`binding`). |
 | `models/behaviours/tooltip_action.dart` | `TooltipAction` : info-bulle déclarative fixe ou liée à un repository JSON (`onTooltip`, `hover`). |
 | `models/behaviours/zone_size_binding_action.dart` | `ZoneSizeBindingAction`, `BehaviorCurve` : liaison réactive et animée de la taille d'une zone de `SuperLayout` (`binding`). |
+| `models/datasources/datasource_config.dart` | `DatasourceConfig`, `DatasourceSearchConfig`, `DatasourceSort`, `DatasourceSortOrder`, `DatasourceCreateConfig`, `DatasourceEntityConfig`, `DatasourceOperation`, `DatasourceCommand`, `DatasourceSortDirection`, `DatasourceInsert` : définition immuable et validée d'une datasource Search / CRUD. |
+| `models/datasources/datasource_pagination.dart` | `DatasourcePagination`, `DatasourcePaginationMode`, `validateDatasourcePath` : pagination par page, position ou curseur et chemins de total / curseur suivant. |
+| `models/datasources/datasource_state.dart` | `DatasourcePageState`, `DatasourceStatus` : état de recherche écrit dans `search.state` et état observable d'une datasource. |
 | `models/providers/data_provider.dart` | `DataProvider`, `CallbackDataProvider`, `ProviderAutoSearch`, `DataProviderStatus` : contrat des providers, callback de code hôte, déclenchement automatique et états de recherche. |
-| `models/providers/http_provider_config.dart` | `HttpProviderConfig`, `HttpRequestTemplate` : configuration HTTP immuable, validée et sérialisable (requête, filtre, cible, réponse et indicateurs). |
-| `models/providers/provider_template.dart` | `ProviderTemplate` : analyse et rendu sûr des références `{{chemin}}` du filtre et `{{env.NOM}}`. |
+| `models/providers/data_provider_request.dart` | `DataProviderRequest`, `DataProviderResult` : paramètres, contexte `ds` et résultat brut d'une exécution de provider. |
+| `models/providers/http_provider_config.dart` | `HttpProviderConfig`, `HttpRequestTemplate` : configuration HTTP immuable, validée et sérialisable (requête GET/POST/PUT/PATCH/DELETE, filtre, cible facultative, réponse et indicateurs). |
+| `models/providers/provider_template.dart` | `ProviderTemplate` : analyse et rendu sûr des références `{{chemin}}` du filtre, `{{env.NOM}}` et `{{ds.*}}`. |
 | `services/events/super_event_bus.dart` | `SuperEventBus`, `SuperComponentEvent` : bus applicatif et snapshots JSON immutables. |
 | `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
 | `widgets/components/component_state_behavior.dart` | `ComponentStateBehavior`, `ComponentBehaviorStateScope` : évaluation réactive des `StateBindingAction` (`invisible`, `readOnly`, `disabled`) et propagation aux composants enfants et à leurs états automatiques. |
@@ -207,7 +239,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `theme/style_extras.dart` | `BorderLineStyle`, `ShadowSpec`, `SurfacePattern`, `SurfaceTransform` : primitives avancées d'ombres, traits de bordure, motifs et transformations 2D. |
 | `theme/surface_style_states.dart` | `SurfaceStyleStates`, `SurfaceStyleOverride`, `SurfaceStylePropertyGroup` : surcharges conditionnelles d'un `ContainerStyle` par état. |
 
-### 3.5. Services (`lib/services/` — 39 fichiers)
+### 3.5. Services (`lib/services/` — 41 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `services/appearance/appearance_codec.dart` | `AppearanceCodec` : contrat de sérialisation complète, compacte (`toCompactJson`), de transfert, validation, migration et gestion de préférences additionnelles pour un modèle `Appearance`. |
@@ -223,13 +255,15 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `services/pages/editor_page_graph.dart` | `EditorPageGraph` : graphe de dépendances des composants et styles d'une page (collecte, duplication profonde, nettoyage d'orphelins à la suppression). |
 | `services/pages/editor_page_router.dart` | `EditorPageRouter`, `buildEditorGoRouter` : génération dynamique des routes `GoRouter` à partir de `EditorPageCatalog`. |
 | `services/repositories/calculated_attribute.dart` | `CalculatedAttributeFunction`, `CalculatedAttributeContext`, `SynchronousCalculatedAttributeContext`, `CalculatedAttributeDescriptor`, `CalculatedAttributeEngine` : calculs racine/par ligne (`@stats.total`, `articles[?].@montant`), getters typés avec défauts et `ctx.sync`, cache par génération et graphe inter-repositories isolé par store ; catalogue sans exécution, cycles et erreurs mémorisées. |
-| `services/repositories/json_list_scope.dart` | `JsonListScope`, `ResolvedJsonBinding` : `InheritedWidget` de contexte de ligne pour les listes/tables/arbres et résolution des jokers `[?]`. |
+| `services/repositories/json_list_scope.dart` | `JsonListScope`, `ResolvedJsonBinding` : `InheritedWidget` de contexte de ligne pour les listes/tables/arbres (indices et `arrayTemplate` du tableau parcouru) et résolution des jokers `[?]`. |
 | `services/repositories/json_repository_binding.dart` | `JsonRepositoryBinding`, `JsonArrayBinding`, `JsonAttributeBinding` : liaisons réactives `ValueNotifier` sur un document JSON en mémoire. |
 | `services/repositories/json_repository_scope.dart` | `JsonRepositoryScope` : `InheritedNotifier` exposant le `JsonRepositoryStore` à tout l'arbre de widgets. |
-| `services/repositories/json_repository_store.dart` | `JsonRepositoryStore`, `JsonRepositoryDocument` : magasin multi-documents JSON réactif avec validation et extraction de chemins. |
+| `services/repositories/json_repository_store.dart` | `JsonRepositoryStore`, `JsonRepositoryDocument` : magasin multi-documents JSON réactif avec validation, extraction de chemins, écritures atomiques (`replaceValue`, `updateValue`, `updateArray`) et registres `providers` / `datasources`. |
 | `services/providers/data_provider_http_transport.dart` | `DataProviderHttpTransport`, `DartIoDataProviderHttpTransport` : transport HTTP injectable, limité en taille et délai, sans redirection automatique. |
-| `services/providers/data_provider_registry.dart` | `DataProviderRegistry` : enregistrement, chargement, persistance, exécution et recherche automatique des providers d'un store. |
-| `services/providers/http_data_provider.dart` | `HttpDataProvider`, `defaultProviderEnv` : construction de requêtes GET/POST, résolution des gabarits et extraction des lignes JSON. |
+| `services/providers/data_provider_registry.dart` | `DataProviderRegistry` : enregistrement, chargement, persistance, exécution (`search`, `execute` pour les datasources) et recherche automatique des providers d'un store. |
+| `services/providers/http_data_provider.dart` | `HttpDataProvider`, `defaultProviderEnv` : construction de requêtes GET/POST/PUT/PATCH/DELETE, résolution des gabarits et extraction des lignes JSON. |
+| `services/providers/json_definition_folder.dart` | `JsonDefinitionFolder` : lecture, écriture atomique et suppression sérialisées des définitions JSON `<id>.json` (providers, datasources). |
+| `services/datasources/datasource_registry.dart` | `DatasourceRegistry` : enregistrement, persistance, exécution des commandes Search / CRUD, pagination, tri, entité courante et synchronisation locale de la liste et du détail. |
 | `services/repositories/json_text_controller_binding.dart` | `JsonTextControllerBinding` : synchronisation bidirectionnelle sans boucle entre un `TextEditingController` et un attribut JSON. |
 | `services/states/content_hover_scope.dart` | `ContentHoverScope` : propagation de l'état de survol d'un conteneur parent (`IterableContent`) vers ses composants enfants (`AutomaticState.contentHover`). |
 | `services/states/surface_state_binding.dart` | `SurfaceStateBinding` : adaptation du lecteur partagé `JsonStringBinding` pour l'état métier nommé (`states.binding`). |
@@ -317,7 +351,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/zone_interactions.dart` | Cibles de glisser-déposer (`DragTarget`) et retour visuel lors du déplacement de slots ou de zones. |
 | `widgets/components/super_layout/zone_resize_handle.dart` | Poignée de redimensionnement interactif entre les zones cardinales (`north`, `south`, `west`, `east`) et `center`. |
 
-### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 111 fichiers)
+### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 114 fichiers)
 
 Le contrôle partagé `widgets/editing/components/shared/editor_number_field.dart`
 expose `EditorNumberField` : badge cliquable et popup numérique ancré.
@@ -347,7 +381,8 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/addition/forms/table_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTable`. |
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
 | `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») préchargeant `SCREEN_JSON_AI_GUIDE.md` (`warmUp`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`, usages compris, avec `filterPatchToScope` limitant composants, styles, comportements et usages au sous-arbre), diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`) et appliquant le patch via `AppearanceTransfer.applyVibe`. |
-| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée, info-bulle et recherche de provider. |
+| `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée, info-bulle, recherche de provider et commande de datasource. |
+| `widgets/editing/behaviors/datasource_action_settings.dart` | `DatasourceActionSettings`, `DatasourceActionDraft` : sélection de la datasource, de la commande et du tri pour l'action `datasource`, avec accès au gestionnaire. |
 | `widgets/editing/behaviors/search_provider_settings.dart` | `SearchProviderSettings` : sélection d'un provider pour l'action `searchProvider`, avec accès au gestionnaire. |
 | `widgets/editing/components/native_component_editor.dart` | Point d'entrée public de l'éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
 | `widgets/editing/components/native_editor/native_region_slot.dart` | Contrats de région (`NativeRegion`) et slots d'adaptation de taille préférée (`NativePreferredSizeWidget`, `NativeWidgetSlot`, `NativeInstanceSlot`). |
@@ -399,6 +434,8 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/pages/editor_page_manager.dart` | Gestionnaire des pages de l'application (`EditorPageCatalog` : création, renommage, duplication, suppression, page d'accueil). |
 | `widgets/editing/repositories/json_repository_manager.dart` | Éditeur et gestionnaire des documents `JsonRepositoryDocument` (import/export JSON, édition de schéma/données). |
 | `widgets/editing/repositories/repository_binding_fields.dart` | Champs d'interface réutilisables pour sélectionner un repository et un chemin `JsonTextBinding` avec autocomplétion. |
+| `widgets/editing/datasources/datasource_form.dart` | `DatasourceForm`, `DatasourceDraft` : formulaire des providers par opération, de la clé, du tri, de la pagination et de l'état de recherche. |
+| `widgets/editing/datasources/datasource_manager.dart` | `DatasourceManager` : gestionnaire des datasources (création, test, sauvegarde, lancement de la recherche, suppression protégée). |
 | `widgets/editing/providers/data_provider_manager.dart` | Gestionnaire des providers HTTP : création, test, sauvegarde, recherche et suppression. |
 | `widgets/editing/providers/http_provider_form.dart` | Formulaire de configuration HTTP et des repositories de filtre, cible et indicateurs. |
 | `widgets/editing/slots/editable_single_child.dart` | Conteneur éditable monoenfant (utilisé notamment pour la région `child` d'une `Card`). |
@@ -437,5 +474,6 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | **Ajouter une propriété visuelle sur les cartes/surfaces** | `lib/theme/container_style.dart` (et `container_fill.dart` / `style_extras.dart`) → `lib/theme/surface_style_states.dart` → `lib/widgets/surfaces/styled_surface.dart` → `lib/widgets/editing/styles/container_style_editor.dart` → `SCREEN_JSON_AI_GUIDE.md` |
 | **Modifier la résolution des liaisons JSON ou `[?]`** | `lib/models/json_text_binding.dart` → `lib/services/repositories/json_list_scope.dart` → `lib/services/repositories/json_repository_binding.dart` |
 | **Ajouter ou modifier un provider / une recherche d'API** | `lib/models/providers/` → `lib/services/providers/` → `lib/models/behaviours/search_provider_action.dart` → `lib/widgets/editing/providers/` & `lib/widgets/editing/behaviors/search_provider_settings.dart` |
+| **Ajouter ou modifier une datasource Search / CRUD** | `lib/models/datasources/` → `lib/services/datasources/datasource_registry.dart` → `lib/models/behaviours/datasource_action.dart` → `lib/widgets/editing/datasources/` & `lib/widgets/editing/behaviors/datasource_action_settings.dart` |
 | **Modifier l'import/export JSON, le client Gemini ou l'application d'un patch Vibe IA** | `lib/ai/gemini_rest_client.dart` → `lib/ai/call_gemini.dart` → `lib/ai/vibe_ask_user.dart` → `lib/ai/vibe_stream_parser.dart` → `lib/services/appearance/appearance_codec.dart` & `default_appearance_codec.dart` → `lib/services/appearance/appearance_transfer.dart` → `lib/widgets/editing/ai/vibe_chat_dialog.dart` |
 | **Modifier la sélection, le glisser-déposer ou le redimensionnement en édition** | `lib/widgets/components/super_layout/layout_selection.dart` → `lib/widgets/components/super_layout/layout_view.dart` → `lib/widgets/editing/slots/editor_slot.dart` → `lib/widgets/editing/overlay/editor_resize_handle.dart` |

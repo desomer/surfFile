@@ -449,6 +449,15 @@ class Appearance {
     }),
   );
 
+  /// Indique si un comportement de l'apparence lance une commande de la
+  /// datasource [datasourceId].
+  bool usesDatasource(String datasourceId) => behaviors.values.any(
+    (list) => list.any((behavior) {
+      final action = behavior.action;
+      return action is DatasourceAction && action.datasourceId == datasourceId;
+    }),
+  );
+
   ThemeData theme(Brightness brightness) {
     final seedScheme = ColorScheme.fromSeed(
       seedColor: accent,

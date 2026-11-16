@@ -3,17 +3,17 @@
 ///
 /// Une configuration décrit un appel d'API (méthode, URL, en-têtes, paramètres
 /// de requête, corps JSON) dont les valeurs viennent du repository de filtre
-/// (`{{q}}`) ou de l'environnement (`{{env.PROVIDER_TOKEN}}`, voir
-/// `provider_template.dart`), le chemin des lignes dans la réponse
-/// (`responsePath`) et les liaisons écrites par le provider (résultats,
-/// chargement, erreur). Elle est stockée dans `<repertoire>/providers/<id>.json`
-/// et exécutée par `HttpDataProvider`.
+/// (`{{q}}`), de l'environnement (`{{env.PROVIDER_TOKEN}}`) ou d'une
+/// datasource (`{{ds.key}}`, voir `provider_template.dart`), le chemin de la
+/// donnée dans la réponse (`responsePath`) et les liaisons écrites par le
+/// provider (résultats, chargement, erreur). Elle est stockée dans
+/// `<repertoire>/providers/<id>.json` et exécutée par `HttpDataProvider`.
 ///
 /// La lecture JSON est stricte (clés inconnues refusées) et la validation
 /// bloque les configurations dangereuses : hôte de l'URL calculé (un secret ne
 /// doit pas partir vers une destination variable), identifiants dans l'URL,
-/// en-têtes de protocole, corps sur un `GET`, tailles et profondeurs non
-/// bornées.
+/// en-têtes de protocole, corps sur un `GET` ou un `DELETE`, tailles et
+/// profondeurs non bornées.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -214,10 +214,16 @@ class HttpRequestTemplate {
   static const int maxValueLength = 4096;
 
   /// Méthodes HTTP prises en charge.
-  static const List<String> methods = ['GET', 'POST'];
+  static const List<String> methods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
-  /// Méthode HTTP : `GET` ou `POST`.
+  /// Méthodes qui acceptent un corps JSON.
+  static const Set<String> bodyMethods = {'POST', 'PUT', 'PATCH'};
+
+  /// Méthode HTTP : `GET`, `POST`, `PUT`, `PATCH` ou `DELETE`.
   final String method;
+
+  /// Vrai si la [method] accepte un corps JSON.
+  bool get acceptsBody => bodyMethods.contains(method);
 
   /// URL `http(s)` ; l'hôte est fixe, le reste peut contenir des `{{...}}`.
   final String url;
@@ -229,11 +235,12 @@ class HttpRequestTemplate {
   /// `{{...}}`. Ils l'emportent sur les paramètres automatiques.
   final Map<String, String> query;
 
-  /// Gabarit du corps JSON (`POST` seulement), ou `null`.
+  /// Gabarit du corps JSON (`POST`, `PUT` ou `PATCH` seulement), ou `null`.
   final Object? body;
 
-  /// Ajoute automatiquement les paramètres du filtre à la requête (query pour
-  /// `GET`, corps JSON pour `POST` sans [body]).
+  /// Ajoute automatiquement les paramètres du filtre (et ceux de tri et de
+  /// pagination d'une datasource) à la requête : query pour `GET` et
+  /// `DELETE`, corps JSON pour `POST`, `PUT` et `PATCH` sans [body].
   final bool autoParams;
 
   /// Durée maximale de l'échange, en millisecondes.
@@ -255,7 +262,7 @@ class HttpRequestTemplate {
   /// répétées par les paramètres automatiques.
   Set<String> get consumedFilterKeys => {
     for (final reference in references)
-      if (!reference.isEnv) reference.filterKey,
+      if (reference.isFilter) reference.filterKey,
   };
 
   /// Vérifie la méthode, l'URL, les en-têtes, les paramètres, le corps et le
@@ -263,15 +270,16 @@ class HttpRequestTemplate {
   void validate() {
     if (!methods.contains(method)) {
       throw FormatException(
-        'Méthode HTTP « $method » non prise en charge : GET ou POST.',
+        'Méthode HTTP « $method » non prise en charge : '
+        '${methods.join(', ')}.',
       );
     }
     _validateUrl();
     _validateHeaders();
     _validateQuery();
     if (body != null) {
-      if (method == 'GET') {
-        throw const FormatException('Un GET ne peut pas avoir de corps.');
+      if (!acceptsBody) {
+        throw FormatException('Un $method ne peut pas avoir de corps.');
       }
       try {
         providerBodyReferences(body);
@@ -464,8 +472,8 @@ class HttpProviderConfig {
   const HttpProviderConfig({
     required this.id,
     required this.label,
-    required this.target,
     required this.request,
+    this.target,
     this.filterRepositoryId,
     this.loading,
     this.error,
@@ -502,18 +510,19 @@ class HttpProviderConfig {
         label is! String ||
         (filter != null && filter is! String) ||
         (responsePath != null && responsePath is! String) ||
-        json['target'] == null ||
         json['request'] == null) {
       throw const FormatException(
-        'Provider invalide : type « http », id, target et request '
-        'obligatoires, textes attendus.',
+        'Provider invalide : type « http », id et request obligatoires, '
+        'textes attendus.',
       );
     }
     final result = HttpProviderConfig(
       id: id,
       label: label,
       filterRepositoryId: filter as String?,
-      target: JsonTextBinding.fromJson(json['target']),
+      target: json['target'] == null
+          ? null
+          : JsonTextBinding.fromJson(json['target']),
       loading: json['loading'] == null
           ? null
           : JsonTextBinding.fromJson(json['loading']),
@@ -539,8 +548,9 @@ class HttpProviderConfig {
   /// Repository qui porte les paramètres de recherche, ou `null`.
   final String? filterRepositoryId;
 
-  /// Tableau du repository qui reçoit les lignes.
-  final JsonTextBinding target;
+  /// Attribut du repository qui reçoit la donnée (tableau de lignes ou
+  /// objet), ou `null` si le provider n'écrit rien.
+  final JsonTextBinding? target;
 
   /// Booléen mis à `true` pendant la recherche, ou `null`.
   final JsonTextBinding? loading;
@@ -554,8 +564,8 @@ class HttpProviderConfig {
   /// Gabarit de la requête HTTP.
   final HttpRequestTemplate request;
 
-  /// Chemin (`data.items`) des lignes dans la réponse JSON, ou `null` pour la
-  /// racine.
+  /// Chemin (`data.items`) de la donnée dans la réponse JSON (tableau de
+  /// lignes, ou objet pour une entité), ou `null` pour la racine.
   final String? responsePath;
 
   /// Vérifie la définition commune, la requête, `responsePath` et la
@@ -574,7 +584,7 @@ class HttpProviderConfig {
     );
     request.validate();
     if (filterRepositoryId == null &&
-        request.references.any((reference) => !reference.isEnv)) {
+        request.references.any((reference) => reference.isFilter)) {
       throw const FormatException(
         'La requête lit le filtre ({{...}}) mais aucun repository de filtre '
         'n’est choisi.',
@@ -600,6 +610,7 @@ class HttpProviderConfig {
     String? filterRepositoryId,
     bool clearFilter = false,
     JsonTextBinding? target,
+    bool clearTarget = false,
     JsonTextBinding? loading,
     bool clearLoading = false,
     JsonTextBinding? error,
@@ -615,7 +626,7 @@ class HttpProviderConfig {
     filterRepositoryId: clearFilter
         ? null
         : (filterRepositoryId ?? this.filterRepositoryId),
-    target: target ?? this.target,
+    target: clearTarget ? null : (target ?? this.target),
     loading: clearLoading ? null : (loading ?? this.loading),
     error: clearError ? null : (error ?? this.error),
     autoSearch: clearAutoSearch ? null : (autoSearch ?? this.autoSearch),
@@ -633,7 +644,7 @@ class HttpProviderConfig {
       'label': label,
       'type': 'http',
       'filter': ?filterRepositoryId,
-      'target': target.toJson(),
+      'target': ?target?.toJson(),
       'loading': ?loading?.toJson(),
       'error': ?error?.toJson(),
       'autoSearch': ?autoSearch?.toJson(),
@@ -651,7 +662,7 @@ class HttpProviderConfig {
       if (label != id) 'label': label,
       'type': 'http',
       'filter': ?filterRepositoryId,
-      'target': target.toCompactJson(),
+      'target': ?target?.toCompactJson(),
       'loading': ?loading?.toCompactJson(),
       'error': ?error?.toCompactJson(),
       'autoSearch': ?autoSearch?.toCompactJson(),

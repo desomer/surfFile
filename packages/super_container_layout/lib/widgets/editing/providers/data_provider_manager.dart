@@ -3,7 +3,8 @@
 /// Boîte de dialogue de l'éditeur qui liste les providers du registre
 /// (`store.providers`), crée, modifie, teste et supprime les providers HTTP
 /// persistés dans `<dossier du store>/providers/`, affiche en lecture seule
-/// ceux définis par le code de l'application et lance leur recherche.
+/// ceux définis par le code de l'application, indique les datasources qui les
+/// utilisent et lance leur recherche.
 library;
 
 import 'dart:async' show unawaited;
@@ -13,6 +14,7 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../../models/datasources/datasource_config.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/providers/data_provider.dart';
 import '../../../services/providers/data_provider_registry.dart';
@@ -27,6 +29,11 @@ import '../../appearance/appearance_scope.dart';
 
 const _prettyJson = JsonEncoder.withIndent('  ');
 const _maxPreviewLength = 600;
+
+/// Méthodes testables depuis l'éditeur : les autres modifient les données du
+/// serveur, comme un provider utilisé par une datasource pour Create, Update
+/// ou Delete (test refusé quelle que soit sa méthode).
+const _testableMethods = {'GET', 'POST'};
 
 /// Boîte de dialogue de gestion des providers du [JsonRepositoryStore].
 class DataProviderManager extends StatefulWidget {
@@ -106,6 +113,7 @@ class _DataProviderManagerState extends State<DataProviderManager> {
     final registry = _registry;
     if (registry == null) return;
     registry.addListener(_registryChanged);
+    widget.store?.datasources.addListener(_registryChanged);
     unawaited(
       _run(() async {
         await registry.ensureLoaded();
@@ -125,6 +133,7 @@ class _DataProviderManagerState extends State<DataProviderManager> {
   @override
   void dispose() {
     _registry?.removeListener(_registryChanged);
+    widget.store?.datasources.removeListener(_registryChanged);
     super.dispose();
   }
 
@@ -261,6 +270,18 @@ class _DataProviderManagerState extends State<DataProviderManager> {
       });
       return;
     }
+    final datasource = widget.store?.datasources
+        .datasourcesUsingProvider(id)
+        .firstOrNull;
+    if (datasource != null) {
+      setState(() {
+        _notice = null;
+        _error =
+            'Impossible de supprimer « $id » : ce provider est utilisé par '
+            'la datasource « ${datasource.label} ».';
+      });
+      return;
+    }
     _confirming = true;
     final label = registry.provider(id)?.label ?? id;
     final confirmed = await showEditorDialog<bool>(
@@ -307,13 +328,29 @@ class _DataProviderManagerState extends State<DataProviderManager> {
       );
       return;
     }
+    final method = config.request.method;
+    final mutation = _mutationUsing(config.id);
+    if (!_testableMethods.contains(method) || mutation != null) {
+      setState(
+        () => _test = (
+          ok: false,
+          text: mutation != null
+              ? 'Test désactivé : ce provider est l’opération '
+                    '${mutation.operation.title} de la datasource '
+                    '« ${mutation.label} » et modifierait les données.'
+              : 'Test désactivé : une requête $method modifie les données. '
+                    'Lancez-la depuis une datasource.',
+        ),
+      );
+      return;
+    }
     setState(() {
       _testing = true;
       _test = null;
     });
     try {
-      final rows = await registry.preview(config);
-      if (mounted) setState(() => _test = (ok: true, text: _describe(rows)));
+      final result = await registry.previewResult(config);
+      if (mounted) setState(() => _test = (ok: true, text: _describe(result)));
     } on DataProviderException catch (error) {
       if (mounted) setState(() => _test = (ok: false, text: error.message));
     } finally {
@@ -321,16 +358,41 @@ class _DataProviderManagerState extends State<DataProviderManager> {
     }
   }
 
-  static String _describe(List<Object?> rows) {
+  /// Première opération de mutation (Create, Update, Delete) d'une
+  /// datasource servie par le provider [id], ou `null`.
+  ({DatasourceOperation operation, String label})? _mutationUsing(String id) {
+    final datasources =
+        widget.store?.datasources.datasourcesUsingProvider(id) ??
+        const <DatasourceConfig>[];
+    for (final config in datasources) {
+      for (final operation in DatasourceOperation.values) {
+        if (operation.isMutation && config.providerOf(operation) == id) {
+          return (operation: operation, label: config.label);
+        }
+      }
+    }
+    return null;
+  }
+
+  static String _excerpt(Object? value) {
+    final text = _prettyJson.convert(value);
+    return text.length > _maxPreviewLength
+        ? '${text.substring(0, _maxPreviewLength)}…'
+        : text;
+  }
+
+  static String _describe(DataProviderResult result) {
+    final rows = result.rows;
+    if (rows == null) {
+      return result.data == null
+          ? 'Réponse vide.'
+          : 'Objet reçu :\n${_excerpt(result.data)}';
+    }
     final buffer = StringBuffer('${rows.length} ligne(s) reçue(s).');
     if (rows.isNotEmpty) {
-      var first = _prettyJson.convert(rows.first);
-      if (first.length > _maxPreviewLength) {
-        first = '${first.substring(0, _maxPreviewLength)}…';
-      }
       buffer
         ..write(' Première ligne :\n')
-        ..write(first);
+        ..write(_excerpt(rows.first));
     }
     return buffer.toString();
   }
@@ -442,24 +504,40 @@ class _DataProviderManagerState extends State<DataProviderManager> {
       ValueListenableBuilder<DataProviderStatus>(
         valueListenable: registry.statusOf(id),
         builder: (context, status, _) {
+          final hasTarget = registry.provider(id)?.target != null;
           final button = TextButton.icon(
             key: const ValueKey('provider-search'),
-            onPressed: _busy || _touched || status.isLoading
+            onPressed: _busy || _touched || !hasTarget || status.isLoading
                 ? null
                 : () => unawaited(_search(id)),
             icon: const Icon(Icons.search),
             label: const Text('Rechercher'),
           );
-          return _touched
-              ? Tooltip(
-                  message:
-                      'Enregistrez les modifications avant de lancer la '
-                      'recherche.',
-                  child: button,
-                )
-              : button;
+          final reason = _touched
+              ? 'Enregistrez les modifications avant de lancer la recherche.'
+              : !hasTarget
+              ? 'Sans repository de résultats, ce provider ne peut être '
+                    'lancé que par une datasource.'
+              : null;
+          return reason == null
+              ? button
+              : Tooltip(message: reason, child: button);
         },
       );
+
+  Widget _usages(String id) {
+    final datasources = widget.store?.datasources.datasourcesUsingProvider(id);
+    if (datasources == null || datasources.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final owner = datasources.length == 1 ? 'la datasource' : 'les datasources';
+    final labels = datasources.map((config) => config.label).join(', ');
+    return Text(
+      'Utilisé par $owner : $labels.',
+      key: const ValueKey('provider-datasources'),
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
 
   Widget _status(DataProviderRegistry registry, String id) =>
       ValueListenableBuilder<DataProviderStatus>(
@@ -598,6 +676,7 @@ class _DataProviderManagerState extends State<DataProviderManager> {
           ],
         ),
         if (!_creating) _status(registry, id!),
+        if (!_creating) _usages(id!),
         if (_test case final test?) _testResult(test),
         const SizedBox(height: 8),
         Expanded(

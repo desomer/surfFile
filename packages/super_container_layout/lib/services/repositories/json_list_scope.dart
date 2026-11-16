@@ -65,6 +65,7 @@ class JsonListScope extends InheritedWidget {
   const JsonListScope({
     required this.repositoryId,
     required this.indices,
+    this.arrayTemplate,
     this.nodePath,
     this.treeTemplatePath,
     this.selected = false,
@@ -78,6 +79,12 @@ class JsonListScope extends InheritedWidget {
 
   /// Indices des lignes englobantes, liste externe d'abord.
   final List<int> indices;
+
+  /// Chemin modèle canonique du tableau de la ligne la plus proche
+  /// (`clients` ou `clients[?].commandes`), ou `null` s'il n'est pas connu.
+  /// Une datasource n'utilise la ligne courante comme entité que si ce
+  /// tableau est exactement celui de ses résultats.
+  final String? arrayTemplate;
 
   /// Chemin concret du nœud courant lorsqu'il s'agit d'une ligne de
   /// `SuperTreeView` (par exemple `nodes[0].children[1]`).
@@ -266,6 +273,7 @@ class JsonListScope extends InheritedWidget {
   @override
   bool updateShouldNotify(JsonListScope oldWidget) =>
       repositoryId != oldWidget.repositoryId ||
+      arrayTemplate != oldWidget.arrayTemplate ||
       nodePath != oldWidget.nodePath ||
       treeTemplatePath != oldWidget.treeTemplatePath ||
       selected != oldWidget.selected ||

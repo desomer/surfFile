@@ -5,10 +5,16 @@
 /// * référence les providers du code (`CallbackDataProvider`, [register]) et
 ///   ceux créés dans l'éditeur (`HttpProviderConfig`), persistés dans
 ///   `<dossier du store>/providers/<id>.json` ;
-/// * orchestre une recherche ([search]) : lecture des paramètres dans le
-///   repository de filtre, appel du provider, écriture des lignes dans le
-///   repository cible et des indicateurs de chargement et d'erreur ;
-/// * relance la recherche quand les paramètres changent (`ProviderAutoSearch`).
+/// * orchestre une recherche ([DataProviderRegistry.search]) : lecture des
+///   paramètres dans le repository de filtre, appel du provider, écriture des
+///   lignes dans le repository cible et des indicateurs de chargement et
+///   d'erreur ;
+/// * expose la même orchestration pour les opérations d'une datasource
+///   ([DataProviderRegistry.execute]) : requête complète, donnée quelconque
+///   et traitement du résultat par l'appelant ;
+/// * relance la recherche quand les paramètres changent (`ProviderAutoSearch`),
+///   ou la confie à la datasource qui pilote le provider
+///   ([DataProviderCoordinator]).
 ///
 /// Les providers ne sont pas stockés dans l'`Appearance` : seule l'action
 /// `searchProvider` y référence leur identifiant.
@@ -17,7 +23,6 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
@@ -29,12 +34,46 @@ import '../../theme/appearance.dart';
 import '../repositories/json_repository_store.dart';
 import 'data_provider_http_transport.dart';
 import 'http_data_provider.dart';
+import 'json_definition_folder.dart';
 
 /// Nombre maximal de providers lus dans le dossier de l'éditeur.
 const maxPersistedDataProviders = 200;
 
-const _maxFileBytes = 256 * 1024;
 const _maxMessageLength = 300;
+
+/// Traitement du résultat d'une exécution ([DataProviderRegistry.execute]),
+/// appelé après l'écriture éventuelle de la cible du provider.
+///
+/// [isCurrent] devient faux si l'exécution a été remplacée ou si le registre
+/// a été libéré : aucune écriture ne doit alors avoir lieu. Retourne le
+/// nombre de lignes à publier dans l'état, ou `null` pour garder celui
+/// calculé par le registre. Une [DataProviderException] est affichée telle
+/// quelle ; toute autre erreur est préfixée par « Écriture des résultats
+/// impossible ».
+typedef DataProviderResultHandler = Future<int?> Function(
+  DataProvider provider,
+  DataProviderResult result,
+  bool Function() isCurrent,
+);
+
+/// Coordination des providers par les datasources (`DatasourceRegistry`).
+abstract interface class DataProviderCoordinator {
+  /// Charge les définitions coordonnées ; attendu avant les recherches
+  /// `onStart` et la suppression d'un provider.
+  Future<void> ensureLoaded();
+
+  /// Liaisons écrites par une datasource dans le filtre du provider
+  /// [providerId] (état de pagination) : retirées de ses paramètres.
+  Iterable<JsonTextBinding> excludedBindingsOf(String providerId);
+
+  /// Lance la recherche automatique du provider [providerId] si une
+  /// datasource la pilote (retour à la première page) ; retourne vrai alors.
+  bool runAutoSearch(String providerId);
+
+  /// Identifiant de la première datasource qui utilise [providerId], ou
+  /// `null`.
+  String? datasourceUsing(String providerId);
+}
 
 /// Message affichable d'une erreur ; les détails inattendus sont tronqués.
 String _messageOf(Object error) {
@@ -62,6 +101,18 @@ class DataProviderRegistry extends ChangeNotifier {
   /// Crée le registre de [store] ; il observe ses modifications pour la
   /// recherche automatique. Préférez `store.providers`.
   DataProviderRegistry(this.store) {
+    _folder = JsonDefinitionFolder<HttpProviderConfig>(
+      directory: () => Directory(
+        '${store.directory.path}${Platform.pathSeparator}providers',
+      ),
+      ofOne: 'du provider',
+      plural: 'providers',
+      maxFiles: maxPersistedDataProviders,
+      decode: HttpProviderConfig.fromJson,
+      encode: (config) => config.toJson(),
+      idOf: (config) => config.id,
+      isValidId: isValidDataProviderId,
+    );
     store.addListener(_onStoreChanged);
   }
 
@@ -75,13 +126,16 @@ class DataProviderRegistry extends ChangeNotifier {
   /// [defaultProviderEnv].
   ProviderEnvResolver? env;
 
+  /// Datasources qui pilotent certains providers (installé par le store).
+  DataProviderCoordinator? coordinator;
+
+  late final JsonDefinitionFolder<HttpProviderConfig> _folder;
   final _code = <String, DataProvider>{};
   final _configs = <String, HttpProviderConfig>{};
   final _statuses = <String, ValueNotifier<DataProviderStatus>>{};
   final _runs = <String, int>{};
   final _auto = <String, _AutoSearchState>{};
   Future<void>? _loading;
-  Future<void> _fileQueue = Future.value();
   bool _started = false;
   bool _disposed = false;
 
@@ -168,7 +222,7 @@ class DataProviderRegistry extends ChangeNotifier {
     _definitionChanged(provider.id);
     notifyListeners();
     if (_started && (provider.autoSearch?.onStart ?? false)) {
-      unawaited(search(provider.id, reportErrors: false));
+      _autoSearch(provider.id);
     }
   }
 
@@ -194,13 +248,24 @@ class DataProviderRegistry extends ChangeNotifier {
   Future<void> _loadFirst() async {
     await _reload();
     await _resetStaleLoading();
+    try {
+      await coordinator?.ensureLoaded();
+    } on Object {
+      // Les problèmes des datasources sont signalés par leur registre.
+    }
     if (_disposed) return;
     _started = true;
     for (final provider in _all().toList()) {
-      if (provider.autoSearch?.onStart ?? false) {
-        unawaited(search(provider.id, reportErrors: false));
-      }
+      if (provider.autoSearch?.onStart ?? false) _autoSearch(provider.id);
     }
+  }
+
+  /// Recherche automatique : confiée à la datasource qui pilote le provider,
+  /// sinon recherche simple.
+  void _autoSearch(String id) {
+    if (_disposed) return;
+    if (coordinator?.runAutoSearch(id) ?? false) return;
+    unawaited(search(id, reportErrors: false));
   }
 
   Future<void> _resetStaleLoading() async {
@@ -239,8 +304,8 @@ class DataProviderRegistry extends ChangeNotifier {
       );
     }
     await ensureLoaded();
-    await _serial(() async {
-      await _write(config);
+    await _folder.serial(() async {
+      await _folder.write(config);
       _configs[config.id] = config;
     });
     _definitionChanged(config.id);
@@ -249,8 +314,9 @@ class DataProviderRegistry extends ChangeNotifier {
 
   /// Supprime le provider de l'éditeur [id].
   ///
-  /// Refuse un provider du code et, si [appearance] est fournie, un provider
-  /// encore lancé par un comportement.
+  /// Refuse un provider du code, un provider utilisé par une datasource et,
+  /// si [appearance] est fournie, un provider encore lancé par un
+  /// comportement.
   Future<void> delete(String id, {Appearance? appearance}) async {
     if (_code.containsKey(id)) {
       throw FormatException(
@@ -265,18 +331,16 @@ class DataProviderRegistry extends ChangeNotifier {
       );
     }
     await ensureLoaded();
-    await _serial(() async {
+    final datasource = coordinator?.datasourceUsing(id);
+    if (datasource != null) {
+      throw FormatException(
+        'Impossible de supprimer « $id » : '
+        'ce provider est utilisé par la datasource « $datasource ».',
+      );
+    }
+    await _folder.serial(() async {
       if (!_configs.containsKey(id)) return;
-      final file = _fileOf(id);
-      final type = await FileSystemEntity.type(file.path, followLinks: false);
-      if (type == FileSystemEntityType.file) {
-        await file.delete();
-      } else if (type != FileSystemEntityType.notFound) {
-        throw FileSystemException(
-          'Fichier du provider invalide ou lien refusé.',
-          file.path,
-        );
-      }
+      await _folder.delete(id);
       _configs.remove(id);
     });
     _definitionChanged(id);
@@ -294,6 +358,52 @@ class DataProviderRegistry extends ChangeNotifier {
     } on FormatException catch (error) {
       throw DataProviderException(error.message);
     }
+    return provider.fetch(await _previewParameters(provider));
+  }
+
+  /// Comme [preview], mais retourne la donnée brute (tableau de lignes ou
+  /// objet d'une entité) sans exiger de liste.
+  ///
+  /// Lève une [DataProviderException] au message affichable.
+  Future<DataProviderResult> previewResult(HttpProviderConfig config) async {
+    final provider = _httpProvider(config);
+    try {
+      provider.validate();
+    } on FormatException catch (error) {
+      throw DataProviderException(error.message);
+    }
+    return provider.execute(
+      DataProviderRequest(parameters: await _previewParameters(provider)),
+    );
+  }
+
+  /// Exécute le provider enregistré [id] sans rien écrire dans les
+  /// repositories ; [request] complète les paramètres du filtre (aperçu de la
+  /// recherche d'une datasource).
+  ///
+  /// Lève une [DataProviderException] au message affichable.
+  Future<DataProviderResult> previewExecute(
+    String id, {
+    DataProviderRequest Function(Map<String, Object?> parameters)? request,
+    Iterable<JsonTextBinding> excludeParameters = const [],
+  }) async {
+    final definition = provider(id);
+    if (definition == null) {
+      throw DataProviderException('Provider « $id » introuvable.');
+    }
+    final parameters = await _previewParameters(
+      definition,
+      exclude: excludeParameters,
+    );
+    return definition.execute(
+      request?.call(parameters) ?? DataProviderRequest(parameters: parameters),
+    );
+  }
+
+  Future<Map<String, Object?>> _previewParameters(
+    DataProvider provider, {
+    Iterable<JsonTextBinding> exclude = const [],
+  }) async {
     final filterId = provider.filterRepositoryId;
     Object? filter;
     if (filterId != null) {
@@ -306,21 +416,98 @@ class DataProviderRegistry extends ChangeNotifier {
         );
       }
     }
-    return provider.fetch(provider.parametersOf(filter));
+    return _parametersOf(provider, filter, exclude);
   }
+
+  /// Paramètres de [provider] lus dans [filter], sans les liaisons écrites
+  /// par une datasource ni [exclude].
+  Map<String, Object?> _parametersOf(
+    DataProvider provider,
+    Object? filter, [
+    Iterable<JsonTextBinding> exclude = const [],
+  ]) => provider.parametersOf(
+    filter,
+    exclude: [...?coordinator?.excludedBindingsOf(provider.id), ...exclude],
+  );
 
   /// Lance la recherche du provider [id] et retourne son état final.
   ///
   /// Les saisies en attente sont d'abord enregistrées, puis les paramètres lus
   /// dans le repository de filtre, le provider appelé, les lignes écrites dans
   /// la cible et les indicateurs mis à jour. Une recherche plus récente du même
-  /// provider remplace celle en cours, dont le résultat est ignoré.
+  /// provider remplace celle en cours, dont le résultat est ignoré. Un
+  /// provider sans cible ne peut être lancé que par une datasource.
   ///
   /// Ne lève jamais : un échec devient l'état `error`, l'indicateur d'erreur
   /// du provider et, si [reportErrors] est vrai, une erreur du store.
   Future<DataProviderStatus> search(
     String id, {
     bool reportErrors = true,
+  }) async {
+    if (_disposed) return DataProviderStatus.idle;
+    if (provider(id) case final definition? when definition.target == null) {
+      final message =
+          'Le provider « $id » n’a pas de tableau de résultats : il ne peut '
+          'être lancé que par une datasource.';
+      if (reportErrors) store.reportBindingError(message);
+      return DataProviderStatus(
+        phase: DataProviderPhase.error,
+        message: message,
+      );
+    }
+    return _run(
+      id,
+      call: (definition, parameters) async =>
+          DataProviderResult.rows(await definition.fetch(parameters)),
+      reportErrors: reportErrors,
+    );
+  }
+
+  /// Exécute le provider [id] pour une opération de datasource et retourne
+  /// son état final.
+  ///
+  /// Même orchestration que [search] (saisies enregistrées, indicateurs,
+  /// exécution plus récente prioritaire), mais [request] construit la requête
+  /// complète à partir des paramètres du filtre (sans [excludeParameters]) et
+  /// [DataProvider.execute] est appelé. Si [writeTarget] est vrai, la donnée
+  /// retournée est écrite dans la cible du provider (liste remplacée, objet
+  /// écrit, rien si `null`), puis [onResult] traite le résultat.
+  ///
+  /// Ne lève jamais : un échec (y compris de [request] ou [onResult]) devient
+  /// l'état `error`.
+  Future<DataProviderStatus> execute(
+    String id, {
+    DataProviderRequest Function(Map<String, Object?> parameters)? request,
+    DataProviderResultHandler? onResult,
+    bool writeTarget = true,
+    Iterable<JsonTextBinding> excludeParameters = const [],
+    bool reportErrors = true,
+  }) {
+    if (_disposed) return Future.value(DataProviderStatus.idle);
+    return _run(
+      id,
+      call: (definition, parameters) => definition.execute(
+        request?.call(parameters) ??
+            DataProviderRequest(parameters: parameters),
+      ),
+      onResult: onResult,
+      writeTarget: writeTarget,
+      exclude: excludeParameters,
+      reportErrors: reportErrors,
+    );
+  }
+
+  Future<DataProviderStatus> _run(
+    String id, {
+    required Future<DataProviderResult> Function(
+      DataProvider provider,
+      Map<String, Object?> parameters,
+    )
+    call,
+    required bool reportErrors,
+    DataProviderResultHandler? onResult,
+    bool writeTarget = true,
+    Iterable<JsonTextBinding> exclude = const [],
   }) async {
     if (_disposed) return DataProviderStatus.idle;
     final definition = provider(id);
@@ -343,6 +530,7 @@ class DataProviderRegistry extends ChangeNotifier {
     );
 
     var stage = '';
+    var handling = false;
     final flagIssues = <String>[];
     void recordFlagIssue(String? issue) {
       if (issue != null && !flagIssues.contains(issue)) flagIssues.add(issue);
@@ -359,21 +547,23 @@ class DataProviderRegistry extends ChangeNotifier {
       final filter = filterId == null
           ? null
           : await store.readDocument(filterId);
-      final parameters = definition.parametersOf(filter);
+      final parameters = _parametersOf(definition, filter, exclude);
       if (!isCurrent()) return _statusOf(id).value;
 
       stage = '';
-      final rows = await definition.fetch(parameters);
+      final result = await call(definition, parameters);
       if (!isCurrent()) return _statusOf(id).value;
 
       stage = 'Écriture des résultats impossible : ';
-      await store.replaceArray(
-        definition.target.repositoryId!,
-        definition.target.path,
-        rows,
-        componentId: 'provider:$id',
-      );
+      if (writeTarget) await _writeTarget(definition, result);
       if (!isCurrent()) return _statusOf(id).value;
+      var rowCount = result.rows?.length;
+      if (onResult != null) {
+        handling = true;
+        rowCount = await onResult(definition, result, isCurrent) ?? rowCount;
+        handling = false;
+        if (!isCurrent()) return _statusOf(id).value;
+      }
 
       stage = '';
       recordFlagIssue(await _writeLoading(definition, false, isCurrent));
@@ -381,7 +571,7 @@ class DataProviderRegistry extends ChangeNotifier {
       final status = DataProviderStatus(
         phase: DataProviderPhase.success,
         run: run,
-        rowCount: rows.length,
+        rowCount: rowCount,
       );
       _publish(id, status);
       if (flagIssues.isNotEmpty && reportErrors) {
@@ -390,7 +580,8 @@ class DataProviderRegistry extends ChangeNotifier {
       return status;
     } on Object catch (error) {
       if (!isCurrent()) return _statusOf(id).value;
-      final message = '$stage${_messageOf(error)}';
+      final prefix = handling && error is DataProviderException ? '' : stage;
+      final message = '$prefix${_messageOf(error)}';
       recordFlagIssue(await _writeLoading(definition, false, isCurrent));
       recordFlagIssue(await _writeError(definition, message, isCurrent));
       if (!isCurrent()) return _statusOf(id).value;
@@ -403,6 +594,34 @@ class DataProviderRegistry extends ChangeNotifier {
       _publish(id, status);
       if (reportErrors) store.reportBindingError(surfacedMessage);
       return status;
+    }
+  }
+
+  /// Écrit la donnée de [result] dans la cible de [provider] : une liste
+  /// remplace le tableau, un objet ou une valeur remplace l'attribut ; rien
+  /// n'est écrit sans cible ni donnée.
+  Future<void> _writeTarget(
+    DataProvider provider,
+    DataProviderResult result,
+  ) async {
+    final target = provider.target;
+    final data = result.data;
+    if (target == null || data == null) return;
+    final componentId = 'provider:${provider.id}';
+    if (data is List) {
+      await store.replaceArray(
+        target.repositoryId!,
+        target.path,
+        List<Object?>.of(data),
+        componentId: componentId,
+      );
+    } else {
+      await store.replaceValue(
+        target.repositoryId!,
+        target.path,
+        data,
+        componentId: componentId,
+      );
     }
   }
 
@@ -479,6 +698,15 @@ class DataProviderRegistry extends ChangeNotifier {
     return failure;
   }
 
+  /// Recalcule la référence des recherches automatiques quand la
+  /// coordination des datasources change (liaisons exclues des paramètres).
+  void coordinationChanged() {
+    if (_disposed) return;
+    for (final provider in _all().toList()) {
+      if (provider.autoSearch != null) _definitionChanged(provider.id);
+    }
+  }
+
   void _definitionChanged(String id) {
     _auto.remove(id)?.timer?.cancel();
     final definition = provider(id);
@@ -504,9 +732,9 @@ class DataProviderRegistry extends ChangeNotifier {
     }
   }
 
-  static String? _signature(DataProvider provider, Object? document) {
+  String? _signature(DataProvider provider, Object? document) {
     try {
-      return jsonEncode(provider.parametersOf(document));
+      return jsonEncode(_parametersOf(provider, document));
     } on Object {
       return null;
     }
@@ -529,8 +757,9 @@ class DataProviderRegistry extends ChangeNotifier {
 
   /// Arme la recherche différée quand les paramètres ont changé.
   ///
-  /// Les écritures du provider lui-même (cible, indicateurs) sont retirées des
-  /// paramètres : elles ne relancent pas la recherche.
+  /// Les écritures du provider lui-même (cible, indicateurs) et de sa
+  /// datasource (état de pagination) sont retirées des paramètres : elles ne
+  /// relancent pas la recherche.
   void _observe(DataProvider provider, _AutoSearchState state, Object? root) {
     if (identical(root, state.root)) return;
     state.root = root;
@@ -545,57 +774,13 @@ class DataProviderRegistry extends ChangeNotifier {
       Duration(milliseconds: provider.autoSearch!.debounceMs),
       () {
         state.timer = null;
-        if (!_disposed) unawaited(search(id, reportErrors: false));
+        _autoSearch(id);
       },
     );
   }
 
-  Directory get _folder =>
-      Directory('${store.directory.path}${Platform.pathSeparator}providers');
-
-  File _fileOf(String id) =>
-      File('${_folder.path}${Platform.pathSeparator}$id.json');
-
-  /// Exécute [action] après les opérations de fichier précédentes.
-  Future<T> _serial<T>(Future<T> Function() action) {
-    final result = Completer<T>();
-    _fileQueue = _fileQueue.then((_) async {
-      try {
-        result.complete(await action());
-      } catch (error, stack) {
-        result.completeError(error, stack);
-      }
-    });
-    return result.future;
-  }
-
-  Future<void> _reload() => _serial(() async {
-    final loaded = <String, HttpProviderConfig>{};
-    final problems = <String>[];
-    final folder = _folder;
-    try {
-      if (await FileSystemEntity.type(folder.path, followLinks: false) ==
-          FileSystemEntityType.directory) {
-        await for (final entity in folder.list(followLinks: false)) {
-          if (entity is! File || !entity.path.endsWith('.json')) continue;
-          final name = entity.uri.pathSegments.last;
-          final id = name.substring(0, name.length - '.json'.length);
-          if (loaded.length >= maxPersistedDataProviders) {
-            problems.add(
-              'au plus $maxPersistedDataProviders providers sont chargés',
-            );
-            break;
-          }
-          try {
-            loaded[id] = await _read(entity, id);
-          } on Object catch (error) {
-            problems.add('« $id » : ${_messageOf(error)}');
-          }
-        }
-      }
-    } on FileSystemException catch (error) {
-      problems.add('dossier illisible : ${error.message}');
-    }
+  Future<void> _reload() => _folder.serial(() async {
+    final (:loaded, :problems) = await _folder.readAll(describe: _messageOf);
     if (_disposed) return;
     final previous = Map<String, HttpProviderConfig>.of(_configs);
     _configs
@@ -609,71 +794,6 @@ class DataProviderRegistry extends ChangeNotifier {
       store.reportBindingError('Providers ignorés — ${problems.join(' ; ')}');
     }
   });
-
-  Future<HttpProviderConfig> _read(File file, String id) async {
-    if (!isValidDataProviderId(id)) {
-      throw const FormatException(
-        'le nom du fichier doit utiliser a-z, 0-9 et _ (32 caractères au plus).',
-      );
-    }
-    if (await file.length() > _maxFileBytes) {
-      throw const FormatException('fichier trop volumineux.');
-    }
-    final Object? json;
-    try {
-      json = jsonDecode(await file.readAsString());
-    } on FormatException {
-      throw const FormatException('JSON invalide.');
-    }
-    final config = HttpProviderConfig.fromJson(json);
-    if (config.id != id) {
-      throw const FormatException('l’identifiant doit être celui du fichier.');
-    }
-    return config;
-  }
-
-  Future<void> _write(HttpProviderConfig config) async {
-    final folder = _folder;
-    final folderType = await FileSystemEntity.type(
-      folder.path,
-      followLinks: false,
-    );
-    if (folderType == FileSystemEntityType.notFound) {
-      await folder.create(recursive: true);
-    } else if (folderType != FileSystemEntityType.directory) {
-      throw FileSystemException(
-        'Dossier des providers invalide ou lien refusé.',
-        folder.path,
-      );
-    }
-    final file = _fileOf(config.id);
-    final type = await FileSystemEntity.type(file.path, followLinks: false);
-    if (type != FileSystemEntityType.notFound &&
-        type != FileSystemEntityType.file) {
-      throw FileSystemException(
-        'Fichier du provider invalide ou lien refusé.',
-        file.path,
-      );
-    }
-    final text =
-        '${const JsonEncoder.withIndent('  ').convert(config.toJson())}\n';
-    final random = Random.secure();
-    final suffix = List.generate(
-      8,
-      (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-    ).join();
-    final temporary = File('${file.path}.$suffix.tmp');
-    await temporary.create(exclusive: true);
-    try {
-      await temporary.writeAsString(text, flush: true);
-      await temporary.rename(file.path);
-    } finally {
-      if (await FileSystemEntity.type(temporary.path, followLinks: false) ==
-          FileSystemEntityType.file) {
-        await temporary.delete();
-      }
-    }
-  }
 
   @override
   void dispose() {

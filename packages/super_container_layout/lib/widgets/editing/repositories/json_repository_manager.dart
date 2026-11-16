@@ -13,6 +13,7 @@ import '../../../theme/appearance.dart';
 import '../dialogs/editor_dialog.dart';
 import '../dialogs/editor_dialog_header.dart';
 import '../overlay/editor_zoom.dart';
+import '../datasources/datasource_manager.dart';
 import '../providers/data_provider_manager.dart';
 import 'floating_repository_editor.dart';
 import '../../appearance/appearance_scope.dart';
@@ -433,6 +434,9 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
   Future<void> _openProviders() =>
       DataProviderManager.show(context, store: _store);
 
+  Future<void> _openDatasources() =>
+      DatasourceManager.show(context, store: _store);
+
   Widget _repositories() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -558,6 +562,18 @@ class _JsonRepositoryManagerState extends State<JsonRepositoryManager> {
             ),
             onPressed: _busy || _store == null ? null : _openProviders,
             icon: const Icon(Icons.cloud_sync_outlined),
+          ),
+          IconButton(
+            key: const ValueKey('repository-datasources'),
+            tooltip: 'Datasources (providers SCRUD d’une même notion)',
+            constraints: const BoxConstraints.tightFor(width: 32, height: 28),
+            padding: EdgeInsets.zero,
+            iconSize: 20,
+            style: IconButton.styleFrom(
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            onPressed: _busy || _store == null ? null : _openDatasources,
+            icon: const Icon(Icons.dataset_outlined),
           ),
         ],
       ),

@@ -166,6 +166,187 @@ void main() {
       expect(appearance.usesProvider('autre'), isFalse);
     });
 
+    test('DatasourceAction serialization, validation and codegen', () {
+      const sort = ComponentBehavior(
+        id: 'b-sort',
+        trigger: BehaviorTrigger.click,
+        action: DatasourceAction(
+          datasourceId: 'clients',
+          command: DatasourceCommand.sort,
+          field: 'nom',
+          direction: DatasourceSortDirection.desc,
+        ),
+      );
+      expect(sort.toJson()['action'], {
+        'type': 'datasource',
+        'datasourceId': 'clients',
+        'command': 'sort',
+        'field': 'nom',
+        'direction': 'desc',
+      });
+      expect(ComponentBehavior.fromJson(sort.toJson()), sort);
+      expect(
+        ComponentBehavior.fromJson(
+          Map<String, dynamic>.from(sort.toCompactJson()),
+        ),
+        sort,
+      );
+      expect(
+        BehaviorActionCatalog.decode({
+          'type': 'datasource',
+          'datasourceId': 'clients',
+        }),
+        const DatasourceAction(datasourceId: 'clients'),
+      );
+      expect(BehaviorCatalog.items, contains(BehaviorCatalog.datasource));
+
+      for (final action in [
+        {'type': 'datasource', 'datasourceId': 'Clients'},
+        {'type': 'datasource', 'datasourceId': 'clients', 'command': 'x'},
+        {'type': 'datasource', 'datasourceId': 'clients', 'command': 'sort'},
+        {'type': 'datasource', 'datasourceId': 'clients', 'field': 'nom'},
+        {
+          'type': 'datasource',
+          'datasourceId': 'clients',
+          'command': 'sort',
+          'field': 'nom',
+          'direction': 'up',
+        },
+        {'type': 'datasource', 'datasourceId': 'clients', 'url': 'x'},
+      ]) {
+        expect(
+          () => BehaviorActionCatalog.decode(action),
+          throwsFormatException,
+          reason: '$action',
+        );
+      }
+      expect(
+        () => const ComponentBehavior(
+          id: 'b-hover',
+          trigger: BehaviorTrigger.hover,
+          action: DatasourceAction(datasourceId: 'clients'),
+        ).validate(),
+        throwsFormatException,
+      );
+
+      final appearance = Appearance(
+        behaviors: {
+          'button': [sort],
+        },
+      );
+      expect(appearance.usesDatasource('clients'), isTrue);
+      expect(appearance.usesDatasource('autre'), isFalse);
+
+      final codegen = DartCodegenContext(
+        appearance: Appearance(),
+        registry: Registry(),
+      );
+      final code = codegen.formatBehaviorAction(sort.action);
+      expect(code, contains('const DatasourceAction('));
+      expect(code, contains("datasourceId: 'clients'"));
+      expect(code, contains('command: DatasourceCommand.sort'));
+      expect(code, contains("field: 'nom'"));
+      expect(code, contains('direction: DatasourceSortDirection.desc'));
+      expect(
+        codegen.formatBehaviorAction(
+          const DatasourceAction(datasourceId: 'clients'),
+        ),
+        isNot(contains('command:')),
+      );
+    });
+
+    testWidgets('DatasourceAction runs the command with the row scope', (
+      tester,
+    ) async {
+      final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('datasource-action-'),
+      );
+      final store = JsonRepositoryStore(directory!);
+      addTearDown(() async {
+        store.dispose();
+        await tester.runAsync(() => directory.delete(recursive: true));
+      });
+      store.registerRepository(
+        RepositoryImpl(
+          id: 'clients',
+          json: {
+            'rows': [
+              {'id': 1, 'nom': 'Dupont'},
+              {'id': 2, 'nom': 'Martin'},
+            ],
+          },
+        ),
+      );
+      const rows = JsonTextBinding(repositoryId: 'clients', path: 'rows');
+      final deleted = <Object?>[];
+      store.providers.register(
+        CallbackDataProvider(
+          id: 'clients_search',
+          target: rows,
+          callback: (_) async => const [],
+        ),
+      );
+      store.providers.register(
+        CallbackDataProvider(
+          id: 'clients_delete',
+          onExecute: (request) async {
+            deleted.add(request.context['key']);
+            return const DataProviderResult();
+          },
+        ),
+      );
+      store.datasources.register(
+        const DatasourceConfig(
+          id: 'clients',
+          label: 'Clients',
+          keyPath: 'id',
+          search: DatasourceSearchConfig(provider: 'clients_search'),
+          delete: DatasourceEntityConfig(provider: 'clients_delete'),
+        ),
+      );
+      late BuildContext context;
+      await tester.pumpWidget(
+        JsonRepositoryScope(
+          store: store,
+          child: JsonListScope(
+            repositoryId: 'clients',
+            indices: const [1],
+            arrayTemplate: 'rows',
+            child: Builder(
+              builder: (inner) {
+                context = inner;
+                return const SizedBox();
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.runAsync(
+        () => const DatasourceAction(
+          datasourceId: 'clients',
+          command: DatasourceCommand.delete,
+        ).execute(context),
+      );
+      final status = store.datasources.stateOf('clients');
+      for (
+        var i = 0;
+        i < 20 && (deleted.isEmpty || status.value.isLoading);
+        i++
+      ) {
+        await tester.pump();
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+
+      expect(deleted, [2]);
+      expect(status.value.phase, DataProviderPhase.success);
+      expect(await tester.runAsync(() => store.readArray('clients', 'rows')), [
+        {'id': 1, 'nom': 'Dupont'},
+      ]);
+    });
+
     testWidgets('SearchProviderAction runs the provider search', (
       tester,
     ) async {
@@ -522,6 +703,181 @@ void main() {
       expect(searches, 1);
       expect(store.peekDocument('resultats')?.document, {
         'rows': ['Dupont'],
+      });
+    });
+
+    testWidgets('Wizard adds a datasource sort behavior that runs on click', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1200, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final directory = await tester.runAsync(
+        () => Directory.systemTemp.createTemp('datasource-wizard-'),
+      );
+      final store = JsonRepositoryStore(directory!);
+      addTearDown(() async {
+        store.dispose();
+        await tester.runAsync(() => directory.delete(recursive: true));
+      });
+      store.registerRepository(
+        RepositoryImpl(id: 'resultats', json: {'rows': <Object?>[]}),
+      );
+      final requests = <DataProviderRequest>[];
+      store.providers.register(
+        CallbackDataProvider(
+          id: 'clients_search',
+          target: const JsonTextBinding(
+            repositoryId: 'resultats',
+            path: 'rows',
+          ),
+          onExecute: (request) async {
+            requests.add(request);
+            return DataProviderResult.rows(const [
+              {'id': 1, 'nom': 'Dupont'},
+            ]);
+          },
+        ),
+      );
+      store.datasources.register(
+        DatasourceConfig(
+          id: 'clients',
+          label: 'Clients',
+          keyPath: 'id',
+          search: DatasourceSearchConfig(
+            provider: 'clients_search',
+            sort: DatasourceSort(fields: ['nom']),
+          ),
+        ),
+      );
+      final editing = ValueNotifier(true);
+      addTearDown(editing.dispose);
+      final appearance = ValueNotifier(Appearance());
+      addTearDown(appearance.dispose);
+
+      Future<void> settle() async {
+        for (var i = 0; i < 5; i++) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+        }
+        await tester.pumpAndSettle();
+      }
+
+      await tester.pumpWidget(
+        JsonRepositoryScope(
+          store: store,
+          child: AppearanceScope(
+            controller: appearance,
+            child: StyleEditScope(
+              controller: editing,
+              child: MaterialApp(
+                home: Scaffold(
+                  body: Center(
+                    child: EditorSlotAction(
+                      label: 'Trier',
+                      enabled: true,
+                      onEdit: () async {},
+                      child: const EditorSlot(
+                        id: 'btn-sort',
+                        label: 'Trier par nom',
+                        child: Text('Trier par nom'),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.text('Trier par nom'),
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('style-menu-behavior')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await tester.pumpAndSettle();
+      final card = find.byKey(const ValueKey('behavior-catalog-datasource'));
+      await tester.ensureVisible(card);
+      await tester.pumpAndSettle();
+      await tester.tap(card);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('behavior-add-next')));
+      await settle();
+
+      final next = find.byKey(const ValueKey('behavior-add-next'));
+      expect(tester.widget<FilledButton>(next).onPressed, isNull);
+      await tester.tap(
+        find.byKey(const ValueKey('behavior-datasource-clients')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(next).onPressed, isNotNull);
+
+      await tester.tap(
+        find.byKey(const ValueKey('behavior-datasource-command')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Trier').last);
+      await tester.pumpAndSettle();
+      expect(tester.widget<FilledButton>(next).onPressed, isNull);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('behavior-datasource-field')),
+        'ville',
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('behavior-datasource-error')),
+        findsOneWidget,
+      );
+      expect(tester.widget<FilledButton>(next).onPressed, isNull);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('behavior-datasource-field')),
+        'nom',
+      );
+      await tester.tap(find.text('Décroissant'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('behavior-datasource-error')),
+        findsNothing,
+      );
+      await tester.tap(next);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Clients (clients)'), findsOneWidget);
+      expect(find.text('Trier sur nom (décroissant)'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('behavior-add-submit')));
+      await tester.pumpAndSettle();
+
+      final behavior = appearance.value.behaviorsFor('btn-sort').single;
+      expect(behavior.trigger, BehaviorTrigger.click);
+      expect(
+        behavior.action,
+        const DatasourceAction(
+          datasourceId: 'clients',
+          command: DatasourceCommand.sort,
+          field: 'nom',
+          direction: DatasourceSortDirection.desc,
+        ),
+      );
+      expect(appearance.value.usesDatasource('clients'), isTrue);
+
+      editing.value = false;
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Trier par nom'));
+      await settle();
+      expect(requests, hasLength(1));
+      expect(requests.single.extraParameters, {'sort': '-nom'});
+      expect(store.peekDocument('resultats')?.document, {
+        'rows': [
+          {'id': 1, 'nom': 'Dupont'},
+        ],
       });
     });
 

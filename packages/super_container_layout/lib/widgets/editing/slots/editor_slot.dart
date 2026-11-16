@@ -442,6 +442,7 @@ class EditorSlotState extends State<EditorSlot> {
 
   static bool _menuOpen = false;
   static bool _openingMenuThisTurn = false;
+  static Offset? _menuInitialPointerPosition;
   static int _menuGeneration = 0;
   static Route<dynamic>? _activeMenuRoute;
   static VoidCallback? _dismissActiveMenu;
@@ -625,6 +626,7 @@ class EditorSlotState extends State<EditorSlot> {
       _ownsOpenMenu = false;
       _menuOpen = false;
       _openingMenuThisTurn = false;
+      _menuInitialPointerPosition = null;
       _activeMenuRoute = null;
       _dismissActiveMenu = null;
     }

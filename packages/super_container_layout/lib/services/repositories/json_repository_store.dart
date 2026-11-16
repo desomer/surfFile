@@ -13,6 +13,8 @@ import 'package:flutter/foundation.dart';
 
 import '../../models/json_text_binding.dart';
 import '../../theme/appearance.dart';
+import '../datasources/datasource_registry.dart';
+import '../datasources/super_backend_datasource_bridge.dart';
 import '../providers/data_provider_registry.dart';
 import 'calculated_attribute.dart';
 import 'json_repository_binding.dart';
@@ -161,11 +163,66 @@ class JsonRepositoryStore extends ChangeNotifier {
   final errors = ValueNotifier<String?>(null);
 
   DataProviderRegistry? _providers;
+  DatasourceRegistry? _datasources;
+  SuperBackend? _superBackend;
+  SuperBackendDatasourceBridge? _superBackendBridge;
+
+  /// Instance [SuperBackend] locale de ce store (base SQLite
+  /// `<directory>/super_backend.db`), créée à la première utilisation.
+  SuperBackend get superBackend =>
+      _superBackend ??= SuperBackend(
+        store: SqliteCollectionStore(
+          '${directory.path}${Platform.pathSeparator}super_backend.db',
+        ),
+      );
+
+  /// Remplace l'instance [SuperBackend] locale de ce store (par exemple en
+  /// mémoire pour les tests) et réinstalle son transport HTTP sur [providers].
+  set superBackend(SuperBackend value) {
+    final previous = _superBackend;
+    if (identical(previous, value)) return;
+    if (previous != null) unawaited(previous.close());
+    _superBackend = value;
+    _superBackendBridge = SuperBackendDatasourceBridge(
+      backend: value,
+      store: this,
+    );
+    if (_providers != null) {
+      _superBackendBridge!.installHttpTransport();
+    }
+  }
+
+  /// Pont connectant [superBackend] aux registres [providers] et [datasources]
+  /// de ce store.
+  SuperBackendDatasourceBridge get superBackendBridge =>
+      _superBackendBridge ??= SuperBackendDatasourceBridge(
+        backend: superBackend,
+        store: this,
+      );
 
   /// Registre des providers de données qui alimentent les repositories de ce
   /// store (appel d'API, etc.), créé à la première utilisation.
-  DataProviderRegistry get providers =>
-      _providers ??= DataProviderRegistry(this);
+  DataProviderRegistry get providers {
+    _ensureDataRegistries();
+    return _providers!;
+  }
+
+  /// Registre des datasources (regroupements Search / Create / Read /
+  /// Update / Delete de providers d'une même notion), créé à la première
+  /// utilisation avec [providers], qu'il coordonne.
+  DatasourceRegistry get datasources {
+    _ensureDataRegistries();
+    return _datasources!;
+  }
+
+  void _ensureDataRegistries() {
+    if (_providers == null) {
+      final created = DataProviderRegistry(this);
+      _providers = created;
+      superBackendBridge.installHttpTransport();
+    }
+    _datasources ??= DatasourceRegistry(this, _providers!);
+  }
 
   final _bindings = <String, JsonRepositoryBinding>{};
   final _activeBindings = <Object, Set<String>>{};
@@ -499,7 +556,8 @@ class JsonRepositoryStore extends ChangeNotifier {
     if (id.isEmpty) return false;
     return isRepositoryBound(id) ||
         (appearance?.usesRepository(id) ?? false) ||
-        (_providers?.usesRepository(id) ?? false);
+        (_providers?.usesRepository(id) ?? false) ||
+        (_datasources?.usesRepository(id) ?? false);
   }
 
   Future<void> _pending = Future.value();
@@ -603,7 +661,10 @@ class JsonRepositoryStore extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _datasources?.dispose();
     _providers?.dispose();
+    final backend = _superBackend;
+    if (backend != null) unawaited(backend.close());
     _calculatedEngine.dispose();
     errors.dispose();
     for (final binding in _bindings.values) {
@@ -1206,6 +1267,95 @@ class JsonRepositoryStore extends ChangeNotifier {
     List<Object?> Function(List<Object?>) change, {
     String? componentId,
     Map<String, Object?>? expectedValues,
+  }) async {
+    final items = await _updateNode(
+      repositoryId,
+      path,
+      (node) => change(_array(node)),
+      componentId: componentId,
+      expectedValues: expectedValues,
+    );
+    return (items as List).length;
+  }
+
+  /// Remplace la valeur à [path] (attributs intermédiaires créés s'ils sont
+  /// absents) par une copie de [value].
+  ///
+  /// Les chemins et valeurs de [expectedValues] doivent encore correspondre
+  /// au document au moment de l'écriture, sinon un
+  /// [JsonRepositoryConflictException] est levé.
+  Future<void> replaceValue(
+    String repositoryId,
+    String path,
+    Object? value, {
+    String? componentId,
+    Map<String, Object?>? expectedValues,
+  }) {
+    final copy = jsonDecode(jsonEncode(value));
+    final expectations = expectedValues == null
+        ? null
+        : Map<String, Object?>.from(
+            jsonDecode(jsonEncode(expectedValues)) as Map<String, dynamic>,
+          );
+    return _updateNode(
+      repositoryId,
+      path,
+      (_) => copy,
+      componentId: componentId,
+      expectedValues: expectations,
+    );
+  }
+
+  /// Met à jour atomiquement la valeur à [path] : [change] reçoit une copie
+  /// modifiable de la valeur courante (`null` si absente) et retourne la
+  /// nouvelle valeur, écrite seulement si elle diffère.
+  ///
+  /// [change] s'exécute dans la section exclusive du store : il peut vérifier
+  /// une précondition et lever une exception pour annuler l'écriture.
+  /// Retourne une copie de la valeur finale.
+  Future<Object?> updateValue(
+    String repositoryId,
+    String path,
+    Object? Function(Object? current) change, {
+    String? componentId,
+  }) async {
+    final result = await _updateNode(
+      repositoryId,
+      path,
+      (node) => jsonDecode(jsonEncode(change(jsonDecode(jsonEncode(node))))),
+      componentId: componentId,
+      skipUnchanged: true,
+    );
+    return jsonDecode(jsonEncode(result));
+  }
+
+  /// Met à jour atomiquement le tableau à [path] (vide s'il est absent) :
+  /// [change] reçoit une copie modifiable des éléments et retourne la
+  /// nouvelle liste, écrite seulement si elle diffère.
+  ///
+  /// [change] s'exécute dans la section exclusive du store : il peut vérifier
+  /// une précondition et lever une exception pour annuler l'écriture.
+  /// Retourne une copie immuable des éléments finaux.
+  Future<List<Object?>> updateArray(
+    String repositoryId,
+    String path,
+    List<Object?> Function(List<Object?> items) change, {
+    String? componentId,
+  }) async {
+    final result = await updateValue(repositoryId, path, (node) {
+      final items = _array(node);
+      return change(List<Object?>.of(items));
+    }, componentId: componentId);
+    return List<Object?>.unmodifiable(result as List);
+  }
+
+  Future<Object?> _updateNode(
+    String repositoryId,
+    String path,
+    Object? Function(Object?) change, {
+    String? componentId,
+    Map<String, Object?>? expectedValues,
+    bool skipUnchanged = false,
   }) => _exclusive(() async {
     final binding = JsonTextBinding(repositoryId: repositoryId, path: path)
       ..validateResolved();
@@ -1218,13 +1368,14 @@ class JsonRepositoryStore extends ChangeNotifier {
       final root = _memoryRepositories[repositoryId];
       _checkExpectedValues(root, expectedValues);
       final attribute = JsonAttributePath(binding.path);
-      final previous = _array(attribute.readNode(root));
-      final items = change(previous);
-      final updated = attribute.replaceNode(root, items);
+      final previous = attribute.readNode(root);
+      final next = change(previous);
+      if (skipUnchanged && jsonEquals(previous, next)) return previous;
+      final updated = attribute.replaceNode(root, next);
       await _saveRegisteredAutomatically(repositoryId, updated);
       _memoryRepositories[repositoryId] = updated;
       _documentCache[repositoryId] = updated;
-      if (!jsonEquals(previous, items)) {
+      if (!jsonEquals(previous, next)) {
         _invalidateCalculated(repositoryId, binding.path);
       }
       _changed();
@@ -1232,25 +1383,27 @@ class JsonRepositoryStore extends ChangeNotifier {
         repositoryId: repositoryId,
         path: binding.path,
         oldValue: previous,
-        newValue: items,
+        newValue: next,
         componentId: componentId,
       );
-      return items.length;
+      return next;
     }
     final name = await _nameOf(repositoryId);
     final original = await read(name);
     final root = _decode(original);
     _checkExpectedValues(root, expectedValues);
     final attribute = JsonAttributePath(binding.path);
-    final items = change(_array(attribute.readNode(root)));
-    final updated = attribute.replaceNode(root, items);
+    final previous = attribute.readNode(root);
+    final next = change(previous);
+    if (skipUnchanged && jsonEquals(previous, next)) return previous;
+    final updated = attribute.replaceNode(root, next);
     await _save(
       name,
       _encode(updated),
       expectedText: original,
       changedPath: binding.path,
     );
-    return items.length;
+    return next;
   });
 
   /// Same structure with empty values: "", 0, false, [] and null.
@@ -1415,13 +1568,21 @@ class JsonRepositoryStore extends ChangeNotifier {
   });
 
   /// Refuse la suppression du repository [name] (ID [repositoryId]) tant
-  /// qu'un provider déjà chargé le lit ou l'alimente.
+  /// qu'un provider déjà chargé le lit ou l'alimente, ou qu'une datasource y
+  /// écrit son état.
   void _checkUnusedByProviders(String name, String repositoryId) {
     final provider = _providers?.providerUsing(repositoryId);
     if (provider != null) {
       throw FormatException(
         'Impossible de supprimer « $name » : '
         'ce repository est encore utilisé par le provider « ${provider.label} ».',
+      );
+    }
+    final datasource = _datasources?.datasourceUsingRepository(repositoryId);
+    if (datasource != null) {
+      throw FormatException(
+        'Impossible de supprimer « $name » : ce repository est encore '
+        'utilisé par la datasource « ${datasource.label} ».',
       );
     }
   }

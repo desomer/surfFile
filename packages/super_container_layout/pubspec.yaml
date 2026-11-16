@@ -1,5 +1,6 @@
 name: super_container_layout
 description: Widgets de conteneur stylable et de disposition modulaire en zones.
+publish_to: none
 version: 0.1.0
 
 environment:
@@ -27,6 +28,8 @@ dependencies:
   material_ui: ^1.5.0
   shared_preferences: ^2.5.5
   shortid: ^0.1.2
+  super_backend:
+    path: ../super_backend
   uuid: ^4.6.0
   yaml: ^3.1.4
 

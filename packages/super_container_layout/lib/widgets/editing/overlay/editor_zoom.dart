@@ -11,6 +11,7 @@ import 'editor_zoom_controls.dart';
 import 'editor_zoom_options.dart';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show RenderSliver;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -65,6 +66,9 @@ class _EditorZoomState extends State<EditorZoom>
   final _viewportKey = GlobalKey();
   BuildContext? _zoomTarget;
   EditorDialogFocus? _zoomDialog;
+  BuildContext? _lastHoverTarget;
+  bool _wasKeepingCurrentView = false;
+  bool _wasContextMenuOpen = false;
   EditorSlotState? _debouncedHighlight;
   Timer? _hoverZoomTimer;
   double? _manualScale;
@@ -156,6 +160,7 @@ class _EditorZoomState extends State<EditorZoom>
     LayoutSelection.focus.addListener(_onFocusChanged);
     EditorSlotState.highlightedTarget.addListener(_onHighlightChanged);
     _controller.dialog.addListener(_schedule);
+    _controller.openContextMenus.addListener(_schedule);
     _controller.contextMenuAvailable.addListener(_schedule);
     _controller.options.addListener(_onOptionsChanged);
     EditorInsertionPreview.active.addListener(_schedule);
@@ -213,22 +218,18 @@ class _EditorZoomState extends State<EditorZoom>
     final hasContextMenu =
         _controller.openContextMenus.value > 0 ||
         _controller.contextMenuAvailable.value != null;
+    if (!_wasContextMenuOpen && hasContextMenu && _zoomDialog == null) {
+      _preRightClickTransform ??= _to;
+    }
+    _wasContextMenuOpen = hasContextMenu;
     final isRightClickContext = hasContextMenu || _focusFromRightClick;
     final highlighted = _debouncedHighlight;
     final rawHoverCtx = highlighted != null && highlighted.mounted
         ? highlighted.context
         : null;
-    BuildContext? activeHoverCtx = options.zoomOnHover ? rawHoverCtx : null;
-    if (activeHoverCtx != null && !_viewport.isEmpty) {
-      final hoverRect = _controller.targetBounds(activeHoverCtx);
-      if ((hasContextMenu && !options.zoomOnRightClick) ||
-          (isRightClickContext &&
-              options.skipLargeElementsOnRightClick &&
-              hoverRect != null &&
-              options.isElementTooLarge(hoverRect, _viewport))) {
-        activeHoverCtx = null;
-      }
-    }
+    final BuildContext? activeHoverCtx = options.zoomOnHover
+        ? rawHoverCtx
+        : null;
     final focus =
         activeHoverCtx ??
         (options.zoomOnEditorDialog ? dialog?.target : null) ??
@@ -239,11 +240,13 @@ class _EditorZoomState extends State<EditorZoom>
     final viewport = _viewportKey.currentContext?.findRenderObject();
     var rect = _controller.targetBounds(focus);
     final isTooLargeForRightClick =
+        activeHoverCtx == null &&
         isRightClickContext &&
         options.skipLargeElementsOnRightClick &&
         rect != null &&
         options.isElementTooLarge(rect, _viewport);
     final isTooLargeForDialog =
+        activeHoverCtx == null &&
         dialog != null &&
         EditorInsertionPreview.active.value == null &&
         options.skipLargeElementsOnDialog &&
@@ -251,14 +254,13 @@ class _EditorZoomState extends State<EditorZoom>
         options.isElementTooLarge(rect, _viewport);
     final shouldKeepCurrentView =
         _controller.enabled &&
+        activeHoverCtx == null &&
         ((dialog != null &&
                 (!options.zoomOnEditorDialog || isTooLargeForDialog)) ||
             (dialog == null &&
-                activeHoverCtx == null &&
                 isRightClickContext &&
                 (!options.zoomOnRightClick || isTooLargeForRightClick)) ||
             (dialog == null &&
-                activeHoverCtx == null &&
                 !isRightClickContext &&
                 focus != null &&
                 !options.zoomOnSelection));
@@ -268,9 +270,14 @@ class _EditorZoomState extends State<EditorZoom>
       _preDialogTransform = _preRightClickTransform ?? _to;
       _preRightClickTransform = null;
     }
+    final hoverTargetChanged = !identical(activeHoverCtx, _lastHoverTarget);
+    final keepCurrentViewChanged =
+        shouldKeepCurrentView != _wasKeepingCurrentView;
     if (!_controller.enabled ||
         !identical(focus, _zoomTarget) ||
-        !identical(dialog, _zoomDialog)) {
+        !identical(dialog, _zoomDialog) ||
+        hoverTargetChanged ||
+        keepCurrentViewChanged) {
       if (!_controller.enabled) {
         _manualScale = null;
         _manualOffset = null;
@@ -283,9 +290,17 @@ class _EditorZoomState extends State<EditorZoom>
         _manualScale = _preDialogTransform!.scale;
         _manualOffset = _preDialogTransform!.offset;
         _preDialogTransform = null;
+      } else if (activeHoverCtx != null) {
+        _manualScale = null;
+        _manualOffset = null;
       } else if (shouldKeepCurrentView) {
-        _manualScale ??= _current.scale;
-        _manualOffset ??= _current.offset;
+        if (_lastHoverTarget != null && _preRightClickTransform != null) {
+          _manualScale = _preRightClickTransform!.scale;
+          _manualOffset = _preRightClickTransform!.offset;
+        } else {
+          _manualScale ??= _current.scale;
+          _manualOffset ??= _current.offset;
+        }
       } else {
         _manualScale = null;
         _manualOffset = null;
@@ -295,6 +310,8 @@ class _EditorZoomState extends State<EditorZoom>
       }
       _zoomTarget = focus;
       _zoomDialog = dialog;
+      _lastHoverTarget = activeHoverCtx;
+      _wasKeepingCurrentView = shouldKeepCurrentView;
       final doubleClickPos = LayoutSelection.doubleClickGlobalPosition;
       LayoutSelection.doubleClickGlobalPosition = null;
       if (_controller.enabled &&
@@ -330,7 +347,8 @@ class _EditorZoomState extends State<EditorZoom>
         final Rect? reservedScreen;
         if (dialog != null) {
           reservedScreen = options.zoomOnEditorDialog ? dialog.available : null;
-        } else if (options.zoomOnRightClick && !isTooLargeForRightClick) {
+        } else if ((options.zoomOnRightClick && !isTooLargeForRightClick) ||
+            activeHoverCtx != null) {
           reservedScreen = _controller.contextMenuAvailable.value;
         } else {
           reservedScreen = null;
@@ -440,7 +458,10 @@ class _EditorZoomState extends State<EditorZoom>
               minAllowedScale,
               effectiveMaxScale,
             );
-            const handleMargin = 28.0;
+            final handleMargin = math.min(
+              28.0,
+              math.min(available.width, available.height) * 0.08,
+            );
             final fitWithHandles = math.min(
               math.max(1.0, available.width - handleMargin * 2) / rect.width,
               math.max(1.0, available.height - handleMargin * 2) / rect.height,
@@ -448,7 +469,7 @@ class _EditorZoomState extends State<EditorZoom>
             final scale = isHoverFraming
                 ? math
                       .min(baseScale, fitWithHandles)
-                      .clamp(0.5, effectiveMaxScale)
+                      .clamp(0.15, effectiveMaxScale)
                 : baseScale;
             if (hasEditorDialog ||
                 scale > EditorZoom.minScale ||
@@ -597,6 +618,9 @@ class _EditorZoomState extends State<EditorZoom>
         _manualScale ??= _to.scale;
         _animation.stop();
         final next = (scale: _current.scale, offset: newOffset);
+        if (_controller.openContextMenus.value > 0) {
+          _preRightClickTransform = next;
+        }
         _controller.transform.value = next;
         setState(() {
           _current = _from = _to = next;
@@ -686,6 +710,12 @@ class _EditorZoomState extends State<EditorZoom>
           ? Offset.zero
           : localPointer -
                 (localPointer - base.offset) * (nextScale / base.scale);
+      if (_controller.openContextMenus.value > 0) {
+        _preRightClickTransform = (
+          scale: _manualScale!,
+          offset: _manualOffset!,
+        );
+      }
       _frameSelection();
     });
   }
@@ -725,7 +755,9 @@ class _EditorZoomState extends State<EditorZoom>
         : pivot - (pivot - base.offset) * (nextScale / base.scale);
     _manualScale = nextScale;
     _manualOffset = nextOffset;
-    if (dialog == null && _controller.openContextMenus.value == 0) {
+    if (_controller.openContextMenus.value > 0) {
+      _preRightClickTransform = (scale: nextScale, offset: nextOffset);
+    } else if (dialog == null) {
       _preRightClickTransform = null;
     }
     _controller.scale.value = nextScale;
@@ -757,6 +789,7 @@ class _EditorZoomState extends State<EditorZoom>
     LayoutSelection.focus.removeListener(_onFocusChanged);
     EditorSlotState.highlightedTarget.removeListener(_onHighlightChanged);
     _controller.dialog.removeListener(_schedule);
+    _controller.openContextMenus.removeListener(_schedule);
     _controller.contextMenuAvailable.removeListener(_schedule);
     _controller.options.removeListener(_onOptionsChanged);
     EditorInsertionPreview.active.removeListener(_schedule);
@@ -996,26 +1029,47 @@ class EditorZoomController {
         !contentContext!.mounted) {
       return null;
     }
+    final content = contentContext!.findRenderObject();
+    if (content is! RenderBox || !content.attached || !content.hasSize) {
+      return null;
+    }
     var belongs = identical(targetContext, contentContext);
     targetContext.visitAncestorElements((element) {
       if (identical(element, contentContext)) belongs = true;
       return !belongs;
     });
+    if (!belongs) {
+      var wrapsContent = false;
+      contentContext!.visitAncestorElements((element) {
+        if (identical(element, targetContext)) wrapsContent = true;
+        return !wrapsContent;
+      });
+      return wrapsContent ? Offset.zero & content.size : null;
+    }
     final target = targetContext.findRenderObject();
-    final content = contentContext!.findRenderObject();
-    if (!belongs ||
-        target is! RenderBox ||
-        content is! RenderBox ||
-        !target.attached ||
-        !content.attached ||
-        !target.hasSize ||
-        !content.hasSize) {
+    if (target == null || !target.attached) {
       return null;
     }
-    return MatrixUtils.transformRect(
-      target.getTransformTo(content),
-      Offset.zero & target.size,
-    );
+    if (target is RenderBox) {
+      if (!target.hasSize) return null;
+      return MatrixUtils.transformRect(
+        target.getTransformTo(content),
+        Offset.zero & target.size,
+      );
+    }
+    if (target is RenderSliver) {
+      final geom = target.geometry;
+      if (geom == null || geom.paintExtent <= 0) return null;
+      final size = target.constraints.axis == Axis.vertical
+          ? Size(target.constraints.crossAxisExtent, geom.paintExtent)
+          : Size(geom.paintExtent, target.constraints.crossAxisExtent);
+      if (size.isEmpty || !size.isFinite) return null;
+      return MatrixUtils.transformRect(
+        target.getTransformTo(content),
+        Offset.zero & size,
+      );
+    }
+    return null;
   }
 
   void dispose() {

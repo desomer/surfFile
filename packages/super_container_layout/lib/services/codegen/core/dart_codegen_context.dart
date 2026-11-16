@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../models/component_behavior.dart';
 import '../../../models/component_config.dart';
+import '../../../models/datasources/datasource_config.dart';
 import '../../../models/json_text_binding.dart';
 import '../../../models/native_component_config.dart';
 import '../../../models/registry.dart';
@@ -386,6 +387,17 @@ class DartCodegenContext {
       case final SearchProviderAction search:
         return formatCall('const SearchProviderAction', const [], {
           'providerId': formatString(search.providerId),
+        }, indent: indent);
+      case final DatasourceAction datasource:
+        return formatCall('const DatasourceAction', const [], {
+          'datasourceId': formatString(datasource.datasourceId),
+          if (datasource.command != DatasourceCommand.search)
+            'command': 'DatasourceCommand.${datasource.command.name}',
+          if (datasource.field != null)
+            'field': formatString(datasource.field!),
+          if (datasource.direction != null)
+            'direction':
+                'DatasourceSortDirection.${datasource.direction!.name}',
         }, indent: indent);
       case final TooltipAction tooltip:
         return formatCall('const TooltipAction', const [], {

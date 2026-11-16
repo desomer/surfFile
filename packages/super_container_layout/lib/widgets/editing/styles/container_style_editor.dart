@@ -1104,6 +1104,7 @@ class _PreviewPaneState extends State<_PreviewPane> {
         surface = JsonListScope(
           repositoryId: ownerListScope.repositoryId,
           indices: ownerListScope.indices,
+          arrayTemplate: ownerListScope.arrayTemplate,
           placeholder: ownerListScope.placeholder,
           selected: ownerListScope.selected,
           child: surface,

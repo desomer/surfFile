@@ -697,6 +697,7 @@ class _SuperTableState extends State<SuperTable> {
           ? null
           : '$basePath[$dataIndex]',
       treeTemplatePath: _templatePath,
+      arrayTemplate: _templatePath,
       placeholder: placeholder,
       child: ValueListenableBuilder<ContainerStyle>(
         valueListenable: style,

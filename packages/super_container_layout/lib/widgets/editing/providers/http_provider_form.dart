@@ -24,10 +24,6 @@ import '../repositories/repository_binding_fields.dart';
 /// message d'erreur affichable qui l'en sépare.
 typedef HttpProviderDraft = ({HttpProviderConfig? config, String? error});
 
-/// Cible provisoire tant que l'utilisateur n'en a pas choisi : elle laisse la
-/// validation signaler d'abord les erreurs situées plus haut dans le formulaire.
-const _placeholderTarget = JsonTextBinding(repositoryId: '_', path: '_');
-
 const _prettyJson = JsonEncoder.withIndent('  ');
 
 String _joinPairs(Map<String, String>? pairs, String separator) => [
@@ -218,7 +214,7 @@ class HttpProviderFormState extends State<HttpProviderForm> {
         id: id,
         label: label.isEmpty ? id : label,
         filterRepositoryId: _filter.isEmpty ? null : _filter,
-        target: _target ?? _placeholderTarget,
+        target: _target,
         loading: _loading,
         error: _errorFlag,
         autoSearch: _autoSearch
@@ -245,7 +241,9 @@ class HttpProviderFormState extends State<HttpProviderForm> {
             what: 'Paramètres',
             example: 'nom=valeur',
           ),
-          body: _method == 'POST' ? _bodyJson() : null,
+          body: HttpRequestTemplate.bodyMethods.contains(_method)
+              ? _bodyJson()
+              : null,
           autoParams: _autoParams,
           timeoutMs: _parseMilliseconds(
             _timeout.text,
@@ -255,12 +253,6 @@ class HttpProviderFormState extends State<HttpProviderForm> {
         responsePath: responsePath.isEmpty ? null : responsePath,
       );
       config.validate();
-      if (_target == null) {
-        throw const FormatException(
-          'Résultats : choisissez le repository et le chemin du tableau qui '
-          'reçoit les lignes.',
-        );
-      }
       return (config: config, error: null);
     } on FormatException catch (error) {
       return (config: null, error: error.message);
@@ -401,7 +393,7 @@ class HttpProviderFormState extends State<HttpProviderForm> {
 
   @override
   Widget build(BuildContext context) {
-    final post = _method == 'POST';
+    final acceptsBody = HttpRequestTemplate.bodyMethods.contains(_method);
     final error = _touched ? draft().error : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -450,8 +442,11 @@ class HttpProviderFormState extends State<HttpProviderForm> {
                   hint: 'https://api.exemple.com/clients',
                   helper:
                       'L’hôte est fixe. Le reste accepte {{champ}} (champ du '
-                      'filtre) et {{env.PROVIDER_NOM}} (variable '
-                      'd’environnement).',
+                      'filtre), {{env.PROVIDER_NOM}} (variable '
+                      'd’environnement) et, lancé par une datasource, '
+                      '{{ds.key}}, {{ds.entity.champ}}, {{ds.page}}, '
+                      '{{ds.pageSize}}, {{ds.offset}}, {{ds.cursor}}, '
+                      '{{ds.sort}} ou {{ds.direction}}.',
                 ),
                 _field(
                   'provider-headers',
@@ -469,22 +464,22 @@ class HttpProviderFormState extends State<HttpProviderForm> {
                   maxLines: 5,
                   monospace: true,
                 ),
-                if (post)
+                if (acceptsBody)
                   _field(
                     'provider-body',
                     _body,
                     'Corps JSON',
                     hint: '{"q": "{{recherche}}"}',
                     helper:
-                        'Une chaîne exactement égale à {{champ}} garde le type '
-                        'de la valeur lue.',
+                        'Une chaîne exactement égale à {{champ}} ou '
+                        '{{ds.entity}} garde le type de la valeur lue.',
                     maxLines: 8,
                     monospace: true,
                   ),
                 _switch(
                   'provider-auto-params',
                   'Ajouter automatiquement les champs du filtre',
-                  post
+                  acceptsBody
                       ? 'Sans corps défini, les champs du filtre non utilisés '
                             'par un {{gabarit}} forment le corps JSON.'
                       : 'Les champs du filtre non utilisés par un {{gabarit}} '
@@ -507,21 +502,25 @@ class HttpProviderFormState extends State<HttpProviderForm> {
                 _field(
                   'provider-response-path',
                   _responsePath,
-                  'Chemin des lignes dans la réponse',
+                  'Chemin de la donnée dans la réponse',
                   hint: 'data.items',
                   helper:
-                      'Tableau JSON qui devient la liste des lignes ; vide : '
-                      'la réponse elle-même.',
+                      'Tableau des lignes (recherche) ou objet (entité lue, '
+                      'créée ou modifiée) ; vide : la réponse elle-même.',
                 ),
                 _heading('Repositories'),
                 _filterField(),
                 _binding(
                   'target',
-                  'Résultats (obligatoire)',
+                  'Résultats (facultatif)',
                   binding: _target,
                   onChanged: (value) => _target = value,
                   pathHint: 'clients',
-                  helper: 'Tableau remplacé à chaque recherche.',
+                  helper:
+                      'Tableau remplacé à chaque recherche, ou objet lu. '
+                      'Obligatoire pour « Lancer la recherche » et le Search '
+                      'd’une datasource ; sans cible, le provider ne peut être '
+                      'lancé que par une datasource.',
                 ),
                 _binding(
                   'loading',

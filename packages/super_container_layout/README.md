@@ -1031,12 +1031,90 @@ dans un en-tête pour lire un secret depuis `.env` ou l'environnement système.
 Les providers Dart de l'application s'enregistrent avec
 `store.providers.register(CallbackDataProvider(...))`.
 
+Les méthodes `GET`, `POST`, `PUT`, `PATCH` et `DELETE` sont acceptées (corps
+JSON pour `POST`, `PUT` et `PATCH` seulement). Le repository de résultats
+(`target`) est facultatif : un provider sans résultats (création, mise à
+jour, suppression…) ne peut être lancé que par une datasource.
+
 Dans le wizard **Comportements**, choisir **Lancer la recherche** puis le
 provider : seule son identité (`providerId`) est persistée dans l'`Appearance`.
 Une recherche automatique peut aussi être lancée au démarrage ou après une
 modification du filtre. Les indicateurs optionnels `loading` et `error` sont
 écrits dans les repositories du store ; les erreurs de requête restent
 consultables dans l'état du provider et les erreurs du store.
+
+## Datasources (Search / CRUD)
+
+Une datasource regroupe les providers **Search, Create, Read, Update et
+Delete** d'une même notion (clients, produits…) : un provider existant par
+opération, chaque opération étant facultative (au moins une). Les providers
+conservent leur filtre et leurs liaisons ; la datasource ajoute la
+pagination, le tri et la mise à jour locale de la liste et de l'entité
+sélectionnée après chaque opération.
+
+```dart
+store.datasources.register(
+  DatasourceConfig(
+    id: 'clients',
+    label: 'Clients',
+    keyPath: 'id',
+    search: DatasourceSearchConfig(
+      provider: 'clients_search',
+      state: JsonTextBinding(repositoryId: filtersId, path: 'page'),
+      sort: DatasourceSort(fields: ['nom', 'ville']),
+      pagination: const DatasourcePagination(
+        pageSize: 20,
+        totalPath: 'meta.total',
+      ),
+    ),
+    create: const DatasourceCreateConfig(provider: 'clients_create'),
+    read: const DatasourceEntityConfig(provider: 'clients_read'),
+    update: const DatasourceEntityConfig(provider: 'clients_update'),
+    delete: const DatasourceEntityConfig(provider: 'clients_delete'),
+  ),
+);
+
+await store.datasources.run('clients', DatasourceCommand.nextPage);
+```
+
+- **Search** écrit les lignes dans le `target` du provider Search et l'état de
+  la recherche (`page`, `pageSize`, `offset`, `total`, `pageCount`,
+  `hasNext`, `hasPrevious`, `cursor`, `nextCursor`, `sort`) dans
+  `search.state`, exclu des paramètres du filtre. Pagination par page
+  (`page`/`size`, première page 0 ou 1), par position (`offset`/`limit`) ou
+  par curseur (`cursor`/`limit`, `nextCursorPath`) ; `totalPath` est
+  facultatif (sans total, une page complète laisse supposer une suite). Le
+  tri envoie `sort=nom` / `sort=-nom`, ou `by=nom&order=desc` avec un
+  `directionParam` ; `fields` limite les champs triables.
+- Ces paramètres sont ajoutés à la requête si le provider HTTP ajoute
+  automatiquement les champs du filtre (`autoParams`) ; ils sont aussi
+  disponibles dans les gabarits : `{{ds.page}}`, `{{ds.pageSize}}`,
+  `{{ds.offset}}`, `{{ds.limit}}`, `{{ds.cursor}}`, `{{ds.sort}}`,
+  `{{ds.direction}}`.
+- **Read / Update / Delete** agissent sur l'entité courante : la ligne du
+  composant si elle appartient au tableau de la recherche, sinon la ligne
+  sélectionnée, sinon le détail lu par Read. Elle est retrouvée par `keyPath`
+  (texte ou entier) et exposée par `{{ds.key}}`, `{{ds.entity}}` et
+  `{{ds.entity.<chemin>}}`.
+- Après **Create**, l'entité retournée est insérée au début ou à la fin de la
+  liste et sélectionnée ; **Read** écrit le détail (`target` du provider
+  Read) ; **Update** remplace la ligne et le détail de même clé ; **Delete**
+  retire la ligne et vide le détail correspondant. Sans entité dans la
+  réponse, la datasource relit l'entité ou relance la recherche.
+
+Commandes : `search`, `refresh`, `firstPage`, `previousPage`, `nextPage`,
+`loadMore` (ajoute la page suivante sans doublon), `sort`, `create`, `read`,
+`update`, `delete`. `run` ne lève jamais d'exception : l'état est exposé par
+`store.datasources.stateOf(id)` et les erreurs sont signalées au store.
+
+Dans l'éditeur, le bouton **Datasources** du gestionnaire de repositories
+crée, teste et enregistre les datasources dans
+`<dossier du store>/datasources/<id>.json` (les datasources du code sont en
+lecture seule). Une datasource utilisée par un comportement, ou un provider
+utilisé par une datasource, ne peut pas être supprimé. Dans le wizard
+**Comportements**, **Commande de datasource** lance une commande au clic ;
+seuls `datasourceId`, `command` et, pour le tri, `field` et `direction` sont
+persistés dans l'`Appearance`.
 
 ## Export contextuel et SuperRenderer
 
