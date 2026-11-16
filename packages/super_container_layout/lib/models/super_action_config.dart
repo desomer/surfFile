@@ -144,6 +144,14 @@ class SuperActionConfig extends ComponentConfig {
   String get componentType => 'action';
 
   @override
+  Iterable<JsonTextBinding> get referencedBindings =>
+      JsonReader.collectReferencedBindings(
+        propertyBindings,
+        states,
+        (c) => c.propertyBindings,
+      );
+
+  @override
   void validate() {
     _validateLeaf();
     states?._validateAgainst(this);

@@ -104,13 +104,31 @@ Toute l'interface est représentée par des dictionnaires plats indexés par l'`
 2. **`styles`** (`Map<String, ContainerStyle>`) : contient les styles visuels des surfaces (`background`, cartes `Card`, lignes de `ListView` indexées sous `<listId>:item`, lignes de `TreeView`/`Table` via leur `itemId`, `IterableContent`).
 3. **`behaviors`** (`Map<String, List<ComponentBehavior>>`) : contient les comportements déclenchés par les composants (ex. navigation `"goToPage"` sur un clic).
 4. **`pageCatalog`** : catalogue des pages routées (`pages`, `homePageId`).
+5. **`usages`** (`Map<String, ComponentUsage>`) : rôle déclaré d'une instance,
+   indexé par l'ID du composant (`"explanation"` avec `translationKey` ARB,
+   `"dynamicData"`, `"staticData"`, `"userInput"`, `"action"`, `"layout"`,
+   `"decoration"`, `"feedback"`). Lis les usages existants et renseigne
+   **obligatoirement un usage pour chaque nouveau composant sans liaison de
+   données** (voir « Usages des composants » ci-dessous).
+
+**Règle obligatoire à la création** : dans le même patch que chaque nouveau
+composant, fournis son **nom d'édition explicite** dans les `slotLabels` de son
+parent et son **usage** dans `usages[<id>]`. Cette règle couvre aussi les
+conteneurs, boutons, icônes et séparateurs, pas seulement les textes.
+Seule exception pour l'usage : un composant lié à des données, y compris par
+le patch de création, ne reçoit pas de proposition d'usage ; son nom reste
+obligatoire. N'attends pas une demande de renommage ou de classification.
+Les extraits centrés sur une propriété dans la suite du guide ne dispensent
+pas de cette règle : complète toujours les noms et usages lors d'une création.
 
 ### Noms des composants en mode édition
 
 Le nom affiché par **Renommer** dans le menu contextuel est le nom du slot,
-pas l'ID technique du composant. Donne à chaque instance un nom court,
-lisible et distinctif, notamment aux composants `"value"` (`"Nom"`,
-`"E-mail"`, `"Téléphone"` plutôt que le libellé générique `"Valeur"`).
+pas l'ID technique du composant. Donne **systématiquement, dès sa création**,
+à chaque instance un nom non vide, court, lisible et distinctif, notamment aux
+composants `"value"` (`"Nom"`, `"E-mail"`, `"Téléphone"` plutôt que le libellé
+générique `"Valeur"`). Un ID descriptif ou un texte visible ne remplace pas
+ce nom. Conserve les noms des instances existantes sauf demande explicite.
 
 Enregistre ce nom dans `slotLabels` de la configuration du parent qui contient
 le slot, avec l'ID de l'enfant comme clé. Dans le JSON plat, cela donne
@@ -156,7 +174,65 @@ nom"` dans l'exemple) et ne renomme pas l'instance dans l'éditeur. Sans entrée
 dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
 `"Valeur"`.
 
+### Usages des composants
+
+`usages[<id>]` déclare le rôle fonctionnel d'une instance, indexée par son
+`id` de placement (le même que dans `components` lorsqu'elle a une
+configuration) ; l'utilisateur peut aussi le saisir dans le dialogue
+**Renommer**. Les usages préparent la traduction des textes et le choix
+ultérieur des liaisons de données. Valeurs de `"kind"` :
+
+| `kind` | Rôle |
+| :--- | :--- |
+| `"explanation"` | Texte d'explication à traduire (titre, libellé, aide). **Exige** `"translationKey"`. |
+| `"dynamicData"` | Valeur issue des données de l'application (texte d'exemple à lier plus tard à un repository). |
+| `"staticData"` | Contenu fixe, ni traduit ni lié (référence, code, constante). |
+| `"userInput"` | Champ, choix ou contrôle modifié par l'utilisateur. |
+| `"action"` | Bouton, lien ou élément déclenchant une action ou une navigation. |
+| `"layout"` | Conteneur ou zone organisant d'autres composants. |
+| `"decoration"` | Icône, image ou séparateur purement visuel. |
+| `"feedback"` | Message d'erreur, de chargement, de vide ou de succès. |
+
+Règles :
+
+- **Obligatoire à la création** : pour chaque nouveau composant sans liaison,
+  inclus une entrée non nulle dans `usages` dans le même patch. Choisis le
+  `kind` selon son rôle fonctionnel, sans attendre une demande de l'utilisateur :
+  par exemple `layout` pour un conteneur, `action` pour un bouton,
+  `decoration` pour un séparateur purement visuel et `explanation` avec une
+  `translationKey` pour un texte à traduire. Ne laisse pas l'usage à déduire
+  du nom, du texte ou du type technique.
+- **Composants sans liaison uniquement** : propose un usage seulement pour un
+  composant dont la configuration (`components[<id>]`, y compris ses `states`)
+  ne contient ni `binding`, ni `optionsBinding`, ni `propertyBindings`, ni
+  `states.binding`. Une proposition sur un composant lié — même lié dans le
+  même patch — est ignorée.
+- **Clé de traduction** : `"translationKey"` est obligatoire pour
+  `"explanation"` et interdite pour les autres types. Format ARB lowerCamelCase
+  (`^[a-z][a-zA-Z0-9_]*$`, sans espace ni accent), dérivé du sens du texte :
+  `"Titre du profil"` → `"profileTitle"`. Ne réutilise une clé existante que
+  pour un texte identique.
+- **Fusion par ID** : n'émets que les entrées à ajouter ou à modifier ; `null`
+  supprime un usage. Ne modifie ni ne supprime un usage existant sans demande
+  explicite de l'utilisateur.
+- **Objet strict** : un usage contient uniquement `"kind"` et, pour
+  `"explanation"`, `"translationKey"`.
+
+```json
+{
+  "usages": {
+    "form-title": { "kind": "explanation", "translationKey": "profileFormTitle" },
+    "client-name-sample": { "kind": "dynamicData" },
+    "currency-code": { "kind": "staticData" }
+  }
+}
+```
+
 ### Exemple complet d'écran
+
+Les racines `root` et `mainLayout`, ainsi que le slot `scaffold:body`, sont
+fournis par l'hôte. Les autres instances ci-dessous sont nommées dans leur
+parent ; chacune reçoit un usage sauf celles qui possèdent une liaison.
 
 ```json
 {
@@ -181,6 +257,10 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
     "root": {
       "type": "native",
       "regions": { "appBar": true, "body": true },
+      "slotLabels": {
+        "main-appbar": "Barre de titre",
+        "scaffold:body": "Espace principal"
+      },
       "placements": {
         "appBar": [{ "id": "main-appbar", "type": "registry:ApplicationBar" }],
         "body": [{ "id": "scaffold:body", "type": "scaffold:body" }]
@@ -189,6 +269,7 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
     "main-appbar": {
       "type": "native",
       "regions": { "title": true },
+      "slotLabels": { "app-title": "Titre de l'application" },
       "placements": {
         "title": [{ "id": "app-title", "type": "registry:Value" }]
       }
@@ -204,6 +285,10 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
       "west": true,
       "westSize": 260,
       "resizeSides": true,
+      "slotLabels": {
+        "list-clients": "Liste des clients",
+        "card-detail": "Fiche client"
+      },
       "placements": {
         "west": [{ "id": "list-clients", "type": "registry:ListView" }],
         "center": [{ "id": "card-detail", "type": "registry:Card" }]
@@ -220,6 +305,7 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
       "allowAdd": true,
       "allowRemove": true,
       "template": {
+        "slotLabels": { "row-client-nom": "Nom du client" },
         "placements": {
           "center": [{ "id": "row-client-nom", "type": "registry:Value" }]
         }
@@ -232,6 +318,7 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
     "card-detail": {
       "type": "native",
       "regions": { "child": true },
+      "slotLabels": { "layout-form": "Formulaire client" },
       "placements": {
         "child": [{ "id": "layout-form", "type": "registry:Layout" }]
       }
@@ -249,6 +336,10 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
       "slotSizeConstraints": {
         "input-nom": { "preferredHeight": "64px", "padding": 8 },
         "btn-save": { "fitContent": true }
+      },
+      "slotLabels": {
+        "input-nom": "Nom complet",
+        "btn-save": "Enregistrer le client"
       },
       "placements": {
         "center": [
@@ -271,6 +362,13 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
       "icon": "save"
     }
   },
+  "usages": {
+    "main-appbar": { "kind": "layout" },
+    "app-title": { "kind": "explanation", "translationKey": "clientManagementTitle" },
+    "card-detail": { "kind": "layout" },
+    "layout-form": { "kind": "layout" },
+    "btn-save": { "kind": "action" }
+  },
   "pageCatalog": {
     "pages": [],
     "homePageId": null
@@ -282,11 +380,11 @@ dans `slotLabels`, un `SuperValue` conserve son libellé de slot par défaut,
 
 ## 3. Mode "Vibe" (`applyVibe` / `surfaceUpdate` incrémental)
 
-En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`), tu n'as **pas besoin de renvoyer tout l'écran**. Tu envoies uniquement les clés modifiées dans `components`, `styles` ou `pageCatalog` :
+En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`), tu n'as **pas besoin de renvoyer tout l'écran**. Tu envoies uniquement les clés modifiées dans `components`, `styles`, `behaviors`, `usages` ou `pageCatalog` :
 
 1. **Modifier partiellement un composant ou un style existant** : fournis son `id` dans `components` ou `styles` avec uniquement les propriétés à changer (le champ `"type"` peut être omis si le composant existe déjà).
-2. **Ajouter un composant** : déclare son entrée avec son `"type"` dans `components` et ajoute sa référence `{"id": "...", "type": "registry:..."}` dans les `placements` de son conteneur parent, en réémettant tous les placements existants de ce parent (voir la règle d'or ci-dessous).
-3. **Supprimer un composant** : passe son entrée à `null` dans `components` (`"components": { "old-id": null }`). Il est automatiquement supprimé de `components`, de `styles`, et retiré des `placements` de ses parents.
+2. **Ajouter un composant** : déclare son entrée avec son `"type"` dans `components` et ajoute sa référence `{"id": "...", "type": "registry:..."}` dans les `placements` de son conteneur parent, en réémettant tous les placements existants de ce parent (voir la règle d'or ci-dessous). Dans ce même patch, fournis obligatoirement son nom dans les `slotLabels` du parent (ou de son `template` pour une liste) et son entrée `usages[<id>]` s'il est sans liaison. Fais de même pour chaque descendant créé.
+3. **Supprimer un composant** : passe son entrée à `null` dans `components` (`"components": { "old-id": null }`). Il est automatiquement supprimé de `components`, de `styles` et de `usages`, et retiré des `placements` de ses parents.
 
 ```json
 {
@@ -300,6 +398,7 @@ En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`)
       "template": {
         "east": true,
         "autoSides": ["east"],
+        "slotLabels": { "btn-delete": "Supprimer le client" },
         "placements": {
           "center": [{ "id": "row-client-nom", "type": "registry:Value" }],
           "east": [{ "id": "btn-delete", "type": "registry:Action" }]
@@ -313,6 +412,9 @@ En mode Vibe (`AppearanceTransfer.applyVibe` ou `AppearanceCodec.patchFromJson`)
       "icon": "delete"
     },
     "old-widget": null
+  },
+  "usages": {
+    "btn-delete": { "kind": "action" }
   }
 }
 ```
@@ -371,6 +473,7 @@ Dans la page principale standard de SuperDesigner, le chemin de rendu est :
   "components": {
     "mainLayout": {
       "type": "layout",
+      "slotLabels": { "form-title": "Titre du profil" },
       "zoneFlows": {
         "center": {
           "expandSlots": false,
@@ -390,6 +493,9 @@ Dans la page principale standard de SuperDesigner, le chemin de rendu est :
       "fontSize": 24,
       "fontWeight": "bold"
     }
+  },
+  "usages": {
+    "form-title": { "kind": "explanation", "translationKey": "profileFormTitle" }
   }
 }
 ```
@@ -404,7 +510,9 @@ Si la zone contient déjà des composants à conserver, inclus aussi leurs place
 4. **Rattachement au rendu** : vérifie le chemin de chaque nouveau composant jusqu'à une page ou un composant effectivement affiché. Déclarer un formulaire et ses enfants sans rattacher son layout ne suffit pas.
 5. **Préservation des placements existants** : pour chaque conteneur dont le patch contient `placements` (ou `regions`), vérifie que toutes les zones, régions et slots existants à conserver sont réémis (voir la règle d'or de la section 3). Pour `root`, `root.placements.body` doit toujours contenir `{"id": "scaffold:body", "type": "scaffold:body"}`.
 6. **Schéma documenté** : utilise uniquement les propriétés et valeurs autorisées pour chaque type. Le `type` de configuration (`"value"`) et le `type` de placement (`"registry:Value"`) ne sont pas interchangeables.
-7. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
+7. **Noms obligatoires** : pour chaque nouveau slot, vérifie la présence d'un nom non vide dans les `slotLabels` du parent approprié, y compris dans les gabarits de listes. Ni l'ID, ni `label`, ni `text` ne remplacent ce nom d'édition.
+8. **Usages obligatoires** : chaque nouveau composant sans liaison de données possède une entrée non nulle dans `usages` dans ce patch. Chaque `"explanation"` porte une `translationKey` lowerCamelCase. N'émets aucun usage pour les composants liés, même si la liaison est ajoutée dans le même patch (voir « Usages des composants »).
+9. **Réponse du chat** : enveloppe le patch dans `{"message":"résumé","vibe":{...}}` (voir section 6). L'objet passé directement à `applyVibe` est le patch intérieur, pas cette enveloppe.
 
 Ces vérifications préviennent les erreurs de génération les plus courantes ; elles ne remplacent pas le décodage, la validation des modèles ni la vérification du rendu.
 

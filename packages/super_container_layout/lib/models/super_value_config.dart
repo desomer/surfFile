@@ -110,6 +110,25 @@ class SuperValueConfig extends ComponentConfig {
   @override
   String get componentType => 'value';
 
+  /// Liaisons du contenu, des options de choix et des propriétés, y compris
+  /// celles redéfinies par les surcharges d'états.
+  @override
+  Iterable<JsonTextBinding> get referencedBindings => [
+    ...JsonReader.collectReferencedBindings(
+      propertyBindings,
+      states,
+      (c) => c.propertyBindings,
+    ),
+    for (final config in [
+      this,
+      ...?states?.named.values,
+      ?states?.hover?.config,
+      ?states?.selected?.config,
+      ...?states?.automatic.values.map((state) => state.config),
+    ])
+      ...[?config.binding, ?config.choice.optionsBinding],
+  ];
+
   @override
   void validate() {
     _validateLeaf();

@@ -8,6 +8,7 @@ import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 
 import '../models/component_behavior.dart';
+import '../models/component_usage.dart';
 import '../models/component_config.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
@@ -60,6 +61,7 @@ class DefaultAppearance extends Appearance {
     super.layouts,
     super.components,
     super.behaviors,
+    super.usages,
     super.pageCatalog,
     this.cardHeight = defaultCardHeight,
     this.cardWidth = defaultCardWidth,
@@ -170,6 +172,7 @@ class DefaultAppearance extends Appearance {
   @override
   DefaultAppearance resetLayouts() => copyWith(
     components: const {},
+    usages: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
 
@@ -179,6 +182,7 @@ class DefaultAppearance extends Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ComponentConfig>? components,
     Map<String, List<ComponentBehavior>>? behaviors,
+    Map<String, ComponentUsage>? usages,
     EditorPageCatalog? pageCatalog,
     ThemeMode? mode,
     Color? accent,
@@ -208,6 +212,7 @@ class DefaultAppearance extends Appearance {
       layouts: layouts ?? const {},
       components: baseComponents,
       behaviors: behaviors ?? this.behaviors,
+      usages: usages ?? this.usages,
       pageCatalog: pageCatalog ?? this.pageCatalog,
       mode: mode ?? this.mode,
       accent: accent ?? this.accent,

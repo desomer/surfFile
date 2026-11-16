@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
 import 'package:material_ui/material_ui.dart';
 import 'package:super_container_layout/models/component_behavior.dart';
+import 'package:super_container_layout/models/component_usage.dart';
 import 'package:super_container_layout/models/component_config.dart';
 import 'package:super_container_layout/models/automatic_state.dart';
 import 'package:super_container_layout/models/editor_page_config.dart';
@@ -69,6 +70,9 @@ class AppearanceCodec {
       for (final entry in a.behaviors.entries)
         entry.key: [for (final b in entry.value) b.toJson()],
     },
+    'usages': {
+      for (final entry in a.usages.entries) entry.key: entry.value.toJson(),
+    },
     'pageCatalog': a.pageCatalog.toJson(),
   };
 
@@ -98,6 +102,11 @@ class AppearanceCodec {
           for (final entry in a.behaviors.entries)
             if (entry.value.isNotEmpty)
               entry.key: [for (final b in entry.value) b.toCompactJson()],
+        },
+      if (a.usages.isNotEmpty)
+        'usages': {
+          for (final entry in a.usages.entries)
+            entry.key: entry.value.toCompactJson(),
         },
       if (a.pageCatalog.pages.isNotEmpty) 'pageCatalog': a.pageCatalog.toJson(),
     };
@@ -193,6 +202,7 @@ class AppearanceCodec {
       'styles',
       'components',
       'behaviors',
+      'usages',
       'pageCatalog',
       ...additionalKeys,
     };
@@ -267,6 +277,10 @@ class AppearanceCodec {
                   if (item is Map<String, dynamic>)
                     ComponentBehavior.fromJson(item),
               ],
+      },
+      usages: {
+        for (final entry in entries('usages').entries)
+          entry.key: ComponentUsage.fromJson(entry.value),
       },
       pageCatalog: json.containsKey('pageCatalog')
           ? EditorPageCatalog.fromJson(json['pageCatalog'])
@@ -353,6 +367,8 @@ class AppearanceCodec {
   /// - New entries in `components` are decoded via [ComponentConfigCatalog].
   /// - Setting an entry to `null` in `styles` or `components` deletes it (and
   ///   unplaces deleted component IDs from parent containers).
+  /// - Entries in `usages` replace the usage of their ID; `null` deletes it.
+  ///   Usages of deleted components are dropped.
   Appearance patchFromJson(Appearance current, Map<String, dynamic> patch) {
     final known = {
       'version',
@@ -364,6 +380,7 @@ class AppearanceCodec {
       'styles',
       'components',
       'behaviors',
+      'usages',
       'pageCatalog',
       'vibe',
       'merge',
@@ -582,6 +599,34 @@ class AppearanceCodec {
       pageCatalog = EditorPageCatalog.fromJson(patch['pageCatalog']);
     }
 
+    final usages = Map<String, ComponentUsage>.of(current.usages)
+      ..removeWhere((id, _) => removedIds.contains(id));
+    if (patch.containsKey('usages') && patch['usages'] != null) {
+      final rawUsages = patch['usages'];
+      if (rawUsages is! Map) {
+        throw const FormatException('Invalid "usages" map.');
+      }
+      for (final entry in rawUsages.entries) {
+        final id = entry.key;
+        if (id is! String || id.trim().isEmpty) {
+          throw const FormatException('Invalid "usages" map.');
+        }
+        if (entry.value == null) {
+          usages.remove(id);
+        } else {
+          try {
+            usages[id] = ComponentUsage.fromJson(entry.value);
+          } on FormatException catch (error) {
+            throw FormatException(
+              'Usage "$id" : ${error.message}',
+              error.source,
+              error.offset,
+            );
+          }
+        }
+      }
+    }
+
     return current.copyWith(
       mode: mode,
       accent: accent,
@@ -590,6 +635,7 @@ class AppearanceCodec {
       windowEffect: windowEffect,
       styles: styles,
       components: components,
+      usages: usages,
       pageCatalog: pageCatalog,
     );
   }

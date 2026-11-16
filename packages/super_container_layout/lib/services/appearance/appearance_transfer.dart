@@ -6,6 +6,8 @@ library;
 
 import 'dart:convert';
 
+import '../../models/component_config.dart';
+import '../../models/component_usage.dart';
 import '../../models/json_numbers.dart';
 
 import 'appearance_codec.dart';
@@ -25,7 +27,7 @@ class AppearanceTransfer {
   const AppearanceTransfer._();
   static const format = 'super_container_layout.appearance';
   static TransferGroup _groupOf(String key) =>
-      key == 'components' || key == 'pageCatalog'
+      key == 'components' || key == 'pageCatalog' || key == 'usages'
       ? TransferGroup.layouts
       : TransferGroup.styles;
 
@@ -182,6 +184,12 @@ class AppearanceTransfer {
   }
 
   /// Applies an incremental GenUI-style surface update onto [current].
+  ///
+  /// Les propositions d'usages (`usages`) ne s'appliquent qu'aux composants
+  /// sans liaison de données : lorsque la configuration résultante d'un
+  /// composant référence une liaison ([ComponentConfig.referencedBindings]),
+  /// son usage actuel est conservé tel quel (ajout, modification et
+  /// suppression ignorés). Supprimer un composant retire toujours son usage.
   static Appearance applyVibe(
     Appearance current,
     String text, {
@@ -202,10 +210,32 @@ class AppearanceTransfer {
             'merge': true,
           }
         : <String, dynamic>{...raw, 'merge': true};
-    return import(current, jsonEncode(payload), const {
+    final next = import(current, jsonEncode(payload), const {
       TransferGroup.styles,
       TransferGroup.layouts,
     }, codec: codec);
+    return _keepBoundUsages(current, next);
+  }
+
+  /// Rétablit dans [next] l'usage de [current] de chaque composant lié à des
+  /// données dont l'usage a changé.
+  static Appearance _keepBoundUsages(Appearance current, Appearance next) {
+    final usages = Map<String, ComponentUsage>.of(next.usages);
+    var restored = false;
+    for (final id in {...current.usages.keys, ...next.usages.keys}) {
+      final before = current.usages[id];
+      if (before == next.usages[id] ||
+          (next.components[id]?.referencedBindings.isEmpty ?? true)) {
+        continue;
+      }
+      restored = true;
+      if (before == null) {
+        usages.remove(id);
+      } else {
+        usages[id] = before;
+      }
+    }
+    return restored ? next.copyWith(usages: usages) : next;
   }
 
   /// Exports the flat GenUI JSON representation for AI or transfer.
@@ -219,6 +249,9 @@ class AppearanceTransfer {
   }) => export(appearance, groups, codec: codec);
 
   /// Exporte une représentation JSON GenUI plate, compacte et minifiée pour l'IA.
+  ///
+  /// Inclut les `usages` déclarés (groupe Dispositions) : l'IA s'en inspire et
+  /// peut en proposer pour les composants sans liaison de données.
   static String exportCompactAi(
     Appearance appearance, {
     Set<TransferGroup> groups = const {

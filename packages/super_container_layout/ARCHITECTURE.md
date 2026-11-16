@@ -1,13 +1,13 @@
 # Architecture et Index des Fichiers — `super_container_layout`
 
-Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **302 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
+Ce document cartographie l'architecture interne du package `super_container_layout` et dresse l'index exhaustif de ses **304 fichiers Dart** afin de permettre aux agents IA de localiser immédiatement les responsabilités et de modifier le code sans hallucination.
 
 ---
 
 ## 1. Vue d'ensemble et philosophie
 
 `super_container_layout` est un moteur d'interface graphique modulaire, stylable et éditable à chaud sous Flutter, inspiré de **Flutter GenUI** :
-- **Modèle plat par identifiant (`Appearance`)** : Toute l'application est décrite par des dictionnaires immuables indexés par l'ID technique de chaque instance (`components`, `styles`, `behaviors`, `pageCatalog`, `repositories`).
+- **Modèle plat par identifiant (`Appearance`)** : Toute l'application est décrite par des dictionnaires immuables indexés par l'ID technique de chaque instance (`components`, `styles`, `behaviors`, `usages`, `pageCatalog`, `repositories`).
 - **Séparation Moteur / Application hôte** : Le package fournit le moteur générique (`SuperApp`, `SuperPage`, `SuperLayout`, `SuperContainer`, `Registry`, `DefaultAppearanceCodec`). Une application hôte comme `SurfFile` enregistre ses composants métier dans `Registry.registerComponent` et compose ses préférences métier via son propre `AppearanceCodec` et `TypedAppearanceScope`.
 - **Double mode Exécution / Édition visuelle & IA** : Les mêmes composants s'exécutent sans surcoût en mode normal et exposent des poignées de redimensionnement, du glisser-déposer (modes Zones et Grille), des menus contextuels, un historique undo/redo et un assistant IA (`VibeChatDialog` / `AppearanceTransfer.applyVibe`) lorsque le mode édition est actif.
 
@@ -33,6 +33,7 @@ Ce document cartographie l'architecture interne du package `super_container_layo
      - `"table"` → `SuperTableConfig`
      - Extensions externes enregistrées via `SuperComponentExtension` / `ComponentConfigCatalog.register` (ex: `"chart"` → `SuperChartConfig` dans le package `super_container_extensions`)
    - `behaviors` : `Map<String, List<ComponentBehavior>>` (navigation `GoToPageAction` au clic, ou `EmitEventAction` au clic/double-clic).
+   - `usages` : `Map<String, ComponentUsage>` (usage déclaré d'une instance depuis le dialogue Renommer : explication traduite avec clé ARB, données dynamiques/statiques, saisie, action, mise en page, décoration, retour d'état). Métadonnée d'édition transférée avec le groupe `layouts`, exposée à l'IA (`exportCompactAi` / `exportScopedAi`) qui peut en proposer uniquement pour les composants sans liaison (`ComponentConfig.referencedBindings` vide, garanti par `applyVibe`), copiée par `EditorPageGraph.export`/`duplicate` et nettoyée à la suppression.
    - `pageCatalog` : `EditorPageCatalog` (liste des pages routées et `homePageId`).
    - `repositories` : `List<JsonRepositoryDocument>` (sources de données JSON réactives).
 2. `Registry` maintient un `ValueNotifier<T>` par identifiant de composant/style (`superLayoutConfigById`, `containerStyleById`, `valueConfigById`, `actionConfigById`, `listConfigById`, `tabConfigById`, `chartConfigById`, `treeViewConfigById`, `tableConfigById`, `nativeComponentConfigById`, `scaffoldPageConfigById`).
@@ -111,7 +112,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 ---
 
-## 3. Index complet des 300 fichiers Dart (`packages/super_container_layout/lib/`)
+## 3. Index complet des 304 fichiers Dart (`packages/super_container_layout/lib/`)
 
 ### 3.1. Racine (`lib/` — 4 fichiers)
 | Fichier | Rôle et classes principales |
@@ -130,11 +131,12 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `ai/vibe_chat_attachment.dart` | `VibeChatAttachment` : représentation immuable d'une pièce jointe (image binaire ou fichier texte/JSON) envoyée dans le chat Vibe IA. |
 | `ai/vibe_stream_parser.dart` | `VibeIncrementalStreamParser`, `VibeStreamSnapshot` : automate d'analyse JSON incrémentale caractère par caractère extrayant en temps réel le champ `"message"`, `hasVibeObject`, `hasAskUserObject` et le nombre de composants du patch `"vibe"`. |
 
-### 3.3. Modèles de données (`lib/models/` — 52 fichiers)
+### 3.3. Modèles de données (`lib/models/` — 53 fichiers)
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
 | `models/automatic_state.dart` | `AutomaticState`, `ComponentStateProperty`, `ComponentConfigOverrideBase`, `ComponentConfigStatesBase`, `ComponentStateHelpers` : états automatiques (`contentHover`, `focused`, `disabled`, `readOnly`) et classes de base génériques des surcharges d'états de composants. |
 | `models/component_behavior.dart` | `ComponentBehavior`, `BehaviorTrigger`, `BehaviorAction`, `BehaviorExecutionData`, `BehaviorActionCatalog`, `BehaviorCatalogItem`, `BehaviorCatalog` : socle des comportements, catalogue polymorphe et réexport des actions (`models/behaviours/`). |
+| `models/component_usage.dart` | `ComponentUsageKind`, `ComponentUsage` : usage déclaré d'une instance (8 types, saisi dans Renommer ou proposé par l'IA pour les composants sans liaison) avec clé de traduction ARB obligatoire pour `explanation`, validation stricte et suggestion lowerCamelCase depuis le nom. |
 | `models/behaviours/emit_event_action.dart` | `EmitEventAction` : publication d'un événement interne sur `SuperEventBus` (`click`, `doubleClick`). |
 | `models/behaviours/go_to_page_action.dart` | `GoToPageAction` : navigation vers une page routée (`click`, `doubleClick`). |
 | `models/behaviours/search_provider_action.dart` | `SearchProviderAction` : lance la recherche d'un provider depuis un comportement (`searchProvider`). |
@@ -148,7 +150,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/behavior_event_listener.dart` | Observation non bloquante des clics et doubles-clics d'evenement, box et sliver. |
 | `widgets/components/component_state_behavior.dart` | `ComponentStateBehavior`, `ComponentBehaviorStateScope` : évaluation réactive des `StateBindingAction` (`invisible`, `readOnly`, `disabled`) et propagation aux composants enfants et à leurs états automatiques. |
 | `widgets/components/component_tooltip.dart` | `ComponentTooltip` : info-bulle fixe ou liée pour tout composant identifié, box/sliver, priorité, déduplication et conservation des configurations explicites. |
-| `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. |
+| `models/component_config.dart` | `ComponentConfig`, `ComponentConfigCodec`, `ComponentConfigCatalog` : classe de base et catalogue de décodage polymorphique des 10 types de composants. `referencedBindings` liste toutes les liaisons d'une configuration (états compris) ; non vide = composant lié. |
 | `models/component_tag_filter.dart` | `ComponentTagFilter` : filtrage par tags (`include`/`exclude`) des composants autorisés dans une zone ou une région native. |
 | `models/editor_page_config.dart` | `EditorPageConfig`, `EditorPageCatalog` : configuration d'une page routée (id, nom, chemin, `scaffoldId`, `layoutId`) et catalogue complet des pages. |
 | `models/grid_layout_config.dart` | `GridLayoutConfig`, `GridTrackSize`, `GridPlacement` : configuration du mode Grille CSS-like (pistes `fr`/`px`/`auto`, placement ligne/colonne/span). |
@@ -193,7 +195,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 
 | Fichier | Rôle et classes principales |
 | :--- | :--- |
-| `theme/appearance.dart` | `Appearance` : contrat de base immuable de l'apparence globale (thème, couleurs, opacités, dictionnaires plats `styles` / `components` / `behaviors` / `pageCatalog` / `repositories`). |
+| `theme/appearance.dart` | `Appearance` : contrat de base immuable de l'apparence globale (thème, couleurs, opacités, dictionnaires plats `styles` / `components` / `behaviors` / `usages` / `pageCatalog` / `repositories`). |
 | `theme/appearance_slot.dart` | `AppearanceSlot`, `AppearanceSurfaceRole` : descripteur d'un slot de style nommé dans le catalogue d'une application. |
 | `theme/container_fill.dart` | `ContainerFill`, `ContainerFillType` : remplissage d'une surface (couleur unie, dégradé `linear`/`radial`/`sweep`, URL/SVG de l'image de fond). Le rendu de l'image est fourni par l'extension `ContainerFillImage` (`widgets/surfaces/surface_image_providers.dart`). |
 | `theme/container_style.dart` | `ContainerStyle`, `ContainerStyleProperty` : modèle complet de style d'une surface (fond, coins, bordures, ombres, néon, flou, motifs, marges, états, liaisons JSON). |
@@ -210,7 +212,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | :--- | :--- |
 | `services/appearance/appearance_codec.dart` | `AppearanceCodec` : contrat de sérialisation complète, compacte (`toCompactJson`), de transfert, validation, migration et gestion de préférences additionnelles pour un modèle `Appearance`. |
 | `services/appearance/appearance_store.dart` | `AppearanceStore`, `AppearanceServicesScope` : persistance asynchrone sérialisée dans `SharedPreferences` (clé `appearance.v1`) et création de contrôleurs persistants. |
-| `services/appearance/appearance_transfer.dart` | `AppearanceTransfer`, `TransferGroup` : import/export JSON par groupes (Styles, Dispositions), export compact minifié pour l'IA (`exportCompactAi`) et application incrémentale des patches (`applyVibe`). |
+| `services/appearance/appearance_transfer.dart` | `AppearanceTransfer`, `TransferGroup` : import/export JSON par groupes (Styles, Dispositions), export compact minifié pour l'IA, usages compris (`exportCompactAi`) et application incrémentale des patches (`applyVibe`, qui conserve l'usage existant des composants liés à des données). |
 | `services/appearance/default_appearance_codec.dart` | `DefaultAppearanceCodec` : codec JSON standard (versions 1 à 3) pour `DefaultAppearance`. |
 | `services/codegen/dart_code_generator.dart` | Fichier baril réexportant le socle (`core/` : `ComponentDartGenerator`, `DartCodegenContext`, `DartCodeExporter`). |
 | `services/codegen/component_dart_generators.dart` | Fichier baril réexportant les générateurs dédiés par composant situés sous `services/codegen/generators/`. |
@@ -315,7 +317,7 @@ lecture seule, désabonnement et protection contre les réponses obsolètes.
 | `widgets/components/super_layout/zone_interactions.dart` | Cibles de glisser-déposer (`DragTarget`) et retour visuel lors du déplacement de slots ou de zones. |
 | `widgets/components/super_layout/zone_resize_handle.dart` | Poignée de redimensionnement interactif entre les zones cardinales (`north`, `south`, `west`, `east`) et `center`. |
 
-### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 110 fichiers)
+### 3.8. Widgets du mode Édition (`lib/widgets/editing/` — 111 fichiers)
 
 Le contrôle partagé `widgets/editing/components/shared/editor_number_field.dart`
 expose `EditorNumberField` : badge cliquable et popup numérique ancré.
@@ -344,7 +346,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/addition/forms/tab_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTab`. |
 | `widgets/editing/addition/forms/table_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTable`. |
 | `widgets/editing/addition/forms/tree_view_add_form.dart` | Formulaire de configuration initiale lors de l'ajout d'un `SuperTreeView`. |
-| `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») préchargeant `SCREEN_JSON_AI_GUIDE.md` (`warmUp`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`), diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`) et appliquant le patch via `AppearanceTransfer.applyVibe`. |
+| `widgets/editing/ai/vibe_chat_dialog.dart` | `VibeChatDialog` : panneau/dialogue de chat IA (« Vibe ») préchargeant `SCREEN_JSON_AI_GUIDE.md` (`warmUp`), construisant un prompt JSON compact (`exportCompactAi` ou `exportScopedAi` ciblé sur `VibeChatScope`, usages compris, avec `filterPatchToScope` limitant composants, styles, comportements et usages au sous-arbre), diffusant la réponse SSE en direct (`streamGemini`, `VibeAiSpeedMode`), réglant le niveau de questionnement via slider (`VibeQuestioningLevel`), présentant les cartes interactives `"askUser"` (`VibeAskUserRequest`) et appliquant le patch via `AppearanceTransfer.applyVibe`. |
 | `widgets/editing/behaviors/component_behavior_editor.dart` | `ComponentBehaviorWizard` : assistant de comportements, navigation, événements, taille liée, info-bulle et recherche de provider. |
 | `widgets/editing/behaviors/search_provider_settings.dart` | `SearchProviderSettings` : sélection d'un provider pour l'action `searchProvider`, avec accès au gestionnaire. |
 | `widgets/editing/components/native_component_editor.dart` | Point d'entrée public de l'éditeur générique des propriétés et régions d'un composant Material natif (`NativeComponentConfig`). |
@@ -373,6 +375,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/components/super_text_field_settings.dart` | Dialogue de paramètres d'un `SuperTextField`. |
 | `widgets/editing/components/super_tree_view_editor.dart` | Fenêtre d'édition d'un `SuperTreeView` (liaison JSON, `childrenKey`, largeur `header`, indentation, connecteurs). |
 | `widgets/editing/components/super_value_editor.dart` | Fenêtre d'édition complète d'un `SuperValue` (mode affichage/saisie, type texte/checkbox/switch, typographie, états, liaison JSON). |
+| `widgets/editing/dialogs/component_rename_dialog.dart` | `showComponentRenameDialog`, `ComponentRenameDialog`, `ComponentRenameResult` : dialogue Renommer saisissant le nom et l'usage du composant (clé de traduction pré-remplie depuis le nom pour un texte d'explication). |
 | `widgets/editing/dialogs/editor_dialog.dart` | `showEditorDialog` : affichage de boîtes de dialogue d'édition ancrées et déplaçables sans masquer la cible éditée. |
 | `widgets/editing/dialogs/editor_dialog_header.dart` | `EditorDialogHeader` : barre de titre standard des dialogues d'édition avec glisser-déposer et bouton de fermeture. |
 | `widgets/editing/dialogs/editor_tabbed_wizard.dart` | `EditorTabbedWizard` : structure à onglets réutilisable pour les fenêtres d'édition complexes. |
@@ -407,7 +410,7 @@ slider restent distinctes des bornes de saisie pour les paramètres extensibles.
 | `widgets/editing/slots/editor_slot.dart` | `EditorSlot`, `EditorSlotState`, `StyleEditScope` : wrapper d'édition universel autour d'un slot de composant (cycle de vie, survol/highlight, rendu Box/Sliver). |
 | `widgets/editing/slots/editor_slot_export.dart` | `part of 'editor_slot.dart'` (`EditorSlotExportExtension`) : inspection du graphe vivant des composants et export JSON/Dart ou ouverture IA ciblée. |
 | `widgets/editing/slots/editor_slot_menu.dart` | `part of 'editor_slot.dart'` (`EditorSlotMenuExtension`) : construction et ouverture du menu contextuel hiérarchique (`openMenu`, badges, indicateurs, actions rapides). |
-| `widgets/editing/slots/editor_slot_targets.dart` | `part of 'editor_slot.dart'` (`EditorSlotTargetsExtension`) : renommage, résolution contextuelle et collecte des cibles (`editableChain`, insertions, comportements, données). |
+| `widgets/editing/slots/editor_slot_targets.dart` | `part of 'editor_slot.dart'` (`EditorSlotTargetsExtension`) : renommage et usage (transaction undo unique), résolution contextuelle et collecte des cibles (`editableChain`, insertions, comportements, données). |
 | `widgets/editing/slots/provided_slot_scope.dart` | `ProvidedSlotScope` : portée transmettant les métadonnées et actions du slot parent aux sous-composants. |
 | `widgets/editing/slots/sliver_pointer_region.dart` | `part of 'editor_selection_region.dart'` : `SliverSlotScope`, `SliverPointerRegion` et son `RenderProxySliver` pour le survol et la peinture d'enfants Sliver. |
 | `widgets/editing/slots/slot_removal.dart` | Logique de suppression sécurisée d'un slot et nettoyage de ses configurations via `EditorPageGraph`. |

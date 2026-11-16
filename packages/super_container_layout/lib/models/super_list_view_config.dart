@@ -112,6 +112,9 @@ class SuperListViewConfig extends ComponentConfig {
   @override
   String get componentType => 'list';
 
+  @override
+  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+
   /// Vérifie la liaison et les bornes numériques ; lève une
   /// [FormatException] avec un message affichable sinon.
   @override

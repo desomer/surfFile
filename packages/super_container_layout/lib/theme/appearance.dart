@@ -2,7 +2,7 @@
 ///
 /// Regroupe l'état global du thème (mode clair/sombre, couleur d'accent, opacités,
 /// effet de fenêtre) et les dictionnaires plats par ID (`styles`, `components`,
-/// `behaviors`, `pageCatalog`, `repositories`).
+/// `behaviors`, `usages`, `pageCatalog`, `repositories`).
 library;
 
 import 'package:flutter_acrylic/flutter_acrylic.dart' show WindowEffect;
@@ -12,6 +12,7 @@ import 'theme_color.dart';
 
 import '../models/component_config.dart';
 import '../models/component_behavior.dart';
+import '../models/component_usage.dart';
 import '../models/super_layout_config.dart';
 import '../models/scaffold_page_config.dart';
 import '../models/native_component_config.dart';
@@ -42,13 +43,15 @@ class Appearance {
     Map<String, SuperLayoutConfig> layouts = const {},
     Map<String, ComponentConfig> components = const {},
     Map<String, List<ComponentBehavior>> behaviors = const {},
+    Map<String, ComponentUsage> usages = const {},
     this.pageCatalog = const EditorPageCatalog.empty(),
   }) : styles = Map.unmodifiable(styles),
        components = Map.unmodifiable(_mergeComponents(components, layouts)),
        behaviors = Map.unmodifiable({
          for (final entry in behaviors.entries)
            entry.key: List<ComponentBehavior>.unmodifiable(entry.value),
-       }) {
+       }),
+       usages = Map.unmodifiable(usages) {
     if (accent is ThemeColor) {
       throw ArgumentError.value(
         accent,
@@ -109,7 +112,26 @@ class Appearance {
   final Map<String, ContainerStyle> styles;
   final Map<String, ComponentConfig> components;
   final Map<String, List<ComponentBehavior>> behaviors;
+
+  /// Usages déclarés des composants, indexés par identifiant d'instance.
+  final Map<String, ComponentUsage> usages;
   final EditorPageCatalog pageCatalog;
+
+  /// Usage déclaré pour l'instance [id], ou `null` s'il n'est pas défini.
+  ComponentUsage? usageFor(String id) => usages[id];
+
+  /// Définit l'usage de l'instance [id] ; `null` le retire.
+  Appearance withUsage(String id, ComponentUsage? usage) {
+    usage?.validate();
+    if (usages[id] == usage) return this;
+    final next = Map<String, ComponentUsage>.from(usages);
+    if (usage == null) {
+      next.remove(id);
+    } else {
+      next[id] = usage;
+    }
+    return copyWith(usages: next);
+  }
 
   List<ComponentBehavior> behaviorsFor(String id) => behaviors[id] ?? const [];
 
@@ -324,6 +346,7 @@ class Appearance {
     Map<String, SuperLayoutConfig>? layouts,
     Map<String, ComponentConfig>? components,
     Map<String, List<ComponentBehavior>>? behaviors,
+    Map<String, ComponentUsage>? usages,
     EditorPageCatalog? pageCatalog,
   }) {
     final baseComponents =
@@ -346,6 +369,7 @@ class Appearance {
       layouts: layouts ?? const {},
       components: baseComponents,
       behaviors: behaviors ?? this.behaviors,
+      usages: usages ?? this.usages,
       pageCatalog: pageCatalog ?? this.pageCatalog,
     );
   }
@@ -376,6 +400,7 @@ class Appearance {
       withComponent(id, value);
   Appearance resetLayouts() => copyWith(
     components: const {},
+    usages: const {},
     pageCatalog: const EditorPageCatalog.empty(),
   );
 

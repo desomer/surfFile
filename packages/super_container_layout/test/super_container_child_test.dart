@@ -373,6 +373,98 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('rename wizard declares the usage in one undoable step', (
+    tester,
+  ) async {
+    final components = registry();
+    await mount(tester, components);
+    await open(tester);
+    await choose(tester, 'factory:Card');
+    final id = components
+        .nativeComponentController('box')
+        .value
+        .slotsOf('child')
+        .single;
+    final context = tester.element(target());
+    final history = EditorHistoryScope.controllerOf(context)!;
+    final appearance = AppearanceScope.controllerOf(context)!;
+    history.clear();
+
+    Future<void> openWizard(String label) async {
+      await tester.tap(target(), buttons: kSecondaryMouseButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('style-menu-rename-$label')));
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> selectUsage(ComponentUsageKind kind) async {
+      await tester.tap(find.byKey(const ValueKey('style-menu-usage')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('style-menu-usage-${kind.name}')).last);
+      await tester.pumpAndSettle();
+    }
+
+    final keyField = find.byKey(
+      const ValueKey('style-menu-usage-translation-key'),
+    );
+    String keyText() => tester
+        .widget<EditableText>(
+          find.descendant(of: keyField, matching: find.byType(EditableText)),
+        )
+        .controller
+        .text;
+
+    await openWizard('Card');
+    expect(keyField, findsNothing);
+    await selectUsage(ComponentUsageKind.explanation);
+    expect(keyText(), 'card');
+    await tester.enterText(
+      find.byKey(const ValueKey('style-menu-rename-input')),
+      'Titre principal',
+    );
+    await tester.pump();
+    expect(keyText(), 'titrePrincipal');
+    await tester.enterText(keyField, 'Titre faux');
+    await tester.tap(find.byKey(const ValueKey('style-menu-rename-save')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Format attendu'), findsOneWidget);
+    expect(appearance.value.usageFor(id), isNull);
+    await tester.enterText(keyField, 'homeTitle');
+    await tester.tap(find.byKey(const ValueKey('style-menu-rename-save')));
+    await tester.pumpAndSettle();
+    expect(keyField, findsNothing);
+    expect(
+      appearance.value.usageFor(id),
+      const ComponentUsage.explanation('homeTitle'),
+    );
+    expect(components.nativeComponentController('box').value.slotLabels, {
+      id: 'Titre principal',
+    });
+
+    await openWizard('Titre principal');
+    expect(keyText(), 'homeTitle');
+    await selectUsage(ComponentUsageKind.dynamicData);
+    expect(keyField, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('style-menu-rename-save')));
+    await tester.pumpAndSettle();
+    expect(
+      appearance.value.usageFor(id),
+      const ComponentUsage(kind: ComponentUsageKind.dynamicData),
+    );
+
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(
+      appearance.value.usageFor(id),
+      const ComponentUsage.explanation('homeTitle'),
+    );
+    history.undo();
+    await tester.pumpAndSettle();
+    expect(appearance.value.usageFor(id), isNull);
+    expect(components.nativeComponentController('box').value.slotLabels, {});
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('child removal sits on the child menu row', (tester) async {
     final components = registry();
     await mount(tester, components);

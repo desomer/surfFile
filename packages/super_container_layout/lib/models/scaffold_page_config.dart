@@ -10,6 +10,7 @@ import 'dart:ui' show Clip;
 import 'package:flutter/painting.dart' show Axis;
 
 import 'component_config.dart';
+import 'json_text_binding.dart';
 import 'native_component_config.dart';
 import 'native_property_descriptor.dart';
 
@@ -170,6 +171,9 @@ class ScaffoldPageConfig extends ComponentConfig {
 
   @override
   String get componentType => 'scaffold';
+
+  @override
+  Iterable<JsonTextBinding> get referencedBindings => native.referencedBindings;
 
   @override
   ScaffoldPageConfig patchFromJson(Map<Object?, Object?> patch) =>

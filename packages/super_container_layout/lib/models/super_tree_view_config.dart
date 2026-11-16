@@ -113,6 +113,9 @@ class SuperTreeViewConfig extends ComponentConfig {
   String get componentType => 'treeView';
 
   @override
+  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+
+  @override
   void validate() {
     binding?.validate();
     final key = childrenKey.trim();

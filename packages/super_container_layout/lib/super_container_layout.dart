@@ -15,6 +15,7 @@ export 'models/registry.dart';
 export 'models/component_config.dart';
 export 'models/component_extension.dart';
 export 'models/component_behavior.dart';
+export 'models/component_usage.dart';
 export 'widgets/components/component_state_behavior.dart';
 export 'widgets/components/component_tooltip.dart';
 export 'services/events/super_event_bus.dart';

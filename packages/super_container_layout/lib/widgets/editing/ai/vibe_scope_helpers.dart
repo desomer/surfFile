@@ -1,4 +1,5 @@
-/// Résout les composants, styles et comportements autorisés dans un scope Vibe.
+/// Résout les composants, styles, comportements et usages autorisés dans un
+/// scope Vibe.
 library;
 
 import 'dart:convert';
@@ -139,10 +140,22 @@ abstract final class VibeScopeHelpers {
       }
     }
 
+    final filteredUsages = <String, Object?>{};
+    if (payload['usages'] case final Map rawUsages) {
+      for (final entry in rawUsages.entries) {
+        final uid = entry.key;
+        if (uid is String &&
+            (allowedSubtreeIds.contains(uid) || uid == rawTargetId)) {
+          filteredUsages[uid] = entry.value;
+        }
+      }
+    }
+
     return <String, dynamic>{
       if (filteredComponents.isNotEmpty) 'components': filteredComponents,
       if (filteredStyles.isNotEmpty) 'styles': filteredStyles,
       if (filteredBehaviors.isNotEmpty) 'behaviors': filteredBehaviors,
+      if (filteredUsages.isNotEmpty) 'usages': filteredUsages,
     };
   }
 
@@ -167,6 +180,8 @@ abstract final class VibeScopeHelpers {
         compactJson['styles'] as Map<String, Object?>? ?? const {};
     final allBehaviors =
         compactJson['behaviors'] as Map<String, Object?>? ?? const {};
+    final allUsages =
+        compactJson['usages'] as Map<String, Object?>? ?? const {};
 
     final scopedComponents = <String, Object?>{
       for (final id in subtreeIds)
@@ -189,6 +204,11 @@ abstract final class VibeScopeHelpers {
         if (subtreeIds.contains(entry.key) || entry.key == rawTargetId)
           entry.key: entry.value,
     };
+    final scopedUsages = <String, Object?>{
+      for (final entry in allUsages.entries)
+        if (subtreeIds.contains(entry.key) || entry.key == rawTargetId)
+          entry.key: entry.value,
+    };
 
     return jsonEncode(
       JsonNumbers.normalizeMap({
@@ -205,6 +225,7 @@ abstract final class VibeScopeHelpers {
         'components': scopedComponents,
         'styles': scopedStyles,
         if (scopedBehaviors.isNotEmpty) 'behaviors': scopedBehaviors,
+        if (scopedUsages.isNotEmpty) 'usages': scopedUsages,
       }),
     );
   }

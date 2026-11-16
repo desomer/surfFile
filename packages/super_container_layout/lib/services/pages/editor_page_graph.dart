@@ -388,6 +388,10 @@ abstract final class EditorPageGraph {
             if (ids.contains(entry.key) || auxiliary.contains(entry.key))
               remap(entry.key): entry.value,
         },
+        usages: {
+          for (final entry in snapshot.usages.entries)
+            if (ids.contains(entry.key)) remap(entry.key): entry.value,
+        },
         pageCatalog: EditorPageCatalog(
           homePageId: rootId,
           pages: [
@@ -409,7 +413,8 @@ abstract final class EditorPageGraph {
   ];
 
   /// Copies the graph of [sourcePageId] under [targetPageId] with new,
-  /// unique instance IDs. The page catalog is left unchanged.
+  /// unique instance IDs. The page catalog is left unchanged. Declared
+  /// usages (`Appearance.usages`) follow the copied instances.
   ///
   /// Throws a [FormatException] without changing anything when the graph
   /// contains a component without duplication contract, an unknown
@@ -545,7 +550,14 @@ abstract final class EditorPageGraph {
       }
       copies[refs[ref]!] = copy;
     }
-    return _write(appearance, copies: copies);
+    return _write(
+      appearance,
+      copies: copies,
+      usageCopies: {
+        for (final MapEntry(key: source, value: target) in ids.entries)
+          if (source != target) target: source,
+      },
+    );
   }
 
   /// Removes the configurations exclusively owned by [pageId].
@@ -602,7 +614,8 @@ abstract final class EditorPageGraph {
   /// Nothing is deleted while the instance is still placed somewhere, nor for
   /// components without [ComponentDuplicationContract]. Descendant
   /// configurations shared with remaining containers or reachable from a page
-  /// of the catalog are kept.
+  /// of the catalog are kept. The declared usage of the unplaced instance is
+  /// always dropped.
   static Appearance removeInstance({
     required Appearance appearance,
     required Registry registry,
@@ -616,7 +629,7 @@ abstract final class EditorPageGraph {
     );
     if (placed) return appearance;
     final contract = _resolve(registry, type, containerKind).contract;
-    if (contract == null) return appearance;
+    if (contract == null) return appearance.withUsage(instanceId, null);
     final graph = _Graph.build(
       appearance,
       registry,
@@ -630,8 +643,8 @@ abstract final class EditorPageGraph {
       registry,
       {...graph.configs}..removeAll(protected),
     );
-    if (candidates.isEmpty) return appearance;
-    return _write(appearance, removed: candidates);
+    if (candidates.isEmpty) return appearance.withUsage(instanceId, null);
+    return _write(appearance, removed: candidates, usageDrops: {instanceId});
   }
 
   /// Keeps only the [candidates] whose owners are placed exclusively inside
@@ -1085,6 +1098,8 @@ Appearance _write(
   Appearance appearance, {
   Map<EditorConfigRef, Object> copies = const {},
   Set<EditorConfigRef> removed = const {},
+  Map<String, String> usageCopies = const {},
+  Set<String> usageDrops = const {},
 }) {
   final styleDrop = {
     for (final ref in removed)
@@ -1126,7 +1141,24 @@ Appearance _write(
     }
   }
 
-  return appearance.copyWith(styles: nextStyles, components: nextComponents);
+  // Les usages suivent les instances : copiés avec elles, retirés avec elles.
+  final dropped = {...compDrop, ...usageDrops};
+  final usageAdd = {
+    for (final MapEntry(key: target, value: source) in usageCopies.entries)
+      target: ?appearance.usages[source],
+  };
+  final nextUsages =
+      usageAdd.isEmpty && !appearance.usages.keys.any(dropped.contains)
+      ? null
+      : ({...appearance.usages}
+          ..removeWhere((id, _) => dropped.contains(id))
+          ..addAll(usageAdd));
+
+  return appearance.copyWith(
+    styles: nextStyles,
+    components: nextComponents,
+    usages: nextUsages,
+  );
 }
 
 /// Retire [drop] des placements de [value] et y fixe les types [types].

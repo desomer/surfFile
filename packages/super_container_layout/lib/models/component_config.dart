@@ -144,7 +144,9 @@ abstract class ComponentConfig {
   /// Validates this configuration.
   void validate() {}
 
-  /// JSON repository bindings referenced by this configuration.
+  /// JSON repository bindings referenced by this configuration, including
+  /// those of its state overrides. A non-empty result marks the component as
+  /// bound to application data (AI usage proposals are then ignored).
   Iterable<JsonTextBinding> get referencedBindings => const [];
 
   /// Child slot IDs and their types owned by this configuration, if any.

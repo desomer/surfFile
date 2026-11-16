@@ -254,6 +254,9 @@ class SuperTableConfig extends ComponentConfig {
   String get componentType => 'table';
 
   @override
+  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+
+  @override
   void validate() {
     binding?.validate();
     if (columns.isEmpty) {

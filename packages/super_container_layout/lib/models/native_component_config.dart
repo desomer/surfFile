@@ -439,6 +439,9 @@ class NativeComponentConfig extends ComponentConfig {
   String get componentType => 'native';
 
   @override
+  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+
+  @override
   NativeComponentConfig patchFromJson(Map<Object?, Object?> patch) =>
       NativeComponentConfig.fromJson({...toJson(), ...patch});
 

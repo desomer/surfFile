@@ -90,52 +90,45 @@ Future<void> _openEditorMenuFromContext(
 
 /// Méthodes de renommage et de collecte des cibles hiérarchiques pour [EditorSlotState].
 extension _EditorSlotTargetsExtension on EditorSlotState {
+  /// Identifiant stable portant l'usage déclaré, ou `null` pour une zone ou
+  /// une instance sans identifiant technique.
+  String? get _usageComponentId {
+    if (widget.zoneId != null) return null;
+    final id = widget.id;
+    if (id != null && id.isNotEmpty) return id;
+    final instanceId = _instance?.id;
+    if (instanceId != null && instanceId.isNotEmpty) return instanceId;
+    return null;
+  }
+
   Future<void> _promptRename() async {
     final currentLabel = titleLabel;
-    var label = currentLabel;
-    final form = GlobalKey<FormState>();
-    final value = await showEditorDialog<String>(
+    final usageId = _usageComponentId;
+    final appearance = usageId == null
+        ? null
+        : AppearanceScope.controllerOf(context);
+    final result = await showComponentRenameDialog(
       context: context,
       target: context,
-      builder: (dialogContext) {
-        void save() {
-          if (form.currentState!.validate()) {
-            Navigator.of(dialogContext).pop(label.trim());
-          }
-        }
-
-        return AlertDialog(
-          title: const Text('Renommer le composant'),
-          content: Form(
-            key: form,
-            child: TextFormField(
-              key: const ValueKey('style-menu-rename-input'),
-              initialValue: currentLabel,
-              autofocus: true,
-              decoration: const InputDecoration(labelText: 'Nom'),
-              validator: (value) => (value ?? '').trim().isEmpty
-                  ? 'Le nom ne peut pas être vide.'
-                  : null,
-              onChanged: (value) => label = value,
-              onFieldSubmitted: (_) => save(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Annuler'),
-            ),
-            FilledButton(
-              key: const ValueKey('style-menu-rename-save'),
-              onPressed: save,
-              child: const Text('Renommer'),
-            ),
-          ],
-        );
-      },
+      initialLabel: currentLabel,
+      initialUsage: appearance?.value.usageFor(usageId!),
+      showUsage: appearance != null,
     );
-    if (value != null && value != currentLabel && mounted) {
-      _renameLabel(value);
+    if (result == null || !mounted) return;
+    final renamed = result.label != currentLabel;
+    final usageChanged =
+        appearance != null &&
+        result.usage != appearance.value.usageFor(usageId!);
+    if (!renamed && !usageChanged) return;
+    final history = EditorHistoryScope.controllerOf(context);
+    history?.beginTransaction();
+    try {
+      if (renamed) _renameLabel(result.label);
+      if (usageChanged) {
+        appearance.value = appearance.value.withUsage(usageId, result.usage);
+      }
+    } finally {
+      history?.commitTransaction();
     }
   }
 

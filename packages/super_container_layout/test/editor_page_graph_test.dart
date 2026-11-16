@@ -8,6 +8,7 @@ import 'package:super_container_layout/models/super_value_config.dart';
 import 'package:super_container_layout/models/super_text_field_config.dart';
 import 'package:super_container_layout/models/json_text_binding.dart';
 import 'package:super_container_layout/models/automatic_state.dart';
+import 'package:super_container_layout/models/component_usage.dart';
 import 'package:super_container_layout/services/pages/editor_page_graph.dart';
 import 'package:super_container_layout/theme/appearance.dart';
 import 'package:super_container_layout/theme/container_style.dart';
@@ -743,5 +744,68 @@ void main() {
         isNot(contains('txt2')),
       );
     });
+
+    test('drops the declared usages of deleted instances', () {
+      const usage = ComponentUsage(kind: ComponentUsageKind.dynamicData);
+      final appearance = unplaced(_sample())
+          .withUsage('lay1', usage)
+          .withUsage('txt2', usage)
+          .withUsage('txt1', usage);
+      final removed = EditorPageGraph.removeInstance(
+        appearance: appearance,
+        registry: _registry(),
+        instanceId: 'lay1',
+        type: 'factory:Layout',
+        containerKind: EditorConfigKind.nativeComponent,
+      );
+      expect(removed.usages.keys, ['txt1']);
+      final leaf = EditorPageGraph.removeInstance(
+        appearance: appearance.withUsage('orphan', usage),
+        registry: _registry(),
+        instanceId: 'orphan',
+        type: 'A',
+        containerKind: EditorConfigKind.layout,
+      );
+      expect(leaf.usages.containsKey('orphan'), isFalse);
+    });
+  });
+
+  test('usages follow exported and duplicated instances', () {
+    const title = ComponentUsage.explanation('pageTitle');
+    const value = ComponentUsage(kind: ComponentUsageKind.dynamicData);
+    final source = _sample()
+        .withUsage('txt1', title)
+        .withUsage('txt2', value)
+        .withUsage('contA', value);
+    final exported = EditorPageGraph.export(
+      appearance: source,
+      registry: _registry(),
+      componentId: 'lay1',
+    ).appearance;
+    expect(exported.usages, {'txt2': value});
+
+    final copy = EditorPageGraph.duplicate(
+      appearance: source,
+      registry: _registry(),
+      sourcePageId: 'p1',
+      targetPageId: 'p2',
+      generateId: _ids(),
+    );
+    final bar = copy.nativeComponent('p2').slotsOf('appBar').single;
+    final copiedTitle = copy.nativeComponent(bar).slotsOf('title').single;
+    expect(copiedTitle, isNot('txt1'));
+    expect(copy.usageFor(copiedTitle), title);
+    expect(copy.usageFor('txt1'), title);
+    expect(copy.usages.values.where((usage) => usage == value).length, 3);
+
+    final removed = EditorPageGraph.remove(
+      appearance: copy,
+      registry: _registry(),
+      pageId: 'p1',
+    );
+    expect(removed.usageFor('txt1'), isNull);
+    expect(removed.usageFor('txt2'), isNull);
+    expect(removed.usageFor(copiedTitle), title);
+    expect(removed.usageFor('contA'), value);
   });
 }

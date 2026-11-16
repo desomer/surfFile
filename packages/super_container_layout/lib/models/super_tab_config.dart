@@ -168,6 +168,9 @@ class SuperTabConfig extends ComponentConfig {
   String get componentType => 'tab';
 
   @override
+  Iterable<JsonTextBinding> get referencedBindings => [?binding];
+
+  @override
   void validate() {
     binding?.validate();
     if (initialIndex < 0) {
